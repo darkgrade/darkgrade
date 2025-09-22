@@ -104,10 +104,20 @@ export class Camera extends EventEmitter {
         this.cameraImplementation = this.cameraFactory.create(detectedVendor, transport)
         await this.cameraImplementation.connect()
 
-        // Set vendor/model/serial from options if not already set
-        if (!this._vendor) this._vendor = this.options.vendor || detectedVendor
-        if (!this._model) this._model = this.options.model || 'Unknown'
-        if (!this._serialNumber) this._serialNumber = this.options.serialNumber || 'Unknown'
+        // Try to get actual camera info from the device
+        try {
+            const cameraInfo = await this.cameraImplementation.getCameraInfo()
+            console.log('[Camera] Retrieved camera info:', cameraInfo)
+            this._vendor = cameraInfo.manufacturer || this.options.vendor || detectedVendor
+            this._model = cameraInfo.model || this.options.model || 'Unknown'
+            this._serialNumber = cameraInfo.serialNumber || this.options.serialNumber || 'Unknown'
+        } catch (error) {
+            console.warn('[Camera] Could not retrieve camera info:', error)
+            // Fall back to options or defaults
+            if (!this._vendor) this._vendor = this.options.vendor || detectedVendor
+            if (!this._model) this._model = this.options.model || 'Unknown'
+            if (!this._serialNumber) this._serialNumber = this.options.serialNumber || 'Unknown'
+        }
     }
 
     async disconnect(): Promise<void> {

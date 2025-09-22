@@ -324,19 +324,114 @@ export class GenericPTPCamera implements CameraInterface {
         }
     }
 
-    protected parseDeviceInfo(_data: Uint8Array): CameraInfo {
-        // Basic parsing - this is a complex structure
-        // TODO: Implement full parsing
+    protected parseDeviceInfo(data: Uint8Array): CameraInfo {
+        // Parse PTP DeviceInfo structure
+        const view = new DataView(data.buffer, data.byteOffset)
+        let offset = 0
+        
+        // Skip standard version (2 bytes) and vendor extension ID (4 bytes)
+        offset += 2 // StandardVersion
+        offset += 4 // VendorExtensionID
+        offset += 2 // VendorExtensionVersion
+        
+        // Read vendor extension description string (PTP string format)
+        const vendorExtDescLength = view.getUint8(offset)
+        offset += 1 + vendorExtDescLength * 2 // Skip unicode string
+        
+        // Skip functional mode (2 bytes)
+        offset += 2
+        
+        // Read operations supported array
+        const opsCount = view.getUint32(offset, true)
+        offset += 4
+        const operationsSupported = []
+        for (let i = 0; i < opsCount; i++) {
+            operationsSupported.push(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read events supported array
+        const eventsCount = view.getUint32(offset, true)
+        offset += 4
+        const eventsSupported = []
+        for (let i = 0; i < eventsCount; i++) {
+            eventsSupported.push(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read device properties supported array
+        const propsCount = view.getUint32(offset, true)
+        offset += 4
+        const devicePropertiesSupported = []
+        for (let i = 0; i < propsCount; i++) {
+            devicePropertiesSupported.push(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read capture formats array
+        const captureCount = view.getUint32(offset, true)
+        offset += 4
+        const captureFormats = []
+        for (let i = 0; i < captureCount; i++) {
+            captureFormats.push(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read image formats array
+        const imageCount = view.getUint32(offset, true)
+        offset += 4
+        const imageFormats = []
+        for (let i = 0; i < imageCount; i++) {
+            imageFormats.push(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read manufacturer string
+        const manufacturerLength = view.getUint8(offset)
+        offset++
+        let manufacturer = ''
+        for (let i = 0; i < manufacturerLength; i++) {
+            manufacturer += String.fromCharCode(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read model string
+        const modelLength = view.getUint8(offset)
+        offset++
+        let model = ''
+        for (let i = 0; i < modelLength; i++) {
+            model += String.fromCharCode(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read version string
+        const versionLength = view.getUint8(offset)
+        offset++
+        let version = ''
+        for (let i = 0; i < versionLength; i++) {
+            version += String.fromCharCode(view.getUint16(offset, true))
+            offset += 2
+        }
+        
+        // Read serial number string
+        const serialLength = view.getUint8(offset)
+        offset++
+        let serialNumber = ''
+        for (let i = 0; i < serialLength; i++) {
+            serialNumber += String.fromCharCode(view.getUint16(offset, true))
+            offset += 2
+        }
+        
         return {
-            manufacturer: 'Generic',
-            model: 'PTP Camera',
-            version: '1.0',
-            serialNumber: '000000',
-            operationsSupported: [],
-            eventsSupported: [],
-            devicePropertiesSupported: [],
-            captureFormats: [],
-            imageFormats: [],
+            manufacturer: manufacturer || 'Unknown',
+            model: model || 'Unknown',
+            version: version || 'Unknown',
+            serialNumber: serialNumber || 'Unknown',
+            operationsSupported,
+            eventsSupported,
+            devicePropertiesSupported,
+            captureFormats,
+            imageFormats,
         }
     }
 
