@@ -68,6 +68,7 @@ export type SDIExtDevicePropInfoParsed = {
     enabled: boolean
     factoryDefaultValue: any
     currentValueRaw: any
+    currentValueBytes: Uint8Array
     currentValueDecoded: any
     formFlag: HexCode
     enumValuesSet: any[]
@@ -100,8 +101,9 @@ export const parseSDIExtDevicePropInfo = (data: Uint8Array): SDIExtDevicePropInf
     offset += factoryDefaultSize
 
     // 6. Current Value (Variable based on dataType)
-    const currentValueRaw = decodePTPValue(sliceBuffer(data, offset), dataType)
-    const currentValueSize = getPTPValueSize(dataType, sliceBuffer(data, offset))
+    const currentValueBytes = sliceBuffer(data, offset)
+    const currentValueRaw = decodePTPValue(currentValueBytes, dataType)
+    const currentValueSize = getPTPValueSize(dataType, currentValueBytes)
     offset += currentValueSize
 
     // 7. Form Flag (UINT8)
@@ -153,6 +155,7 @@ export const parseSDIExtDevicePropInfo = (data: Uint8Array): SDIExtDevicePropInf
         enabled: isEnabled === 0x01 || isEnabled === 0x02,
         factoryDefaultValue,
         currentValueRaw,
+        currentValueBytes: currentValueBytes.slice(0, currentValueSize),
         // TODO
         currentValueDecoded: currentValueRaw,
         formFlag,

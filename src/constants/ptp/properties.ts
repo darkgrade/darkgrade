@@ -61,7 +61,7 @@ export const PTPProperties = {
             return encodePTPValue(value, DataType.UINT32)
         },
         decode: (value: HexCode | Uint8Array) => {
-            return decodePTPValue(value as Uint8Array, DataType.UINT32)
+            return `ISO ${decodePTPValue(value as Uint8Array, DataType.UINT32)}`
         },
     },
     SHUTTER_SPEED: {
@@ -76,7 +76,15 @@ export const PTPProperties = {
             return encodePTPValue(value * 10000, DataType.UINT32)
         },
         decode: (value: HexCode | Uint8Array) => {
-            return decodePTPValue(value as Uint8Array, DataType.UINT32) / 10000
+            const seconds = decodePTPValue(value as Uint8Array, DataType.UINT32) / 10000
+            
+            // Handle special cases
+            if (seconds === 0) return 'bulb'
+            if (seconds >= 1) return `${seconds}"`
+            
+            // Convert to fraction for fast shutter speeds
+            const denominator = Math.round(1 / seconds)
+            return `1/${denominator}`
         },
     },
     APERTURE: {
@@ -91,7 +99,7 @@ export const PTPProperties = {
             return encodePTPValue(value * 100, DataType.UINT16)
         },
         decode: (value: HexCode | Uint8Array) => {
-            return decodePTPValue(value as Uint8Array, DataType.UINT16) / 100
+            return `f/${decodePTPValue(value as Uint8Array, DataType.UINT16) / 100}"`
         },
     },
 } as const satisfies PropertyDefinition<any>

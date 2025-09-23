@@ -29,7 +29,7 @@ export const SonyProperties = {
             return hexValue === 0xfffd ? 'Iris Close' :
                    hexValue === 0xfffe ? '--' :
                    hexValue === 0xffff ? 'nothing to display' :
-                   (hexValue / 100).toString()
+                   `f/${hexValue / 100}"`
         },
     },
 

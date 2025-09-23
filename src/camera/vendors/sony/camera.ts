@@ -41,6 +41,10 @@ export class SonyCamera extends GenericPTPCamera {
         }
     }
 
+    async disconnect(): Promise<void> {
+        await super.disconnect()
+    }
+
     async getDeviceProperty<T = any>(propertyName: keyof typeof SonyProperties): Promise<T> {
         const property = SonyProperties[propertyName]
         if (!property) {
@@ -62,6 +66,11 @@ export class SonyCamera extends GenericPTPCamera {
 
         // Parse Sony's all-properties response to find our property
         const value = parseSDIExtDevicePropInfo(response.data)
+
+        // Decode the value if the property has a decode function
+        if ('decode' in property && typeof property.decode === 'function') {
+            return property.decode(value.currentValueBytes) as T
+        }
 
         return value.currentValueRaw as T
     }
