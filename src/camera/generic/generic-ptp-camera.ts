@@ -1,5 +1,5 @@
 import { ProtocolInterface } from '@core/protocol'
-import { CameraInterface, CameraInfo, StorageInfo } from '@camera/interfaces/camera.interface'
+import { CameraInterface, CameraInfo } from '@camera/interfaces/camera.interface'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { PTPOperations } from '@constants/ptp/operations'
 import { PTPResponses } from '@constants/ptp/responses'

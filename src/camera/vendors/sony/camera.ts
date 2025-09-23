@@ -134,27 +134,28 @@ export class SonyCamera extends GenericPTPCamera {
         // Start live view if not already active
         await this.setDeviceProperty('SET_LIVE_VIEW_ENABLE', 'ENABLE')
 
-        let liveViewEnabled = false
-
-        while (!liveViewEnabled) {
-            const liveViewStatus = await this.getDeviceProperty('LIVE_VIEW_STATUS')
-            liveViewEnabled = liveViewStatus === 'SUPPORTED_ENABLED'
-            if (!liveViewEnabled) {
-                await new Promise(resolve => setTimeout(resolve, 100))
-            }
-        }
+        // Add delay to allow live view to initialize
+        await new Promise(resolve => setTimeout(resolve, 500))
 
         const response = await this.protocol.sendOperation({
             ...SonyOperations.GET_OBJECT,
             parameters: [SONY_LIVE_VIEW_OBJECT_HANDLE],
+            maxDataLength: 512 * 1024, // 512KB for live view
         })
 
+        // Handle ACCESS_DENIED gracefully - camera may not be ready or doesn't support live view
+        if (response.code === PTPResponses.ACCESS_DENIED.code) {
+            console.log('Live view not available (camera may not support it or not be ready)')
+            return null
+        }
+
         if (response.code !== PTPResponses.OK.code) {
-            throw new Error(`Failed to get live view: 0x${response.code.toString(16)}`)
+            console.log(`Live view response: 0x${response.code.toString(16)}`)
+            return null
         }
 
         if (!response.data) {
-            throw new Error(`No data received for live view`)
+            return null
         }
 
         // Parse Sony's live view format
