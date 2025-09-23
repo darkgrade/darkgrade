@@ -1,4 +1,4 @@
-import { LiveViewFrame } from './liveview.interface'
+import { LiveViewFrame } from '@camera/interfaces/liveview.interface'
 
 /**
  * Camera interface - Simplified V7 Architecture

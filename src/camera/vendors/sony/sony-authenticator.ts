@@ -1,7 +1,7 @@
-import { ProtocolInterface } from '../../../core/ptp-protocol'
+import { ProtocolInterface } from '@core/ptp-protocol'
 import { SonyOperations } from '@constants/vendors/sony/operations'
 import { SonyConstants } from '@constants/vendors/sony/properties'
-import { PTPResponses } from '@constants/ptp'
+import { PTPResponses } from '@constants/ptp/responses'
 
 /**
  * Interface for Sony authentication

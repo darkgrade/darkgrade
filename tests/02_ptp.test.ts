@@ -7,9 +7,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { TransportFactory } from '@transport/transport-factory'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { USBDeviceFinder } from '@transport/usb/usb-device-finder'
-import { PTPProtocol } from '@core/ptp/ptp-protocol'
-import { PTPMessageBuilder } from '@core/ptp/ptp-message-builder'
-import { PTPOperations, PTPResponses } from '@constants/ptp'
+import { PTPProtocol } from '@core/ptp-protocol'
+import { PTPMessageBuilder } from '@core/ptp-message-builder'
+import { PTPOperations } from '@constants/ptp/operations'
+import { PTPResponses } from '@constants/ptp/responses'
 
 // These will be populated by device discovery
 let discoveredVendorId = 0

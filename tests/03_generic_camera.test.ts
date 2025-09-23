@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { PTPProtocol } from '@core/ptp/ptp-protocol'
-import { PTPMessageBuilder } from '@core/ptp/ptp-message-builder'
+import { PTPProtocol } from '@core/ptp-protocol'
+import { PTPMessageBuilder } from '@core/ptp-message-builder'
 import { GenericPTPCamera } from '@camera/generic/generic-ptp-camera'
 import { TransportFactory } from '@transport/transport-factory'
 import { TransportInterface } from '@transport/interfaces/transport.interface'

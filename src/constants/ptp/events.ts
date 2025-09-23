@@ -3,8 +3,8 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import { DataType } from '../types'
-import type { EventDefinitionShape } from '../validation-types'
+import { DataType } from '@constants/types'
+import type { EventDefinitionShape } from '@constants/validation-types'
 
 /**
  * PTP Events with type validation

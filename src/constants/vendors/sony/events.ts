@@ -3,8 +3,8 @@
  * V7 Architecture - Vendor extensions define their own shape
  */
 
-import { PTPEvents } from '../../ptp/events'
-import { DataType } from '../../types'
+import { PTPEvents } from '@constants/ptp/events'
+import { DataType } from '@constants/types'
 
 /**
  * Sony events - extending PTP

@@ -4,7 +4,14 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest'
-import { Camera, listCameras, watchCameras, DeviceProperty, ExposureMode } from '../src'
+import { Camera, listCameras, watchCameras, DeviceProperty } from '../src'
+// ExposureMode enum not yet implemented
+const ExposureMode = {
+    AUTO: 'auto',
+    MANUAL: 'manual',
+    APERTURE_PRIORITY: 'aperture',
+    SHUTTER_PRIORITY: 'shutter'
+}
 
 describe('Client API', () => {
     describe('Discovery', () => {

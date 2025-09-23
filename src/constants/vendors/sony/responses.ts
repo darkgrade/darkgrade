@@ -3,7 +3,7 @@
  * V7 Architecture - Vendor extensions define their own shape
  */
 
-import { PTPResponses } from '../../ptp/responses'
+import { PTPResponses } from '@constants/ptp/responses'
 
 /**
  * Sony response codes - extending PTP

@@ -3,12 +3,12 @@
  */
 
 // Client Layer - Primary API
-export { Camera } from './client/camera'
-export { Photo } from './client/photo'
-export { Frame } from './client/frame'
+export { Camera } from '@client/camera'
+export { Photo } from '@client/photo'
+export { Frame } from '@client/frame'
 export type {
     CameraOptions
-} from './client/types'
+} from '@client/types'
 
 // Property constants for advanced usage
 export { DeviceProperty } from '@camera/properties/device-properties'

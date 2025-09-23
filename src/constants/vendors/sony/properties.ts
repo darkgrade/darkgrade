@@ -3,9 +3,9 @@
  * V7 Architecture - Vendor extensions don't require validation
  */
 
-import { DataType } from '../../types'
-import { PTPProperties } from '../../ptp/properties'
-import type { HexCode } from '../../types'
+import { DataType } from '@constants/types'
+import { PTPProperties } from '@constants/ptp/properties'
+import type { HexCode } from '@constants/types'
 
 /**
  * Sony Device Constants

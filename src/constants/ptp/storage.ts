@@ -3,7 +3,7 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import type { StorageTypeDefinitionShape } from '../validation-types'
+import type { StorageTypeDefinitionShape } from '@constants/validation-types'
 
 /**
  * PTP Storage Types with type validation

@@ -3,7 +3,7 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import type { ResponseDefinitionShape } from '../validation-types'
+import type { ResponseDefinitionShape } from '@constants/validation-types'
 
 /**
  * PTP Response codes with type validation

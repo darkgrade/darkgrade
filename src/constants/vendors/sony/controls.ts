@@ -3,7 +3,7 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import type { ControlDefinitionShape } from '../../validation-types'
+import type { ControlDefinitionShape } from '@constants/validation-types'
 
 /**
  * Sony hardware controls with type validation

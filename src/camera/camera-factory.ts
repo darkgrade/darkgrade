@@ -3,10 +3,10 @@ import { ProtocolInterface } from '@core/ptp-protocol'
 import { MessageBuilderInterface } from '@core/ptp-message-builder'
 import { PTPMessageBuilder } from '@core/ptp-message-builder'
 import { PTPProtocol } from '@core/ptp-protocol'
-import { CameraInterface } from './interfaces/camera.interface'
-import { GenericPTPCamera } from './generic/generic-ptp-camera'
-import { SonyCamera } from './vendors/sony/sony-camera'
-import { SonyAuthenticator } from './vendors/sony/sony-authenticator'
+import { CameraInterface } from '@camera/interfaces/camera.interface'
+import { GenericPTPCamera } from '@camera/generic/generic-ptp-camera'
+import { SonyCamera } from '@camera/vendors/sony/sony-camera'
+import { SonyAuthenticator } from '@camera/vendors/sony/sony-authenticator'
 
 /**
  * Camera factory for creating camera implementations

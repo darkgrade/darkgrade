@@ -12,6 +12,7 @@
 - Vendor code goes in src/vendors/ only
 - No vendor logic in core/transport layers
 - Keep package.json scripts clean and complete
+- Always use import aliases ("@core/ptp-protocol/<>"), never use relative (from "../../<>") imports
 
 ## Development Process:
 

@@ -1,13 +1,11 @@
-import { ProtocolInterface } from '../../core/ptp-protocol'
-import { CameraInterface, CameraInfo, StorageInfo } from '../interfaces/camera.interface'
-import { LiveViewFrame } from '../interfaces/liveview.interface'
-import { DeviceDescriptor } from '../../transport/interfaces/device.interface'
-import { 
-  PTPOperations, 
-  PTPResponses, 
-  PTPProperties
-} from '@constants'
-import { EventEmitter } from '../../client/event-emitter'
+import { ProtocolInterface } from '@core/ptp-protocol'
+import { CameraInterface, CameraInfo, StorageInfo } from '@camera/interfaces/camera.interface'
+import { LiveViewFrame } from '@camera/interfaces/liveview.interface'
+import { DeviceDescriptor } from '@transport/interfaces/device.interface'
+import { PTPOperations } from '@constants/ptp/operations'
+import { PTPResponses } from '@constants/ptp/responses'
+import { PTPProperties } from '@constants/ptp/properties'
+import { EventEmitter } from '@client/event-emitter'
 
 /**
  * Generic PTP camera implementation - Simplified V7 Architecture

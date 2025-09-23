@@ -1,4 +1,4 @@
-import { LiveViewFrame, FrameFormat } from '../../interfaces/liveview.interface'
+import { LiveViewFrame, FrameFormat } from '@camera/interfaces/liveview.interface'
 
 /**
  * Sony SDIO Parser - Extracts live view frames from Sony's proprietary SDIO format

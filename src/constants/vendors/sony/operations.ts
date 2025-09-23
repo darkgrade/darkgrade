@@ -3,8 +3,8 @@
  * V7 Architecture - Vendor extensions define their own shape
  */
 
-import { PTPOperations } from '../../ptp/operations'
-import { DataType } from '../../types'
+import { PTPOperations } from '@constants/ptp/operations'
+import { DataType } from '@constants/types'
 
 /**
  * Sony operations - extending PTP

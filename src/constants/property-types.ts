@@ -3,7 +3,7 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import type { HexCode, DataType, PropertyForm } from './types'
+import type { HexCode, DataType, PropertyForm } from '@constants/types'
 
 /**
  * Property descriptor for allowed values

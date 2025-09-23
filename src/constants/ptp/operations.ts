@@ -3,8 +3,8 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import { DataType } from '../types'
-import type { OperationDefinitionShape } from '../validation-types'
+import { DataType } from '@constants/types'
+import type { OperationDefinitionShape } from '@constants/validation-types'
 
 /**
  * PTP Operations with type validation

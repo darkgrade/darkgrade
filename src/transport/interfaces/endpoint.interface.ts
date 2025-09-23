@@ -1,7 +1,7 @@
 /**
  * Endpoint management interface for transport implementations
  */
-import { DeviceDescriptor, DeviceSearchCriteria } from './device.interface'
+import { DeviceDescriptor, DeviceSearchCriteria } from '@transport/interfaces/device.interface'
 export interface EndpointManagerInterface {
     /**
      * Configure endpoints for a device

@@ -5,8 +5,10 @@
 
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { MessageBuilderInterface } from '@core/ptp-message-builder'
-import { PTPOperations, PTPResponses, PTPError } from '@constants/ptp'
-import { SonyOperations } from '@constants/vendors/sony'
+import { PTPOperations } from '@constants/ptp/operations'
+import { PTPResponses } from '@constants/ptp/responses'
+import { PTPError } from '@constants/ptp/container-types'
+import { SonyOperations } from '@constants/vendors/sony/operations'
 
 /**
  * PTP Protocol interface for protocol-level operations

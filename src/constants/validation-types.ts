@@ -3,7 +3,7 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import type { HexCode, DataType } from './types'
+import type { HexCode, DataType } from '@constants/types'
 
 /**
  * Response definition shape for validation

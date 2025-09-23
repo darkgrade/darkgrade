@@ -3,7 +3,7 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import type { FormatDefinitionShape } from '../validation-types'
+import type { FormatDefinitionShape } from '@constants/validation-types'
 
 /**
  * PTP Object Formats with type validation

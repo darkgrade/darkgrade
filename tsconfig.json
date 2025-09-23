@@ -38,6 +38,8 @@
             "@application/*": ["src/application/*"],
             "@camera/*": ["src/camera/*"],
             "@camera": ["src/camera"],
+            "@client/*": ["src/client/*"],
+            "@client": ["src/client"],
             "@constants/*": ["src/constants/*"],
             "@constants": ["src/constants"],
             "@core/*": ["src/core/*"],

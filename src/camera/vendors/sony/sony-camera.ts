@@ -1,12 +1,10 @@
-import { ProtocolInterface } from '../../../core/ptp-protocol'
-import { GenericPTPCamera } from '../../generic/generic-ptp-camera'
-import { LiveViewFrame, FrameFormat } from '../../interfaces/liveview.interface'
-import { SonyAuthenticator } from './sony-authenticator'
-import { 
-  SonyOperations,
-  SonyProperties
-} from '@constants/vendors/sony'
-import { PTPResponses } from '@constants'
+import { ProtocolInterface } from '@core/ptp-protocol'
+import { GenericPTPCamera } from '@camera/generic/generic-ptp-camera'
+import { LiveViewFrame, FrameFormat } from '@camera/interfaces/liveview.interface'
+import { SonyAuthenticator } from '@camera/vendors/sony/sony-authenticator'
+import { SonyOperations } from '@constants/vendors/sony/operations'
+import { SonyProperties } from '@constants/vendors/sony/properties'
+import { PTPResponses } from '@constants/ptp/responses'
 
 /**
  * Sony camera implementation - Simplified V7 Architecture

@@ -8,4 +8,4 @@
 export * from './exports'
 
 // Discovery functions with Node.js support
-export { listCameras, watchCameras } from './client/discovery'
+export { listCameras, watchCameras } from '@client/discovery'

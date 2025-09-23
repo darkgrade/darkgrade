@@ -1,6 +1,6 @@
-import { TransportInterface, TransportType } from '@transport/interfaces/transport.interface'
+import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { EndpointManagerInterface, EndpointType, DeviceFinderInterface } from '@transport/interfaces/endpoint.interface'
-import { DeviceDescriptor } from '@transport/interfaces/device.interface'
+import { DeviceDescriptor, TransportType } from '@transport/interfaces/device.interface'
 
 /**
  * USB transport implementation for PTP communication

@@ -1,8 +1,7 @@
 /**
  * Transport layer interface for device communication
  */
-import { DeviceDescriptor, TransportType } from './device.interface'
-export { TransportType } from './device.interface'
+import { DeviceDescriptor, TransportType } from '@transport/interfaces/device.interface'
 export interface TransportInterface {
     /**
      * Connect to a device

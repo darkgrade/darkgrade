@@ -4,7 +4,7 @@
  */
 
 import { Response, Event, MessageType } from '@core/ptp-protocol'
-import { ContainerTypes, ContainerType } from '@constants/ptp'
+import { ContainerTypes, ContainerType } from '@constants/ptp/container-types'
 import { DataType } from '@constants/types'
 
 /**
@@ -90,8 +90,6 @@ export interface DataConverterInterface {
 // For backwards compatibility during migration:
 export type ParsedResponse = Response
 export type ParsedEvent = Event
-// PTPDataType replaced by DataType from constants/types.ts
-export { DataType as PTPDataType } from '@constants/types'
 
 /**
  * PTP Message Builder implementation

@@ -3,9 +3,9 @@
  * V7 Architecture - Type-safe with validation
  */
 
-import { DataType, PropertyForm } from '../types'
-import type { PropertyDefinitionShape } from '../property-types'
-import type { HexCode } from '../types'
+import { DataType, PropertyForm } from '@constants/types'
+import type { PropertyDefinitionShape } from '@constants/property-types'
+import type { HexCode } from '@constants/types'
 
 /**
  * PTP standard property definitions with type validation
