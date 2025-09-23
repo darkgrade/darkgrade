@@ -6,8 +6,8 @@
 import { ProtocolInterface, Operation, Response, Event } from '@core/interfaces/protocol.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { MessageBuilderInterface } from '@core/interfaces/message-builder.interface'
-import { PTPOperations, PTPResponses, PTPError } from './ptp-constants'
-import { SonyOperations } from '../../camera/vendors/sony/sony-constants'
+import { PTPOperations, PTPResponses, PTPError } from '@constants/ptp'
+import { SonyOperations } from '@constants/vendors/sony'
 
 export class PTPProtocol implements ProtocolInterface {
     private sessionId: number | null = null
@@ -29,7 +29,7 @@ export class PTPProtocol implements ProtocolInterface {
         }
 
         // Build and send OpenSession command
-        const command = this.messageBuilder.buildCommand(PTPOperations.OPEN_SESSION, [sessionId])
+        const command = this.messageBuilder.buildCommand(PTPOperations.OPEN_SESSION.code, [sessionId])
         console.log(`PTP Protocol: Sending OpenSession command...`)
 
         await this.transport.send(command)
@@ -41,14 +41,14 @@ export class PTPProtocol implements ProtocolInterface {
         console.log(`PTP Protocol: OpenSession response received: 0x${response.code.toString(16)}`)
 
         // Check response code
-        if (response.code === PTPResponses.SESSION_ALREADY_OPEN) {
+        if (response.code === PTPResponses.SESSION_ALREADY_OPEN.code) {
             console.log('PTP Protocol: Camera says session already open, continuing...')
             this.sessionId = sessionId
             this.isOpen = true
             return
         }
 
-        if (response.code !== PTPResponses.OK) {
+        if (response.code !== PTPResponses.OK.code) {
             throw new PTPError(
                 response.code,
                 `Failed to open session: 0x${response.code.toString(16).padStart(4, '0')}`,
@@ -70,7 +70,7 @@ export class PTPProtocol implements ProtocolInterface {
 
         try {
             // Build and send CloseSession command
-            const command = this.messageBuilder.buildCommand(PTPOperations.CLOSE_SESSION)
+            const command = this.messageBuilder.buildCommand(PTPOperations.CLOSE_SESSION.code)
 
             await this.transport.send(command)
 
@@ -79,7 +79,7 @@ export class PTPProtocol implements ProtocolInterface {
             const response = this.messageBuilder.parseResponse(responseData)
 
             // Check response code (be lenient on close)
-            if (response.code !== PTPResponses.OK && response.code !== PTPResponses.SESSION_NOT_OPEN) {
+            if (response.code !== PTPResponses.OK.code && response.code !== PTPResponses.SESSION_NOT_OPEN.code) {
                 console.warn(`CloseSession returned: 0x${response.code.toString(16).padStart(4, '0')}`)
             }
         } finally {
@@ -92,8 +92,8 @@ export class PTPProtocol implements ProtocolInterface {
      * Send a PTP operation
      */
     async sendOperation(operation: Operation): Promise<Response> {
-        if (!this.isOpen && operation.code !== PTPOperations.GET_DEVICE_INFO) {
-            throw new PTPError(PTPResponses.SESSION_NOT_OPEN, 'Session not open', 'SendOperation')
+        if (!this.isOpen && operation.code !== PTPOperations.GET_DEVICE_INFO.code) {
+            throw new PTPError(PTPResponses.SESSION_NOT_OPEN.code, 'Session not open', 'SendOperation')
         }
 
         const transactionId = this.messageBuilder.getNextTransactionId()
@@ -189,7 +189,7 @@ export class PTPProtocol implements ProtocolInterface {
      */
     async getDeviceInfo(): Promise<Response> {
         return this.sendOperation({
-            code: PTPOperations.GET_DEVICE_INFO,
+            code: PTPOperations.GET_DEVICE_INFO.code,
             hasDataPhase: true,
         })
     }
@@ -234,18 +234,18 @@ export class PTPProtocol implements ProtocolInterface {
     static expectsDataIn(operationCode: number): boolean {
         // Operations that receive data from device
         const dataInOps: number[] = [
-            PTPOperations.GET_DEVICE_INFO,
-            PTPOperations.GET_STORAGE_IDS,
-            PTPOperations.GET_STORAGE_INFO,
-            PTPOperations.GET_NUM_OBJECTS,
-            PTPOperations.GET_OBJECT_HANDLES,
-            PTPOperations.GET_OBJECT_INFO,
-            PTPOperations.GET_OBJECT,
-            PTPOperations.GET_DEVICE_PROP_DESC,
-            PTPOperations.GET_DEVICE_PROP_VALUE,
-            SonyOperations.SDIO_GET_EXT_DEVICE_INFO,
-            SonyOperations.GET_ALL_EXT_DEVICE_PROP_INFO,
-            SonyOperations.SDIO_GET_OSD_IMAGE,
+            PTPOperations.GET_DEVICE_INFO.code,
+            PTPOperations.GET_STORAGE_IDS.code,
+            PTPOperations.GET_STORAGE_INFO.code,
+            PTPOperations.GET_NUM_OBJECTS.code,
+            PTPOperations.GET_OBJECT_HANDLES.code,
+            PTPOperations.GET_OBJECT_INFO.code,
+            PTPOperations.GET_OBJECT.code,
+            PTPOperations.GET_DEVICE_PROP_DESC.code,
+            PTPOperations.GET_DEVICE_PROP_VALUE.code,
+            SonyOperations.SDIO_GET_EXT_DEVICE_INFO.code,
+            SonyOperations.GET_ALL_EXT_DEVICE_PROP_INFO.code,
+            SonyOperations.SDIO_GET_OSD_IMAGE.code,
         ]
         return dataInOps.includes(operationCode)
     }

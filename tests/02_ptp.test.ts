@@ -9,7 +9,7 @@ import { USBTransport } from '@transport/usb/usb-transport'
 import { USBDeviceFinder } from '@transport/usb/usb-device-finder'
 import { PTPProtocol } from '@core/ptp/ptp-protocol'
 import { PTPMessageBuilder } from '@core/ptp/ptp-message-builder'
-import { PTPOperations, PTPResponses } from '@core/ptp/ptp-constants'
+import { PTPOperations, PTPResponses } from '@constants/ptp'
 
 // These will be populated by device discovery
 let discoveredVendorId = 0
@@ -58,7 +58,7 @@ describe('PTP Protocol', () => {
 
         // Create transport
         const transportFactory = new TransportFactory()
-        transport = transportFactory.createUSBTransport() as USBTransport
+        transport = await transportFactory.createUSBTransport() as unknown as USBTransport
 
         // Create message builder and protocol
         const messageBuilder = new PTPMessageBuilder()
@@ -152,7 +152,7 @@ describe('PTP Protocol', () => {
             console.log('Requesting device info...')
             const response = await protocol.getDeviceInfo()
 
-            expect(response.code).toBe(PTPResponses.OK)
+            expect(response.code).toBe(PTPResponses.OK.code)
             expect(response.data).toBeDefined()
             expect(response.data?.byteLength).toBeGreaterThan(0)
 
@@ -186,10 +186,10 @@ describe('PTP Protocol', () => {
             console.log('----------------------------------------')
 
             console.log('Getting storage IDs...')
-            const response = await protocol.sendCommandReceiveData(PTPOperations.GET_STORAGE_IDS)
+            const response = await protocol.sendCommandReceiveData(PTPOperations.GET_STORAGE_IDS.code)
 
             // Accept OK or STORE_NOT_AVAILABLE (camera might not have storage)
-            expect([PTPResponses.OK, PTPResponses.STORE_NOT_AVAILABLE]).toContain(response.code)
+            expect([PTPResponses.OK.code, PTPResponses.STORE_NOT_AVAILABLE.code]).toContain(response.code)
             console.log('✓ Command sent successfully')
             console.log(`✓ Response code: 0x${response.code.toString(16).padStart(4, '0')}`)
 
@@ -219,18 +219,18 @@ describe('PTP Protocol', () => {
 
             // Test a sequence of operations
             const operations = [
-                { name: 'Get Storage IDs', code: PTPOperations.GET_STORAGE_IDS },
-                { name: 'Get Device Info', code: PTPOperations.GET_DEVICE_INFO },
+                { name: 'Get Storage IDs', code: PTPOperations.GET_STORAGE_IDS.code },
+                { name: 'Get Device Info', code: PTPOperations.GET_DEVICE_INFO.code },
             ]
 
             for (const op of operations) {
                 console.log(`Executing: ${op.name}...`)
                 const response = await protocol.sendCommandReceiveData(op.code)
                 // Accept OK for device info, OK or STORE_NOT_AVAILABLE for storage IDs
-                if (op.code === PTPOperations.GET_STORAGE_IDS) {
-                    expect([PTPResponses.OK, PTPResponses.STORE_NOT_AVAILABLE]).toContain(response.code)
+                if (op.code === PTPOperations.GET_STORAGE_IDS.code) {
+                    expect([PTPResponses.OK.code, PTPResponses.STORE_NOT_AVAILABLE.code]).toContain(response.code)
                 } else {
-                    expect(response.code).toBe(PTPResponses.OK)
+                    expect(response.code).toBe(PTPResponses.OK.code)
                 }
                 console.log(`✓ ${op.name}: Response 0x${response.code.toString(16).padStart(4, '0')}`)
             }
@@ -277,12 +277,12 @@ describe('PTP Protocol', () => {
             console.log('Attempting operation without session...')
 
             try {
-                await protocol.sendCommand(PTPOperations.GET_STORAGE_IDS)
+                await protocol.sendCommand(PTPOperations.GET_STORAGE_IDS.code)
                 // Should not reach here
                 expect(true).toBe(false)
             } catch (error: any) {
                 expect(error.name).toBe('PTPError')
-                expect(error.code).toBe(PTPResponses.SESSION_NOT_OPEN)
+                expect(error.code).toBe(PTPResponses.SESSION_NOT_OPEN.code)
                 console.log('✓ Correctly threw SESSION_NOT_OPEN error')
             }
 

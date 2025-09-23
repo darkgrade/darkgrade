@@ -24,10 +24,8 @@ export { DeviceProperty } from '@camera/properties/device-properties'
 export type { CameraInterface } from '@camera/interfaces/camera.interface'
 export type { TransportInterface, DeviceIdentifier, TransportType } from '@transport/interfaces/transport.interface'
 export type { ProtocolInterface, Operation, Response, Event } from '@core/interfaces/protocol.interface'
-export type { PropertyMapperInterface } from '@camera/interfaces/property-mapper.interface'
-
 // Export camera layer types
-export type { PropertyDescriptor, CameraInfo, StorageInfo } from '@camera/interfaces/camera.interface'
+export type { CameraInfo, StorageInfo } from '@camera/interfaces/camera.interface'
 export type { ImageInfo, ImageData } from '@camera/interfaces/image.interface'
 export { ImageFormat } from '@camera/interfaces/image.interface'
 export type {
@@ -41,25 +39,7 @@ export type {
 } from '@camera/interfaces/liveview.interface'
 export { FrameFormat, FocusStatus } from '@camera/interfaces/liveview.interface'
 
-// Export property types and constants
-export { DataType, PropertyUnit } from '@camera/properties/device-properties'
-export type {
-    PropertyValue,
-    PropertyMetadata,
-    PropertyEnumValue,
-    PropertyRange,
-} from '@camera/properties/device-properties'
-export {
-    ExposureMode as ExposureModeEnum,
-    FocusMode,
-    WhiteBalanceMode,
-    DriveMode,
-    ImageQuality,
-    FlashMode,
-    MeteringMode,
-    AFAreaMode,
-    ColorSpace,
-} from '@camera/properties/property-constants'
+// Export property types and constants - removed as they're not part of simplified API
 
 // Export core layer types
 export type {

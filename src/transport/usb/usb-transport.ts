@@ -146,6 +146,11 @@ export class USBTransport implements TransportInterface {
             throw new Error('Not connected')
         }
 
+        const endpointAddr = this.isWebEnvironment 
+            ? this.endpoints.bulkIn.endpointNumber 
+            : (this.endpoints.bulkIn as any).descriptor?.bEndpointAddress
+        console.log(`USB Transport: Receiving up to ${maxLength} bytes from endpoint 0x${endpointAddr?.toString(16) || '??'}`)
+
         if (this.isWebEnvironment) {
             // WebUSB has a 32MB limit per transfer, so cap it
             const MAX_WEBUSB_TRANSFER = 32 * 1024 * 1024 - 1024; // 32MB minus 1KB for safety
@@ -155,10 +160,19 @@ export class USBTransport implements TransportInterface {
             if (result.status !== 'ok') {
                 throw new Error(`Transfer failed: ${result.status}`)
             }
+            console.log(`USB Transport: Received ${result.data.byteLength} bytes`)
             return new Uint8Array(result.data.buffer)
         } else {
             return new Promise((resolve, reject) => {
+                // Add timeout to prevent hanging forever
+                const timeout = setTimeout(() => {
+                    console.log('USB Transport: Receive timeout after 5 seconds')
+                    reject(new Error('USB receive timeout'))
+                }, 5000)
+
                 const handleReceive = (error: any, data: Buffer) => {
+                    clearTimeout(timeout)
+                    console.log(`USB Transport: Receive callback, error: ${error}, data length: ${data?.length || 0}`)
                     if (error) {
                         // Handle stall on receive
                         if (error.errno === 4 || error.errno === -9 || error.message?.includes('STALL')) {
@@ -167,10 +181,16 @@ export class USBTransport implements TransportInterface {
                                 .clearHalt(EndpointType.BULK_IN)
                                 .then(() => {
                                     console.log('USB receive halt cleared, retrying...')
+                                    const retryTimeout = setTimeout(() => {
+                                        console.log('USB Transport: Retry receive timeout')
+                                        reject(new Error('USB receive retry timeout'))
+                                    }, 5000)
                                     this.endpoints.bulkIn.transfer(maxLength, (retryError: any, retryData: Buffer) => {
+                                        clearTimeout(retryTimeout)
                                         if (retryError) {
                                             reject(retryError)
                                         } else {
+                                            console.log(`USB Transport: Retry received ${retryData?.length || 0} bytes`)
                                             resolve(new Uint8Array(retryData))
                                         }
                                     })
@@ -182,9 +202,11 @@ export class USBTransport implements TransportInterface {
                             reject(error)
                         }
                     } else {
+                        console.log(`USB Transport: Successfully received ${data.length} bytes`)
                         resolve(new Uint8Array(data))
                     }
                 }
+                console.log(`USB Transport: Calling transfer with maxLength ${maxLength}`)
                 this.endpoints.bulkIn.transfer(maxLength, handleReceive)
             })
         }

@@ -32,6 +32,7 @@ export default defineConfig({
             '@transport': resolve(__dirname, 'src/transport'),
             '@factories': resolve(__dirname, 'src/factories'),
             '@types': resolve(__dirname, 'src/types'),
+            '@constants': resolve(__dirname, 'src/constants'),
         },
     },
 })

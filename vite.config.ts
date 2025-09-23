@@ -40,6 +40,7 @@ export default defineConfig({
       '@transport': resolve(__dirname, './src/transport'),
       '@factories': resolve(__dirname, './src/factories'),
       '@client': resolve(__dirname, './src/client'),
+      '@constants': resolve(__dirname, './src/constants'),
     },
   },
 })

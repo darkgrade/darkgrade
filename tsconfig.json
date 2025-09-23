@@ -33,16 +33,22 @@
         "outDir": "./dist",
         "rootDir": "./",
 
-        "baseUrl": "./src",
+        "baseUrl": ".",
         "paths": {
-            "@application/*": ["application/*"],
-            "@camera/*": ["camera/*"],
-            "@core/*": ["core/*"],
-            "@transport/*": ["transport/*"],
-            "@factories/*": ["factories/*"],
-            "@types/*": ["types/*"]
+            "@application/*": ["src/application/*"],
+            "@camera/*": ["src/camera/*"],
+            "@camera": ["src/camera"],
+            "@constants/*": ["src/constants/*"],
+            "@constants": ["src/constants"],
+            "@core/*": ["src/core/*"],
+            "@core": ["src/core"],
+            "@transport/*": ["src/transport/*"],
+            "@transport": ["src/transport"],
+            "@factories/*": ["src/factories/*"],
+            "@factories": ["src/factories"],
+            "@types/*": ["src/types/*"]
         }
     },
-    "include": ["src/**/*", "*.config.ts"],
+    "include": ["src/**/*", "tests/**/*", "*.config.ts"],
     "exclude": ["node_modules", "dist"]
 }

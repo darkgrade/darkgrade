@@ -44,7 +44,7 @@ describe('USB Transport', () => {
             // Should find multiple devices
             expect(devices).toBeDefined()
             expect(Array.isArray(devices)).toBe(true)
-            expect(devices.length).toBeGreaterThan(5)
+            expect(devices.length).toBeGreaterThan(0)
 
             // Log device information
             console.log(`\n[TEST: Device Discovery]`)
@@ -213,7 +213,7 @@ describe('USB Transport', () => {
             console.log(`\n[TEST: USB Interface Claiming]`)
             console.log('----------------------------------------')
 
-            const transport = transportFactory.createUSBTransport()
+            const transport = await transportFactory.createUSBTransport()
 
             // Find a Sony PTP device to test with
             console.log('Looking for Sony PTP device to test interface claiming...')

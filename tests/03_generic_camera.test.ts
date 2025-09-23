@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { PTPProtocol } from '../core/ptp/ptp-protocol'
-import { PTPMessageBuilder } from '../core/ptp/ptp-message-builder'
-import { GenericPTPCamera } from '../camera/generic/generic-ptp-camera'
-import { GenericPropertyMapper } from '../camera/generic/generic-property-mapper'
-import { TransportFactory } from '../transport/transport-factory'
-import { TransportInterface } from '../transport/interfaces/transport.interface'
+import { PTPProtocol } from '@core/ptp/ptp-protocol'
+import { PTPMessageBuilder } from '@core/ptp/ptp-message-builder'
+import { GenericPTPCamera } from '@camera/generic/generic-ptp-camera'
+import { TransportFactory } from '@transport/transport-factory'
+import { TransportInterface } from '@transport/interfaces/transport.interface'
 
 describe('GenericPTPCamera', () => {
     let transport: TransportInterface
@@ -14,7 +13,7 @@ describe('GenericPTPCamera', () => {
     it('should connect to USB transport', async () => {
         // Create transport using factory
         const transportFactory = new TransportFactory()
-        transport = transportFactory.createUSBTransport()
+        transport = await transportFactory.createUSBTransport()
 
         // Connect to first available PTP device (0,0 means find any PTP device)
         await transport.connect({
@@ -27,11 +26,8 @@ describe('GenericPTPCamera', () => {
         const messageBuilder = new PTPMessageBuilder()
         protocol = new PTPProtocol(transport, messageBuilder)
 
-        // Create property mapper
-        const propertyMapper = new GenericPropertyMapper()
-
         // Create generic camera
-        camera = new GenericPTPCamera(protocol, propertyMapper)
+        camera = new GenericPTPCamera(protocol)
 
         expect(transport.isConnected()).toBe(true)
     })

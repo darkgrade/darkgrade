@@ -10,7 +10,7 @@ import {
     ParsedData,
     MessageType,
 } from '@core/interfaces/message-builder.interface'
-import { ContainerTypes, ContainerType } from './ptp-constants'
+import { ContainerTypes, ContainerType } from '@constants/ptp'
 
 export class PTPMessageBuilder implements MessageBuilderInterface {
     private transactionId = 0

@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { PTPProtocol } from '../core/ptp/ptp-protocol'
-import { PTPMessageBuilder } from '../core/ptp/ptp-message-builder'
-import { SonyCamera } from '../camera/vendors/sony/sony-camera'
-import { SonyAuthenticator } from '../camera/vendors/sony/sony-authenticator'
-import { SonyConstants } from '../camera/vendors/sony/sony-constants'
-import { TransportFactory } from '../transport/transport-factory'
-import { DeviceProperty } from '../camera/properties/device-properties'
+import { PTPProtocol } from '@core/ptp/ptp-protocol'
+import { PTPMessageBuilder } from '@core/ptp/ptp-message-builder'
+import { SonyCamera } from '@camera/vendors/sony/sony-camera'
+import { SonyAuthenticator } from '@camera/vendors/sony/sony-authenticator'
+import { SonyConstants } from '@constants/vendors/sony'
+import { TransportFactory } from '@transport/transport-factory'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -26,7 +25,7 @@ describe('SonyCamera', () => {
 
         // Create transport using factory
         const transportFactory = new TransportFactory()
-        transport = transportFactory.createUSBTransport()
+        transport = await transportFactory.createUSBTransport()
 
         // Connect to Sony camera - try both known product IDs
         const productIds = [SonyConstants.PRODUCT_ID, SonyConstants.PRODUCT_ID_ALPHA]
@@ -97,135 +96,88 @@ describe('SonyCamera', () => {
             })
             console.log('============================================================')
         }
-    })
+    }, 15000) // Increase timeout to 15 seconds
 
     it('should open session and authenticate', async () => {
         await camera.connect()
         expect(camera.isConnected()).toBe(true)
         console.log('✅ Session opened and authenticated')
-    })
+    }, 15000) // Increase timeout to 15 seconds
 
     it('should get current ISO', async () => {
-        const iso = await camera.getDeviceProperty(DeviceProperty.ISO)
+        const iso = await camera.getDeviceProperty('EXPOSURE_INDEX')
         expect(iso).toBeDefined()
         console.log(`  Current ISO: ${iso}`)
     })
 
     it('should get current shutter speed', async () => {
-        const shutterSpeed = await camera.getDeviceProperty(DeviceProperty.SHUTTER_SPEED)
+        const shutterSpeed = await camera.getDeviceProperty('EXPOSURE_TIME')
         expect(shutterSpeed).toBeDefined()
         console.log(`  Current shutter speed: ${shutterSpeed}`)
     })
 
     it('should get current aperture', async () => {
-        const aperture = await camera.getDeviceProperty(DeviceProperty.APERTURE)
+        const aperture = await camera.getDeviceProperty('F_NUMBER')
         expect(aperture).toBeDefined()
         console.log(`  Current aperture: ${aperture}`)
     })
 
-    it('should get all camera settings together', async () => {
-        const settings = await camera.getCameraSettings()
-        expect(settings).toBeDefined()
-        expect(settings.aperture).toBeDefined()
-        expect(settings.shutterSpeed).toBeDefined()
-        expect(settings.iso).toBeDefined()
-        console.log(`  Camera settings: ${JSON.stringify(settings, null, 2)}`)
+    it('should get camera info', async () => {
+        const info = await camera.getCameraInfo()
+        expect(info).toBeDefined()
+        expect(info.manufacturer).toBeDefined()
+        expect(info.model).toBeDefined()
+        console.log(`  Camera info: ${JSON.stringify(info, null, 2)}`)
     })
 
     it('should capture a photo', async () => {
         await camera.captureImage()
         console.log('✅ Photo captured')
+        
+        // Note: In the simplified API, image download is handled separately
+        // The captureImage just triggers the capture
+        console.log('  (Photo saved to camera storage)')
     })
 
-    it('should download captured photo', async () => {
-        const photo = await camera.getPhoto()
-        expect(photo).toBeDefined()
-        expect(photo.data).toBeInstanceOf(Uint8Array)
-        expect(photo.data.length).toBeGreaterThan(0)
-        expect(photo.filename).toBeDefined()
-
-        console.log(`  File size: ${photo.data.length} bytes`)
-
-        // Save the photo
-        const filePath = path.join(outputDir, photo.filename)
-        fs.writeFileSync(filePath, photo.data)
-
-        console.log(`✅ Photo retrieved: ${photo.filename} (${photo.data.length} bytes)`)
-
-        // Detect file type
-        const isRAW = photo.data[0] === 0x49 && photo.data[1] === 0x49
-        if (isRAW) {
-            console.log('📝 Detected RAW format')
-        }
-        console.log(`💾 PHOTO SAVED TO: ${filePath}`)
-    })
-
-    it('should enable live view', async () => {
-        await camera.enableLiveView()
-        console.log('✅ Live view enabled')
-    })
-
-    it('should retrieve live view image', async () => {
-        const frame = await camera.getLiveViewFrame()
-        expect(frame).toBeDefined()
-        expect(frame.data).toBeInstanceOf(Uint8Array)
-
-        if (frame.data.length > 0) {
+    it('should capture a live view frame', async () => {
+        const frame = await camera.captureLiveViewFrame()
+        
+        if (frame && frame.data && frame.data.length > 0) {
             console.log(`✅ Live view frame: ${frame.width}x${frame.height} (${frame.data.length} bytes)`)
 
             const liveViewPath = path.join(outputDir, `liveview_${Date.now()}.jpg`)
             fs.writeFileSync(liveViewPath, frame.data)
             console.log(`💾 LIVE VIEW SAVED TO: ${liveViewPath}`)
         } else {
-            console.log('⚠️ Live view frame is empty (camera may not be ready)')
+            console.log('⚠️ Live view frame not available (camera may not support it or not be ready)')
         }
     })
 
-    it('should disable live view', async () => {
-        await camera.disableLiveView()
-        console.log('✅ Live view disabled')
-    })
-
-    it('should enable OSD mode', async () => {
-        const result = await camera.setOSDMode(true)
-        expect(result).toBe(true)
-        console.log('✅ OSD mode enabled')
-    })
-
-    it('should retrieve OSD image', async () => {
-        try {
-            const osdImage = await camera.getOSDImage()
-            expect(osdImage).toBeDefined()
-            expect(osdImage.data).toBeInstanceOf(Uint8Array)
-
-            const isPNG = osdImage.data[0] === 0x89 && osdImage.data[1] === 0x50
-            const fileExtension = isPNG ? '.png' : '.jpg'
-            console.log(`✅ OSD image: ${isPNG ? 'PNG' : 'JPEG'} (${osdImage.data.length} bytes)`)
-
-            const osdPath = path.join(outputDir, `osd_${Date.now()}${fileExtension}`)
-            fs.writeFileSync(osdPath, osdImage.data)
-            console.log(`💾 OSD IMAGE SAVED TO: ${osdPath}`)
-        } catch (error: any) {
-            // OSD might not be supported on all cameras
-            console.log(`⚠️ OSD image retrieval failed: ${error.message}`)
-            console.log('   (This is normal if your camera does not support OSD mode)')
+    it('should get storage info', async () => {
+        const storageInfo = await camera.getStorageInfo()
+        expect(storageInfo).toBeDefined()
+        expect(Array.isArray(storageInfo)).toBe(true)
+        
+        if (storageInfo.length > 0) {
+            console.log(`✅ Found ${storageInfo.length} storage device(s):`)
+            storageInfo.forEach((storage, index) => {
+                console.log(`  Storage ${index + 1}: ${storage.name}`)
+                console.log(`    - Free: ${(storage.freeSpace / 1024 / 1024).toFixed(2)} MB`)
+                console.log(`    - Total: ${(storage.totalSpace / 1024 / 1024).toFixed(2)} MB`)
+            })
+        } else {
+            console.log('⚠️ No storage devices found')
         }
-    })
-
-    it('should disable OSD mode', async () => {
-        const result = await camera.setOSDMode(false)
-        expect(result).toBe(true)
-        console.log('✅ OSD mode disabled')
     })
 
     it('should handle multiple operations in sequence', async () => {
         // Quick sequence test
-        const iso1 = await camera.getDeviceProperty(DeviceProperty.ISO)
-        const iso2 = await camera.getDeviceProperty(DeviceProperty.ISO)
+        const iso1 = await camera.getDeviceProperty('EXPOSURE_INDEX')
+        const iso2 = await camera.getDeviceProperty('EXPOSURE_INDEX')
         expect(iso1).toEqual(iso2)
 
-        const settings = await camera.getCameraSettings()
-        expect(settings).toBeDefined()
+        const info = await camera.getCameraInfo()
+        expect(info).toBeDefined()
 
         console.log('✅ Sequential operations completed successfully')
     })

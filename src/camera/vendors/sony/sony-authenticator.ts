@@ -1,6 +1,7 @@
 import { ProtocolInterface } from '../../../core/interfaces/protocol.interface'
-import { SonyOperations, SonyConstants, SDIOPhases, SDIOPhase } from './sony-constants'
-import { PTPResponses } from '../../../core/ptp/ptp-constants'
+import { SonyOperations } from '@constants/vendors/sony/operations'
+import { SonyConstants } from '@constants/vendors/sony/properties'
+import { PTPResponses } from '@constants/ptp'
 
 /**
  * Interface for Sony authentication
@@ -8,6 +9,17 @@ import { PTPResponses } from '../../../core/ptp/ptp-constants'
 export interface SonyAuthenticatorInterface {
     authenticate(protocol: ProtocolInterface): Promise<void>
 }
+
+/**
+ * SDIO Authentication Phases
+ */
+export const SDIOPhases = {
+  INITIAL_HANDSHAKE: 1,
+  CAPABILITY_EXCHANGE: 2,
+  FINAL_AUTHENTICATION: 3,
+} as const
+
+export type SDIOPhase = typeof SDIOPhases[keyof typeof SDIOPhases]
 
 /**
  * Sony camera authenticator
@@ -41,25 +53,25 @@ export class SonyAuthenticator implements SonyAuthenticatorInterface {
     private async sdioConnect(protocol: ProtocolInterface, phase: SDIOPhase): Promise<void> {
         console.log(`Sony Auth: Sending SDIO_CONNECT for phase ${phase}`)
         const response = await protocol.sendOperation({
-            code: SonyOperations.SDIO_CONNECT,
+            code: SonyOperations.SDIO_CONNECT.code,
             parameters: [phase, 0, 0], // Phase, KeyCode1, KeyCode2
             hasDataPhase: true, // Expect data in response
         })
         console.log(`Sony Auth: SDIO_CONNECT response: 0x${response.code.toString(16)}`)
 
-        if (response.code !== PTPResponses.OK) {
+        if (response.code !== PTPResponses.OK.code) {
             throw new Error(`SDIO Connect Phase ${phase} failed: 0x${response.code.toString(16)}`)
         }
     }
 
     private async getExtDeviceInfo(protocol: ProtocolInterface): Promise<void> {
         const response = await protocol.sendOperation({
-            code: SonyOperations.SDIO_GET_EXT_DEVICE_INFO,
+            code: SonyOperations.SDIO_GET_EXT_DEVICE_INFO.code,
             parameters: [SonyConstants.PROTOCOL_VERSION, SonyConstants.DEVICE_PROPERTY_OPTION],
             hasDataPhase: true, // Expect device info data
         })
 
-        if (response.code !== PTPResponses.OK) {
+        if (response.code !== PTPResponses.OK.code) {
             throw new Error(`Get extended device info failed: 0x${response.code.toString(16)}`)
         }
 
