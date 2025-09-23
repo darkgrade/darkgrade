@@ -1,25 +1,8 @@
 /**
  * PTP Operations with type validation
- * V7 Architecture - Type-safe with validation
  */
 
-import { DataType } from '@constants/types'
-import type { HexCode, DataTypeValue } from '@constants/types'
-
-/**
- * Operation definition shape for validation
- */
-type OperationDefinitionShape = Record<string, {
-  code: HexCode
-  description: string
-  parameters?: Array<{
-    name: string
-    type: DataTypeValue
-    description: string
-  }>
-  hasDataPhase?: boolean
-  dataDescription?: string
-}>
+import { DataType, OperationDefinition } from '@constants/types'
 
 /**
  * PTP Operations with type validation
@@ -28,7 +11,9 @@ export const PTPOperations = {
   // Session operations
   GET_DEVICE_INFO: {
     code: 0x1001,
-    description: 'Get device information including manufacturer, model, and supported operations'
+    description: 'Get device information including manufacturer, model, and supported operations',
+    dataIn: true,
+    dataDescription: 'DeviceInfo dataset'
   },
   OPEN_SESSION: {
     code: 0x1002,
@@ -50,7 +35,7 @@ export const PTPOperations = {
   GET_STORAGE_IDS: {
     code: 0x1004,
     description: 'Get list of storage IDs',
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Array of storage IDs'
   },
   GET_STORAGE_INFO: {
@@ -63,7 +48,7 @@ export const PTPOperations = {
         description: 'Storage identifier to query'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'StorageInfo dataset'
   },
   GET_NUM_OBJECTS: {
@@ -107,7 +92,7 @@ export const PTPOperations = {
         description: 'Parent folder handle'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Array of object handles'
   },
   
@@ -122,7 +107,7 @@ export const PTPOperations = {
         description: 'Object handle'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'ObjectInfo dataset'
   },
   GET_OBJECT: {
@@ -135,7 +120,7 @@ export const PTPOperations = {
         description: 'Handle of the object to retrieve'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Object data in format specified by ObjectInfo'
   },
   GET_THUMB: {
@@ -148,7 +133,7 @@ export const PTPOperations = {
         description: 'Object handle'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Thumbnail image data'
   },
   DELETE_OBJECT: {
@@ -182,13 +167,13 @@ export const PTPOperations = {
         description: 'Parent folder'
       }
     ],
-    hasDataPhase: true,
+    dataOut: true,
     dataDescription: 'ObjectInfo to send'
   },
   SEND_OBJECT: {
     code: 0x100D,
     description: 'Send object data',
-    hasDataPhase: true,
+    dataOut: true,
     dataDescription: 'Object data to send'
   },
   
@@ -272,7 +257,7 @@ export const PTPOperations = {
         description: 'Property code to query'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Property descriptor data'
   },
   GET_DEVICE_PROP_VALUE: {
@@ -285,7 +270,7 @@ export const PTPOperations = {
         description: 'Property code to get'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Current property value'
   },
   SET_DEVICE_PROP_VALUE: {
@@ -298,7 +283,7 @@ export const PTPOperations = {
         description: 'Property code to set'
       }
     ],
-    hasDataPhase: true,
+    dataOut: true,
     dataDescription: 'New property value'
   },
   RESET_DEVICE_PROP_VALUE: {
@@ -387,7 +372,7 @@ export const PTPOperations = {
         description: 'Maximum bytes to return'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Partial object data'
   },
   INITIATE_OPEN_CAPTURE: {
@@ -406,6 +391,6 @@ export const PTPOperations = {
       }
     ]
   }
-} as const satisfies OperationDefinitionShape
+} as const satisfies OperationDefinition
 
 export type PTPOperationDefinitions = typeof PTPOperations

@@ -1,4 +1,24 @@
-import { LiveViewFrame } from '@camera/interfaces/liveview.interface'
+import { TransportOptions } from '@transport/interfaces/transport-types'
+
+/**
+ * Camera connection options
+ * Extends TransportOptions with camera-specific settings
+ */
+export interface CameraOptions extends TransportOptions {
+    vendor?: string
+    model?: string
+    serialNumber?: string
+
+    usb?: {
+        vendorId?: number
+        productId?: number
+    }
+    ip?: {
+        host: string
+        port?: number
+        protocol?: 'ptp/ip' | 'upnp'
+    }
+}
 
 /**
  * Camera interface - Simplified V7 Architecture
@@ -52,7 +72,7 @@ export interface CameraInterface {
    * Capture a live view frame
    * Automatically handles enabling/disabling live view as needed
    */
-  captureLiveViewFrame(): Promise<LiveViewFrame | null>
+  captureLiveViewFrame(): Promise<any>
 }
 
 /**

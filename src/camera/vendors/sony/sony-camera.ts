@@ -1,10 +1,12 @@
-import { ProtocolInterface } from '@core/ptp-protocol'
+import { ProtocolInterface } from '@core/protocol'
 import { GenericPTPCamera } from '@camera/generic/generic-ptp-camera'
-import { LiveViewFrame, FrameFormat } from '@camera/interfaces/liveview.interface'
 import { SonyAuthenticator } from '@camera/vendors/sony/sony-authenticator'
 import { SonyOperations } from '@constants/vendors/sony/operations'
 import { SonyProperties } from '@constants/vendors/sony/properties'
 import { PTPResponses } from '@constants/ptp/responses'
+import { encodePTPValue, decodePTPValue, extractPropertyFromResponse } from '@core/buffers'
+import { extractSonyLiveViewJPEG } from '@camera/vendors/sony/sony-image-utils'
+import { parseJPEGDimensions } from '@core/images'
 
 /**
  * Sony camera implementation - Simplified V7 Architecture
@@ -29,7 +31,7 @@ export class SonyCamera extends GenericPTPCamera {
     const dialModeProperty = SonyProperties.DIAL_MODE
     // Use the enum value directly since we know DIAL_MODE has an enum
     const hostValue = dialModeProperty.enum['HOST']
-    const encodedValue = this.encodePropertyValue(hostValue, dialModeProperty.type)
+    const encodedValue = encodePTPValue(hostValue, dialModeProperty.type)
     
     const response = await this.protocol.sendOperation({
       code: SonyOperations.SET_DEVICE_PROPERTY_VALUE.code,
@@ -62,30 +64,15 @@ export class SonyCamera extends GenericPTPCamera {
       throw new Error(`No data received for property ${propertyName}`)
     }
 
-    // Parse Sony's all-properties response to find our property inline
-    const data = response.data
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-    let offset = 0
-    let value = new Uint8Array()
-
-    while (offset < data.length - 4) {
-      const code = view.getUint16(offset, true)
-      const size = view.getUint16(offset + 2, true)
-      
-      if (code === property.code) {
-        value = data.slice(offset + 4, offset + 4 + size)
-        break
-      }
-      
-      offset += 4 + size
-    }
+    // Parse Sony's all-properties response to find our property
+    const value = extractPropertyFromResponse(response.data, property.code)
     
     // Use property's decoder if available
     if ('decoder' in property && typeof property.decoder === 'function') {
       return property.decoder(value) as T
     }
 
-    return this.decodePropertyValue(value, property.type) as T
+    return decodePTPValue(value, property.type) as T
   }
 
   async setDeviceProperty(propertyName: keyof typeof SonyProperties, value: any): Promise<void> {
@@ -111,9 +98,9 @@ export class SonyCamera extends GenericPTPCamera {
     if ('encoder' in property && typeof property.encoder === 'function') {
       encodedValue = property.encoder(value)
     } else if ('enum' in property && property.enum && typeof value === 'string' && value in property.enum) {
-      encodedValue = this.encodePropertyValue(property.enum[value as keyof typeof property.enum], property.type)
+      encodedValue = encodePTPValue(property.enum[value as keyof typeof property.enum], property.type)
     } else {
-      encodedValue = this.encodePropertyValue(value, property.type)
+      encodedValue = encodePTPValue(value, property.type)
     }
 
     const response = await this.protocol.sendOperation({
@@ -145,7 +132,7 @@ export class SonyCamera extends GenericPTPCamera {
     await this.setDeviceProperty('SHUTTER_BUTTON_CONTROL', 'RELEASE')
   }
 
-  async captureLiveViewFrame(): Promise<LiveViewFrame | null> {
+  async captureLiveViewFrame(): Promise<any> {
     // Start live view if not already active
     const startResponse = await this.protocol.sendOperation({
       code: SonyOperations.GET_LIVE_VIEW_IMG.code,
@@ -156,52 +143,21 @@ export class SonyCamera extends GenericPTPCamera {
       return null
     }
 
-    // Parse Sony's live view format inline
-    const data = startResponse.data
-    
-    // Sony live view data has a header followed by JPEG data
-    if (data.length < 136) {
+    // Parse Sony's live view format
+    const jpegData = extractSonyLiveViewJPEG(startResponse.data)
+    if (!jpegData) {
       return null
     }
 
-    // Skip header (136 bytes for Sony)
-    const jpegStart = 136
-    const jpegData = data.slice(jpegStart)
-
-    // Verify JPEG start marker
-    if (jpegData[0] !== 0xFF || jpegData[1] !== 0xD8) {
-      return null
-    }
+    // Parse actual dimensions from JPEG
+    const dimensions = parseJPEGDimensions(jpegData)
 
     return {
       data: jpegData,
       timestamp: Date.now(),
-      width: 640,  // These should be parsed from header
-      height: 480, // These should be parsed from header
-      format: FrameFormat.JPEG
+      width: dimensions.width,
+      height: dimensions.height,
+      format: 'jpeg'
     }
   }
 }
-
-// Commented out and moved to bottom - kept for reference
-/*
-private parsePropertyFromAllData(data: Uint8Array, propertyCode: number): Uint8Array {
-  // Sony's all-properties format includes multiple properties
-  // This is a simplified parser - real implementation would need proper parsing
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-  let offset = 0
-
-  while (offset < data.length - 4) {
-    const code = view.getUint16(offset, true)
-    const size = view.getUint16(offset + 2, true)
-    
-    if (code === propertyCode) {
-      return data.slice(offset + 4, offset + 4 + size)
-    }
-    
-    offset += 4 + size
-  }
-
-  return new Uint8Array()
-}
-*/

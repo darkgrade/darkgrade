@@ -1,7 +1,8 @@
-import { ProtocolInterface } from '@core/ptp-protocol'
+import { ProtocolInterface } from '@core/protocol'
 import { SonyOperations } from '@constants/vendors/sony/operations'
 import { SonyConstants } from '@constants/vendors/sony/properties'
 import { PTPResponses } from '@constants/ptp/responses'
+import { createDataView } from '@core/buffers'
 
 /**
  * Interface for Sony authentication
@@ -77,7 +78,7 @@ export class SonyAuthenticator implements SonyAuthenticatorInterface {
 
         // Parse device info (simplified)
         if (response.data && response.data.length > 0) {
-            const view = new DataView(response.data.buffer, response.data.byteOffset)
+            const view = createDataView(response.data)
             const version = view.getUint16(0, true)
 
             // Store for later use

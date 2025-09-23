@@ -1,10 +1,9 @@
 /**
  * Sony operations - extending PTP
- * V7 Architecture - Vendor extensions define their own shape
  */
 
+import { DataType, OperationDefinition } from '@constants/types'
 import { PTPOperations } from '@constants/ptp/operations'
-import { DataType } from '@constants/types'
 
 /**
  * Sony operations - extending PTP
@@ -29,7 +28,7 @@ export const SonyOperations = {
         description: 'Protocol version'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Connection handshake data'
   },
   
@@ -43,7 +42,7 @@ export const SonyOperations = {
         description: 'Protocol version'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Extended device info dataset'
   },
   
@@ -57,7 +56,7 @@ export const SonyOperations = {
         description: 'Property code to set'
       }
     ],
-    hasDataPhase: true,
+    dataOut: true,
     dataDescription: 'Property value to set'
   },
   
@@ -71,7 +70,7 @@ export const SonyOperations = {
         description: 'Control property code'
       }
     ],
-    hasDataPhase: true,
+    dataOut: true,
     dataDescription: 'Control value'
   },
   
@@ -85,7 +84,7 @@ export const SonyOperations = {
         description: 'Protocol version'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'All device property descriptors'
   },
   
@@ -93,7 +92,7 @@ export const SonyOperations = {
     code: 0x920A,
     description: 'Get all device property values',
     parameters: [],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'All device property values'
   },
   
@@ -102,7 +101,7 @@ export const SonyOperations = {
     code: 0x9219,
     description: 'Get live view image',
     parameters: [],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'Live view image data'
   },
   
@@ -116,9 +115,9 @@ export const SonyOperations = {
         description: 'OSD image handle'
       }
     ],
-    hasDataPhase: true,
+    dataIn: true,
     dataDescription: 'OSD image data'
   }
-} as const
+} as const satisfies OperationDefinition
 
 export type SonyOperationDefinitions = typeof SonyOperations

@@ -1,23 +1,8 @@
 /**
  * PTP Events with type validation
- * V7 Architecture - Type-safe with validation
  */
 
-import { DataType } from '@constants/types'
-import type { HexCode, DataTypeValue } from '@constants/types'
-
-/**
- * Event definition shape for validation
- */
-type EventDefinitionShape = Record<string, {
-  code: HexCode
-  description: string
-  parameters?: Array<{
-    name: string
-    type: DataTypeValue
-    description: string
-  }>
-}>
+import { DataType, EventDefinition } from '@constants/types'
 
 /**
  * PTP Events with type validation
@@ -153,6 +138,6 @@ export const PTPEvents = {
     code: 0x400E,
     description: 'Device has unreported status changes'
   }
-} as const satisfies EventDefinitionShape
+} as const satisfies EventDefinition
 
 export type PTPEventDefinitions = typeof PTPEvents

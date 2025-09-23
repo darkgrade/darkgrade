@@ -4,11 +4,13 @@
  */
 
 import { TransportInterface } from '@transport/interfaces/transport.interface'
-import { MessageBuilderInterface } from '@core/ptp-message-builder'
+import { MessageBuilderInterface } from '@core/messages'
 import { PTPOperations } from '@constants/ptp/operations'
 import { PTPResponses } from '@constants/ptp/responses'
-import { PTPError } from '@constants/ptp/container-types'
+import { PTPError } from '@constants/ptp/errors'
+import { PTP_LIMITS } from '@constants/ptp/containers'
 import { SonyOperations } from '@constants/vendors/sony/operations'
+import { Operation, Response, Event } from '@constants/types'
 
 /**
  * PTP Protocol interface for protocol-level operations
@@ -54,49 +56,9 @@ export interface ProtocolInterface {
     reset(): Promise<void>
 }
 
-/**
- * PTP Operation
- */
-export interface Operation {
-    code: number
-    parameters?: number[]
-    data?: Uint8Array
-    hasDataPhase?: boolean
-    maxDataLength?: number // Maximum expected data length for data-in operations
-}
-
-/**
- * PTP Response - unified structure for both parsed and raw responses
- */
-export interface Response {
-    code: number
-    sessionId: number
-    transactionId: number
-    parameters?: number[]
-    data?: Uint8Array
-    raw?: Uint8Array  // Optional raw message bytes
-    type?: MessageType // Optional message type for parsed responses
-}
-
-/**
- * Message type enumeration (moved from message-builder.interface.ts)
- */
-export enum MessageType {
-    COMMAND = 1,
-    DATA = 2,
-    RESPONSE = 3,
-    EVENT = 4,
-}
-
-/**
- * PTP Event
- */
-export interface Event {
-    code: number
-    sessionId: number
-    transactionId: number
-    parameters?: number[]
-}
+// Re-export types from constants for convenience
+export type { Operation, Response, Event } from '@constants/types'
+export { MessageType } from '@constants/types'
 
 export class PTPProtocol implements ProtocolInterface {
     private sessionId: number | null = null
@@ -125,7 +87,7 @@ export class PTPProtocol implements ProtocolInterface {
         console.log(`PTP Protocol: OpenSession command sent, waiting for response...`)
 
         // Receive response
-        const responseData = await this.transport.receive(512)
+        const responseData = await this.transport.receive(PTP_LIMITS.DEFAULT_RECEIVE_SIZE)
         const response = this.messageBuilder.parseResponse(responseData)
         console.log(`PTP Protocol: OpenSession response received: 0x${response.code.toString(16)}`)
 
@@ -164,7 +126,7 @@ export class PTPProtocol implements ProtocolInterface {
             await this.transport.send(command)
 
             // Receive response
-            const responseData = await this.transport.receive(512)
+            const responseData = await this.transport.receive(PTP_LIMITS.DEFAULT_RECEIVE_SIZE)
             const response = this.messageBuilder.parseResponse(responseData)
 
             // Check response code (be lenient on close)
@@ -191,7 +153,7 @@ export class PTPProtocol implements ProtocolInterface {
         const hasDataPhase =
             operation.hasDataPhase !== undefined
                 ? operation.hasDataPhase
-                : PTPProtocol.expectsDataIn(operation.code) || operation.data !== undefined
+                : this.expectsDataIn(operation.code) || operation.data !== undefined
 
         // Send command phase
         const command = this.messageBuilder.buildCommand(operation.code, operation.parameters || [])
@@ -206,15 +168,15 @@ export class PTPProtocol implements ProtocolInterface {
             await this.transport.send(dataMessage)
         } else if (hasDataPhase) {
             // Receive data (data-in operation)
-            // Use maxDataLength if specified, otherwise use a reasonable default
-            const maxLength = operation.maxDataLength || 65536 // Default to 64KB
+            // Use maxDataLength if specified, otherwise use default
+            const maxLength = operation.maxDataLength || PTP_LIMITS.DEFAULT_DATA_SIZE
             const dataResponse = await this.transport.receive(maxLength)
             const parsedData = this.messageBuilder.parseData(dataResponse)
             receivedData = parsedData.payload
         }
 
         // Receive response phase
-        const responseData = await this.transport.receive(512)
+        const responseData = await this.transport.receive(PTP_LIMITS.DEFAULT_RECEIVE_SIZE)
         const parsedResponse = this.messageBuilder.parseResponse(responseData)
 
         // Build response object
@@ -236,7 +198,7 @@ export class PTPProtocol implements ProtocolInterface {
         // Events would typically come from an interrupt endpoint
         // For now, this is a placeholder implementation
         // Real implementation would need to handle async event polling
-        const eventData = await this.transport.receive(512)
+        const eventData = await this.transport.receive(PTP_LIMITS.DEFAULT_RECEIVE_SIZE)
         const parsedEvent = this.messageBuilder.parseEvent(eventData)
 
         return {
@@ -259,6 +221,21 @@ export class PTPProtocol implements ProtocolInterface {
      */
     isSessionOpen(): boolean {
         return this.isOpen
+    }
+
+    /**
+     * Check if an operation expects to receive data
+     */
+    private expectsDataIn(operationCode: number): boolean {
+        // Check PTP operations
+        const ptpOp = Object.values(PTPOperations).find(op => op.code === operationCode)
+        if (ptpOp && 'dataIn' in ptpOp) return ptpOp.dataIn === true
+        
+        // Check Sony operations
+        const sonyOp = Object.values(SonyOperations).find(op => op.code === operationCode)
+        if (sonyOp && 'dataIn' in sonyOp) return sonyOp.dataIn === true
+        
+        return false
     }
 
     /**
@@ -317,25 +294,4 @@ export class PTPProtocol implements ProtocolInterface {
         })
     }
 
-    /**
-     * Check if an operation expects to receive data
-     */
-    static expectsDataIn(operationCode: number): boolean {
-        // Operations that receive data from device
-        const dataInOps: number[] = [
-            PTPOperations.GET_DEVICE_INFO.code,
-            PTPOperations.GET_STORAGE_IDS.code,
-            PTPOperations.GET_STORAGE_INFO.code,
-            PTPOperations.GET_NUM_OBJECTS.code,
-            PTPOperations.GET_OBJECT_HANDLES.code,
-            PTPOperations.GET_OBJECT_INFO.code,
-            PTPOperations.GET_OBJECT.code,
-            PTPOperations.GET_DEVICE_PROP_DESC.code,
-            PTPOperations.GET_DEVICE_PROP_VALUE.code,
-            SonyOperations.SDIO_GET_EXT_DEVICE_INFO.code,
-            SonyOperations.GET_ALL_EXT_DEVICE_PROP_INFO.code,
-            SonyOperations.SDIO_GET_OSD_IMAGE.code,
-        ]
-        return dataInOps.includes(operationCode)
-    }
 }

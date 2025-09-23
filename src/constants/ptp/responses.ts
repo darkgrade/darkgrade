@@ -1,19 +1,8 @@
 /**
  * PTP Response codes with type validation
- * V7 Architecture - Type-safe with validation
  */
 
-import type { HexCode } from '@constants/types'
-
-/**
- * Response definition shape for validation
- */
-type ResponseDefinitionShape = Record<string, {
-  name: string
-  code: HexCode
-  description: string
-  recoverable?: boolean
-}>
+import { ResponseDefinition } from '@constants/types'
 
 /**
  * PTP Response codes with type validation
@@ -217,6 +206,6 @@ export const PTPResponses = {
     description: 'Specification of destination unsupported',
     recoverable: false
   }
-} as const satisfies ResponseDefinitionShape
+} as const satisfies ResponseDefinition
 
 export type PTPResponseDefinitions = typeof PTPResponses

@@ -1,19 +1,8 @@
 /**
  * Sony hardware controls with type validation
- * V7 Architecture - Type-safe with validation
  */
 
-import type { HexCode } from '@constants/types'
-
-/**
- * Control definition shape for validation
- */
-type ControlDefinitionShape = Record<string, {
-  property: HexCode
-  value: HexCode
-  description: string
-  holdable?: boolean
-}>
+import { ControlDefinition } from '@constants/types'
 
 /**
  * Sony hardware controls with type validation
@@ -98,6 +87,6 @@ export const SonyControls = {
     description: 'Disable live view mode',
     holdable: false
   }
-} as const satisfies ControlDefinitionShape
+} as const satisfies ControlDefinition
 
 export type SonyControlDefinitions = typeof SonyControls

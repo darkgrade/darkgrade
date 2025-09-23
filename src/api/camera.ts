@@ -1,11 +1,11 @@
 import { TransportFactory } from '@transport/transport-factory'
 import { CameraFactory } from '@camera/camera-factory'
-import { CameraInterface } from '@camera/interfaces/camera.interface'
+import { CameraInterface, CameraOptions } from '@camera/interfaces/camera.interface'
 import { TransportType, DeviceDescriptor } from '@transport/interfaces/transport.interface'
 import { listCameras } from '@api/discovery'
-import { CameraOptions } from '@api/types'
 import { Photo } from '@api/photo'
 import { Frame } from '@api/frame'
+import { toBuffer } from '@core/buffers'
 
 /**
  * High-level Camera API - simplified wrapper around GenericPTPCamera
@@ -145,7 +145,7 @@ export class Camera {
         const frame = await this.cameraImplementation.captureLiveViewFrame()
         if (frame) {
             return new Frame(
-                Buffer.from(frame.data),
+                toBuffer(frame.data),
                 frame.width,
                 frame.height,
                 frame.timestamp
@@ -168,6 +168,6 @@ export class Camera {
     async takePhoto(): Promise<Photo> {
         await this.captureImage()
         // Return a placeholder photo indicating success
-        return new Photo(Buffer.from(''), 'capture_successful.jpg')
+        return new Photo(toBuffer(new Uint8Array()), 'capture_successful.jpg')
     }
 }

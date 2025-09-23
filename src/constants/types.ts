@@ -1,7 +1,11 @@
 /**
- * Core type definitions for PTP constants
- * V7 Architecture - Type-safe with validation
+ * Consolidated type definitions for PTP protocol
+ * All core types, runtime interfaces, and definition shapes
  */
+
+// ============================================================================
+// Basic Types
+// ============================================================================
 
 /**
  * Hex code type for all PTP codes
@@ -55,3 +59,167 @@ export const PropertyAccess = {
 } as const
 
 export type PropertyAccessValue = typeof PropertyAccess[keyof typeof PropertyAccess]
+
+/**
+ * Message type enumeration
+ */
+export enum MessageType {
+  COMMAND = 1,
+  DATA = 2,
+  RESPONSE = 3,
+  EVENT = 4,
+}
+
+// ============================================================================
+// Runtime Types (for actual data instances)
+// ============================================================================
+
+/**
+ * PTP Operation - runtime instance
+ */
+export interface Operation {
+  code: number
+  parameters?: number[]
+  data?: Uint8Array
+  hasDataPhase?: boolean
+  maxDataLength?: number
+}
+
+/**
+ * PTP Response - runtime instance
+ */
+export interface Response {
+  code: number
+  sessionId: number
+  transactionId: number
+  parameters?: number[]
+  data?: Uint8Array
+  raw?: Uint8Array
+  type?: MessageType
+}
+
+/**
+ * PTP Event - runtime instance
+ */
+export interface Event {
+  code: number
+  sessionId: number
+  transactionId: number
+  parameters?: number[]
+}
+
+/**
+ * Property descriptor for allowed values
+ */
+export interface PropertyDescriptor<T> {
+  current?: T
+  default?: T
+  form: PropertyFormValue
+  min?: T
+  max?: T
+  step?: T
+  allowedValues?: T[]
+}
+
+// ============================================================================
+// Definition Types (for constant definitions)
+// ============================================================================
+
+/**
+ * Operation definition for PTP operation constants
+ */
+export type OperationDefinition = Record<string, {
+  code: HexCode
+  description: string
+  parameters?: Array<{
+    name: string
+    type: DataTypeValue
+    description: string
+  }>
+  dataIn?: boolean
+  dataOut?: boolean
+  dataDescription?: string
+}>
+
+/**
+ * Response definition for PTP response constants
+ */
+export type ResponseDefinition = Record<string, {
+  name: string
+  code: HexCode
+  description: string
+  recoverable?: boolean
+}>
+
+/**
+ * Event definition for PTP event constants
+ */
+export type EventDefinition = Record<string, {
+  code: HexCode
+  description: string
+  parameters?: Array<{
+    name: string
+    type: DataTypeValue
+    description: string
+  }>
+}>
+
+/**
+ * Property definition type
+ */
+export interface Property {
+  name: string
+  code: HexCode
+  type: DataTypeValue
+  unit?: string
+  description: string
+  writable?: boolean
+  descriptor?: PropertyDescriptor<any>
+  enum?: Record<string, HexCode>
+  encode?: (value: any) => HexCode | Uint8Array
+  decode?: (value: HexCode | Uint8Array) => any
+}
+
+/**
+ * Property definition for PTP property constants
+ */
+export type PropertyDefinition = Record<string, Property>
+
+/**
+ * Storage type definition
+ */
+export type StorageDefinition = Record<string, {
+  name: string
+  code: HexCode
+  description: string
+}>
+
+/**
+ * Format definition
+ */
+export type FormatDefinition = Record<string, {
+  name: string
+  code: HexCode
+  description: string
+  fileExtension?: string
+  mimeType?: string
+}>
+
+/**
+ * Control definition (for Sony controls)
+ */
+export type ControlDefinition = Record<string, {
+  property: HexCode
+  value: HexCode
+  description: string
+  holdable?: boolean
+}>
+
+// ============================================================================
+// Backwards Compatibility Aliases (will be removed in future)
+// ============================================================================
+
+export type OperationDefinitionShape = OperationDefinition
+export type ResponseDefinitionShape = ResponseDefinition
+export type EventDefinitionShape = EventDefinition
+export type PropertyDefinitionShape = PropertyDefinition

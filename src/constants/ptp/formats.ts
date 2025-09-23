@@ -1,20 +1,8 @@
 /**
  * PTP Object Formats with type validation
- * V7 Architecture - Type-safe with validation
  */
 
-import type { HexCode } from '@constants/types'
-
-/**
- * Format definition shape for validation
- */
-type FormatDefinitionShape = Record<string, {
-  name: string
-  code: HexCode
-  description: string
-  fileExtension?: string
-  mimeType?: string
-}>
+import { FormatDefinition } from '@constants/types'
 
 /**
  * PTP Object Formats with type validation
@@ -192,6 +180,6 @@ export const PTPFormats = {
     fileExtension: '.jpx',
     mimeType: 'image/jpx'
   }
-} as const satisfies FormatDefinitionShape
+} as const satisfies FormatDefinition
 
 export type PTPFormatDefinitions = typeof PTPFormats

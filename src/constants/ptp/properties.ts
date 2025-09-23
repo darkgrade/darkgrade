@@ -1,11 +1,8 @@
 /**
  * PTP standard property definitions with type validation
- * V7 Architecture - Type-safe with validation
  */
 
-import { DataType, PropertyForm } from '@constants/types'
-import type { PropertyDefinitionShape } from '@constants/property-types'
-import type { HexCode } from '@constants/types'
+import { DataType, PropertyForm, PropertyDefinition, HexCode } from '@constants/types'
 
 /**
  * PTP standard property definitions with type validation
@@ -375,6 +372,6 @@ export const PTPProperties = {
     description: 'Copyright information for metadata',
     writable: true
   }
-} as const satisfies PropertyDefinitionShape
+} as const satisfies PropertyDefinition
 
 export type PTPPropertyDefinitions = typeof PTPProperties

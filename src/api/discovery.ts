@@ -2,7 +2,7 @@
  * Unified discovery functions with runtime detection
  * Automatically handles Node.js (USB) and browser (WebUSB) environments
  */
-import { CameraOptions } from '@api/types'
+import { CameraOptions } from '@camera/interfaces/camera.interface'
 import { DeviceDescriptor } from '@transport/interfaces/transport.interface'
 
 // Runtime environment detection

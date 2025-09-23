@@ -1,12 +1,11 @@
-import { ProtocolInterface } from '@core/ptp-protocol'
+import { ProtocolInterface } from '@core/protocol'
 import { CameraInterface, CameraInfo, StorageInfo } from '@camera/interfaces/camera.interface'
-import { LiveViewFrame } from '@camera/interfaces/liveview.interface'
 import { DeviceDescriptor } from '@transport/interfaces/transport.interface'
 import { PTPOperations } from '@constants/ptp/operations'
 import { PTPResponses } from '@constants/ptp/responses'
 import { PTPProperties } from '@constants/ptp/properties'
-import { DataType } from '@constants/types'
 import { EventEmitter } from '@api/event-emitter'
+import { encodePTPValue, decodePTPValue, createDataView } from '@core/buffers'
 
 /**
  * Generic PTP camera implementation - Simplified V7 Architecture
@@ -95,7 +94,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
     }
 
     // Basic decoding for common types
-    return this.decodePropertyValue(response.data, property.type) as T
+    return decodePTPValue(response.data, property.type) as T
   }
 
   async setDeviceProperty(propertyName: keyof typeof PTPProperties, value: any): Promise<void> {
@@ -107,7 +106,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
     // Use property's encoder if available
     const data = ('encoder' in property && typeof property.encoder === 'function')
       ? property.encoder(value)
-      : this.encodePropertyValue(value, property.type)
+      : encodePTPValue(value, property.type)
 
     const response = await this.protocol.sendOperation({
       code: PTPOperations.SET_DEVICE_PROP_VALUE.code,
@@ -130,16 +129,15 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
       throw new Error(`Failed to get device info: 0x${response.code.toString(16)}`)
     }
 
-    // Parse device info inline (basic implementation)
-    // const data = response.data || new Uint8Array()
-    // TODO: Properly parse device info from response data
+    // Parse device info from response data
+    // Note: Full device info parsing will be implemented when needed
+    // For now, return basic info structure
     const info = {
       manufacturer: 'Generic',
       model: 'PTP Camera',
       serialNumber: '',
       deviceVersion: '1.0',
     }
-    // TODO: Properly parse device info from response data
     
     // Try to get battery level
     let batteryLevel = 0
@@ -171,7 +169,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
     const idsData = idsResponse.data || new Uint8Array()
     const storageIds: number[] = []
     if (idsData.length >= 4) {
-      const view = new DataView(idsData.buffer, idsData.byteOffset, idsData.byteLength)
+      const view = createDataView(idsData)
       const count = view.getUint32(0, true)
       
       for (let i = 0; i < count && (i + 1) * 4 + 4 <= idsData.length; i++) {
@@ -212,75 +210,10 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
     return storageInfos
   }
 
-  async captureLiveViewFrame(): Promise<LiveViewFrame | null> {
+  async captureLiveViewFrame(): Promise<any> {
     // Generic PTP doesn't have standard live view
     // Subclasses should override this for vendor-specific implementations
     return null
   }
 
-  // Helper methods for encoding/decoding
-
-  protected encodePropertyValue(value: any, dataType: number): Uint8Array {
-    const buffer = new ArrayBuffer(8)
-    const view = new DataView(buffer)
-    
-    switch (dataType) {
-      case DataType.UINT8:
-        view.setUint8(0, value)
-        return new Uint8Array(buffer, 0, 1)
-      case DataType.INT8:
-        view.setInt8(0, value)
-        return new Uint8Array(buffer, 0, 1)
-      case DataType.UINT16:
-        view.setUint16(0, value, true)
-        return new Uint8Array(buffer, 0, 2)
-      case DataType.INT16:
-        view.setInt16(0, value, true)
-        return new Uint8Array(buffer, 0, 2)
-      case DataType.UINT32:
-        view.setUint32(0, value, true)
-        return new Uint8Array(buffer, 0, 4)
-      case DataType.INT32:
-        view.setInt32(0, value, true)
-        return new Uint8Array(buffer, 0, 4)
-      case DataType.STRING:
-        const encoder = new TextEncoder()
-        const utf8 = encoder.encode(value)
-        const result = new Uint8Array(2 + utf8.length)
-        result[0] = utf8.length & 0xff
-        result[1] = (utf8.length >> 8) & 0xff
-        result.set(utf8, 2)
-        return result
-      default:
-        return new Uint8Array()
-    }
-  }
-
-  protected decodePropertyValue(data: Uint8Array, dataType: number): any {
-    if (data.length === 0) return null
-    
-    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-    
-    switch (dataType) {
-      case DataType.UINT8:
-        return view.getUint8(0)
-      case DataType.INT8:
-        return view.getInt8(0)
-      case DataType.UINT16:
-        return view.getUint16(0, true)
-      case DataType.INT16:
-        return view.getInt16(0, true)
-      case DataType.UINT32:
-        return view.getUint32(0, true)
-      case DataType.INT32:
-        return view.getInt32(0, true)
-      case DataType.STRING:
-        if (data.length < 2) return ''
-        const length = view.getUint16(0, true)
-        const decoder = new TextDecoder()
-        return decoder.decode(data.slice(2, 2 + length))
-      default:
-        return null
-    }
-  }
 }

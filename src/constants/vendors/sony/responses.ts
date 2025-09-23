@@ -1,8 +1,8 @@
 /**
  * Sony response codes - extending PTP
- * V7 Architecture - Vendor extensions define their own shape
  */
 
+import { ResponseDefinition } from '@constants/types'
 import { PTPResponses } from '@constants/ptp/responses'
 
 /**
@@ -81,6 +81,6 @@ export const SonyResponses = {
     description: 'Camera buffer is full',
     recoverable: true
   }
-} as const
+} as const satisfies ResponseDefinition
 
 export type SonyResponseDefinitions = typeof SonyResponses

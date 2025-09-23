@@ -1,12 +1,10 @@
 /**
  * Sony property definitions - extending and overriding PTP
- * V7 Architecture - Vendor extensions don't require validation
  */
 
-import { DataType } from '@constants/types'
+import { DataType, HexCode, PropertyDefinition } from '@constants/types'
 import { PTPProperties } from '@constants/ptp/properties'
 import { VendorIDs } from '@constants/vendors/vendor-ids'
-import type { HexCode } from '@constants/types'
 
 /**
  * Sony Device Constants
@@ -17,6 +15,8 @@ export const SonyConstants = {
   PRODUCT_ID_ALPHA: 0x0e78,
   PROTOCOL_VERSION: 0x012c,
   DEVICE_PROPERTY_OPTION: 0x01,
+  SDIO_FRAME_BUFFER_SIZE: 1024 * 1024, // 1MB frame buffer for SDIO parsing
+  SDIO_HEADER_SIZE: 8, // SDIO packet header size
 } as const
 
 /**
@@ -322,6 +322,6 @@ export const SonyProperties = {
       'ENABLE': 0x0002,
     }
   }
-} as const
+} as const satisfies PropertyDefinition
 
 export type SonyPropertyDefinitions = typeof SonyProperties

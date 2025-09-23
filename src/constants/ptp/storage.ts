@@ -1,18 +1,8 @@
 /**
  * PTP Storage Types with type validation
- * V7 Architecture - Type-safe with validation
  */
 
-import type { HexCode } from '@constants/types'
-
-/**
- * Storage type definition shape for validation
- */
-type StorageTypeDefinitionShape = Record<string, {
-  name: string
-  code: HexCode
-  description: string
-}>
+import { StorageDefinition } from '@constants/types'
 
 /**
  * PTP Storage Types with type validation
@@ -43,7 +33,7 @@ export const PTPStorageTypes = {
     code: 0x0004,
     description: 'Removable RAM storage (memory card, SD card)'
   }
-} as const satisfies StorageTypeDefinitionShape
+} as const satisfies StorageDefinition
 
 export type PTPStorageTypeDefinitions = typeof PTPStorageTypes
 
