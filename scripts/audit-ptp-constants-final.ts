@@ -213,18 +213,54 @@ async function checkDocumentation(constant: ExtractedConstant): Promise<{ found:
   
   const docPath = constant.vendor === 'iso' ? CONFIG.isoDocsPath : CONFIG.sonyDocsPath
   const docContent = await fs.readFile(docPath, 'utf-8')
+  const docContentLower = docContent.toLowerCase()
   
-  // Try multiple variations of the hex code
+  // Try multiple variations of the hex code with case insensitive matching
   const searchAttempts = [
     constant.hexCode,
     constant.hexCode.toLowerCase(),
     constant.hexCode.toUpperCase(),
-    constant.hexCode.replace('0x', '0X')
+    constant.hexCode.replace('0x', '0X'),
+    // Add padded variations for 3-digit hex codes
+    constant.hexCode.length === 6 ? '0x0' + constant.hexCode.substring(2) : null,
+    constant.hexCode.length === 6 ? '0X0' + constant.hexCode.substring(2).toUpperCase() : null,
+  ].filter(Boolean) as string[]
+  
+  // Search for hex code
+  for (const searchTerm of searchAttempts) {
+    // Case-insensitive search
+    if (docContentLower.includes(searchTerm.toLowerCase())) {
+      return { found: true, searchAttempts }
+    }
+  }
+  
+  // If hex code not found, also try searching for the constant name with various formats
+  // This helps catch cases where documentation might reference by name
+  const nameVariations = [
+    constant.constantName,
+    constant.constantName.toLowerCase(),
+    constant.constantName.toUpperCase(),
+    // Convert snake_case to various formats
+    constant.constantName.replace(/_/g, ' '),
+    constant.constantName.replace(/_/g, ' ').toLowerCase(),
+    // Convert to camelCase
+    constant.constantName.toLowerCase().replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()),
   ]
   
-  for (const searchTerm of searchAttempts) {
-    if (docContent.includes(searchTerm)) {
-      return { found: true, searchAttempts }
+  // Check if the hex code appears near any variation of the constant name
+  for (const nameVariation of nameVariations) {
+    const nameIndex = docContentLower.indexOf(nameVariation.toLowerCase())
+    if (nameIndex !== -1) {
+      // Check if hex code appears within 200 characters of the name
+      const contextStart = Math.max(0, nameIndex - 200)
+      const contextEnd = Math.min(docContent.length, nameIndex + 200)
+      const context = docContent.substring(contextStart, contextEnd).toLowerCase()
+      
+      for (const hexVariation of searchAttempts) {
+        if (context.includes(hexVariation.toLowerCase())) {
+          return { found: true, searchAttempts: [...searchAttempts, `Found near "${nameVariation}"`] }
+        }
+      }
     }
   }
   

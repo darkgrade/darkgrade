@@ -11,10 +11,14 @@ import { encodePTPValue } from '@core/buffers'
  * Sony Device Constants
  */
 export const SonyConstants = {
-  VENDOR_ID: VendorIDs.SONY,
-  DEVICE_PROPERTY_OPTION: 0x01,
-  SDIO_FRAME_BUFFER_SIZE: 1024 * 1024, // 1MB frame buffer for SDIO parsing
-  SDIO_HEADER_SIZE: 8, // SDIO packet header size
+    VENDOR_ID: VendorIDs.SONY,
+    DEVICE_PROPERTY_OPTION: 0x01,
+    // from the Sony Reference document, kind of buried
+    // The Initiator Version and SDIExtensionVersion are 0x012C (3.00) in this version.
+    // “3” indicates the major version, and “00” indicates the minor version
+    PROTOCOL_VERSION: 0x012c,
+    SDIO_FRAME_BUFFER_SIZE: 1024 * 1024, // 1MB frame buffer for SDIO parsing
+    SDIO_HEADER_SIZE: 8, // SDIO packet header size
 } as const
 
 /**
@@ -44,7 +48,7 @@ export const SonyProperties = {
 
     ISO: {
         name: 'ISO',
-        code: 0xD21E,
+        code: 0xd21e,
         type: DataType.UINT32, // Sony uses UINT32 instead of UINT16
         unit: 'ISO',
         description: 'ISO sensitivity with Sony-specific auto modes',
@@ -108,7 +112,7 @@ export const SonyProperties = {
 
     OSD_IMAGE_MODE: {
         name: 'OSD_IMAGE_MODE',
-        code: 0xD207,
+        code: 0xd207,
         type: DataType.UINT8,
         description: 'On-screen display image mode',
         writable: true,
@@ -120,7 +124,7 @@ export const SonyProperties = {
 
     SHUTTER_SPEED: {
         name: 'SHUTTER_SPEED',
-        code: 0xD20D,
+        code: 0xd20d,
         type: DataType.UINT32,
         unit: 'seconds',
         description: 'Sony-specific shutter speed encoding with bulb mode support',
@@ -167,7 +171,7 @@ export const SonyProperties = {
 
     CAPTURE_STATUS: {
         name: 'CAPTURE_STATUS',
-        code: 0xD215,
+        code: 0xd215,
         type: DataType.UINT8,
         description: 'Camera capture status',
         writable: false,
@@ -180,7 +184,7 @@ export const SonyProperties = {
 
     LIVE_VIEW_STATUS: {
         name: 'LIVE_VIEW_STATUS',
-        code: 0xD221,
+        code: 0xd221,
         type: DataType.UINT8,
         description: 'Live view status',
         writable: false,
@@ -192,7 +196,7 @@ export const SonyProperties = {
 
     SAVE_MEDIA: {
         name: 'SAVE_MEDIA',
-        code: 0xD222,
+        code: 0xd222,
         type: DataType.UINT8,
         description: 'Where to save captured images',
         writable: true,
@@ -205,7 +209,7 @@ export const SonyProperties = {
 
     DIAL_MODE: {
         name: 'DIAL_MODE',
-        code: 0xD25A,
+        code: 0xd25a,
         type: DataType.UINT8,
         description: 'Camera dial mode control (controls which setting takes priority between host and camera)',
         writable: true,
@@ -217,7 +221,7 @@ export const SonyProperties = {
 
     SHUTTER_BUTTON_CONTROL: {
         name: 'SHUTTER_BUTTON_CONTROL',
-        code: 0xD2C1,
+        code: 0xd2c1,
         type: DataType.UINT16,
         description: 'Shutter button control property',
         writable: true,
@@ -230,7 +234,7 @@ export const SonyProperties = {
 
     FOCUS_BUTTON_CONTROL: {
         name: 'FOCUS_BUTTON_CONTROL',
-        code: 0xD2C2,
+        code: 0xd2c2,
         type: DataType.UINT16,
         description: 'Focus button control property',
         writable: true,
@@ -243,7 +247,7 @@ export const SonyProperties = {
 
     LIVE_VIEW_CONTROL: {
         name: 'LIVE_VIEW_CONTROL',
-        code: 0xD313,
+        code: 0xd313,
         type: DataType.UINT16,
         description: 'Live view control property',
         writable: true,
