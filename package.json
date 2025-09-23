@@ -65,6 +65,9 @@
         "usb": "^2.11.0"
     },
     "devDependencies": {
+        "@types/glob": "^9.0.0",
+        "glob": "^11.0.3",
+        "string-similarity": "^4.0.4",
         "@tailwindcss/postcss": "^4.1.13",
         "@types/node": "^20.11.0",
         "@types/usb": "^2.0.0",

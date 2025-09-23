@@ -73,15 +73,6 @@ export const PTPProperties = {
     description: 'White balance setting for color temperature adjustment',
     writable: true,
     enum: {
-      'MANUAL': 0x0001,
-      'AUTO': 0x0002,
-      'ONE_PUSH_AUTO': 0x0003,
-      'DAYLIGHT': 0x0004,
-      'FLUORESCENT': 0x0005,
-      'TUNGSTEN': 0x0006,
-      'FLASH': 0x0007,
-      'CLOUDY': 0x8010,
-      'SHADE': 0x8011,
     }
   },
   

@@ -41,29 +41,7 @@ export const SonyControls = {
     value: 0x0000,
     description: 'Release focus button',
   },
-  
-  // Zoom controls
-  ZOOM_IN_START: {
-    property: 0xD2D2,
-    value: 0x0001,
-    description: 'Start zooming in',
-  },
-  ZOOM_IN_STOP: {
-    property: 0xD2D2,
-    value: 0x0000,
-    description: 'Stop zooming in',
-  },
-  ZOOM_OUT_START: {
-    property: 0xD2D3,
-    value: 0x0001,
-    description: 'Start zooming out',
-  },
-  ZOOM_OUT_STOP: {
-    property: 0xD2D3,
-    value: 0x0000,
-    description: 'Stop zooming out',
-  },
-  
+
   // Live view controls
   LIVE_VIEW_ENABLE: {
     property: 0xD313,

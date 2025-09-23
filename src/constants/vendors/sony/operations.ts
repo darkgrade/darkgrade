@@ -87,24 +87,7 @@ export const SonyOperations = {
     dataIn: true,
     dataDescription: 'All device property descriptors'
   },
-  
-  GET_ALL_DEVICE_PROP_DATA: {
-    code: 0x920A,
-    description: 'Get all device property values',
-    parameters: [],
-    dataIn: true,
-    dataDescription: 'All device property values'
-  },
-  
-  
-  GET_LIVE_VIEW_IMG: {
-    code: 0x9219,
-    description: 'Get live view image',
-    parameters: [],
-    dataIn: true,
-    dataDescription: 'Live view image data'
-  },
-  
+
   SDIO_GET_OSD_IMAGE: {
     code: 0x9238,
     description: 'Get on-screen display image',
