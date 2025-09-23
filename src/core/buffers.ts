@@ -135,7 +135,7 @@ export function findByteSequence(buffer: Uint8Array, sequence: readonly number[]
  * @param length - Number of bytes to slice
  * @returns New Uint8Array view of the sliced data (no copy)
  */
-export function sliceToUint8Array(data: Uint8Array, offset: number, length: number): Uint8Array {
+export function viewSlice(data: Uint8Array, offset: number, length: number): Uint8Array {
   return new Uint8Array(data.buffer, data.byteOffset + offset, length)
 }
 
@@ -161,5 +161,29 @@ export function validateBufferLength(data: Uint8Array, minLength: number, contex
   if (data.byteLength < minLength) {
     throw new Error(`${context}: buffer too short (${data.byteLength} < ${minLength})`)
   }
+}
+
+/**
+ * Parse a PTP array of UINT32 values
+ * PTP arrays are formatted as: [count:uint32][value1:uint32][value2:uint32]...
+ * @param data - Buffer containing the array
+ * @param offset - Starting offset in the buffer (default: 0)
+ * @returns Array of parsed values
+ */
+export function parsePTPUint32Array(data: Uint8Array, offset = 0): number[] {
+  if (data.length < offset + 4) return []
+  
+  const view = createDataView(data)
+  const count = view.getUint32(offset, true)
+  const values: number[] = []
+  
+  // Ensure we don't read beyond buffer bounds
+  const maxItems = Math.min(count, Math.floor((data.length - offset - 4) / 4))
+  
+  for (let i = 0; i < maxItems; i++) {
+    values.push(view.getUint32(offset + 4 + i * 4, true))
+  }
+  
+  return values
 }
 

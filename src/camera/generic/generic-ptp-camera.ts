@@ -5,7 +5,7 @@ import { PTPOperations } from '@constants/ptp/operations'
 import { PTPResponses } from '@constants/ptp/responses'
 import { PTPProperties } from '@constants/ptp/properties'
 import { EventEmitter } from '@api/event-emitter'
-import { encodePTPValue, decodePTPValue, createDataView } from '@core/buffers'
+import { encodePTPValue, decodePTPValue, parsePTPUint32Array } from '@core/buffers'
 
 /**
  * Generic PTP camera implementation - Simplified V7 Architecture
@@ -165,17 +165,9 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
       return []
     }
 
-    // Parse storage IDs inline
+    // Parse storage IDs
     const idsData = idsResponse.data || new Uint8Array()
-    const storageIds: number[] = []
-    if (idsData.length >= 4) {
-      const view = createDataView(idsData)
-      const count = view.getUint32(0, true)
-      
-      for (let i = 0; i < count && (i + 1) * 4 + 4 <= idsData.length; i++) {
-        storageIds.push(view.getUint32(4 + i * 4, true))
-      }
-    }
+    const storageIds = parsePTPUint32Array(idsData)
 
     const storageInfos: StorageInfo[] = []
 

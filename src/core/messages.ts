@@ -4,7 +4,7 @@
  */
 
 import { ContainerTypes, containerTypeToMessageType, PTP_CONTAINER, PTP_LIMITS, EVENT_LIMITS } from '@constants/ptp/containers'
-import { createDataView, sliceToUint8Array, validateBufferLength } from '@core/buffers'
+import { createDataView, viewSlice, validateBufferLength } from '@core/buffers'
 import { Response, Event, HexCode } from '@constants/types'
 
 /**
@@ -222,7 +222,7 @@ export class PTPMessageBuilder implements MessageBuilderInterface {
         const transactionId = view.getUint32(8, true)
 
         // Extract payload (everything after header)
-        const payload = sliceToUint8Array(data, PTP_CONTAINER.HEADER_SIZE, data.byteLength - PTP_CONTAINER.HEADER_SIZE)
+        const payload = viewSlice(data, PTP_CONTAINER.HEADER_SIZE, data.byteLength - PTP_CONTAINER.HEADER_SIZE)
 
         return {
             sessionId: 0, // Session ID not in data container
