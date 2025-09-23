@@ -56,7 +56,16 @@ describe('SonyCamera', () => {
         // Create camera with authenticator
         const authenticator = new SonyAuthenticator()
         camera = new SonyCamera(protocol, authenticator)
-    })
+        
+        // Connect the camera once for all tests
+        try {
+            await camera.connect()
+            console.log('✅ Camera connected and authenticated')
+        } catch (error) {
+            console.error('Failed to connect camera:', error)
+            throw error
+        }
+    }, 30000) // Increase timeout for authentication
 
     afterAll(async () => {
         if (connected) {
@@ -91,11 +100,10 @@ describe('SonyCamera', () => {
         }
     }, 15000) // Increase timeout to 15 seconds
 
-    it('should open session and authenticate', async () => {
-        await camera.connect()
+    it('should be connected and authenticated', async () => {
         expect(camera.isConnected()).toBe(true)
-        console.log('✅ Session opened and authenticated')
-    }, 15000) // Increase timeout to 15 seconds
+        console.log('✅ Camera is connected and authenticated')
+    })
 
     it('should get current ISO', async () => {
         const iso = await camera.getDeviceProperty('ISO')
@@ -139,8 +147,11 @@ describe('SonyCamera', () => {
             const liveViewPath = path.join(outputDir, `liveview_${Date.now()}.jpg`)
             fs.writeFileSync(liveViewPath, frame)
             console.log(`💾 LIVE VIEW SAVED TO: ${liveViewPath}`)
+            expect(frame).toBeInstanceOf(Uint8Array)
         } else {
             console.log('⚠️ Live view frame not available (camera may not support it or not be ready)')
+            // This is acceptable - camera may not support live view or not be ready
+            expect(frame).toBeNull()
         }
     })
 

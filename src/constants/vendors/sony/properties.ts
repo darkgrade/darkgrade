@@ -274,7 +274,7 @@ export const SonyProperties = {
         writable: false,
         enum: {
             SUPPORTED_DISABLED: 0x00,
-            SUPPORETED_ENABLED: 0x01,
+            SUPPORTED_ENABLED: 0x01,
             NOT_SUPPORTED: 0x02,
         },
     },

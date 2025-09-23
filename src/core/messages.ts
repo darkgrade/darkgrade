@@ -128,7 +128,8 @@ function parseGenericMessage(data: Uint8Array, messageType: string, maxParamByte
   // For data messages, extract payload
   let payload: Uint8Array | undefined
   if (messageType === 'data') {
-    payload = sliceBuffer(data, PTP_CONTAINER.HEADER_SIZE, data.byteLength, { copy: false })
+    const payloadLength = data.byteLength - PTP_CONTAINER.HEADER_SIZE
+    payload = sliceBuffer(data, PTP_CONTAINER.HEADER_SIZE, payloadLength, { copy: false })
   }
   
   return {

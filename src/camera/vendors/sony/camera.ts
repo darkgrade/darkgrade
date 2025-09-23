@@ -83,7 +83,8 @@ export class SonyCamera extends GenericPTPCamera {
 
         // Determine which operation to use based on property type
         // Some properties use SET_DEVICE_PROPERTY_VALUE, others use CONTROL_DEVICE_PROPERTY
-        const isControlProperty = /shutter|focus|live_view/i.test(property.name)
+        const isControlProperty = /shutter|focus|live.*view/i.test(property.name)
+        console.log('isControlProperty', isControlProperty, property.name)
 
         const operation = isControlProperty
             ? SonyOperations.SDIO_CONTROL_DEVICE
@@ -123,6 +124,7 @@ export class SonyCamera extends GenericPTPCamera {
         const response = await this.protocol.sendOperation({
             ...SonyOperations.GET_OBJECT,
             parameters: [SONY_CAPTURED_IMAGE_OBJECT_HANDLE],
+            maxDataLength: 10 * 1024 * 1024, // 10MB
         })
 
         return response.data || null
@@ -131,6 +133,16 @@ export class SonyCamera extends GenericPTPCamera {
     async captureLiveView(): Promise<Uint8Array | null> {
         // Start live view if not already active
         await this.setDeviceProperty('SET_LIVE_VIEW_ENABLE', 'ENABLE')
+
+        let liveViewEnabled = false
+
+        while (!liveViewEnabled) {
+            const liveViewStatus = await this.getDeviceProperty('LIVE_VIEW_STATUS')
+            liveViewEnabled = liveViewStatus === 'SUPPORTED_ENABLED'
+            if (!liveViewEnabled) {
+                await new Promise(resolve => setTimeout(resolve, 100))
+            }
+        }
 
         const response = await this.protocol.sendOperation({
             ...SonyOperations.GET_OBJECT,
