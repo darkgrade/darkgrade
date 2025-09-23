@@ -28,9 +28,8 @@ export class SonyCamera extends GenericPTPCamera {
 
         // Set the host as the priority for settings
         const response = await this.protocol.sendOperation({
-            code: SonyOperations.SDIO_SET_EXT_DEVICE_PROP_VALUE.code,
+            ...SonyOperations.SDIO_SET_EXT_DEVICE_PROP_VALUE,
             parameters: [SonyProperties.POSITION_KEY_SETTING.code],
-            expectsData: true,
             data: encodePTPValue(
                 SonyProperties.POSITION_KEY_SETTING.enum.HOST_PRIORITY,
                 SonyProperties.POSITION_KEY_SETTING.type
@@ -49,9 +48,8 @@ export class SonyCamera extends GenericPTPCamera {
         }
 
         const response = await this.protocol.sendOperation({
-            code: SonyOperations.SDIO_GET_EXT_DEVICE_PROP_VALUE.code,
+            ...SonyOperations.SDIO_GET_EXT_DEVICE_PROP_VALUE,
             parameters: [property.code],
-            expectsData: true,
         })
 
         if (response.code !== PTPResponses.OK.code) {
@@ -78,9 +76,9 @@ export class SonyCamera extends GenericPTPCamera {
         // Some properties use SET_DEVICE_PROPERTY_VALUE, others use CONTROL_DEVICE_PROPERTY
         const isControlProperty = /shutter|focus|live_view/i.test(property.name)
 
-        const operationCode = isControlProperty
-            ? SonyOperations.SDIO_CONTROL_DEVICE.code
-            : SonyOperations.SDIO_SET_EXT_DEVICE_PROP_VALUE.code
+        const operation = isControlProperty
+            ? SonyOperations.SDIO_CONTROL_DEVICE
+            : SonyOperations.SDIO_SET_EXT_DEVICE_PROP_VALUE
 
         // Use property's encode if available, or enum value if provided
         let encodedValue: Uint8Array
@@ -93,9 +91,8 @@ export class SonyCamera extends GenericPTPCamera {
         }
 
         const response = await this.protocol.sendOperation({
-            code: operationCode,
+            ...operation,
             parameters: [property.code],
-            expectsData: true,
             data: encodedValue,
         })
 
@@ -115,7 +112,7 @@ export class SonyCamera extends GenericPTPCamera {
         await this.setDeviceProperty('SHUTTER_HALF_RELEASE_BUTTON', 'UP')
 
         const response = await this.protocol.sendOperation({
-            code: SonyOperations.GET_OBJECT.code,
+            ...SonyOperations.GET_OBJECT,
             parameters: [SONY_CAPTURED_IMAGE_OBJECT_HANDLE],
         })
 
@@ -127,9 +124,8 @@ export class SonyCamera extends GenericPTPCamera {
         await this.setDeviceProperty('SET_LIVE_VIEW_ENABLE', 'ENABLE')
 
         const response = await this.protocol.sendOperation({
-            code: SonyOperations.GET_OBJECT.code,
+            ...SonyOperations.GET_OBJECT,
             parameters: [SONY_LIVE_VIEW_OBJECT_HANDLE],
-            expectsData: true,
         })
 
         if (response.code !== PTPResponses.OK.code) {

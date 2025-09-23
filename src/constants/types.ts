@@ -176,9 +176,9 @@ export interface Storage {
 export interface Format {
     name: string
     code: HexCode
+    type: 'A' | 'I' | any
     description: string
     fileExtension?: string
-    mimeType?: string
 }
 
 // ============================================================================

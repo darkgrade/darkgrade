@@ -57,7 +57,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
 
   async captureImage(): Promise<Uint8Array | null> {
     const response = await this.protocol.sendOperation({
-      code: PTPOperations.INITIATE_CAPTURE.code,
+      ...PTPOperations.INITIATE_CAPTURE,
       parameters: [0, 0], // storageId: 0, objectFormat: 0
     })
 
@@ -76,7 +76,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
     }
 
     const response = await this.protocol.sendOperation({
-      code: PTPOperations.GET_DEVICE_PROP_VALUE.code,
+      ...PTPOperations.GET_DEVICE_PROP_VALUE,
       parameters: [property.code],
     })
 
@@ -109,10 +109,9 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
       : encodePTPValue(value, property.type)
 
     const response = await this.protocol.sendOperation({
-      code: PTPOperations.SET_DEVICE_PROP_VALUE.code,
+      ...PTPOperations.SET_DEVICE_PROP_VALUE,
       parameters: [property.code],
       data,
-      expectsData: true,
     })
 
     if (response.code !== PTPResponses.OK.code) {
@@ -122,7 +121,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
 
   async getCameraInfo(): Promise<CameraInfo> {
     const response = await this.protocol.sendOperation({
-      code: PTPOperations.GET_DEVICE_INFO.code,
+      ...PTPOperations.GET_DEVICE_INFO
     })
 
     if (response.code !== PTPResponses.OK.code) {
@@ -158,7 +157,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
 
   async getStorageInfo(): Promise<StorageInfo[]> {
     const idsResponse = await this.protocol.sendOperation({
-      code: PTPOperations.GET_STORAGE_IDS.code,
+      ...PTPOperations.GET_STORAGE_IDS,
     })
 
     if (idsResponse.code !== PTPResponses.OK.code) {
@@ -173,7 +172,7 @@ export class GenericPTPCamera extends EventEmitter implements CameraInterface {
 
     for (const id of storageIds) {
       const infoResponse = await this.protocol.sendOperation({
-        code: PTPOperations.GET_STORAGE_INFO.code,
+        ...PTPOperations.GET_STORAGE_INFO,
         parameters: [id],
       })
 

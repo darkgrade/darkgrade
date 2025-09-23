@@ -1,8 +1,7 @@
 import { ProtocolInterface } from '@core/protocol'
 import { SonyOperations } from '@constants/vendors/sony/operations'
 import { PTPResponses } from '@constants/ptp/responses'
-import { createDataView, encodePTPValue } from '@core/buffers'
-import { DataType } from '@constants/types'
+import { createDataView } from '@core/buffers'
 
 /**
  * Interface for Sony authentication
@@ -13,13 +12,15 @@ export interface SonyAuthenticatorInterface {
 
 const SDIO_AUTH_PROTOCOL_VERSION = 0x012c
 const SDIO_AUTH_DEVICE_PROPERTY_OPTION = 0x01
-export const SDIOPhases = {
-    PHASE_1: 1,
-    PHASE_2: 2,
-    PHASE_3: 3,
+const SDIO_AUTH_KEY_CODE_1 = 0x00000000
+const SDIO_AUTH_KEY_CODE_2 = 0x00000000
+export const SDIO_AUTH_PHASES = {
+    PHASE_1: 0x01,
+    PHASE_2: 0x02,
+    PHASE_3: 0x03,
 } as const
 
-export type SDIOPhase = (typeof SDIOPhases)[keyof typeof SDIOPhases]
+export type SDIOPhase = (typeof SDIO_AUTH_PHASES)[keyof typeof SDIO_AUTH_PHASES]
 
 /**
  * Sony camera authenticator
@@ -31,12 +32,12 @@ export class SonyAuthenticator implements SonyAuthenticatorInterface {
     async authenticate(protocol: ProtocolInterface): Promise<void> {
         // Phase 1: Initial handshake
         console.log('Sony Auth: Starting Phase 1 - Initial handshake')
-        await this.sdioConnect(protocol, SDIOPhases.PHASE_1)
+        await this.sdioConnect(protocol, SDIO_AUTH_PHASES.PHASE_1)
         console.log('Sony Auth: Phase 1 complete')
 
         // Phase 2: Capability exchange
         console.log('Sony Auth: Starting Phase 2 - Capability exchange')
-        await this.sdioConnect(protocol, SDIOPhases.PHASE_2)
+        await this.sdioConnect(protocol, SDIO_AUTH_PHASES.PHASE_2)
         console.log('Sony Auth: Phase 2 complete')
 
         // Get extended device info
@@ -46,19 +47,15 @@ export class SonyAuthenticator implements SonyAuthenticatorInterface {
 
         // Phase 3: Final authentication
         console.log('Sony Auth: Starting Phase 3 - Final authentication')
-        await this.sdioConnect(protocol, SDIOPhases.PHASE_3)
+        await this.sdioConnect(protocol, SDIO_AUTH_PHASES.PHASE_3)
         console.log('Sony Auth: Phase 3 complete - Authentication successful!')
     }
 
     private async sdioConnect(protocol: ProtocolInterface, phase: SDIOPhase): Promise<void> {
         console.log(`Sony Auth: Sending SDIO_CONNECT for phase ${phase}`)
         const response = await protocol.sendOperation({
-            code: SonyOperations.SDIO_CONNECT.code,
-            parameters: [
-                encodePTPValue(phase, DataType.UINT32),
-                encodePTPValue(0, DataType.UINT32),
-                encodePTPValue(0, DataType.UINT32),
-            ], // Phase, KeyCode1, KeyCode2
+            ...SonyOperations.SDIO_CONNECT,
+            parameters: [phase, SDIO_AUTH_KEY_CODE_1, SDIO_AUTH_KEY_CODE_2],
         })
         console.log(`Sony Auth: SDIO_CONNECT response: 0x${response.code.toString(16)}`)
 
@@ -69,7 +66,7 @@ export class SonyAuthenticator implements SonyAuthenticatorInterface {
 
     private async getExtDeviceInfo(protocol: ProtocolInterface): Promise<void> {
         const response = await protocol.sendOperation({
-            code: SonyOperations.SDIO_GET_EXT_DEVICE_INFO.code,
+            ...SonyOperations.SDIO_GET_EXT_DEVICE_INFO,
             parameters: [SDIO_AUTH_PROTOCOL_VERSION, SDIO_AUTH_DEVICE_PROPERTY_OPTION],
         })
 

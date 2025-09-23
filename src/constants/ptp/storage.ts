@@ -16,12 +16,12 @@ export const PTPStorageTypes = {
   FIXED_ROM: {
     name: 'FIXED_ROM',
     code: 0x0001,
-    description: 'Fixed ROM storage (built-in non-writable memory)'
+    description: 'Fixed read-only memory (built-in non-writable memory)'
   },
   REMOVABLE_ROM: {
     name: 'REMOVABLE_ROM',
     code: 0x0002,
-    description: 'Removable ROM storage (CD, DVD)'
+    description: 'Removable read-only memory (CD, DVD)'
   },
   FIXED_RAM: {
     name: 'FIXED_RAM',
@@ -54,8 +54,8 @@ export type PTPFilesystemType = typeof PTPFilesystemTypes[keyof typeof PTPFilesy
  */
 export const PTPStorageAccess = {
   READ_WRITE: 0x0000,
-  READ_ONLY_WITHOUT_DELETE: 0x0001,
-  READ_ONLY_WITH_DELETE: 0x0002,
+  READ_ONLY_WITHOUT_OBJECT_DELETION: 0x0001,
+  READ_ONLY_WITH_OBJECT_DELETION: 0x0002,
 } as const
 
 export type PTPStorageAccessType = typeof PTPStorageAccess[keyof typeof PTPStorageAccess]

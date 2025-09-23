@@ -1,4 +1,4 @@
-import { DataType, OperationDefinition } from '@constants/types'
+import { DataType } from '@constants/types'
 import { PTPOperations } from '@constants/ptp/operations'
 
 export const SonyOperations = {
@@ -125,6 +125,6 @@ export const SonyOperations = {
         respondsWithData: true,
         dataDescription: 'OSD Image Dataset',
     },
-} as const satisfies OperationDefinition
+} as const
 
 export type SonyOperationDefinitions = typeof SonyOperations

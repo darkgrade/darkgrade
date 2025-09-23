@@ -6,6 +6,7 @@
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { MessageBuilderInterface, MessageParserInterface } from '@core/messages'
 import { PTPOperations } from '@constants/ptp/operations'
+import { SonyOperations } from '@constants/vendors/sony/operations'
 import { PTPResponses } from '@constants/ptp/responses'
 import { PTPError } from '@constants/ptp/errors'
 import { PTP_LIMITS } from '@constants/ptp/containers'
@@ -142,6 +143,32 @@ export class PTPProtocol implements ProtocolInterface {
             throw new PTPError(PTPResponses.SESSION_NOT_OPEN.code, 'Session not open', 'SendOperation')
         }
 
+        // Find operation name and description
+        const allOps = { ...PTPOperations, ...SonyOperations }
+        const opDef = Object.entries(allOps).find(([_, op]) => op.code === operation.code)
+        const opName = opDef ? opDef[0] : 'UNKNOWN'
+        const opInfo = opDef ? opDef[1] : null
+
+        console.log(`Protocol: sendOperation ${opName} (0x${operation.code.toString(16).padStart(4, '0')})`)
+        if (opInfo?.description) {
+            console.log(`  Description: ${opInfo.description}`)
+        }
+        console.log(`  Data mode: ${operation.respondsWithData ? 'expects data from device' : operation.expectsData ? 'sends data to device' : 'no data phase'}`)
+        if (operation.parameters && operation.parameters.length > 0) {
+            console.log(`  Parameters: [${operation.parameters.map(p => `0x${p.toString(16).padStart(8, '0')}`).join(', ')}]`)
+            if (opInfo && 'parameters' in opInfo && opInfo.parameters) {
+                operation.parameters.forEach((param, i) => {
+                    const paramDef = opInfo.parameters[i]
+                    if (paramDef) {
+                        console.log(`    - ${paramDef.name}: 0x${param.toString(16)} (${param})`)
+                        if (paramDef.description) {
+                            console.log(`      ${paramDef.description}`)
+                        }
+                    }
+                })
+            }
+        }
+
         const transactionId = this.messageBuilder.getNextTransactionId()
 
         // Send command phase
@@ -166,14 +193,29 @@ export class PTPProtocol implements ProtocolInterface {
             // Receive data (data-in operation)
             // Use maxDataLength if specified, otherwise use default
             const maxLength = operation.maxDataLength || PTP_LIMITS.DEFAULT_DATA_SIZE
+            console.log(`Protocol: Waiting for data phase (max ${maxLength} bytes)...`)
             const dataResponse = await this.transport.receive(maxLength)
+            console.log(`Protocol: Received data packet (${dataResponse.length} bytes):`, 
+                Array.from(dataResponse.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' '))
             const parsedData = this.messageBuilder.parseData(dataResponse)
             receivedData = parsedData.payload
         }
 
         // Receive response phase
+        console.log(`Protocol: Waiting for response phase...`)
         const responseData = await this.transport.receive(PTP_LIMITS.DEFAULT_RECEIVE_SIZE)
+        console.log(`Protocol: Received response packet (${responseData.length} bytes):`, 
+            Array.from(responseData.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' '))
         const parsedResponse = this.messageBuilder.parseResponse(responseData)
+        
+        // Decode response code
+        const respDef = Object.entries(PTPResponses).find(([_, resp]) => resp.code === parsedResponse.code)
+        const respName = respDef ? respDef[0] : 'UNKNOWN'
+        const respInfo = respDef ? respDef[1] : null
+        console.log(`Protocol: Response code: ${respName} (0x${parsedResponse.code.toString(16).padStart(4, '0')})`)
+        if (respInfo?.description) {
+            console.log(`  ${respInfo.description}`)
+        }
 
         // Build response object
         const response: Response = {
