@@ -1380,35 +1380,33 @@ export default function App() {
         const visibleStartSecond = Math.max(0, (viewport.offsetX - trackLabelWidth) / pixelsPerSecond)
         const visibleEndSecond = Math.min(totalDuration, (viewport.offsetX + canvasWidth - trackLabelWidth) / pixelsPerSecond)
         
-        // Find first major tick in visible range
-        const firstMajorTick = Math.floor(visibleStartSecond / majorIntervalSeconds) * majorIntervalSeconds
+        // Calculate the range of major ticks we need to consider
+        // Include extra major ticks on both sides to ensure subdivisions are always visible
+        const firstMajorTick = Math.max(0, Math.floor((visibleStartSecond - majorIntervalSeconds) / majorIntervalSeconds) * majorIntervalSeconds)
+        const lastMajorTick = Math.ceil((visibleEndSecond + majorIntervalSeconds) / majorIntervalSeconds) * majorIntervalSeconds
         
-        // Draw ticks
-        for (let majorSecond = firstMajorTick; majorSecond <= visibleEndSecond + majorIntervalSeconds; majorSecond += majorIntervalSeconds) {
+        // Draw major ticks and subdivisions
+        for (let majorSecond = firstMajorTick; majorSecond <= lastMajorTick; majorSecond += majorIntervalSeconds) {
             const majorWorldX = trackLabelWidth + (majorSecond * pixelsPerSecond)
             const majorScreenX = majorWorldX - viewport.offsetX
             
-            // Only draw if on screen
-            if (majorScreenX >= trackLabelWidth - 50 && majorScreenX <= canvasWidth + 50) {
-                // Draw major tick
+            // Draw major tick only if actually visible
+            if (majorScreenX >= -50 && majorScreenX <= canvasWidth + 50) {
                 drawTick(ctx, majorScreenX, 0, timecodeHeight, 'major')
-                
-                // Draw timecode for major tick
                 drawTimecode(ctx, majorScreenX, timecodeHeight, majorSecond)
+            }
+            
+            // Draw subdivisions for this major interval
+            const framesInMajorInterval = majorIntervalSeconds * fps
+            for (let frame = 1; frame < framesInMajorInterval; frame++) {
+                const frameTime = majorSecond + (frame / fps)
+                const frameWorldX = trackLabelWidth + (frameTime * pixelsPerSecond)
+                const frameScreenX = frameWorldX - viewport.offsetX
                 
-                // Draw all subdivision levels between this major and next major
-                const framesInMajorInterval = majorIntervalSeconds * fps
-                
-                for (let frame = 1; frame < framesInMajorInterval; frame++) {
-                    const frameTime = majorSecond + (frame / fps)
-                    const frameWorldX = trackLabelWidth + (frameTime * pixelsPerSecond)
-                    const frameScreenX = frameWorldX - viewport.offsetX
-                    
-                    if (frameScreenX >= trackLabelWidth && frameScreenX <= canvasWidth) {
-                        // Determine tick type with adaptive subdivision based on spacing
-                        const tickType = getTickTypeAlwaysShow(frame, framesInMajorInterval, pixelsPerFrame)
-                        drawTick(ctx, frameScreenX, 0, timecodeHeight, tickType)
-                    }
+                // Draw subdivision if it's anywhere near the visible area
+                if (frameScreenX >= -50 && frameScreenX <= canvasWidth + 50) {
+                    const tickType = getTickTypeAlwaysShow(frame, framesInMajorInterval, pixelsPerFrame)
+                    drawTick(ctx, frameScreenX, 0, timecodeHeight, tickType)
                 }
             }
         }
@@ -1859,8 +1857,18 @@ export default function App() {
             cache.width = width
             return waveformData
         } else if (realtimeData.length > 0) {
-            // For real-time data, always regenerate (it's changing)
-            return generateRealtimeWaveformData(realtimeData, width)
+            // Cache real-time data based on data length and width to prevent jittering
+            const realtimeDataLength = realtimeData.reduce((sum, chunk) => sum + chunk.length, 0)
+            if (cache.data && cache.audioLength === realtimeDataLength && cache.width === width) {
+                return cache.data
+            }
+            
+            // Generate new waveform data for real-time
+            const waveformData = generateRealtimeWaveformData(realtimeData, width)
+            cache.data = waveformData
+            cache.audioLength = realtimeDataLength
+            cache.width = width
+            return waveformData
         }
         
         return []
@@ -2010,7 +2018,18 @@ export default function App() {
                 drawWaveformInCanvasScrolled(ctx, visibleStartX, y, visibleWidth, height - 16, visibleWaveformData)
             }
         } else if (isRecording && realtimeAudioData.length > 0) {
-            const visibleWaveformData = generateRealtimeWaveformData(realtimeAudioData, Math.floor(visibleWidth))
+            // Use timeline width instead of clip width for stable waveform during recording
+            const timelineDuration = calculateTimelineDuration(capturedFrames.length)
+            const timelineWidth = timelineDuration * 100 * timelineZoom
+            const fullWaveformData = getCachedWaveform(null, realtimeAudioData, Math.floor(timelineWidth))
+            
+            // Calculate visible portion of waveform using timeline width
+            const startRatio = Math.max(0, (visibleStartX - screenX) / timelineWidth)
+            const endRatio = Math.min(1, (visibleEndX - screenX) / timelineWidth)
+            const startIndex = Math.floor(startRatio * fullWaveformData.length)
+            const endIndex = Math.ceil(endRatio * fullWaveformData.length)
+            const visibleWaveformData = fullWaveformData.slice(startIndex, endIndex)
+            
             if (visibleWaveformData.length > 0) {
                 drawWaveformInCanvasScrolled(ctx, visibleStartX, y, visibleWidth, height - 16, visibleWaveformData)
             }
@@ -2247,7 +2266,7 @@ export default function App() {
     // Update timeline rendering on state changes (direct rendering)
     useEffect(() => {
         renderTimelineCanvas()
-    }, [capturedFrames, capturedAudio, realtimeAudioData, isRecording, currentFrameIndex, clipTrimStart, clipTrimEnd, timelineZoom, viewportOffset.x])
+    }, [capturedFrames, capturedAudio, realtimeAudioData.length, isRecording, currentFrameIndex, clipTrimStart, clipTrimEnd, timelineZoom, viewportOffset.x])
     
     // ResizeObserver for efficient canvas resizing
     useEffect(() => {
