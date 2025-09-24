@@ -181,6 +181,8 @@ export default function App() {
     const [currentFrameIndex, setCurrentFrameIndex] = useState(0)
     const [playbackSpeed, setPlaybackSpeed] = useState(1)
     const [timelineZoom, setTimelineZoom] = useState(1) // Zoom level for timeline
+    const [clipTrimStart, setClipTrimStart] = useState(0) // Start frame for trimmed clip
+    const [clipTrimEnd, setClipTrimEnd] = useState(0) // End frame for trimmed clip
     const playbackAnimationFrameRef = useRef<number | null>(null)
     const playbackFrameIndexRef = useRef(0)
     const lastPlaybackTime = useRef(0)
@@ -333,6 +335,10 @@ export default function App() {
                                 updatedFrames[0].imageBitmap.close()
                                 return updatedFrames.slice(1)
                             }
+
+                            // Update trim end when frames change
+                            setClipTrimEnd(updatedFrames.length - 1)
+
                             return updatedFrames
                         })
                     }
@@ -441,8 +447,8 @@ export default function App() {
             console.log(`Starting playback with ${capturedFrames.length} frames`)
             stopStreaming()
             setIsPlayingback(true)
-            setCurrentFrameIndex(0)
-            playbackFrameIndexRef.current = 0
+            setCurrentFrameIndex(clipTrimStart)
+            playbackFrameIndexRef.current = clipTrimStart
             lastPlaybackTime.current = performance.now()
         }
     }
@@ -500,8 +506,14 @@ export default function App() {
                     setCurrentFrameIndex(frameIndex)
                 }
 
-                // Advance frame index
-                playbackFrameIndexRef.current = (playbackFrameIndexRef.current + 1) % capturedFrames.length
+                // Advance frame index within trim bounds
+                const nextFrame = playbackFrameIndexRef.current + 1
+                if (nextFrame > clipTrimEnd) {
+                    // Loop back to start of trimmed section
+                    playbackFrameIndexRef.current = clipTrimStart
+                } else {
+                    playbackFrameIndexRef.current = nextFrame
+                }
                 lastPlaybackTime.current = now
             }
 
@@ -522,7 +534,8 @@ export default function App() {
     const onScrubTimeline = (frameIndex: number) => {
         if (capturedFrames.length === 0) return
 
-        const clampedIndex = Math.max(0, Math.min(frameIndex, capturedFrames.length - 1))
+        // Clamp to trim bounds
+        const clampedIndex = Math.max(clipTrimStart, Math.min(frameIndex, clipTrimEnd))
         setCurrentFrameIndex(clampedIndex)
         playbackFrameIndexRef.current = clampedIndex
 
@@ -547,6 +560,8 @@ export default function App() {
         setCurrentFrameIndex(0)
         setIsPlayingback(false)
         setIsRecording(false)
+        setClipTrimStart(0)
+        setClipTrimEnd(0)
 
         if (playbackAnimationFrameRef.current) {
             cancelAnimationFrame(playbackAnimationFrameRef.current)
@@ -598,6 +613,82 @@ export default function App() {
 
         // Prevent default to avoid text selection
         e.preventDefault()
+    }
+
+    // Left trim handle dragging functionality
+    const onLeftTrimMouseDown = (e: React.MouseEvent) => {
+        if (capturedFrames.length === 0) return
+
+        // Get the initial timeline container reference
+        const initialTimelineContainer = (e.target as HTMLElement).closest('.timeline-track-container')
+        if (!initialTimelineContainer) return
+
+        const initialRect = initialTimelineContainer.getBoundingClientRect()
+        const trackLabelWidth = 64 // w-16 in Tailwind = 64px
+        const borderWidth = 1 // border-r adds 1px
+        const totalOffset = trackLabelWidth + borderWidth
+        const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+
+        const handleMouseMove = (e: MouseEvent) => {
+            // Use the initial container rect, ignore vertical movement
+            const relativeX = e.clientX - initialRect.left - totalOffset
+            const progress = Math.max(0, Math.min(1, relativeX / clipWidth))
+            const frameIndex = Math.floor(progress * capturedFrames.length)
+
+            // Ensure left trim doesn't exceed right trim
+            const newLeftTrim = Math.min(frameIndex, clipTrimEnd - 1)
+            setClipTrimStart(Math.max(0, newLeftTrim))
+        }
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+
+        // Prevent default to avoid text selection
+        e.preventDefault()
+        e.stopPropagation()
+    }
+
+    // Right trim handle dragging functionality
+    const onRightTrimMouseDown = (e: React.MouseEvent) => {
+        if (capturedFrames.length === 0) return
+
+        // Get the initial timeline container reference
+        const initialTimelineContainer = (e.target as HTMLElement).closest('.timeline-track-container')
+        if (!initialTimelineContainer) return
+
+        const initialRect = initialTimelineContainer.getBoundingClientRect()
+        const trackLabelWidth = 64 // w-16 in Tailwind = 64px
+        const borderWidth = 1 // border-r adds 1px
+        const totalOffset = trackLabelWidth + borderWidth
+        const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+
+        const handleMouseMove = (e: MouseEvent) => {
+            // Use the initial container rect, ignore vertical movement
+            const relativeX = e.clientX - initialRect.left - totalOffset
+            const progress = Math.max(0, Math.min(1, relativeX / clipWidth))
+            const frameIndex = Math.floor(progress * capturedFrames.length)
+
+            // Ensure right trim doesn't go below left trim
+            const newRightTrim = Math.max(frameIndex, clipTrimStart + 1)
+            setClipTrimEnd(Math.min(capturedFrames.length - 1, newRightTrim))
+        }
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+
+        // Prevent default to avoid text selection
+        e.preventDefault()
+        e.stopPropagation()
     }
 
     return (
@@ -767,8 +858,16 @@ export default function App() {
             <div className="w-full max-w-[80vw] border border-primary/10 rounded-md bg-primary/10 overflow-hidden">
                 {/* Timeline Header */}
                 <div className="flex items-center justify-between px-3 py-1 border-b border-primary/10 bg-black/40">
-                    <div className="text-sm font-mono font-medium text-primary/70">
-                        {formatTimecode(currentFrameIndex)}
+                    <div className="flex items-center gap-4">
+                        <div className="text-sm font-mono font-medium text-primary/70">
+                            {formatTimecode(currentFrameIndex)}
+                        </div>
+                        {capturedFrames.length > 0 &&
+                            (clipTrimStart > 0 || clipTrimEnd < capturedFrames.length - 1) && (
+                                <div className="text-xs font-mono text-primary/50">
+                                    Trim: {formatTimecode(clipTrimStart)} - {formatTimecode(clipTrimEnd)}
+                                </div>
+                            )}
                     </div>
                     <div className="flex items-center gap-3">
                         <Button
@@ -844,6 +943,25 @@ export default function App() {
                                 minWidth: '100px',
                             }}
                         >
+                            {/* Left Trim Overlay */}
+                            {clipTrimStart > 0 && (
+                                <div
+                                    className="absolute top-0 left-0 h-full bg-black/50 z-10"
+                                    style={{
+                                        width: `${(clipTrimStart / capturedFrames.length) * 100}%`,
+                                    }}
+                                ></div>
+                            )}
+
+                            {/* Right Trim Overlay */}
+                            {clipTrimEnd < capturedFrames.length - 1 && (
+                                <div
+                                    className="absolute top-0 right-0 h-full bg-black/50 z-10"
+                                    style={{
+                                        width: `${((capturedFrames.length - 1 - clipTrimEnd) / capturedFrames.length) * 100}%`,
+                                    }}
+                                ></div>
+                            )}
                             {/* Clip Preview Frames */}
                             {(() => {
                                 const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
@@ -890,6 +1008,24 @@ export default function App() {
                             <div className="absolute bottom-0 left-0 right-0 h-5 flex items-center justify-start pl-2 bg-primary/5 text-xs text-primary/90 font-medium">
                                 Recorded Clip
                             </div>
+
+                            {/* Left Trim Handle */}
+                            <div
+                                className="absolute top-0 left-0 w-2 h-full bg-primary/0 cursor-ew-resize hover:bg-primary/60 transition-colors z-20"
+                                onMouseDown={onLeftTrimMouseDown}
+                                style={{
+                                    borderRadius: '2px 0 0 2px',
+                                }}
+                            ></div>
+
+                            {/* Right Trim Handle */}
+                            <div
+                                className="absolute top-0 right-0 w-2 h-full bg-primary/0 cursor-ew-resize hover:bg-primary/60 transition-colors z-20"
+                                onMouseDown={onRightTrimMouseDown}
+                                style={{
+                                    borderRadius: '0 2px 2px 0',
+                                }}
+                            ></div>
                         </div>
                     </div>
 
