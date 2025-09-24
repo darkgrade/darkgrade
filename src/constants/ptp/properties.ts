@@ -38,11 +38,18 @@ export const parseShutter = (v: string): [number, number] => {
     const num = parseFloat(s)
     if (isNaN(num)) return [1, 1]
     
-    // For values < 1, convert to fraction (e.g., 0.25 -> 1/4)
-    if (num < 1) return [1, Math.round(1 / num)]
+    // Sony camera uses:
+    // - Decimal notation (with denominator 10) for speeds >= 0.4" (30", 15", 8", 4", 2", 1", 0.8", 0.6", 0.4")
+    // - Fraction notation for speeds < 0.4" (1/3, 1/4, 1/8, 1/15, etc.)
     
-    // For whole seconds, use denominator 10 for display as X.0"
-    return [Math.round(num * 10), 10]
+    if (num >= 0.4) {
+        // Use decimal notation with denominator 10
+        return [Math.round(num * 10), 10]
+    } else {
+        // Convert to fraction for fast speeds
+        const denominator = Math.round(1 / num)
+        return [1, denominator]
+    }
 }
 
 /**
@@ -99,7 +106,7 @@ export const PTPProperties = {
             return encodePTPValue(value * 100, DataType.UINT16)
         },
         decode: (value: HexCode | Uint8Array) => {
-            return `f/${decodePTPValue(value as Uint8Array, DataType.UINT16) / 100}"`
+            return `f/${decodePTPValue(value as Uint8Array, DataType.UINT16) / 100}`
         },
     },
 } as const satisfies PropertyDefinition<any>

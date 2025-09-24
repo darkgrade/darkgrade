@@ -70,10 +70,13 @@ export class SonyCamera extends GenericPTPCamera {
 
         // Parse Sony's all-properties response to find our property
         const value = parseSDIExtDevicePropInfo(response.data)
+        console.log(`  Got raw value for ${propertyName}:`, Array.from(value.currentValueBytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '))
 
         // Decode the value if the property has a decode function
         if ('decode' in property && typeof property.decode === 'function') {
-            return property.decode(value.currentValueBytes) as T
+            const decoded = property.decode(value.currentValueBytes) as T
+            console.log(`  Decoded ${propertyName} to: "${decoded}"`)
+            return decoded
         }
 
         return value.currentValueRaw as T
@@ -98,6 +101,7 @@ export class SonyCamera extends GenericPTPCamera {
         let encodedValue: Uint8Array
         if ('encode' in property && typeof property.encode === 'function') {
             encodedValue = property.encode(value)
+            console.log(`  Encoded ${propertyName} value "${value}" to:`, Array.from(encodedValue).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '))
         } else if ('enum' in property && property.enum && typeof value === 'string' && value in property.enum) {
             encodedValue = encodePTPValue(property.enum[value as keyof typeof property.enum], property.type)
         } else {
@@ -111,8 +115,10 @@ export class SonyCamera extends GenericPTPCamera {
         })
 
         if (response.code !== PTPResponses.OK.code) {
+            console.log(`  Failed to set ${propertyName} to "${value}", response code: 0x${response.code.toString(16)}`)
             throw new Error(`Failed to set property ${propertyName}: 0x${response.code.toString(16)}`)
         }
+        console.log(`  Successfully set ${propertyName} to "${value}"`)
     }
 
     /**

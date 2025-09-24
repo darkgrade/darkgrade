@@ -29,7 +29,7 @@ export const SonyProperties = {
             return hexValue === 0xfffd ? 'Iris Close' :
                    hexValue === 0xfffe ? '--' :
                    hexValue === 0xffff ? 'nothing to display' :
-                   `f/${hexValue / 100}"`
+                   `f/${hexValue / 100}`
         },
     },
 
@@ -51,11 +51,24 @@ export const SonyProperties = {
             const numerator = (hexValue >> 16) & 0xffff
             const denominator = hexValue & 0xffff
             
-            return denominator === 0x000a 
-                ? `${numerator / 10}"`
-                : numerator === 1 
-                  ? `1/${denominator}`
-                  : `${numerator}/${denominator}`
+            // Handle fractions where numerator is 1
+            if (numerator === 1) {
+                return `1/${denominator}`
+            }
+            
+            // Handle whole/decimal seconds (denominator is 10)
+            if (denominator === 0x000a) {
+                const seconds = numerator / 10
+                // Return whole seconds without decimal point
+                if (seconds === Math.floor(seconds)) {
+                    return `${Math.floor(seconds)}"`
+                }
+                // Return decimal seconds with precision
+                return `${seconds}"`
+            }
+            
+            // Other fractions
+            return `${numerator}/${denominator}`
         },
     },
 
