@@ -32,6 +32,11 @@ interface CapturedFrame {
     }
 }
 
+interface AudioSample {
+    timestamp: number
+    audioBuffer: AudioBuffer
+}
+
 const useConsoleCapture = (enabled: boolean) => {
     const [messages, setMessages] = useState<ConsoleMessage[]>([])
 
@@ -177,16 +182,46 @@ export default function App() {
     // Timeline and recording state
     const [isRecording, setIsRecording] = useState(false)
     const [capturedFrames, setCapturedFrames] = useState<CapturedFrame[]>([])
+    const [capturedAudio, setCapturedAudio] = useState<AudioSample[]>([])
     const [isPlayingback, setIsPlayingback] = useState(false)
     const [currentFrameIndex, setCurrentFrameIndex] = useState(0)
     const [playbackSpeed, setPlaybackSpeed] = useState(1)
     const [timelineZoom, setTimelineZoom] = useState(1) // Zoom level for timeline
     const [clipTrimStart, setClipTrimStart] = useState(0) // Start frame for trimmed clip
     const [clipTrimEnd, setClipTrimEnd] = useState(0) // End frame for trimmed clip
+
+    // Audio recording state
+    const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
+    const [selectedAudioDevice, setSelectedAudioDevice] = useState<string>('')
+    const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
+    const [audioContext, setAudioContext] = useState<AudioContext | null>(null)
+    const [audioSource, setAudioSource] = useState<AudioBufferSourceNode | null>(null)
     const playbackAnimationFrameRef = useRef<number | null>(null)
     const playbackFrameIndexRef = useRef(0)
     const lastPlaybackTime = useRef(0)
     const maxFrames = 300 // Limit to ~10 seconds at 30fps
+
+    // Initialize audio context and get audio devices
+    useEffect(() => {
+        const initAudio = async () => {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices()
+                const audioInputs = devices.filter(device => device.kind === 'audioinput')
+                setAudioDevices(audioInputs)
+
+                if (audioInputs.length > 0) {
+                    setSelectedAudioDevice(audioInputs[0].deviceId)
+                }
+
+                const context = new AudioContext()
+                setAudioContext(context)
+            } catch (error) {
+                console.error('Error initializing audio:', error)
+            }
+        }
+
+        initAudio()
+    }, [])
 
     // Auto-scroll terminal to bottom when new messages arrive
     useEffect(() => {
@@ -200,6 +235,16 @@ export default function App() {
         return () => {
             // Clean up all captured frames
             capturedFrames.forEach(frame => frame.imageBitmap.close())
+
+            // Clean up audio context
+            if (audioContext) {
+                audioContext.close()
+            }
+
+            // Stop media recorder
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop()
+            }
 
             // Cancel any running animation frames
             if (playbackAnimationFrameRef.current) {
@@ -423,10 +468,61 @@ export default function App() {
     }
 
     // Timeline and playback functions
-    const onToggleRecording = () => {
-        setIsRecording(prev => !prev)
-        if (isRecording && capturedFrames.length > 0) {
-            console.log(`Recording stopped. Captured ${capturedFrames.length} frames.`)
+    const onToggleRecording = async () => {
+        if (isRecording) {
+            // Stop recording
+            setIsRecording(false)
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop()
+            }
+            console.log(`Recording stopped. Captured ${capturedFrames.length} frames and ${capturedAudio.length} audio samples.`)
+        } else {
+            // Start recording
+            setIsRecording(true)
+            
+            // Start audio recording if available
+            if (selectedAudioDevice && audioContext) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: { deviceId: selectedAudioDevice }
+                    })
+
+                    const recorder = new MediaRecorder(stream)
+                    const audioChunks: Blob[] = []
+
+                    recorder.ondataavailable = event => {
+                        if (event.data.size > 0) {
+                            audioChunks.push(event.data)
+                        }
+                    }
+
+                    recorder.onstop = async () => {
+                        try {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
+                            const arrayBuffer = await audioBlob.arrayBuffer()
+                            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+
+                            setCapturedAudio(prev => [...prev, {
+                                timestamp: performance.now(),
+                                audioBuffer
+                            }])
+                            
+                            console.log('Audio captured:', audioBuffer.duration, 'seconds')
+                        } catch (error) {
+                            console.error('Error processing audio:', error)
+                        }
+
+                        // Clean up stream
+                        stream.getTracks().forEach(track => track.stop())
+                    }
+
+                    setMediaRecorder(recorder)
+                    recorder.start(100) // Collect data every 100ms
+                    console.log('Audio recording started')
+                } catch (error) {
+                    console.error('Error starting audio recording:', error)
+                }
+            }
         }
     }
 
@@ -443,6 +539,17 @@ export default function App() {
                 cancelAnimationFrame(playbackAnimationFrameRef.current)
                 playbackAnimationFrameRef.current = null
             }
+            
+            // Stop audio playback
+            if (audioSource) {
+                try {
+                    audioSource.stop()
+                    setAudioSource(null)
+                    console.log('Audio playback stopped')
+                } catch (error) {
+                    console.error('Error stopping audio playback:', error)
+                }
+            }
         } else {
             console.log(`Starting playback with ${capturedFrames.length} frames`)
             stopStreaming()
@@ -450,6 +557,40 @@ export default function App() {
             setCurrentFrameIndex(clipTrimStart)
             playbackFrameIndexRef.current = clipTrimStart
             lastPlaybackTime.current = performance.now()
+            
+            // Start audio playback if available
+            if (capturedAudio.length > 0 && audioContext && capturedFrames.length > 0) {
+                try {
+                    const audioBuffer = capturedAudio[0].audioBuffer
+                    const source = audioContext.createBufferSource()
+                    source.buffer = audioBuffer
+                    source.connect(audioContext.destination)
+                    
+                    // Calculate timing based on actual frame timestamps
+                    const firstFrameTime = capturedFrames[0].timestamp
+                    const lastFrameTime = capturedFrames[capturedFrames.length - 1].timestamp
+                    const totalVideoTime = (lastFrameTime - firstFrameTime) / 1000 // Convert to seconds
+                    
+                    // Calculate trim times based on proportional position in the recording
+                    const trimStartRatio = clipTrimStart / (capturedFrames.length - 1)
+                    const trimEndRatio = clipTrimEnd / (capturedFrames.length - 1)
+                    
+                    const trimStartTime = trimStartRatio * audioBuffer.duration
+                    const trimEndTime = trimEndRatio * audioBuffer.duration
+                    const trimDuration = trimEndTime - trimStartTime
+                    
+                    source.start(0, trimStartTime, trimDuration)
+                    setAudioSource(source)
+                    console.log('Audio playback started:', {
+                        totalVideoTime,
+                        audioBufferDuration: audioBuffer.duration,
+                        trimStartTime,
+                        trimDuration
+                    })
+                } catch (error) {
+                    console.error('Error starting audio playback:', error)
+                }
+            }
         }
     }
 
@@ -528,6 +669,16 @@ export default function App() {
                 cancelAnimationFrame(playbackAnimationFrameRef.current)
                 playbackAnimationFrameRef.current = null
             }
+            
+            // Clean up audio source
+            if (audioSource) {
+                try {
+                    audioSource.stop()
+                    setAudioSource(null)
+                } catch (error) {
+                    // Audio source might already be stopped
+                }
+            }
         }
     }, [isPlayingback, capturedFrames.length, playbackSpeed])
 
@@ -557,11 +708,27 @@ export default function App() {
         // Clean up ImageBitmap resources
         capturedFrames.forEach(frame => frame.imageBitmap.close())
         setCapturedFrames([])
+        setCapturedAudio([])
         setCurrentFrameIndex(0)
         setIsPlayingback(false)
         setIsRecording(false)
         setClipTrimStart(0)
         setClipTrimEnd(0)
+
+        // Stop any active recording
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop()
+        }
+
+        // Stop any audio playback
+        if (audioSource) {
+            try {
+                audioSource.stop()
+                setAudioSource(null)
+            } catch (error) {
+                // Audio source might already be stopped
+            }
+        }
 
         if (playbackAnimationFrameRef.current) {
             cancelAnimationFrame(playbackAnimationFrameRef.current)
@@ -691,6 +858,126 @@ export default function App() {
         e.stopPropagation()
     }
 
+    // Generate waveform data from audio buffer
+    const generateWaveformData = (audioBuffer: AudioBuffer, width: number): number[] => {
+        const samples = audioBuffer.getChannelData(0) // Use first channel
+        const samplesPerPixel = samples.length / width
+        const waveformData: number[] = []
+
+        // First pass: find peak values for normalization
+        let globalMax = 0
+        for (let i = 0; i < samples.length; i++) {
+            globalMax = Math.max(globalMax, Math.abs(samples[i]))
+        }
+
+        // Avoid division by zero
+        if (globalMax === 0) globalMax = 1
+
+        // Second pass: generate normalized waveform data
+        for (let i = 0; i < width; i++) {
+            const start = Math.floor(i * samplesPerPixel)
+            const end = Math.floor((i + 1) * samplesPerPixel)
+
+            let max = 0
+            let rms = 0
+            let count = 0
+            
+            for (let j = start; j < end; j++) {
+                if (j < samples.length) {
+                    const sample = Math.abs(samples[j])
+                    max = Math.max(max, sample)
+                    rms += sample * sample
+                    count++
+                }
+            }
+            
+            // Normalize and use RMS for smoother waveform visualization
+            rms = count > 0 ? Math.sqrt(rms / count) : 0
+            const normalizedMax = (max / globalMax) // Scale to 100% of full height
+            const normalizedRms = (rms / globalMax)
+            
+            // Blend max and RMS, normalized to full scale
+            waveformData.push(Math.max(normalizedMax * 0.3, normalizedRms))
+        }
+
+        console.log('Waveform generated:', {
+            samples: samples.length,
+            width: width,
+            globalMax: globalMax,
+            maxWaveformValue: Math.max(...waveformData),
+            minWaveformValue: Math.min(...waveformData)
+        })
+
+        return waveformData
+    }
+
+    // Render waveform to canvas
+    const renderWaveform = (canvas: HTMLCanvasElement, waveformData: number[], width: number, height: number) => {
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        // Set canvas size with 2x pixel density for high resolution
+        const pixelDensity = 2
+        canvas.width = width * pixelDensity
+        canvas.height = height * pixelDensity
+        canvas.style.width = width + 'px'
+        canvas.style.height = height + 'px'
+        ctx.scale(pixelDensity, pixelDensity)
+
+        ctx.clearRect(0, 0, width, height)
+        
+        const labelHeight = 16 // Height of the label at bottom (h-4 = 16px)
+        const bottomY = height - labelHeight // Zero line right on top of label
+        const maxAmplitude = height - labelHeight // Use full available height
+
+        // Create gradient fill (80% opacity at top, 20% at bottom)
+        const gradient = ctx.createLinearGradient(0, 0, 0, bottomY)
+        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.7)') // 80% opacity at top
+        gradient.addColorStop(1, 'rgba(99, 102, 241, 0)') // 20% opacity at bottom
+        
+        // Draw filled waveform area
+        ctx.fillStyle = gradient
+        ctx.beginPath()
+        ctx.moveTo(0, bottomY)
+        
+        // Draw waveform peaks going upward from bottom
+        for (let x = 0; x < waveformData.length; x++) {
+            // Boost amplitude to use full height (since we normalized to 0-1 range)
+            const amplitude = waveformData[x] * maxAmplitude * 2 // Double to compensate for positive-only display
+            const clampedAmplitude = Math.min(amplitude, maxAmplitude) // Don't exceed available height
+            ctx.lineTo(x, bottomY - clampedAmplitude)
+        }
+        
+        // Connect back to bottom
+        ctx.lineTo(waveformData.length - 1, bottomY)
+        ctx.closePath()
+        ctx.fill()
+
+        // Draw waveform outline with crisp lines
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
+        ctx.lineWidth = 1
+        ctx.imageSmoothingEnabled = false
+        
+        // Draw peak line
+        ctx.beginPath()
+        ctx.moveTo(0, bottomY)
+        for (let x = 0; x < waveformData.length; x++) {
+            // Boost amplitude to use full height (since we normalized to 0-1 range)
+            const amplitude = waveformData[x] * maxAmplitude * 2 // Double to compensate for positive-only display
+            const clampedAmplitude = Math.min(amplitude, maxAmplitude) // Don't exceed available height
+            ctx.lineTo(x, bottomY - clampedAmplitude)
+        }
+        ctx.stroke()
+
+        // Draw baseline at bottom (above label)
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(0, bottomY)
+        ctx.lineTo(width, bottomY)
+        ctx.stroke()
+    }
+
     return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-6 p-4">
             <div className="flex flex-row items-center justify-center gap-4 flex-wrap">
@@ -704,6 +991,22 @@ export default function App() {
                     />
                     Display Console
                 </label>
+{audioDevices.length > 0 && (
+                    <label className="flex items-center gap-2 text-sm">
+                        <span>Audio Device:</span>
+                        <select
+                            value={selectedAudioDevice}
+                            onChange={e => setSelectedAudioDevice(e.target.value)}
+                            className="px-2 py-1 text-sm border border-primary/20 rounded bg-primary/5 text-primary/80"
+                        >
+                            {audioDevices.map(device => (
+                                <option key={device.deviceId} value={device.deviceId}>
+                                    {device.label || `Microphone ${device.deviceId.slice(-4)}`}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
             </div>
 
             {/* Always show live view frame */}
@@ -918,13 +1221,11 @@ export default function App() {
                     </div>
                 </div>
 
-                {/* Timeline Track */}
+                {/* Video Track */}
                 <div className="relative h-20 bg-black/50 timeline-track-container">
                     {/* Track Label */}
                     <div className="absolute left-0 top-0 w-16 h-full bg-black/40 border-r border-primary/10 flex items-center justify-center">
-                        <span className="text-xs text-primary/50 writing-mode-vertical transform -rotate-90">
-                            Video 1
-                        </span>
+                        <span className="text-xs text-primary/50 writing-mode-vertical transform">V1</span>
                     </div>
 
                     {/* Clip Container */}
@@ -1031,15 +1332,123 @@ export default function App() {
 
                     {/* Vertical Playhead */}
                     <div
-                        className="absolute top-0 bottom-0 w-0.5 bg-primary/60 z-10 cursor-ew-resize"
+                        className="absolute top-0 w-0.5 bg-primary/60 z-10 cursor-ew-resize"
                         style={{
                             left: `${64 + 1 + (currentFrameIndex / Math.max(1, capturedFrames.length - 1)) * ((capturedFrames.length / 30) * 100 * timelineZoom)}px`,
+                            height: `${80 + (mediaRecorder || capturedAudio.length > 0 ? 21 : 0)}px`, // Video track (80px) + audio track (20px) + border (1px)
                             boxShadow: '0 0 4px rgba(0, 0, 0, 0.3)',
                         }}
                         onMouseDown={onPlayheadMouseDown}
                     >
                         {/* Playhead Handle */}
                         <div className="absolute -top-1 -left-2 w-4 h-4 bg-primary/80 rounded-full cursor-ew-resize border border-primary/40"></div>
+                    </div>
+                </div>
+
+                {/* Audio Track */}
+                <div className="relative h-20 bg-black/60 border-t border-primary/10">
+                    {/* Track Label */}
+                    <div className="absolute left-0 top-0 w-16 h-full bg-black/40 border-r border-primary/10 flex items-center justify-center">
+                        <span className="text-xs text-primary/50 writing-mode-vertical transform">A1</span>
+                    </div>
+
+                    {/* Audio Clip Container */}
+                    <div
+                        className="absolute left-16 top-2 h-16 overflow-hidden"
+                        style={{
+                            width: `calc(100% - 64px)`,
+                            scrollBehavior: 'smooth',
+                        }}
+                    >
+                        {/* Audio Clip */}
+                        {(mediaRecorder || capturedAudio.length > 0) && (
+                            <div
+                                className="relative bg-primary/3 rounded h-full border border-primary/10 overflow-hidden"
+                                style={{
+                                    width: `${(capturedFrames.length / 30) * 100 * timelineZoom}px`,
+                                    minWidth: '100px',
+                                }}
+                            >
+                                {/* Left Trim Overlay */}
+                                {clipTrimStart > 0 && (
+                                    <div
+                                        className="absolute top-0 left-0 h-full bg-black/50 z-10"
+                                        style={{
+                                            width: `${(clipTrimStart / capturedFrames.length) * 100}%`,
+                                        }}
+                                    ></div>
+                                )}
+
+                                {/* Right Trim Overlay */}
+                                {clipTrimEnd < capturedFrames.length - 1 && (
+                                    <div
+                                        className="absolute top-0 right-0 h-full bg-black/50 z-10"
+                                        style={{
+                                            width: `${((capturedFrames.length - 1 - clipTrimEnd) / capturedFrames.length) * 100}%`,
+                                        }}
+                                    ></div>
+                                )}
+
+                                {/* Audio Waveform */}
+                                <canvas
+                                    className="w-full h-full bg-gradient-to-r from-primary/5 to-primary/10"
+                                    ref={canvas => {
+                                        if (canvas) {
+                                            const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+                                            
+                                            if (capturedAudio.length > 0 && capturedAudio[0]) {
+                                                // Show actual waveform
+                                                const waveformData = generateWaveformData(
+                                                    capturedAudio[0].audioBuffer,
+                                                    Math.floor(clipWidth)
+                                                )
+                                                const canvasHeight = canvas.clientHeight || 56 // Use actual canvas height (64px clip - 16px label = 48px available)
+                                                renderWaveform(canvas, waveformData, Math.floor(clipWidth), canvasHeight)
+                                            } else if (mediaRecorder) {
+                                                // Show recording indicator
+                                                const ctx = canvas.getContext('2d')
+                                                if (ctx) {
+                                                    const canvasHeight = canvas.clientHeight || 56
+                                                    canvas.width = Math.floor(clipWidth)
+                                                    canvas.height = canvasHeight
+                                                    ctx.fillStyle = 'rgba(99, 102, 241, 0.1)'
+                                                    ctx.fillRect(0, 0, canvas.width, canvas.height)
+                                                    
+                                                    // Add "Recording..." text
+                                                    ctx.fillStyle = 'rgba(99, 102, 241, 0.6)'
+                                                    ctx.font = '12px monospace'
+                                                    ctx.textAlign = 'center'
+                                                    ctx.fillText('🎤 Recording...', canvas.width / 2, (canvasHeight - 16) / 2 + 4) // Position above label area
+                                                }
+                                            }
+                                        }
+                                    }}
+                                />
+
+                                {/* Audio Clip Label */}
+                                <div className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-start pl-2 bg-primary/3 text-xs text-primary/70 font-medium">
+                                    Audio Clip
+                                </div>
+
+                                {/* Left Trim Handle */}
+                                <div
+                                    className="absolute top-0 left-0 w-2 h-full bg-primary/0 cursor-ew-resize hover:bg-primary/60 transition-colors z-20"
+                                    onMouseDown={onLeftTrimMouseDown}
+                                    style={{
+                                        borderRadius: '2px 0 0 2px',
+                                    }}
+                                ></div>
+
+                                {/* Right Trim Handle */}
+                                <div
+                                    className="absolute top-0 right-0 w-2 h-full bg-primary/0 cursor-ew-resize hover:bg-primary/60 transition-colors z-20"
+                                    onMouseDown={onRightTrimMouseDown}
+                                    style={{
+                                        borderRadius: '0 2px 2px 0',
+                                    }}
+                                ></div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
