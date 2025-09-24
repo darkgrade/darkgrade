@@ -3,7 +3,7 @@ import './globals.css'
 import React from 'react'
 import * as ReactDOM from 'react-dom/client'
 import { Camera } from '@api/camera'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { CameraInfo } from '@camera/interfaces/camera.interface'
 import type { ButtonHTMLAttributes } from 'react'
 
@@ -189,6 +189,7 @@ export default function App() {
     const [timelineZoom, setTimelineZoom] = useState(1) // Zoom level for timeline
     const [clipTrimStart, setClipTrimStart] = useState(0) // Start frame for trimmed clip
     const [clipTrimEnd, setClipTrimEnd] = useState(0) // End frame for trimmed clip
+    const [needsScrollbar, setNeedsScrollbar] = useState(false) // Track if scrollbar is needed to prevent layout shift
 
     // Audio recording state
     const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
@@ -239,6 +240,17 @@ export default function App() {
         return () => {
             // Clean up all captured frames
             capturedFrames.forEach(frame => frame.imageBitmap.close())
+
+            // Clean up thumbnail cache
+            const thumbnailCache = thumbnailCacheRef.current
+            thumbnailCache.forEach(cached => {
+                cached.canvas.width = 0
+                cached.canvas.height = 0
+            })
+            thumbnailCache.clear()
+
+            // Clean up waveform cache
+            waveformCacheRef.current = { data: null, audioLength: 0, width: 0 }
 
             // Clean up audio context
             if (audioContext) {
@@ -749,17 +761,23 @@ export default function App() {
     }, [isPlayingback, capturedFrames.length, playbackSpeed])
 
     const onScrubTimeline = (frameIndex: number) => {
-        if (capturedFrames.length === 0) return
-
-        // Clamp to trim bounds
-        const clampedIndex = Math.max(clipTrimStart, Math.min(frameIndex, clipTrimEnd))
-        setCurrentFrameIndex(clampedIndex)
-        playbackFrameIndexRef.current = clampedIndex
+        // Allow scrubbing to any position in timeline, even outside clip bounds
+        setCurrentFrameIndex(frameIndex)
+        playbackFrameIndexRef.current = frameIndex
 
         const canvas = canvasRef.current
         const ctx = canvas?.getContext('2d')
         if (!canvas || !ctx) return
 
+        // Show blank/black frame if outside clip bounds or no frames exist
+        if (capturedFrames.length === 0 || frameIndex < clipTrimStart || frameIndex > clipTrimEnd) {
+            ctx.fillStyle = 'black'
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+            return
+        }
+
+        // Clamp frame index to available frames for display
+        const clampedIndex = Math.max(clipTrimStart, Math.min(frameIndex, clipTrimEnd))
         const frame = capturedFrames[clampedIndex]
         if (frame) {
             canvas.width = frame.imageBitmap.width
@@ -1146,11 +1164,159 @@ export default function App() {
         ctx.stroke()
     }
 
-    // Canvas-based timeline rendering
+    // Virtualized Canvas-based timeline rendering
     const timelineCanvasRef = useRef<HTMLCanvasElement>(null)
     const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false)
     const [isDraggingLeftTrim, setIsDraggingLeftTrim] = useState(false)
     const [isDraggingRightTrim, setIsDraggingRightTrim] = useState(false)
+    
+    // Viewport management for virtualization with scrolling
+    const [viewportOffset, setViewportOffset] = useState({ x: 0, y: 0 })
+    const viewportRef = useRef({ x: 0, y: 0, width: 0, height: 0, offsetX: 0, offsetY: 0 })
+    const lastRenderParams = useRef({ 
+        capturedFrames: 0, 
+        currentFrameIndex: -1, 
+        clipTrimStart: -1, 
+        clipTrimEnd: -1, 
+        timelineZoom: -1, 
+        viewportX: -1,
+        offsetX: -1,
+        isRecording: false,
+        realtimeAudioDataLength: 0,
+        capturedAudioLength: 0
+    })
+    
+    // Scrolling state
+    const [isDraggingTimeline, setIsDraggingTimeline] = useState(false)
+    const dragStartRef = useRef({ x: 0, y: 0, offsetX: 0 })
+    
+    // Thumbnail cache for performance
+    const thumbnailCacheRef = useRef<Map<number, { canvas: HTMLCanvasElement; timestamp: number }>>(new Map())
+    const waveformCacheRef = useRef<{ data: number[] | null; audioLength: number; width: number }>({ data: null, audioLength: 0, width: 0 })
+    
+    // Viewport class for coordinate transformation with scrolling
+    class TimelineViewport {
+        x: number = 0
+        y: number = 0
+        width: number = 0
+        height: number = 0
+        zoom: number = 1
+        offsetX: number = 0
+        offsetY: number = 0
+        
+        constructor(width: number, height: number, zoom: number, offsetX: number = 0, offsetY: number = 0) {
+            this.width = width
+            this.height = height
+            this.zoom = zoom
+            this.offsetX = offsetX
+            this.offsetY = offsetY
+            // Viewport bounds are offset by scroll position
+            this.x = offsetX
+            this.y = offsetY
+        }
+        
+        // Transform canvas coordinates to user space
+        canvasToUser(canvasX: number, canvasY: number): { x: number; y: number } {
+            return {
+                x: canvasX + this.offsetX,
+                y: canvasY + this.offsetY
+            }
+        }
+        
+        // Transform user space coordinates to canvas
+        userToCanvas(userX: number, userY: number): { x: number; y: number } {
+            return {
+                x: userX - this.offsetX,
+                y: userY - this.offsetY
+            }
+        }
+        
+        // Check if an element is visible in the viewport (accounting for scroll offset)
+        isVisible(x: number, width: number): boolean {
+            const viewportStart = this.offsetX
+            const viewportEnd = this.offsetX + this.width
+            return x + width >= viewportStart && x <= viewportEnd
+        }
+        
+        // Get the visible portion of an element (accounting for scroll offset)
+        getVisibleBounds(x: number, width: number): { x: number; width: number; clipStart: number; clipEnd: number } {
+            const viewportStart = this.offsetX
+            const viewportEnd = this.offsetX + this.width
+            
+            const startX = Math.max(x, viewportStart)
+            const endX = Math.min(x + width, viewportEnd)
+            const visibleWidth = Math.max(0, endX - startX)
+            
+            return {
+                x: startX,
+                width: visibleWidth,
+                clipStart: Math.max(0, (startX - x) / width),
+                clipEnd: Math.min(1, (endX - x) / width)
+            }
+        }
+        
+        // Get the maximum scrollable width based on content
+        getMaxScrollX(contentWidth: number): number {
+            return Math.max(0, contentWidth - this.width)
+        }
+    }
+    
+    // Optimized thumbnail renderer with caching
+    const getCachedThumbnail = (frameIndex: number, frame: CapturedFrame, targetWidth: number, targetHeight: number): HTMLCanvasElement => {
+        const cache = thumbnailCacheRef.current
+        const cacheKey = frameIndex
+        const cached = cache.get(cacheKey)
+        
+        // Check if cached thumbnail is still valid
+        if (cached && cached.timestamp === frame.timestamp) {
+            return cached.canvas
+        }
+        
+        // Create new thumbnail
+        const thumbnailCanvas = document.createElement('canvas')
+        thumbnailCanvas.width = targetWidth
+        thumbnailCanvas.height = targetHeight
+        const thumbnailCtx = thumbnailCanvas.getContext('2d')
+        
+        if (thumbnailCtx && frame.imageBitmap) {
+            // Calculate aspect ratio fit
+            const aspectRatio = frame.imageBitmap.width / frame.imageBitmap.height
+            const targetAspectRatio = targetWidth / targetHeight
+            
+            let drawWidth = targetWidth
+            let drawHeight = targetHeight
+            let offsetX = 0
+            let offsetY = 0
+            
+            if (aspectRatio > targetAspectRatio) {
+                drawHeight = targetWidth / aspectRatio
+                offsetY = (targetHeight - drawHeight) / 2
+            } else {
+                drawWidth = targetHeight * aspectRatio
+                offsetX = (targetWidth - drawWidth) / 2
+            }
+            
+            thumbnailCtx.fillStyle = 'rgba(0, 0, 0, 0.2)'
+            thumbnailCtx.fillRect(0, 0, targetWidth, targetHeight)
+            thumbnailCtx.drawImage(frame.imageBitmap, offsetX, offsetY, drawWidth, drawHeight)
+        }
+        
+        // Cache the thumbnail (limit cache size)
+        if (cache.size > 50) {
+            const oldestKey = cache.keys().next().value
+            if (oldestKey !== undefined) {
+                const oldest = cache.get(oldestKey)
+                if (oldest) {
+                    oldest.canvas.width = 0
+                    oldest.canvas.height = 0
+                }
+                cache.delete(oldestKey)
+            }
+        }
+        
+        cache.set(cacheKey, { canvas: thumbnailCanvas, timestamp: frame.timestamp })
+        return thumbnailCanvas
+    }
     
     const renderTimelineCanvas = () => {
         const canvas = timelineCanvasRef.current
@@ -1159,64 +1325,131 @@ export default function App() {
         const ctx = canvas.getContext('2d')
         if (!ctx) return
         
-        // Set canvas size with high DPI
+        // Set canvas size with high DPI (only resize if actually changed)
         const rect = canvas.getBoundingClientRect()
         const pixelRatio = window.devicePixelRatio || 1
-        canvas.width = rect.width * pixelRatio
-        canvas.height = rect.height * pixelRatio
-        ctx.scale(pixelRatio, pixelRatio)
+        const targetWidth = rect.width * pixelRatio
+        const targetHeight = rect.height * pixelRatio
         
-        // Clear canvas
-        ctx.clearRect(0, 0, rect.width, rect.height)
+        // Only resize canvas if dimensions actually changed (prevents flickering)
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth
+            canvas.height = targetHeight
+        }
+        
+        // Always reset transform to ensure consistent state
+        ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
         
         // Timeline dimensions
         const trackLabelWidth = 64
         const videoTrackHeight = 80
         const audioTrackHeight = 80
         const totalHeight = videoTrackHeight + audioTrackHeight
-        const clipWidth = Math.max(100, (capturedFrames.length / 30) * 100 * timelineZoom)
         const timecodeHeight = 20
-        const topPadding = timecodeHeight // Space for timecode and playhead head
+        const topPadding = timecodeHeight
         
-        // Draw background for tracks only
+        // Calculate timeline width (always show at least 30 seconds)
+        const minTimelineDuration = 30
+        const actualDuration = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDuration
+        const timelineDuration = Math.max(minTimelineDuration, actualDuration)
+        const timelineWidth = timelineDuration * 100 * timelineZoom
+        const clipWidth = capturedFrames.length > 0 ? (capturedFrames.length / 30) * 100 * timelineZoom : 0
+        
+        // Create viewport with scroll offset
+        const viewport = new TimelineViewport(rect.width, rect.height, timelineZoom, viewportOffset.x, viewportOffset.y)
+        viewportRef.current = { 
+            x: viewportOffset.x, 
+            y: viewportOffset.y, 
+            width: rect.width, 
+            height: rect.height, 
+            offsetX: viewportOffset.x, 
+            offsetY: viewportOffset.y 
+        }
+        
+        // Calculate content dimensions for scrolling (use timeline width, not clip width)
+        const contentWidth = trackLabelWidth + timelineWidth
+        const maxScrollX = viewport.getMaxScrollX(contentWidth)
+        
+        // Check if we need to re-render (performance optimization)
+        const currentParams = {
+            capturedFrames: capturedFrames.length,
+            currentFrameIndex,
+            clipTrimStart,
+            clipTrimEnd,
+            timelineZoom,
+            viewportX: viewport.x,
+            offsetX: viewportOffset.x,
+            isRecording, // Add recording state to cache params
+            realtimeAudioDataLength: realtimeAudioData.length, // Add realtime audio changes
+            capturedAudioLength: capturedAudio.length // Add captured audio changes
+        }
+        
+        const paramsChanged = Object.keys(currentParams).some(key => 
+            lastRenderParams.current[key as keyof typeof currentParams] !== currentParams[key as keyof typeof currentParams]
+        )
+        
+        // Always redraw if no frames exist or if dimensions changed to prevent disappearing
+        if (!paramsChanged && capturedFrames.length > 0 && canvas.width === targetWidth && canvas.height === targetHeight) {
+            // Only redraw playhead if nothing else changed
+            drawPlayheadScrolled(ctx, trackLabelWidth, topPadding + totalHeight, viewportOffset.x)
+            return
+        }
+        
+        lastRenderParams.current = currentParams
+        
+        // Clear the entire canvas
+        ctx.clearRect(0, 0, rect.width, rect.height)
+        
+        // Draw background for tracks (full timeline width)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-        ctx.fillRect(0, topPadding, rect.width, totalHeight)
+        const trackWorldWidth = timelineWidth + trackLabelWidth
+        const trackScreenX = -viewportOffset.x
+        ctx.fillRect(trackScreenX, topPadding, trackWorldWidth, totalHeight)
         
-        // Draw timecode ruler background
+        // Draw timecode ruler background (full timeline width)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
-        ctx.fillRect(0, 0, rect.width, timecodeHeight)
+        const rulerWorldWidth = timelineWidth + trackLabelWidth
+        const rulerScreenX = -viewportOffset.x
+        const rulerScreenWidth = rulerWorldWidth
+        ctx.fillRect(rulerScreenX, 0, rulerScreenWidth, timecodeHeight)
         
-        // Draw timecode markers
-        if (capturedFrames.length > 0) {
-            const totalDuration = capturedFrames.length / 30 // Assume 30fps
-            const pixelsPerSecond = 100 * timelineZoom
-            const secondInterval = Math.max(1, Math.floor(1 / timelineZoom)) // Adjust interval based on zoom
+        // Always draw timecode markers (ruler)
+        // Use the timeline duration calculated above
+        const totalDuration = timelineDuration
+        
+        const pixelsPerSecond = 100 * timelineZoom
+        const secondInterval = Math.max(1, Math.floor(1 / timelineZoom))
+        
+        // Calculate visible time range (accounting for scroll offset)
+        const visibleStartSecond = Math.floor(Math.max(0, (viewport.offsetX - trackLabelWidth) / pixelsPerSecond))
+        const visibleEndSecond = Math.ceil(Math.min(totalDuration, (viewport.offsetX + viewport.width - trackLabelWidth) / pixelsPerSecond))
+        
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.6)'
+        ctx.font = '10px monospace'
+        ctx.textAlign = 'left'
+        
+        for (let second = Math.floor(visibleStartSecond / secondInterval) * secondInterval; second <= visibleEndSecond; second += secondInterval) {
+            const worldX = trackLabelWidth + (second * pixelsPerSecond)
+            const screenX = worldX - viewportOffset.x
             
-            ctx.fillStyle = 'rgba(99, 102, 241, 0.6)'
-            ctx.font = '10px monospace'
-            ctx.textAlign = 'left'
-            
-            for (let second = 0; second <= totalDuration; second += secondInterval) {
-                const x = trackLabelWidth + (second * pixelsPerSecond)
-                if (x < rect.width) {
-                    // Draw tick mark
-                    ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)'
-                    ctx.lineWidth = 1
-                    ctx.beginPath()
-                    ctx.moveTo(x, 0)
-                    ctx.lineTo(x, timecodeHeight)
-                    ctx.stroke()
-                    
-                    // Draw timecode
-                    const minutes = Math.floor(second / 60)
-                    const secs = second % 60
-                    const timecode = `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-                    ctx.fillText(timecode, x + 4, timecodeHeight - 4)
-                }
+            if (screenX >= trackLabelWidth && screenX <= rect.width) {
+                // Draw tick mark
+                ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)'
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                ctx.moveTo(screenX, 0)
+                ctx.lineTo(screenX, timecodeHeight)
+                ctx.stroke()
+                
+                // Draw timecode
+                const minutes = Math.floor(second / 60)
+                const secs = second % 60
+                const timecode = `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+                ctx.fillText(timecode, screenX + 4, timecodeHeight - 4)
             }
         }
         
-        // Draw track labels
+        // Draw track labels (always visible)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
         ctx.fillRect(0, topPadding, trackLabelWidth, videoTrackHeight)
         ctx.fillRect(0, topPadding + videoTrackHeight, trackLabelWidth, audioTrackHeight)
@@ -1238,24 +1471,30 @@ export default function App() {
         ctx.fillText('V1', trackLabelWidth / 2, topPadding + videoTrackHeight / 2 + 4)
         ctx.fillText('A1', trackLabelWidth / 2, topPadding + videoTrackHeight + audioTrackHeight / 2 + 4)
         
-        if (capturedFrames.length > 0) {
-            // Draw video track clip (with 2px vertical margin)
+        // Draw clips if they exist
+        if (capturedFrames.length > 0 && clipWidth > 0) {
             const clipMargin = 2
-            drawVideoClip(ctx, trackLabelWidth, topPadding + clipMargin, clipWidth, videoTrackHeight - (clipMargin * 2))
+            const clipScreenX = trackLabelWidth - viewportOffset.x
             
-            // Draw audio track clip (with 2px vertical margin)
-            drawAudioClip(ctx, trackLabelWidth, topPadding + videoTrackHeight + clipMargin, clipWidth, audioTrackHeight - (clipMargin * 2))
-            
-            // Draw trim overlays
-            drawTrimOverlays(ctx, trackLabelWidth, topPadding, clipWidth, totalHeight)
-            
-            // Draw playhead
-            drawPlayhead(ctx, trackLabelWidth, topPadding + totalHeight)
+            // Only draw if any part of clip is visible
+            if (clipScreenX + clipWidth > trackLabelWidth && clipScreenX < rect.width) {
+                // Draw video track clip with scrolling
+                drawVideoClipScrolled(ctx, clipScreenX, topPadding + clipMargin, clipWidth, videoTrackHeight - (clipMargin * 2), viewportOffset.x)
+                
+                // Draw audio track clip with scrolling
+                drawAudioClipScrolled(ctx, clipScreenX, topPadding + videoTrackHeight + clipMargin, clipWidth, audioTrackHeight - (clipMargin * 2), viewportOffset.x)
+                
+                // Draw trim overlays
+                drawTrimOverlaysScrolled(ctx, clipScreenX, topPadding, clipWidth, totalHeight, viewportOffset.x)
+            }
         }
+        
+        // Always draw playhead (critical UI element) - use timeline duration for positioning
+        drawPlayheadScrolledWithDuration(ctx, trackLabelWidth, topPadding + totalHeight, viewportOffset.x, timelineDuration)
     }
     
-    const drawVideoClip = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) => {
-        // Create rounded clip path
+    // Virtualized video clip rendering with thumbnail caching
+    const drawVideoClipVirtualized = (ctx: CanvasRenderingContext2D, viewport: TimelineViewport, x: number, y: number, width: number, height: number) => {
         const borderRadius = 4
         ctx.save()
         ctx.beginPath()
@@ -1266,43 +1505,48 @@ export default function App() {
         ctx.fillStyle = 'rgba(99, 102, 241, 0.1)'
         ctx.fillRect(x, y, width, height)
         
-        // Calculate proper thumbnail dimensions to fill the full track height
-        const videoAspectRatio = 16 / 9 // Assume 16:9 for camera feeds
-        const availableHeight = height - 16 // Reserve space for label
-        const availableWidth = width
+        // Calculate thumbnail dimensions
+        const videoAspectRatio = 16 / 9
+        const availableHeight = height - 16
+        const thumbnailHeight = availableHeight
+        const thumbnailWidth = thumbnailHeight * videoAspectRatio
         
-        // Make thumbnails fill the full available height
-        let thumbnailHeight = availableHeight
-        let thumbnailWidth = thumbnailHeight * videoAspectRatio
+        // Calculate visible thumbnail range for performance
+        const visibleBounds = viewport.getVisibleBounds(x, width)
+        const firstVisibleThumbnailIndex = Math.floor(Math.max(0, (visibleBounds.x - x) / thumbnailWidth))
+        const lastVisibleThumbnailIndex = Math.ceil(Math.min(width / thumbnailWidth, (visibleBounds.x + visibleBounds.width - x) / thumbnailWidth))
         
-        // Don't scale down - let thumbnails be their natural size and tile across
-        
-        // Draw thumbnails extending across full clip width
-        const totalThumbnails = Math.ceil(availableWidth / thumbnailWidth)
-        for (let i = 0; i < totalThumbnails; i++) {
-            const frameIndex = Math.floor((i / totalThumbnails) * capturedFrames.length)
+        // Only render visible thumbnails
+        for (let i = firstVisibleThumbnailIndex; i <= lastVisibleThumbnailIndex; i++) {
+            const frameIndex = Math.floor((i / Math.ceil(width / thumbnailWidth)) * capturedFrames.length)
             const frame = capturedFrames[frameIndex]
             
             if (frame?.imageBitmap) {
                 const thumbnailX = x + (i * thumbnailWidth)
                 const thumbnailY = y
                 
-                // Only draw if thumbnail starts within bounds
-                if (thumbnailX < x + availableWidth) {
-                    // Calculate how much of the thumbnail to draw (for overflow clipping)
-                    const maxDrawWidth = Math.max(0, x + availableWidth - thumbnailX)
-                    const actualDrawWidth = Math.min(thumbnailWidth, maxDrawWidth)
+                // Skip if completely outside visible area
+                if (thumbnailX + thumbnailWidth < visibleBounds.x || thumbnailX > visibleBounds.x + visibleBounds.width) {
+                    continue
+                }
+                
+                // Use cached thumbnail for better performance
+                const cachedThumbnail = getCachedThumbnail(frameIndex, frame, Math.floor(thumbnailWidth), Math.floor(thumbnailHeight))
+                
+                // Calculate clipping for partial thumbnails
+                const clipLeft = Math.max(0, visibleBounds.x - thumbnailX)
+                const clipRight = Math.min(thumbnailWidth, visibleBounds.x + visibleBounds.width - thumbnailX)
+                const drawWidth = clipRight - clipLeft
+                
+                if (drawWidth > 0) {
+                    const sourceClipLeft = (clipLeft / thumbnailWidth) * cachedThumbnail.width
+                    const sourceClipWidth = (drawWidth / thumbnailWidth) * cachedThumbnail.width
                     
-                    if (actualDrawWidth > 0) {
-                        // Calculate source rectangle to maintain aspect ratio
-                        const sourceWidth = (actualDrawWidth / thumbnailWidth) * frame.imageBitmap.width
-                        
-                        ctx.drawImage(
-                            frame.imageBitmap,
-                            0, 0, sourceWidth, frame.imageBitmap.height,
-                            thumbnailX, thumbnailY, actualDrawWidth, thumbnailHeight
-                        )
-                    }
+                    ctx.drawImage(
+                        cachedThumbnail,
+                        sourceClipLeft, 0, sourceClipWidth, cachedThumbnail.height,
+                        thumbnailX + clipLeft, thumbnailY, drawWidth, thumbnailHeight
+                    )
                 }
             }
         }
@@ -1331,8 +1575,119 @@ export default function App() {
         ctx.fillText('Video Clip', x + 8, y + height - 4)
     }
     
-    const drawAudioClip = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) => {
-        // Create rounded clip path
+    // Scrolled video clip rendering (screen space coordinates)
+    const drawVideoClipScrolled = (ctx: CanvasRenderingContext2D, screenX: number, y: number, width: number, height: number, scrollX: number) => {
+        const borderRadius = 4
+        const visibleStartX = Math.max(64, screenX) // Don't draw over track labels
+        const visibleEndX = Math.min(screenX + width, ctx.canvas.width / (window.devicePixelRatio || 1))
+        const visibleWidth = Math.max(0, visibleEndX - visibleStartX)
+        
+        if (visibleWidth <= 0) return
+        
+        ctx.save()
+        ctx.beginPath()
+        ctx.roundRect(visibleStartX, y, visibleWidth, height, borderRadius)
+        ctx.clip()
+        
+        // Clip background
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.1)'
+        ctx.fillRect(visibleStartX, y, visibleWidth, height)
+        
+        // Calculate thumbnail dimensions
+        const videoAspectRatio = 16 / 9
+        const availableHeight = height - 16
+        const thumbnailHeight = availableHeight
+        const thumbnailWidth = thumbnailHeight * videoAspectRatio
+        
+        // Calculate which thumbnails are visible
+        const thumbnailsPerClip = Math.ceil(width / thumbnailWidth)
+        const firstVisibleIndex = Math.floor(Math.max(0, (visibleStartX - screenX) / thumbnailWidth))
+        const lastVisibleIndex = Math.ceil(Math.min(thumbnailsPerClip, (visibleEndX - screenX) / thumbnailWidth))
+        
+        // Draw visible thumbnails
+        for (let i = firstVisibleIndex; i <= lastVisibleIndex; i++) {
+            const frameIndex = Math.floor((i / thumbnailsPerClip) * capturedFrames.length)
+            const frame = capturedFrames[frameIndex]
+            
+            if (frame?.imageBitmap) {
+                const thumbnailScreenX = screenX + (i * thumbnailWidth)
+                
+                if (thumbnailScreenX + thumbnailWidth > visibleStartX && thumbnailScreenX < visibleEndX) {
+                    const cachedThumbnail = getCachedThumbnail(frameIndex, frame, Math.floor(thumbnailWidth), Math.floor(thumbnailHeight))
+                    
+                    const drawStartX = Math.max(thumbnailScreenX, visibleStartX)
+                    const drawEndX = Math.min(thumbnailScreenX + thumbnailWidth, visibleEndX)
+                    const drawWidth = drawEndX - drawStartX
+                    
+                    if (drawWidth > 0) {
+                        const sourceStartX = (drawStartX - thumbnailScreenX) / thumbnailWidth * cachedThumbnail.width
+                        const sourceWidth = drawWidth / thumbnailWidth * cachedThumbnail.width
+                        
+                        ctx.drawImage(
+                            cachedThumbnail,
+                            sourceStartX, 0, sourceWidth, cachedThumbnail.height,
+                            drawStartX, y, drawWidth, thumbnailHeight
+                        )
+                    }
+                }
+            }
+        }
+        
+        ctx.restore()
+        
+        // Clip border
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.3)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.roundRect(visibleStartX, y, visibleWidth, height, borderRadius)
+        ctx.stroke()
+        
+        // Clip label
+        ctx.save()
+        ctx.beginPath()
+        ctx.roundRect(visibleStartX, y + height - 16, visibleWidth, 16, [0, 0, borderRadius, borderRadius])
+        ctx.clip()
+        ctx.fillStyle = 'rgba(0,0,0, 0.7)'
+        ctx.fillRect(visibleStartX, y + height - 16, visibleWidth, 16)
+        ctx.restore()
+        
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.7)'
+        ctx.font = '10px monospace'
+        ctx.textAlign = 'left'
+        ctx.fillText('Video Clip', visibleStartX + 8, y + height - 4)
+    }
+    
+    // Keep original function for backward compatibility if needed
+    const drawVideoClip = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) => {
+        drawVideoClipScrolled(ctx, x, y, width, height, 0)
+    }
+    
+    // Cached waveform generator with viewport optimization
+    const getCachedWaveform = (audioBuffer: AudioBuffer | null, realtimeData: Float32Array[], width: number): number[] => {
+        const cache = waveformCacheRef.current
+        
+        if (audioBuffer) {
+            // Check if cached waveform is still valid
+            if (cache.data && cache.audioLength === audioBuffer.length && cache.width === width) {
+                return cache.data
+            }
+            
+            // Generate new waveform data
+            const waveformData = generateWaveformData(audioBuffer, width)
+            cache.data = waveformData
+            cache.audioLength = audioBuffer.length
+            cache.width = width
+            return waveformData
+        } else if (realtimeData.length > 0) {
+            // For real-time data, always regenerate (it's changing)
+            return generateRealtimeWaveformData(realtimeData, width)
+        }
+        
+        return []
+    }
+    
+    // Virtualized audio clip rendering with waveform caching
+    const drawAudioClipVirtualized = (ctx: CanvasRenderingContext2D, viewport: TimelineViewport, x: number, y: number, width: number, height: number) => {
         const borderRadius = 4
         ctx.save()
         ctx.beginPath()
@@ -1343,19 +1698,38 @@ export default function App() {
         ctx.fillStyle = 'rgba(99, 102, 241, 0.1)'
         ctx.fillRect(x, y, width, height)
         
-        // Draw waveform
+        // Get visible bounds for waveform optimization
+        const visibleBounds = viewport.getVisibleBounds(x, width)
+        const visibleWidth = Math.ceil(visibleBounds.width)
+        const visibleX = visibleBounds.x - x
+        
+        // Draw waveform only for visible area
         if (capturedAudio.length > 0 && capturedAudio[0]) {
-            const waveformData = generateWaveformData(capturedAudio[0].audioBuffer, Math.floor(width))
-            drawWaveformInCanvas(ctx, x, y, width, height - 16, waveformData)
+            // Use cached waveform data
+            const fullWaveformData = getCachedWaveform(capturedAudio[0].audioBuffer, [], Math.floor(width))
+            
+            // Extract visible portion of waveform
+            const startIndex = Math.floor((visibleX / width) * fullWaveformData.length)
+            const endIndex = Math.ceil(((visibleX + visibleWidth) / width) * fullWaveformData.length)
+            const visibleWaveformData = fullWaveformData.slice(startIndex, endIndex)
+            
+            if (visibleWaveformData.length > 0) {
+                drawWaveformInCanvasVirtualized(ctx, visibleBounds.x, y, visibleWidth, height - 16, visibleWaveformData)
+            }
         } else if (isRecording && realtimeAudioData.length > 0) {
-            const waveformData = generateRealtimeWaveformData(realtimeAudioData, Math.floor(width))
-            drawWaveformInCanvas(ctx, x, y, width, height - 16, waveformData)
+            // For real-time data, generate visible portion only
+            const visibleWaveformData = generateRealtimeWaveformData(realtimeAudioData, visibleWidth)
+            if (visibleWaveformData.length > 0) {
+                drawWaveformInCanvasVirtualized(ctx, visibleBounds.x, y, visibleWidth, height - 16, visibleWaveformData)
+            }
         } else if (isRecording) {
-            // Recording indicator
-            ctx.fillStyle = 'rgba(99, 102, 241, 0.6)'
-            ctx.font = '12px monospace'
-            ctx.textAlign = 'center'
-            ctx.fillText('🎤 Recording...', x + width / 2, y + height / 2)
+            // Recording indicator - only show if visible
+            if (viewport.isVisible(x + width / 4, width / 2)) {
+                ctx.fillStyle = 'rgba(99, 102, 241, 0.6)'
+                ctx.font = '12px monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText('🎤 Recording...', x + width / 2, y + height / 2)
+            }
         }
         
         ctx.restore()
@@ -1380,6 +1754,162 @@ export default function App() {
         ctx.font = '10px monospace'
         ctx.textAlign = 'left'
         ctx.fillText('Audio Clip', x + 8, y + height - 4)
+    }
+    
+    // Virtualized waveform drawing
+    const drawWaveformInCanvasVirtualized = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, waveformData: number[]) => {
+        if (waveformData.length === 0) return
+        
+        const bottomY = y + height
+        const maxAmplitude = height
+        
+        // Create gradient fill
+        const gradient = ctx.createLinearGradient(x, y, x, bottomY)
+        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.7)')
+        gradient.addColorStop(1, 'rgba(99, 102, 241, 0.1)')
+        
+        // Draw filled waveform area
+        ctx.fillStyle = gradient
+        ctx.beginPath()
+        ctx.moveTo(x, bottomY)
+        
+        const pixelsPerSample = width / waveformData.length
+        for (let i = 0; i < waveformData.length; i++) {
+            const amplitude = waveformData[i] * maxAmplitude * 2
+            const clampedAmplitude = Math.min(amplitude, maxAmplitude)
+            ctx.lineTo(x + (i * pixelsPerSample), bottomY - clampedAmplitude)
+        }
+        
+        ctx.lineTo(x + width, bottomY)
+        ctx.closePath()
+        ctx.fill()
+        
+        // Draw waveform outline
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(x, bottomY)
+        for (let i = 0; i < waveformData.length; i++) {
+            const amplitude = waveformData[i] * maxAmplitude * 2
+            const clampedAmplitude = Math.min(amplitude, maxAmplitude)
+            ctx.lineTo(x + (i * pixelsPerSample), bottomY - clampedAmplitude)
+        }
+        ctx.stroke()
+    }
+    
+    // Scrolled audio clip rendering (screen space coordinates)
+    const drawAudioClipScrolled = (ctx: CanvasRenderingContext2D, screenX: number, y: number, width: number, height: number, scrollX: number) => {
+        const borderRadius = 4
+        const visibleStartX = Math.max(64, screenX) // Don't draw over track labels
+        const visibleEndX = Math.min(screenX + width, ctx.canvas.width / (window.devicePixelRatio || 1))
+        const visibleWidth = Math.max(0, visibleEndX - visibleStartX)
+        
+        if (visibleWidth <= 0) return
+        
+        ctx.save()
+        ctx.beginPath()
+        ctx.roundRect(visibleStartX, y, visibleWidth, height, borderRadius)
+        ctx.clip()
+        
+        // Clip background
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.1)'
+        ctx.fillRect(visibleStartX, y, visibleWidth, height)
+        
+        // Draw waveform for visible area
+        if (capturedAudio.length > 0 && capturedAudio[0]) {
+            const fullWaveformData = getCachedWaveform(capturedAudio[0].audioBuffer, [], Math.floor(width))
+            
+            // Calculate visible portion of waveform
+            const startRatio = Math.max(0, (visibleStartX - screenX) / width)
+            const endRatio = Math.min(1, (visibleEndX - screenX) / width)
+            const startIndex = Math.floor(startRatio * fullWaveformData.length)
+            const endIndex = Math.ceil(endRatio * fullWaveformData.length)
+            const visibleWaveformData = fullWaveformData.slice(startIndex, endIndex)
+            
+            if (visibleWaveformData.length > 0) {
+                drawWaveformInCanvasScrolled(ctx, visibleStartX, y, visibleWidth, height - 16, visibleWaveformData)
+            }
+        } else if (isRecording && realtimeAudioData.length > 0) {
+            const visibleWaveformData = generateRealtimeWaveformData(realtimeAudioData, Math.floor(visibleWidth))
+            if (visibleWaveformData.length > 0) {
+                drawWaveformInCanvasScrolled(ctx, visibleStartX, y, visibleWidth, height - 16, visibleWaveformData)
+            }
+        } else if (isRecording) {
+            // Recording indicator
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.6)'
+            ctx.font = '12px monospace'
+            ctx.textAlign = 'center'
+            ctx.fillText('🎤 Recording...', visibleStartX + visibleWidth / 2, y + height / 2)
+        }
+        
+        ctx.restore()
+        
+        // Clip border
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.3)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.roundRect(visibleStartX, y, visibleWidth, height, borderRadius)
+        ctx.stroke()
+        
+        // Clip label
+        ctx.save()
+        ctx.beginPath()
+        ctx.roundRect(visibleStartX, y + height - 16, visibleWidth, 16, [0, 0, borderRadius, borderRadius])
+        ctx.clip()
+        ctx.fillStyle = 'rgba(0,0,0, 0.7)'
+        ctx.fillRect(visibleStartX, y + height - 16, visibleWidth, 16)
+        ctx.restore()
+        
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.7)'
+        ctx.font = '10px monospace'
+        ctx.textAlign = 'left'
+        ctx.fillText('Audio Clip', visibleStartX + 8, y + height - 4)
+    }
+    
+    // Waveform drawing for scrolled context
+    const drawWaveformInCanvasScrolled = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, waveformData: number[]) => {
+        if (waveformData.length === 0) return
+        
+        const bottomY = y + height
+        const maxAmplitude = height
+        
+        // Create gradient fill
+        const gradient = ctx.createLinearGradient(x, y, x, bottomY)
+        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.7)')
+        gradient.addColorStop(1, 'rgba(99, 102, 241, 0.1)')
+        
+        // Draw filled waveform area
+        ctx.fillStyle = gradient
+        ctx.beginPath()
+        ctx.moveTo(x, bottomY)
+        
+        const pixelsPerSample = width / waveformData.length
+        for (let i = 0; i < waveformData.length; i++) {
+            const amplitude = waveformData[i] * maxAmplitude * 2
+            const clampedAmplitude = Math.min(amplitude, maxAmplitude)
+            ctx.lineTo(x + (i * pixelsPerSample), bottomY - clampedAmplitude)
+        }
+        
+        ctx.lineTo(x + width, bottomY)
+        ctx.closePath()
+        ctx.fill()
+        
+        // Draw waveform outline
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(x, bottomY)
+        for (let i = 0; i < waveformData.length; i++) {
+            const amplitude = waveformData[i] * maxAmplitude * 2
+            const clampedAmplitude = Math.min(amplitude, maxAmplitude)
+            ctx.lineTo(x + (i * pixelsPerSample), bottomY - clampedAmplitude)
+        }
+        ctx.stroke()
+    }
+    
+    // Keep original function for backward compatibility if needed
+    const drawAudioClip = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) => {
+        drawAudioClipScrolled(ctx, x, y, width, height, 0)
     }
     
     const drawWaveformInCanvas = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, waveformData: number[]) => {
@@ -1421,75 +1951,201 @@ export default function App() {
         ctx.stroke()
     }
     
-    const drawTrimOverlays = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) => {
+    // Scrolled trim overlays
+    const drawTrimOverlaysScrolled = (ctx: CanvasRenderingContext2D, screenX: number, y: number, width: number, height: number, scrollX: number) => {
+        const visibleStartX = Math.max(64, screenX)
+        const visibleEndX = Math.min(screenX + width, ctx.canvas.width / (window.devicePixelRatio || 1))
+        
         if (clipTrimStart > 0) {
             const trimWidth = (clipTrimStart / Math.max(1, capturedFrames.length - 1)) * width
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-            ctx.fillRect(x, y, trimWidth, height)
+            const trimEndX = screenX + trimWidth
+            
+            if (trimEndX > visibleStartX) {
+                const overlayStartX = Math.max(visibleStartX, screenX)
+                const overlayEndX = Math.min(visibleEndX, trimEndX)
+                const overlayWidth = Math.max(0, overlayEndX - overlayStartX)
+                
+                if (overlayWidth > 0) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+                    ctx.fillRect(overlayStartX, y, overlayWidth, height)
+                }
+            }
         }
         
         if (clipTrimEnd < capturedFrames.length - 1) {
-            const trimStartX = ((clipTrimEnd + 1) / Math.max(1, capturedFrames.length - 1)) * width
-            const trimWidth = width - trimStartX
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-            ctx.fillRect(x + trimStartX, y, trimWidth, height)
+            const trimStartX = screenX + ((clipTrimEnd + 1) / Math.max(1, capturedFrames.length - 1)) * width
+            
+            if (trimStartX < visibleEndX) {
+                const overlayStartX = Math.max(visibleStartX, trimStartX)
+                const overlayEndX = Math.min(visibleEndX, screenX + width)
+                const overlayWidth = Math.max(0, overlayEndX - overlayStartX)
+                
+                if (overlayWidth > 0) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+                    ctx.fillRect(overlayStartX, y, overlayWidth, height)
+                }
+            }
         }
     }
     
-    const drawPlayhead = (ctx: CanvasRenderingContext2D, offsetX: number, totalHeight: number) => {
-        const clipWidth = Math.max(100, (capturedFrames.length / 30) * 100 * timelineZoom)
-        const playheadX = offsetX + (currentFrameIndex / Math.max(1, capturedFrames.length - 1)) * clipWidth
-        
-        // Playhead line
-        ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(playheadX, 8)
-        ctx.lineTo(playheadX, totalHeight)
-        ctx.stroke()
-        
-        // Playhead circular head
-        ctx.fillStyle = 'rgba(99, 102, 241, 1)'
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.arc(playheadX, 8, 6, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.stroke()
+    const drawTrimOverlays = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) => {
+        drawTrimOverlaysScrolled(ctx, x, y, width, height, 0)
     }
     
-    // Update timeline rendering on state changes
+    // Scrolled playhead with timeline duration support
+    const drawPlayheadScrolledWithDuration = (ctx: CanvasRenderingContext2D, trackLabelWidth: number, totalHeight: number, scrollX: number, timelineDuration: number) => {
+        const pixelsPerSecond = 100 * timelineZoom
+        let playheadPosition = 0
+        
+        if (capturedFrames.length > 0) {
+            // Use actual frame position if frames exist
+            const currentTime = currentFrameIndex / 30 // Convert frame to seconds
+            playheadPosition = currentTime * pixelsPerSecond
+        } else {
+            // Default to start of timeline if no frames
+            playheadPosition = 0
+        }
+        
+        const playheadWorldX = trackLabelWidth + playheadPosition
+        const playheadScreenX = playheadWorldX - scrollX
+        
+        // Only draw if playhead is visible
+        const canvasWidth = ctx.canvas.width / (window.devicePixelRatio || 1)
+        if (playheadScreenX >= trackLabelWidth && playheadScreenX <= canvasWidth) {
+            // Playhead line
+            ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.moveTo(playheadScreenX, 8)
+            ctx.lineTo(playheadScreenX, totalHeight)
+            ctx.stroke()
+            
+            // Playhead circular head
+            ctx.fillStyle = 'rgba(99, 102, 241, 1)'
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.arc(playheadScreenX, 8, 6, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+        }
+    }
+    
+    // Scrolled playhead
+    const drawPlayheadScrolled = (ctx: CanvasRenderingContext2D, trackLabelWidth: number, totalHeight: number, scrollX: number) => {
+        const minTimelineDuration = 30
+        const actualDuration = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDuration
+        const timelineDuration = Math.max(minTimelineDuration, actualDuration)
+        drawPlayheadScrolledWithDuration(ctx, trackLabelWidth, totalHeight, scrollX, timelineDuration)
+    }
+    
+    const drawPlayhead = (ctx: CanvasRenderingContext2D, offsetX: number, totalHeight: number) => {
+        drawPlayheadScrolled(ctx, offsetX, totalHeight, 0)
+    }
+    
+    // Update scrollbar visibility synchronously to prevent layout shift
+    useLayoutEffect(() => {
+        const canvas = timelineCanvasRef.current
+        if (!canvas) {
+            setNeedsScrollbar(false)
+            return
+        }
+        
+        const rect = canvas.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) {
+            setNeedsScrollbar(false)
+            return
+        }
+        
+        const trackLabelWidth = 64
+        const minTimelineDuration = 30
+        const actualDuration = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDuration
+        const timelineDuration = Math.max(minTimelineDuration, actualDuration)
+        const timelineWidth = timelineDuration * 100 * timelineZoom
+        const contentWidth = trackLabelWidth + timelineWidth
+        const maxScrollX = Math.max(0, contentWidth - rect.width)
+        
+        setNeedsScrollbar(maxScrollX > 0)
+    }, [capturedFrames.length, timelineZoom])
+
+    // Update timeline rendering on state changes (direct rendering)
     useEffect(() => {
         renderTimelineCanvas()
-    }, [capturedFrames, capturedAudio, realtimeAudioData, isRecording, currentFrameIndex, clipTrimStart, clipTrimEnd, timelineZoom])
+    }, [capturedFrames, capturedAudio, realtimeAudioData, isRecording, currentFrameIndex, clipTrimStart, clipTrimEnd, timelineZoom, viewportOffset.x])
+    
+    // ResizeObserver for efficient canvas resizing
+    useEffect(() => {
+        const canvas = timelineCanvasRef.current
+        if (!canvas || !window.ResizeObserver) return
+        
+        const resizeObserver = new ResizeObserver(() => {
+            // Invalidate render cache completely when canvas resizes
+            lastRenderParams.current = { 
+                capturedFrames: -1, 
+                currentFrameIndex: -1, 
+                clipTrimStart: -1, 
+                clipTrimEnd: -1, 
+                timelineZoom: -1, 
+                viewportX: -1,
+                offsetX: -1,
+                isRecording: false,
+                realtimeAudioDataLength: -1,
+                capturedAudioLength: -1
+            }
+            renderTimelineCanvas()
+        })
+        
+        resizeObserver.observe(canvas)
+        
+        return () => {
+            resizeObserver.disconnect()
+        }
+    }, [])
 
     // Handle global mouse events for canvas dragging
     useEffect(() => {
         const handleGlobalMouseMove = (e: MouseEvent) => {
             const canvas = timelineCanvasRef.current
-            if (!canvas || (!isDraggingPlayhead && !isDraggingLeftTrim && !isDraggingRightTrim)) return
+            if (!canvas || (!isDraggingPlayhead && !isDraggingLeftTrim && !isDraggingRightTrim && !isDraggingTimeline)) return
             
             const rect = canvas.getBoundingClientRect()
-            const x = e.clientX - rect.left
+            const canvasX = e.clientX - rect.left
+            const canvasY = e.clientY - rect.top
+            // Transform screen coordinates to world coordinates
+            const worldX = canvasX + viewportOffset.x
             
             const trackLabelWidth = 64
-            const clipX = trackLabelWidth
-            const clipWidth = Math.max(100, (capturedFrames.length / 30) * 100 * timelineZoom)
+            const timelineX = trackLabelWidth
+            const minTimelineDurationGlobal = 30
+            const actualDurationGlobal = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDurationGlobal
+            const timelineDurationGlobal = Math.max(minTimelineDurationGlobal, actualDurationGlobal)
+            const timelineWidthGlobal = timelineDurationGlobal * 100 * timelineZoom
             
             if (isDraggingPlayhead) {
-                const progress = Math.max(0, Math.min(1, (x - clipX) / clipWidth))
-                const frameIndex = Math.floor(progress * (capturedFrames.length - 1))
+                const progress = Math.max(0, Math.min(1, (worldX - timelineX) / timelineWidthGlobal))
+                const timePosition = progress * timelineDurationGlobal // seconds
+                const frameIndex = Math.floor(timePosition * 30) // convert to frames, allow any position
                 onScrubTimeline(frameIndex)
-            } else if (isDraggingLeftTrim) {
-                const progress = Math.max(0, Math.min(1, (x - clipX) / clipWidth))
+            } else if (isDraggingLeftTrim && capturedFrames.length > 0) {
+                const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+                const clipX = trackLabelWidth
+                const progress = Math.max(0, Math.min(1, (worldX - clipX) / clipWidth))
                 const frameIndex = Math.floor(progress * (capturedFrames.length - 1))
                 const newLeftTrim = Math.max(0, Math.min(clipTrimEnd - 1, frameIndex))
                 setClipTrimStart(newLeftTrim)
-            } else if (isDraggingRightTrim) {
-                const progress = Math.max(0, Math.min(1, (x - clipX) / clipWidth))
+            } else if (isDraggingRightTrim && capturedFrames.length > 0) {
+                const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+                const clipX = trackLabelWidth
+                const progress = Math.max(0, Math.min(1, (worldX - clipX) / clipWidth))
                 const frameIndex = Math.floor(progress * (capturedFrames.length - 1))
                 const newRightTrim = Math.max(clipTrimStart + 1, Math.min(capturedFrames.length - 1, frameIndex))
                 setClipTrimEnd(newRightTrim)
+            } else if (isDraggingTimeline) {
+                // Handle timeline panning
+                const deltaX = canvasX - dragStartRef.current.x
+                const maxScrollX = Math.max(0, trackLabelWidth + timelineWidthGlobal - rect.width)
+                const newOffsetX = Math.max(0, Math.min(maxScrollX, dragStartRef.current.offsetX - deltaX))
+                setViewportOffset(prev => ({ ...prev, x: newOffsetX }))
             }
         }
 
@@ -1497,9 +2153,10 @@ export default function App() {
             setIsDraggingPlayhead(false)
             setIsDraggingLeftTrim(false)
             setIsDraggingRightTrim(false)
+            setIsDraggingTimeline(false)
         }
 
-        if (isDraggingPlayhead || isDraggingLeftTrim || isDraggingRightTrim) {
+        if (isDraggingPlayhead || isDraggingLeftTrim || isDraggingRightTrim || isDraggingTimeline) {
             document.addEventListener('mousemove', handleGlobalMouseMove)
             document.addEventListener('mouseup', handleGlobalMouseUp)
         }
@@ -1516,45 +2173,76 @@ export default function App() {
         if (!canvas) return
         
         const rect = canvas.getBoundingClientRect()
-        const x = e.clientX - rect.left
-        const y = e.clientY - rect.top
+        const canvasX = e.clientX - rect.left
+        const canvasY = e.clientY - rect.top
+        // Transform screen coordinates to world coordinates
+        const worldX = canvasX + viewportOffset.x
+        const worldY = canvasY
         
         const trackLabelWidth = 64
         const videoTrackHeight = 80
         const topPadding = 20
-        const clipX = trackLabelWidth
-        const clipWidth = Math.max(100, (capturedFrames.length / 30) * 100 * timelineZoom)
+        const timelineX = trackLabelWidth
+        const minTimelineDurationDown = 30
+        const actualDurationDown = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDurationDown
+        const timelineDurationDown = Math.max(minTimelineDurationDown, actualDurationDown)
+        const timelineWidthDown = timelineDurationDown * 100 * timelineZoom
         
         // Check if clicking on playhead (with expanded tolerance)
-        const playheadX = clipX + (currentFrameIndex / Math.max(1, capturedFrames.length - 1)) * clipWidth
-        if (Math.abs(x - playheadX) < 8 && y >= topPadding) {
+        const currentTime = capturedFrames.length > 0 ? currentFrameIndex / 30 : 0
+        const playheadWorldX = timelineX + (currentTime * 100 * timelineZoom)
+        if (Math.abs(worldX - playheadWorldX) < 8 && worldY >= topPadding) {
             setIsDraggingPlayhead(true)
             return
         }
         
-        // Check if clicking on trim handles (only in track areas)
-        if (x >= clipX && x <= clipX + clipWidth && y >= topPadding) {
-            const leftTrimX = clipX + (clipTrimStart / Math.max(1, capturedFrames.length - 1)) * clipWidth
-            const rightTrimX = clipX + ((clipTrimEnd + 1) / Math.max(1, capturedFrames.length - 1)) * clipWidth
-            
-            if (Math.abs(x - leftTrimX) < 8) {
-                setIsDraggingLeftTrim(true)
-                return
-            }
-            
-            if (Math.abs(x - rightTrimX) < 8) {
-                setIsDraggingRightTrim(true)
-                return
+        // Check if clicking on trim handles (only in track areas and if clips exist)
+        if (capturedFrames.length > 0) {
+            const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+            const clipX = trackLabelWidth
+            if (worldX >= clipX && worldX <= clipX + clipWidth && worldY >= topPadding) {
+                const leftTrimX = clipX + (clipTrimStart / Math.max(1, capturedFrames.length - 1)) * clipWidth
+                const rightTrimX = clipX + ((clipTrimEnd + 1) / Math.max(1, capturedFrames.length - 1)) * clipWidth
+                
+                if (Math.abs(worldX - leftTrimX) < 8) {
+                    setIsDraggingLeftTrim(true)
+                    return
+                }
+                
+                if (Math.abs(worldX - rightTrimX) < 8) {
+                    setIsDraggingRightTrim(true)
+                    return
+                }
             }
         }
         
+        // Check for middle mouse button or shift+click for panning
+        if (e.button === 1 || e.shiftKey) {
+            setIsDraggingTimeline(true)
+            dragStartRef.current = { 
+                x: canvasX, 
+                y: canvasY, 
+                offsetX: viewportOffset.x 
+            }
+            return
+        }
+        
         // Allow scrubbing by clicking anywhere in the timeline area (including timecode ruler)
-        if (x >= clipX && x <= clipX + clipWidth) {
-            const progress = Math.max(0, Math.min(1, (x - clipX) / clipWidth))
-            const frameIndex = Math.floor(progress * (capturedFrames.length - 1))
+        if (worldX >= timelineX && worldX <= timelineX + timelineWidthDown) {
+            const progress = Math.max(0, Math.min(1, (worldX - timelineX) / timelineWidthDown))
+            const timePosition = progress * timelineDurationDown // seconds
+            const frameIndex = Math.floor(timePosition * 30) // convert to frames, allow any position
             onScrubTimeline(frameIndex)
             // Start dragging playhead after scrubbing
             setIsDraggingPlayhead(true)
+        } else {
+            // Start timeline panning if clicking in empty space
+            setIsDraggingTimeline(true)
+            dragStartRef.current = { 
+                x: canvasX, 
+                y: canvasY, 
+                offsetX: viewportOffset.x 
+            }
         }
     }
     
@@ -1563,23 +2251,32 @@ export default function App() {
         if (!canvas) return
         
         const rect = canvas.getBoundingClientRect()
-        const x = e.clientX - rect.left
+        const canvasX = e.clientX - rect.left
+        const worldX = canvasX + viewportOffset.x
         
         const trackLabelWidth = 64
-        const clipX = trackLabelWidth
-        const clipWidth = Math.max(100, (capturedFrames.length / 30) * 100 * timelineZoom)
+        const timelineX = trackLabelWidth
+        const minTimelineDurationMove = 30
+        const actualDurationMove = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDurationMove
+        const timelineDurationMove = Math.max(minTimelineDurationMove, actualDurationMove)
+        const timelineWidthMove = timelineDurationMove * 100 * timelineZoom
         
         if (isDraggingPlayhead) {
-            const progress = Math.max(0, Math.min(1, (x - clipX) / clipWidth))
-            const frameIndex = Math.floor(progress * (capturedFrames.length - 1))
+            const progress = Math.max(0, Math.min(1, (worldX - timelineX) / timelineWidthMove))
+            const timePosition = progress * timelineDurationMove
+            const frameIndex = Math.floor(timePosition * 30) // allow any position
             onScrubTimeline(frameIndex)
-        } else if (isDraggingLeftTrim) {
-            const progress = Math.max(0, Math.min(1, (x - clipX) / clipWidth))
+        } else if (isDraggingLeftTrim && capturedFrames.length > 0) {
+            const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+            const clipX = trackLabelWidth
+            const progress = Math.max(0, Math.min(1, (worldX - clipX) / clipWidth))
             const frameIndex = Math.floor(progress * (capturedFrames.length - 1))
             const newLeftTrim = Math.max(0, Math.min(clipTrimEnd - 1, frameIndex))
             setClipTrimStart(newLeftTrim)
-        } else if (isDraggingRightTrim) {
-            const progress = Math.max(0, Math.min(1, (x - clipX) / clipWidth))
+        } else if (isDraggingRightTrim && capturedFrames.length > 0) {
+            const clipWidth = (capturedFrames.length / 30) * 100 * timelineZoom
+            const clipX = trackLabelWidth
+            const progress = Math.max(0, Math.min(1, (worldX - clipX) / clipWidth))
             const frameIndex = Math.floor(progress * (capturedFrames.length - 1))
             const newRightTrim = Math.max(clipTrimStart + 1, Math.min(capturedFrames.length - 1, frameIndex))
             setClipTrimEnd(newRightTrim)
@@ -1590,6 +2287,37 @@ export default function App() {
         setIsDraggingPlayhead(false)
         setIsDraggingLeftTrim(false)
         setIsDraggingRightTrim(false)
+        setIsDraggingTimeline(false)
+    }
+    
+    // Handle mouse wheel for horizontal scrolling
+    const handleTimelineWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+        e.preventDefault()
+        
+        const canvas = timelineCanvasRef.current
+        if (!canvas) return
+        
+        const rect = canvas.getBoundingClientRect()
+        const trackLabelWidth = 64
+        const minTimelineDurationWheel = 30
+        const actualDurationWheel = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDurationWheel
+        const timelineDurationWheel = Math.max(minTimelineDurationWheel, actualDurationWheel)
+        const timelineWidthWheel = timelineDurationWheel * 100 * timelineZoom
+        const contentWidth = trackLabelWidth + timelineWidthWheel
+        const maxScrollX = Math.max(0, contentWidth - rect.width)
+        
+        // Horizontal scrolling (shift+wheel or trackpad horizontal)
+        let deltaX = e.deltaX
+        
+        // Convert vertical wheel to horizontal if no horizontal delta
+        if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
+            deltaX = e.deltaY
+        }
+        
+        const scrollSpeed = 1.5
+        const newOffsetX = Math.max(0, Math.min(maxScrollX, viewportOffset.x + (deltaX * scrollSpeed)))
+        
+        setViewportOffset(prev => ({ ...prev, x: newOffsetX }))
     }
 
     return (
@@ -1808,9 +2536,48 @@ export default function App() {
                                 type="range"
                                 min={0.1}
                                 max={5}
-                                step={0.1}
+                                step={0.01}
                                 value={timelineZoom}
-                                onChange={e => setTimelineZoom(Number(e.target.value))}
+                                onChange={e => {
+                                    const newZoom = Number(e.target.value)
+                                    
+                                    // Calculate playhead position before zoom
+                                    const pixelsPerSecond = 100 * timelineZoom
+                                    const trackLabelWidth = 64
+                                    const currentTime = capturedFrames.length > 0 ? currentFrameIndex / 30 : 0
+                                    const oldPlayheadWorldX = trackLabelWidth + (currentTime * pixelsPerSecond)
+                                    
+                                    // Calculate new playhead position after zoom
+                                    const newPixelsPerSecond = 100 * newZoom
+                                    const newPlayheadWorldX = trackLabelWidth + (currentTime * newPixelsPerSecond)
+                                    
+                                    // Calculate how much to adjust scroll to keep playhead centered
+                                    const canvas = timelineCanvasRef.current
+                                    if (canvas) {
+                                        const rect = canvas.getBoundingClientRect()
+                                        const playheadScreenPos = oldPlayheadWorldX - viewportOffset.x
+                                        
+                                        // Calculate new scroll offset to keep playhead at same screen position
+                                        const newScrollX = newPlayheadWorldX - playheadScreenPos
+                                        
+                                        // Apply zoom first
+                                        setTimelineZoom(newZoom)
+                                        
+                                        // Then adjust scroll position with bounds checking
+                                        const minTimelineDurationForZoom = 30
+                                        const actualDurationForZoom = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDurationForZoom
+                                        const timelineDurationForZoom = Math.max(minTimelineDurationForZoom, actualDurationForZoom)
+                                        const newTimelineWidth = timelineDurationForZoom * newPixelsPerSecond
+                                        const maxScrollX = Math.max(0, trackLabelWidth + newTimelineWidth - rect.width)
+                                        
+                                        setViewportOffset(prev => ({ 
+                                            ...prev, 
+                                            x: Math.max(0, Math.min(maxScrollX, newScrollX))
+                                        }))
+                                    } else {
+                                        setTimelineZoom(newZoom)
+                                    }
+                                }}
                                 className="w-16 h-1"
                             />
                             <span className="text-xs text-primary/50 w-8">{timelineZoom.toFixed(1)}x</span>
@@ -1826,8 +2593,83 @@ export default function App() {
                     onMouseDown={handleTimelineMouseDown}
                     onMouseMove={handleTimelineMouseMove}
                     onMouseUp={handleTimelineMouseUp}
+                    onWheel={handleTimelineWheel}
                     style={{ display: 'block', height: '180px' }}
                 />
+                
+                {/* Horizontal Scrollbar - Always present to prevent layout shift */}
+                {(() => {
+                    const scrollbarHeight = 8
+                    
+                    if (needsScrollbar) {
+                        const canvas = timelineCanvasRef.current
+                        if (!canvas) {
+                            return <div className="w-full bg-black/20 rounded" style={{ height: scrollbarHeight }} />
+                        }
+                        
+                        const rect = canvas.getBoundingClientRect()
+                        if (rect.width === 0 || rect.height === 0) {
+                            return <div className="w-full bg-black/20 rounded" style={{ height: scrollbarHeight }} />
+                        }
+                        
+                        const trackLabelWidth = 64
+                        const minTimelineDurationScrollbar = 30
+                        const actualDurationScrollbar = capturedFrames.length > 0 ? capturedFrames.length / 30 : minTimelineDurationScrollbar
+                        const timelineDurationScrollbar = Math.max(minTimelineDurationScrollbar, actualDurationScrollbar)
+                        const timelineWidthScrollbar = timelineDurationScrollbar * 100 * timelineZoom
+                        const contentWidth = trackLabelWidth + timelineWidthScrollbar
+                        const maxScrollX = Math.max(0, contentWidth - rect.width)
+                        
+                        const scrollbarWidth = rect.width
+                        const thumbWidth = Math.max(20, (rect.width / contentWidth) * scrollbarWidth)
+                        const thumbPosition = (viewportOffset.x / maxScrollX) * (scrollbarWidth - thumbWidth)
+                        
+                        return (
+                            <div 
+                                className="relative w-full bg-black/20 rounded"
+                                style={{ height: scrollbarHeight }}
+                            >
+                                <div
+                                    className="absolute top-0 bg-primary/40 rounded cursor-pointer hover:bg-primary/60 transition-colors"
+                                    style={{
+                                        left: thumbPosition,
+                                        width: thumbWidth,
+                                        height: scrollbarHeight
+                                    }}
+                                    onMouseDown={(e) => {
+                                        e.preventDefault()
+                                        const startX = e.clientX
+                                        const startThumbPos = thumbPosition
+                                        
+                                        const handleMouseMove = (e: MouseEvent) => {
+                                            const deltaX = e.clientX - startX
+                                            const newThumbPos = Math.max(0, Math.min(scrollbarWidth - thumbWidth, startThumbPos + deltaX))
+                                            const scrollRatio = newThumbPos / (scrollbarWidth - thumbWidth)
+                                            const newScrollX = scrollRatio * maxScrollX
+                                            setViewportOffset(prev => ({ ...prev, x: newScrollX }))
+                                        }
+                                        
+                                        const handleMouseUp = () => {
+                                            document.removeEventListener('mousemove', handleMouseMove)
+                                            document.removeEventListener('mouseup', handleMouseUp)
+                                        }
+                                        
+                                        document.addEventListener('mousemove', handleMouseMove)
+                                        document.addEventListener('mouseup', handleMouseUp)
+                                    }}
+                                />
+                            </div>
+                        )
+                    } else {
+                        // Show empty scrollbar background to maintain consistent height
+                        return (
+                            <div 
+                                className="w-full bg-black/10 rounded"
+                                style={{ height: scrollbarHeight }}
+                            />
+                        )
+                    }
+                })()}
             </div>
 
             {/* Terminal-like console output */}
