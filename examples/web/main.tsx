@@ -96,7 +96,7 @@ export default function App() {
                     if (liveViewUrl) {
                         URL.revokeObjectURL(liveViewUrl)
                     }
-                    
+
                     const blob = new Blob([new Uint8Array(result.data)], { type: 'image/jpeg' })
                     const url = URL.createObjectURL(blob)
                     setLiveViewUrl(url)
@@ -141,27 +141,43 @@ export default function App() {
     return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-6 p-4">
             <div className="flex flex-row items-center justify-center gap-4 flex-wrap">
-                <Button onClick={connected ? onDisconnect : onConnect}>
-                    {connected ? 'Disconnect' : 'Connect'}
-                </Button>
-                {connected && <Button onClick={onCaptureImage}>Capture Image (Download)</Button>}
-                {connected && <Button onClick={onCaptureLiveView}>Capture Live View (Download)</Button>}
-                {connected && !streaming && <Button onClick={onStartStreaming}>Start Live View Stream</Button>}
-                {connected && streaming && <Button onClick={onStopStreaming}>Stop Live View Stream</Button>}
-            </div>
-            
-            <div className="text-center">
-                {connected ? `${cameraInfo?.manufacturer} Connected` : 'Disconnected'}
-                {streaming && <div className="text-sm text-gray-600 mt-1">Live streaming...</div>}
+                <Button onClick={connected ? onDisconnect : onConnect}>{connected ? 'Disconnect' : 'Connect'}</Button>
+                {connected && <Button onClick={onCaptureImage}>Capture Image</Button>}
+                {connected && <Button onClick={onCaptureLiveView}>Capture Live View</Button>}
             </div>
 
-            {liveViewUrl && (
-                <div className="flex justify-center">
-                    <img 
-                        src={liveViewUrl} 
-                        alt="Live View" 
-                        className="max-w-[80vw] max-h-[60vh] rounded-lg shadow-lg"
-                    />
+            <div className="text-center text-sm text-gray-600">
+                {connected ? `${cameraInfo?.manufacturer} Connected` : 'Disconnected'}
+            </div>
+
+            {/* Always show live view frame */}
+            {connected && (
+                <div className="relative flex justify-center">
+                    <div className="relative border border-primary/10 rounded-md overflow-hidden bg-primary/5">
+                        {liveViewUrl && streaming ? (
+                            <img src={liveViewUrl} alt="Live View" className="max-w-[80vw] max-h-[60vh] block" />
+                        ) : (
+                            <div className="flex items-center justify-center max-w-[80vw] max-h-[60vh] w-[640px] h-[480px] text-primary">
+                                <span>Live view</span>
+                            </div>
+                        )}
+
+                        {/* Play/Pause button in bottom right */}
+                        <button
+                            onClick={streaming ? onStopStreaming : onStartStreaming}
+                            className="absolute bottom-2 left-2 w-8 h-8 bg-black/50 hover:bg-black/70 rounded-md flex items-center justify-center text-white transition-all"
+                        >
+                            {streaming ? (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                                </svg>
+                            ) : (
+                                <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z" />
+                                </svg>
+                            )}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
