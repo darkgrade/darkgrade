@@ -85,6 +85,8 @@ export default function App() {
         iso: string
         liveViewImageQuality: string
     } | null>(null)
+    const [changedProps, setChangedProps] = useState<Set<string>>(new Set())
+    const previousSettings = useRef<typeof settings>(null)
 
     useEffect(() => {
         const getCameraInfo = async () => {
@@ -109,19 +111,27 @@ export default function App() {
     }
 
     const onCaptureImage = async () => {
+        stopStreaming()
+        await new Promise(resolve => setTimeout(resolve, 100))
         const result = await camera?.captureImage()
         if (result?.data) {
             const filename = result.info?.filename || 'captured_image.jpg'
             downloadFile(result.data, filename, 'image/jpeg')
         }
+        await new Promise(resolve => setTimeout(resolve, 100))
+        startStreaming()
     }
 
     const onCaptureLiveView = async () => {
+        stopStreaming()
+        await new Promise(resolve => setTimeout(resolve, 100))
         const result = await camera?.captureLiveView()
         if (result?.data) {
             const filename = result.info?.filename || 'captured_liveview.jpg'
             downloadFile(result.data, filename, 'image/jpeg')
         }
+        await new Promise(resolve => setTimeout(resolve, 100))
+        startStreaming()
     }
 
     // High-performance streaming using Canvas and requestAnimationFrame
@@ -142,12 +152,32 @@ export default function App() {
                 const shutterSpeed = await camera.getDeviceProperty('SHUTTER_SPEED')
                 const iso = await camera.getDeviceProperty('ISO')
                 const liveViewImageQuality = await camera.getDeviceProperty('LIVE_VIEW_IMAGE_QUALITY')
-                setSettings({
+
+                const newSettings = {
                     aperture: exposureSettings,
                     shutterSpeed: shutterSpeed,
                     iso: iso,
                     liveViewImageQuality: liveViewImageQuality,
-                })
+                }
+
+                // Track which properties changed
+                if (previousSettings.current) {
+                    const changed = new Set<string>()
+                    if (previousSettings.current.aperture !== newSettings.aperture) changed.add('aperture')
+                    if (previousSettings.current.shutterSpeed !== newSettings.shutterSpeed) changed.add('shutterSpeed')
+                    if (previousSettings.current.iso !== newSettings.iso) changed.add('iso')
+                    if (previousSettings.current.liveViewImageQuality !== newSettings.liveViewImageQuality)
+                        changed.add('liveViewImageQuality')
+
+                    if (changed.size > 0) {
+                        setChangedProps(changed)
+                        // Clear highlights after animation
+                        setTimeout(() => setChangedProps(new Set()), 1000)
+                    }
+                }
+
+                previousSettings.current = newSettings
+                setSettings(newSettings)
 
                 const result = await camera.streamLiveView()
                 if (result && streamingRef.current) {
@@ -287,7 +317,8 @@ export default function App() {
 
                         {/* Live view image quality display */}
                         <div
-                            className="px-2 py-1 bg-black/70 rounded text-primary/30 text-xs font-mono cursor-pointer select-none"
+                            className="px-2 py-1 bg-black/70 rounded text-xs font-mono cursor-pointer select-none transition-colors duration-300"
+                            style={{ color: changedProps.has('liveViewImageQuality') ? '#4ade80' : '#ffffff4c' }}
                             onClick={onToggleLiveViewImageQuality}
                         >
                             {settings?.liveViewImageQuality
@@ -300,9 +331,24 @@ export default function App() {
 
                     {/* Exposure settings in top right */}
                     <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 rounded text-primary/30 text-xs font-mono flex flex-row gap-4">
-                        <span>{settings?.aperture || '--'}</span>
-                        <span>{settings?.shutterSpeed || '--'}</span>
-                        <span>{settings?.iso || '--'}</span>
+                        <span
+                            className="transition-colors duration-300"
+                            style={{ color: changedProps.has('aperture') ? '#4ade80' : undefined }}
+                        >
+                            {settings?.aperture || '--'}
+                        </span>
+                        <span
+                            className="transition-colors duration-300"
+                            style={{ color: changedProps.has('shutterSpeed') ? '#4ade80' : undefined }}
+                        >
+                            {settings?.shutterSpeed || '--'}
+                        </span>
+                        <span
+                            className="transition-colors duration-300"
+                            style={{ color: changedProps.has('iso') ? '#4ade80' : undefined }}
+                        >
+                            {settings?.iso || '--'}
+                        </span>
                     </div>
 
                     {/* Play/Pause button in bottom right */}
