@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount, onDestroy } from 'svelte'
     import { Camera } from '@api/camera'
     import Button from '../lib/Button.svelte'
 
@@ -33,13 +32,7 @@
     let changedProps = $state<Set<string>>(new Set())
     let previousSettings: typeof settings = null
 
-    onMount(() => {
-        camera = new Camera()
-    })
-
-    onDestroy(() => {
-        camera?.disconnect()
-    })
+    camera = new Camera()
 
     // High-performance streaming using Canvas and requestAnimationFrame
     $effect(() => {
