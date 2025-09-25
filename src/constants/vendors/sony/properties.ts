@@ -110,6 +110,57 @@ export const SonyProperties = {
         },
     },
 
+    EXPOSURE: {
+        name: 'EXPOSURE',
+        code: 0x0000, // hack, handled in camera api
+        type: DataType.INT16,
+        description: 'Exposure (either metered or manually set)',
+        writable: false,
+        unit: 'EV',
+    },
+
+    METERED_EXPOSURE: {
+        name: 'METERED_EXPOSURE',
+        code: 0xd1b5,
+        type: DataType.INT16,
+        description: 'AKA Metered Manual Level - Get the metered manual level.',
+        writable: true,
+        unit: 'EV',
+        // The value is obtained by multiplying a real Exposure Bias Compensation value by 1000.
+        // 0xEC78 = -5000 (means -5.0Ev)
+        // 0x0000 = 0 (means 0.0Ev)
+        // 0x1388 = 5000 (means 5.0Ev)
+        // 0x1388 = 5000 (means 5.0Ev)
+        encode: (value: string): Uint8Array => {
+            return encodePTPValue(Math.round(parseFloat(value) * 1000), DataType.INT16)
+        },
+        decode: (value: Uint8Array): string => {
+            const decoded = decodePTPValue(value, DataType.INT16) / 1000
+            return `${decoded < 0 ? '-' : '+'}${Math.abs(decoded)} EV`
+        },
+    },
+
+    EXPOSURE_COMPENSATION: {
+        name: 'EXPOSURE_COMPENSATION',
+        code: 0x5010,
+        type: DataType.INT16,
+        description: 'AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.',
+        writable: true,
+        unit: 'EV',
+        // The value is obtained by multiplying a real Exposure Bias Compensation value by 1000.
+        // 0xEC78 = -5000 (means -5.0Ev)
+        // 0x0000 = 0 (means 0.0Ev)
+        // 0x1388 = 5000 (means 5.0Ev)
+        // 0x1388 = 5000 (means 5.0Ev)
+        encode: (value: string): Uint8Array => {
+            return encodePTPValue(Math.round(parseFloat(value) * 1000), DataType.INT16)
+        },
+        decode: (value: Uint8Array): string => {
+            const decoded = decodePTPValue(value, DataType.INT16) / 1000
+            return `${decoded < 0 ? '-' : '+'}${Math.abs(decoded)} EV`
+        },
+    },
+
     STILL_CAPTURE_MODE: {
         name: 'STILL_CAPTURE_MODE',
         code: 0x5013,

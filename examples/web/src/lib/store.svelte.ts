@@ -1,0 +1,35 @@
+export const store = $state<{
+    connected: boolean
+    streaming: boolean
+    animationFrame: number | null
+    fps: number
+    frameTimestamps: number[]
+    resolution: { width: number; height: number } | null
+    canvasRef: HTMLCanvasElement | null
+    settings: {
+        aperture: string
+        shutterSpeed: string
+        iso: string
+        exposure: string
+        liveViewImageQuality: string
+    } | null
+    previousSettings: {
+        aperture: string
+        shutterSpeed: string
+        iso: string
+        exposure: string
+        liveViewImageQuality: string
+    } | null
+    changedProps: Set<string>
+}>({
+    connected: false,
+    streaming: false,
+    animationFrame: null,
+    fps: 0,
+    frameTimestamps: [],
+    resolution: null,
+    canvasRef: null,
+    settings: null,
+    previousSettings: null,
+    changedProps: new Set(),
+})

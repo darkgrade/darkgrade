@@ -57,6 +57,12 @@ export class SonyCamera extends GenericPTPCamera {
             throw new Error(`Unknown property: ${String(propertyName)}`)
         }
 
+        if (propertyName === 'EXPOSURE') {
+            const meteredExposure = await this.getDeviceProperty('METERED_EXPOSURE')
+            const exposureCompensation = await this.getDeviceProperty('EXPOSURE_COMPENSATION')
+            return meteredExposure !== '0 EV' ? meteredExposure : exposureCompensation
+        }
+
         const response = await this.protocol.sendOperation({
             ...SonyOperations.SDIO_GET_EXT_DEVICE_PROP_VALUE,
             parameters: [property.code],
@@ -236,7 +242,7 @@ export class SonyCamera extends GenericPTPCamera {
         const response = await this.protocol.sendOperation({
             ...SonyOperations.GET_OBJECT,
             parameters: [SONY_LIVE_VIEW_OBJECT_HANDLE],
-            maxDataLength: 256 * 1024 // 256KB
+            maxDataLength: 256 * 1024, // 256KB
         })
 
         // Parse Sony's live view format
