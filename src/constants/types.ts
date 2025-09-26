@@ -39,6 +39,28 @@ export const DataType = {
 
 export type DataTypeValue = (typeof DataType)[keyof typeof DataType]
 
+type DataTypeMap = {
+    [DataType.UINT8]: number
+    [DataType.INT8]: number
+    [DataType.UINT16]: number
+    [DataType.INT16]: number
+    [DataType.UINT32]: number
+    [DataType.INT32]: number
+    [DataType.UINT64]: number
+    [DataType.INT64]: number
+    [DataType.UINT128]: number
+    [DataType.INT128]: number
+    [DataType.ARRAY_UINT8]: number[]
+    [DataType.ARRAY_INT8]: number[]
+    [DataType.ARRAY_UINT16]: number[]
+    [DataType.ARRAY_INT16]: number[]
+    [DataType.ARRAY_UINT32]: number[]
+    [DataType.ARRAY_INT32]: number[]
+    [DataType.ARRAY_UINT64]: number[]
+    [DataType.ARRAY_INT64]: number[]
+    [DataType.STRING]: string
+}
+
 /**
  * Property form types
  */
@@ -71,32 +93,40 @@ export enum MessageType {
 }
 
 // ============================================================================
-// Core Types (used in both constants and runtime)
+// Core Types - Separated Definition and Runtime
 // ============================================================================
 
 /**
- * Operation - used in constants and runtime
+ * Possible value for a parameter
  */
+export interface PossibleValue<T> {
+    name: string
+    description: string
+    value: T
+}
+
+export type Parameter = {
+    [K in keyof DataTypeMap]: {
+        name: string
+        type: K
+        description: string
+        possibleValues?: PossibleValue<DataTypeMap[K]>[]
+        // only present at runtime, not necessary for parameter definitions
+        value?: DataTypeMap[K]
+    }
+}[keyof DataTypeMap]
+
 export interface Operation {
     code: HexCode
-    // Constant fields
     name?: string
     description?: string
-    parameters?:
-        | Array<{
-              name: string
-              type: DataTypeValue
-              description: string
-          }>
-        | number[]
-        | Uint8Array[]
-        | HexCode[] // Can be parameter definitions OR runtime values
+    parameters?: Parameter[]
     expectsData?: boolean
     respondsWithData?: boolean
     dataDescription?: string
-    // Runtime fields
-    data?: Uint8Array
     maxDataLength?: number
+    // only present at runtime, not necessary for operation definitions
+    data?: Uint8Array
 }
 
 /**
@@ -191,7 +221,7 @@ export interface Format {
 /**
  * Operation constants collection
  */
-export type OperationDefinition = Record<string, Operation>
+export type OperationDefinitions = Record<string, Operation>
 
 /**
  * Response constants collection

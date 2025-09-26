@@ -1,4 +1,4 @@
-import { DataType } from '@constants/types'
+import { DataType, OperationDefinitions } from '@constants/types'
 import { PTPOperations } from '@constants/ptp/operations'
 
 export const SonyOperations = {
@@ -32,16 +32,47 @@ export const SonyOperations = {
                 name: 'Phase Type',
                 type: DataType.UINT32,
                 description: 'Connection phase (1, 2, or 3)',
+                possibleValues: [
+                    {
+                        name: 'Phase 1',
+                        description: 'Initial connection phase',
+                        value: 1,
+                    },
+                    {
+                        name: 'Phase 2',
+                        description: 'Authentication phase',
+                        value: 2,
+                    },
+                    {
+                        name: 'Phase 3',
+                        description: 'Finalization phase',
+                        value: 3,
+                    },
+                ],
             },
             {
                 name: 'KeyCode1',
                 type: DataType.UINT32,
                 description: 'KeyCode1 (always 0x00000000)',
+                possibleValues: [
+                    {
+                        name: 'Default',
+                        description: 'Standard KeyCode1 value',
+                        value: 0x00000000,
+                    },
+                ],
             },
             {
                 name: 'KeyCode2',
                 type: DataType.UINT32,
                 description: 'KeyCode2 (always 0x00000000)',
+                possibleValues: [
+                    {
+                        name: 'Default',
+                        description: 'Standard KeyCode2 value',
+                        value: 0x00000000,
+                    },
+                ],
             },
         ],
         respondsWithData: true,
@@ -164,6 +195,6 @@ export const SonyOperations = {
             },
         ],
     },
-} as const
+} as const satisfies OperationDefinitions
 
 export type SonyOperationDefinitions = typeof SonyOperations

@@ -2,7 +2,7 @@
  * PTP Operations with type validation
  */
 
-import { DataType, OperationDefinition } from '@constants/types'
+import { DataType, OperationDefinitions } from '@constants/types'
 
 /**
  * PTP Operations with type validation
@@ -123,17 +123,37 @@ export const PTPOperations = {
         code: 0x1016,
         name: 'SET_DEVICE_PROP_VALUE',
         description:
-            'Sets the current value of the device property indicated by Parameter1 to the value indicated in the data phase of this operation. The format of the property value object sent in the data phase can be determined from the DatatypeCode field of the property’s DevicePropDesc data set. If the property is not settable, the response Access_Denied should be returned. If the value is not allowed by the device, Invalid_DeviceProp_Value should be returned. If the format or size of the property value is incorrect, Invalid_DeviceProp_Format should be returned.',
+            'Sets the current value of the device property indicated by Parameter1 to the value indicated in the data phase of this operation. ' +
+            "The format of the property value object sent in the data phase can be determined from the DatatypeCode field of the property's DevicePropDesc data set. " +
+            'If the property is not settable, the response Access_Denied should be returned. If the value is not allowed by the device, Invalid_DeviceProp_Value should be returned. ' +
+            'If the format or size of the property value is incorrect, Invalid_DeviceProp_Format should be returned.',
         parameters: [
             {
                 name: 'DevicePropCode',
                 type: DataType.UINT16,
                 description: 'Property code to set',
+                possibleValues: [
+                    {
+                        name: 'Battery Level',
+                        description: 'Current battery level of the device',
+                        value: 0x5001,
+                    },
+                    {
+                        name: 'White Balance',
+                        description: 'White balance setting',
+                        value: 0x5005,
+                    },
+                    {
+                        name: 'F-Number',
+                        description: 'Aperture f-stop value',
+                        value: 0x5007,
+                    },
+                ],
             },
         ],
         expectsData: true,
         dataDescription: 'Device Property Value',
     },
-} as const satisfies OperationDefinition
+} as const satisfies OperationDefinitions
 
 export type PTPOperationDefinitions = typeof PTPOperations
