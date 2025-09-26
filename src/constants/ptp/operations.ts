@@ -132,23 +132,6 @@ export const PTPOperations = {
                 name: 'DevicePropCode',
                 type: DataType.UINT16,
                 description: 'Property code to set',
-                possibleValues: [
-                    {
-                        name: 'Battery Level',
-                        description: 'Current battery level of the device',
-                        value: 0x5001,
-                    },
-                    {
-                        name: 'White Balance',
-                        description: 'White balance setting',
-                        value: 0x5005,
-                    },
-                    {
-                        name: 'F-Number',
-                        description: 'Aperture f-stop value',
-                        value: 0x5007,
-                    },
-                ],
             },
         ],
         expectsData: true,

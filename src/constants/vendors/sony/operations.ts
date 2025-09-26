@@ -35,17 +35,17 @@ export const SonyOperations = {
                 possibleValues: [
                     {
                         name: 'Phase 1',
-                        description: 'Initial connection phase',
+                        description: 'Phase 1',
                         value: 1,
                     },
                     {
                         name: 'Phase 2',
-                        description: 'Authentication phase',
+                        description: 'Phase 2',
                         value: 2,
                     },
                     {
                         name: 'Phase 3',
-                        description: 'Finalization phase',
+                        description: 'Phase 3',
                         value: 3,
                     },
                 ],
