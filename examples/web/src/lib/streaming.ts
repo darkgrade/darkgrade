@@ -1,6 +1,7 @@
 import { Camera } from '@api/camera'
 import { store } from './store.svelte'
 import { wait } from './utils'
+import { cameraQueue } from './queue'
 
 export const startStreaming = () => {
     store.streaming = true
@@ -24,13 +25,13 @@ export const streamFrame = async (camera: Camera, ctx: CanvasRenderingContext2D)
     if (!store.streaming || !camera || !store.connected || !store.canvasRef) return
 
     try {
-        const newSettings = {
+        const newSettings = await cameraQueue.push(async () => ({
             aperture: await camera.getDeviceProperty('APERTURE'),
             shutterSpeed: await camera.getDeviceProperty('SHUTTER_SPEED'),
             iso: await camera.getDeviceProperty('ISO'),
             exposure: await camera.getDeviceProperty('EXPOSURE'),
             liveViewImageQuality: await camera.getDeviceProperty('LIVE_VIEW_IMAGE_QUALITY'),
-        }
+        }))
 
         // Track which properties changed
         if (store.previousSettings) {
@@ -54,7 +55,7 @@ export const streamFrame = async (camera: Camera, ctx: CanvasRenderingContext2D)
         store.previousSettings = newSettings
         store.settings = newSettings
 
-        const result = await camera.streamLiveView()
+        const result = await cameraQueue.push(async () => await camera.streamLiveView())
         if (result && store.streaming) {
             // Decode JPEG binary data directly to ImageBitmap (no URLs!)
             const blob = new Blob([new Uint8Array(result)], { type: 'image/jpeg' })

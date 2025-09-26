@@ -1,9 +1,11 @@
 <script lang="ts">
     import { Camera } from '@api/camera'
     import Button from '../lib/Button.svelte'
+    import CameraControls from '../lib/CameraControls.svelte'
     import { store } from '../lib/store.svelte'
     import { downloadFile, wait } from '../lib/utils'
     import { streamFrame, startStreaming, stopStreaming } from '../lib/streaming'
+    import { cameraQueue } from '../lib/queue'
 
     let camera: Camera = new Camera()
 
@@ -38,34 +40,39 @@
     }
 
     const onCaptureImage = async () => {
-        stopStreaming()
-        const result = await camera?.captureImage()
+        const result = await cameraQueue.push(async () => await camera.captureImage())
         if (result?.data) {
             const filename = result.info?.filename || 'captured_image.jpg'
             downloadFile(result.data, filename, 'image/jpeg')
         }
-        startStreaming()
+    }
+
+    const onStartRecording = async () => {
+        await cameraQueue.push(async () => await camera.startRecording())
+        store.recording = true
+    }
+
+    const onStopRecording = async () => {
+        await cameraQueue.push(async () => await camera.stopRecording())
+        store.recording = false
     }
 
     const onCaptureLiveView = async () => {
-        stopStreaming()
-        const result = await camera?.captureLiveView()
+        const result = await cameraQueue.push(async () => await camera.captureLiveView())
         if (result?.data) {
             const filename = result.info?.filename || 'captured_liveview.jpg'
             downloadFile(result.data, filename, 'image/jpeg')
         }
-        startStreaming()
     }
 
     const onToggleLiveViewImageQuality = async () => {
-        stopStreaming()
-        await wait(100)
-        await camera?.setDeviceProperty(
-            'LIVE_VIEW_IMAGE_QUALITY',
-            store.settings?.liveViewImageQuality === 'HIGH' ? 'LOW' : 'HIGH'
+        await cameraQueue.push(
+            async () =>
+                await camera.setDeviceProperty(
+                    'LIVE_VIEW_IMAGE_QUALITY',
+                    store.settings?.liveViewImageQuality === 'HIGH' ? 'LOW' : 'HIGH'
+                )
         )
-        await wait(100)
-        startStreaming()
     }
 </script>
 
@@ -128,24 +135,10 @@
             <div
                 class="absolute top-2 right-2 px-2 py-1 bg-black/70 rounded text-primary/30 text-xs font-mono flex flex-row gap-4"
             >
-                <span
-                    class="transition-colors duration-300"
-                    style="color: {store.changedProps.has('aperture') ? '#4ade80' : undefined};"
-                >
-                    {store.settings?.aperture || '--'}
-                </span>
-                <span
-                    class="transition-colors duration-300"
-                    style="color: {store.changedProps.has('shutterSpeed') ? '#4ade80' : undefined};"
-                >
-                    {store.settings?.shutterSpeed || '--'}
-                </span>
-                <span
-                    class="transition-colors duration-300"
-                    style="color: {store.changedProps.has('iso') ? '#4ade80' : undefined};"
-                >
-                    {store.settings?.iso || '--'}
-                </span>
+                <!-- Camera Controls -->
+                {#if store.connected}
+                    <CameraControls {camera} />
+                {/if}
                 <span
                     class="transition-colors duration-300"
                     style="color: {store.changedProps.has('exposure') ? '#4ade80' : undefined};"
@@ -211,20 +204,34 @@
                 </Button>
 
                 <Button
-                    disabled={true}
+                    onClick={store.recording ? onStopRecording : onStartRecording}
                     className="w-8! h-8! bg-black/50! hover:bg-black/70! rounded-md flex items-center justify-center text-primary/30 transition-all"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="24"
-                        height="24"
-                        fill="var(--color-red-400)"
-                        viewBox="0 0 256 256"
-                    >
-                        <path
-                            d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm72-88a72,72,0,1,1-72-72A72.08,72.08,0,0,1,200,128Z"
-                        ></path>
-                    </svg>
+                    {#if store.recording}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="24"
+                            height="24"
+                            fill="var(--color-red-400)"
+                            viewBox="0 0 256 256"
+                        >
+                            <path
+                                d="M216,56V200a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V56A16,16,0,0,1,56,40H200A16,16,0,0,1,216,56Z"
+                            ></path>
+                        </svg>
+                    {:else}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="24"
+                            height="24"
+                            fill="currentColor"
+                            viewBox="0 0 256 256"
+                        >
+                            <path
+                                d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm72-88a72,72,0,1,1-72-72A72.08,72.08,0,0,1,200,128Z"
+                            ></path>
+                        </svg>
+                    {/if}
                 </Button>
             </div>
         </div>

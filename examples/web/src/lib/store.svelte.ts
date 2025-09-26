@@ -21,6 +21,8 @@ export const store = $state<{
         liveViewImageQuality: string
     } | null
     changedProps: Set<string>
+    queueProcessing: boolean
+    recording: boolean
 }>({
     connected: false,
     streaming: false,
@@ -32,4 +34,6 @@ export const store = $state<{
     settings: null,
     previousSettings: null,
     changedProps: new Set(),
+    queueProcessing: false,
+    recording: false,
 })
