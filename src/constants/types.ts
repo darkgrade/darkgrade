@@ -218,32 +218,9 @@ export interface Format {
 // Collection Types (for constant objects)
 // ============================================================================
 
-/**
- * Operation constants collection
- */
 export type OperationDefinitions = Record<string, Operation>
-
-/**
- * Response constants collection
- */
 export type ResponseDefinition = Record<string, Response>
-
-/**
- * Event constants collection
- */
 export type EventDefinition = Record<string, Event>
-
-/**
- * Property constants collection
- */
 export type PropertyDefinition<T> = Record<string, Property<T>>
-
-/**
- * Storage constants collection
- */
 export type StorageDefinition = Record<string, Storage>
-
-/**
- * Format constants collection
- */
 export type FormatDefinition = Record<string, Format>
