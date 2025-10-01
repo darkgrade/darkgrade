@@ -41,6 +41,8 @@
     "author": "JPGLab",
     "license": "MIT",
     "dependencies": {
+        "ink": "^6.3.1",
+        "ink-spinner": "^5.0.0",
         "usb": "^2.11.0"
     },
     "devDependencies": {
@@ -48,7 +50,7 @@
         "@tailwindcss/vite": "^4.1.13",
         "@types/glob": "^9.0.0",
         "@types/node": "^20.11.0",
-        "@types/react": "^19",
+        "@types/react": "^19.1.13",
         "@types/react-dom": "^19",
         "@types/usb": "^2.0.0",
         "@typescript-eslint/eslint-plugin": "^6.21.0",
@@ -63,7 +65,7 @@
         "postcss": "^8.5.6",
         "prettier": "^3.6.2",
         "process": "^0.11.10",
-        "react": "^19",
+        "react": "^19.1.1",
         "react-dom": "^19",
         "string-similarity": "^4.0.4",
         "tailwindcss": "^4.1.13",
