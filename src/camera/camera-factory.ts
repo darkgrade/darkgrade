@@ -8,12 +8,26 @@ import { GenericPTPCamera } from '@camera/generic/generic-ptp-camera'
 import { SonyCamera } from '@camera/vendors/sony/camera'
 import { SonyAuthenticator } from '@camera/vendors/sony/authenticator'
 import { VendorIDs } from '@constants/vendors/vendor-ids'
+import { LoggerInterface } from '@core/logger'
+
+/**
+ * No-op logger for environments without logging support (e.g., browser)
+ */
+class NoOpLogger implements LoggerInterface {
+    addLog(): number {
+        return -1
+    }
+    updateEntry(): number {
+        return -1
+    }
+}
 
 /**
  * Camera factory for creating camera implementations
  * V7 Architecture - Direct constant usage without mappers
  */
 export class CameraFactory {
+    private logger: LoggerInterface = new NoOpLogger()
     /**
      * Create a Sony camera instance
      * @param transport - Transport interface
@@ -136,6 +150,6 @@ export class CameraFactory {
         transport: TransportInterface,
         messageBuilder: MessageBuilderInterface & MessageParserInterface
     ): ProtocolInterface {
-        return new PTPProtocol(transport, messageBuilder)
+        return new PTPProtocol(transport, messageBuilder, this.logger)
     }
 }

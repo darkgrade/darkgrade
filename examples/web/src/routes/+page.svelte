@@ -236,4 +236,23 @@
             </div>
         </div>
     </div>
+    <div>
+        Notes:
+        <ul class="list-disc list-outside ms-8 leading-relaxed">
+            <li>Only confirmed working on Sony Alpha series cameras</li>
+            <li>USB mode must be set to "PC Remote mode"</li>
+            <li>Network > Network Option > Access Authen. Settings must be set to "Off"</li>
+            <li>
+                MacOS tries to instantly claim the USB interface as soon as you connect the camera (<a
+                    class="underline"
+                    href="http://www.gphoto.org/doc/manual/FAQ.html#FAQ-already-in-use"
+                    target="_blank">more info</a
+                >).
+                <br />You need to run this in Terminal for now until we can create a proper Electron build:<br />
+                <pre class="mt-2"><code class="text-sm bg-foreground/20 rounded px-4 py-2"
+                        >{`while ; do; kill -9 $(ps aux | grep "[p]tpcamera" | awk '{print $2}'); done`}</code
+                    ></pre>
+            </li>
+        </ul>
+    </div>
 </div>
