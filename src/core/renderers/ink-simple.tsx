@@ -117,11 +117,17 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                         {Object.keys(ptpLog.requestPhase.decodedParams).length === 0 ? (
                             <Text><Text dimColor>  │</Text>    (no parameters)</Text>
                         ) : (
-                            Object.entries(ptpLog.requestPhase.decodedParams).map(([key, value]) => (
-                                <Text key={key}>
-                                    <Text dimColor>{ptpLog.dataPhase || ptpLog.responsePhase ? '  │' : '  '}</Text>    {key} set to {JSON.stringify(value)}
-                                </Text>
-                            ))
+                            Object.entries(ptpLog.requestPhase.decodedParams).map(([key, value]) => {
+                                // Format numeric values as hex
+                                const formattedValue = typeof value === 'number'
+                                    ? `0x${value.toString(16)}`
+                                    : JSON.stringify(value)
+                                return (
+                                    <Text key={key}>
+                                        <Text dimColor>{ptpLog.dataPhase || ptpLog.responsePhase ? '  │' : '  '}</Text>    {key} set to {formattedValue}
+                                    </Text>
+                                )
+                            })
                         )}
                         {config.showEncodedData &&
                             ptpLog.requestPhase.encodedParams?.map((encoded, idx) => {

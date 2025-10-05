@@ -12,6 +12,8 @@ const camera = new SonyCamera(transport, logger)
 
 async function main() {
     await camera.connect()
+
+    await camera.disconnect()
 }
 
-main()
+main().catch(console.error)

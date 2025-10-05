@@ -68,9 +68,32 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
     private nextId: number = 1
     private changeListeners: Array<() => void> = []
     private notifyTimeout: NodeJS.Timeout | null = null
+    private inkInstance: any = null
 
     constructor(config: Partial<LoggerConfig> = {}) {
         this.config = { ...defaultLoggerConfig, ...config }
+
+        // Auto-render ink logger in Node.js environment
+        if (typeof window === 'undefined' && typeof process !== 'undefined') {
+            this.setupInkRenderer()
+        }
+    }
+
+    private setupInkRenderer() {
+        // Dynamically import to avoid bundling issues in browser
+        import('react').then(React => {
+            import('ink').then(({ render }) => {
+                import('./renderers/ink-simple').then(({ InkSimpleLogger }) => {
+                    this.inkInstance = render(React.createElement(InkSimpleLogger, { logger: this }))
+                }).catch(() => {
+                    // Ink renderer not available, continue without UI
+                })
+            }).catch(() => {
+                // Ink not available, continue without UI
+            })
+        }).catch(() => {
+            // React not available, continue without UI
+        })
     }
 
     onChange(listener: () => void) {
