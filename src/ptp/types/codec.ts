@@ -23,7 +23,7 @@ export class CustomCodec<T> {
     readonly type: CustomCodecType | BaseCodecType = 'custom' as const
     public baseCodecs?: ReturnType<typeof createBaseCodecs>
 
-    protected resolveBaseCodec<U>(codec: CodecDefinition<U>): { encode: (value: U) => Uint8Array; decode: (buffer: Uint8Array, offset?: number) => { value: U; bytesRead: number } } {
+    public resolveBaseCodec<U>(codec: CodecDefinition<U>): { encode: (value: U) => Uint8Array; decode: (buffer: Uint8Array, offset?: number) => { value: U; bytesRead: number } } {
         if (!this.baseCodecs) {
             throw new Error('CustomCodec baseCodecs not bound - cannot resolve')
         }

@@ -59,13 +59,13 @@ export class USBTransport implements TransportInterface {
     private readonly deviceFinder: USBDeviceFinder
     private readonly endpointManager: USBEndpointManager
 
-    constructor(logger: Logger<readonly OperationDefinition[]>) {
+    constructor(logger: Logger<any>) {
         this.logger = logger
         this.deviceFinder = new USBDeviceFinder()
         this.endpointManager = new USBEndpointManager()
     }
 
-    private logger: Logger<readonly OperationDefinition[]>
+    private logger: Logger<any>
 
     /**
      * Discover available USB devices
@@ -194,12 +194,7 @@ export class USBTransport implements TransportInterface {
                 )
             ])
             if (data && data.length > 0) {
-                this.logger.addLog({
-                    type: 'warning',
-                    message: `Drained ${data.length} bytes of stale data from device`,
-                    status: 'succeeded',
-                    source: 'USB',
-                })
+                // Drained stale data from device
                 return true
             }
         } catch (e) {
@@ -237,15 +232,6 @@ export class USBTransport implements TransportInterface {
         const buffer = toBuffer(data)
         const endpointAddress = this.endpoints.bulkOut.endpointNumber
 
-        // Log raw bytes
-        const rawBytesHex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ')
-        this.logger.addLog({
-            type: 'info',
-            message: `RAW SEND: ${rawBytesHex}`,
-            status: 'succeeded',
-            source: 'USB',
-        })
-
         const container = USBContainerBuilder.parseContainer(data)
         const containerTypeNames = ['', 'COMMAND', 'DATA', 'RESPONSE', 'EVENT']
         const containerTypeName = containerTypeNames[container.type] || `Unknown(${container.type})`
@@ -253,13 +239,14 @@ export class USBTransport implements TransportInterface {
 
         const transferId = this.logger.addLog({
             type: 'usb_transfer',
+            level: 'info',
             direction: 'send',
-            message: `Send data ${containerInfo}`,
             bytes: buffer.length,
             endpoint: 'bulkOut',
             endpointAddress: `0x${endpointAddress.toString(16)}`,
-            status: 'pending',
-            source: 'USB',
+            sessionId: container.transactionId >> 16,
+            transactionId: container.transactionId,
+            phase: container.type === 1 ? 'request' : container.type === 2 ? 'data' : 'response',
         })
 
         try {
@@ -267,16 +254,7 @@ export class USBTransport implements TransportInterface {
             if (result.status !== 'ok') {
                 throw new Error(`Transfer failed: ${result.status}`)
             }
-
-            this.logger.updateEntry(transferId, {
-                message: `Sent ${containerInfo}`,
-                status: 'succeeded',
-            })
         } catch (error) {
-            this.logger.updateEntry(transferId, {
-                message: `Transfer failed: ${error}`,
-                status: 'failed',
-            })
             throw error
         }
     }
@@ -288,17 +266,6 @@ export class USBTransport implements TransportInterface {
 
         const endpointAddr = this.endpoints.bulkIn.endpointNumber
 
-        const receiveId = this.logger.addLog({
-            type: 'usb_transfer',
-            direction: 'receive',
-            message: 'Receive data',
-            bytes: maxLength,
-            endpoint: 'bulkIn',
-            endpointAddress: `0x${endpointAddr?.toString(16) || '??'}`,
-            status: 'pending',
-            source: 'USB',
-        })
-
         try {
             const transferSize = Math.min(maxLength, USB_LIMITS.MAX_USB_TRANSFER)
             const result = await this.device.transferIn(this.endpoints.bulkIn.endpointNumber, transferSize)
@@ -309,32 +276,22 @@ export class USBTransport implements TransportInterface {
             const receivedData = toUint8Array(result.data.buffer)
             const receivedBytes = receivedData.length
 
-            // Log raw bytes
-            const rawBytesHex = Array.from(receivedData.slice(0, Math.min(64, receivedData.length))).map(b => b.toString(16).padStart(2, '0')).join(' ')
-            this.logger.addLog({
-                type: 'info',
-                message: `RAW RECV: ${rawBytesHex}${receivedData.length > 64 ? '...' : ''}`,
-                status: 'succeeded',
-                source: 'USB',
-            })
-
             const container = USBContainerBuilder.parseContainer(receivedData)
-            const containerTypeNames = ['', 'COMMAND', 'DATA', 'RESPONSE', 'EVENT']
-            const containerTypeName = containerTypeNames[container.type] || `Unknown(${container.type})`
-            const containerInfo = `[${containerTypeName}, Code: 0x${container.code.toString(16)}, TxID: ${container.transactionId}]`
 
-            this.logger.updateEntry(receiveId, {
-                message: `Received ${containerInfo}`,
+            this.logger.addLog({
+                type: 'usb_transfer',
+                level: 'info',
+                direction: 'receive',
                 bytes: receivedBytes,
-                status: 'succeeded',
+                endpoint: 'bulkIn',
+                endpointAddress: `0x${endpointAddr?.toString(16) || '??'}`,
+                sessionId: container.transactionId >> 16,
+                transactionId: container.transactionId,
+                phase: container.type === 1 ? 'request' : container.type === 2 ? 'data' : 'response',
             })
 
             return receivedData
         } catch (error) {
-            this.logger.updateEntry(receiveId, {
-                message: `Receive failed: ${error}`,
-                status: 'failed',
-            })
             throw error
         }
     }
@@ -430,12 +387,6 @@ export class USBTransport implements TransportInterface {
         // Camera may send events that need to be polled before it can proceed
         if (this.endpoints.interrupt) {
             await this.startEventListening()
-            this.logger.addLog({
-                type: 'info',
-                message: 'Started interrupt endpoint polling',
-                status: 'succeeded',
-                source: 'USB',
-            })
         }
     }
 
@@ -447,12 +398,7 @@ export class USBTransport implements TransportInterface {
         if (this.classRequestHandler) {
             const status = await this.classRequestHandler.getDeviceStatus()
 
-            this.logger.addLog({
-                type: 'warning',
-                message: `Stall detected - Device status code: 0x${status.code.toString(16)}`,
-                status: 'pending',
-                source: 'USB',
-            })
+            // Stall detected
         }
 
         // Clear halt on the appropriate endpoint
@@ -463,12 +409,7 @@ export class USBTransport implements TransportInterface {
         try {
             await this.device.clearHalt('in', endpointNumber)
         } catch (error) {
-            this.logger.addLog({
-                type: 'warning',
-                message: `Failed to clear halt: ${error}`,
-                status: 'failed',
-                source: 'USB',
-            })
+            // Failed to clear halt
         }
 
         if (this.classRequestHandler) {
@@ -489,12 +430,7 @@ export class USBTransport implements TransportInterface {
 
         if (this.eventHandlers.size === 1 && this.connected) {
             this.startEventListening().catch(error => {
-                this.logger.addLog({
-                    type: 'error',
-                    message: `Failed to start event listening: ${error}`,
-                    status: 'failed',
-                    source: 'USB',
-                })
+                // Failed to start event listening
             })
         }
     }
@@ -504,12 +440,7 @@ export class USBTransport implements TransportInterface {
 
         if (this.eventHandlers.size === 0) {
             this.stopEventListening().catch(error => {
-                this.logger.addLog({
-                    type: 'error',
-                    message: `Failed to stop event listening: ${error}`,
-                    status: 'failed',
-                    source: 'USB',
-                })
+                // Failed to stop event listening
             })
         }
     }
@@ -552,12 +483,7 @@ export class USBTransport implements TransportInterface {
                 this.handleInterruptData(data)
             }
         } catch (error) {
-            this.logger.addLog({
-                type: 'warning',
-                message: `Interrupt endpoint error: ${error}`,
-                status: 'failed',
-                source: 'USB',
-            })
+            // Interrupt endpoint error (ignore)
         }
 
         // Continue polling if still listening
@@ -592,34 +518,25 @@ export class USBTransport implements TransportInterface {
 
             this.logger.addLog({
                 type: 'usb_transfer',
-                message: `Event 0x${event.code.toString(16)} (transactionId=${event.transactionId}, params=[${event.parameters.map(p => `0x${p.toString(16)}`).join(', ')}])${this.eventHandlers.size === 0 ? ' [NO HANDLERS]' : ''}`,
+                level: 'info',
                 bytes: data.length,
-                status: 'succeeded',
                 direction: 'receive',
                 endpoint: 'interrupt',
                 endpointAddress: `0x${this.endpoints.interrupt.endpointNumber.toString(16)}`,
-                source: 'USB',
+                sessionId: event.transactionId >> 16,
+                transactionId: event.transactionId,
+                phase: 'response',
             })
 
             this.eventHandlers.forEach(handler => {
                 try {
                     handler(event)
                 } catch (error) {
-                    this.logger.addLog({
-                        type: 'error',
-                        message: `Event handler error: ${error}`,
-                        status: 'failed',
-                        source: 'USB',
-                    })
+                    // Event handler error (ignore)
                 }
             })
         } catch (error) {
-            this.logger.addLog({
-                type: 'error',
-                message: `Failed to parse event: ${error}`,
-                status: 'failed',
-                source: 'USB',
-            })
+            // Failed to parse event (ignore)
         }
     }
 }

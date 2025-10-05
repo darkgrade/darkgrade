@@ -387,7 +387,7 @@ export class GenericCamera<
         return { type, code, transactionId, payload }
     }
 
-    protected resolveCodec<T>(codec: CodecDefinition<T>): {
+    public resolveCodec<T>(codec: CodecDefinition<T>): {
         encode: (value: T) => Uint8Array
         decode: (buffer: Uint8Array, offset?: number) => { value: T; bytesRead: number }
     } {
