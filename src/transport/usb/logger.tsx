@@ -69,7 +69,7 @@ export interface LoggerInterface {
     updateEntry(id: number, updates: Partial<LogEntry>): number
 }
 
-const getRandomId = (): number => {
+export const getRandomId = (): number => {
     return Date.now() + Math.round(Math.random() * 1000)
 }
 

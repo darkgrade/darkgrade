@@ -244,6 +244,7 @@
     <div>
         Notes:
         <ul class="list-disc list-outside ms-8 leading-relaxed">
+            <li>Make sure you're on the latest firmware for your camera</li>
             <li>WebUSB only works reliably in Chromium based browsers</li>
             <li>You may need to set permissions for "USB Devices" to "Ask" in Chrome site settings</li>
             <li>Only confirmed working on Sony Alpha series cameras</li>

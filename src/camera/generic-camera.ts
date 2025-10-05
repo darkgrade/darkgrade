@@ -470,4 +470,4 @@ export class GenericCamera<
 }
 
 // Export types for external use
-export type { PTPEventData, OperationName, PropertyName, PropertyValue }
+export type { PTPEventData, OperationName, PropertyName, PropertyValue, OperationParamsObject, GetOperation }
