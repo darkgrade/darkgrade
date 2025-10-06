@@ -63,6 +63,16 @@ type GetProperty<N extends string, Props extends readonly PropertyDefinition[]> 
 type PropertyValue<N extends string, Props extends readonly PropertyDefinition[]> =
     GetProperty<N, Props> extends { codec: infer C } ? CodecType<C> : never
 
+// Extract operation data return type
+type OperationDataType<Op extends OperationDefinition> =
+    Op extends { dataCodec: infer C } ? CodecType<C> : never
+
+// Build operation response type
+type OperationResponse<Op extends OperationDefinition> =
+    Op extends { dataCodec: any }
+        ? { code: number; data: OperationDataType<Op> }
+        : { code: number; data?: undefined }
+
 // Runtime event data structure (not a definition, but actual event data)
 interface PTPEventData {
     name: string
@@ -148,7 +158,7 @@ export class GenericCamera<
         params: OperationParamsObject<GetOperation<N, Ops>>,
         data?: Uint8Array,
         maxDataLength?: number
-    ): Promise<{ code: number; data?: Uint8Array }> {
+    ): Promise<OperationResponse<GetOperation<N, Ops>>> {
         const operation = this.operationDefinitions.find(op => op.name === operationName)
         if (!operation) {
             throw new Error(`Unknown operation: ${operationName}`)
@@ -262,7 +272,7 @@ export class GenericCamera<
             return {
                 code: responseContainer.code,
                 data: returnData,
-            }
+            } as OperationResponse<GetOperation<N, Ops>>
         } catch (error) {
             throw error
         }

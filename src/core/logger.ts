@@ -76,7 +76,27 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
         // Auto-render ink logger in Node.js environment
         if (typeof window === 'undefined' && typeof process !== 'undefined') {
             this.setupInkRenderer()
+            this.setupProcessHandlers()
         }
+    }
+
+    private setupProcessHandlers() {
+        // Cleanup on SIGINT (Ctrl+C)
+        process.on('SIGINT', () => {
+            this.cleanup()
+            process.exit(0)
+        })
+
+        // Cleanup on SIGTERM
+        process.on('SIGTERM', () => {
+            this.cleanup()
+            process.exit(0)
+        })
+
+        // Cleanup on exit (after all async operations complete)
+        process.on('exit', () => {
+            this.cleanup()
+        })
     }
 
     private setupInkRenderer() {
@@ -176,6 +196,13 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
 
     getConfig(): LoggerConfig {
         return this.config
+    }
+
+    cleanup(): void {
+        if (this.inkInstance) {
+            this.inkInstance.unmount()
+            this.inkInstance = null
+        }
     }
 
     clear(): void {

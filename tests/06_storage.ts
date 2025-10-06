@@ -47,12 +47,34 @@ async function main() {
 
     const storageIds = await camera.send('GetStorageIDs', {})
 
+    // sleep for 1 second
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
     // test storage-info dataset
-    // const storageInfo = await camera.send('GetStorageInfo', {
-    //     StorageID: 0x00000001,
-    // })
+    const storageInfo = await camera.send('GetStorageInfo', {
+        StorageID: storageIds.data[0],
+    })
+
+    new Promise(resolve => setTimeout(resolve, 1000))
+
+    const objectIds = await camera.send('GetObjectHandles', {
+        StorageID: storageIds.data[0],
+    })
+
+    await camera.send('SDIO_SetContentsTransferMode', {
+        ContentsSelectType: 'HOST',
+        TransferMode: 'DISABLE',
+        AdditionalInformation: 'NONE',
+    })
 
     await camera.disconnect()
+
+    // Give logger time to finish rendering before cleanup
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    logger.cleanup()
+
+    console.log('Storage IDs:', storageIds)
 }
 
 main().catch(console.error)

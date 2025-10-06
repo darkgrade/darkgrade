@@ -15,7 +15,7 @@ import { propertyDefinitions as standardPropertyDefinitions } from '@ptp/definit
 import { responseDefinitions as standardResponseDefinitions } from '@ptp/definitions/response-definitions'
 import { formatDefinitions as standardFormatDefinitions } from '@ptp/definitions/format-definitions'
 import { parseLiveViewDataset } from '@ptp/datasets/vendors/sony/sony-live-view-dataset'
-import { ObjectInfoCodec, ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { getSonyFormatByCode } from '@ptp/definitions/vendors/sony/sony-format-definitions'
 
 // Merge Sony definitions with standard PTP definitions
@@ -218,9 +218,7 @@ export class SonyCamera extends GenericCamera<
             return null
         }
 
-        const objectInfoCodec = new ObjectInfoCodec()
-        objectInfoCodec.baseCodecs = this.baseCodecs as any
-        const objectInfo = objectInfoCodec.decode(objectInfoResponse.data).value
+        const objectInfo = objectInfoResponse.data
         const objectCompressedSize = objectInfo.objectCompressedSize
 
         const objectResponse = await this.send(
@@ -258,9 +256,7 @@ export class SonyCamera extends GenericCamera<
 
         await new Promise(resolve => setTimeout(resolve, 500))
 
-        const objInfoCodec = new ObjectInfoCodec()
-        objInfoCodec.baseCodecs = this.baseCodecs
-        const objectInfo = objInfoCodec.decode(objectInfoResponse.data).value
+        const objectInfo = objectInfoResponse.data
         const objectCompressedSize = objectInfo.objectCompressedSize
         const objectFormat = objectInfo.objectFormat
         const sonyFormatInfo = getSonyFormatByCode(objectFormat)
