@@ -100,7 +100,7 @@ async function main() {
 
         try {
             // Use Sony's SDIO_GetPartialLargeObject to retrieve the file in chunks
-            const CHUNK_SIZE = 1024 * 1024 // 1MB chunks
+            const CHUNK_SIZE = 1024 * 1024 * 10 // 10MB chunks
             const chunks: Uint8Array[] = []
             let offset = 0
 

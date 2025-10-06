@@ -5,6 +5,7 @@ import { OperationDefinition } from '../../ptp/types/operation'
 import { Logger, Log, PTPOperationLog, USBTransferLog, PTPTransferLog } from '../logger'
 import { responseDefinitions } from '../../ptp/definitions/response-definitions'
 import { formatJSON } from './formatters/compact-formatter'
+import { formatBytes } from './formatters/bytes-formatter'
 
 interface InkSimpleLoggerProps<Ops extends readonly OperationDefinition[]> {
     logger: Logger<Ops>
@@ -167,7 +168,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                     const direction = usbLog.direction === 'send' ? 'to' : 'from'
                                     return (
                                         <Text key={usbLog.id}>
-                                            <Text dimColor>{ptpLog.dataPhase || ptpLog.responsePhase ? '  │' : '  '}</Text>    Transferred {usbLog.bytes} bytes via USB {direction} {usbLog.endpoint}{' '}
+                                            <Text dimColor>{ptpLog.dataPhase || ptpLog.responsePhase ? '  │' : '  '}</Text>    Transferred {formatBytes(usbLog.bytes)} via USB {direction} {usbLog.endpoint}{' '}
                                             {usbLog.endpointAddress}
                                         </Text>
                                     )
@@ -199,6 +200,18 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                         ? transferLog.transferredBytes / transferLog.chunks.length
                                         : 0
 
+                                    // Calculate speed from last chunk
+                                    let speedText = ''
+                                    if (transferLog.chunks.length >= 2) {
+                                        const lastChunk = transferLog.chunks[transferLog.chunks.length - 1]
+                                        const prevChunk = transferLog.chunks[transferLog.chunks.length - 2]
+                                        const timeDiff = (lastChunk.timestamp - prevChunk.timestamp) / 1000 // seconds
+                                        if (timeDiff > 0) {
+                                            const bytesPerSecond = lastChunk.bytes / timeDiff
+                                            speedText = `${formatBytes(bytesPerSecond, 1)}/s`
+                                        }
+                                    }
+
                                     return (
                                         <>
                                             <Text>
@@ -206,8 +219,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                                 <Text> {percent.toFixed(1)}%</Text>
                                             </Text>
                                             <Text>
-                                                <Text dimColor>{ptpLog.responsePhase ? '  │' : '  '}</Text>    <Text>{transferLog.chunks.length} chunks ({(avgChunkSize / 1024).toFixed(0)} KB avg), </Text>
-                                                <Text>{(transferLog.transferredBytes / 1024 / 1024).toFixed(2)} MB / {(transferLog.totalBytes / 1024 / 1024).toFixed(2)} MB</Text>
+                                                <Text dimColor>{ptpLog.responsePhase ? '  │' : '  '}</Text>    <Text>{speedText} ({formatBytes(transferLog.totalBytes)} total, {transferLog.chunks.length} chunks @ {formatBytes(avgChunkSize, 0)} each)</Text>
                                             </Text>
                                         </>
                                     )
@@ -235,18 +247,36 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                     </Text>
                                 )}
                                 {/* USB transfers for data phase */}
-                                {!config.collapseUSB &&
-                                    transaction.usbLogs
-                                        .filter(u => u.phase === 'data')
-                                        .map((usbLog) => {
-                                            const direction = usbLog.direction === 'send' ? 'to' : 'from'
-                                            return (
-                                                <Text key={usbLog.id}>
-                                                    <Text dimColor>{ptpLog.responsePhase ? '  │' : '  '}</Text>    Transferred {usbLog.bytes} bytes via USB {direction} {usbLog.endpoint}{' '}
-                                                    {usbLog.endpointAddress}
-                                                </Text>
-                                            )
-                                        })}
+                                {!config.collapseUSB && (() => {
+                                    const dataUsbLogs = transaction.usbLogs.filter(u => u.phase === 'data')
+
+                                    // For transfer logs, show aggregate USB stats across all chunks
+                                    if (ptpLog.type === 'ptp_transfer' && dataUsbLogs.length > 0) {
+                                        const transferLog = ptpLog as PTPTransferLog<Ops>
+                                        const totalBytes = transferLog.transferredBytes
+                                        const direction = dataUsbLogs[0].direction === 'send' ? 'to' : 'from'
+                                        const endpoint = dataUsbLogs[0].endpoint
+                                        const endpointAddress = dataUsbLogs[0].endpointAddress
+
+                                        return (
+                                            <Text key="aggregate-usb">
+                                                <Text dimColor>{ptpLog.responsePhase ? '  │' : '  '}</Text>    Transferred {formatBytes(totalBytes)} via USB {direction} {endpoint}{' '}
+                                                {endpointAddress}
+                                            </Text>
+                                        )
+                                    }
+
+                                    // For regular operations, show individual USB transfers
+                                    return dataUsbLogs.map((usbLog) => {
+                                        const direction = usbLog.direction === 'send' ? 'to' : 'from'
+                                        return (
+                                            <Text key={usbLog.id}>
+                                                <Text dimColor>{ptpLog.responsePhase ? '  │' : '  '}</Text>    Transferred {formatBytes(usbLog.bytes)} via USB {direction} {usbLog.endpoint}{' '}
+                                                {usbLog.endpointAddress}
+                                            </Text>
+                                        )
+                                    })
+                                })()}
                             </>
                         ) : !ptpLog.responsePhase ? (
                             <>
@@ -287,7 +317,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                             const direction = usbLog.direction === 'send' ? 'to' : 'from'
                                             return (
                                                 <Text key={usbLog.id}>
-                                                    {'       '}Transferred {usbLog.bytes} bytes via USB {direction} {usbLog.endpoint}{' '}
+                                                    {'       '}Transferred {formatBytes(usbLog.bytes)} via USB {direction} {usbLog.endpoint}{' '}
                                                     {usbLog.endpointAddress}
                                                 </Text>
                                             )
