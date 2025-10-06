@@ -111,12 +111,17 @@ async function main() {
                 const offsetLower = offset & 0xffffffff
                 const offsetUpper = Math.floor(offset / 0x100000000) // Divide by 2^32 to get upper 32 bits
 
-                const chunkResponse = await camera.send('SDIO_GetPartialLargeObject', {
-                    ObjectHandle: objectId,
-                    OffsetLower: offsetLower,
-                    OffsetUpper: offsetUpper,
-                    MaxBytes: bytesToRead,
-                })
+                const chunkResponse = await camera.send(
+                    'SDIO_GetPartialLargeObject',
+                    {
+                        ObjectHandle: objectId,
+                        OffsetLower: offsetLower,
+                        OffsetUpper: offsetUpper,
+                        MaxBytes: bytesToRead,
+                    },
+                    undefined,
+                    offset === 0 ? objectSize : undefined  // Pass total size on first chunk only
+                )
 
                 if (chunkResponse.data) {
                     chunks.push(chunkResponse.data)

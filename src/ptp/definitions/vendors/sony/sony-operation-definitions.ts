@@ -197,6 +197,47 @@ export const sonyOperationDefinitions = [
         responseParameters: [],
     },
     {
+        code: 0x9211,
+        name: 'SDIO_GetPartialLargeObject',
+        description: 'Get partial object from the device. Same as GetPartialObject on PIMA 15740 but with 64-bit offset support.',
+        dataDirection: 'out',
+        dataCodec: baseCodecs.uint8array,
+        operationParameters: [
+            {
+                name: 'ObjectHandle',
+                description: 'Object handle',
+                codec: baseCodecs.uint32,
+                required: true,
+            },
+            {
+                name: 'OffsetLower',
+                description: 'Offset in bytes (lower 32 bits)',
+                codec: baseCodecs.uint32,
+                required: true,
+            },
+            {
+                name: 'OffsetUpper',
+                description: 'Offset in bytes (upper 32 bits)',
+                codec: baseCodecs.uint32,
+                required: true,
+            },
+            {
+                name: 'MaxBytes',
+                description: 'Maximum number of bytes to obtain (does not support 0xFFFFFFFF)',
+                codec: baseCodecs.uint32,
+                required: true,
+            },
+        ],
+        responseParameters: [
+            {
+                name: 'ActualBytesSent',
+                description: 'Actual number of bytes sent',
+                codec: baseCodecs.uint32,
+                required: true,
+            },
+        ],
+    },
+    {
         code: 0x9212,
         name: 'SDIO_SetContentsTransferMode',
         description: 'Enable content transfer mode to access memory card content.',

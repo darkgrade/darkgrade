@@ -188,23 +188,57 @@ export class GenericCamera<
             encodedParams.push(codec.encode(value))
         }
 
-        const logId = this.logger.addLog({
-            type: 'ptp_operation',
-            level: 'info',
-            sessionId: this.sessionId!,
-            transactionId,
-            requestPhase: {
-                timestamp: Date.now(),
-                operationName: operationName as any,
-                encodedParams,
-                decodedParams: params as any,
-            },
-        })
+        // Check if this is a partial object operation (GetPartialObject or SDIO_GetPartialLargeObject)
+        const isPartialObjectOp = operationName === 'GetPartialObject' || operationName === 'SDIO_GetPartialLargeObject'
+        const objectHandle = isPartialObjectOp ? (params as any).ObjectHandle : null
+
+        // Check if we have an active transfer for this object
+        let logId: number
+        if (isPartialObjectOp && objectHandle !== null) {
+            const existingLogId = this.logger.getActiveTransfer(objectHandle)
+            if (existingLogId !== undefined) {
+                // Reuse existing transfer log
+                logId = existingLogId
+            } else {
+                // Create new transfer log
+                logId = this.logger.addLog({
+                    type: 'ptp_transfer',
+                    level: 'info',
+                    sessionId: this.sessionId!,
+                    transactionId,
+                    objectHandle: objectHandle!,
+                    totalBytes: 0, // Will be updated later
+                    transferredBytes: 0, // Will be updated later
+                    chunks: [],
+                    requestPhase: {
+                        timestamp: Date.now(),
+                        operationName: operationName as any,
+                        encodedParams,
+                        decodedParams: params as any,
+                    },
+                } as any)
+                this.logger.registerTransfer(objectHandle, logId)
+            }
+        } else {
+            // Regular operation - create standard log
+            logId = this.logger.addLog({
+                type: 'ptp_operation',
+                level: 'info',
+                sessionId: this.sessionId!,
+                transactionId,
+                requestPhase: {
+                    timestamp: Date.now(),
+                    operationName: operationName as any,
+                    encodedParams,
+                    decodedParams: params as any,
+                },
+            })
+        }
 
         try {
             // Build and send COMMAND container
             const commandContainer = this.buildCommand(operation.code, transactionId, encodedParams)
-            await this.transport.send(commandContainer)
+            await this.transport.send(commandContainer, this.sessionId!, transactionId)
 
             // Handle data phase
             let receivedData: Uint8Array | undefined
@@ -223,12 +257,12 @@ export class GenericCamera<
                     },
                 })
 
-                await this.transport.send(dataContainer)
+                await this.transport.send(dataContainer, this.sessionId!, transactionId)
             } else if (operation.dataDirection === 'out') {
                 // Receive DATA from camera
                 // Use custom maxDataLength if provided, otherwise default to 256KB for live view
                 const bufferSize = maxDataLength || 256 * 1024
-                const dataRaw = await this.transport.receive(bufferSize)
+                const dataRaw = await this.transport.receive(bufferSize, this.sessionId!, transactionId)
                 const dataContainer = this.parseContainer(dataRaw)
                 receivedData = dataContainer.payload
 
@@ -246,20 +280,61 @@ export class GenericCamera<
                     }
                 }
 
-                this.logger.updateLog(logId, {
-                    dataPhase: {
+                // Handle data phase logging
+                if (isPartialObjectOp && objectHandle !== null) {
+                    // For partial object operations, add chunk info to transfer log
+                    const offset = (params as any).Offset ?? ((params as any).OffsetLower ?? 0)
+                    const offsetUpper = (params as any).OffsetUpper ?? 0
+                    const fullOffset = offsetUpper * 0x100000000 + offset
+                    const receivedBytes = receivedData?.length || 0
+
+                    // Get current log to update chunks
+                    const currentLog = this.logger.getLogById(logId) as any
+                    const chunks = currentLog?.chunks || []
+                    chunks.push({
+                        transactionId,
                         timestamp: Date.now(),
-                        direction: 'out',
-                        bytes: receivedData?.length || 0,
-                        encodedData: receivedData,
-                        decodedData: decodedData,
-                        maxDataLength,
-                    },
-                })
+                        offset: fullOffset,
+                        bytes: receivedBytes,
+                    })
+
+                    const totalTransferred = chunks.reduce((sum: number, c: any) => sum + c.bytes, 0)
+
+                    // Only set totalBytes on first chunk (when current is 0) or if maxDataLength is provided
+                    const totalBytes = currentLog?.totalBytes && currentLog.totalBytes > 0
+                        ? currentLog.totalBytes  // Keep existing totalBytes
+                        : (maxDataLength || (fullOffset + receivedBytes))  // Set initial totalBytes
+
+                    this.logger.updateLog(logId, {
+                        chunks,
+                        totalBytes,
+                        transferredBytes: totalTransferred,
+                        dataPhase: {
+                            timestamp: Date.now(),
+                            direction: 'out',
+                            bytes: receivedData?.length || 0,
+                            encodedData: receivedData,
+                            decodedData: decodedData,
+                            maxDataLength,
+                        },
+                    })
+                } else {
+                    // Regular operation - standard data phase
+                    this.logger.updateLog(logId, {
+                        dataPhase: {
+                            timestamp: Date.now(),
+                            direction: 'out',
+                            bytes: receivedData?.length || 0,
+                            encodedData: receivedData,
+                            decodedData: decodedData,
+                            maxDataLength,
+                        },
+                    })
+                }
             }
 
             // Receive RESPONSE
-            const responseRaw = await this.transport.receive(512)
+            const responseRaw = await this.transport.receive(512, this.sessionId!, transactionId)
             const responseContainer = this.parseContainer(responseRaw)
 
             this.logger.updateLog(logId, {
@@ -268,6 +343,7 @@ export class GenericCamera<
                     code: responseContainer.code,
                 },
             })
+
 
             // Return decoded data if available
             const finalData = this.logger.getLogs().find(l => l.id === logId)

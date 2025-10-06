@@ -53,7 +53,23 @@ type USBTransferLog = BaseLog & {
     phase: 'request' | 'data' | 'response'
 }
 
-type Log<Ops extends readonly OperationDefinition[]> = PTPOperationLog<Ops> | USBTransferLog
+type PTPTransferLog<
+    Ops extends readonly OperationDefinition[],
+    N extends OperationName<Ops> = OperationName<Ops>
+> = PTPOperationLog<Ops, N> & {
+    type: 'ptp_transfer'
+    objectHandle: number
+    totalBytes: number
+    transferredBytes: number
+    chunks: Array<{
+        transactionId: number
+        timestamp: number
+        offset: number
+        bytes: number
+    }>
+}
+
+type Log<Ops extends readonly OperationDefinition[]> = PTPOperationLog<Ops> | USBTransferLog | PTPTransferLog<Ops>
 
 // Before adding to logger (no id/timestamp yet)
 type NewLog<Ops extends readonly OperationDefinition[]> = Omit<Log<Ops>, 'id' | 'timestamp'>
@@ -69,6 +85,7 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
     private changeListeners: Array<() => void> = []
     private notifyTimeout: NodeJS.Timeout | null = null
     private inkInstance: any = null
+    private activeTransfers: Map<number, number> = new Map() // objectHandle -> logId
 
     constructor(config: Partial<LoggerConfig> = {}) {
         this.config = { ...defaultLoggerConfig, ...config }
@@ -208,6 +225,19 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
     clear(): void {
         this.logs.clear()
         this.orderedTransactions = []
+        this.activeTransfers.clear()
+    }
+
+    getActiveTransfer(objectHandle: number): number | undefined {
+        return this.activeTransfers.get(objectHandle)
+    }
+
+    registerTransfer(objectHandle: number, logId: number): void {
+        this.activeTransfers.set(objectHandle, logId)
+    }
+
+    completeTransfer(objectHandle: number): void {
+        this.activeTransfers.delete(objectHandle)
     }
 
     private trimIfNeeded(): void {
@@ -219,4 +249,4 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
     }
 }
 
-export type { LogLevel, BaseLog, PTPOperationLog, USBTransferLog, Log, NewLog }
+export type { LogLevel, BaseLog, PTPOperationLog, USBTransferLog, PTPTransferLog, Log, NewLog }

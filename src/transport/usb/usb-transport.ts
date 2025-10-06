@@ -13,8 +13,8 @@ import { EndpointType } from './endpoint.interface'
  * USB-specific limits
  */
 export const USB_LIMITS = {
-    /** Maximum USB transfer size (32MB - 1KB for safety) */
-    MAX_USB_TRANSFER: 32 * 1024 * 1024 - 1024,
+    /** Maximum USB transfer size (1GB for large file transfers) */
+    MAX_USB_TRANSFER: 1024 * 1024 * 1024,
     /** Default USB receive timeout in milliseconds */
     RECEIVE_TIMEOUT: 5000,
     /** Default bulk transfer size */
@@ -208,23 +208,23 @@ export class USBTransport implements TransportInterface {
         return this.transactionId
     }
 
-    async send(data: Uint8Array): Promise<void> {
+    async send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void> {
         if (!this.connected || !this.endpoints) {
             throw new Error('Not connected')
         }
 
-        await this.bulkOut(data)
+        await this.bulkOut(data, sessionId, transactionId)
     }
 
-    async receive(maxLength: number): Promise<Uint8Array> {
+    async receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array> {
         if (!this.connected || !this.endpoints) {
             throw new Error('Not connected')
         }
 
-        return await this.bulkIn(maxLength)
+        return await this.bulkIn(maxLength, sessionId, transactionId)
     }
 
-    private async bulkOut(data: Uint8Array): Promise<void> {
+    private async bulkOut(data: Uint8Array, sessionId: number, transactionId: number): Promise<void> {
         if (!this.connected || !this.endpoints) {
             throw new Error('Not connected')
         }
@@ -244,8 +244,8 @@ export class USBTransport implements TransportInterface {
             bytes: buffer.length,
             endpoint: 'bulkOut',
             endpointAddress: `0x${endpointAddress.toString(16)}`,
-            sessionId: container.transactionId >> 16,
-            transactionId: container.transactionId,
+            sessionId: sessionId,
+            transactionId: transactionId,
             phase: container.type === 1 ? 'request' : container.type === 2 ? 'data' : 'response',
         })
 
@@ -259,38 +259,99 @@ export class USBTransport implements TransportInterface {
         }
     }
 
-    private async bulkIn(maxLength: number = USB_LIMITS.DEFAULT_BULK_SIZE): Promise<Uint8Array> {
+    private async bulkIn(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array> {
         if (!this.connected || !this.endpoints) {
             throw new Error('Not connected')
         }
 
         const endpointAddr = this.endpoints.bulkIn.endpointNumber
+        const CHUNK_SIZE = 64 * 1024 // 64KB chunks
 
         try {
-            const transferSize = Math.min(maxLength, USB_LIMITS.MAX_USB_TRANSFER)
-            const result = await this.device.transferIn(this.endpoints.bulkIn.endpointNumber, transferSize)
-            if (result.status !== 'ok') {
-                throw new Error(`Transfer failed: ${result.status}`)
+            // Read first chunk to get container header and determine total length
+            const firstResult = await this.device.transferIn(this.endpoints.bulkIn.endpointNumber, CHUNK_SIZE)
+
+            if (firstResult.status !== 'ok') {
+                throw new Error(`Transfer failed: ${firstResult.status}`)
             }
 
-            const receivedData = toUint8Array(result.data.buffer)
-            const receivedBytes = receivedData.length
+            const firstChunk = toUint8Array(firstResult.data.buffer)
 
-            const container = USBContainerBuilder.parseContainer(receivedData)
+            // Parse container header to get total expected length
+            if (firstChunk.length < 12) {
+                throw new Error('Container too short')
+            }
+
+            const view = new DataView(firstChunk.buffer, firstChunk.byteOffset, firstChunk.byteLength)
+            const containerLength = view.getUint32(0, true) // little-endian
+
+            // If this is a small container (command/response), we likely got it all
+            if (firstChunk.length >= containerLength) {
+                const container = USBContainerBuilder.parseContainer(firstChunk)
+
+                this.logger.addLog({
+                    type: 'usb_transfer',
+                    level: 'info',
+                    direction: 'receive',
+                    bytes: firstChunk.length,
+                    endpoint: 'bulkIn',
+                    endpointAddress: `0x${endpointAddr.toString(16)}`,
+                    sessionId: sessionId,
+                    transactionId: transactionId,
+                    phase: container.type === 1 ? 'request' : container.type === 2 ? 'data' : 'response',
+                })
+
+                return firstChunk.slice(0, containerLength)
+            }
+
+            // Large transfer - read remaining data in chunks
+            const chunks: Uint8Array[] = [firstChunk]
+            let totalReceived = firstChunk.length
+
+            while (totalReceived < containerLength) {
+                const remaining = containerLength - totalReceived
+                const nextChunkSize = Math.min(remaining, CHUNK_SIZE)
+
+                const result = await this.device.transferIn(this.endpoints.bulkIn.endpointNumber, nextChunkSize)
+
+                if (result.status !== 'ok') {
+                    throw new Error(`Transfer failed: ${result.status}`)
+                }
+
+                const chunk = toUint8Array(result.data.buffer)
+
+                if (chunk.length === 0) {
+                    // No more data available
+                    break
+                }
+
+                chunks.push(chunk)
+                totalReceived += chunk.length
+            }
+
+            // Combine all chunks into final buffer
+            const completeData = new Uint8Array(totalReceived)
+            let offset = 0
+            for (const chunk of chunks) {
+                completeData.set(chunk, offset)
+                offset += chunk.length
+            }
+
+            const container = USBContainerBuilder.parseContainer(completeData)
 
             this.logger.addLog({
                 type: 'usb_transfer',
                 level: 'info',
                 direction: 'receive',
-                bytes: receivedBytes,
+                bytes: completeData.length,
                 endpoint: 'bulkIn',
-                endpointAddress: `0x${endpointAddr?.toString(16) || '??'}`,
-                sessionId: container.transactionId >> 16,
-                transactionId: container.transactionId,
+                endpointAddress: `0x${endpointAddr.toString(16)}`,
+                sessionId: sessionId,
+                transactionId: transactionId,
                 phase: container.type === 1 ? 'request' : container.type === 2 ? 'data' : 'response',
             })
 
-            return receivedData
+            return completeData.slice(0, Math.min(containerLength, completeData.length))
         } catch (error) {
             throw error
         }

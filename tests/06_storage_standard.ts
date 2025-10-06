@@ -80,34 +80,65 @@ async function main() {
 
     // Try with just the first object to debug
     const firstObjectId = nonAssociationObjectIds[0]
-    console.log(`Attempting to get object ${firstObjectId.toString(16)}, size: ${objectInfos[firstObjectId].objectCompressedSize} bytes`)
+    const objectSize = objectInfos[firstObjectId].objectCompressedSize
+    console.log(`Attempting to get object ${firstObjectId.toString(16)}, size: ${objectSize} bytes`)
 
+    // Disable content transfer mode before using standard GetPartialObject
+    console.log('Disabling content transfer mode before testing standard GetPartialObject')
     await camera.send('SDIO_SetContentsTransferMode', {
         ContentsSelectType: 'HOST',
         TransferMode: 'DISABLE',
         AdditionalInformation: 'NONE',
     })
 
-
     try {
-        const objectData = await camera.send(
-            'GetObject',
-            {
+        // Use standard PTP GetPartialObject to retrieve the file in chunks
+        const CHUNK_SIZE = 1024 * 1024 // 1MB chunks
+        const chunks: Uint8Array[] = []
+        let offset = 0
+
+        console.log('Testing standard PTP GetPartialObject with content transfer mode DISABLED')
+
+        while (offset < objectSize) {
+            const bytesToRead = Math.min(CHUNK_SIZE, objectSize - offset)
+
+            console.log(`Reading chunk at offset ${offset}, size ${bytesToRead} bytes`)
+
+            // Standard GetPartialObject uses a single 32-bit offset (max 4GB)
+            if (offset > 0xffffffff) {
+                throw new Error('File too large for standard GetPartialObject (> 4GB)')
+            }
+
+            const chunkResponse = await camera.send('GetPartialObject', {
                 ObjectHandle: firstObjectId,
-            },
-            undefined
-            // Not passing maxDataLength - use default and chunk
-        )
-        console.log('Object retrieved successfully:', objectData.code)
+                Offset: offset,
+                MaxBytes: bytesToRead,
+            })
+
+            if (chunkResponse.data) {
+                chunks.push(chunkResponse.data)
+                offset += chunkResponse.data.length
+                console.log(`Received ${chunkResponse.data.length} bytes, total: ${offset}/${objectSize}`)
+            } else {
+                console.error('No data received in chunk response')
+                break
+            }
+        }
+
+        // Combine all chunks
+        const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+        const completeFile = new Uint8Array(totalBytes)
+        let writeOffset = 0
+        for (const chunk of chunks) {
+            completeFile.set(chunk, writeOffset)
+            writeOffset += chunk.length
+        }
+
+        console.log(`Object retrieved successfully! Total size: ${completeFile.length} bytes`)
+        console.log(`First 32 bytes (hex): ${Array.from(completeFile.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`)
     } catch (error) {
         console.error('Failed to get object:', error)
     }
-
-    await camera.send('SDIO_SetContentsTransferMode', {
-        ContentsSelectType: 'HOST',
-        TransferMode: 'DISABLE',
-        AdditionalInformation: 'NONE',
-    })
 
     await camera.disconnect()
 

@@ -2,7 +2,7 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import Spinner from 'ink-spinner'
 import { OperationDefinition } from '../../ptp/types/operation'
-import { Logger, Log, PTPOperationLog, USBTransferLog } from '../logger'
+import { Logger, Log, PTPOperationLog, USBTransferLog, PTPTransferLog } from '../logger'
 import { responseDefinitions } from '../../ptp/definitions/response-definitions'
 import { formatJSON } from './formatters/compact-formatter'
 
@@ -14,7 +14,7 @@ interface TransactionGroup<Ops extends readonly OperationDefinition[]> {
     key: string
     sessionId: number
     transactionId: number
-    ptpLog?: PTPOperationLog<Ops>
+    ptpLog?: PTPOperationLog<Ops> | PTPTransferLog<Ops>
     usbLogs: USBTransferLog[]
     timestamp: number
 }
@@ -48,8 +48,8 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
         }
 
         const group = grouped.get(key)!
-        if (log.type === 'ptp_operation') {
-            group.ptpLog = log as PTPOperationLog<Ops>
+        if (log.type === 'ptp_operation' || log.type === 'ptp_transfer') {
+            group.ptpLog = log as PTPOperationLog<Ops> | PTPTransferLog<Ops>
         } else if (log.type === 'usb_transfer') {
             group.usbLogs.push(log as USBTransferLog)
         }
@@ -73,7 +73,24 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                 // Calculate timing
                 const startTime = ptpLog.requestPhase.timestamp
                 const endTime = ptpLog.responsePhase?.timestamp || Date.now()
-                const duration = endTime - startTime
+
+                // For transfer logs, calculate aggregate timing across all chunks
+                let duration: number
+                let dataPhaseTime: number
+                let responsePhaseTime: number
+                if (ptpLog.type === 'ptp_transfer') {
+                    const transferLog = ptpLog as PTPTransferLog<Ops>
+                    // First chunk starts at requestPhase timestamp
+                    const firstChunkTime = transferLog.chunks[0]?.timestamp || startTime
+                    const lastChunkTime = transferLog.chunks[transferLog.chunks.length - 1]?.timestamp || Date.now()
+                    dataPhaseTime = lastChunkTime - firstChunkTime
+                    responsePhaseTime = ptpLog.responsePhase ? ptpLog.responsePhase.timestamp - lastChunkTime : 0
+                    duration = endTime - startTime
+                } else {
+                    duration = endTime - startTime
+                    dataPhaseTime = ptpLog.dataPhase ? ptpLog.dataPhase.timestamp - ptpLog.requestPhase.timestamp : 0
+                    responsePhaseTime = ptpLog.responsePhase ? ptpLog.responsePhase.timestamp - (ptpLog.dataPhase?.timestamp || ptpLog.requestPhase.timestamp) : 0
+                }
 
                 // Format timestamp
                 const date = new Date(ptpLog.timestamp)
@@ -165,8 +182,36 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                     <Text>{ptpLog.dataPhase.direction === 'in' ? 'Sent' : 'Received'} </Text>
                                     <Text color="blue" bold>data</Text>
                                     <Text> in </Text>
-                                    <Text color="magenta" bold>{ptpLog.dataPhase.timestamp - ptpLog.requestPhase.timestamp}ms</Text>
+                                    <Text color="magenta" bold>{dataPhaseTime}ms</Text>
                                 </Text>
+                                {/* Progress bar for transfer logs */}
+                                {ptpLog.type === 'ptp_transfer' && (() => {
+                                    const transferLog = ptpLog as PTPTransferLog<Ops>
+                                    const percent = transferLog.totalBytes > 0
+                                        ? (transferLog.transferredBytes / transferLog.totalBytes) * 100
+                                        : 0
+                                    const barLength = 30
+                                    const filledLength = Math.round((percent / 100) * barLength)
+                                    const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength)
+
+                                    // Calculate average chunk size
+                                    const avgChunkSize = transferLog.chunks.length > 0
+                                        ? transferLog.transferredBytes / transferLog.chunks.length
+                                        : 0
+
+                                    return (
+                                        <>
+                                            <Text>
+                                                <Text dimColor>{ptpLog.responsePhase ? '  │' : '  '}</Text>    <Text color="blue">{bar}</Text>
+                                                <Text> {percent.toFixed(1)}%</Text>
+                                            </Text>
+                                            <Text>
+                                                <Text dimColor>{ptpLog.responsePhase ? '  │' : '  '}</Text>    <Text>{transferLog.chunks.length} chunks ({(avgChunkSize / 1024).toFixed(0)} KB avg), </Text>
+                                                <Text>{(transferLog.transferredBytes / 1024 / 1024).toFixed(2)} MB / {(transferLog.totalBytes / 1024 / 1024).toFixed(2)} MB</Text>
+                                            </Text>
+                                        </>
+                                    )
+                                })()}
                                 {config.showDecodedData &&
                                     ptpLog.dataPhase.decodedData !== undefined &&
                                     ptpLog.dataPhase.decodedData !== null &&
@@ -225,7 +270,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                     <Text>Received </Text>
                                     <Text color={hasError ? 'red' : 'green'} bold>response</Text>
                                     <Text> in </Text>
-                                    <Text color="magenta" bold>{ptpLog.responsePhase.timestamp - (ptpLog.dataPhase?.timestamp || ptpLog.requestPhase.timestamp)}ms</Text>
+                                    <Text color="magenta" bold>{responsePhaseTime}ms</Text>
                                 </Text>
                                 <Text>
                                     {'       '}Response code: {hasError ? 'error' : 'ok'} (0x{ptpLog.responsePhase.code.toString(16)})

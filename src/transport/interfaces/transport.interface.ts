@@ -37,15 +37,19 @@ export interface TransportInterface {
     /**
      * Send data to device (COMMAND or DATA container)
      * @param data - Container data to send
+     * @param sessionId - PTP session ID for logging
+     * @param transactionId - PTP transaction ID for logging
      */
-    send(data: Uint8Array): Promise<void>
+    send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void>
 
     /**
      * Receive data from device (DATA or RESPONSE container)
      * @param maxLength - Maximum number of bytes to receive
+     * @param sessionId - PTP session ID for logging
+     * @param transactionId - PTP transaction ID for logging
      * @returns Received container data
      */
-    receive(maxLength: number): Promise<Uint8Array>
+    receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array>
 
     /**
      * Check if currently connected to a device
