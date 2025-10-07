@@ -53,6 +53,12 @@ type USBTransferLog = BaseLog & {
     phase: 'request' | 'data' | 'response'
 }
 
+type ConsoleLog = BaseLog & {
+    type: 'console'
+    consoleLevel: 'log' | 'error' | 'info' | 'warn'
+    args: any[]
+}
+
 type PTPTransferLog<
     Ops extends readonly OperationDefinition[],
     N extends OperationName<Ops> = OperationName<Ops>
@@ -69,7 +75,7 @@ type PTPTransferLog<
     }>
 }
 
-type Log<Ops extends readonly OperationDefinition[]> = PTPOperationLog<Ops> | USBTransferLog | PTPTransferLog<Ops>
+type Log<Ops extends readonly OperationDefinition[]> = PTPOperationLog<Ops> | USBTransferLog | PTPTransferLog<Ops> | ConsoleLog
 
 // Before adding to logger (no id/timestamp yet)
 type NewLog<Ops extends readonly OperationDefinition[]> = Omit<Log<Ops>, 'id' | 'timestamp'>
@@ -86,15 +92,41 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
     private notifyTimeout: NodeJS.Timeout | null = null
     private inkInstance: any = null
     private activeTransfers: Map<number, number> = new Map() // objectHandle -> logId
+    private originalConsole = {
+        log: console.log.bind(console),
+        error: console.error.bind(console),
+        info: console.info.bind(console),
+        warn: console.warn.bind(console),
+    }
 
     constructor(config: Partial<LoggerConfig> = {}) {
         this.config = { ...defaultLoggerConfig, ...config }
 
         // Auto-render ink logger in Node.js environment
         if (typeof window === 'undefined' && typeof process !== 'undefined') {
+            this.captureConsole()
             this.setupInkRenderer()
             this.setupProcessHandlers()
         }
+    }
+
+    private captureConsole() {
+        const createWrapper = (consoleLevel: 'log' | 'error' | 'info' | 'warn') => {
+            return (...args: any[]) => {
+                // Add to logger as a console log entry
+                this.addLog({
+                    type: 'console',
+                    level: 'info',
+                    consoleLevel,
+                    args,
+                } as Omit<ConsoleLog, 'id' | 'timestamp'>)
+            }
+        }
+
+        console.log = createWrapper('log')
+        console.error = createWrapper('error')
+        console.info = createWrapper('info')
+        console.warn = createWrapper('warn')
     }
 
     private setupProcessHandlers() {
@@ -121,7 +153,10 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
         import('react').then(React => {
             import('ink').then(({ render }) => {
                 import('./renderers/ink-simple').then(({ InkSimpleLogger }) => {
-                    this.inkInstance = render(React.createElement(InkSimpleLogger, { logger: this as any }))
+                    this.inkInstance = render(
+                        React.createElement(InkSimpleLogger, { logger: this as any }),
+                        { patchConsole: false }
+                    )
                 }).catch(() => {
                     // Ink renderer not available, continue without UI
                 })
@@ -156,21 +191,30 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
 
     addLog(log: Omit<PTPOperationLog<Ops>, 'id' | 'timestamp'>): number
     addLog(log: Omit<USBTransferLog, 'id' | 'timestamp'>): number
+    addLog(log: Omit<ConsoleLog, 'id' | 'timestamp'>): number
     addLog(log: NewLog<Ops>): number {
         const id = this.nextId++
         const timestamp = Date.now()
         const fullLog = { ...log, id, timestamp } as Log<Ops>
 
-        const key = this.getKey(log.sessionId, log.transactionId)
-        const existing = this.logs.get(key)
-
-        if (!existing) {
-            // New transaction
+        // Console logs don't have sessionId/transactionId, handle separately
+        if (log.type === 'console') {
+            // Store console logs with a special key
+            const key = `console:${id}`
             this.logs.set(key, [fullLog])
             this.orderedTransactions.push({ key, timestamp })
         } else {
-            // Add to existing transaction
-            existing.push(fullLog)
+            const key = this.getKey((log as any).sessionId, (log as any).transactionId)
+            const existing = this.logs.get(key)
+
+            if (!existing) {
+                // New transaction
+                this.logs.set(key, [fullLog])
+                this.orderedTransactions.push({ key, timestamp })
+            } else {
+                // Add to existing transaction
+                existing.push(fullLog)
+            }
         }
 
         this.trimIfNeeded()
@@ -220,12 +264,19 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
             this.inkInstance.unmount()
             this.inkInstance = null
         }
+
+        // Restore console
+        console.log = this.originalConsole.log
+        console.error = this.originalConsole.error
+        console.info = this.originalConsole.info
+        console.warn = this.originalConsole.warn
     }
 
     clear(): void {
         this.logs.clear()
         this.orderedTransactions = []
         this.activeTransfers.clear()
+        this.nextId = 1
     }
 
     getActiveTransfer(objectHandle: number): number | undefined {
@@ -249,4 +300,4 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
     }
 }
 
-export type { LogLevel, BaseLog, PTPOperationLog, USBTransferLog, PTPTransferLog, Log, NewLog }
+export type { LogLevel, BaseLog, PTPOperationLog, USBTransferLog, PTPTransferLog, ConsoleLog, Log, NewLog }

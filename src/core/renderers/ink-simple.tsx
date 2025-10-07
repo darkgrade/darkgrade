@@ -2,7 +2,7 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import Spinner from 'ink-spinner'
 import { OperationDefinition } from '../../ptp/types/operation'
-import { Logger, Log, PTPOperationLog, USBTransferLog, PTPTransferLog } from '../logger'
+import { Logger, Log, PTPOperationLog, USBTransferLog, PTPTransferLog, ConsoleLog } from '../logger'
 import { responseDefinitions } from '../../ptp/definitions/response-definitions'
 import { formatJSON } from './formatters/compact-formatter'
 import { formatBytes } from './formatters/bytes-formatter'
@@ -13,9 +13,10 @@ interface InkSimpleLoggerProps<Ops extends readonly OperationDefinition[]> {
 
 interface TransactionGroup<Ops extends readonly OperationDefinition[]> {
     key: string
-    sessionId: number
-    transactionId: number
+    sessionId?: number
+    transactionId?: number
     ptpLog?: PTPOperationLog<Ops> | PTPTransferLog<Ops>
+    consoleLog?: ConsoleLog
     usbLogs: USBTransferLog[]
     timestamp: number
 }
@@ -36,34 +37,88 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
     const grouped = new Map<string, TransactionGroup<Ops>>()
 
     for (const log of allLogs) {
-        const key = `${log.sessionId}:${log.transactionId}`
-
-        if (!grouped.has(key)) {
+        if (log.type === 'console') {
+            // Console logs get their own group
+            const consoleLog = log as ConsoleLog
+            const key = `console:${consoleLog.id}`
             grouped.set(key, {
                 key,
-                sessionId: log.sessionId,
-                transactionId: log.transactionId,
+                consoleLog,
                 usbLogs: [],
                 timestamp: log.timestamp,
             })
-        }
+        } else {
+            const ptpLog = log as PTPOperationLog<Ops> | USBTransferLog | PTPTransferLog<Ops>
+            const key = `${ptpLog.sessionId}:${ptpLog.transactionId}`
 
-        const group = grouped.get(key)!
-        if (log.type === 'ptp_operation' || log.type === 'ptp_transfer') {
-            group.ptpLog = log as PTPOperationLog<Ops> | PTPTransferLog<Ops>
-        } else if (log.type === 'usb_transfer') {
-            group.usbLogs.push(log as USBTransferLog)
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    key,
+                    sessionId: ptpLog.sessionId,
+                    transactionId: ptpLog.transactionId,
+                    usbLogs: [],
+                    timestamp: log.timestamp,
+                })
+            }
+
+            const group = grouped.get(key)!
+            if (log.type === 'ptp_operation' || log.type === 'ptp_transfer') {
+                group.ptpLog = log as PTPOperationLog<Ops> | PTPTransferLog<Ops>
+            } else if (log.type === 'usb_transfer') {
+                group.usbLogs.push(log as USBTransferLog)
+            }
         }
     }
 
-    const transactions = Array.from(grouped.values()).filter(t => t.ptpLog)
+    // Sort all groups by timestamp to interleave console logs and operations
+    const allGroups = Array.from(grouped.values()).sort((a, b) => a.timestamp - b.timestamp)
 
     const config = logger.getConfig()
 
     return (
-        <Box flexDirection="column">
-            {transactions.map(transaction => {
-                const ptpLog = transaction.ptpLog!
+        <Box flexDirection="column" rowGap={1}>
+            {allGroups.map(group => {
+                // Handle console logs
+                if (group.consoleLog) {
+                    const consoleLog = group.consoleLog
+                    const colorMap = {
+                        log: 'cyan',
+                        info: 'cyan',
+                        warn: 'yellow',
+                        error: 'red',
+                    } as const
+                    const color = colorMap[consoleLog.consoleLevel]
+                    const levelLabel = consoleLog.consoleLevel === 'log' ? 'Debug' : consoleLog.consoleLevel.charAt(0).toUpperCase() + consoleLog.consoleLevel.slice(1)
+                    const formatted = consoleLog.args
+                        .map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
+                        .join(' ')
+
+                    // Format timestamp
+                    const date = new Date(consoleLog.timestamp)
+                    const hours24 = date.getHours()
+                    const hours = hours24 % 12 || 12
+                    const minutes = date.getMinutes().toString().padStart(2, '0')
+                    const seconds = date.getSeconds().toString().padStart(2, '0')
+                    const millis = date.getMilliseconds().toString().padStart(3, '0')
+                    const ampm = hours24 >= 12 ? 'PM' : 'AM'
+                    const timestamp = `${hours}:${minutes}:${seconds}.${millis} ${ampm}`
+
+                    return (
+                        <Box key={group.key} flexDirection="column">
+                            <Text>
+                                <Text bold>{timestamp} [</Text>
+                                <Text color={color} bold>{levelLabel}</Text>
+                                <Text bold>] </Text>
+                                <Text>{formatted}</Text>
+                            </Text>
+                        </Box>
+                    )
+                }
+
+                // Handle PTP operations
+                if (!group.ptpLog) return null
+
+                const ptpLog = group.ptpLog
                 const operationName = ptpLog.requestPhase.operationName
 
                 // Determine status
@@ -107,7 +162,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                 const statusColor = hasError ? 'red' : isSuccess ? 'green' : 'yellow'
 
                 return (
-                    <Box key={transaction.key} flexDirection="column">
+                    <Box key={group.key} flexDirection="column">
                         {/* Header */}
                         <Box>
                             <Text bold>{timestamp} </Text>
@@ -122,7 +177,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                 </>
                             )}
                         </Box>
-                        <Text dimColor>  ├─ Session 0x{transaction.sessionId.toString(16)}, transaction {transaction.transactionId}</Text>
+                        <Text dimColor>  ├─ Session 0x{group.sessionId!.toString(16)}, transaction {group.transactionId}</Text>
                         <Text dimColor>  │</Text>
 
                         {/* Request Phase */}
@@ -162,7 +217,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                             })}
                         {/* USB transfers for request phase */}
                         {!config.collapseUSB &&
-                            transaction.usbLogs
+                            group.usbLogs
                                 .filter(u => u.phase === 'request')
                                 .map((usbLog) => {
                                     const direction = usbLog.direction === 'send' ? 'to' : 'from'
@@ -248,7 +303,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                 )}
                                 {/* USB transfers for data phase */}
                                 {!config.collapseUSB && (() => {
-                                    const dataUsbLogs = transaction.usbLogs.filter(u => u.phase === 'data')
+                                    const dataUsbLogs = group.usbLogs.filter(u => u.phase === 'data')
 
                                     // For transfer logs, show aggregate USB stats across all chunks
                                     if (ptpLog.type === 'ptp_transfer' && dataUsbLogs.length > 0) {
@@ -311,7 +366,7 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                 </Text>
                                 {/* USB transfers for response phase */}
                                 {!config.collapseUSB &&
-                                    transaction.usbLogs
+                                    group.usbLogs
                                         .filter(u => u.phase === 'response')
                                         .map((usbLog) => {
                                             const direction = usbLog.direction === 'send' ? 'to' : 'from'
@@ -335,10 +390,6 @@ export function InkSimpleLogger<Ops extends readonly OperationDefinition[]>({
                                 </Text>
                             </>
                         )}
-
-                        {/* Spacing between operations */}
-                        <Text>{'\n'}</Text>
-                        <Text>{'\n'}</Text>
                     </Box>
                 )
             })}
