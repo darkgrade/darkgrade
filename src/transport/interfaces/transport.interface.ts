@@ -113,10 +113,4 @@ export interface TransportInterface {
      * Get extended event data (USB-specific)
      */
     getExtendedEventData?(bufferSize?: number): Promise<any>
-
-    /**
-     * Drain pending data from endpoints (USB-specific)
-     * @returns true if stale data was found, false otherwise
-     */
-    drainPendingData?(): Promise<boolean>
 }

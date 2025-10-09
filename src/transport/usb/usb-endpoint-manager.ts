@@ -52,6 +52,11 @@ export class USBEndpointManager implements EndpointManagerInterface {
             } else if (ep.direction === 'out' && ep.type === 'bulk') {
                 endpoints.bulkOut = ep
             } else if (ep.direction === 'in' && ep.type === 'interrupt') {
+                console.log('[DEBUG] Found interrupt endpoint:', {
+                    endpointNumber: ep.endpointNumber,
+                    packetSize: ep.packetSize,
+                    interval: (ep as any).interval
+                })
                 endpoints.interrupt = ep
             }
         }
@@ -84,19 +89,6 @@ export class USBEndpointManager implements EndpointManagerInterface {
     getConfiguration(): EndpointConfiguration | null {
         return this.configuration
     }
-
-    /**
-     * Clear endpoint halt condition
-     */
-    async clearHalt(endpoint: EndpointType): Promise<void> {
-        if (!this.configuration) {
-            throw new Error('No endpoint configuration')
-        }
-
-        // Halt clearing is handled automatically
-        return
-    }
-
 
     private getEndpoint(type: EndpointType): any {
         if (!this.configuration) return null

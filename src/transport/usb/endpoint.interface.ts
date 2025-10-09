@@ -21,12 +21,6 @@ export interface EndpointManagerInterface {
      * Get current endpoint configuration
      */
     getConfiguration(): EndpointConfiguration | null
-
-    /**
-     * Clear endpoint halt condition
-     * @param endpoint - Endpoint to clear
-     */
-    clearHalt(endpoint: EndpointType): Promise<void>
 }
 
 /**

@@ -64,14 +64,12 @@ type PropertyValue<N extends string, Props extends readonly PropertyDefinition[]
     GetProperty<N, Props> extends { codec: infer C } ? CodecType<C> : never
 
 // Extract operation data return type
-type OperationDataType<Op extends OperationDefinition> =
-    Op extends { dataCodec: infer C } ? CodecType<C> : never
+type OperationDataType<Op extends OperationDefinition> = Op extends { dataCodec: infer C } ? CodecType<C> : never
 
 // Build operation response type
-type OperationResponse<Op extends OperationDefinition> =
-    Op extends { dataCodec: any }
-        ? { code: number; data: OperationDataType<Op> }
-        : { code: number; data?: undefined }
+type OperationResponse<Op extends OperationDefinition> = Op extends { dataCodec: any }
+    ? { code: number; data: OperationDataType<Op> }
+    : { code: number; data?: undefined }
 
 // Runtime event data structure (not a definition, but actual event data)
 interface PTPEventData {
@@ -121,31 +119,34 @@ export class GenericCamera<
     }
 
     async connect(deviceIdentifier?: DeviceDescriptor): Promise<void> {
+        console.log('[DEBUG] GenericCamera.connect: Calling transport.connect()')
         await this.transport.connect(deviceIdentifier)
-        this.sessionId = Math.floor(Math.random() * 0xffffffff)
+        console.log('[DEBUG] GenericCamera.connect: transport.connect() completed')
 
+        // Try to close any existing session first (use sessionId 1 as a fallback)
+        // Ignore errors since we don't know if a session is actually open
+        this.sessionId = 1
+        console.log('[DEBUG] GenericCamera.connect: Attempting to close any existing session')
         try {
-            await (this.send as any)('OpenSession', { SessionID: this.sessionId })
-        } catch (error: any) {
-            if (error.message?.includes('SessionAlreadyOpen')) {
-                await (this.send as any)('CloseSession', {})
-                await (this.send as any)('OpenSession', { SessionID: this.sessionId })
-            } else {
-                throw error
-            }
+            await (this.send as any)('CloseSession', {})
+        } catch (e) {
+            console.log('[DEBUG] GenericCamera.connect: CloseSession failed (expected if no session open)')
+            // Ignore - no session was open or wrong sessionId
         }
+
+        // Now open a new session
+        this.sessionId = Math.floor(Math.random() * 0xffffffff)
+        console.log(`[DEBUG] GenericCamera.connect: Opening new session with ID 0x${this.sessionId.toString(16)}`)
+        await (this.send as any)('OpenSession', { SessionID: this.sessionId })
+        console.log('[DEBUG] GenericCamera.connect: Session opened successfully')
     }
 
     async disconnect(): Promise<void> {
-        if (this.sessionId !== null) {
-            this.emitter.removeAllListeners()
-            try {
-                await (this.send as any)('CloseSession', {})
-            } catch (e) {
-                // Ignore close session errors during disconnect
-            }
-            this.sessionId = null
-        }
+        this.emitter.removeAllListeners()
+
+        await this.send('CloseSession', {} as any)
+
+        this.sessionId = null
         await this.transport.disconnect()
     }
 
@@ -160,6 +161,7 @@ export class GenericCamera<
         maxDataLength?: number
     ): Promise<OperationResponse<GetOperation<N, Ops>>> {
         const operation = this.operationDefinitions.find(op => op.name === operationName)
+
         if (!operation) {
             throw new Error(`Unknown operation: ${operationName}`)
         }
@@ -235,129 +237,151 @@ export class GenericCamera<
             })
         }
 
-        try {
-            // Build and send COMMAND container
-            const commandContainer = this.buildCommand(operation.code, transactionId, encodedParams)
-            await this.transport.send(commandContainer, this.sessionId!, transactionId)
+        // Build and send COMMAND container
+        const commandContainer = this.buildCommand(operation.code, transactionId, encodedParams)
+        await this.transport.send(commandContainer, this.sessionId!, transactionId)
 
-            // Handle data phase
-            let receivedData: Uint8Array | undefined
-            if (operation.dataDirection === 'in') {
-                // Send DATA to camera
-                if (!data) throw new Error('Data required for dataDirection=in')
-                const dataContainer = this.buildData(operation.code, transactionId, data)
+        // Handle data phase
+        let receivedData: Uint8Array | undefined
+        if (operation.dataDirection === 'in') {
+            // await new Promise<void>(resolve => setTimeout(resolve, 50))
 
-                this.logger.updateLog(logId, {
-                    dataPhase: {
-                        timestamp: Date.now(),
-                        direction: 'in',
-                        bytes: data.length,
-                        encodedData: data,
-                        maxDataLength,
-                    },
-                })
-
-                await this.transport.send(dataContainer, this.sessionId!, transactionId)
-            } else if (operation.dataDirection === 'out') {
-                // Receive DATA from camera
-                // Use custom maxDataLength if provided, otherwise default to 256KB for live view
-                const bufferSize = maxDataLength || 256 * 1024
-                const dataRaw = await this.transport.receive(bufferSize, this.sessionId!, transactionId)
-                const dataContainer = this.parseContainer(dataRaw)
-                receivedData = dataContainer.payload
-
-                // Decode received data if dataCodec is defined
-                let decodedData: any = undefined
-                if (receivedData && (operation as any).dataCodec) {
-                    try {
-                        const codec = this.resolveCodec((operation as any).dataCodec)
-                        const result = codec.decode(receivedData)
-                        decodedData = result.value
-                    } catch (decodeError) {
-                        console.error(`Failed to decode ${operationName} data:`, decodeError)
-                        console.error(`Received ${receivedData.length} bytes:`, Array.from(receivedData.slice(0, 64)).map(b => b.toString(16).padStart(2, '0')).join(' '))
-                        throw decodeError
-                    }
-                }
-
-                // Handle data phase logging
-                if (isPartialObjectOp && objectHandle !== null) {
-                    // For partial object operations, add chunk info to transfer log
-                    const offset = (params as any).Offset ?? ((params as any).OffsetLower ?? 0)
-                    const offsetUpper = (params as any).OffsetUpper ?? 0
-                    const fullOffset = offsetUpper * 0x100000000 + offset
-                    const receivedBytes = receivedData?.length || 0
-
-                    // Get current log to update chunks
-                    const currentLog = this.logger.getLogById(logId) as any
-                    const chunks = currentLog?.chunks || []
-                    chunks.push({
-                        transactionId,
-                        timestamp: Date.now(),
-                        offset: fullOffset,
-                        bytes: receivedBytes,
-                    })
-
-                    const totalTransferred = chunks.reduce((sum: number, c: any) => sum + c.bytes, 0)
-
-                    // Only set totalBytes on first chunk (when current is 0) or if maxDataLength is provided
-                    const totalBytes = currentLog?.totalBytes && currentLog.totalBytes > 0
-                        ? currentLog.totalBytes  // Keep existing totalBytes
-                        : (maxDataLength || (fullOffset + receivedBytes))  // Set initial totalBytes
-
-                    this.logger.updateLog(logId, {
-                        chunks,
-                        totalBytes,
-                        transferredBytes: totalTransferred,
-                        dataPhase: {
-                            timestamp: Date.now(),
-                            direction: 'out',
-                            bytes: receivedData?.length || 0,
-                            encodedData: receivedData,
-                            decodedData: decodedData,
-                            maxDataLength,
-                        },
-                    })
-                } else {
-                    // Regular operation - standard data phase
-                    this.logger.updateLog(logId, {
-                        dataPhase: {
-                            timestamp: Date.now(),
-                            direction: 'out',
-                            bytes: receivedData?.length || 0,
-                            encodedData: receivedData,
-                            decodedData: decodedData,
-                            maxDataLength,
-                        },
-                    })
-                }
-            }
-
-            // Receive RESPONSE
-            const responseRaw = await this.transport.receive(512, this.sessionId!, transactionId)
-            const responseContainer = this.parseContainer(responseRaw)
+            // Send DATA to camera
+            if (!data) throw new Error('Data required for dataDirection=in')
+            const dataContainer = this.buildData(operation.code, transactionId, data)
 
             this.logger.updateLog(logId, {
-                responsePhase: {
+                dataPhase: {
                     timestamp: Date.now(),
-                    code: responseContainer.code,
+                    direction: 'in',
+                    bytes: data.length,
+                    encodedData: data,
+                    maxDataLength,
                 },
             })
 
+            await this.transport.send(dataContainer, this.sessionId!, transactionId)
+        } else if (operation.dataDirection === 'out') {
+            // await new Promise<void>(resolve => setTimeout(resolve, 50))
 
-            // Return decoded data if available
-            const finalData = this.logger.getLogs().find(l => l.id === logId)
-            const returnData = (finalData as any)?.dataPhase?.decodedData !== undefined
+            console.log(`[DEBUG] About to receive data for ${operationName}`)
+            // Receive DATA from camera
+            // Use custom maxDataLength if provided, otherwise default to 256KB for live view
+            const bufferSize = maxDataLength || 256 * 1024
+            const dataRaw = await this.transport.receive(bufferSize, this.sessionId!, transactionId)
+            const dataContainer = this.parseContainer(dataRaw)
+            receivedData = dataContainer.payload
+
+            // Decode received data if dataCodec is defined
+            let decodedData: any = undefined
+            if (receivedData && (operation as any).dataCodec) {
+                const codec = this.resolveCodec((operation as any).dataCodec)
+                const result = codec.decode(receivedData)
+                decodedData = result.value
+            }
+
+            // Special handling for property value operations without dataCodec
+            // (GetDevicePropValue, GetDevicePropValueEx, etc.)
+            if (
+                receivedData &&
+                !decodedData &&
+                (operationName === 'GetDevicePropValue' || operationName === 'GetDevicePropValueEx')
+            ) {
+                const propCode = (params as any).DevicePropCode
+                if (propCode !== undefined) {
+                    const property = this.propertyDefinitions.find(p => p.code === propCode)
+                    if (property) {
+                        const codec = this.resolveCodec(property.codec as any)
+                        const result = codec.decode(receivedData)
+                        decodedData = {
+                            propertyName: property.name,
+                            propertyCode: propCode,
+                            value: result.value,
+                        }
+                    }
+                }
+            }
+
+            // Handle data phase logging
+            if (isPartialObjectOp && objectHandle !== null) {
+                // For partial object operations, add chunk info to transfer log
+                const offset = (params as any).Offset ?? (params as any).OffsetLower ?? 0
+                const offsetUpper = (params as any).OffsetUpper ?? 0
+                const fullOffset = offsetUpper * 0x100000000 + offset
+                const receivedBytes = receivedData?.length || 0
+
+                // Get current log to update chunks
+                const currentLog = this.logger.getLogById(logId) as any
+                const chunks = currentLog?.chunks || []
+                chunks.push({
+                    transactionId,
+                    timestamp: Date.now(),
+                    offset: fullOffset,
+                    bytes: receivedBytes,
+                })
+
+                const totalTransferred = chunks.reduce((sum: number, c: any) => sum + c.bytes, 0)
+
+                // Only set totalBytes on first chunk (when current is 0) or if maxDataLength is provided
+                const totalBytes =
+                    currentLog?.totalBytes && currentLog.totalBytes > 0
+                        ? currentLog.totalBytes // Keep existing totalBytes
+                        : maxDataLength || fullOffset + receivedBytes // Set initial totalBytes
+
+                this.logger.updateLog(logId, {
+                    chunks,
+                    totalBytes,
+                    transferredBytes: totalTransferred,
+                    dataPhase: {
+                        timestamp: Date.now(),
+                        direction: 'out',
+                        bytes: receivedData?.length || 0,
+                        encodedData: receivedData,
+                        decodedData: decodedData,
+                        maxDataLength,
+                    },
+                })
+            } else {
+                // Regular operation - standard data phase
+                this.logger.updateLog(logId, {
+                    dataPhase: {
+                        timestamp: Date.now(),
+                        direction: 'out',
+                        bytes: receivedData?.length || 0,
+                        encodedData: receivedData,
+                        decodedData: decodedData,
+                        maxDataLength,
+                    },
+                })
+            }
+        }
+
+        // await new Promise<void>(resolve => setTimeout(resolve, 50))
+
+        // Receive RESPONSE
+        const responseRaw = await this.transport.receive(512, this.sessionId!, transactionId)
+        const responseContainer = this.parseContainer(responseRaw)
+
+        this.logger.updateLog(logId, {
+            responsePhase: {
+                timestamp: Date.now(),
+                code: responseContainer.code,
+            },
+        })
+
+        // Return decoded data if available, but for property operations return raw bytes
+        // (they need to be decoded by the camera layer with the property's codec)
+        const isPropertyOp = operationName === 'GetDevicePropValue' || operationName === 'GetDevicePropValueEx'
+        const finalData = this.logger.getLogs().find(l => l.id === logId)
+        const returnData =
+            !isPropertyOp && (finalData as any)?.dataPhase?.decodedData !== undefined
                 ? (finalData as any).dataPhase.decodedData
                 : receivedData
 
-            return {
-                code: responseContainer.code,
-                data: returnData,
-            } as OperationResponse<GetOperation<N, Ops>>
-        } catch (error) {
-            throw error
-        }
+        return {
+            code: responseContainer.code,
+            data: returnData,
+        } as OperationResponse<GetOperation<N, Ops>>
     }
 
     /**
@@ -457,7 +481,7 @@ export class GenericCamera<
             u16.encode(1), // COMMAND type
             u16.encode(code),
             u32.encode(transactionId),
-            ...params
+            ...params,
         ]
 
         const buffer = new Uint8Array(length)
@@ -481,7 +505,7 @@ export class GenericCamera<
             u16.encode(2), // DATA type
             u16.encode(code),
             u32.encode(transactionId),
-            data
+            data,
         ]
 
         const buffer = new Uint8Array(length)

@@ -1,10 +1,12 @@
 import { CustomCodec, ArrayCodec, baseCodecs } from '@ptp/types/codec'
 import { operationDefinitions } from '@ptp/definitions/operation-definitions'
 import { sonyOperationDefinitions } from '@ptp/definitions/vendors/sony/sony-operation-definitions'
+import { nikonOperationDefinitions } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import { eventDefinitions } from '@ptp/definitions/event-definitions'
 import { sonyEventDefinitions } from '@ptp/definitions/vendors/sony/sony-event-definitions'
 import { formatDefinitions } from '@ptp/definitions/format-definitions'
 import { sonyFormatDefinitions } from '@ptp/definitions/vendors/sony/sony-format-definitions'
+import { propertyDefinitions } from '@ptp/definitions/property-definitions'
 
 export interface DeviceInfo {
     standardVersion: number
@@ -17,6 +19,7 @@ export interface DeviceInfo {
     eventsSupportedRaw: number[]
     eventsSupportedDecoded: string[]
     devicePropertiesSupported: number[]
+    devicePropertiesSupportedDecoded: string[]
     captureFormats: number[]
     imageFormatsRaw: number[]
     imageFormatsDecoded: string[]
@@ -118,10 +121,16 @@ export class DeviceInfoCodec extends CustomCodec<DeviceInfo> {
         currentOffset += serialNumber.bytesRead
 
         // Decode operation codes to names
-        const allOperations = [...operationDefinitions, ...sonyOperationDefinitions]
+        const allOperations = [...operationDefinitions, ...sonyOperationDefinitions, ...nikonOperationDefinitions]
         const operationsSupportedDecoded = operationsSupported.value.map(code => {
             const op = allOperations.find(o => o.code === code)
             return op?.name || `Unknown_0x${code.toString(16)}`
+        })
+
+        // Decode property codes to names
+        const devicePropertiesSupportedDecoded = devicePropertiesSupported.value.map(code => {
+            const prop = propertyDefinitions.find(p => p.code === code)
+            return prop?.name || `Unknown_0x${code.toString(16)}`
         })
 
         // Decode event codes to names
@@ -150,6 +159,7 @@ export class DeviceInfoCodec extends CustomCodec<DeviceInfo> {
                 eventsSupportedRaw: eventsSupported.value,
                 eventsSupportedDecoded,
                 devicePropertiesSupported: devicePropertiesSupported.value,
+                devicePropertiesSupportedDecoded,
                 captureFormats: captureFormats.value,
                 imageFormatsRaw: imageFormats.value,
                 imageFormatsDecoded,

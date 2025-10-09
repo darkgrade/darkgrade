@@ -163,52 +163,40 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SDIExtDevicePropInfo>
         let enumValuesGetSetDecoded = enumValuesGetSet
 
         if (propertyDef && propertyDef.codec) {
-            try {
-                // Decode current value
-                const codec = propertyDef.codec as any
-                // Set baseCodecs on the codec instance
-                if (codec && typeof codec === 'object') {
-                    codec.baseCodecs = this.baseCodecs
-                }
-                const decodedResult = codec.decode(currentValueBytes, 0)
-                currentValueDecoded = decodedResult.value
+            // Decode current value
+            const codec = propertyDef.codec as any
+            // Set baseCodecs on the codec instance
+            if (codec && typeof codec === 'object') {
+                codec.baseCodecs = this.baseCodecs
+            }
+            const decodedResult = codec.decode(currentValueBytes, 0)
+            currentValueDecoded = decodedResult.value
 
-                // Decode enum values
-                if (enumValuesSet.length > 0) {
-                    enumValuesSetDecoded = enumValuesSet.map((rawVal: any) => {
-                        try {
-                            // Get the datatype codec to encode raw value to bytes
-                            const datatypeDefinition = getDatatypeByCode(dataType)
-                            if (!datatypeDefinition?.codec) return rawVal
+            // Decode enum values
+            if (enumValuesSet.length > 0) {
+                enumValuesSetDecoded = enumValuesSet.map((rawVal: any) => {
+                    // Get the datatype codec to encode raw value to bytes
+                    const datatypeDefinition = getDatatypeByCode(dataType)
+                    if (!datatypeDefinition?.codec) return rawVal
 
-                            const datatypeCodec = this.resolveBaseCodec(datatypeDefinition.codec)
-                            const bytes = datatypeCodec.encode(rawVal)
-                            const decoded = codec.decode(bytes, 0)
-                            return decoded.value
-                        } catch {
-                            return rawVal
-                        }
-                    })
-                }
+                    const datatypeCodec = this.resolveBaseCodec(datatypeDefinition.codec)
+                    const bytes = datatypeCodec.encode(rawVal)
+                    const decoded = codec.decode(bytes, 0)
+                    return decoded.value
+                })
+            }
 
-                if (enumValuesGetSet.length > 0) {
-                    enumValuesGetSetDecoded = enumValuesGetSet.map((rawVal: any) => {
-                        try {
-                            // Get the datatype codec to encode raw value to bytes
-                            const datatypeDefinition = getDatatypeByCode(dataType)
-                            if (!datatypeDefinition?.codec) return rawVal
+            if (enumValuesGetSet.length > 0) {
+                enumValuesGetSetDecoded = enumValuesGetSet.map((rawVal: any) => {
+                    // Get the datatype codec to encode raw value to bytes
+                    const datatypeDefinition = getDatatypeByCode(dataType)
+                    if (!datatypeDefinition?.codec) return rawVal
 
-                            const datatypeCodec = this.resolveBaseCodec(datatypeDefinition.codec)
-                            const bytes = datatypeCodec.encode(rawVal)
-                            const decoded = codec.decode(bytes, 0)
-                            return decoded.value
-                        } catch {
-                            return rawVal
-                        }
-                    })
-                }
-            } catch (e) {
-                // If decoding fails, use raw values
+                    const datatypeCodec = this.resolveBaseCodec(datatypeDefinition.codec)
+                    const bytes = datatypeCodec.encode(rawVal)
+                    const decoded = codec.decode(bytes, 0)
+                    return decoded.value
+                })
             }
         }
 
@@ -272,7 +260,10 @@ export class SDIDevicePropInfoArrayCodec extends CustomCodec<SDIDevicePropInfoAr
 export const sdiExtDevicePropInfoCodec = new SDIExtDevicePropInfoCodec()
 export const sdiDevicePropInfoArrayCodec = new SDIDevicePropInfoArrayCodec()
 
-export function parseSDIExtDevicePropInfo(data: Uint8Array, baseCodecs?: ReturnType<typeof import('@ptp/types/codec').createBaseCodecs>): SDIExtDevicePropInfo {
+export function parseSDIExtDevicePropInfo(
+    data: Uint8Array,
+    baseCodecs?: ReturnType<typeof import('@ptp/types/codec').createBaseCodecs>
+): SDIExtDevicePropInfo {
     const codec = new SDIExtDevicePropInfoCodec()
     if (baseCodecs) {
         codec.baseCodecs = baseCodecs
@@ -280,7 +271,10 @@ export function parseSDIExtDevicePropInfo(data: Uint8Array, baseCodecs?: ReturnT
     return codec.decode(data).value
 }
 
-export function parseSDIDevicePropInfoArray(data: Uint8Array, baseCodecs?: ReturnType<typeof import('@ptp/types/codec').createBaseCodecs>): SDIDevicePropInfoArray {
+export function parseSDIDevicePropInfoArray(
+    data: Uint8Array,
+    baseCodecs?: ReturnType<typeof import('@ptp/types/codec').createBaseCodecs>
+): SDIDevicePropInfoArray {
     const codec = new SDIDevicePropInfoArrayCodec()
     if (baseCodecs) {
         codec.baseCodecs = baseCodecs

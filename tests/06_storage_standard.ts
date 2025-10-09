@@ -145,8 +145,6 @@ async function main() {
     // Give logger time to finish rendering before cleanup
     await new Promise(resolve => setTimeout(resolve, 100))
 
-    logger.cleanup()
-
     console.log('Storage IDs:', storageIds)
 }
 

@@ -45,7 +45,7 @@ export class USBClassRequestHandler {
             requestType: USBRequestType.CLASS_INTERFACE,
             request: USBClassRequest.DEVICE_RESET,
             value: 0,
-            index: 0,
+            index: this.interfaceNumber,
         }
 
         await this.device.controlTransferOut(setup)
@@ -56,7 +56,7 @@ export class USBClassRequestHandler {
             requestType: USBRequestType.CLASS_INTERFACE_IN,
             request: USBClassRequest.GET_DEVICE_STATUS,
             value: 0,
-            index: 0,
+            index: this.interfaceNumber,
         }
 
         const result = await this.device.controlTransferIn(setup, 20)
@@ -93,7 +93,7 @@ export class USBClassRequestHandler {
             requestType: USBRequestType.CLASS_INTERFACE_IN,
             request: USBClassRequest.GET_EXTENDED_EVENT_DATA,
             value: 0,
-            index: 0,
+            index: this.interfaceNumber,
         }
 
         const result = await this.device.controlTransferIn(setup, bufferSize)

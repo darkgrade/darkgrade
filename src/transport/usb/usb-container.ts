@@ -49,96 +49,13 @@ export class USBContainerBuilder {
         return buffer
     }
 
-    static parseResponse(data: Uint8Array): USBContainer {
-        if (data.length < 12) {
-            throw new Error(`Invalid response container: too short (${data.length} bytes)`)
-        }
-
-        const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-
-        const length = view.getUint32(0, true)
-        const type = view.getUint16(4, true)
-        const code = view.getUint16(6, true)
-        const transactionId = view.getUint32(8, true)
-
-        if (type !== USBContainerType.RESPONSE) {
-            throw new Error(`Expected response container, got type ${type}`)
-        }
-
-        if (length !== data.length) {
-            throw new Error(`Container length mismatch: header says ${length}, received ${data.length}`)
-        }
-
-        const payload = data.slice(12)
-
-        return {
-            length,
-            type,
-            code,
-            transactionId,
-            payload,
-        }
-    }
-
-    static parseData(data: Uint8Array): USBContainer {
-        if (data.length < 12) {
-            throw new Error(`Invalid data container: too short (${data.length} bytes)`)
-        }
-
-        const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-
-        const length = view.getUint32(0, true)
-        const type = view.getUint16(4, true)
-        const code = view.getUint16(6, true)
-        const transactionId = view.getUint32(8, true)
-
-        if (type !== USBContainerType.DATA) {
-            throw new Error(`Expected data container, got type ${type}`)
-        }
-
-        if (length !== data.length) {
-            throw new Error(`Container length mismatch: header says ${length}, received ${data.length}`)
-        }
-
-        const payload = data.slice(12)
-
-        return {
-            length,
-            type,
-            code,
-            transactionId,
-            payload,
-        }
-    }
-
-    static parseEvent(data: Uint8Array): USBContainer {
-        if (data.length < 12) {
-            throw new Error(`Invalid event container: too short (${data.length} bytes)`)
-        }
-
-        const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-
-        const length = view.getUint32(0, true)
-        const type = view.getUint16(4, true)
-        const code = view.getUint16(6, true)
-        const transactionId = view.getUint32(8, true)
-
-        if (type !== USBContainerType.EVENT) {
-            throw new Error(`Expected event container, got type ${type}`)
-        }
-
-        const payload = data.slice(12)
-
-        return {
-            length,
-            type,
-            code,
-            transactionId,
-            payload,
-        }
-    }
-
-    static parseContainer(data: Uint8Array): USBContainer {
+    /**
+     * Parse a container with optional type validation
+     * @param data - Container data
+     * @param expectedType - Optional expected container type (validates if provided)
+     * @returns Parsed container
+     */
+    static parseContainer(data: Uint8Array, expectedType?: USBContainerType): USBContainer {
         if (data.length < 12) {
             throw new Error(`Invalid container: too short (${data.length} bytes)`)
         }
@@ -150,6 +67,12 @@ export class USBContainerBuilder {
         const code = view.getUint16(6, true)
         const transactionId = view.getUint32(8, true)
 
+        // Validate type if expected type is provided
+        if (expectedType !== undefined && type !== expectedType) {
+            const typeName = ['undefined', 'command', 'data', 'response', 'event'][expectedType] || 'unknown'
+            throw new Error(`Expected ${typeName} container, got type ${type}`)
+        }
+
         const payload = data.slice(12)
 
         return {
@@ -159,5 +82,18 @@ export class USBContainerBuilder {
             transactionId,
             payload,
         }
+    }
+
+    // Convenience methods for type-specific parsing
+    static parseResponse(data: Uint8Array): USBContainer {
+        return this.parseContainer(data, USBContainerType.RESPONSE)
+    }
+
+    static parseData(data: Uint8Array): USBContainer {
+        return this.parseContainer(data, USBContainerType.DATA)
+    }
+
+    static parseEvent(data: Uint8Array): USBContainer {
+        return this.parseContainer(data, USBContainerType.EVENT)
     }
 }

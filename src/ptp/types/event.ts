@@ -45,11 +45,7 @@ export class EventEmitter {
         const listeners = this.events.get(event)
         if (listeners) {
             listeners.forEach(listener => {
-                try {
-                    listener(...args)
-                } catch (error) {
-                    console.error(`Error in event listener for event "${event}":`, error)
-                }
+                listener(...args)
             })
             return true
         }

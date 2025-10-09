@@ -136,7 +136,7 @@ export class SonyCamera extends GenericCamera<
         }
 
         const response = await this.send('SDIO_GetExtDevicePropValue', {
-            devicePropCode: property.code,
+            DevicePropCode: property.code,
         })
 
         if (!response.data) {
@@ -185,7 +185,7 @@ export class SonyCamera extends GenericCamera<
             await this.send(
                 'SDIO_SetExtDevicePropValue',
                 {
-                    devicePropCode: property.code,
+                    DevicePropCode: property.code,
                     flagOfDevicePropertyOption: 'ENABLE',
                 },
                 encodedValue

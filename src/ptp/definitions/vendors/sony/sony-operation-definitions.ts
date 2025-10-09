@@ -98,7 +98,7 @@ export const sonyOperationDefinitions = [
         dataCodec: sdiExtDevicePropInfoCodec,
         operationParameters: [
             {
-                name: 'devicePropCode',
+                name: 'DevicePropCode',
                 description: 'Property code to get',
                 codec: baseCodecs.uint32,
                 required: true,
@@ -113,7 +113,7 @@ export const sonyOperationDefinitions = [
         dataDirection: 'in',
         operationParameters: [
             {
-                name: 'devicePropCode',
+                name: 'DevicePropCode',
                 description: 'Property code to set',
                 codec: baseCodecs.uint32,
                 required: true,

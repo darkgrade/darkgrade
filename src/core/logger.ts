@@ -13,7 +13,7 @@ type BaseLog = {
 
 type PTPOperationLog<
     Ops extends readonly OperationDefinition[],
-    N extends OperationName<Ops> = OperationName<Ops>
+    N extends OperationName<Ops> = OperationName<Ops>,
 > = BaseLog & {
     type: 'ptp_operation'
     sessionId: number
@@ -31,7 +31,11 @@ type PTPOperationLog<
         direction: 'in' | 'out'
         bytes: number
         encodedData?: Uint8Array
-        decodedData?: GetOperation<N, Ops>['dataCodec'] extends infer C ? (C extends { type: any } ? CodecType<C> : unknown) : unknown
+        decodedData?: GetOperation<N, Ops>['dataCodec'] extends infer C
+            ? C extends { type: any }
+                ? CodecType<C>
+                : unknown
+            : unknown
         maxDataLength?: number
     }
 
@@ -61,7 +65,7 @@ type ConsoleLog = BaseLog & {
 
 type PTPTransferLog<
     Ops extends readonly OperationDefinition[],
-    N extends OperationName<Ops> = OperationName<Ops>
+    N extends OperationName<Ops> = OperationName<Ops>,
 > = PTPOperationLog<Ops, N> & {
     type: 'ptp_transfer'
     objectHandle: number
@@ -75,7 +79,11 @@ type PTPTransferLog<
     }>
 }
 
-type Log<Ops extends readonly OperationDefinition[]> = PTPOperationLog<Ops> | USBTransferLog | PTPTransferLog<Ops> | ConsoleLog
+type Log<Ops extends readonly OperationDefinition[]> =
+    | PTPOperationLog<Ops>
+    | USBTransferLog
+    | PTPTransferLog<Ops>
+    | ConsoleLog
 
 // Before adding to logger (no id/timestamp yet)
 type NewLog<Ops extends readonly OperationDefinition[]> = Omit<Log<Ops>, 'id' | 'timestamp'>
@@ -106,7 +114,6 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
         if (typeof window === 'undefined' && typeof process !== 'undefined') {
             this.captureConsole()
             this.setupInkRenderer()
-            this.setupProcessHandlers()
         }
     }
 
@@ -129,43 +136,30 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
         console.warn = createWrapper('warn')
     }
 
-    private setupProcessHandlers() {
-        // Cleanup on SIGINT (Ctrl+C)
-        process.on('SIGINT', () => {
-            this.cleanup()
-            process.exit(0)
-        })
-
-        // Cleanup on SIGTERM
-        process.on('SIGTERM', () => {
-            this.cleanup()
-            process.exit(0)
-        })
-
-        // Cleanup on exit (after all async operations complete)
-        process.on('exit', () => {
-            this.cleanup()
-        })
-    }
-
     private setupInkRenderer() {
         // Dynamically import to avoid bundling issues in browser
-        import('react').then(React => {
-            import('ink').then(({ render }) => {
-                import('./renderers/ink-simple').then(({ InkSimpleLogger }) => {
-                    this.inkInstance = render(
-                        React.createElement(InkSimpleLogger, { logger: this as any }),
-                        { patchConsole: false }
-                    )
-                }).catch(() => {
-                    // Ink renderer not available, continue without UI
-                })
-            }).catch(() => {
-                // Ink not available, continue without UI
+        import('react')
+            .then(React => {
+                import('ink')
+                    .then(({ render }) => {
+                        import('./renderers/ink-simple')
+                            .then(({ InkSimpleLogger }) => {
+                                this.inkInstance = render(
+                                    React.createElement(InkSimpleLogger, { logger: this as any }),
+                                    { patchConsole: false }
+                                )
+                            })
+                            .catch(() => {
+                                // Ink renderer not available, continue without UI
+                            })
+                    })
+                    .catch(() => {
+                        // Ink not available, continue without UI
+                    })
             })
-        }).catch(() => {
-            // React not available, continue without UI
-        })
+            .catch(() => {
+                // React not available, continue without UI
+            })
     }
 
     onChange(listener: () => void) {
@@ -257,19 +251,6 @@ export class Logger<Ops extends readonly OperationDefinition[] = readonly Operat
 
     getConfig(): LoggerConfig {
         return this.config
-    }
-
-    cleanup(): void {
-        if (this.inkInstance) {
-            this.inkInstance.unmount()
-            this.inkInstance = null
-        }
-
-        // Restore console
-        console.log = this.originalConsole.log
-        console.error = this.originalConsole.error
-        console.info = this.originalConsole.info
-        console.warn = this.originalConsole.warn
     }
 
     clear(): void {

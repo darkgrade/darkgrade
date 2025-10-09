@@ -1,5 +1,5 @@
 import { PropertyDefinition } from '@ptp/types/property'
-import { baseCodecs, EnumCodec } from '@ptp/types/codec'
+import { baseCodecs, EnumCodec, CustomCodec } from '@ptp/types/codec'
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 
 const UNDEF = getDatatypeByName('UNDEF')!.code
@@ -72,7 +72,17 @@ export const propertyDefinitions = [
         description: 'F-stop number',
         datatype: UINT16,
         access: 'GetSet',
-        codec: baseCodecs.uint16,
+        codec: new (class extends CustomCodec<number> {
+            encode(value: number): Uint8Array {
+                const uint16 = this.resolveBaseCodec(baseCodecs.uint16)
+                return uint16.encode(Math.round(value * 100))
+            }
+            decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
+                const uint16 = this.resolveBaseCodec(baseCodecs.uint16)
+                const result = uint16.decode(buffer, offset)
+                return { value: result.value / 100, bytesRead: result.bytesRead }
+            }
+        })(),
     },
     {
         code: 0x5008,
@@ -120,7 +130,17 @@ export const propertyDefinitions = [
         description: 'Exposure time in milliseconds',
         datatype: UINT32,
         access: 'GetSet',
-        codec: baseCodecs.uint32,
+        codec: new (class extends CustomCodec<number> {
+            encode(value: number): Uint8Array {
+                const uint32 = this.resolveBaseCodec(baseCodecs.uint32)
+                return uint32.encode(Math.round(value * 10000))
+            }
+            decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
+                const uint32 = this.resolveBaseCodec(baseCodecs.uint32)
+                const result = uint32.decode(buffer, offset)
+                return { value: result.value / 10000, bytesRead: result.bytesRead }
+            }
+        })(),
     },
     {
         code: 0x500e,
@@ -136,7 +156,17 @@ export const propertyDefinitions = [
         description: 'ISO speed',
         datatype: UINT16,
         access: 'GetSet',
-        codec: baseCodecs.uint16,
+        codec: new (class extends CustomCodec<number | 'auto'> {
+            encode(value: number | 'auto'): Uint8Array {
+                const uint16 = this.resolveBaseCodec(baseCodecs.uint16)
+                return uint16.encode(value === 'auto' ? 0xffff : value)
+            }
+            decode(buffer: Uint8Array, offset = 0): { value: number | 'auto'; bytesRead: number } {
+                const uint16 = this.resolveBaseCodec(baseCodecs.uint16)
+                const result = uint16.decode(buffer, offset)
+                return { value: result.value === 0xffff ? 'auto' : result.value, bytesRead: result.bytesRead }
+            }
+        })(),
     },
     {
         code: 0x5010,
