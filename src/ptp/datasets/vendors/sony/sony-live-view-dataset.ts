@@ -1,4 +1,4 @@
-import { CustomCodec, BaseCodecRegistry } from '@ptp/types/codec'
+import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 
 export interface FocalFrameInfo {
     data: Uint8Array
@@ -15,14 +15,12 @@ export interface LiveViewDataset {
 }
 
 export class LiveViewDatasetCodec extends CustomCodec<LiveViewDataset> {
-    
-
     encode(value: LiveViewDataset): Uint8Array {
         throw new Error('Encoding LiveViewDataset is not yet implemented')
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: LiveViewDataset; bytesRead: number } {
-        const u32 = this.baseCodecs.uint32
+        const u32 = this.registry.codecs.uint32
 
         let currentOffset = offset
 
@@ -94,6 +92,6 @@ export class LiveViewDatasetCodec extends CustomCodec<LiveViewDataset> {
 }
 
 
-export function parseLiveViewDataset(data: Uint8Array, baseCodecs: BaseCodecRegistry): LiveViewDataset {
-    const codec = new LiveViewDatasetCodec(baseCodecs); return codec.decode(data).value
+export function parseLiveViewDataset(data: Uint8Array, registry: PTPRegistry): LiveViewDataset {
+    const codec = new LiveViewDatasetCodec(registry); return codec.decode(data).value
 }

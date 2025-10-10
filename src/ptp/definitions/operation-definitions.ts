@@ -1,5 +1,5 @@
 import { OperationDefinition } from '@ptp/types/operation'
-import { baseCodecs, ArrayCodec, BaseCodecRegistry } from '@ptp/types/codec'
+import { baseCodecs, ArrayCodec, type PTPRegistry } from '@ptp/types/codec'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfoCodec } from '@ptp/datasets/object-info-dataset'
 import { StorageInfoCodec } from '@ptp/datasets/storage-info-dataset'
@@ -19,7 +19,7 @@ export const GetDeviceInfo = {
     name: 'GetDeviceInfo',
     description: 'Returns information and capabilities about the responder device',
     dataDirection: 'out',
-    dataCodec: (bc: BaseCodecRegistry) => new DeviceInfoCodec(bc),
+    dataCodec: (registry: PTPRegistry) => new DeviceInfoCodec(registry),
     operationParameters: [],
     responseParameters: [],
 } as const satisfies OperationDefinition
@@ -54,7 +54,7 @@ export const GetStorageIDs = {
     name: 'GetStorageIDs',
     description: 'Returns list of currently valid StorageIDs',
     dataDirection: 'out',
-    dataCodec: (bc: BaseCodecRegistry) => new ArrayCodec(bc, bc.uint32),
+    dataCodec: (registry: PTPRegistry) => new ArrayCodec(registry, registry.codecs.uint32),
     operationParameters: [],
     responseParameters: [],
 } as const satisfies OperationDefinition
@@ -64,7 +64,7 @@ export const GetStorageInfo = {
     name: 'GetStorageInfo',
     description: 'Returns StorageInfo data set for a storage area',
     dataDirection: 'out',
-    dataCodec: (bc: BaseCodecRegistry) => new StorageInfoCodec(bc),
+    dataCodec: (registry: PTPRegistry) => new StorageInfoCodec(registry),
     operationParameters: [
         {
             name: 'StorageID',
@@ -118,7 +118,7 @@ export const GetObjectHandles = {
     name: 'GetObjectHandles',
     description: 'Returns array of ObjectHandles in storage',
     dataDirection: 'out',
-    dataCodec: (bc: BaseCodecRegistry) => new ArrayCodec(bc, bc.uint32),
+    dataCodec: (registry: PTPRegistry) => new ArrayCodec(registry, registry.codecs.uint32),
     operationParameters: [
         {
             name: 'StorageID',
@@ -149,7 +149,7 @@ export const GetObjectInfo = {
     name: 'GetObjectInfo',
     description: 'Returns ObjectInfo data set for an object',
     dataDirection: 'out',
-    dataCodec: (bc: BaseCodecRegistry) => new ObjectInfoCodec(bc),
+    dataCodec: (registry: PTPRegistry) => new ObjectInfoCodec(registry),
     operationParameters: [
         {
             name: 'ObjectHandle',
@@ -377,7 +377,7 @@ export const GetDevicePropDesc = {
     name: 'GetDevicePropDesc',
     description: 'Gets device property descriptor',
     dataDirection: 'out',
-    dataCodec: (bc: BaseCodecRegistry) => new DevicePropDescCodec(bc, false),
+    dataCodec: (registry: PTPRegistry) => new DevicePropDescCodec(registry, false),
     operationParameters: [
         {
             name: 'DevicePropCode',
@@ -613,7 +613,7 @@ export const EnumHandles = {
     name: 'EnumHandles',
     description: 'Returns a chunk of object handles from an active enumeration (PTP v1.1)',
     dataDirection: 'out',
-    dataCodec: (bc: BaseCodecRegistry) => new ArrayCodec(bc, bc.uint32),
+    dataCodec: (registry: PTPRegistry) => new ArrayCodec(registry, registry.codecs.uint32),
     operationParameters: [
         {
             name: 'EnumID',

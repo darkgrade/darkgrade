@@ -17,7 +17,7 @@ export const SDIO_OpenSession = {
         {
             name: 'FunctionMode',
             description: 'Function mode',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'REMOTE', description: 'Remote Control Mode' },
                     { value: 0x00000001, name: 'CONTENT_TRANSFER', description: 'Content Transfer Mode' },
@@ -27,7 +27,7 @@ export const SDIO_OpenSession = {
                         description: 'Remote Control with Transfer Mode',
                     },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },
@@ -40,7 +40,7 @@ export const SDIO_Connect = {
     name: 'SDIO_Connect',
     description: 'This is for the Sony SDIO authentication handshake.',
     dataDirection: 'out',
-    dataCodec: (bc) => bc.uint64,
+    dataCodec: (registry) => registry.codecs.uint64,
     operationParameters: [
         {
             name: 'phaseType',
@@ -79,12 +79,12 @@ export const SDIO_GetExtDeviceInfo = {
         {
             name: 'flagOfDevicePropertyOption',
             description: 'Enables extended SDIO Device Property / SDIControlCode',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'DISABLE', description: 'DISABLE' },
                     { value: 0x00000001, name: 'ENABLE', description: 'ENABLE' },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },
@@ -97,7 +97,7 @@ export const SDIO_GetExtDevicePropValue = {
     name: 'SDIO_GetExtDevicePropValue',
     description: 'Get the DevicePropInfo.',
     dataDirection: 'out',
-    dataCodec: (bc) => new SDIExtDevicePropInfoCodec(bc),
+    dataCodec: (registry) => new SDIExtDevicePropInfoCodec(registry),
     operationParameters: [
         {
             name: 'DevicePropCode',
@@ -124,12 +124,12 @@ export const SDIO_SetExtDevicePropValue = {
         {
             name: 'flagOfDevicePropertyOption',
             description: 'Enables extended SDIO Device Property / SDIControlCode',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'DISABLE', description: 'DISABLE' },
                     { value: 0x00000001, name: 'ENABLE', description: 'ENABLE' },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },
@@ -152,12 +152,12 @@ export const SDIO_ControlDevice = {
         {
             name: 'flagOfDevicePropertyOption',
             description: 'Enables extended SDIO Device Property / SDIControlCode',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'DISABLE', description: 'DISABLE' },
                     { value: 0x00000001, name: 'ENABLE', description: 'ENABLE' },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },
@@ -181,12 +181,12 @@ export const SDIO_GetAllExtDevicePropInfo = {
         {
             name: 'flagOfDevicePropertyOption',
             description: 'Enables extended SDIO Device Property / SDIControlCode',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'DISABLE', description: 'DISABLE' },
                     { value: 0x00000001, name: 'ENABLE', description: 'ENABLE' },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },
@@ -253,37 +253,37 @@ export const SDIO_SetContentsTransferMode = {
         {
             name: 'ContentsSelectType',
             description: 'The Initiator should send this command with one of the following values:',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'INVALID', description: 'INVALID' },
                     { value: 0x00000001, name: 'CAMERA', description: 'Select on the Camera' },
                     { value: 0x00000002, name: 'HOST', description: 'Select on the Remote/Host Device' },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },
         {
             name: 'TransferMode',
             description: 'The Initiator should send this command with one of the following values:',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'DISABLE', description: 'DISABLE' },
                     { value: 0x00000001, name: 'ENABLE', description: 'ENABLE' },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },
         {
             name: 'AdditionalInformation',
             description: 'The Initiator should send this command with one of the following values:',
-            codec: (bc) => new EnumCodec(bc,
+            codec: (registry) => new EnumCodec(registry,
                 [
                     { value: 0x00000000, name: 'NONE', description: 'NONE' },
                     { value: 0x00000001, name: 'CANCEL', description: 'CANCEL' },
                 ],
-                bc.uint32
+                registry.codecs.uint32
             ),
             required: true,
         },

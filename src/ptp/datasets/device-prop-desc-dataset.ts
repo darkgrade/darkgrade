@@ -1,18 +1,7 @@
-import { CodecDefinition, BaseCodecRegistry, CodecInstance, CustomCodec } from '@ptp/types/codec'
+import { CodecDefinition, CodecInstance, CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
-
-// Lazy-loaded registry to avoid circular dependency
-let _propertyRegistry: any = null
-
-function getPropertyRegistry() {
-    if (!_propertyRegistry) {
-        const { genericPropertyRegistry } = require('@ptp/definitions/property-definitions')
-        _propertyRegistry = Object.values(genericPropertyRegistry)
-    }
-    return _propertyRegistry
-}
 
 export interface DevicePropDesc {
     devicePropertyCode: number
@@ -41,8 +30,8 @@ export interface DevicePropDesc {
 export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
     private use4ByteCode: boolean
 
-    constructor(baseCodecs: BaseCodecRegistry, use4ByteCode: boolean = false) {
-        super(baseCodecs)
+    constructor(registry: PTPRegistry, use4ByteCode: boolean = false) {
+        super(registry)
         this.use4ByteCode = use4ByteCode
     }
 
@@ -57,9 +46,9 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
             throw new Error(`Buffer too short: expected at least 6 bytes, got ${buffer.length}`)
         }
 
-        const u8 = this.baseCodecs.uint8
-        const u16 = this.baseCodecs.uint16
-        const u32 = this.baseCodecs.uint32
+        const u8 = this.registry.codecs.uint8
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
 
         // DevicePropCode (2 or 4 bytes)
         let devicePropertyCode: number
@@ -83,7 +72,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         const getSet = getSetResult.value
         currentOffset += getSetResult.bytesRead
 
-        const valueCodec = new VariableValueCodec(this.baseCodecs, dataType)
+        const valueCodec = new VariableValueCodec(this.registry, dataType)
 
         // FactoryDefaultValue (variable size)
         const factoryDefaultResult = valueCodec.decode(buffer, currentOffset)
@@ -101,9 +90,8 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         const formFlag = formFlagResult.value
         currentOffset += formFlagResult.bytesRead
 
-        // Look up property name from definitions (lazy-loaded)
-        const propertyRegistry = getPropertyRegistry()
-        const propertyDef = propertyRegistry.find((p: any) => p.code === devicePropertyCode)
+        // Look up property name from definitions
+        const propertyDef = Object.values(this.registry.properties).find((p: any) => p.code === devicePropertyCode)
         const devicePropertyName = propertyDef?.name || `Unknown_0x${devicePropertyCode.toString(16).padStart(4, '0')}`
         const devicePropertyDescription = propertyDef?.description || ''
 
@@ -112,7 +100,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         if (propertyDef && propertyDef.codec) {
             // Get codec instance from builder
             const codecInstance = typeof propertyDef.codec === 'function'
-                ? propertyDef.codec(this.baseCodecs)
+                ? propertyDef.codec(this.registry)
                 : propertyDef.codec
             const decodedResult = codecInstance.decode(currentValueBytes, 0)
             currentValueDecoded = decodedResult.value
@@ -144,14 +132,14 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
             if (propertyDef && propertyDef.codec && minimumValue !== undefined && maximumValue !== undefined && stepSize !== undefined) {
                 // Get codec instance from builder
                 const codecInstance = typeof propertyDef.codec === 'function'
-                    ? propertyDef.codec(this.baseCodecs)
+                    ? propertyDef.codec(this.registry)
                     : propertyDef.codec
 
                 const datatypeDefinition = getDatatypeByCode(dataType)
                 if (datatypeDefinition?.codec) {
                     // Get datatype codec instance
                     const datatypeCodec = typeof datatypeDefinition.codec === 'function'
-                        ? datatypeDefinition.codec(this.baseCodecs)
+                        ? datatypeDefinition.codec(this.registry)
                         : datatypeDefinition.codec
 
                     const minBytes = datatypeCodec.encode(minimumValue)
@@ -181,14 +169,14 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
             if (propertyDef && propertyDef.codec && supportedValuesRaw && supportedValuesRaw.length > 0) {
                 // Get codec instance from builder
                 const codecInstance = typeof propertyDef.codec === 'function'
-                    ? propertyDef.codec(this.baseCodecs)
+                    ? propertyDef.codec(this.registry)
                     : propertyDef.codec
 
                 const datatypeDefinition = getDatatypeByCode(dataType)
                 if (datatypeDefinition?.codec) {
                     // Get datatype codec instance
                     const datatypeCodec = typeof datatypeDefinition.codec === 'function'
-                        ? datatypeDefinition.codec(this.baseCodecs)
+                        ? datatypeDefinition.codec(this.registry)
                         : datatypeDefinition.codec
 
                     supportedValuesDecoded = supportedValuesRaw.map((rawVal) => {

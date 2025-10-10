@@ -7,13 +7,8 @@
 
 import { EventEmitter } from '@ptp/types/event'
 import type { EventData } from '@ptp/types/event'
-import { genericOperationRegistry, type GenericOperationDef } from '@ptp/definitions/operation-definitions'
-import { genericPropertyRegistry, type GenericPropertyDef } from '@ptp/definitions/property-definitions'
-import { genericEventRegistry, type GenericEventDef } from '@ptp/definitions/event-definitions'
-import { responseRegistry } from '@ptp/definitions/response-definitions'
-import { formatRegistry } from '@ptp/definitions/format-definitions'
-import type { CodecType, BaseCodecRegistry, CodecDefinition, CodecInstance } from '@ptp/types/codec'
-import { baseCodecs, createBaseCodecs } from '@ptp/types/codec'
+import { createPTPRegistry, Registry, type PTPRegistry } from '@ptp/registry'
+import type { CodecType, CodecDefinition, CodecInstance } from '@ptp/types/codec'
 import { TransportInterface, PTPEvent } from '@transport/interfaces/transport.interface'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -33,12 +28,12 @@ export class GenericCamera {
     private transactionId = 0
     public transport: TransportInterface
     protected logger: Logger
-    protected baseCodecs: BaseCodecRegistry
+    protected registry: Registry
 
     constructor(transport: TransportInterface, logger: Logger) {
         this.transport = transport
         this.logger = logger
-        this.baseCodecs = createBaseCodecs(transport.isLittleEndian())
+        this.registry = createPTPRegistry(transport.isLittleEndian())
 
         if (this.transport.on) {
             this.transport.on(this.handleEvent.bind(this))
@@ -52,12 +47,12 @@ export class GenericCamera {
         await this.transport.connect({ ...deviceIdentifier, ...(this.vendorId && { vendorId: this.vendorId }) })
 
         this.sessionId = Math.floor(Math.random() * 0xffffffff)
-        const openResult = await this.send(genericOperationRegistry.OpenSession, { SessionID: this.sessionId })
+        const openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
 
         // Handle session already open error
         if (openResult.code === 0x201e) {
-            await this.send(genericOperationRegistry.CloseSession, {})
-            await this.send(genericOperationRegistry.OpenSession, { SessionID: this.sessionId })
+            await this.send(this.registry.operations.CloseSession, {})
+            await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
         }
     }
 
@@ -68,7 +63,7 @@ export class GenericCamera {
         this.emitter.removeAllListeners()
 
         if (this.sessionId !== null) {
-            await this.send(genericOperationRegistry.CloseSession, {})
+            await this.send(this.registry.operations.CloseSession, {})
         }
 
         this.sessionId = null
@@ -202,7 +197,9 @@ export class GenericCamera {
                 const propCode = paramsRecord.DevicePropCode
                 if (propCode !== undefined) {
                     // Look up property definition in registry to decode value
-                    const property = Object.values(genericPropertyRegistry).find(p => p.code === propCode)
+                    const property = Object.values(this.registry.properties).find(
+                        (p: any) => p.code === propCode
+                    ) as any
                     if (property) {
                         const codec = this.resolveCodec(property.codec)
                         const result = codec.decode(receivedData)
@@ -312,11 +309,11 @@ export class GenericCamera {
         }
 
         // Use GetDevicePropDesc to get full descriptor including current value
-        const response = await this.send(genericOperationRegistry.GetDevicePropDesc, {
+        const response = await this.send(this.registry.operations.GetDevicePropDesc as any, {
             DevicePropCode: property.code,
         })
 
-        if (!response.data) {
+        if (!('data' in response) || !response.data) {
             throw new Error('No data received from GetDevicePropDesc')
         }
 
@@ -336,11 +333,7 @@ export class GenericCamera {
         const codec = this.resolveCodec(property.codec)
         const encodedValue = codec.encode(value)
 
-        await this.send(
-            genericOperationRegistry.SetDevicePropValue,
-            { DevicePropCode: property.code },
-            encodedValue
-        )
+        await this.send(this.registry.operations.SetDevicePropValue, { DevicePropCode: property.code }, encodedValue)
     }
 
     /**
@@ -366,7 +359,7 @@ export class GenericCamera {
      */
     protected handleEvent(event: PTPEvent): void {
         // Look up event definition by code
-        const eventDef = Object.values(genericEventRegistry).find(e => e.code === event.code)
+        const eventDef = Object.values(this.registry.events).find((e: any) => e.code === event.code) as any
         if (!eventDef) return
 
         // Emit event parameters as array (compatible with EventData)
@@ -386,8 +379,8 @@ export class GenericCamera {
      * Build PTP COMMAND container
      */
     private buildCommand(code: number, transactionId: number, params: Uint8Array[]): Uint8Array {
-        const u16 = this.resolveCodec(baseCodecs.uint16)
-        const u32 = this.resolveCodec(baseCodecs.uint32)
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
 
         const paramBytes = params.reduce((sum, p) => sum + p.length, 0)
         const length = 12 + paramBytes
@@ -414,8 +407,8 @@ export class GenericCamera {
      * Build PTP DATA container
      */
     private buildData(code: number, transactionId: number, data: Uint8Array): Uint8Array {
-        const u16 = this.resolveCodec(baseCodecs.uint16)
-        const u32 = this.resolveCodec(baseCodecs.uint32)
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
 
         const length = 12 + data.length
 
@@ -450,8 +443,8 @@ export class GenericCamera {
             throw new Error(`Container too short: ${data.length} bytes`)
         }
 
-        const u16 = this.resolveCodec(baseCodecs.uint16)
-        const u32 = this.resolveCodec(baseCodecs.uint32)
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
 
         let offset = 0
 
@@ -481,9 +474,9 @@ export class GenericCamera {
      * Handles both codec instances and codec builder functions
      */
     public resolveCodec<T>(codec: CodecDefinition<T> | CodecDefinition<any>): CodecInstance<T> {
-        // If it's a builder function, call it with baseCodecs
+        // If it's a builder function, call it with full registry
         if (typeof codec === 'function') {
-            return codec(this.baseCodecs)
+            return codec(this.registry)
         }
 
         // Otherwise it's already a codec instance

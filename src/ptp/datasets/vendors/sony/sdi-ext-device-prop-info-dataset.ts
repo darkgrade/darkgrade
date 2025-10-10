@@ -1,22 +1,8 @@
-import { CodecDefinition, BaseCodecRegistry, CodecInstance, CustomCodec } from '@ptp/types/codec'
+import { CodecDefinition, CodecInstance, CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
-
-// Lazy-loaded registry to avoid circular dependency
-let _propertyRegistry: any = null
-
-function getPropertyRegistry() {
-    if (!_propertyRegistry) {
-        const { genericPropertyRegistry } = require('@ptp/definitions/property-definitions')
-        const { sonyPropertyRegistry } = require('@ptp/definitions/vendors/sony/sony-property-definitions')
-        const standardPropertyDefinitions = Object.values(genericPropertyRegistry)
-        const sonyPropertyDefinitions = Object.values(sonyPropertyRegistry)
-        _propertyRegistry = [...sonyPropertyDefinitions, ...standardPropertyDefinitions]
-    }
-    return _propertyRegistry
-}
 
 /**
  * Sony-specific device property descriptor extensions
@@ -54,8 +40,8 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
             throw new Error(`Buffer too short: expected at least 6 bytes, got ${buffer.length}`)
         }
 
-        const u8 = this.baseCodecs.uint8
-        const u16 = this.baseCodecs.uint16
+        const u8 = this.registry.codecs.uint8
+        const u16 = this.registry.codecs.uint16
 
         const devicePropertyCodeResult = u16.decode(buffer, currentOffset)
         const devicePropertyCode = devicePropertyCodeResult.value
@@ -73,7 +59,7 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
         const isEnabled = isEnabledResult.value
         currentOffset += isEnabledResult.bytesRead
 
-        const valueCodec = new VariableValueCodec(this.baseCodecs, dataType)
+        const valueCodec = new VariableValueCodec(this.registry, dataType)
 
         const factoryDefaultResult = valueCodec.decode(buffer, currentOffset)
         const factoryDefaultValue = factoryDefaultResult.value.value
@@ -113,9 +99,8 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
             }
         }
 
-        // Look up property from definitions (lazy-loaded)
-        const allProperties = getPropertyRegistry()
-        const propertyDef = allProperties.find((p: any) => p.code === devicePropertyCode)
+        // Look up property from definitions
+        const propertyDef = Object.values(this.registry.properties).find((p: any) => p.code === devicePropertyCode)
 
         let devicePropertyName = propertyDef?.name || `Unknown_0x${devicePropertyCode.toString(16).padStart(4, '0')}`
         let devicePropertyDescription = propertyDef?.description || ''
@@ -128,7 +113,7 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
         if (propertyDef && propertyDef.codec) {
             // Get codec instance from builder
             const codecInstance = typeof propertyDef.codec === 'function'
-                ? propertyDef.codec(this.baseCodecs)
+                ? propertyDef.codec(this.registry)
                 : propertyDef.codec
             const decodedResult = codecInstance.decode(currentValueBytes, 0)
             currentValueDecoded = decodedResult.value
@@ -142,7 +127,7 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
 
                     // Get datatype codec instance
                     const datatypeCodec = typeof datatypeDefinition.codec === 'function'
-                        ? datatypeDefinition.codec(this.baseCodecs)
+                        ? datatypeDefinition.codec(this.registry)
                         : datatypeDefinition.codec
 
                     const bytes = datatypeCodec.encode(rawVal)
@@ -159,7 +144,7 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
 
                     // Get datatype codec instance
                     const datatypeCodec = typeof datatypeDefinition.codec === 'function'
-                        ? datatypeDefinition.codec(this.baseCodecs)
+                        ? datatypeDefinition.codec(this.registry)
                         : datatypeDefinition.codec
 
                     const bytes = datatypeCodec.encode(rawVal)
@@ -204,22 +189,20 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
 }
 
 export class SDIDevicePropInfoArrayCodec extends CustomCodec<SDIDevicePropInfoArray> {
-    
-
     encode(value: SDIDevicePropInfoArray): Uint8Array {
         throw new Error('Encoding SDIDevicePropInfoArray is not yet implemented')
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: SDIDevicePropInfoArray; bytesRead: number } {
         let currentOffset = offset
-        const u64 = this.baseCodecs.uint64
+        const u64 = this.registry.codecs.uint64
 
         const numOfElementsResult = u64.decode(buffer, currentOffset)
         const numOfElements = Number(numOfElementsResult.value)
         currentOffset += numOfElementsResult.bytesRead
 
         const properties: SonyDevicePropDesc[] = []
-        const propCodec = new SDIExtDevicePropInfoCodec(this.baseCodecs)
+        const propCodec = new SDIExtDevicePropInfoCodec(this.registry)
 
         for (let i = 0; i < numOfElements; i++) {
             const propResult = propCodec.decode(buffer, currentOffset)

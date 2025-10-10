@@ -50,8 +50,6 @@ const parseShutter = (v: string): [number, number] => {
 }
 
 class ApertureCodec extends CustomCodec<string> {
-
-
     encode(value: string): Uint8Array {
         const v = String(value).toLowerCase()
         const u16 = this.baseCodecs.uint16
@@ -80,8 +78,6 @@ class ApertureCodec extends CustomCodec<string> {
 }
 
 class ShutterSpeedCodec extends CustomCodec<string> {
-
-
     encode(value: string): Uint8Array {
         const [n, d] = parseShutter(value)
         const u32 = this.baseCodecs.uint32
@@ -120,8 +116,6 @@ class ShutterSpeedCodec extends CustomCodec<string> {
 }
 
 class IsoCodec extends CustomCodec<string> {
-
-
     encode(value: string): Uint8Array {
         const v = String(value).toLowerCase()
         const isoValue = parseISO(value)
@@ -161,8 +155,6 @@ class IsoCodec extends CustomCodec<string> {
 }
 
 class ExposureValueCodec extends CustomCodec<string> {
-
-
     encode(value: string): Uint8Array {
         const i16 = this.baseCodecs.int16
         return i16.encode(Math.round(parseFloat(value) * 1000))
@@ -182,7 +174,7 @@ export const Aperture = {
     description: 'Get/Set the aperture value.',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new ApertureCodec(bc),
+    codec: (registry) => new ApertureCodec(registry),
 } as const satisfies PropertyDefinition
 
 export const ShutterSpeed = {
@@ -191,7 +183,7 @@ export const ShutterSpeed = {
     description: 'Get/Set the shutter speed.',
     datatype: UINT32,
     access: 'GetSet',
-    codec: (bc) => new ShutterSpeedCodec(bc),
+    codec: (registry) => new ShutterSpeedCodec(registry),
 } as const satisfies PropertyDefinition
 
 export const Iso = {
@@ -200,7 +192,7 @@ export const Iso = {
     description: 'Get/Set the ISO sensitivity.',
     datatype: UINT32,
     access: 'GetSet',
-    codec: (bc) => new IsoCodec(bc),
+    codec: (registry) => new IsoCodec(registry),
 } as const satisfies PropertyDefinition
 
 export const Exposure = {
@@ -218,7 +210,7 @@ export const MeteredExposure = {
     description: 'AKA Metered Manual Level - Get the metered manual level.',
     datatype: INT16,
     access: 'GetSet',
-    codec: (bc) => new ExposureValueCodec(bc),
+    codec: (registry) => new ExposureValueCodec(registry),
 } as const satisfies PropertyDefinition
 
 export const ExposureCompensation = {
@@ -227,7 +219,7 @@ export const ExposureCompensation = {
     description: 'AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.',
     datatype: INT16,
     access: 'GetSet',
-    codec: (bc) => new ExposureValueCodec(bc),
+    codec: (registry) => new ExposureValueCodec(registry),
 } as const satisfies PropertyDefinition
 
 export const StillCaptureMode = {
@@ -236,7 +228,7 @@ export const StillCaptureMode = {
     description: 'Get/Set the drive mode.',
     datatype: UINT32,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x00000001, name: 'Normal', description: 'Normal' },
             { value: 0x00010002, name: 'Continuous Shooting Hi', description: 'Continuous Shooting Hi' },
@@ -904,7 +896,7 @@ export const StillCaptureMode = {
             { value: 0x00098032, name: 'Spot Burst Shooting Hi', description: 'Spot Burst Shooting Hi' },
             { value: 0x000a8040, name: 'Focus Bracket', description: 'Focus Bracket' },
         ],
-        bc.uint32
+        registry.codecs.uint32
     ),
 } as const satisfies PropertyDefinition
 
@@ -914,12 +906,12 @@ export const OsdImageMode = {
     description: 'Get/Set the OSD image mode',
     datatype: UINT8,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x00, name: 'OFF', description: 'OFF' },
             { value: 0x01, name: 'ON', description: 'ON' },
         ],
-        bc.uint8
+        registry.codecs.uint8
     ),
 } as const satisfies PropertyDefinition
 
@@ -929,13 +921,13 @@ export const LiveViewStatus = {
     description: 'Get the live view status.',
     datatype: UINT8,
     access: 'Get',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x00, name: 'SUPPORTED_DISABLED', description: 'SUPPORTED_DISABLED' },
             { value: 0x01, name: 'SUPPORTED_ENABLED', description: 'SUPPORTED_ENABLED' },
             { value: 0x02, name: 'NOT_SUPPORTED', description: 'NOT_SUPPORTED' },
         ],
-        bc.uint8
+        registry.codecs.uint8
     ),
 } as const satisfies PropertyDefinition
 
@@ -945,13 +937,13 @@ export const StillImageSaveDestination = {
     description: 'Get the information of still image save destination.',
     datatype: UINT8,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x0001, name: 'CAMERA_DEVICE', description: 'CAMERA_DEVICE' },
             { value: 0x0010, name: 'HOST_DEVICE', description: 'HOST_DEVICE' },
             { value: 0x0011, name: 'BOTH_DEVICES', description: 'BOTH_DEVICES' },
         ],
-        bc.uint8
+        registry.codecs.uint8
     ),
 } as const satisfies PropertyDefinition
 
@@ -961,12 +953,12 @@ export const PositionKeySetting = {
     description: 'Get/Set the position key setting (controls which setting takes priority between host and camera)',
     datatype: UINT8,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x00, name: 'CAMERA_PRIORITY', description: 'CAMERA_PRIORITY' },
             { value: 0x01, name: 'HOST_PRIORITY', description: 'HOST_PRIORITY' },
         ],
-        bc.uint8
+        registry.codecs.uint8
     ),
 } as const satisfies PropertyDefinition
 
@@ -977,12 +969,12 @@ export const SetLiveViewEnable = {
         'Set live view enable. When using Live View while connected in "Remote Control with Transfer Mode," it is necessary to enable the feature using this Control Code.',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x0001, name: 'DISABLE', description: 'DISABLE' },
             { value: 0x0002, name: 'ENABLE', description: 'ENABLE' },
         ],
-        bc.uint16
+        registry.codecs.uint16
     ),
 } as const satisfies PropertyDefinition
 
@@ -992,12 +984,12 @@ export const ShutterHalfReleaseButton = {
     description: 'Control shutter half-release (S1) (focus) button.',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x0001, name: 'UP', description: 'UP' },
             { value: 0x0002, name: 'DOWN', description: 'DOWN' },
         ],
-        bc.uint16
+        registry.codecs.uint16
     ),
 } as const satisfies PropertyDefinition
 
@@ -1007,12 +999,12 @@ export const ShutterReleaseButton = {
     description: 'Control shutter release (S2) button.',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x0001, name: 'UP', description: 'UP' },
             { value: 0x0002, name: 'DOWN', description: 'DOWN' },
         ],
-        bc.uint16
+        registry.codecs.uint16
     ),
 } as const satisfies PropertyDefinition
 
@@ -1022,12 +1014,12 @@ export const MovieRecButton = {
     description: 'Control movie record button (hold)',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x0001, name: 'UP', description: 'UP' },
             { value: 0x0002, name: 'DOWN', description: 'DOWN' },
         ],
-        bc.uint16
+        registry.codecs.uint16
     ),
 } as const satisfies PropertyDefinition
 
@@ -1037,12 +1029,12 @@ export const LiveViewImageQuality = {
     description: 'Get/Set the live view image quality.',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x01, name: 'LOW', description: 'LOW' },
             { value: 0x02, name: 'HIGH', description: 'HIGH' },
         ],
-        bc.uint16
+        registry.codecs.uint16
     ),
 } as const satisfies PropertyDefinition
 
@@ -1052,12 +1044,12 @@ export const ContentTransferEnable = {
     description: 'Get the contents transfer enabled status.',
     datatype: UINT8,
     access: 'Get',
-    codec: (bc) => new EnumCodec(bc,
+    codec: (registry) => new EnumCodec(registry,
         [
             { value: 0x00, name: 'DISABLE', description: 'DISABLE' },
             { value: 0x01, name: 'ENABLE', description: 'ENABLE' },
         ],
-        bc.uint8
+        registry.codecs.uint8
     ),
 } as const satisfies PropertyDefinition
 

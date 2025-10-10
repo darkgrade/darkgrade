@@ -7,21 +7,8 @@
 
 import { EventEmitter } from '@ptp/types/event'
 import type { EventData } from '@ptp/types/event'
-import { genericOperationRegistry, type GenericOperationDef } from '@ptp/definitions/operation-definitions'
-import { genericPropertyRegistry, type GenericPropertyDef } from '@ptp/definitions/property-definitions'
-import { genericEventRegistry, type GenericEventDef } from '@ptp/definitions/event-definitions'
-import {
-    sonyOperationRegistry,
-    type SonyOperationDef,
-} from '@ptp/definitions/vendors/sony/sony-operation-definitions'
-import { sonyPropertyRegistry, type SonyPropertyDef } from '@ptp/definitions/vendors/sony/sony-property-definitions'
-import { sonyEventRegistry, type SonyEventDef } from '@ptp/definitions/vendors/sony/sony-event-definitions'
-import { sonyFormatRegistry, type SonyFormatDef } from '@ptp/definitions/vendors/sony/sony-format-definitions'
-import { sonyResponseRegistry, type SonyResponseDef } from '@ptp/definitions/vendors/sony/sony-response-definitions'
-import { responseRegistry } from '@ptp/definitions/response-definitions'
-import { formatRegistry } from '@ptp/definitions/format-definitions'
-import type { CodecType, BaseCodecRegistry, CodecDefinition, CodecInstance } from '@ptp/types/codec'
-import { baseCodecs, createBaseCodecs } from '@ptp/types/codec'
+import { createSonyRegistry, type SonyRegistry } from '@ptp/registry'
+import type { CodecType, CodecDefinition, CodecInstance } from '@ptp/types/codec'
 import { TransportInterface, PTPEvent } from '@transport/interfaces/transport.interface'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -33,22 +20,6 @@ import { parseLiveViewDataset } from '@ptp/datasets/vendors/sony/sony-live-view-
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { GenericCamera } from './generic-camera'
 import { OperationParams, OperationResponse } from '@ptp/types/type-helpers'
-
-// ============================================================================
-// Merge Sony registries with generic registries
-// ============================================================================
-
-const mergedOperationRegistry = { ...genericOperationRegistry, ...sonyOperationRegistry } as const
-const mergedPropertyRegistry = { ...genericPropertyRegistry, ...sonyPropertyRegistry } as const
-const mergedEventRegistry = { ...genericEventRegistry, ...sonyEventRegistry } as const
-const mergedFormatRegistry = { ...formatRegistry, ...sonyFormatRegistry } as const
-const mergedResponseRegistry = { ...responseRegistry, ...sonyResponseRegistry } as const
-
-type MergedOperationDef = (typeof mergedOperationRegistry)[keyof typeof mergedOperationRegistry]
-type MergedPropertyDef = (typeof mergedPropertyRegistry)[keyof typeof mergedPropertyRegistry]
-type MergedEventDef = (typeof mergedEventRegistry)[keyof typeof mergedEventRegistry]
-type MergedFormatDef = (typeof mergedFormatRegistry)[keyof typeof mergedFormatRegistry]
-type MergedResponseDef = (typeof mergedResponseRegistry)[keyof typeof mergedResponseRegistry]
 
 // ============================================================================
 // Sony authentication constants
@@ -75,9 +46,12 @@ const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
 export class SonyCamera extends GenericCamera {
     private liveViewEnabled = false
     vendorId = VendorIDs.SONY
+    declare protected registry: SonyRegistry
 
     constructor(transport: TransportInterface, logger: Logger) {
         super(transport, logger)
+        // Override with Sony-specific registry
+        this.registry = createSonyRegistry(transport.isLittleEndian()) as any
     }
 
     /**
@@ -89,15 +63,15 @@ export class SonyCamera extends GenericCamera {
         this.sessionId = Math.floor(Math.random() * 0xffffffff)
 
         // Use Sony-specific open session
-        const openResult = await this.send(mergedOperationRegistry.SDIO_OpenSession, {
+        const openResult = await this.send(this.registry.operations.SDIO_OpenSession, {
             SessionId: this.sessionId,
             FunctionMode: 'REMOTE_AND_CONTENT_TRANSFER',
         })
 
         // Check if session was already open (response code 0x201e = SessionAlreadyOpen)
         if (openResult.code === 0x201e) {
-            await this.send(genericOperationRegistry.CloseSession, {})
-            await this.send(mergedOperationRegistry.SDIO_OpenSession, {
+            await this.send(this.registry.operations.CloseSession, {})
+            await this.send(this.registry.operations.SDIO_OpenSession, {
                 SessionId: this.sessionId,
                 FunctionMode: 'REMOTE_AND_CONTENT_TRANSFER',
             })
@@ -109,8 +83,8 @@ export class SonyCamera extends GenericCamera {
         await this.authenticate()
 
         // Configure Sony camera settings
-        await this.set(mergedPropertyRegistry.PositionKeySetting, 'HOST_PRIORITY')
-        await this.set(mergedPropertyRegistry.StillImageSaveDestination, 'CAMERA_DEVICE')
+        await this.set(this.registry.properties.PositionKeySetting, 'HOST_PRIORITY')
+        await this.set(this.registry.properties.StillImageSaveDestination, 'CAMERA_DEVICE')
     }
 
     /**
@@ -118,27 +92,27 @@ export class SonyCamera extends GenericCamera {
      */
     private async authenticate(): Promise<void> {
         // Phase 1
-        await this.send(mergedOperationRegistry.SDIO_Connect, {
+        await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: SDIO_AUTH_PHASES.PHASE_1,
             keyCode1: SDIO_AUTH_KEY_CODE_1,
             keyCode2: SDIO_AUTH_KEY_CODE_2,
         })
 
         // Phase 2
-        await this.send(mergedOperationRegistry.SDIO_Connect, {
+        await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: SDIO_AUTH_PHASES.PHASE_2,
             keyCode1: SDIO_AUTH_KEY_CODE_1,
             keyCode2: SDIO_AUTH_KEY_CODE_2,
         })
 
         // Get extended device info - required for version verification
-        await this.send(mergedOperationRegistry.SDIO_GetExtDeviceInfo, {
+        await this.send(this.registry.operations.SDIO_GetExtDeviceInfo, {
             initiatorVersion: SDIO_AUTH_PROTOCOL_VERSION,
             flagOfDevicePropertyOption: SDIO_AUTH_DEVICE_PROPERTY_OPTION,
         })
 
         // Phase 3
-        await this.send(mergedOperationRegistry.SDIO_Connect, {
+        await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: SDIO_AUTH_PHASES.PHASE_3,
             keyCode1: SDIO_AUTH_KEY_CODE_1,
             keyCode2: SDIO_AUTH_KEY_CODE_2,
@@ -153,7 +127,7 @@ export class SonyCamera extends GenericCamera {
             throw new Error(`Property ${property.name} is not readable`)
         }
 
-        const response = await this.send(mergedOperationRegistry.SDIO_GetExtDevicePropValue, {
+        const response = await this.send(this.registry.operations.SDIO_GetExtDevicePropValue, {
             DevicePropCode: property.code,
         })
 
@@ -197,7 +171,7 @@ export class SonyCamera extends GenericCamera {
 
         if (isControlProperty) {
             await this.send(
-                mergedOperationRegistry.SDIO_ControlDevice,
+                this.registry.operations.SDIO_ControlDevice,
                 {
                     sdiControlCode: property.code,
                     flagOfDevicePropertyOption: 'ENABLE',
@@ -206,7 +180,7 @@ export class SonyCamera extends GenericCamera {
             )
         } else {
             await this.send(
-                mergedOperationRegistry.SDIO_SetExtDevicePropValue,
+                this.registry.operations.SDIO_SetExtDevicePropValue,
                 {
                     DevicePropCode: property.code,
                     flagOfDevicePropertyOption: 'ENABLE',
@@ -238,14 +212,14 @@ export class SonyCamera extends GenericCamera {
      * Start video recording
      */
     async startRecording(): Promise<void> {
-        await this.set(mergedPropertyRegistry.MovieRecButton, 'DOWN')
+        await this.set(this.registry.properties.MovieRecButton, 'DOWN')
     }
 
     /**
      * Stop video recording
      */
     async stopRecording(): Promise<void> {
-        await this.set(mergedPropertyRegistry.MovieRecButton, 'UP')
+        await this.set(this.registry.properties.MovieRecButton, 'UP')
     }
 
     /**
@@ -253,18 +227,18 @@ export class SonyCamera extends GenericCamera {
      */
     async captureImage(): Promise<{ info: ObjectInfo; data: Uint8Array } | null> {
         // Half-press shutter
-        await this.set(mergedPropertyRegistry.ShutterHalfReleaseButton, 'DOWN')
+        await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
         await new Promise(resolve => setTimeout(resolve, 500))
 
         // Full-press shutter
-        await this.set(mergedPropertyRegistry.ShutterReleaseButton, 'DOWN')
-        await this.set(mergedPropertyRegistry.ShutterReleaseButton, 'UP')
-        await this.set(mergedPropertyRegistry.ShutterHalfReleaseButton, 'UP')
+        await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
+        await this.set(this.registry.properties.ShutterReleaseButton, 'UP')
+        await this.set(this.registry.properties.ShutterHalfReleaseButton, 'UP')
 
         await new Promise(resolve => setTimeout(resolve, 500))
 
         // Get object info
-        const objectInfoResponse = await this.send(mergedOperationRegistry.GetObjectInfo, {
+        const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
             ObjectHandle: SONY_CAPTURED_IMAGE_OBJECT_HANDLE,
         })
 
@@ -277,7 +251,7 @@ export class SonyCamera extends GenericCamera {
 
         // Get object data
         const objectResponse = await this.send(
-            mergedOperationRegistry.GetObject,
+            this.registry.operations.GetObject,
             {
                 ObjectHandle: SONY_CAPTURED_IMAGE_OBJECT_HANDLE,
             },
@@ -300,13 +274,13 @@ export class SonyCamera extends GenericCamera {
      */
     async captureLiveView(): Promise<{ info: ObjectInfo; data: Uint8Array } | null> {
         if (!this.liveViewEnabled) {
-            await this.set(mergedPropertyRegistry.SetLiveViewEnable, 'ENABLE')
+            await this.set(this.registry.properties.SetLiveViewEnable, 'ENABLE')
             this.liveViewEnabled = true
         }
 
         await new Promise(resolve => setTimeout(resolve, 500))
 
-        const objectInfoResponse = await this.send(mergedOperationRegistry.GetObjectInfo, {
+        const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
             ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
         })
 
@@ -320,7 +294,7 @@ export class SonyCamera extends GenericCamera {
 
         const objectFormat = objectInfo.objectFormat
 
-        const objectResponse = await this.send(mergedOperationRegistry.GetObject, {
+        const objectResponse = await this.send(this.registry.operations.GetObject, {
             ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
         })
 
@@ -328,10 +302,10 @@ export class SonyCamera extends GenericCamera {
             return null
         }
 
-        const liveViewData = parseLiveViewDataset(objectResponse.data, this.baseCodecs)
+        const liveViewData = parseLiveViewDataset(objectResponse.data, this.registry)
 
         // Try to look up Sony format info by code
-        const sonyFormatInfo = Object.values(mergedFormatRegistry).find(f => f.code === objectFormat)
+        const sonyFormatInfo = Object.values(this.registry.formats).find(f => f.code === objectFormat)
 
         return liveViewData.liveViewImage
             ? {
@@ -349,11 +323,11 @@ export class SonyCamera extends GenericCamera {
      */
     async streamLiveView(): Promise<Uint8Array> {
         if (!this.liveViewEnabled) {
-            await this.set(mergedPropertyRegistry.SetLiveViewEnable, 'ENABLE')
+            await this.set(this.registry.properties.SetLiveViewEnable, 'ENABLE')
             this.liveViewEnabled = true
         }
 
-        const objectResponse = await this.send(mergedOperationRegistry.GetObject, {
+        const objectResponse = await this.send(this.registry.operations.GetObject, {
             ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
         })
 
@@ -361,7 +335,7 @@ export class SonyCamera extends GenericCamera {
             return new Uint8Array()
         }
 
-        const liveViewData = parseLiveViewDataset(objectResponse.data, this.baseCodecs)
+        const liveViewData = parseLiveViewDataset(objectResponse.data, this.registry)
 
         return liveViewData.liveViewImage || new Uint8Array()
     }
@@ -371,7 +345,7 @@ export class SonyCamera extends GenericCamera {
      */
     protected handleEvent(event: PTPEvent): void {
         // Look up event definition by code in merged registry
-        const eventDef = Object.values(mergedEventRegistry).find(e => e.code === event.code)
+        const eventDef = Object.values(this.registry.events).find(e => e.code === event.code)
         if (!eventDef) return
 
         // Emit event parameters as array

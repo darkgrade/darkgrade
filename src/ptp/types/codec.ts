@@ -1,3 +1,13 @@
+// Forward declaration to avoid circular dependency
+export type PTPRegistry = {
+    codecs: BaseCodecRegistry
+    operations: Record<string, any>
+    properties: Record<string, any>
+    events: Record<string, any>
+    formats: Record<string, any>
+    responses: Record<string, any>
+}
+
 export type BaseCodecType = 'int8' | 'uint8' | 'int16' | 'uint16' | 'int32' | 'uint32' | 'int64' | 'uint64' | 'string'
 export type CustomCodecType = 'enum' | 'range' | 'array' | 'custom'
 
@@ -20,8 +30,8 @@ export interface BaseCodecRegistry {
     readonly string: CodecInstance<string>
 }
 
-// Codec builder function type - receives base codecs and returns codec instance
-export type CodecBuilder<T> = (baseCodecs: BaseCodecRegistry) => CodecInstance<T>
+// Codec builder function type - receives PTP registry and returns codec instance
+export type CodecBuilder<T> = (registry: PTPRegistry) => CodecInstance<T>
 
 // Codec definition can be either a builder function or an instance (for backwards compat)
 export type CodecDefinition<T> = CodecBuilder<T> | CodecInstance<T>
@@ -32,9 +42,13 @@ export type EnumValue<T> = {
     description: string
 }
 
-// Base class for custom codecs - receives baseCodecs in constructor
+// Base class for custom codecs - receives registry in constructor
 export abstract class CustomCodec<T> implements CodecInstance<T> {
-    constructor(public readonly baseCodecs: BaseCodecRegistry) {}
+    constructor(public readonly registry: PTPRegistry) {}
+
+    // Convenience getters (public for use in anonymous classes)
+    public get codecs() { return this.registry.codecs }
+    public get baseCodecs() { return this.registry.codecs } // For backward compatibility
 
     abstract encode(value: T): Uint8Array
     abstract decode(buffer: Uint8Array, offset?: number): { value: T; bytesRead: number }
@@ -45,8 +59,8 @@ export class EnumCodec<T> extends CustomCodec<T | string> {
     private readonly nameToValue = new Map<string, EnumValue<T>>()
     private readonly baseCodec: CodecInstance<T>
 
-    constructor(baseCodecs: BaseCodecRegistry, values: EnumValue<T>[], baseCodec: CodecInstance<T>) {
-        super(baseCodecs)
+    constructor(registry: PTPRegistry, values: EnumValue<T>[], baseCodec: CodecInstance<T>) {
+        super(registry)
         this.baseCodec = baseCodec
         for (const enumValue of values) {
             this.valueToName.set(enumValue.value, enumValue)
@@ -102,8 +116,8 @@ export class RangeCodec<T extends number> extends CustomCodec<T> {
     private readonly range: RangeSpec<T>
     private readonly baseCodec: CodecInstance<T>
 
-    constructor(baseCodecs: BaseCodecRegistry, range: RangeSpec<T>, baseCodec: CodecInstance<T>) {
-        super(baseCodecs)
+    constructor(registry: PTPRegistry, range: RangeSpec<T>, baseCodec: CodecInstance<T>) {
+        super(registry)
         this.range = range
         this.baseCodec = baseCodec
     }
@@ -375,8 +389,8 @@ export class StringCodec {
 export class ArrayCodec<T> extends CustomCodec<T[]> {
     private readonly elementCodec: CodecInstance<T>
 
-    constructor(baseCodecs: BaseCodecRegistry, elementCodec: CodecInstance<T>) {
-        super(baseCodecs)
+    constructor(registry: PTPRegistry, elementCodec: CodecInstance<T>) {
+        super(registry)
         this.elementCodec = elementCodec
     }
 
@@ -428,15 +442,15 @@ export class ArrayCodec<T> extends CustomCodec<T[]> {
 
 // Builder functions for base codecs - definitions use these
 export const baseCodecs = {
-    int8: (bc: BaseCodecRegistry) => bc.int8,
-    uint8: (bc: BaseCodecRegistry) => bc.uint8,
-    int16: (bc: BaseCodecRegistry) => bc.int16,
-    uint16: (bc: BaseCodecRegistry) => bc.uint16,
-    int32: (bc: BaseCodecRegistry) => bc.int32,
-    uint32: (bc: BaseCodecRegistry) => bc.uint32,
-    int64: (bc: BaseCodecRegistry) => bc.int64,
-    uint64: (bc: BaseCodecRegistry) => bc.uint64,
-    string: (bc: BaseCodecRegistry) => bc.string,
+    int8: (registry: PTPRegistry) => registry.codecs.int8,
+    uint8: (registry: PTPRegistry) => registry.codecs.uint8,
+    int16: (registry: PTPRegistry) => registry.codecs.int16,
+    uint16: (registry: PTPRegistry) => registry.codecs.uint16,
+    int32: (registry: PTPRegistry) => registry.codecs.int32,
+    uint32: (registry: PTPRegistry) => registry.codecs.uint32,
+    int64: (registry: PTPRegistry) => registry.codecs.int64,
+    uint64: (registry: PTPRegistry) => registry.codecs.uint64,
+    string: (registry: PTPRegistry) => registry.codecs.string,
 } as const
 
 // Create actual codec instances based on endianness

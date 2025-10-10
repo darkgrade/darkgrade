@@ -1,5 +1,5 @@
 import { OperationDefinition } from '@ptp/types/operation'
-import { baseCodecs } from '@ptp/types/codec'
+import { baseCodecs, type PTPRegistry } from '@ptp/types/codec'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 
 export const GetPartialObjectEx = {
@@ -60,7 +60,7 @@ export const GetDevicePropDescEx = {
     name: 'GetDevicePropDescEx',
     description: 'Get device property descriptor (4-byte extension)',
     dataDirection: 'out',
-    dataCodec: (bc) => new DevicePropDescCodec(bc, true),
+    dataCodec: (registry) => new DevicePropDescCodec(registry, true),
     operationParameters: [
         {
             name: 'DevicePropCode',

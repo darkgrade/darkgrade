@@ -78,8 +78,8 @@ export const FNumber = {
     description: 'F-stop number (aperture)',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new (class extends CustomCodec<string> {
-        constructor() { super(bc); }
+    codec: (registry) => new (class extends CustomCodec<string> {
+        constructor() { super(registry); }
         encode(value: string): Uint8Array {
             const uint16 = this.baseCodecs.uint16
             // Parse strings like "f/2.8", "2.8", "F2.8"
@@ -151,8 +151,8 @@ export const ExposureTime = {
     description: 'Exposure time (shutter speed)',
     datatype: UINT32,
     access: 'GetSet',
-    codec: (bc) => new (class extends CustomCodec<string> {
-        constructor() { super(bc); }
+    codec: (registry) => new (class extends CustomCodec<string> {
+        constructor() { super(registry); }
         encode(value: string): Uint8Array {
             // Parse strings like "1/250", "1.3\"", "BULB"
             const uint32 = this.baseCodecs.uint32
@@ -227,8 +227,8 @@ export const ExposureIndex = {
     description: 'ISO speed',
     datatype: UINT16,
     access: 'GetSet',
-    codec: (bc) => new (class extends CustomCodec<string> {
-        constructor() { super(bc); }
+    codec: (registry) => new (class extends CustomCodec<string> {
+        constructor() { super(registry); }
         encode(value: string): Uint8Array {
             const uint16 = this.baseCodecs.uint16
             // Parse strings like "ISO 100", "ISO AUTO", "100", "auto"

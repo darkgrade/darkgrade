@@ -1,16 +1,4 @@
-import { CustomCodec, baseCodecs } from '@ptp/types/codec'
-
-// Lazy-loaded registry to avoid circular dependency
-let _formatRegistry: any = null
-
-function getFormatRegistry() {
-    if (!_formatRegistry) {
-        const { formatRegistry } = require('@ptp/definitions/format-definitions')
-        const { sonyFormatRegistry } = require('@ptp/definitions/vendors/sony/sony-format-definitions')
-        _formatRegistry = [...Object.values(formatRegistry), ...Object.values(sonyFormatRegistry)]
-    }
-    return _formatRegistry
-}
+import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 
 export interface ObjectInfo {
     storageID: number
@@ -37,12 +25,10 @@ export interface ObjectInfo {
 }
 
 export class ObjectInfoCodec extends CustomCodec<ObjectInfo> {
-    
-
     encode(value: ObjectInfo): Uint8Array {
-        const u16 = this.baseCodecs.uint16
-        const u32 = this.baseCodecs.uint32
-        const str = this.baseCodecs.string
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
+        const str = this.registry.codecs.string
 
         const buffers: Uint8Array[] = []
 
@@ -80,9 +66,9 @@ export class ObjectInfoCodec extends CustomCodec<ObjectInfo> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: ObjectInfo; bytesRead: number } {
-        const u16 = this.baseCodecs.uint16
-        const u32 = this.baseCodecs.uint32
-        const str = this.baseCodecs.string
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
+        const str = this.registry.codecs.string
 
         let currentOffset = offset
 
@@ -143,12 +129,11 @@ export class ObjectInfoCodec extends CustomCodec<ObjectInfo> {
         const keywords = str.decode(buffer, currentOffset)
         currentOffset += keywords.bytesRead
 
-        // Decode format codes to names (lazy-loaded)
-        const allFormats = getFormatRegistry()
-        const objectFormatDef = allFormats.find((f: any) => f.code === objectFormat.value)
+        // Decode format codes to names
+        const objectFormatDef = Object.values(this.registry.formats).find((f: any) => f.code === objectFormat.value)
         const objectFormatDecoded = objectFormatDef?.name || `Unknown_0x${objectFormat.value.toString(16)}`
 
-        const thumbFormatDef = allFormats.find((f: any) => f.code === thumbFormat.value)
+        const thumbFormatDef = Object.values(this.registry.formats).find((f: any) => f.code === thumbFormat.value)
         const thumbFormatDecoded = thumbFormatDef?.name || (thumbFormat.value === 0 ? 'None' : `Unknown_0x${thumbFormat.value.toString(16)}`)
 
         return {

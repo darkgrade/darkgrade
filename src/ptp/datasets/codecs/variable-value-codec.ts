@@ -1,4 +1,4 @@
-import { CustomCodec, BaseCodecRegistry, CodecInstance } from '@ptp/types/codec'
+import { CustomCodec, type PTPRegistry, CodecInstance } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 
@@ -12,8 +12,8 @@ export interface VariableValue {
  * Used by device property descriptors to encode/decode values of different types
  */
 export class VariableValueCodec extends CustomCodec<VariableValue> {
-    constructor(baseCodecs: BaseCodecRegistry, private dataType: DatatypeCode) {
-        super(baseCodecs)
+    constructor(registry: PTPRegistry, private dataType: DatatypeCode) {
+        super(registry)
     }
 
     encode(value: VariableValue | number | bigint | string): Uint8Array {
@@ -33,7 +33,7 @@ export class VariableValueCodec extends CustomCodec<VariableValue> {
 
         // Get codec instance from builder
         const codec = typeof datatypeDefinition.codec === 'function'
-            ? datatypeDefinition.codec(this.baseCodecs)
+            ? datatypeDefinition.codec(this.registry)
             : datatypeDefinition.codec
 
         if (typeof value !== 'number' && typeof value !== 'bigint' && typeof value !== 'string') {
@@ -54,7 +54,7 @@ export class VariableValueCodec extends CustomCodec<VariableValue> {
 
         // Get codec instance from builder
         const codec = typeof datatypeDefinition.codec === 'function'
-            ? datatypeDefinition.codec(this.baseCodecs)
+            ? datatypeDefinition.codec(this.registry)
             : datatypeDefinition.codec
 
         const result = codec.decode(buffer, offset)

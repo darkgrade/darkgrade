@@ -7,17 +7,8 @@
 
 import { EventEmitter } from '@ptp/types/event'
 import type { EventData } from '@ptp/types/event'
-import { genericOperationRegistry, type GenericOperationDef } from '@ptp/definitions/operation-definitions'
-import { genericPropertyRegistry, type GenericPropertyDef } from '@ptp/definitions/property-definitions'
-import { genericEventRegistry, type GenericEventDef } from '@ptp/definitions/event-definitions'
-import {
-    nikonOperationRegistry,
-    type NikonOperationDef,
-} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
-import { responseRegistry } from '@ptp/definitions/response-definitions'
-import { formatRegistry } from '@ptp/definitions/format-definitions'
-import type { CodecType, BaseCodecRegistry, CodecDefinition, CodecInstance } from '@ptp/types/codec'
-import { baseCodecs, createBaseCodecs } from '@ptp/types/codec'
+import { createNikonRegistry, type NikonRegistry } from '@ptp/registry'
+import type { CodecType, CodecDefinition, CodecInstance } from '@ptp/types/codec'
 import { TransportInterface, PTPEvent } from '@transport/interfaces/transport.interface'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -29,30 +20,17 @@ import { GenericCamera } from './generic-camera'
 import { OperationParams, OperationResponse } from '@ptp/types/type-helpers'
 
 // ============================================================================
-// Merge Nikon registries with generic registries
-// ============================================================================
-
-const mergedOperationRegistry = { ...genericOperationRegistry, ...nikonOperationRegistry } as const
-const mergedPropertyRegistry = { ...genericPropertyRegistry } as const
-const mergedEventRegistry = { ...genericEventRegistry } as const
-const mergedFormatRegistry = { ...formatRegistry } as const
-const mergedResponseRegistry = { ...responseRegistry } as const
-
-type MergedOperationDef = (typeof mergedOperationRegistry)[keyof typeof mergedOperationRegistry]
-type MergedPropertyDef = (typeof mergedPropertyRegistry)[keyof typeof mergedPropertyRegistry]
-type MergedEventDef = (typeof mergedEventRegistry)[keyof typeof mergedEventRegistry]
-type MergedFormatDef = (typeof mergedFormatRegistry)[keyof typeof mergedFormatRegistry]
-type MergedResponseDef = (typeof mergedResponseRegistry)[keyof typeof mergedResponseRegistry]
-
-// ============================================================================
 // NikonCamera class
 // ============================================================================
 
 export class NikonCamera extends GenericCamera {
     vendorId = VendorIDs.NIKON
+    declare protected registry: NikonRegistry
 
     constructor(transport: TransportInterface, logger: Logger) {
         super(transport, logger)
+        // Override with Nikon-specific registry
+        this.registry = createNikonRegistry(transport.isLittleEndian()) as any
     }
 
     /**
@@ -65,7 +43,7 @@ export class NikonCamera extends GenericCamera {
         }
 
         // Use GetDevicePropDescEx to get full descriptor including current value
-        const response = await this.send(mergedOperationRegistry.GetDevicePropDescEx, {
+        const response = await this.send(this.registry.operations.GetDevicePropDescEx, {
             DevicePropCode: property.code,
         })
 
@@ -98,7 +76,7 @@ export class NikonCamera extends GenericCamera {
         const encodedValue = codec.encode(value)
 
         await this.send(
-            mergedOperationRegistry.SetDevicePropValueEx,
+            this.registry.operations.SetDevicePropValueEx,
             {
                 DevicePropCode: property.code,
             },
@@ -129,7 +107,7 @@ export class NikonCamera extends GenericCamera {
      */
     protected handleEvent(event: PTPEvent): void {
         // Look up event definition by code in merged registry
-        const eventDef = Object.values(mergedEventRegistry).find(e => e.code === event.code)
+        const eventDef = Object.values(this.registry.events).find(e => e.code === event.code)
         if (!eventDef) return
 
         // Emit event parameters as array

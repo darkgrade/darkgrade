@@ -1,4 +1,4 @@
-import { CustomCodec, baseCodecs } from '@ptp/types/codec'
+import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 
 export interface StorageInfo {
     storageType: number
@@ -12,13 +12,11 @@ export interface StorageInfo {
 }
 
 export class StorageInfoCodec extends CustomCodec<StorageInfo> {
-    
-
     encode(value: StorageInfo): Uint8Array {
-        const u16 = this.baseCodecs.uint16
-        const u32 = this.baseCodecs.uint32
-        const u64 = this.baseCodecs.uint64
-        const str = this.baseCodecs.string
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
+        const u64 = this.registry.codecs.uint64
+        const str = this.registry.codecs.string
 
         const buffers: Uint8Array[] = []
 
@@ -43,10 +41,10 @@ export class StorageInfoCodec extends CustomCodec<StorageInfo> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: StorageInfo; bytesRead: number } {
-        const u16 = this.baseCodecs.uint16
-        const u32 = this.baseCodecs.uint32
-        const u64 = this.baseCodecs.uint64
-        const str = this.baseCodecs.string
+        const u16 = this.registry.codecs.uint16
+        const u32 = this.registry.codecs.uint32
+        const u64 = this.registry.codecs.uint64
+        const str = this.registry.codecs.string
 
         let currentOffset = offset
 
