@@ -6,8 +6,6 @@ import path from 'path'
 
 export default defineConfig({
     plugins: [sveltekit(), tailwindcss(), devtoolsJson()],
-    define: { global: 'globalThis' },
-    optimizeDeps: { include: ['buffer', 'process'] },
     resolve: {
         alias: {
             '@camera': path.resolve('../../src/camera'),

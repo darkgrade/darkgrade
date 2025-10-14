@@ -186,14 +186,14 @@ export class GenericCamera {
 
             // Decode received data if dataCodec is defined
             let decodedData: number | bigint | string | object | Uint8Array | undefined = undefined
-            if (receivedData && 'dataCodec' in operation && operation.dataCodec) {
+            if (receivedData && receivedData.length > 0 && 'dataCodec' in operation && operation.dataCodec) {
                 const codec = this.resolveCodec(operation.dataCodec)
                 const result = codec.decode(receivedData)
                 decodedData = result.value
             }
 
             // Special handling for property value operations without dataCodec
-            if (receivedData && !decodedData && operation.name.includes('GetDevicePropValue')) {
+            if (receivedData && receivedData.length > 0 && !decodedData && operation.name.includes('GetDevicePropValue')) {
                 const propCode = paramsRecord.DevicePropCode
                 if (propCode !== undefined) {
                     // Look up property definition in registry to decode value

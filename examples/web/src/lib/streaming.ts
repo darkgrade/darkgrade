@@ -1,6 +1,6 @@
 import type { SonyCamera } from '@camera/sony-camera'
+import * as SonyProps from '@ptp/definitions/vendors/sony/sony-property-definitions'
 import { store } from './store.svelte'
-import { wait } from './utils'
 import { cameraQueue } from './queue'
 
 export const startStreaming = () => {
@@ -8,7 +8,6 @@ export const startStreaming = () => {
 }
 
 export const stopStreaming = () => {
-    store.streaming = false
     store.streaming = false
 
     if (store.animationFrame) {
@@ -25,13 +24,15 @@ export const streamFrame = async (camera: SonyCamera, ctx: CanvasRenderingContex
     if (!store.streaming || !camera || !store.connected || !store.canvasRef) return
 
     try {
-        const newSettings = await cameraQueue.push(async () => ({
-            aperture: await camera.get('Aperture'),
-            shutterSpeed: await camera.get('ShutterSpeed'),
-            iso: await camera.get('Iso'),
-            exposure: await camera.get('Exposure'),
-            liveViewImageQuality: await camera.get('LiveViewImageQuality'),
-        }))
+        const newSettings = await cameraQueue.push(async () => {
+            return {
+                aperture: await camera.get(SonyProps.Aperture),
+                shutterSpeed: await camera.get(SonyProps.ShutterSpeed),
+                iso: await camera.get(SonyProps.Iso),
+                liveViewImageQuality: String(await camera.get(SonyProps.LiveViewImageQuality)),
+                // exposure: await camera.get(SonyProps.Exposure),
+            }
+        })
 
         // Track which properties changed
         if (store.previousSettings) {
@@ -41,7 +42,7 @@ export const streamFrame = async (camera: SonyCamera, ctx: CanvasRenderingContex
             if (store.previousSettings.iso !== newSettings.iso) changed.add('iso')
             if (store.previousSettings.liveViewImageQuality !== newSettings.liveViewImageQuality)
                 changed.add('liveViewImageQuality')
-            if (store.previousSettings.exposure !== newSettings.exposure) changed.add('exposure')
+            // if (store.previousSettings.exposure !== newSettings.exposure) changed.add('exposure')
 
             if (changed.size > 0) {
                 store.changedProps = changed
@@ -98,8 +99,11 @@ export const streamFrame = async (camera: SonyCamera, ctx: CanvasRenderingContex
             }
         }
     } catch (error) {
-        console.error('Error capturing live view:', error)
-        // Continue streaming even if one frame fails
+        if (error instanceof DOMException && error.name === 'InvalidStateError') {
+            // live view frame is invalid, camera was not ready (>30fps) so ignore
+        } else {
+            console.error('Error capturing live view:', error)
+        }
         if (store.streaming) {
             store.animationFrame = requestAnimationFrame(() => streamFrame(camera, ctx))
         }

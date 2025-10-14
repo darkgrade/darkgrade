@@ -110,46 +110,59 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
         let enumValuesSetDecoded: (number | bigint | string)[] = enumValuesSet
         let enumValuesGetSetDecoded: (number | bigint | string)[] = enumValuesGetSet
 
-        if (propertyDef && propertyDef.codec) {
+        if (propertyDef && propertyDef.codec && currentValueBytes.length > 0) {
             // Get codec instance from builder
             const codecInstance = typeof propertyDef.codec === 'function'
                 ? propertyDef.codec(this.registry)
                 : propertyDef.codec
-            const decodedResult = codecInstance.decode(currentValueBytes, 0)
-            currentValueDecoded = decodedResult.value
+
+            try {
+                const decodedResult = codecInstance.decode(currentValueBytes, 0)
+                currentValueDecoded = decodedResult.value
+            } catch (e) {
+                // If decoding fails, keep the raw value
+            }
 
             // Decode enum values
             if (enumValuesSet.length > 0) {
                 enumValuesSetDecoded = enumValuesSet.map((rawVal) => {
-                    // Get the datatype codec to encode raw value to bytes
-                    const datatypeDefinition = getDatatypeByCode(dataType)
-                    if (!datatypeDefinition?.codec) return rawVal
+                    try {
+                        // Get the datatype codec to encode raw value to bytes
+                        const datatypeDefinition = getDatatypeByCode(dataType)
+                        if (!datatypeDefinition?.codec) return rawVal
 
-                    // Get datatype codec instance
-                    const datatypeCodec = typeof datatypeDefinition.codec === 'function'
-                        ? datatypeDefinition.codec(this.registry)
-                        : datatypeDefinition.codec
+                        // Get datatype codec instance
+                        const datatypeCodec = typeof datatypeDefinition.codec === 'function'
+                            ? datatypeDefinition.codec(this.registry)
+                            : datatypeDefinition.codec
 
-                    const bytes = datatypeCodec.encode(rawVal)
-                    const decoded = codecInstance.decode(bytes, 0)
-                    return decoded.value
+                        const bytes = datatypeCodec.encode(rawVal)
+                        const decoded = codecInstance.decode(bytes, 0)
+                        return decoded.value
+                    } catch (e) {
+                        return rawVal
+                    }
                 })
             }
 
             if (enumValuesGetSet.length > 0) {
                 enumValuesGetSetDecoded = enumValuesGetSet.map((rawVal) => {
-                    // Get the datatype codec to encode raw value to bytes
-                    const datatypeDefinition = getDatatypeByCode(dataType)
-                    if (!datatypeDefinition?.codec) return rawVal
+                    try {
+                        // Get the datatype codec to encode raw value to bytes
+                        const datatypeDefinition = getDatatypeByCode(dataType)
+                        if (!datatypeDefinition?.codec) return rawVal
 
-                    // Get datatype codec instance
-                    const datatypeCodec = typeof datatypeDefinition.codec === 'function'
-                        ? datatypeDefinition.codec(this.registry)
-                        : datatypeDefinition.codec
+                        // Get datatype codec instance
+                        const datatypeCodec = typeof datatypeDefinition.codec === 'function'
+                            ? datatypeDefinition.codec(this.registry)
+                            : datatypeDefinition.codec
 
-                    const bytes = datatypeCodec.encode(rawVal)
-                    const decoded = codecInstance.decode(bytes, 0)
-                    return decoded.value
+                        const bytes = datatypeCodec.encode(rawVal)
+                        const decoded = codecInstance.decode(bytes, 0)
+                        return decoded.value
+                    } catch (e) {
+                        return rawVal
+                    }
                 })
             }
         }

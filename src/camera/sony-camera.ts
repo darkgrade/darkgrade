@@ -132,27 +132,11 @@ export class SonyCamera extends GenericCamera {
         })
 
         if (!response.data) {
-            throw new Error(`No data received from SDIO_GetExtDevicePropValue for ${property.name}`)
+            throw new Error(`No data received from SDIO_GetExtDevicePropValue for ${property.name} (response code: 0x${response.code.toString(16)})`)
         }
 
         const propInfo = response.data
-
-        // Decode the property value from the raw bytes using the property's codec
-        const codec = this.resolveCodec(property.codec)
-
-        // Type guard to ensure propInfo has currentValueBytes
-        if (!propInfo || typeof propInfo !== 'object' || !('currentValueBytes' in propInfo)) {
-            throw new Error('Invalid property info structure')
-        }
-
-        const currentValueBytes = propInfo.currentValueBytes
-        if (!(currentValueBytes instanceof Uint8Array)) {
-            throw new Error('currentValueBytes must be Uint8Array')
-        }
-
-        const result = codec.decode(currentValueBytes)
-        // Cast needed: TypeScript can't narrow codec return type from property union
-        return result.value as CodecType<P['codec']>
+        return propInfo.currentValueDecoded as CodecType<P['codec']>
     }
 
     /**

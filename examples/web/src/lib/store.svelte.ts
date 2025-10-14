@@ -10,14 +10,14 @@ export const store = $state<{
         aperture: string
         shutterSpeed: string
         iso: string
-        exposure: string
+        // exposure: string
         liveViewImageQuality: string
     } | null
     previousSettings: {
         aperture: string
         shutterSpeed: string
         iso: string
-        exposure: string
+        // exposure: string
         liveViewImageQuality: string
     } | null
     changedProps: Set<string>
