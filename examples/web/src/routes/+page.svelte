@@ -8,6 +8,7 @@
     import { downloadFile, wait } from '../lib/utils'
     import { streamFrame, startStreaming, stopStreaming } from '../lib/streaming'
     import { cameraQueue } from '../lib/queue'
+    import { LiveViewImageQuality } from '@ptp/definitions/vendors/sony/sony-property-definitions'
 
     const logger = new BrowserLogger()
     const transport = new USBTransport(logger)
@@ -73,10 +74,7 @@
     const onToggleLiveViewImageQuality = async () => {
         await cameraQueue.push(
             async () =>
-                await camera.set(
-                    'LiveViewImageQuality',
-                    store.settings?.liveViewImageQuality === 'HIGH' ? 'LOW' : 'HIGH'
-                )
+                await camera.set(LiveViewImageQuality, store.settings?.liveViewImageQuality === 'HIGH' ? 'LOW' : 'HIGH')
         )
     }
 </script>
@@ -148,7 +146,7 @@
                     class="transition-colors duration-300"
                     style="color: {store.changedProps.has('exposure') ? '#4ade80' : undefined};"
                 >
-                    {store.settings?.exposure || '--'}
+                    <!-- {store.settings?.exposure || '--'} -->
                 </span>
             </div>
 

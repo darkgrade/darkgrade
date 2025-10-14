@@ -108,7 +108,7 @@ export class SonyCamera extends GenericCamera {
         // Get extended device info - required for version verification
         await this.send(this.registry.operations.SDIO_GetExtDeviceInfo, {
             initiatorVersion: SDIO_AUTH_PROTOCOL_VERSION,
-            flagOfDevicePropertyOption: SDIO_AUTH_DEVICE_PROPERTY_OPTION,
+            flagOfDevicePropertyOption: 'ENABLE',
         })
 
         // Phase 3
@@ -132,7 +132,9 @@ export class SonyCamera extends GenericCamera {
         })
 
         if (!response.data) {
-            throw new Error(`No data received from SDIO_GetExtDevicePropValue for ${property.name} (response code: 0x${response.code.toString(16)})`)
+            throw new Error(
+                `No data received from SDIO_GetExtDevicePropValue for ${property.name} (response code: 0x${response.code.toString(16)})`
+            )
         }
 
         const propInfo = response.data

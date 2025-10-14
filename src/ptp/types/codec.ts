@@ -47,14 +47,18 @@ export abstract class CustomCodec<T> implements CodecInstance<T> {
     constructor(public readonly registry: PTPRegistry) {}
 
     // Convenience getters (public for use in anonymous classes)
-    public get codecs() { return this.registry.codecs }
-    public get baseCodecs() { return this.registry.codecs } // For backward compatibility
+    public get codecs() {
+        return this.registry.codecs
+    }
+    public get baseCodecs() {
+        return this.registry.codecs
+    } // For backward compatibility
 
     abstract encode(value: T): Uint8Array
     abstract decode(buffer: Uint8Array, offset?: number): { value: T; bytesRead: number }
 }
 
-export class EnumCodec<T> extends CustomCodec<T | string> {
+export class EnumCodec<T> extends CustomCodec<string> {
     private readonly valueToName = new Map<T, EnumValue<T>>()
     private readonly nameToValue = new Map<string, EnumValue<T>>()
     private readonly baseCodec: CodecInstance<T>
@@ -68,7 +72,7 @@ export class EnumCodec<T> extends CustomCodec<T | string> {
         }
     }
 
-    encode(value: T | string): Uint8Array {
+    encode(value: string): Uint8Array {
         // If value is a string, look it up by name
         if (typeof value === 'string') {
             const enumValue = this.nameToValue.get(value)
@@ -149,7 +153,6 @@ export class RangeCodec<T extends number> extends CustomCodec<T> {
         return { ...this.range }
     }
 }
-
 
 export class Uint8Codec {
     readonly type = 'uint8' as const
@@ -473,19 +476,34 @@ export function createBaseCodecs(littleEndian: boolean): BaseCodecRegistry {
  * This allows us to infer TypeScript types from codec definitions
  */
 export type CodecType<T> =
-    T extends CodecBuilder<infer U> ? U :
-    T extends CodecInstance<infer U> ? U :
-    T extends Uint8Codec ? number :
-    T extends Uint16Codec ? number :
-    T extends Uint32Codec ? number :
-    T extends Uint64Codec ? bigint :
-    T extends Int8Codec ? number :
-    T extends Int16Codec ? number :
-    T extends Int32Codec ? number :
-    T extends Int64Codec ? bigint :
-    T extends StringCodec ? string :
-    T extends ArrayCodec<infer E> ? E[] :
-    T extends EnumCodec<infer V> ? V :
-    T extends RangeCodec<infer N> ? N :
-    T extends CustomCodec<infer C> ? C :
-    never
+    T extends CodecBuilder<infer U>
+        ? U
+        : T extends CodecInstance<infer U>
+          ? U
+          : T extends Uint8Codec
+            ? number
+            : T extends Uint16Codec
+              ? number
+              : T extends Uint32Codec
+                ? number
+                : T extends Uint64Codec
+                  ? bigint
+                  : T extends Int8Codec
+                    ? number
+                    : T extends Int16Codec
+                      ? number
+                      : T extends Int32Codec
+                        ? number
+                        : T extends Int64Codec
+                          ? bigint
+                          : T extends StringCodec
+                            ? string
+                            : T extends ArrayCodec<infer E>
+                              ? E[]
+                              : T extends EnumCodec<infer V>
+                                ? V
+                                : T extends RangeCodec<infer N>
+                                  ? N
+                                  : T extends CustomCodec<infer C>
+                                    ? C
+                                    : never

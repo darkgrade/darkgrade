@@ -2,6 +2,7 @@
     import type { SonyCamera } from '@camera/sony-camera'
     import { store } from './store.svelte'
     import { cameraQueue } from './queue'
+    import { Aperture, Iso, ShutterSpeed } from '@ptp/definitions/vendors/sony/sony-property-definitions'
 
     interface Props {
         camera: SonyCamera
@@ -124,29 +125,19 @@
         'ISO 32000',
     ]
 
-    const changeSetting = async (propertyName: any, value: any) => {
-        if (!store.connected) return
-
-        try {
-            await cameraQueue.push(async () => await camera.set(propertyName, value))
-        } catch (error) {
-            console.error(`Failed to set ${propertyName} to ${value}:`, error)
-        }
+    const onApertureChange = async (event: Event) => {
+        const target = event.target as HTMLSelectElement
+        await cameraQueue.push(async () => await camera.set(Aperture, target.value))
     }
 
-    const onApertureChange = (event: Event) => {
+    const onShutterSpeedChange = async (event: Event) => {
         const target = event.target as HTMLSelectElement
-        changeSetting('Aperture', target.value)
+        await cameraQueue.push(async () => await camera.set(ShutterSpeed, target.value))
     }
 
-    const onShutterSpeedChange = (event: Event) => {
+    const onISOChange = async (event: Event) => {
         const target = event.target as HTMLSelectElement
-        changeSetting('ShutterSpeed', target.value)
-    }
-
-    const onISOChange = (event: Event) => {
-        const target = event.target as HTMLSelectElement
-        changeSetting('Iso', target.value)
+        await cameraQueue.push(async () => await camera.set(Iso, target.value))
     }
 </script>
 

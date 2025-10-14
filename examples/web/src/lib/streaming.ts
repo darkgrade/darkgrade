@@ -29,7 +29,7 @@ export const streamFrame = async (camera: SonyCamera, ctx: CanvasRenderingContex
                 aperture: await camera.get(SonyProps.Aperture),
                 shutterSpeed: await camera.get(SonyProps.ShutterSpeed),
                 iso: await camera.get(SonyProps.Iso),
-                liveViewImageQuality: String(await camera.get(SonyProps.LiveViewImageQuality)),
+                liveViewImageQuality: await camera.get(SonyProps.LiveViewImageQuality),
                 // exposure: await camera.get(SonyProps.Exposure),
             }
         })
