@@ -1,5 +1,6 @@
 import { Logger } from '@core/logger'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
@@ -210,6 +211,19 @@ export class SonyCamera extends GenericCamera {
         await this.set(this.registry.properties.MovieRecButton, 'UP')
     }
 
+    async listObjects(): Promise<{
+        [storageId: number]: {
+            info: StorageInfo
+            objects: { [objectHandle: number]: ObjectInfo }
+        }
+    }> {
+        await this.enableContentTransferMode()
+        const objects = await super.listObjects()
+        await this.disableContentTransferMode()
+
+        return objects
+    }
+
     protected async waitForCapturedImageObjectHandle(): Promise<number> {
         let capturedImageObjectHandle: number | null = null
         this.on(this.registry.events.SDIE_ObjectAdded, event => {
@@ -246,6 +260,29 @@ export class SonyCamera extends GenericCamera {
             await this.set(this.registry.properties.SetLiveViewEnable, 'ENABLE')
             await this.set(this.registry.properties.SetPostViewEnable, 'ENABLE')
             this.liveViewPostViewEnabled = true
+        }
+    }
+
+    private async enableContentTransferMode(): Promise<void> {
+        await this.startLiveView()
+        await this.send(this.registry.operations.SDIO_SetContentsTransferMode, {
+            ContentsSelectType: 'HOST',
+            TransferMode: 'ENABLE',
+            AdditionalInformation: 'NONE',
+        })
+        while ((await this.get(this.registry.properties.ContentTransferEnable)) === 'DISABLE') {
+            await this.waitMs(10)
+        }
+    }
+
+    private async disableContentTransferMode(): Promise<void> {
+        await this.send(this.registry.operations.SDIO_SetContentsTransferMode, {
+            ContentsSelectType: 'HOST',
+            TransferMode: 'DISABLE',
+            AdditionalInformation: 'NONE',
+        })
+        while ((await this.get(this.registry.properties.ContentTransferEnable)) === 'ENABLE') {
+            await this.waitMs(10)
         }
     }
 

@@ -1,4 +1,6 @@
 import { Logger } from '@core/logger'
+import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
@@ -104,6 +106,15 @@ export class Camera {
 
     async stopRecording(): Promise<void> {
         return this.instance.stopRecording()
+    }
+
+    async listObjects(): Promise<{
+        [storageId: number]: {
+            info: StorageInfo
+            objects: { [objectHandle: number]: ObjectInfo }
+        }
+    }> {
+        return this.instance.listObjects()
     }
 }
 

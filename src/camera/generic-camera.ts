@@ -1,5 +1,7 @@
 import { Logger, PTPTransferLog } from '@core/logger'
+import { formatJSON } from '@core/renderers/formatters/compact-formatter'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
 import { createPTPRegistry, Registry } from '@ptp/registry'
@@ -441,6 +443,55 @@ export class GenericCamera {
 
     async stopRecording(): Promise<void> {
         throw new Error('Video recording not supported on generic PTP cameras')
+    }
+
+    /*
+     * WARNING: This operation is extremely slow for >100 objects/images on card.
+     */
+    async listObjects(): Promise<{
+        [storageId: number]: {
+            info: StorageInfo
+            objects: { [objectHandle: number]: ObjectInfo }
+        }
+    }> {
+        type StorageEntry = { info: StorageInfo; objects: { [objectHandle: number]: ObjectInfo } }
+        const result: { [storageId: number]: StorageEntry } = {}
+
+        const storageIdsResponse = await this.send(this.registry.operations.GetStorageIDs, {})
+        const storageIds = storageIdsResponse.data
+
+        for (const storageId of storageIds) {
+            // Get info for this storage
+            const storageInfoResponse = await this.send(this.registry.operations.GetStorageInfo, {
+                StorageID: storageId,
+            })
+            const storageInfo = storageInfoResponse.data
+
+            // Prepare container for objects in this storage
+            const storageObjects: { [objectHandle: number]: ObjectInfo } = {}
+
+            // Get all object handles for this storage
+            const objectIdsResponse = await this.send(this.registry.operations.GetObjectHandles, {
+                StorageID: storageId,
+            })
+            const objectHandles = objectIdsResponse.data
+
+            // Get detailed info for each object handle
+            for (const objectHandle of objectHandles) {
+                const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
+                    ObjectHandle: objectHandle,
+                })
+                storageObjects[objectHandle] = objectInfoResponse.data
+            }
+
+            result[storageId] = {
+                info: storageInfo,
+                objects: storageObjects,
+            }
+        }
+        console.log(formatJSON(result))
+
+        return result
     }
 
     public resolveCodec<T>(codec: CodecDefinition<T> | CodecDefinition<any>): CodecInstance<T> {
