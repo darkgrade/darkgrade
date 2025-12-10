@@ -27,9 +27,9 @@ export class SonyCamera extends GenericCamera {
         this.registry = createSonyRegistry(transport.isLittleEndian())
     }
 
-    async connect(deviceIdentifier?: DeviceDescriptor): Promise<void> {
+    async connect(device?: DeviceDescriptor): Promise<void> {
         if (!this.transport.isConnected()) {
-            await this.transport.connect({ ...deviceIdentifier, vendorId: this.vendorId })
+            await this.transport.connect({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
         }
 
         this.sessionId = randomSessionId()

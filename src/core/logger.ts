@@ -47,6 +47,7 @@ type USBTransferLog = BaseLog & {
     sessionId: number
     transactionId: number
     phase: 'request' | 'data' | 'response'
+    status: USBTransferStatus
 }
 
 type ConsoleLog = BaseLog & {
@@ -96,7 +97,6 @@ export class Logger {
     private nextId: number = 1
     private changeListeners: Array<() => void> = []
     private notifyTimeout: NodeJS.Timeout | null = null
-    private inkInstance: { unmount: () => void; waitUntilExit: () => Promise<void> } | null = null
     private activeTransfers: Map<number, number> = new Map()
     private originalConsole = {
         log: console.log.bind(console),
@@ -111,6 +111,7 @@ export class Logger {
         if (typeof window === 'undefined' && typeof process !== 'undefined') {
             this.captureConsole()
             this.setupInkRenderer()
+            this.setupExitHandler()
         }
     }
 
@@ -132,22 +133,41 @@ export class Logger {
         console.warn = createWrapper('warn')
     }
 
-    private setupInkRenderer() {
-        import('react')
-            .then(React => {
-                import('ink')
-                    .then(({ render }) => {
-                        import('./renderers/ink')
-                            .then(({ InkLogger }) => {
-                                this.inkInstance = render(React.createElement(InkLogger, { logger: this }), {
-                                    patchConsole: false,
-                                })
-                            })
-                            .catch(() => {})
-                    })
-                    .catch(() => {})
-            })
-            .catch(() => {})
+    private async setupInkRenderer() {
+        const react = await import('react')
+        const ink = await import('ink')
+        const renderer = await import('./renderers/ink')
+
+        ink.render(react.createElement(renderer.InkLogger, { logger: this }), {
+            patchConsole: false,
+        })
+    }
+
+    private setupExitHandler() {
+        const flush = async () => {
+            if (this.notifyTimeout) {
+                clearTimeout(this.notifyTimeout)
+                this.notifyTimeout = null
+            }
+            for (const listener of this.changeListeners) {
+                listener()
+            }
+            await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        // Handle exceptions by delaying slightly to let Ink render
+        process.on('uncaughtException', async error => {
+            await flush()
+
+            console.error(`${error.message}\n\n${error.stack}`)
+            // throw error
+        })
+
+        process.on('unhandledRejection', async reason => {
+            await flush()
+            const error = reason instanceof Error ? reason : new Error(String(reason))
+            console.error(`${error.message}\n\n${error.stack}`)
+            // throw error
+        })
     }
 
     onChange(listener: () => void) {
@@ -294,7 +314,13 @@ export class Logger {
         this.activeTransfers.delete(objectHandle)
     }
 
-    startTransfer(objectHandle: number, sessionId: number, transactionId: number, operationName: string, totalBytes: number): number {
+    startTransfer(
+        objectHandle: number,
+        sessionId: number,
+        transactionId: number,
+        operationName: string,
+        totalBytes: number
+    ): number {
         const transferLog: PTPTransferLog = {
             type: 'ptp_transfer',
             level: 'info',
@@ -329,12 +355,15 @@ export class Logger {
         const log = this.getLogById(logId)
         if (!log || log.type !== 'ptp_transfer') return
 
-        const chunks = [...log.chunks, {
-            transactionId: chunkTransactionId,
-            timestamp: Date.now(),
-            offset: log.transferredBytes,
-            bytes: chunkBytes,
-        }]
+        const chunks = [
+            ...log.chunks,
+            {
+                transactionId: chunkTransactionId,
+                timestamp: Date.now(),
+                offset: log.transferredBytes,
+                bytes: chunkBytes,
+            },
+        ]
 
         const transferredBytes = log.transferredBytes + chunkBytes
 

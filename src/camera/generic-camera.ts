@@ -1,5 +1,5 @@
-import { Logger, PTPTransferLog } from '@core/logger'
-import { formatCompact, formatJSON } from '@core/renderers/formatters/compact-formatter'
+import { Logger } from '@core/logger'
+import { formatCompact } from '@core/renderers/formatters/compact-formatter'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
@@ -32,14 +32,12 @@ export class GenericCamera {
         this.logger = logger
         this.registry = createPTPRegistry(transport.isLittleEndian())
 
-        if (this.transport.on) {
-            this.transport.on(this.handleEvent.bind(this))
-        }
+        this.transport.on?.(event => this.handleEvent(event))
     }
 
-    async connect(deviceIdentifier?: DeviceDescriptor): Promise<void> {
+    async connect(device?: DeviceDescriptor): Promise<void> {
         if (!this.transport.isConnected()) {
-            await this.transport.connect({ ...deviceIdentifier, ...(this.vendorId && { vendorId: this.vendorId }) })
+            await this.transport.connect(device)
         }
 
         this.sessionId = randomSessionId()

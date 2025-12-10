@@ -10,13 +10,12 @@ export interface PTPEvent {
 }
 
 export interface TransportInterface {
-    discover(criteria?: Partial<DeviceDescriptor>): Promise<DeviceDescriptor[]>
     connect(device?: DeviceDescriptor): Promise<void>
     disconnect(): Promise<void>
     send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void>
     receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array>
     isConnected(): boolean
-    reset(): Promise<void>
+    classRequestReset(): Promise<void>
     getType(): TransportType
 
     /**

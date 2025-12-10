@@ -13,30 +13,31 @@ import { GenericCamera } from './generic-camera'
 import { NikonCamera } from './nikon-camera'
 import { SonyCamera } from './sony-camera'
 
-export function createCamera(vendorId: number, transport: TransportInterface, logger: Logger): GenericCamera {
-    switch (vendorId) {
-        case VendorIDs.SONY:
-            return new SonyCamera(transport, logger)
-        case VendorIDs.NIKON:
-            return new NikonCamera(transport, logger)
-        default:
-            return new GenericCamera(transport, logger)
-    }
-}
-
 export class Camera {
-    private instance: GenericCamera
+    private instance: GenericCamera | SonyCamera | NikonCamera
+    private deviceDescriptor?: DeviceDescriptor
 
-    constructor(vendorId: number, transport: TransportInterface, logger: Logger) {
-        this.instance = createCamera(vendorId, transport, logger)
+    constructor(transport: TransportInterface, logger: Logger, device?: DeviceDescriptor) {
+        this.deviceDescriptor = device
+        switch (device?.usb?.filters?.[0]?.vendorId) {
+            case VendorIDs.SONY:
+                this.instance = new SonyCamera(transport, logger)
+                break
+            case VendorIDs.NIKON:
+                this.instance = new NikonCamera(transport, logger)
+                break
+            default:
+                this.instance = new GenericCamera(transport, logger)
+                break
+        }
     }
 
     getInstance(): GenericCamera {
         return this.instance
     }
 
-    async connect(deviceIdentifier?: DeviceDescriptor): Promise<void> {
-        return this.instance.connect(deviceIdentifier)
+    async connect(device?: DeviceDescriptor): Promise<void> {
+        return this.instance.connect(device || this.deviceDescriptor)
     }
 
     async disconnect(): Promise<void> {
