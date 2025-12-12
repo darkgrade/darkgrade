@@ -25,7 +25,6 @@ export class CanonCamera extends GenericCamera {
     private eventPollingInterval?: NodeJS.Timeout
     private isPollingPaused = false
     private propertyCache = new Map<number, any>()
-    private pendingPropertyRequests = new Map<number, Array<(value: any) => void>>()
     vendorId = VendorIDs.CANON
     declare public registry: CanonRegistry
 
@@ -44,7 +43,7 @@ export class CanonCamera extends GenericCamera {
         await this.enableRemoteMode()
         await this.enableEventMode()
         
-        // Flush initial property dump from camera
+        // Flush initial property dump from camera and cache all properties
         await this.flushInitialEvents()
         
         this.startEventPolling()
@@ -70,8 +69,11 @@ export class CanonCamera extends GenericCamera {
     }
 
     async getShutterSpeed(): Promise<string> {
-        const value = await this.getCanonProperty(this.registry.properties.CanonShutterSpeed.code)
-        return value.toString()
+        const rawValue = await this.getCanonProperty(this.registry.properties.CanonShutterSpeed.code)
+        const codec = this.registry.properties.CanonShutterSpeed.codec(this.registry)
+        const encoded = this.registry.codecs.uint16.encode(rawValue)
+        const decoded = codec.decode(encoded)
+        return decoded.value
     }
 
     async setShutterSpeed(value: string): Promise<void> {
@@ -79,8 +81,11 @@ export class CanonCamera extends GenericCamera {
     }
 
     async getIso(): Promise<string> {
-        const value = await this.getCanonProperty(this.registry.properties.CanonIso.code)
-        return value.toString()
+        const rawValue = await this.getCanonProperty(this.registry.properties.CanonIso.code)
+        const codec = this.registry.properties.CanonIso.codec(this.registry)
+        const encoded = this.registry.codecs.uint16.encode(rawValue)
+        const decoded = codec.decode(encoded)
+        return decoded.value
     }
 
     async setIso(value: string): Promise<void> {
@@ -88,40 +93,12 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async getCanonProperty(propertyCode: number): Promise<any> {
-        // Check cache first
-        if (this.propertyCache.has(propertyCode)) {
-            return this.propertyCache.get(propertyCode)
+        // Canon EOS properties are read-only from the event stream cache
+        // We never send RequestDevicePropValue - just read from cache
+        if (!this.propertyCache.has(propertyCode)) {
+            throw new Error(`Property ${propertyCode.toString(16)} not found in cache. The camera may not support this property or event mode is not enabled.`)
         }
-        
-        // Not in cache, request it
-        return new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
-                const callbacks = this.pendingPropertyRequests.get(propertyCode)
-                if (callbacks) {
-                    const index = callbacks.indexOf(resolve)
-                    if (index > -1) {
-                        callbacks.splice(index, 1)
-                    }
-                    if (callbacks.length === 0) {
-                        this.pendingPropertyRequests.delete(propertyCode)
-                    }
-                }
-                reject(new Error(`Timeout waiting for property ${propertyCode.toString(16)} value`))
-            }, 5000)
-
-            if (!this.pendingPropertyRequests.has(propertyCode)) {
-                this.pendingPropertyRequests.set(propertyCode, [])
-            }
-            
-            const wrappedResolve = (value: any) => {
-                clearTimeout(timeoutId)
-                resolve(value)
-            }
-            
-            this.pendingPropertyRequests.get(propertyCode)!.push(wrappedResolve)
-
-            this.send(this.registry.operations.CanonRequestDevicePropValue, { DevicePropCode: propertyCode }).catch(reject)
-        })
+        return this.propertyCache.get(propertyCode)
     }
 
     private async setCanonProperty(propertyCode: number, value: number): Promise<void> {
@@ -190,12 +167,6 @@ export class CanonCamera extends GenericCamera {
                             const propCode = typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
                             const value = typeof event.parameters[1] === 'bigint' ? Number(event.parameters[1]) : event.parameters[1]
                             this.propertyCache.set(propCode, value)
-                            
-                            const callbacks = this.pendingPropertyRequests.get(propCode)
-                            if (callbacks) {
-                                callbacks.forEach(cb => cb(value))
-                                this.pendingPropertyRequests.delete(propCode)
-                            }
                         }
                     })
                 }
@@ -212,7 +183,7 @@ export class CanonCamera extends GenericCamera {
 
     private async flushInitialEvents(): Promise<void> {
         // After enabling event mode, camera sends all current property values
-        // We need to poll events to cache them before making property requests
+        // Cache them so properties are available immediately
         let emptyCount = 0
         const maxEmptyBeforeStop = 3 // Wait for 3 consecutive empty responses
         
@@ -228,7 +199,7 @@ export class CanonCamera extends GenericCamera {
                             this.propertyCache.set(propCode, value)
                         }
                     })
-                    emptyCount = 0 // Reset counter when we get events
+                    emptyCount = 0
                 } else {
                     emptyCount++
                     if (emptyCount >= maxEmptyBeforeStop) {
