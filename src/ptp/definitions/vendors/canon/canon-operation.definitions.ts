@@ -13,7 +13,10 @@ export const CanonSetRemoteMode = {
             codec: registry =>
                 createEnumCodec(
                     registry,
-                    [{ value: 0x00000001, name: 'ENABLE', description: 'Enable Remote Mode' }] as const,
+                    [
+                        { value: 0x00000001, name: 'ENABLE', description: 'Enable Remote Mode' },
+                        { value: 0x00000000, name: 'DISABLE', description: 'Disable Remote Mode' }
+                    ] as const,
                     registry.codecs.uint32
                 ),
             required: true,
@@ -35,7 +38,10 @@ export const CanonSetEventMode = {
             codec: registry =>
                 createEnumCodec(
                     registry,
-                    [{ value: 0x00000001, name: 'ENABLE', description: 'Enable Event Mode' }] as const,
+                    [
+                        { value: 0x00000001, name: 'ENABLE', description: 'Enable Event Mode' },
+                        { value: 0x00000000, name: 'DISABLE', description: 'Disable Event Mode' }
+                    ] as const,
                     registry.codecs.uint32
                 ),
             required: true,
@@ -94,6 +100,9 @@ export const CanonRemoteReleaseOff = {
 
 export const canonOperationRegistry = {
     CanonSetRemoteMode,
+    CanonSetEventMode,
+    CanonRemoteReleaseOn,
+    CanonRemoteReleaseOff,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type CanonOperationDef = (typeof canonOperationRegistry)[keyof typeof canonOperationRegistry]
