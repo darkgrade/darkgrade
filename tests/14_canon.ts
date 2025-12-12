@@ -1,5 +1,6 @@
 import { CanonCamera } from '@camera/canon-camera'
 import { Logger } from '@core/logger'
+import { GetDeviceInfo } from '@ptp/definitions/operation-definitions'
 import { USBTransport } from '@transport/usb/usb-transport'
 
 const logger = new Logger({
@@ -10,8 +11,14 @@ const transport = new USBTransport(logger)
 const canonCamera = new CanonCamera(transport, logger)
 await canonCamera.connect()
 
-canonCamera.startEventPolling(200)
+// await canonCamera.send(GetDeviceInfo, {}, undefined, 1024 * 1024)
 
-await canonCamera.captureImage({ includeInfo: true, includeData: true })
+console.log('Getting aperture...')
+try {
+    const aperture = await canonCamera.getAperture()
+    console.log('Aperture:', aperture)
+} catch (error) {
+    console.error('Failed to get aperture:', error)
+}
 
 await canonCamera.disconnect()

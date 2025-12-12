@@ -2,10 +2,8 @@ import { Logger } from '@core/logger'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { CanonRegistry, createCanonRegistry } from '@ptp/registry'
-import { EventDefinition } from '@ptp/types/event'
-import { EventParams } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
-import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
+import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { GenericCamera } from './generic-camera'
 
 /**
@@ -26,6 +24,8 @@ export class CanonCamera extends GenericCamera {
     private eventModeEnabled = false
     private eventPollingInterval?: NodeJS.Timeout
     private isPollingPaused = false
+    private propertyCache = new Map<number, any>()
+    private pendingPropertyRequests = new Map<number, Array<(value: any) => void>>()
     vendorId = VendorIDs.CANON
     declare public registry: CanonRegistry
 
@@ -43,17 +43,11 @@ export class CanonCamera extends GenericCamera {
         await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
         await this.enableRemoteMode()
         await this.enableEventMode()
-
-        const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-        if (response.data && Array.isArray(response.data)) {
-            response.data.forEach(event =>
-                this.handleEvent({
-                    code: event.code,
-                    parameters: event.parameters.map(p => (typeof p === 'bigint' ? Number(p) : p)),
-                    transactionId: 0,
-                })
-            )
-        }
+        
+        // Flush initial property dump from camera
+        await this.flushInitialEvents()
+        
+        this.startEventPolling()
     }
 
     async disconnect(): Promise<void> {
@@ -63,64 +57,12 @@ export class CanonCamera extends GenericCamera {
         await super.disconnect()
     }
 
-    protected handleEvent(event: PTPEvent): void {
-        const eventDef = Object.values(this.registry.events).find(e => e.code === event.code)
-        if (!eventDef) return
-
-        const decodedParams: Record<string, number | bigint | string> = {}
-        const encodedParams = event.parameters || []
-
-        for (let i = 0; i < eventDef.parameters.length; i++) {
-            const paramDef = eventDef.parameters[i]
-            if (!paramDef || i >= encodedParams.length) continue
-
-            const codec = this.resolveCodec(paramDef.codec)
-            const rawValue = encodedParams[i]
-
-            if (typeof rawValue === 'number' || typeof rawValue === 'bigint' || typeof rawValue === 'string') {
-                const bytes = codec.encode(rawValue)
-                const result = codec.decode(bytes)
-                decodedParams[paramDef.name] = result.value
-            } else {
-                decodedParams[paramDef.name] = rawValue
-            }
-        }
-
-        if (decodedParams.PropertyCode !== undefined && typeof decodedParams.PropertyCode === 'number') {
-            const property = Object.values(this.registry.properties).find(p => p.code === decodedParams.PropertyCode)
-            if (property) {
-                decodedParams.PropertyName = property.name
-            }
-        }
-
-        this.logger.addLog({
-            type: 'ptp_event',
-            level: 'info',
-            sessionId: this.sessionId,
-            eventCode: eventDef.code,
-            eventName: eventDef.name,
-            encodedParams,
-            decodedParams,
-        })
-
-        this.emitter.emit<Record<string, number | bigint | string>>(eventDef.name, decodedParams)
-    }
-
-    on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
-        this.emitter.on<EventParams<E>>(event.name, handler)
-    }
-
-    off<E extends EventDefinition>(event: E, handler?: (params: EventParams<E>) => void): void {
-        if (handler) {
-            this.emitter.off<EventParams<E>>(event.name, handler)
-        } else {
-            this.emitter.removeAllListeners(event.name)
-        }
-    }
-
     async getAperture(): Promise<string> {
-        const value = await this.getCanonProperty(this.registry.properties.CanonAperture.code)
-        return value.toString()
+        const rawValue = await this.getCanonProperty(this.registry.properties.CanonAperture.code)
+        const codec = this.registry.properties.CanonAperture.codec(this.registry)
+        const encoded = this.registry.codecs.uint16.encode(rawValue)
+        const decoded = codec.decode(encoded)
+        return decoded.value
     }
 
     async setAperture(value: string): Promise<void> {
@@ -145,70 +87,62 @@ export class CanonCamera extends GenericCamera {
         return this.setCanonProperty(this.registry.properties.CanonIso.code, parseInt(value))
     }
 
-    private async getCanonProperty(propertyCode: number): Promise<number> {
-        const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 12000)
-        if (!response.data) {
-            throw new Error('No event data received')
+    private async getCanonProperty(propertyCode: number): Promise<any> {
+        // Check cache first
+        if (this.propertyCache.has(propertyCode)) {
+            return this.propertyCache.get(propertyCode)
         }
-        return 0
+        
+        // Not in cache, request it
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                const callbacks = this.pendingPropertyRequests.get(propertyCode)
+                if (callbacks) {
+                    const index = callbacks.indexOf(resolve)
+                    if (index > -1) {
+                        callbacks.splice(index, 1)
+                    }
+                    if (callbacks.length === 0) {
+                        this.pendingPropertyRequests.delete(propertyCode)
+                    }
+                }
+                reject(new Error(`Timeout waiting for property ${propertyCode.toString(16)} value`))
+            }, 5000)
+
+            if (!this.pendingPropertyRequests.has(propertyCode)) {
+                this.pendingPropertyRequests.set(propertyCode, [])
+            }
+            
+            const wrappedResolve = (value: any) => {
+                clearTimeout(timeoutId)
+                resolve(value)
+            }
+            
+            this.pendingPropertyRequests.get(propertyCode)!.push(wrappedResolve)
+
+            this.send(this.registry.operations.CanonRequestDevicePropValue, { DevicePropCode: propertyCode }).catch(reject)
+        })
     }
 
     private async setCanonProperty(propertyCode: number, value: number): Promise<void> {
-        const wasPolling = this.eventPollingInterval !== undefined
-        if (wasPolling) {
-            this.pauseEventPolling()
-            await this.waitMs(250)
-        }
+        const codec = this.registry.codecs.uint16
+        const propertyCodeBytes = codec.encode(propertyCode)
+        const valueBytes = codec.encode(value)
 
-        try {
-            const codec = this.registry.codecs.uint16
-            const propertyCodeBytes = codec.encode(propertyCode)
-            const valueBytes = codec.encode(value)
+        const data = new Uint8Array(propertyCodeBytes.length + valueBytes.length)
+        data.set(propertyCodeBytes, 0)
+        data.set(valueBytes, propertyCodeBytes.length)
 
-            const data = new Uint8Array(propertyCodeBytes.length + valueBytes.length)
-            data.set(propertyCodeBytes, 0)
-            data.set(valueBytes, propertyCodeBytes.length)
-
-            await this.send(this.registry.operations.CanonSetPropValue, {}, data)
-        } finally {
-            if (wasPolling) {
-                this.resumeEventPolling()
-            }
-        }
+        await this.send(this.registry.operations.CanonSetPropValue, {}, data)
     }
 
     async captureImage({ includeInfo = true, includeData = true }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
-        const wasPolling = this.eventPollingInterval !== undefined
-        if (wasPolling) {
-            this.pauseEventPolling()
-            await this.waitMs(250)
-        }
+        await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS' })
+        await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'SHUTTER' })
+        await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'SHUTTER' })
+        await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
 
-        try {
-            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS' })
-            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'SHUTTER' })
-            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'SHUTTER' })
-            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
-
-            if (wasPolling) {
-                const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-                if (response.data && Array.isArray(response.data)) {
-                    response.data.forEach(event =>
-                        this.handleEvent({
-                            code: event.code,
-                            parameters: event.parameters.map(p => (typeof p === 'bigint' ? Number(p) : p)),
-                            transactionId: 0,
-                        })
-                    )
-                }
-            }
-
-            return {}
-        } finally {
-            if (wasPolling) {
-                this.resumeEventPolling()
-            }
-        }
+        return {}
     }
 
     async enableRemoteMode(): Promise<void> {
@@ -244,13 +178,26 @@ export class CanonCamera extends GenericCamera {
             try {
                 const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
                 if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-                    response.data.forEach(event =>
+                    response.data.forEach(event => {
                         this.handleEvent({
                             code: event.code,
                             parameters: event.parameters.map(p => (typeof p === 'bigint' ? Number(p) : p)),
                             transactionId: 0,
                         })
-                    )
+                        
+                        // CanonValueChanged event (0xC189 = 49545)
+                        if (event.code === 0xC189 && event.parameters && event.parameters.length >= 2) {
+                            const propCode = typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
+                            const value = typeof event.parameters[1] === 'bigint' ? Number(event.parameters[1]) : event.parameters[1]
+                            this.propertyCache.set(propCode, value)
+                            
+                            const callbacks = this.pendingPropertyRequests.get(propCode)
+                            if (callbacks) {
+                                callbacks.forEach(cb => cb(value))
+                                this.pendingPropertyRequests.delete(propCode)
+                            }
+                        }
+                    })
                 }
             } catch (error) {}
         }, intervalMs)
@@ -263,11 +210,37 @@ export class CanonCamera extends GenericCamera {
         }
     }
 
-    pauseEventPolling(): void {
-        this.isPollingPaused = true
-    }
-
-    resumeEventPolling(): void {
-        this.isPollingPaused = false
+    private async flushInitialEvents(): Promise<void> {
+        // After enabling event mode, camera sends all current property values
+        // We need to poll events to cache them before making property requests
+        let emptyCount = 0
+        const maxEmptyBeforeStop = 3 // Wait for 3 consecutive empty responses
+        
+        for (let i = 0; i < 20; i++) {
+            try {
+                const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+                if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+                    response.data.forEach(event => {
+                        // CanonValueChanged event (0xC189 = 49545)
+                        if (event.code === 0xC189 && event.parameters && event.parameters.length >= 2) {
+                            const propCode = typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
+                            const value = typeof event.parameters[1] === 'bigint' ? Number(event.parameters[1]) : event.parameters[1]
+                            this.propertyCache.set(propCode, value)
+                        }
+                    })
+                    emptyCount = 0 // Reset counter when we get events
+                } else {
+                    emptyCount++
+                    if (emptyCount >= maxEmptyBeforeStop) {
+                        break
+                    }
+                }
+                
+                // Small delay between polls
+                await new Promise(resolve => setTimeout(resolve, 50))
+            } catch (error) {
+                break
+            }
+        }
     }
 }

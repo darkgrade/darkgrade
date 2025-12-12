@@ -1,5 +1,5 @@
 import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { createEnumCodec, PTPRegistry } from '@ptp/types/codec'
+import { baseCodecs, createEnumCodec, PTPRegistry } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 
 export const CanonSetRemoteMode = {
@@ -107,6 +107,22 @@ export const CanonSetPropValue = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+export const CanonRequestDevicePropValue = {
+    code: 0x9127,
+    name: 'CanonRequestDevicePropValue',
+    description: 'Request Property Value (Canon-specific). This operation requests the camera to send a property value via an event, it does not return the value directly.',
+    dataDirection: 'none',
+    operationParameters: [
+        {
+            name: 'DevicePropCode',
+            description: 'Property code',
+            codec: baseCodecs.uint32,
+            required: true,
+        },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const CanonGetEventData = {
     code: 0x9116,
     name: 'CanonGetEventData',
@@ -123,6 +139,7 @@ export const canonOperationRegistry = {
     CanonRemoteReleaseOn,
     CanonRemoteReleaseOff,
     CanonSetPropValue,
+    CanonRequestDevicePropValue,
     CanonGetEventData,
 } as const satisfies { [key: string]: OperationDefinition }
 
