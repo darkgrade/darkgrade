@@ -3,6 +3,7 @@ import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 export interface CanonEventRecord {
     code: number
     parameters: (number | bigint)[]
+    allowedValues?: number[]
 }
 
 export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
@@ -63,12 +64,29 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
 
                 currentOffset += 2
 
+                const typeResult = u32.decode(buffer, currentOffset)
+                const type = typeResult.value
+                currentOffset += typeResult.bytesRead
+
+                const countResult = u32.decode(buffer, currentOffset)
+                const count = countResult.value
+                currentOffset += countResult.bytesRead
+
+                const allowedValues: number[] = []
+
+                if (type === 3 && count > 0 && count < 256) {
+                    for (let i = 0; i < count; i++) {
+                        const valueResult = u32.decode(buffer, currentOffset)
+                        allowedValues.push(valueResult.value)
+                        currentOffset += valueResult.bytesRead
+                    }
+                }
+
                 events.push({
                     code: eventCode,
                     parameters: [propCode],
+                    allowedValues: allowedValues.length > 0 ? allowedValues : undefined,
                 })
-
-                currentOffset += payloadSize - 4
             } else {
                 currentOffset += payloadSize
             }

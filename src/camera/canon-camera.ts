@@ -25,6 +25,7 @@ export class CanonCamera extends GenericCamera {
     private eventPollingInterval?: NodeJS.Timeout
     private isPollingPaused = false
     private propertyCache = new Map<number, any>()
+    private allowedValuesCache = new Map<number, number[]>()
     vendorId = VendorIDs.CANON
     declare public registry: CanonRegistry
 
@@ -65,7 +66,12 @@ export class CanonCamera extends GenericCamera {
     }
 
     async setAperture(value: string): Promise<void> {
-        return this.setCanonProperty(this.registry.properties.CanonAperture.code, parseInt(value))
+        const codec = this.registry.properties.CanonAperture.codec(this.registry)
+        const rawValue = this.findRawValueFromString(codec, value)
+        if (rawValue === undefined) {
+            throw new Error(`Invalid aperture value: ${value}`)
+        }
+        return this.setCanonProperty(this.registry.properties.CanonAperture.code, rawValue)
     }
 
     async getShutterSpeed(): Promise<string> {
@@ -77,7 +83,12 @@ export class CanonCamera extends GenericCamera {
     }
 
     async setShutterSpeed(value: string): Promise<void> {
-        return this.setCanonProperty(this.registry.properties.CanonShutterSpeed.code, parseInt(value))
+        const codec = this.registry.properties.CanonShutterSpeed.codec(this.registry)
+        const rawValue = this.findRawValueFromString(codec, value)
+        if (rawValue === undefined) {
+            throw new Error(`Invalid shutter speed value: ${value}`)
+        }
+        return this.setCanonProperty(this.registry.properties.CanonShutterSpeed.code, rawValue)
     }
 
     async getIso(): Promise<string> {
@@ -89,7 +100,12 @@ export class CanonCamera extends GenericCamera {
     }
 
     async setIso(value: string): Promise<void> {
-        return this.setCanonProperty(this.registry.properties.CanonIso.code, parseInt(value))
+        const codec = this.registry.properties.CanonIso.codec(this.registry)
+        const rawValue = this.findRawValueFromString(codec, value)
+        if (rawValue === undefined) {
+            throw new Error(`Invalid ISO value: ${value}`)
+        }
+        return this.setCanonProperty(this.registry.properties.CanonIso.code, rawValue)
     }
 
     private async getCanonProperty(propertyCode: number): Promise<any> {
@@ -102,15 +118,85 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async setCanonProperty(propertyCode: number, value: number): Promise<void> {
-        const codec = this.registry.codecs.uint16
-        const propertyCodeBytes = codec.encode(propertyCode)
-        const valueBytes = codec.encode(value)
+        const u32Codec = this.registry.codecs.uint32
+        const u16Codec = this.registry.codecs.uint16
+        
+        const totalSize = 12
+        
+        const data = new Uint8Array(totalSize)
+        
+        const sizeBytes = u32Codec.encode(totalSize)
+        data.set(sizeBytes, 0)
+        
+        const propCodeBytes = u32Codec.encode(propertyCode)
+        data.set(propCodeBytes, 4)
+        
+        const valueBytes = u16Codec.encode(value)
+        data.set(valueBytes, 8)
 
-        const data = new Uint8Array(propertyCodeBytes.length + valueBytes.length)
-        data.set(propertyCodeBytes, 0)
-        data.set(valueBytes, propertyCodeBytes.length)
+        this.isPollingPaused = true
+        
+        try {
+            let retries = 0
+            const maxRetries = 5
+            
+            while (retries < maxRetries) {
+                try {
+                    await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
+                    return
+                } catch (error: any) {
+                    if (error.code === 0x2019) {
+                        retries++
+                        if (retries < maxRetries) {
+                            await new Promise(resolve => setTimeout(resolve, 100))
+                            continue
+                        }
+                    }
+                    throw error
+                }
+            }
+        } finally {
+            this.isPollingPaused = false
+        }
+    }
 
-        await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
+    private findRawValueFromString(codec: any, searchValue: string): number | undefined {
+        if ('getEnumByName' in codec && 'getAllValues' in codec) {
+            const byName = codec.getEnumByName(searchValue)
+            if (byName) {
+                return byName.value
+            }
+            
+            const allValues = codec.getAllValues()
+            const byDescription = allValues.find((e: any) => e.description === searchValue)
+            if (byDescription) {
+                return byDescription.value
+            }
+        }
+        return undefined
+    }
+
+    getPropertyAllowedValues(propertyCode: number): string[] | undefined {
+        const rawValues = this.allowedValuesCache.get(propertyCode)
+        if (!rawValues) {
+            return undefined
+        }
+
+        const property = Object.values(this.registry.properties).find(p => p.code === propertyCode)
+        if (!property) {
+            return rawValues.map(v => v.toString())
+        }
+
+        try {
+            const codec = property.codec(this.registry)
+            return rawValues.map(rawValue => {
+                const encoded = this.registry.codecs.uint16.encode(rawValue)
+                const decoded = codec.decode(encoded)
+                return decoded.value
+            })
+        } catch (error) {
+            return rawValues.map(v => v.toString())
+        }
     }
 
     async captureImage({ includeInfo = true, includeData = true }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
@@ -168,6 +254,16 @@ export class CanonCamera extends GenericCamera {
                             const value = typeof event.parameters[1] === 'bigint' ? Number(event.parameters[1]) : event.parameters[1]
                             this.propertyCache.set(propCode, value)
                         }
+                        
+                        // CanonAllowedValuesChanged event (0xC18A = 49546)
+                        if (event.code === 0xC18A) {
+                            if (event.parameters && event.parameters.length >= 1) {
+                                const propCode = typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
+                                if (event.allowedValues && event.allowedValues.length > 0) {
+                                    this.allowedValuesCache.set(propCode, event.allowedValues)
+                                }
+                            }
+                        }
                     })
                 }
             } catch (error) {}
@@ -191,12 +287,26 @@ export class CanonCamera extends GenericCamera {
             try {
                 const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
                 if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+                    console.log(`Received ${response.data.length} events during initial flush`)
                     response.data.forEach(event => {
+                        console.log(`Event: 0x${event.code.toString(16)} with ${event.parameters?.length || 0} parameters`)
+                        
                         // CanonValueChanged event (0xC189 = 49545)
                         if (event.code === 0xC189 && event.parameters && event.parameters.length >= 2) {
                             const propCode = typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
                             const value = typeof event.parameters[1] === 'bigint' ? Number(event.parameters[1]) : event.parameters[1]
                             this.propertyCache.set(propCode, value)
+                        }
+                        
+                        // CanonAllowedValuesChanged event (0xC18A = 49546)
+                        if (event.code === 0xC18A) {
+                            if (event.parameters && event.parameters.length >= 1) {
+                                const propCode = typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
+                                console.log(`  Property: 0x${propCode.toString(16)}, allowedValues: ${event.allowedValues?.length || 0}`)
+                                if (event.allowedValues && event.allowedValues.length > 0) {
+                                    this.allowedValuesCache.set(propCode, event.allowedValues)
+                                }
+                            }
                         }
                     })
                     emptyCount = 0
@@ -213,5 +323,7 @@ export class CanonCamera extends GenericCamera {
                 break
             }
         }
+        
+        console.log(`Initial flush complete: ${this.propertyCache.size} properties cached, ${this.allowedValuesCache.size} properties with allowed values`)
     }
 }
