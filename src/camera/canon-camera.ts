@@ -110,7 +110,7 @@ export class CanonCamera extends GenericCamera {
         data.set(propertyCodeBytes, 0)
         data.set(valueBytes, propertyCodeBytes.length)
 
-        await this.send(this.registry.operations.CanonSetPropValue, {}, data)
+        await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
     }
 
     async captureImage({ includeInfo = true, includeData = true }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {

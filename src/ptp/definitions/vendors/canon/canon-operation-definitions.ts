@@ -98,7 +98,7 @@ export const CanonRemoteReleaseOff = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
-export const CanonSetPropValue = {
+export const CanonSetDevicePropValue = {
     code: 0x9110,
     name: 'CanonSetPropValue',
     description: 'Set Property Value (Canon-specific).',
@@ -107,6 +107,24 @@ export const CanonSetPropValue = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+/**
+ * This doesn't actually seem useful. Canon relies on events for all property updates/changes.
+ * 
+ * The only operations Canon EOS utility uses this for are:
+ * - 0xd1af (Serial Number)
+ * - 0xd1a6 (Battery Info)
+ * - 0xd169 (Error History)
+ * - 0xd16a (Lens Exchange History) (?)
+ * - 0xd16b (Strobo Exchange History) (?)
+ * - 0xd272 (?)
+ * 
+ * These do not match up with the devicePropertiesSupported returned by GetDeviceInfo:
+ * - 0xd402 (Vanilla PTP, DeviceFriendlyName)
+ * - 0xd407 (Vanilla PTP, PerceivedDeviceType)
+ * - 0xd406 (Vanilla PTP, SessionInitiatorInfo)
+ * - 0x5001 (Vanilla PTP, BatteryLevel)
+ * - 0xd303 (?)
+ */
 export const CanonRequestDevicePropValue = {
     code: 0x9127,
     name: 'CanonRequestDevicePropValue',
@@ -138,7 +156,7 @@ export const canonOperationRegistry = {
     CanonSetEventMode,
     CanonRemoteReleaseOn,
     CanonRemoteReleaseOff,
-    CanonSetPropValue,
+    CanonSetDevicePropValue,
     CanonRequestDevicePropValue,
     CanonGetEventData,
 } as const satisfies { [key: string]: OperationDefinition }
