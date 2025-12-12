@@ -1,7 +1,7 @@
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import { GetDeviceInfo, InitiateCapture } from '@ptp/definitions/operation-definitions'
-import { CanonGetRemoteMode, CanonSetRemoteMode } from '@ptp/definitions/vendors/canon/canon-operation.definitions'
+import { CanonGetRemoteMode, CanonSetRemoteMode } from '@ptp/definitions/vendors/canon/canon-operation-definitions'
 import { USBTransport } from '@transport/usb/usb-transport'
 
 const logger = new Logger({

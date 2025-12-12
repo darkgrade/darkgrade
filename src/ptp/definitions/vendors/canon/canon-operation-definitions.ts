@@ -1,4 +1,5 @@
-import { createEnumCodec } from '@ptp/types/codec'
+import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
+import { createEnumCodec, PTPRegistry } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 
 export const CanonSetRemoteMode = {
@@ -15,7 +16,7 @@ export const CanonSetRemoteMode = {
                     registry,
                     [
                         { value: 0x00000001, name: 'ENABLE', description: 'Enable Remote Mode' },
-                        { value: 0x00000000, name: 'DISABLE', description: 'Disable Remote Mode' }
+                        { value: 0x00000000, name: 'DISABLE', description: 'Disable Remote Mode' },
                     ] as const,
                     registry.codecs.uint32
                 ),
@@ -26,8 +27,7 @@ export const CanonSetRemoteMode = {
 } as const satisfies OperationDefinition
 
 export const CanonSetEventMode = {
-    // listed in the R6 Mk.III supported operations
-    code: 0x9114,
+    code: 0x9115,
     name: 'CanonSetEventMode',
     description: 'Set Event Mode.',
     dataDirection: 'none',
@@ -40,7 +40,7 @@ export const CanonSetEventMode = {
                     registry,
                     [
                         { value: 0x00000001, name: 'ENABLE', description: 'Enable Event Mode' },
-                        { value: 0x00000000, name: 'DISABLE', description: 'Disable Event Mode' }
+                        { value: 0x00000000, name: 'DISABLE', description: 'Disable Event Mode' },
                     ] as const,
                     registry.codecs.uint32
                 ),
@@ -98,11 +98,32 @@ export const CanonRemoteReleaseOff = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+export const CanonSetPropValue = {
+    code: 0x9110,
+    name: 'CanonSetPropValue',
+    description: 'Set Property Value (Canon-specific).',
+    dataDirection: 'in',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const CanonGetEventData = {
+    code: 0x9116,
+    name: 'CanonGetEventData',
+    description: 'Get Event Data (Canon-specific event polling).',
+    dataDirection: 'out',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+    dataCodec: (registry: PTPRegistry) => new CanonEventDataCodec(registry),
+} as const satisfies OperationDefinition
+
 export const canonOperationRegistry = {
     CanonSetRemoteMode,
     CanonSetEventMode,
     CanonRemoteReleaseOn,
     CanonRemoteReleaseOff,
+    CanonSetPropValue,
+    CanonGetEventData,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type CanonOperationDef = (typeof canonOperationRegistry)[keyof typeof canonOperationRegistry]

@@ -34,7 +34,7 @@ export function EventLogEntry({ eventLog, expanded, groupTimestamp }: EventLogEn
                             {hasParams ? (
                                 Object.entries(eventLog.decodedParams).map(([key, value]) => (
                                     <Text key={key}>
-                                        {key} = {safeStringify(value)}
+                                        {key} = {typeof value === 'number' ? '0x' + value.toString(16) : safeStringify(value)}
                                     </Text>
                                 ))
                             ) : (

@@ -100,19 +100,24 @@ export class GenericCamera {
             // This operation is part of an active transfer, don't create a new log
             logId = existingTransferLogId
         } else {
-            // Regular operation log
-            logId = this.logger.addLog({
-                type: 'ptp_operation',
-                level: 'info',
-                sessionId: this.sessionId!,
-                transactionId,
-                requestPhase: {
-                    timestamp: Date.now(),
-                    operationName: operation.name,
-                    encodedParams,
-                    decodedParams: paramsRecord,
-                },
-            })
+            const shouldLog = operation.name !== 'CanonGetEventData'
+            
+            if (shouldLog) {
+                logId = this.logger.addLog({
+                    type: 'ptp_operation',
+                    level: 'info',
+                    sessionId: this.sessionId!,
+                    transactionId,
+                    requestPhase: {
+                        timestamp: Date.now(),
+                        operationName: operation.name,
+                        encodedParams,
+                        decodedParams: paramsRecord,
+                    },
+                })
+            } else {
+                logId = -1
+            }
         }
 
         const commandContainer = this.buildCommand(operation.code, transactionId, encodedParams)
@@ -158,16 +163,18 @@ export class GenericCamera {
                 }
             }
 
-            this.logger.updateLog(logId, {
-                dataPhase: {
-                    timestamp: Date.now(),
-                    direction: 'in',
-                    bytes: data.length,
-                    encodedData: data,
-                    decodedData,
-                    maxDataLength,
-                },
-            })
+            if (logId !== -1) {
+                this.logger.updateLog(logId, {
+                    dataPhase: {
+                        timestamp: Date.now(),
+                        direction: 'in',
+                        bytes: data.length,
+                        encodedData: data,
+                        decodedData,
+                        maxDataLength,
+                    },
+                })
+            }
 
             await this.transport.send(dataContainer, this.sessionId!, transactionId)
         } else if (operation.dataDirection === 'out') {
@@ -204,20 +211,20 @@ export class GenericCamera {
                 }
             }
 
-            // Only update data phase for non-transfer operations
-            // Transfer operations are updated externally via logger.updateTransferProgress
-            const currentLog = this.logger.getLogById(logId)
-            if (!currentLog || currentLog.type !== 'ptp_transfer') {
-                this.logger.updateLog(logId, {
-                    dataPhase: {
-                        timestamp: Date.now(),
-                        direction: 'out',
-                        bytes: receivedData?.length || 0,
-                        encodedData: receivedData,
-                        decodedData: decodedData,
-                        maxDataLength,
-                    },
-                })
+            if (logId !== -1) {
+                const currentLog = this.logger.getLogById(logId)
+                if (!currentLog || currentLog.type !== 'ptp_transfer') {
+                    this.logger.updateLog(logId, {
+                        dataPhase: {
+                            timestamp: Date.now(),
+                            direction: 'out',
+                            bytes: receivedData?.length || 0,
+                            encodedData: receivedData,
+                            decodedData: decodedData,
+                            maxDataLength,
+                        },
+                    })
+                }
             }
         }
 
@@ -225,8 +232,7 @@ export class GenericCamera {
         const responseRaw = await this.transport.receive(responseBufferSize, this.sessionId!, transactionId)
         const responseContainer = this.parseContainer(responseRaw)
 
-        // Don't update response phase for transfer operations - they're updated externally
-        const currentLog = this.logger.getLogById(logId)
+        const currentLog = logId !== -1 ? this.logger.getLogById(logId) : undefined
         const isTransferLog = currentLog && currentLog.type === 'ptp_transfer'
 
         // If data phase had empty payload but response has payload, use response payload as data
@@ -245,21 +251,21 @@ export class GenericCamera {
                 decodedData = result.value
             }
 
-            // Update the data phase with the actual data from response
-            this.logger.updateLog(logId, {
-                dataPhase: {
-                    timestamp: Date.now(),
-                    direction: 'out',
-                    bytes: receivedData.length,
-                    encodedData: receivedData,
-                    decodedData,
-                    maxDataLength,
-                },
-            })
+            if (logId !== -1) {
+                this.logger.updateLog(logId, {
+                    dataPhase: {
+                        timestamp: Date.now(),
+                        direction: 'out',
+                        bytes: receivedData.length,
+                        encodedData: receivedData,
+                        decodedData,
+                        maxDataLength,
+                    },
+                })
+            }
         }
 
-        // Only update response phase for non-transfer operations
-        if (!isTransferLog) {
+        if (logId !== -1 && !isTransferLog) {
             this.logger.updateLog(logId, {
                 responsePhase: {
                     timestamp: Date.now(),
@@ -269,14 +275,21 @@ export class GenericCamera {
         }
 
         const isPropertyOp = operation.name.includes('GetDevicePropValue')
-        const finalData = this.logger.getLogs().find(l => l.id === logId)
-        const returnData =
+        const finalData = logId !== -1 ? this.logger.getLogs().find(l => l.id === logId) : undefined
+        let returnData: any =
             !isPropertyOp &&
             finalData &&
             finalData.type === 'ptp_operation' &&
             finalData.dataPhase?.decodedData !== undefined
                 ? finalData.dataPhase.decodedData
                 : receivedData
+
+        // If logId is -1 (operation wasn't logged), still decode if dataCodec exists
+        if (logId === -1 && receivedData && receivedData.length > 0 && 'dataCodec' in operation && operation.dataCodec) {
+            const codec = this.resolveCodec(operation.dataCodec)
+            const result = codec.decode(receivedData)
+            returnData = result.value
+        }
 
         return {
             code: responseContainer.code,

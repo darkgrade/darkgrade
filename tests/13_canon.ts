@@ -7,7 +7,7 @@ import {
     CanonRemoteReleaseOn,
     CanonSetEventMode,
     CanonSetRemoteMode,
-} from '@ptp/definitions/vendors/canon/canon-operation.definitions'
+} from '@ptp/definitions/vendors/canon/canon-operation-definitions'
 import { USBTransport } from '@transport/usb/usb-transport'
 
 const logger = new Logger({

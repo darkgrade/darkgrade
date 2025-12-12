@@ -3,7 +3,9 @@ import { formatRegistry } from '@ptp/definitions/format-definitions'
 import { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
 import { genericPropertyRegistry } from '@ptp/definitions/property-definitions'
 import { responseRegistry } from '@ptp/definitions/response-definitions'
-import { canonOperationRegistry } from '@ptp/definitions/vendors/canon/canon-operation.definitions'
+import { canonEventRegistry } from '@ptp/definitions/vendors/canon/canon-event-definitions'
+import { canonOperationRegistry } from '@ptp/definitions/vendors/canon/canon-operation-definitions'
+import { canonPropertyRegistry } from '@ptp/definitions/vendors/canon/canon-property-definitions'
 import { nikonOperationRegistry } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import { sonyEventRegistry } from '@ptp/definitions/vendors/sony/sony-event-definitions'
 import { sonyFormatRegistry } from '@ptp/definitions/vendors/sony/sony-format-definitions'
@@ -46,8 +48,8 @@ export const createCanonRegistry = (littleEndian: boolean) =>
     ({
         codecs: createBaseCodecs(littleEndian),
         operations: { ...genericOperationRegistry, ...canonOperationRegistry },
-        properties: genericPropertyRegistry,
-        events: genericEventRegistry,
+        properties: { ...genericPropertyRegistry, ...canonPropertyRegistry },
+        events: { ...genericEventRegistry, ...canonEventRegistry },
         formats: formatRegistry,
         responses: responseRegistry,
     }) as const
