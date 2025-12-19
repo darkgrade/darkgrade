@@ -1,16 +1,22 @@
 <script lang="ts">
-    import { Camera } from '@api/camera'
+    import { Camera } from '@camera/index'
+    import { VendorIDs } from '@ptp/definitions/vendor-ids'
+    import { USBTransport } from '@transport/usb/usb-transport'
+    import { BrowserLogger } from '../lib/browser-logger'
     import Button from '../lib/Button.svelte'
     import CameraControls from '../lib/CameraControls.svelte'
     import { store } from '../lib/store.svelte'
-    import { downloadFile, wait } from '../lib/utils'
+    import { downloadFile } from '../lib/utils'
     import { streamFrame, startStreaming, stopStreaming } from '../lib/streaming'
     import { cameraQueue } from '../lib/queue'
 
-    let camera: Camera = new Camera()
+    const logger = new BrowserLogger()
+    const transport = new USBTransport(logger)
+    // Camera instance - will be recreated on connect
+    let camera: Camera | null = null
 
     $effect(() => {
-        if (!store.canvasRef) return
+        if (!store.canvasRef || !camera) return
 
         const ctx = store.canvasRef.getContext('2d')
         if (!ctx) return
@@ -29,58 +35,82 @@
     })
 
     const onConnect = async () => {
-        await camera?.connect()
+        // Prompt user to select device and connect transport
+        await transport.connect()
+
+        // Get vendor ID from connected device
+        const vendorId = transport.device?.vendorId || VendorIDs.SONY
+
+        // Create camera instance based on detected vendor
+        camera = new Camera(vendorId, transport, logger)
+
+        // Camera.connect() will skip transport.connect() since already connected
+        // and just open the PTP session
+        await camera.connect()
         store.connected = true
         startStreaming()
     }
 
     const onDisconnect = async () => {
         stopStreaming()
-        await camera?.disconnect()
+        if (camera) {
+            await camera.disconnect()
+        }
+        camera = null
         store.connected = false
     }
 
     const onCaptureImage = async () => {
-        const result = await cameraQueue.push(async () => await camera.captureImage())
-        if (result?.data) {
-            const filename = result.info?.filename || 'captured_image.jpg'
-            downloadFile(result.data, filename, 'image/jpeg')
+        if (!camera) return
+        try {
+            const result = await cameraQueue.push(async () => await camera!.captureImage())
+            if (result?.data) {
+                const filename = result.info?.filename || `capture_${Date.now()}.jpg`
+                downloadFile(result.data, filename, 'image/jpeg')
+            }
+        } catch (error) {
+            console.error('Capture failed:', error)
         }
     }
 
     const onStartRecording = async () => {
-        await cameraQueue.push(async () => await camera.startRecording())
-        store.recording = true
-    }
-
-    const onStopRecording = async () => {
-        await cameraQueue.push(async () => await camera.stopRecording())
-        store.recording = false
-    }
-
-    const onCaptureLiveView = async () => {
-        const result = await cameraQueue.push(async () => await camera.captureLiveView())
-        if (result?.data) {
-            const filename = result.info?.filename || 'captured_liveview.jpg'
-            downloadFile(result.data, filename, 'image/jpeg')
+        if (!camera) return
+        try {
+            await cameraQueue.push(async () => await camera!.startRecording())
+            store.recording = true
+        } catch (error) {
+            console.error('Recording not supported:', error)
         }
     }
 
-    const onToggleLiveViewImageQuality = async () => {
-        await cameraQueue.push(
-            async () =>
-                await camera.setDeviceProperty(
-                    'LIVE_VIEW_IMAGE_QUALITY',
-                    store.settings?.liveViewImageQuality === 'HIGH' ? 'LOW' : 'HIGH'
-                )
-        )
+    const onStopRecording = async () => {
+        if (!camera) return
+        try {
+            await cameraQueue.push(async () => await camera!.stopRecording())
+            store.recording = false
+        } catch (error) {
+            console.error('Recording stop failed:', error)
+        }
+    }
+
+    const onCaptureLiveView = async () => {
+        if (!camera) return
+        try {
+            const result = await cameraQueue.push(async () => await camera!.captureLiveView())
+            if (result && result.length > 0) {
+                const filename = `liveview_${Date.now()}.jpg`
+                downloadFile(result, filename, 'image/jpeg')
+            }
+        } catch (error) {
+            console.error('Live view capture failed:', error)
+        }
     }
 </script>
 
 <div class="flex flex-col items-center justify-center min-h-screen gap-6 p-4">
     <div class="flex flex-row items-center justify-center gap-4 flex-wrap">
         <Button onClick={store.connected ? onDisconnect : onConnect}>
-            {store.connected ? 'Disconnect' : 'Connect'}
+            {store.connected ? 'Disconnect' : 'Connect Camera'}
         </Button>
     </div>
 
@@ -115,21 +145,6 @@
                     {store.resolution?.width || '--'} × {store.resolution?.height || '--'}
                 </div>
 
-                <!-- Live view image quality display -->
-                <div
-                    class="px-2 py-1 bg-black/70 rounded text-xs font-mono cursor-pointer select-none transition-colors duration-300"
-                    style="color: {store.changedProps.has('liveViewImageQuality') ? '#4ade80' : '#ffffff4c'};"
-                    onclick={onToggleLiveViewImageQuality}
-                    onkeydown={e => e.key === 'Enter' && onToggleLiveViewImageQuality()}
-                    role="button"
-                    tabindex="0"
-                >
-                    {store.settings?.liveViewImageQuality
-                        ? store.settings.liveViewImageQuality === 'HIGH'
-                            ? 'HQ'
-                            : 'LQ'
-                        : '--'}
-                </div>
             </div>
 
             <!-- Exposure settings in top right -->
@@ -144,7 +159,7 @@
                     class="transition-colors duration-300"
                     style="color: {store.changedProps.has('exposure') ? '#4ade80' : undefined};"
                 >
-                    {store.settings?.exposure || '--'}
+                    <!-- {store.settings?.exposure || '--'} -->
                 </span>
             </div>
 
@@ -240,11 +255,13 @@
     <div>
         Notes:
         <ul class="list-disc list-outside ms-8 leading-relaxed">
-            <li>WebUSB only works reliably in Chromium based browsers</li>
+            <li>Supports <strong>Sony</strong> and <strong>Nikon</strong> cameras (auto-detected)</li>
+            <li>Ensure your camera is on the latest firmware</li>
+            <li>WebUSB only works in Chromium-based browsers</li>
             <li>You may need to set permissions for "USB Devices" to "Ask" in Chrome site settings</li>
-            <li>Only confirmed working on Sony Alpha series cameras</li>
-            <li>USB mode must be set to "PC Remote mode"</li>
-            <li>Network > Network Option > Access Authen. Settings must be set to "Off"</li>
+            <li><strong>Sony:</strong> USB mode must be set to "PC Remote mode"</li>
+            <li><strong>Sony:</strong> Network > Network Option > Access Authen. Settings must be set to "Off"</li>
+            <li><strong>Nikon:</strong> Ensure camera is in PC connection mode for live view</li>
             <li>
                 MacOS tries to instantly claim the USB interface as soon as you connect the camera (<a
                     class="underline"

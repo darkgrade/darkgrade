@@ -1,13 +1,11 @@
-import devtoolsJson from 'vite-plugin-devtools-json'
 import { sveltekit } from '@sveltejs/kit/vite'
-import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { defineConfig } from 'vite'
+import devtoolsJson from 'vite-plugin-devtools-json'
 
 export default defineConfig({
     plugins: [sveltekit(), tailwindcss(), devtoolsJson()],
-    define: { global: 'globalThis' },
-    optimizeDeps: { include: ['buffer', 'process'] },
     resolve: {
         alias: {
             '@camera': path.resolve('../../src/camera'),
@@ -16,6 +14,7 @@ export default defineConfig({
             '@factories': path.resolve('../../src/factories'),
             '@api': path.resolve('../../src/api'),
             '@constants': path.resolve('../../src/constants'),
+            '@ptp': path.resolve('../../src/ptp'),
         },
     },
     build: {

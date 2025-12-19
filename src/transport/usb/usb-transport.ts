@@ -1,423 +1,418 @@
-import { TransportInterface } from '@transport/interfaces/transport.interface'
-import { EndpointManagerInterface, EndpointType } from '@transport/interfaces/endpoint.interface'
-import { DeviceFinderInterface, DeviceDescriptor } from '@transport/interfaces/device.interface'
+import { Logger } from '@core/logger'
+import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
-import { USB_LIMITS } from '@constants/ptp/containers'
-import { toBuffer, toUint8Array } from '@core/buffers'
-import { LoggerInterface } from '@core/logger'
+import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
+import { LibUSBException } from 'usb'
+import { USBContainerBuilder, USBContainerType } from './usb-container'
+import { formatDeviceTable } from './usb-device-table'
 
-/**
- * USB transport implementation for PTP communication
- */
+export enum EndpointType {
+    BULK_IN = 'bulk_in',
+    BULK_OUT = 'bulk_out',
+    INTERRUPT = 'interrupt',
+}
+
+export interface EndpointConfiguration {
+    bulkIn: USBEndpoint
+    bulkOut: USBEndpoint
+    interrupt: USBEndpoint
+}
+
+enum USBClassRequest {
+    CANCEL_REQUEST = 0x64,
+    GET_EXTENDED_EVENT_DATA = 0x65,
+    DEVICE_RESET = 0x66,
+    GET_DEVICE_STATUS = 0x67,
+}
+
+export interface DeviceStatus {
+    code: number
+    parameters: number[]
+}
+export interface ExtendedEventData {
+    eventCode: number
+    transactionId: number
+    parameters: Array<{ size: number; value: Uint8Array }>
+}
+
+export const USB_LIMITS = { MAX_USB_TRANSFER: 1024 * 1024 * 1024, DEFAULT_BULK_SIZE: 8192 } as const
+
 export class USBTransport implements TransportInterface {
-    private device: any = null
-    private interface: any = null
-    private endpoints: any = null
+    private device: USBDevice | null = null
+    private interfaceNumber = 0
+    private endpoints: EndpointConfiguration | null = null
     private connected = false
-    private readonly isWebEnvironment = typeof navigator !== 'undefined' && 'usb' in navigator
-    private deviceInfo: { vendorId: number; productId: number } | null = null
+    private usb: USB | null = null
+    private eventHandler: ((event: PTPEvent) => void) | null = null
 
-    constructor(
-        private readonly deviceFinder: DeviceFinderInterface,
-        private readonly endpointManager: EndpointManagerInterface,
-        private readonly logger?: LoggerInterface
-    ) {}
+    constructor(private logger: Logger) {}
 
-    /**
-     * Connect to a USB device
-     */
-    async connect(deviceIdentifier: DeviceDescriptor): Promise<void> {
-        if (this.connected) {
-            throw new Error('Already connected')
-        }
-
-        let device: any = null
-
-        // In web environment with auto-discovery (vendorId 0), directly request device
-        if (this.isWebEnvironment && deviceIdentifier.vendorId === 0) {
-            device = await this.deviceFinder.requestDevice({
-                vendorId: undefined, // Will show all PTP devices
-                productId: undefined,
-                class: 6, // PTP/Still Image class
-            })
-        } else {
-            // Find device - include PTP class filter to ensure we find PTP devices
-            const devices = await this.deviceFinder.findDevices({
-                vendorId: deviceIdentifier.vendorId,
-                productId: deviceIdentifier.productId,
-                class: 6, // PTP/Still Image class
-            })
-
-            device = devices.find(d => {
-                if (deviceIdentifier.serialNumber) {
-                    return d.serialNumber === deviceIdentifier.serialNumber
-                }
-                return true
-            })
-
-            if (!device && this.isWebEnvironment) {
-                // Request device access in web environment
-                device = await this.deviceFinder.requestDevice({
-                    vendorId: deviceIdentifier.vendorId,
-                    productId: deviceIdentifier.productId,
-                })
-            }
-        }
-
-        if (!device) {
-            throw new Error(`Device not found: ${deviceIdentifier.vendorId}:${deviceIdentifier.productId}`)
-        }
-
-        this.device = device.device
-        this.deviceInfo = { vendorId: device.vendorId, productId: device.productId }
-
-        if (this.isWebEnvironment) {
-            await this.connectWebUSB()
-        } else {
-            await this.connectNodeUSB()
-        }
-
-        this.connected = true
-    }
-
-    /**
-     * Disconnect from the current device
-     */
-    async disconnect(): Promise<void> {
-        if (!this.connected) {
-            return
-        }
-
-        if (this.isWebEnvironment) {
-            if (this.interface) {
-                await this.device.releaseInterface(this.interface.interfaceNumber)
-            }
-            await this.device.close()
-        } else {
-            await this.endpointManager.releaseEndpoints()
-            try {
-                this.device.close()
-            } catch {
-                // Ignore errors during close
-            }
-        }
-
-        this.device = null
-        this.interface = null
-        this.endpoints = null
-        this.connected = false
-    }
-
-    /**
-     * Send data to the device
-     */
-    async send(data: Uint8Array): Promise<void> {
-        if (!this.connected || !this.endpoints) {
-            throw new Error('Not connected')
-        }
-
-        const buffer = toBuffer(data)
-        const endpointAddress = this.isWebEnvironment
-            ? this.endpoints.bulkOut.endpointNumber
-            : this.endpoints.bulkOut.descriptor.bEndpointAddress
-
-        // Use progress tracking if logger is available
-        if (this.logger) {
-            const transferId = this.logger.addLog({
-                type: 'usb_transfer',
-                direction: 'send',
-                message: 'Send data',
-                bytes: buffer.length,
-                endpoint: 'bulkOut',
-                endpointAddress: `0x${endpointAddress.toString(16)}`,
-                status: 'pending',
-            })
-
-            try {
-                if (this.isWebEnvironment) {
-                    const result = await this.device.transferOut(this.endpoints.bulkOut.endpointNumber, buffer)
-                    if (result.status !== 'ok') {
-                        throw new Error(`Transfer failed: ${result.status}`)
-                    }
-                } else {
-                    await this.sendNodeUSB(buffer)
-                }
-
-                this.logger.updateEntry(transferId, {
-                    message: 'Sent data',
-                    status: 'succeeded',
-                })
-            } catch (error) {
-                this.logger.updateEntry(transferId, {
-                    message: `Transfer failed: ${error}`,
-                    status: 'failed',
-                })
-                throw error
-            }
-        } else {
-            if (this.isWebEnvironment) {
-                const result = await this.device.transferOut(this.endpoints.bulkOut.endpointNumber, buffer)
-                if (result.status !== 'ok') {
-                    throw new Error(`Transfer failed: ${result.status}`)
-                }
-            } else {
-                await this.sendNodeUSB(buffer)
-            }
-        }
-    }
-
-    /**
-     * Receive data from the device
-     */
-    async receive(maxLength: number = USB_LIMITS.DEFAULT_BULK_SIZE): Promise<Uint8Array> {
-        if (!this.connected || !this.endpoints) {
-            throw new Error('Not connected')
-        }
-
-        const endpointAddr = this.isWebEnvironment
-            ? this.endpoints.bulkIn.endpointNumber
-            : (this.endpoints.bulkIn as any).descriptor?.bEndpointAddress
-
-        // Use progress tracking if logger is available
-        if (this.logger) {
-            const receiveId = this.logger.addLog({
-                type: 'usb_transfer',
-                direction: 'receive',
-                message: 'Receive data',
-                bytes: maxLength,
-                endpoint: 'bulkIn',
-                endpointAddress: `0x${endpointAddr?.toString(16) || '??'}`,
-                status: 'pending',
-            })
-
-            try {
-                let result: any
-                if (this.isWebEnvironment) {
-                    const transferSize = Math.min(maxLength, USB_LIMITS.MAX_WEBUSB_TRANSFER)
-                    result = await this.device.transferIn(this.endpoints.bulkIn.endpointNumber, transferSize)
-                    if (result.status !== 'ok') {
-                        throw new Error(`Transfer failed: ${result.status}`)
-                    }
-                } else {
-                    result = await this.receiveNodeUSB(maxLength)
-                }
-
-                const receivedBytes = this.isWebEnvironment ? result.data.byteLength : result.length
-                this.logger.updateEntry(receiveId, {
-                    message: 'Received data',
-                    bytes: receivedBytes,
-                    status: 'succeeded',
-                })
-
-                return this.isWebEnvironment ? toUint8Array(result.data.buffer) : toUint8Array(result)
-            } catch (error) {
-                this.logger.updateEntry(receiveId, {
-                    message: `Receive failed: ${error}`,
-                    status: 'failed',
-                })
-                throw error
-            }
-        } else {
-            if (this.isWebEnvironment) {
-                const transferSize = Math.min(maxLength, USB_LIMITS.MAX_WEBUSB_TRANSFER)
-
-                const result = await this.device.transferIn(this.endpoints.bulkIn.endpointNumber, transferSize)
-                if (result.status !== 'ok') {
-                    throw new Error(`Transfer failed: ${result.status}`)
-                }
-
-                return toUint8Array(result.data.buffer)
-            } else {
-                return this.receiveNodeUSB(maxLength)
-            }
-        }
-    }
-
-    /**
-     * Check if connected
-     */
-    isConnected(): boolean {
+    public isConnected() {
         return this.connected
     }
 
-    /**
-     * Reset the USB device
-     */
-    async reset(): Promise<void> {
-        if (!this.connected || !this.device) {
-            throw new Error('Not connected')
-        }
-
-        if (!this.isWebEnvironment) {
-            // Node USB reset
-            try {
-                this.device.reset()
-            } catch {
-                // Ignore reset errors
-            }
-        }
-        // WebUSB doesn't have a reset method
-    }
-
-    /**
-     * Get transport type
-     */
-    getType(): TransportType {
+    public getType() {
         return TransportType.USB
     }
 
-    /**
-     * Get connected device information
-     */
-    getDeviceInfo(): DeviceDescriptor | null {
-        return this.deviceInfo
+    public isLittleEndian() {
+        return true
     }
 
-    private async connectWebUSB(): Promise<void> {
-        await this.device.open()
+    private async getUSB(): Promise<USB> {
+        if (this.usb) return this.usb
+        this.usb = typeof navigator !== 'undefined' && 'usb' in navigator ? navigator.usb : (await import('usb')).webusb
+        return this.usb
+    }
 
-        // Configure endpoints
-        const config = await this.endpointManager.configureEndpoints(this.device)
-        this.endpoints = config
-
-        // Find the interface number from the endpoint configuration
-        const configuration = this.device.configuration || this.device.configurations[0]
-        for (const intf of configuration.interfaces) {
-            const alt = intf.alternates[0]
-            if (alt.interfaceClass === 6 && alt.interfaceSubclass === 1) {
-                this.interface = intf
-                await this.device.claimInterface(intf.interfaceNumber)
-                break
+    async discover() {
+        const usb = await this.getUSB()
+        
+        // Request devices for common camera vendors with PTP/Still Image class
+        const cameraVendors = [
+            { vendorId: 0x04b0, name: 'Nikon' },      // Nikon
+            { vendorId: 0x054c, name: 'Sony' },       // Sony
+            { vendorId: 0x04a9, name: 'Canon' },      // Canon
+        ]
+        
+        for (const vendor of cameraVendors) {
+            try {
+                await usb.requestDevice({
+                    filters: [{ 
+                        vendorId: vendor.vendorId,
+                        classCode: 0x06,
+                        subclassCode: 0x01
+                    }]
+                })
+            } catch (e) {
+                // Device not found or access denied
             }
         }
+        
+        const devices = await usb.getDevices()
+        return devices.map(device => ({
+            device,
+            vendorId: device.vendorId,
+            productId: device.productId,
+            manufacturer: device.manufacturerName,
+            model: device.productName,
+            serialNumber: device.serialNumber,
+            classCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceClass,
+            subclassCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceSubclass,
+        }))
+    }
 
-        if (!this.interface) {
-            throw new Error('Failed to claim PTP interface')
+    async connect(device?: DeviceDescriptor): Promise<void> {
+        if (this.connected) throw new Error('Already connected')
+
+        const usb = await this.getUSB()
+
+        const availableDevices = await this.discover()
+
+        if (availableDevices.length === 0) {
+            console.error('[USB] No USB devices found. Make sure camera is connected and in PTP/MTP mode.')
+            throw new Error('No USB devices available')
+        }
+
+        console.log(JSON.stringify(availableDevices, null, 2))
+
+        console.log(formatDeviceTable(availableDevices))
+
+        const filters = device?.usb?.filters || [{ classCode: 0x06, subclassCode: 0x01 }]
+
+        const matchingDevice = availableDevices.find(d => {
+            const filter = filters[0]
+            if (filter.vendorId !== undefined && d.vendorId !== filter.vendorId) return false
+            if (filter.productId !== undefined && d.productId !== filter.productId) return false
+            if (filter.classCode !== undefined && d.classCode !== filter.classCode) return false
+            if (filter.subclassCode !== undefined && d.subclassCode !== filter.subclassCode) return false
+            return true
+        })
+        if (!matchingDevice?.device) {
+            throw new Error('No matching device found in discovered devices')
+        }
+        this.device = matchingDevice.device as USBDevice
+        console.log(
+            `[USB] Selected device: VID:PID 0x${matchingDevice.vendorId?.toString(16).padStart(4, '0')}:0x${matchingDevice.productId?.toString(16).padStart(4, '0')} - ${matchingDevice.manufacturer || 'Unknown'} ${matchingDevice.model || 'Unknown'}`
+        )
+
+        await this.device.open()
+
+        const configuration = this.device.configuration ?? this.device.configurations?.[0]
+        if (!configuration) throw new Error('No USB configuration found')
+
+        const ptpInterface = this.findPTPInterface(configuration)
+        if (!ptpInterface) throw new Error('PTP interface not found')
+
+        this.interfaceNumber = ptpInterface.interfaceNumber
+        await this.device.claimInterface(this.interfaceNumber)
+
+        const alternate = ptpInterface.alternates[0] || ptpInterface.alternate
+        if (!alternate) throw new Error('No alternate interface')
+
+        this.endpoints = this.findEndpoints(alternate)
+        this.connected = true
+        // await this.nukeDevice()
+
+        this.listenForInterrupt()
+    }
+
+    async disconnect(): Promise<void> {
+        if (!this.connected) return
+
+        this.connected = false
+        this.eventHandler = null
+
+        // give events 100ms to complete if any are pending
+        await new Promise(resolve => setTimeout(resolve, 100))
+        await this.clearHalt(EndpointType.INTERRUPT)
+        // await this.device?.reset()
+        // await this.nukeDevice()
+
+        await this.device?.close()
+
+        this.device = null
+        this.interfaceNumber = 0
+        this.endpoints = null
+    }
+
+    private async nukeDevice(): Promise<void> {
+        try {
+            await this.classRequestReset()
+        } catch (error) {
+            console.error('classRequestReset error:', error)
+        }
+        
+        try {
+            await this.clearHalt(EndpointType.BULK_IN)
+        } catch (error) {
+            console.error('clearHalt BULK_IN error:', error)
+        }
+        
+        try {
+            await this.clearHalt(EndpointType.BULK_OUT)
+        } catch (error) {
+            console.error('clearHalt BULK_OUT error:', error)
+        }
+        
+        try {
+            await this.clearHalt(EndpointType.INTERRUPT)
+        } catch (error) {
+            console.error('clearHalt INTERRUPT error:', error)
         }
     }
 
-    private async connectNodeUSB(): Promise<void> {
-        this.device.open()
-
-        // Configure endpoints (this also claims the interface)
-        const config = await this.endpointManager.configureEndpoints(this.device)
-        this.endpoints = config
-    }
-
-    /**
-     * Send data using Node.js USB with proper error handling
-     */
-    private async sendNodeUSB(buffer: Buffer): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.endpoints.bulkOut.transfer(buffer, async (error: any) => {
-                if (!error) {
-                    resolve()
-                    return
-                }
-
-                // Check if this is a stall error
-                if (this.isStallError(error)) {
-                    try {
-                        await this.handleStallError(EndpointType.BULK_OUT)
-                        // Retry the transfer once
-                        await this.retryTransfer(buffer)
-                        resolve()
-                    } catch (retryError) {
-                        reject(retryError)
-                    }
-                } else {
-                    reject(error)
-                }
-            })
+    private findPTPInterface(configuration: USBConfiguration): USBInterface | undefined {
+        return configuration.interfaces.find(iface => {
+            const alternate = iface.alternates[0] || iface.alternate
+            return alternate?.interfaceClass === 0x06 && alternate?.interfaceSubclass === 0x01
         })
     }
 
-    /**
-     * Receive data using Node.js USB with proper error handling
-     */
-    private async receiveNodeUSB(maxLength: number): Promise<Uint8Array> {
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('USB receive timeout'))
-            }, USB_LIMITS.RECEIVE_TIMEOUT)
+    private findEndpoints(alternate: USBAlternateInterface): EndpointConfiguration {
+        const bulkIn = alternate.endpoints.find(ep => ep.direction === 'in' && ep.type === 'bulk')
+        const bulkOut = alternate.endpoints.find(ep => ep.direction === 'out' && ep.type === 'bulk')
+        const interrupt = alternate.endpoints.find(ep => ep.direction === 'in' && ep.type === 'interrupt')
+        if (!bulkIn || !bulkOut || !interrupt) throw new Error('USB endpoints not found')
+        return { bulkIn, bulkOut, interrupt }
+    }
 
-            this.endpoints.bulkIn.transfer(maxLength, async (error: any, data: Buffer) => {
-                clearTimeout(timeout)
+    async send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void> {
+        if (!this.connected || !this.endpoints || !this.device) throw new Error('Not connected')
 
-                if (!error) {
-                    resolve(toUint8Array(data))
-                    return
+        const endpoint = this.endpoints.bulkOut.endpointNumber
+        const container = USBContainerBuilder.parseContainer(data)
+
+        let result = await this.device.transferOut(endpoint, Uint8Array.from(data))
+
+        this.logger.addLog({
+            type: 'usb_transfer',
+            level: 'info',
+            direction: 'send',
+            bytes: data.length,
+            endpoint: 'bulkOut',
+            endpointAddress: `0x${endpoint.toString(16)}`,
+            sessionId: sessionId,
+            transactionId: transactionId,
+            phase:
+                container.type === USBContainerType.COMMAND
+                    ? 'request'
+                    : container.type === USBContainerType.DATA
+                      ? 'data'
+                      : 'response',
+            status: result.status,
+        })
+
+        if (result.status === 'stall') {
+            await this.clearHalt(EndpointType.BULK_OUT)
+        }
+    }
+
+    async receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array> {
+        if (!this.connected || !this.endpoints || !this.device) throw new Error('Not connected')
+
+        const endpoint = this.endpoints.bulkIn.endpointNumber
+        let result = await this.device.transferIn(endpoint, maxLength)
+
+        if (result.status === 'stall') {
+            await this.clearHalt(EndpointType.BULK_IN)
+        }
+
+        if (result.status !== 'ok' || !result.data || result.data.byteLength === 0)
+            throw new Error(`Bulk IN failed: ${result.status}`)
+
+        const data = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength)
+        const container = USBContainerBuilder.parseContainer(data)
+
+        this.logger.addLog({
+            type: 'usb_transfer',
+            level: 'info',
+            direction: 'receive',
+            bytes: data.length,
+            endpoint: 'bulkIn',
+            endpointAddress: `0x${endpoint.toString(16)}`,
+            sessionId: sessionId,
+            transactionId: transactionId,
+            phase:
+                container.type === USBContainerType.COMMAND
+                    ? 'request'
+                    : container.type === USBContainerType.DATA
+                      ? 'data'
+                      : 'response',
+            status: result.status,
+        })
+
+        return data
+    }
+
+    private async clearHalt(type: EndpointType): Promise<void> {
+        if (!this.device || !this.endpoints) throw new Error('Cannot clear stall')
+
+        if (type === EndpointType.BULK_IN) {
+            try {
+                await this.device.clearHalt('in', this.endpoints.bulkIn.endpointNumber)
+            } catch (error) {
+                if (
+                    error instanceof LibUSBException &&
+                    (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
+                ) {
+                    // Stall cleared
                 }
-
-                // Check if this is a stall error
-                if (this.isStallError(error)) {
-                    try {
-                        await this.handleStallError(EndpointType.BULK_IN)
-                        // Retry the receive once
-                        const retryData = await this.retryReceive(maxLength)
-                        resolve(retryData)
-                    } catch (retryError) {
-                        reject(retryError)
-                    }
-                } else {
-                    reject(error)
+            }
+        } else if (type === EndpointType.BULK_OUT) {
+            try {
+                await this.device.clearHalt('out', this.endpoints.bulkOut.endpointNumber)
+            } catch (error) {
+                if (
+                    error instanceof LibUSBException &&
+                    (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
+                ) {
+                    // Stall cleared
                 }
-            })
+            }
+        } else if (type === EndpointType.INTERRUPT) {
+            try {
+                await this.device.clearHalt('in', this.endpoints.interrupt.endpointNumber)
+            } catch (error) {
+                if (
+                    error instanceof LibUSBException &&
+                    (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
+                ) {
+                    // Stall cleared
+                }
+            }
+        }
+    }
+
+    public on(handler: (event: PTPEvent) => void) {
+        this.eventHandler = handler
+    }
+
+    public off(handler: (event: PTPEvent) => void) {
+        this.eventHandler = null
+    }
+
+    async classRequestReset(): Promise<void> {
+        await this.device?.controlTransferOut({
+            requestType: 'class',
+            recipient: 'interface',
+            request: USBClassRequest.DEVICE_RESET,
+            value: 0,
+            index: this.interfaceNumber,
         })
     }
 
-    /**
-     * Check if error is a stall/pipe error
-     */
-    private isStallError(error: any): boolean {
-        return (
-            error.errno === -9 ||
-            error.errno === 4 ||
-            error.message?.includes('PIPE') ||
-            error.message?.includes('STALL')
+    async classRequestGetDeviceStatus(): Promise<DeviceStatus> {
+        if (!this.device) throw new Error('Not connected')
+
+        const result = await this.device.controlTransferIn(
+            {
+                requestType: 'class',
+                recipient: 'interface',
+                request: USBClassRequest.GET_DEVICE_STATUS,
+                value: 0,
+                index: this.interfaceNumber,
+            },
+            20
         )
+
+        if (!result?.data || result.status !== 'ok') throw new Error('Failed to get status')
+
+        const view = new DataView(result.data.buffer)
+        const length = view.getUint16(0, true)
+        const code = view.getUint16(2, true)
+        const parameters: number[] = []
+        for (let i = 4; i + 4 <= length && i < result.data.byteLength; i += 4) {
+            parameters.push(view.getUint32(i, true))
+        }
+        return { code, parameters }
     }
 
-    /**
-     * Handle stall error by clearing halt
-     */
-    private async handleStallError(endpointType: EndpointType): Promise<void> {
-        const direction = endpointType === EndpointType.BULK_IN ? 'IN' : 'OUT'
-        await this.endpointManager.clearHalt(endpointType)
-    }
+    private async listenForInterrupt(): Promise<void> {
+        while (this.connected && this.device && this.endpoints) {
+            try {
+                const result = await this.device.transferIn(this.endpoints.interrupt.endpointNumber, 64)
 
-    /**
-     * Retry a send transfer after error
-     */
-    private async retryTransfer(buffer: Buffer): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.endpoints.bulkOut.transfer(buffer, (error: any) => {
-                if (error) {
-                    reject(error)
-                } else {
-                    resolve()
+                if (result.data) {
+                    const data = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength)
+                    const container = USBContainerBuilder.parseEvent(data)
+                    const view = new DataView(
+                        container.payload.buffer,
+                        container.payload.byteOffset,
+                        container.payload.byteLength
+                    )
+                    const event: PTPEvent = {
+                        code: container.code,
+                        transactionId: container.transactionId,
+                        parameters: [],
+                    }
+
+                    for (let i = 0; i + 4 <= container.payload.length && event.parameters.length < 5; i += 4) {
+                        event.parameters.push(view.getUint32(i, true))
+                    }
+                    this.logger.addLog({
+                        type: 'usb_transfer',
+                        level: 'info',
+                        bytes: data.length,
+                        direction: 'receive',
+                        endpoint: 'interrupt',
+                        endpointAddress: `0x${this.endpoints.interrupt.endpointNumber.toString(16)}`,
+                        sessionId: event.transactionId >> 16,
+                        transactionId: event.transactionId,
+                        phase: 'response',
+                        status: result.status,
+                    })
+
+                    if (this.eventHandler) {
+                        this.eventHandler(event)
+                    }
                 }
-            })
-        })
-    }
+            } catch (error) {
+                // halt will be cleared when device is disconnected, ignore
+                if (!this.connected) return
 
-    /**
-     * Retry a receive transfer after error
-     */
-    private async retryReceive(maxLength: number): Promise<Uint8Array> {
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('USB receive retry timeout'))
-            }, USB_LIMITS.RECEIVE_TIMEOUT)
-
-            this.endpoints.bulkIn.transfer(maxLength, (error: any, data: Buffer) => {
-                clearTimeout(timeout)
-                if (error) {
-                    reject(error)
-                } else {
-                    resolve(toUint8Array(data))
-                }
-            })
-        })
+                console.error('Error listening for interrupt: ', error)
+            }
+        }
     }
 }

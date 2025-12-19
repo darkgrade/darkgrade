@@ -1,10 +1,7 @@
-import { defineConfig } from 'vite'
 import { resolve } from 'path'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
-    plugins: [react(), tailwindcss()],
     define: {
         global: 'globalThis',
     },
@@ -20,13 +17,13 @@ export default defineConfig({
             '@factories': resolve(__dirname, './src/factories'),
             '@api': resolve(__dirname, './src/api'),
             '@constants': resolve(__dirname, './src/constants'),
+            '@ptp': resolve(__dirname, './src/ptp'),
         },
     },
     build: {
         lib: {
             entry: {
-                web: resolve(__dirname, 'src/web.ts'),
-                node: resolve(__dirname, 'src/node.ts'),
+                web: resolve(__dirname, 'src/index.ts'),
             },
             name: 'Fuse',
         },

@@ -4,6 +4,7 @@
         "module": "ESNext",
         "moduleResolution": "bundler",
         "lib": ["ES2022", "DOM"],
+        "types": ["w3c-web-usb"],
         "jsx": "react-jsx",
         "strict": true,
         "skipLibCheck": true,
@@ -19,7 +20,8 @@
             "@transport/*": ["src/transport/*"],
             "@constants/*": ["src/constants/*"],
             "@api/*": ["src/api/*"],
-            "@factories/*": ["src/factories/*"]
+            "@factories/*": ["src/factories/*"],
+            "@ptp/*": ["src/ptp/*"]
         }
     },
     "include": ["src", "tests", "scripts", "examples", "*.config.ts"]

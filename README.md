@@ -1,6 +1,6 @@
 # @jpglab/fuse
 
-**Connect to & control your camera with 2 lines of TypeScript**
+**Connect to & control your camera with TypeScript**
 
 > **Note:** Fuse is in alpha and APIs may change without backwards compatibility.
 
@@ -13,140 +13,190 @@ This library is a comprehensive TypeScript implementation of [ISO-15740:2013](ht
 
 ## ✨ Highlights
 
-- [x] **🚀 2 Lines to Connect** - Zero-configuration with auto-discovery
+- [x] **🚀 Zero Configuration** - Automatic camera detection and vendor-specific features
 - [x] **📦 55kB Bundled** - Lightweight and tree-shakable
-- [x] **🔥 1 Dependency** - Minimal footprint (just `usb` for Node.js)
+- [x] **🔥 1 major dependency** - just `usb` for Node.js
+- [x] **🌐 Runs anywhere** - Works in both browser & Node.js
 - [x] **🎯 Pure TypeScript** - Full type safety and modern DX
-- [x] **✨ Simple API** - 2 lines to connect to a camera
-- [x] **📷 Works with any PTP camera**
-    - [x] **Sony ⍺ Series Cameras**
-    - [ ] **Canon EOS R Series Cameras**
-    - [ ] **Nikon Z Series Cameras**
+- [x] **✨ Simple API** - Connect and control your camera with minimal code
+- [x] **📷 Vendor Extensions** - Extended features for Sony, Nikon & Canon
+    - **Sony ⍺ Series** - Live view, video recording, SDIO operations
+    - **Nikon Z Series** - Live view, extended properties
+    - **Canon EOS R Series** - Remote control, event polling
 
-## 📦 Installation
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
 npm install @jpglab/fuse
 ```
 
-## 🚀 Quick Start
+### Basic Usage
 
 ```typescript
 import { Camera } from '@jpglab/fuse'
 
-// Connect to camera - that's it!
 const camera = new Camera()
 await camera.connect()
 
-// Take a photo
-const photo = await camera.takePhoto()
-await photo.save('./photo.jpg')
+// Control camera settings
+await camera.setIso('800')
+await camera.setShutterSpeed('1/250')
+await camera.setAperture('f/2.8')
 
-// Disconnect
+// Capture an image
+const { data } = await camera.captureImage()
+
 await camera.disconnect()
 ```
 
-### Manual Discovery
+## 📖 Usage Examples
+
+### Camera Settings
 
 ```typescript
-import { Camera, listCameras } from '@jpglab/fuse'
+// Get current settings
+const currentIso = await camera.getIso()
+const currentShutter = await camera.getShutterSpeed()
+const currentAperture = await camera.getAperture()
 
-// Auto-discover specific vendor
-const camera = new Camera({ vendor: 'sony' })
-await camera.connect()
-
-// Or discover by model
-const camera = new Camera({ model: 'A6700' })
-await camera.connect()
-
-// Or list all available cameras first
-const cameras = await listCameras()
-console.log(cameras)
-// [
-//   { vendor: 'Sony', model: 'A6700', usb: { vendorId: 0x054c, productId: 0x0e78 } },
-//   { vendor: 'Canon', model: 'R5', usb: { vendorId: 0x04a9, productId: 0x1234 } }
-// ]
-
-// Connect to specific camera
-const camera = new Camera(cameras[0])
-await camera.connect()
+// Set new values
+await camera.setIso('1600')
+await camera.setShutterSpeed('1/500')
+await camera.setAperture('f/4.0')
 ```
 
-### Operations
+### Event Handling
 
 ```typescript
-await camera.setISO(400)
-await camera.setShutterSpeed('1/250')
-await camera.setAperture('f/5.6')
-await camera.setExposureMode('manual')
+import { Camera } from '@jpglab/fuse'
 
-// Take photo
-const photo = await camera.takePhoto()
+const camera = new Camera()
+await camera.connect()
+
+// Listen for camera events
+camera.on(camera.getInstance().registry.events.ObjectAdded, (event) => {
+    console.log('New object added:', event.ObjectHandle)
+})
+
+camera.on(camera.getInstance().registry.events.PropertyChanged, (event) => {
+    console.log('Property changed:', event.PropertyName)
+})
+
+// Remove event listeners
+camera.off(camera.getInstance().registry.events.ObjectAdded)
 ```
 
-### Events
+### Live View
 
 ```typescript
-// Event handling
-camera.on('photo', photo => {
-    console.log(`Photo captured: ${photo.filename}`)
+// Capture live view frame (Sony & Nikon only)
+const { data: liveViewFrame } = await camera.captureLiveView()
+
+// Save or display the frame
+fs.writeFileSync('liveview.jpg', liveViewFrame)
+```
+
+### Video Recording
+
+```typescript
+// Start recording (Sony & Canon only)
+await camera.startRecording()
+
+// ... record for some duration ...
+
+// Stop recording
+await camera.stopRecording()
+```
+
+### File Management
+
+```typescript
+// List all objects on camera
+const objects = await camera.listObjects()
+
+for (const [storageId, storage] of Object.entries(objects)) {
+    console.log(`Storage ${storageId}: ${storage.info.storageDescription}`)
+    
+    for (const [handle, info] of Object.entries(storage.objects)) {
+        console.log(`  - ${info.filename} (${info.objectCompressedSize} bytes)`)
+        
+        // Download a specific object
+        const fileData = await camera.getObject(
+            Number(handle), 
+            info.objectCompressedSize
+        )
+        fs.writeFileSync(info.filename, fileData)
+    }
+}
+```
+
+### Advanced Property Access
+
+```typescript
+// Access vendor-specific properties directly
+const registry = camera.getInstance().registry
+
+// Get property descriptor
+const propValue = await camera.get(registry.properties.ExposureIndex)
+
+// Set property with type safety
+await camera.set(registry.properties.ExposureIndex, '3200')
+```
+
+### How It Works
+
+The `Camera` class automatically detects your connected camera's brand and uses the appropriate vendor-specific implementation:
+
+- **Sony α Series** → Automatically uses `SonyCamera` with Sony extensions
+- **Nikon Z Series** → Automatically uses `NikonCamera` with Nikon extensions
+- **Canon EOS R Series** → Automatically uses `CanonCamera` with Canon extensions
+- **Other PTP Cameras** → Falls back to `GenericCamera` with standard PTP operations
+
+You can also import and use vendor-specific camera classes directly:
+
+```typescript
+import { SonyCamera } from '@jpglab/fuse'
+// or NikonCamera, CanonCamera, GenericCamera
+```
+
+Or specify a device descriptor when initializing the `Camera` constructor:
+
+```typescript
+import { Camera, VendorIDs } from '@jpglab/fuse'
+
+// Specify a camera brand for vendor-specific features
+const camera = new Camera({
+    device: {
+        usb: {
+            filters: [{ vendorId: VendorIDs.SONY }], // VendorIDs.NIKON, VendorIDs.CANON
+        },
+    },
+    logger: {
+        expanded: true, // Show detailed logging
+    },
 })
 
-camera.on('error', error => {
-    console.error(`Camera error: ${error.message}`)
-})
-
-camera.on('disconnect', () => {
-    console.log('Camera disconnected')
-})
+await camera.connect()
 ```
 
-## 🏗️ Architecture
+## 📊 Feature Compatibility
 
-Clean, layered architecture with dependency injection and pluggable components:
-
-- **Client Layer** ← 2-line API to connect
-- **Camera Layer** ← Vendor-specific (Sony, Canon, etc.)
-- **Core PTP Layer** ← ISO 15740 implementation
-- **Transport Layer** ← USB (implemented), TCP/IP (coming soon)
-
-## 🧪 Development
-
-```bash
-# Install
-npm install
-
-# Test
-npm test:all            # All tests
-
-# Build
-npm run build           # Build library
-npm run all             # Compile, lint, format, test
-
-# Dev
-npm run dev             # Development server
-```
-
-## 📁 Project Structure
-
-```
-src/
-├── client/          # New simplified API layer
-│   ├── camera.ts    # Main Camera class
-│   ├── discovery.ts # Auto-discovery functions
-│   ├── photo.ts     # Photo class
-│   └── types.ts     # TypeScript interfaces
-├── application/     # High-level abstractions
-├── camera/          # Camera implementations
-│   ├── generic/     # Generic PTP
-│   ├── vendors/     # Sony, Canon, Nikon
-│   ├── properties/  # Device properties
-│   └── camera-factory.ts
-├── core/            # PTP protocol (ISO 15740)
-├── transport/       # USB, TCP/IP
-│   └── transport-factory.ts
-└── tests/           # Integration tests
-```
+| Feature                   | Generic PTP | Sony  | Nikon  | Canon         |
+| ------------------------- | ----------- | ----- | ------ | ------------- |
+| **Connection**            | ✅          | ✅    | ✅     | ✅            |
+| **Get/Set Properties**    | ✅          | ✅    | ✅     | ✅            |
+| **Event Handling**        | ✅          | ✅    | ✅     | ✅            |
+| **Aperture Control**      | ✅          | ✅    | ✅     | ✅            |
+| **Shutter Speed Control** | ✅          | ✅    | ✅     | ✅            |
+| **ISO Control**           | ✅          | ✅    | ✅     | ✅            |
+| **Capture Image**         | ✅          | ✅    | ✅     | ✅            |
+| **List Objects**          | ✅          | ✅    | ✅     | 🟡            |
+| **Download Objects**      | ✅          | ✅    | ✅     | 🟡            |
+| **Live View**             | ❌          | ✅    | ✅     | 🟡            |
+| **Video Recording**       | ❌          | ✅    | 🟡     | 🟡            |
+| Tested with:              |             | α6700 | Z6 III | EOS R6 Mk.III |
 
 ## 📚 Reference
 

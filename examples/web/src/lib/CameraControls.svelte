@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Camera } from '@api/camera'
+    import type { Camera } from '@camera/index'
     import { store } from './store.svelte'
     import { cameraQueue } from './queue'
 
@@ -124,29 +124,19 @@
         'ISO 32000',
     ]
 
-    const changeSetting = async (propertyName: string, value: string) => {
-        if (!store.connected) return
-
-        try {
-            await cameraQueue.push(async () => await camera.setDeviceProperty(propertyName, value))
-        } catch (error) {
-            console.error(`Failed to set ${propertyName} to ${value}:`, error)
-        }
+    const onApertureChange = async (event: Event) => {
+        const target = event.target as HTMLSelectElement
+        await cameraQueue.push(async () => await camera.setAperture(target.value))
     }
 
-    const onApertureChange = (event: Event) => {
+    const onShutterSpeedChange = async (event: Event) => {
         const target = event.target as HTMLSelectElement
-        changeSetting('APERTURE', target.value)
+        await cameraQueue.push(async () => await camera.setShutterSpeed(target.value))
     }
 
-    const onShutterSpeedChange = (event: Event) => {
+    const onISOChange = async (event: Event) => {
         const target = event.target as HTMLSelectElement
-        changeSetting('SHUTTER_SPEED', target.value)
-    }
-
-    const onISOChange = (event: Event) => {
-        const target = event.target as HTMLSelectElement
-        changeSetting('ISO', target.value)
+        await cameraQueue.push(async () => await camera.setIso(target.value))
     }
 </script>
 

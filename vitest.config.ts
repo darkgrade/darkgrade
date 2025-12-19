@@ -1,5 +1,5 @@
-import { defineConfig } from 'vitest/config'
 import { resolve } from 'path'
+import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
     resolve: {
@@ -10,6 +10,7 @@ export default defineConfig({
             '@factories': resolve(__dirname, './src/factories'),
             '@api': resolve(__dirname, './src/api'),
             '@constants': resolve(__dirname, './src/constants'),
+            '@ptp': resolve(__dirname, './src/ptp'),
         },
     },
     test: {

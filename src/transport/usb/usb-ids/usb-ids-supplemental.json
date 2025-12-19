@@ -1,0 +1,92 @@
+{
+    "vendors": [
+        {
+            "id": "0x2188",
+            "name": "Caldigit, Inc.",
+            "devices": [
+                { "id": "0x551a", "name": "TS5 Plus USB 2 Hub - A" },
+                { "id": "0x2174", "name": "TS5 Plus USB 2 Hub - B" },
+                { "id": "0x2175", "name": "TS5 Plus USB 2 Hub - C" },
+                { "id": "0x552a", "name": "TS5 Plus USB 3 Hub - A" },
+                { "id": "0x2074", "name": "TS5 Plus USB 3 Hub - B" },
+                { "id": "0x2075", "name": "TS5 Plus USB 3 Hub - C" },
+                { "id": "0x2075", "name": "Unnamed Device" },
+                { "id": "0x7113", "name": "Unnamed Device" },
+                { "id": "0x551f", "name": "TS5 Plus HID" },
+                { "id": "0x5804", "name": "TS5 Plus USB 2 Hub" },
+                { "id": "0xace1", "name": "TS5 Plus Billboard" }
+            ]
+        },
+        { "id": "0x1235", "name": "Focusrite", "devices": [{ "id": "0x8219", "name": "Scarlett 2i2 4th Gen" }] },
+        { "id": "0x8087", "name": "Intel, Corp.", "devices": [{ "id": "0x5787", "name": "USB3 HUB" }] },
+        {
+            "id": "0x05ac",
+            "name": "Apple, Inc.",
+            "devices": [
+                { "id": "0x0322", "name": "Magic Keyboard with Touch ID and Numeric Keypad" },
+                { "id": "0x0324", "name": "Magic Trackpad" }
+            ]
+        },
+        {
+            "id": "0x0b05",
+            "name": "ASUSTeK Computer Inc.",
+            "devices": [
+                { "id": "0x1bfd", "name": "ROG Gaming Display Aura Device" },
+                { "id": "0x1c01", "name": "USB2.1 Hub" }
+            ]
+        },
+        {
+            "id": "0x04a9",
+            "name": "Canon, Inc.",
+            "devices": [
+                { "id": "0x32f8", "name": "EOS R10" },
+                { "id": "0x3312", "name": "EOS R100" },
+                { "id": "0x3323", "name": "EOS R6 Mark III" },
+                { "id": "0x32f7", "name": "EOS R7" },
+                { "id": "0x330c", "name": "EOS R8" },
+                { "id": "0x330d", "name": "EOS R50" },
+                { "id": "0x32f4", "name": "EOS R5" },
+                { "id": "0x32f5", "name": "EOS R6" },
+                { "id": "0x32e2", "name": "EOS RP" },
+                { "id": "0x32da", "name": "EOS R" },
+                { "id": "0x32e8", "name": "EOS 1D X Mark III" },
+                { "id": "0x32ea", "name": "EOS 90D" },
+                { "id": "0x32ca", "name": "EOS 6D Mark II" },
+                { "id": "0x32cb", "name": "EOS 77D" },
+                { "id": "0x3281", "name": "EOS 5D Mark IV" },
+                { "id": "0x3294", "name": "EOS 80D" },
+                { "id": "0x3292", "name": "EOS 1D X Mark II" },
+                { "id": "0x32af", "name": "EOS 5DS R" },
+                { "id": "0x326f", "name": "EOS 7D Mark II" },
+                { "id": "0x3252", "name": "EOS 1D C" },
+                { "id": "0x3250", "name": "EOS 6D" },
+                { "id": "0x3219", "name": "EOS 1D X" },
+                { "id": "0x323a", "name": "EOS 5D Mark III" },
+                { "id": "0x3215", "name": "EOS 60D" },
+                { "id": "0x31d0", "name": "EOS-1D Mark IV" },
+                { "id": "0x319a", "name": "EOS 7D" },
+                { "id": "0x3199", "name": "EOS 5D Mark II" },
+                { "id": "0x3147", "name": "EOS 1Ds Mark III" },
+                { "id": "0x3144", "name": "EOS 1D Mark III" },
+                { "id": "0x32f9", "name": "EOS M50 Mark II" },
+                { "id": "0x32ef", "name": "EOS M200" },
+                { "id": "0x32e7", "name": "EOS M6 Mark II" },
+                { "id": "0x32d2", "name": "EOS M50" },
+                { "id": "0x32f1", "name": "EOS Rebel T8i" },
+                { "id": "0x32e9", "name": "EOS Rebel SL3" },
+                { "id": "0x32e1", "name": "EOS REBEL T7" },
+                { "id": "0x32cc", "name": "EOS REBEL SL2" },
+                { "id": "0x32c9", "name": "EOS REBEL T7i" },
+                { "id": "0x32b4", "name": "EOS REBEL T6" },
+                { "id": "0x3270", "name": "EOS REBEL SL1" },
+                { "id": "0x3272", "name": "EOS REBEL T5i" },
+                { "id": "0x3218", "name": "EOS REBEL T3i" },
+                { "id": "0x32f0", "name": "PowerShot G7X Mark III" },
+                { "id": "0x32e5", "name": "PowerShot G5X Mark II" },
+                { "id": "0x32ee", "name": "Powershot SX70 HS" }
+            ]
+        },
+        { "id": "0x054c", "name": "Sony Corp.", "devices": [{ "id": "0x0e78", "name": "α6700" }] },
+        { "id": "0x04b0", "name": "Nikon Corp.", "devices": [{ "id": "0x0454", "name": "Z6 III" }] }
+    ]
+}

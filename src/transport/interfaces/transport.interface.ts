@@ -1,57 +1,27 @@
-/**
- * Transport layer main interface
- */
+export * from './device.interface'
+export * from './transport-types'
 
-import { DeviceDescriptor } from './device.interface'
-import { TransportType } from './transport-types'
+export interface PTPEvent {
+    code: number
+    transactionId: number
+    parameters: number[]
+}
 
-export { TransportType }
-
-/**
- * Transport layer interface for device communication
- */
 export interface TransportInterface {
-    /**
-     * Connect to a device
-     * @param device - Device descriptor for connection
-     */
-    connect(device: DeviceDescriptor): Promise<void>
-
-    /**
-     * Disconnect from the current device
-     */
+    connect(device?: DeviceDescriptor): Promise<void>
     disconnect(): Promise<void>
-
-    /**
-     * Send data to the connected device
-     * @param data - Raw data to send
-     */
-    send(data: Uint8Array): Promise<void>
-
-    /**
-     * Receive data from the connected device
-     * @param maxLength - Maximum number of bytes to receive
-     * @returns Received data
-     */
-    receive(maxLength?: number): Promise<Uint8Array>
-
-    /**
-     * Check if currently connected to a device
-     */
+    send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void>
+    receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array>
     isConnected(): boolean
-
-    /**
-     * Reset the transport connection
-     */
-    reset(): Promise<void>
-
-    /**
-     * Get transport type identifier
-     */
+    classRequestReset(): Promise<void>
     getType(): TransportType
 
     /**
-     * Get connected device information
+     * Get endianness for this transport
+     * USB uses little-endian (per PIMA 15740), IP uses big-endian (per PTP spec)
      */
-    getDeviceInfo?(): DeviceDescriptor | null
+    isLittleEndian(): boolean
+
+    on?(handler: (event: PTPEvent) => void): void
+    off?(handler: (event: PTPEvent) => void): void
 }

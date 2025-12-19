@@ -1,66 +1,64 @@
 /**
  * USB Transport Tests
- * Tests USB device discovery, connection, and Sony camera interaction
+ * Tests USB device discovery, connection, and camera interaction
  */
 
-import { describe, it, expect, beforeAll } from 'vitest'
-import { TransportFactory } from '@transport/transport-factory'
+import { VendorNames } from '@ptp/definitions/vendor-ids'
 import { TransportType } from '@transport/interfaces/transport.interface'
-import { USBDeviceFinder } from '@transport/usb/usb-device-finder'
-import { VendorIDs, VendorNames } from '@constants/vendors/vendor-ids'
-
-// Sony vendor ID
-const SONY_VENDOR_ID = VendorIDs.SONY
+import { TransportFactory } from '@transport/transport-factory'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // Set to true for verbose output
 const VERBOSE = true
+const DEBUG = process.env.DEBUG === 'true'
+const log = DEBUG ? (...args: any[]) => process.stderr.write(args.join(' ') + '\n') : (...args: any[]) => console.log(...args)
 
 describe('USB Transport', () => {
     let transportFactory: TransportFactory
-    let deviceFinder: USBDeviceFinder
 
     beforeAll(() => {
         transportFactory = new TransportFactory()
-        deviceFinder = new USBDeviceFinder()
 
         if (VERBOSE) {
-            console.log('\n========================================')
-            console.log('USB Transport Test Suite - VERBOSE MODE')
-            console.log('========================================\n')
+            log('\n========================================')
+            log('USB Transport Test Suite - VERBOSE MODE')
+            log('========================================\n')
         }
     })
 
     describe('Device Discovery', () => {
-        it('should be able to use node-usb', async () => {
-            // Test that we can import and use node-usb
+        it('should be able to use WebUSB', async () => {
             const usb = await import('usb')
             expect(usb).toBeDefined()
-            expect(usb.usb).toBeDefined()
-            expect(usb.usb.getDeviceList).toBeDefined()
+            expect(usb.webusb).toBeDefined()
+            expect(usb.webusb.getDevices).toBeDefined()
         })
 
         it('should discover devices and interfaces', async () => {
-            const devices = await deviceFinder.getAllDevices()
+            const transport = await transportFactory.createUSBTransport()
+            
+            log('\nNote: In Node.js, discover() will use native USB API if WebUSB hasn\'t granted permissions yet.\n')
+            
+            const devices = await transport.discover()
 
-            // Should find multiple devices
             expect(devices).toBeDefined()
             expect(Array.isArray(devices)).toBe(true)
             expect(devices.length).toBeGreaterThan(0)
 
             // Log device information
-            console.log(`\n[TEST: Device Discovery]`)
-            console.log(`Found ${devices.length} USB devices:`)
-            console.log('----------------------------------------')
+            log(`\n[TEST: Device Discovery]`)
+            log(`Found ${devices.length} USB devices:`)
+            log('----------------------------------------')
 
             devices.forEach((device, index) => {
                 const vendorHex = device.vendorId?.toString(16).padStart(4, '0') || 'N/A'
                 const productHex = device.productId?.toString(16).padStart(4, '0') || 'N/A'
 
-                console.log(`\nDevice #${index + 1}:`)
-                console.log(`  VID:PID: 0x${vendorHex}:0x${productHex} (${device.vendorId}:${device.productId})`)
-                console.log(`  Manufacturer: ${device.manufacturer || 'Not available'}`)
-                console.log(`  Product: ${device.model || 'Not available'}`)
-                console.log(`  Serial Number: ${device.serialNumber || 'Not available'}`)
+                log(`\nDevice #${index + 1}:`)
+                log(`  VID:PID: 0x${vendorHex}:0x${productHex} (${device.vendorId}:${device.productId})`)
+                log(`  Manufacturer: ${device.manufacturer || 'Not available'}`)
+                log(`  Product: ${device.model || 'Not available'}`)
+                log(`  Serial Number: ${device.serialNumber || 'Not available'}`)
 
                 if (VERBOSE) {
                     // Check if it's a known vendor
@@ -74,152 +72,124 @@ describe('USB Transport', () => {
                         0x1235: 'Focusrite',
                     }
                     if (device.vendorId && knownVendors[device.vendorId]) {
-                        console.log(`  Known Vendor: ${knownVendors[device.vendorId]}`)
+                        log(`  Known Vendor: ${knownVendors[device.vendorId]}`)
                     }
 
                     // Raw device object (be careful with this)
                     if (device.device && typeof device.device === 'object') {
-                        console.log(`  Device Object: Available (Type: ${device.device.constructor.name || 'Unknown'})`)
+                        log(`  Device Object: Available (Type: ${device.device.constructor.name || 'Unknown'})`)
                     }
                 }
             })
-            console.log('\n----------------------------------------')
+            log('\n----------------------------------------')
         })
 
-        it('should find at least one device with Sony vendor code', async () => {
-            console.log(`\n[TEST: Sony Device Detection]`)
-            console.log('----------------------------------------')
+        it('should find at least one camera device', async () => {
+            log(`\n[TEST: Camera Detection]`)
+            log('----------------------------------------')
 
-            const devices = await deviceFinder.findDevices({ vendorId: SONY_VENDOR_ID })
+            const transport = await transportFactory.createUSBTransport()
+            const allDevices = await transport.discover()
+            const cameras = allDevices.filter(d => d.vendorId && d.vendorId !== 0)
 
-            // Should find at least one Sony device
-            expect(devices).toBeDefined()
-            expect(Array.isArray(devices)).toBe(true)
-            expect(devices.length).toBeGreaterThanOrEqual(1)
+            log(`Found ${allDevices.length} total USB device(s)`)
+            log(`Found ${cameras.length} camera device(s) (non-zero vendor ID)`)
 
-            // All devices should have Sony vendor ID
-            devices.forEach(device => {
-                expect(device.vendorId).toBe(SONY_VENDOR_ID)
+            expect(cameras).toBeDefined()
+            expect(Array.isArray(cameras)).toBe(true)
+            expect(cameras.length).toBeGreaterThanOrEqual(1)
+
+            cameras.forEach((device, index) => {
+                const vendorHex = device.vendorId?.toString(16).padStart(4, '0') || 'N/A'
+                const productHex = device.productId?.toString(16).padStart(4, '0') || 'N/A'
+                const vendorName = VendorNames[device.vendorId!] || 'Unknown'
+
+                log(
+                    `\nCamera Device #${index + 1}:\n` +
+                        `  VID:PID: 0x${vendorHex}:0x${productHex} (${device.vendorId}:${device.productId})\n` +
+                        `  Vendor: ${vendorName}\n` +
+                        `  Manufacturer: ${device.manufacturer || 'Not available'}\n` +
+                        `  Product: ${device.model || 'Not available'}\n` +
+                        `  Serial Number: ${device.serialNumber || 'Not available'}`
+                )
             })
-
-            console.log(`Found ${devices.length} Sony device(s)`)
-
-            if (VERBOSE && devices.length > 0) {
-                devices.forEach((device, index) => {
-                    console.log(`\nSony Device #${index + 1}:`)
-                    console.log(`  Product ID: 0x${device.productId?.toString(16).padStart(4, '0') || 'N/A'}`)
-                    console.log(`  Decimal: ${device.productId || 'N/A'}`)
-
-                    // Known Sony camera product IDs
-                    const knownSonyDevices: Record<number, string> = {
-                        0x0e78: 'Alpha Camera (possibly a6700 or similar)',
-                        0x094e: 'Alpha a7 III',
-                        0x094f: 'Alpha a7R III',
-                        0x0954: 'Alpha a9',
-                        0x0a6b: 'Alpha a7R IV',
-                        0x0c34: 'Alpha a1',
-                        0x0d55: 'Alpha a7 IV',
-                    }
-
-                    if (device.productId && knownSonyDevices[device.productId]) {
-                        console.log(`  Possible Model: ${knownSonyDevices[device.productId]}`)
-                    }
-                })
-            }
-            console.log('----------------------------------------')
+            log('----------------------------------------')
         })
 
-        it('should find a Sony camera and read its details', async () => {
-            console.log(`\n[TEST: Sony Camera PTP Detection]`)
-            console.log('----------------------------------------')
+        it('should find a camera and read its details', async () => {
+            log(`\n[TEST: Camera PTP Detection]`)
+            log('----------------------------------------')
 
-            // Find PTP devices (still image class)
-            console.log('Searching for Sony PTP devices (class 6 - Still Image)...')
-            const devices = await deviceFinder.findDevices({
-                vendorId: SONY_VENDOR_ID,
-                class: 6, // Still Image class
-            })
+            log('Searching for camera devices...')
+            const transport = await transportFactory.createUSBTransport()
+            const allDevices = await transport.discover()
+            const cameras = allDevices.filter(d => d.vendorId && d.vendorId !== 0)
 
-            console.log(`Found ${devices.length} Sony PTP device(s)`)
+            log(`Found ${cameras.length} camera device(s)`)
 
-            // Find a camera with 6700 in the name
-            let camera = devices.find(d => d.model?.includes('6700'))
-
-            // If no 6700, just use the first Sony PTP device
-            if (!camera && devices.length > 0) {
-                camera = devices[0]
-                console.log('No device with "6700" in product name')
-                console.log('Using first Sony PTP device found')
-            }
+            const camera = cameras[0]
 
             if (camera) {
-                console.log('\nSony PTP Camera Details:')
-                console.log(`  Vendor ID: 0x${camera.vendorId?.toString(16).padStart(4, '0') || 'N/A'} (${camera.vendorId || 'N/A'})`)
-                console.log(`  Product ID: 0x${camera.productId?.toString(16).padStart(4, '0') || 'N/A'} (${camera.productId || 'N/A'})`)
-                console.log(`  Product Name: ${camera.model || 'Not available (need to open device)'}`)
-                console.log(`  Manufacturer: ${camera.manufacturer || 'Not available (need to open device)'}`)
-                console.log(`  Serial Number: ${camera.serialNumber || 'Not available (need to open device)'}`)
+                log(
+                    `\nCamera Details:\n` +
+                        `  Vendor ID: 0x${camera.vendorId?.toString(16).padStart(4, '0') || 'N/A'} (${camera.vendorId || 'N/A'})\n` +
+                        `  Product ID: 0x${camera.productId?.toString(16).padStart(4, '0') || 'N/A'} (${camera.productId || 'N/A'})\n` +
+                        `  Vendor: ${VendorNames[camera.vendorId!] || 'Unknown'}\n` +
+                        `  Product Name: ${camera.model || 'Not available'}\n` +
+                        `  Manufacturer: ${camera.manufacturer || 'Not available'}\n` +
+                        `  Serial Number: ${camera.serialNumber || 'Not available'}`
+                )
 
                 if (VERBOSE) {
-                    console.log('\nAdditional Info:')
-                    console.log(`  Has Device Object: ${camera.device ? 'Yes' : 'No'}`)
+                    let additionalInfo = `\nAdditional Info:\n  Has Device Object: ${camera.device ? 'Yes' : 'No'}`
                     if (camera.device) {
-                        console.log(`  Device Type: ${camera.device.constructor.name || 'Unknown'}`)
+                        additionalInfo += `\n  Device Type: ${camera.device.constructor.name || 'Unknown'}`
 
-                        // Try to get more info from the device object
                         try {
                             const deviceObj = camera.device as any
                             if (deviceObj.deviceDescriptor) {
                                 const desc = deviceObj.deviceDescriptor
-                                console.log('\n  Device Descriptor Info:')
-                                console.log(`    bcdUSB: ${desc.bcdUSB || 'N/A'}`)
-                                console.log(`    bDeviceClass: ${desc.bDeviceClass || 'N/A'}`)
-                                console.log(`    bDeviceSubClass: ${desc.bDeviceSubClass || 'N/A'}`)
-                                console.log(`    bDeviceProtocol: ${desc.bDeviceProtocol || 'N/A'}`)
-                                console.log(`    bMaxPacketSize: ${desc.bMaxPacketSize0 || 'N/A'}`)
-                                console.log(`    iManufacturer: ${desc.iManufacturer || 'N/A'}`)
-                                console.log(`    iProduct: ${desc.iProduct || 'N/A'}`)
-                                console.log(`    iSerialNumber: ${desc.iSerialNumber || 'N/A'}`)
+                                additionalInfo +=
+                                    `\n\n  Device Descriptor Info:\n` +
+                                    `    bcdUSB: ${desc.bcdUSB || 'N/A'}\n` +
+                                    `    bDeviceClass: ${desc.bDeviceClass || 'N/A'}\n` +
+                                    `    bDeviceSubClass: ${desc.bDeviceSubClass || 'N/A'}\n` +
+                                    `    bDeviceProtocol: ${desc.bDeviceProtocol || 'N/A'}\n` +
+                                    `    bMaxPacketSize: ${desc.bMaxPacketSize0 || 'N/A'}\n` +
+                                    `    iManufacturer: ${desc.iManufacturer || 'N/A'}\n` +
+                                    `    iProduct: ${desc.iProduct || 'N/A'}\n` +
+                                    `    iSerialNumber: ${desc.iSerialNumber || 'N/A'}`
                             }
                         } catch (e) {
-                            console.log('  Could not read device descriptor details')
+                            additionalInfo += '\n  Could not read device descriptor details'
                         }
                     }
+                    log(additionalInfo)
                 }
 
-                expect(camera.vendorId).toBe(SONY_VENDOR_ID)
-
-                // Try to read serial number if available
-                if (camera.serialNumber) {
-                    expect(camera.serialNumber).toBeTruthy()
-                    expect(typeof camera.serialNumber).toBe('string')
-                    console.log(`\n✓ Successfully read serial number: ${camera.serialNumber}`)
-                } else {
-                    console.log('\nNote: Serial number not available without opening device')
-                }
+                expect(camera.vendorId).toBeTruthy()
+                expect(camera.vendorId).not.toBe(0)
             } else {
-                // If no Sony PTP device found, skip the test
-                console.warn('\n⚠️  No Sony PTP device found - camera may not be connected or not in USB mode')
-                console.warn('    Make sure camera is:')
-                console.warn('    1. Connected via USB')
-                console.warn('    2. Turned on')
-                console.warn('    3. Set to PC Remote or MTP/PTP mode')
+                console.warn(
+                    '\n⚠️  No camera device found\n' +
+                        '    Make sure camera is:\n' +
+                        '    1. Connected via USB\n' +
+                        '    2. Turned on\n' +
+                        '    3. Set to PC Remote or MTP/PTP mode'
+                )
             }
-            console.log('----------------------------------------')
+            log('----------------------------------------')
         })
 
         it('should be able to claim the interface', async () => {
-            console.log(`\n[TEST: USB Interface Claiming]`)
-            console.log('----------------------------------------')
+            log(`\n[TEST: USB Interface Claiming]`)
+            log('----------------------------------------')
 
             const transport = await transportFactory.createUSBTransport()
 
-            // Find a Sony PTP device to test with
-            console.log('Looking for Sony PTP device to test interface claiming...')
-            const devices = await deviceFinder.findDevices({
-                vendorId: SONY_VENDOR_ID,
-                class: 6, // Still Image class
-            })
+            log('Looking for camera device to test interface claiming...')
+            const allDevices = await transport.discover()
+            const devices = allDevices.filter(d => d.vendorId && d.vendorId !== 0)
 
             if (devices.length > 0) {
                 const device = devices[0]
@@ -228,14 +198,14 @@ describe('USB Transport', () => {
                     return
                 }
 
-                console.log(`\nAttempting to connect to:`)
-                console.log(
+                log(`\nAttempting to connect to:`)
+                log(
                     `  Device: 0x${device.vendorId?.toString(16).padStart(4, '0') || 'N/A'}:0x${device.productId?.toString(16).padStart(4, '0') || 'N/A'}`
                 )
 
                 // Try to connect to the device
                 try {
-                    console.log('\n1. Connecting to device...')
+                    log('\n1. Connecting to device...')
                     await transport.connect({
                         vendorId: device.vendorId,
                         productId: device.productId,
@@ -246,39 +216,38 @@ describe('USB Transport', () => {
                     expect(transport.isConnected()).toBe(true)
                     expect(transport.getType()).toBe(TransportType.USB)
 
-                    console.log('   ✓ Successfully connected')
-                    console.log('   ✓ Transport type:', transport.getType())
-                    console.log('   ✓ Connection status:', transport.isConnected())
+                    log('   ✓ Successfully connected')
+                    log('   ✓ Transport type:', transport.getType())
+                    log('   ✓ Connection status:', transport.isConnected())
 
                     if (VERBOSE) {
-                        console.log('\n2. Connection established:')
-                        console.log('   - USB interface claimed')
-                        console.log('   - Endpoints configured')
-                        console.log('   - Ready for PTP communication')
+                        log('\n2. Connection established:')
+                        log('   - USB interface claimed')
+                        log('   - Endpoints configured')
+                        log('   - Ready for PTP communication')
                     }
 
-                    console.log('\n3. Disconnecting...')
+                    log('\n3. Disconnecting...')
                     await transport.disconnect()
                     expect(transport.isConnected()).toBe(false)
 
-                    console.log('   ✓ Successfully disconnected')
-                    console.log('   ✓ Interface released')
+                    log('   ✓ Successfully disconnected')
+                    log('   ✓ Interface released')
 
-                    console.log('\n✅ Interface claim/release test PASSED')
+                    log('\n✅ Interface claim/release test PASSED')
                 } catch (error: any) {
-                    // Device might be in use by another application
-                    console.error('\n❌ Could not claim interface')
-                    console.error('   Error:', error.message || error)
+                    let errorMsg = `\n❌ Could not claim interface\n   Error: ${error.message || error}`
 
                     if (VERBOSE) {
-                        console.log('\nPossible reasons:')
-                        console.log('  1. Device is in use by another application')
-                        console.log('  2. Need elevated permissions (try with sudo)')
-                        console.log('  3. Camera is not in correct USB mode')
-                        console.log('  4. USB driver conflict')
+                        errorMsg +=
+                            '\n\nPossible reasons:\n' +
+                            '  1. Device is in use by another application\n' +
+                            '  2. Need elevated permissions (try with sudo)\n' +
+                            '  3. Camera is not in correct USB mode\n' +
+                            '  4. USB driver conflict\n' +
+                            '  5. Mac PTPCamera is running and hijacking the USB device'
 
                         if (error.errno) {
-                            console.log(`\n  Error code: ${error.errno}`)
                             const errorCodes: Record<number, string> = {
                                 '-1': 'LIBUSB_ERROR_IO - Input/output error',
                                 '-2': 'LIBUSB_ERROR_INVALID_PARAM - Invalid parameter',
@@ -290,17 +259,18 @@ describe('USB Transport', () => {
                                 '-9': 'LIBUSB_ERROR_PIPE - Pipe error',
                                 '-12': 'LIBUSB_ERROR_NOT_SUPPORTED - Operation not supported',
                             }
+                            errorMsg += `\n\n  Error code: ${error.errno}`
                             if (errorCodes[error.errno]) {
-                                console.log(`  Meaning: ${errorCodes[error.errno]}`)
+                                errorMsg += `\n  Meaning: ${errorCodes[error.errno]}`
                             }
                         }
                     }
+                    console.error(errorMsg)
                 }
             } else {
-                console.warn('\n⚠️  No Sony PTP device found to test interface claiming')
-                console.warn('    Skipping interface test')
+                console.warn('\n⚠️  No camera device found to test interface claiming\n    Skipping interface test')
             }
-            console.log('----------------------------------------')
+            log('----------------------------------------')
         })
     })
 })

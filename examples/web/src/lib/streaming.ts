@@ -1,14 +1,12 @@
-import { Camera } from '@api/camera'
-import { store } from './store.svelte'
-import { wait } from './utils'
+import type { Camera } from '@camera/index'
 import { cameraQueue } from './queue'
+import { store } from './store.svelte'
 
 export const startStreaming = () => {
     store.streaming = true
 }
 
 export const stopStreaming = () => {
-    store.streaming = false
     store.streaming = false
 
     if (store.animationFrame) {
@@ -25,23 +23,25 @@ export const streamFrame = async (camera: Camera, ctx: CanvasRenderingContext2D)
     if (!store.streaming || !camera || !store.connected || !store.canvasRef) return
 
     try {
-        const newSettings = await cameraQueue.push(async () => ({
-            aperture: await camera.getDeviceProperty('APERTURE'),
-            shutterSpeed: await camera.getDeviceProperty('SHUTTER_SPEED'),
-            iso: await camera.getDeviceProperty('ISO'),
-            exposure: await camera.getDeviceProperty('EXPOSURE'),
-            liveViewImageQuality: await camera.getDeviceProperty('LIVE_VIEW_IMAGE_QUALITY'),
-        }))
+        const newSettings = await cameraQueue.push(async () => {
+            try {
+                return {
+                    aperture: await camera.getAperture(),
+                    shutterSpeed: await camera.getShutterSpeed(),
+                    iso: await camera.getIso(),
+                }
+            } catch (error) {
+                // Properties not supported on this camera
+                return {}
+            }
+        })
 
-        // Track which properties changed
-        if (store.previousSettings) {
+        // Track which properties changed (only if we have settings)
+        if (store.previousSettings && Object.keys(newSettings).length > 0) {
             const changed = new Set<string>()
             if (store.previousSettings.aperture !== newSettings.aperture) changed.add('aperture')
             if (store.previousSettings.shutterSpeed !== newSettings.shutterSpeed) changed.add('shutterSpeed')
             if (store.previousSettings.iso !== newSettings.iso) changed.add('iso')
-            if (store.previousSettings.liveViewImageQuality !== newSettings.liveViewImageQuality)
-                changed.add('liveViewImageQuality')
-            if (store.previousSettings.exposure !== newSettings.exposure) changed.add('exposure')
 
             if (changed.size > 0) {
                 store.changedProps = changed
@@ -55,7 +55,7 @@ export const streamFrame = async (camera: Camera, ctx: CanvasRenderingContext2D)
         store.previousSettings = newSettings
         store.settings = newSettings
 
-        const result = await cameraQueue.push(async () => await camera.streamLiveView())
+        const result = await cameraQueue.push(async () => await camera.captureLiveView())
         if (result && store.streaming) {
             // Decode JPEG binary data directly to ImageBitmap (no URLs!)
             const blob = new Blob([new Uint8Array(result)], { type: 'image/jpeg' })
@@ -98,8 +98,11 @@ export const streamFrame = async (camera: Camera, ctx: CanvasRenderingContext2D)
             }
         }
     } catch (error) {
-        console.error('Error capturing live view:', error)
-        // Continue streaming even if one frame fails
+        if (error instanceof DOMException && error.name === 'InvalidStateError') {
+            // live view frame is invalid, camera was not ready (>30fps) so ignore
+        } else {
+            console.error('Error capturing live view:', error)
+        }
         if (store.streaming) {
             store.animationFrame = requestAnimationFrame(() => streamFrame(camera, ctx))
         }

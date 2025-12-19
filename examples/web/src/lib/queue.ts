@@ -30,7 +30,7 @@ class CameraQueue {
 
         while (this.queue.length > 0) {
             const operation = this.queue.shift()!
-            
+
             try {
                 await operation()
             } catch (error) {

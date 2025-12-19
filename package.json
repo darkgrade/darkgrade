@@ -19,14 +19,14 @@
         "dist"
     ],
     "scripts": {
-        "compile": "tsc --noEmit",
         "build": "vite build && tsc --emitDeclarationOnly",
         "test": "vitest run",
         "lint": "eslint . --ext .ts,.tsx",
         "format": "prettier --write .",
         "clean": "rm -rf dist",
         "all": "npm run compile && npm run lint && npm run format && npm run test && npm run build",
-        "example:web": "cd examples/web && bun i && bun run dev"
+        "example:web": "cd examples/web && bun i && bun run dev",
+        "usb-ids": "bun run src/transport/usb/usb-ids/generate-usb-ids.ts"
     },
     "keywords": [
         "ptp",
@@ -41,6 +41,8 @@
     "author": "JPGLab",
     "license": "MIT",
     "dependencies": {
+        "ink": "^6.3.1",
+        "ink-spinner": "^5.0.0",
         "usb": "^2.11.0"
     },
     "devDependencies": {
@@ -51,6 +53,7 @@
         "@types/react": "^19",
         "@types/react-dom": "^19",
         "@types/usb": "^2.0.0",
+        "@types/w3c-web-usb": "^1.0.13",
         "@typescript-eslint/eslint-plugin": "^6.21.0",
         "@typescript-eslint/parser": "^6.21.0",
         "@vitejs/plugin-react": "^4.2.1",
@@ -62,6 +65,7 @@
         "glob": "^11.0.3",
         "postcss": "^8.5.6",
         "prettier": "^3.6.2",
+        "prettier-plugin-organize-imports": "^4.3.0",
         "process": "^0.11.10",
         "react": "^19",
         "react-dom": "^19",
