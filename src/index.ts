@@ -1,5 +1,9 @@
 // Main protocol implementation
+export { Camera } from '@camera/index'
 export { GenericCamera } from '@camera/generic-camera'
+export { SonyCamera } from '@camera/sony-camera'
+export { NikonCamera } from '@camera/nikon-camera'
+export { CanonCamera } from '@camera/canon-camera'
 
 // Core type definitions
 export * from '@ptp/types/codec'
@@ -17,6 +21,7 @@ export { formatRegistry } from '@ptp/definitions/format-definitions'
 export { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
 export { genericPropertyRegistry } from '@ptp/definitions/property-definitions'
 export { responseRegistry } from '@ptp/definitions/response-definitions'
+export { VendorIDs } from '@ptp/definitions/vendor-ids'
 
 // Data sets (PTP datasets with codecs)
 export * from '@ptp/datasets/device-info-dataset'

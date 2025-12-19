@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { LoggerConfig } from '@core/logger-config'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
@@ -9,25 +10,40 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
+import { USBTransport } from '@transport/usb/usb-transport'
+import { CanonCamera } from './canon-camera'
 import { GenericCamera } from './generic-camera'
 import { NikonCamera } from './nikon-camera'
 import { SonyCamera } from './sony-camera'
 
-export class Camera {
-    private instance: GenericCamera | SonyCamera | NikonCamera
-    private deviceDescriptor?: DeviceDescriptor
+export interface CameraOptions {
+    logger?: Partial<LoggerConfig>
+    device?: DeviceDescriptor
+}
 
-    constructor(transport: TransportInterface, logger: Logger, device?: DeviceDescriptor) {
-        this.deviceDescriptor = device
-        switch (device?.usb?.filters?.[0]?.vendorId) {
+export class Camera {
+    private instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera
+    private deviceDescriptor?: DeviceDescriptor
+    private logger: Logger
+    private transport: TransportInterface
+
+    constructor(options?: CameraOptions) {
+        this.logger = new Logger(options?.logger)
+        this.transport = new USBTransport(this.logger)
+        this.deviceDescriptor = options?.device
+
+        switch (options?.device?.usb?.filters?.[0]?.vendorId) {
             case VendorIDs.SONY:
-                this.instance = new SonyCamera(transport, logger)
+                this.instance = new SonyCamera(this.transport, this.logger)
                 break
             case VendorIDs.NIKON:
-                this.instance = new NikonCamera(transport, logger)
+                this.instance = new NikonCamera(this.transport, this.logger)
+                break
+            case VendorIDs.CANON:
+                this.instance = new CanonCamera(this.transport, this.logger)
                 break
             default:
-                this.instance = new GenericCamera(transport, logger)
+                this.instance = new GenericCamera(this.transport, this.logger)
                 break
         }
     }
@@ -123,6 +139,7 @@ export class Camera {
     }
 }
 
+export { CanonCamera } from './canon-camera'
 export { GenericCamera } from './generic-camera'
 export { NikonCamera } from './nikon-camera'
 export { SonyCamera } from './sony-camera'
