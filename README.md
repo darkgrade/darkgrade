@@ -76,11 +76,11 @@ const camera = new Camera()
 await camera.connect()
 
 // Listen for camera events
-camera.on(camera.getInstance().registry.events.ObjectAdded, (event) => {
+camera.on(camera.getInstance().registry.events.ObjectAdded, event => {
     console.log('New object added:', event.ObjectHandle)
 })
 
-camera.on(camera.getInstance().registry.events.PropertyChanged, (event) => {
+camera.on(camera.getInstance().registry.events.PropertyChanged, event => {
     console.log('Property changed:', event.PropertyName)
 })
 
@@ -118,15 +118,12 @@ const objects = await camera.listObjects()
 
 for (const [storageId, storage] of Object.entries(objects)) {
     console.log(`Storage ${storageId}: ${storage.info.storageDescription}`)
-    
+
     for (const [handle, info] of Object.entries(storage.objects)) {
         console.log(`  - ${info.filename} (${info.objectCompressedSize} bytes)`)
-        
+
         // Download a specific object
-        const fileData = await camera.getObject(
-            Number(handle), 
-            info.objectCompressedSize
-        )
+        const fileData = await camera.getObject(Number(handle), info.objectCompressedSize)
         fs.writeFileSync(info.filename, fileData)
     }
 }
@@ -183,20 +180,28 @@ await camera.connect()
 
 ## 📊 Feature Compatibility
 
-| Feature                   | Generic PTP | Sony  | Nikon  | Canon         |
-| ------------------------- | ----------- | ----- | ------ | ------------- |
-| **Connection**            | ✅          | ✅    | ✅     | ✅            |
-| **Get/Set Properties**    | ✅          | ✅    | ✅     | ✅            |
-| **Event Handling**        | ✅          | ✅    | ✅     | ✅            |
-| **Aperture Control**      | ✅          | ✅    | ✅     | ✅            |
-| **Shutter Speed Control** | ✅          | ✅    | ✅     | ✅            |
-| **ISO Control**           | ✅          | ✅    | ✅     | ✅            |
-| **Capture Image**         | ✅          | ✅    | ✅     | ✅            |
-| **List Objects**          | ✅          | ✅    | ✅     | 🟡            |
-| **Download Objects**      | ✅          | ✅    | ✅     | 🟡            |
-| **Live View**             | ❌          | ✅    | ✅     | 🟡            |
-| **Video Recording**       | ❌          | ✅    | 🟡     | 🟡            |
-| Tested with:              |             | α6700 | Z6 III | EOS R6 Mk.III |
+| Feature                   | Generic PTP | Sony  | Nikon           | Canon         |
+| ------------------------- | ----------- | ----- | --------------- | ------------- |
+| **Connection**            | ✅          | ✅    | ✅              | ✅            |
+| **Get/Set Properties**    | ✅          | ✅    | ✅              | ✅            |
+| **Event Handling**        | ✅          | ✅    | ✅              | ✅            |
+| **Aperture Control**      | ✅          | ✅    | ✅              | ✅            |
+| **Shutter Speed Control** | ✅          | ✅    | ✅              | ✅            |
+| **ISO Control**           | ✅          | ✅    | ✅              | ✅            |
+| **Capture Image**         | ✅          | ✅    | ✅              | ✅            |
+| **List Objects**          | ✅          | ✅    | ✅              | 🟡            |
+| **Download Objects**      | ✅          | ✅    | ✅              | 🟡            |
+| **Live View**             | ❌ <sup>1</sup>           | ✅    | ✅              | 🟡            |
+| **Video Recording**       | ❌ <sup>2</sup>          | ✅    | ✅ <sup>3</sup> | 🟡            |
+| Tested with:              |             | α6700 | Z6 III          | EOS R6 Mk.III |
+
+**Notes**
+
+1. The earliest versions of PTP date back to 2002 and this was not included in the specification (perhaps not thought of as necessary/useful/possible on the first wave of digital still cameras).
+2. Same as (1) above
+3. Nikon cameras differentiate between "photo mode" and "video mode" with an on-camera hardware switch and do not allow capture of (a) videos while in photo mode or (b) photos while in video mode. There are two workarounds we support:
+    - You accept this limitation and get full feature support for photo OR video, but not both at the same time, via the hardware switch. This is optimal if you don't plan to do hybrid shooting within the same session.
+    - We allow you to do both at the same time in either switch mode, however when you are capturing in the "wrong" mode" (e.g. you start recording a video while in photo mode), the on-screen display on your camera will be blank and say "Connected to Computer."
 
 ## 📚 Reference
 
