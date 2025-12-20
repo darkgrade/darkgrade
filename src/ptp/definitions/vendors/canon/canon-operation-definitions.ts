@@ -84,7 +84,7 @@ export const CanonRemoteReleaseOn = {
                 ),
             required: true,
         },
-    ],
+    ] as const,
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
@@ -108,7 +108,7 @@ export const CanonRemoteReleaseOff = {
                 ),
             required: true,
         },
-    ],
+    ] as const,
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 

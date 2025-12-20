@@ -897,7 +897,7 @@ export const StillCaptureMode = {
                 { value: 0x00098031, name: 'Spot Burst Shooting Mid', description: 'Spot Burst Shooting Mid' },
                 { value: 0x00098032, name: 'Spot Burst Shooting Hi', description: 'Spot Burst Shooting Hi' },
                 { value: 0x000a8040, name: 'Focus Bracket', description: 'Focus Bracket' },
-            ],
+            ] as const,
             registry.codecs.uint32
         ),
 } as const satisfies PropertyDefinition
@@ -914,7 +914,7 @@ export const OsdImageMode = {
             [
                 { value: 0x00, name: 'OFF', description: 'OFF' },
                 { value: 0x01, name: 'ON', description: 'ON' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition
@@ -932,7 +932,7 @@ export const LiveViewStatus = {
                 { value: 0x00, name: 'SUPPORTED_DISABLED', description: 'SUPPORTED_DISABLED' },
                 { value: 0x01, name: 'SUPPORTED_ENABLED', description: 'SUPPORTED_ENABLED' },
                 { value: 0x02, name: 'NOT_SUPPORTED', description: 'NOT_SUPPORTED' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition
@@ -950,7 +950,7 @@ export const StillImageSaveDestination = {
                 { value: 0x0001, name: 'CAMERA_DEVICE', description: 'CAMERA_DEVICE' },
                 { value: 0x0010, name: 'HOST_DEVICE', description: 'HOST_DEVICE' },
                 { value: 0x0011, name: 'BOTH_DEVICES', description: 'BOTH_DEVICES' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition
@@ -967,7 +967,7 @@ export const PositionKeySetting = {
             [
                 { value: 0x00, name: 'CAMERA_PRIORITY', description: 'CAMERA_PRIORITY' },
                 { value: 0x01, name: 'HOST_PRIORITY', description: 'HOST_PRIORITY' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition
@@ -985,7 +985,7 @@ export const SetLiveViewEnable = {
             [
                 { value: 0x0001, name: 'DISABLE', description: 'DISABLE' },
                 { value: 0x0002, name: 'ENABLE', description: 'ENABLE' },
-            ],
+            ] as const,
             registry.codecs.uint16
         ),
 } as const satisfies PropertyDefinition
@@ -1003,7 +1003,7 @@ export const SetPostViewEnable = {
             [
                 { value: 0x0001, name: 'DISABLE', description: 'DISABLE' },
                 { value: 0x0002, name: 'ENABLE', description: 'ENABLE' },
-            ],
+            ] as const,
             registry.codecs.uint16
         ),
 } as const satisfies PropertyDefinition
@@ -1029,7 +1029,7 @@ export const ShutterHalfReleaseButton = {
             [
                 { value: 0x0001, name: 'UP', description: 'UP' },
                 { value: 0x0002, name: 'DOWN', description: 'DOWN' },
-            ],
+            ] as const,
             registry.codecs.uint16
         ),
 } as const satisfies PropertyDefinition
@@ -1046,7 +1046,7 @@ export const ShutterReleaseButton = {
             [
                 { value: 0x0001, name: 'UP', description: 'UP' },
                 { value: 0x0002, name: 'DOWN', description: 'DOWN' },
-            ],
+            ] as const,
             registry.codecs.uint16
         ),
 } as const satisfies PropertyDefinition
@@ -1080,7 +1080,7 @@ export const MovieRecButton = {
             [
                 { value: 0x0001, name: 'UP', description: 'UP' },
                 { value: 0x0002, name: 'DOWN', description: 'DOWN' },
-            ],
+            ] as const,
             registry.codecs.uint16
         ),
 } as const satisfies PropertyDefinition
@@ -1097,7 +1097,7 @@ export const LiveViewImageQuality = {
             [
                 { value: 0x01, name: 'LOW', description: 'LOW' },
                 { value: 0x02, name: 'HIGH', description: 'HIGH' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition
@@ -1114,7 +1114,7 @@ export const ContentTransferEnable = {
             [
                 { value: 0x00, name: 'DISABLE', description: 'DISABLE' },
                 { value: 0x01, name: 'ENABLE', description: 'ENABLE' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition

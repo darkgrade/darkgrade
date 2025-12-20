@@ -15,7 +15,7 @@ export const CanonValueChanged = {
             description: 'New property value',
             codec: registry => registry.codecs.uint16,
         },
-    ],
+    ] as const,
 } as const satisfies EventDefinition
 
 export const CanonAllowedValuesChanged = {
@@ -28,7 +28,7 @@ export const CanonAllowedValuesChanged = {
             description: 'Property code whose allowed values changed',
             codec: registry => registry.codecs.uint16,
         },
-    ],
+    ] as const,
 } as const satisfies EventDefinition
 
 export const canonEventRegistry = {

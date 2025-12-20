@@ -17,7 +17,7 @@ export const LiveViewSelector = {
             [
                 { value: 0, name: 'PHOTO', description: 'Photo live view mode' },
                 { value: 1, name: 'VIDEO', description: 'Video live view mode' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition
@@ -45,7 +45,7 @@ export const MovieRecProhibitionCondition = {
                 { bit: 18, name: 'sequenceError', description: 'During sequence error' },
                 { bit: 19, name: 'lensFactorWarning', description: 'During warning/error of lens factor' },
                 { bit: 20, name: 'rawFormatRestriction', description: 'ProRes RAW/N-RAW with SD card or FAT32 format' },
-            ],
+            ] as const,
             registry.codecs.uint32
         ),
 } as const satisfies PropertyDefinition

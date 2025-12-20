@@ -1,7 +1,7 @@
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { NikonLiveViewDatasetCodec } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
-import { baseCodecs, EnumCodec } from '@ptp/types/codec'
+import { baseCodecs, createEnumCodec, EnumCodec } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 import { PropertyDefinition } from '@ptp/types/property'
 
@@ -20,7 +20,7 @@ export const ISOAutoControl = {
             [
                 { value: 0, name: 'OFF', description: 'Auto ISO control disabled' },
                 { value: 1, name: 'ON', description: 'Auto ISO control enabled' },
-            ],
+            ] as const,
             registry.codecs.uint8
         ),
 } as const satisfies PropertyDefinition
@@ -61,7 +61,7 @@ export const GetPartialObjectEx = {
             codec: baseCodecs.uint32,
             required: true,
         },
-    ],
+    ] as const,
     responseParameters: [
         {
             name: 'ActualBytesSentLower',
@@ -75,7 +75,7 @@ export const GetPartialObjectEx = {
             codec: baseCodecs.uint32,
             required: true,
         },
-    ],
+    ] as const,
 } as const satisfies OperationDefinition
 
 export const GetDevicePropDescEx = {
@@ -91,8 +91,8 @@ export const GetDevicePropDescEx = {
             codec: baseCodecs.uint32,
             required: true,
         },
-    ],
-    responseParameters: [],
+    ] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const GetDevicePropValueEx = {
@@ -107,8 +107,8 @@ export const GetDevicePropValueEx = {
             codec: baseCodecs.uint32,
             required: true,
         },
-    ],
-    responseParameters: [],
+    ] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const SetDevicePropValueEx = {
@@ -123,8 +123,8 @@ export const SetDevicePropValueEx = {
             codec: baseCodecs.uint32,
             required: true,
         },
-    ],
-    responseParameters: [],
+    ] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const DeviceReady = {
@@ -132,8 +132,8 @@ export const DeviceReady = {
     name: 'DeviceReady',
     description: 'Check status of activation-type command (e.g. StartLiveView, AfDrive)',
     dataDirection: 'none',
-    operationParameters: [],
-    responseParameters: [],
+    operationParameters: [] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const StartLiveView = {
@@ -141,8 +141,8 @@ export const StartLiveView = {
     name: 'StartLiveView',
     description: 'Start remote live view mode (activation-type command)',
     dataDirection: 'none',
-    operationParameters: [],
-    responseParameters: [],
+    operationParameters: [] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const EndLiveView = {
@@ -150,8 +150,8 @@ export const EndLiveView = {
     name: 'EndLiveView',
     description: 'End remote live view mode',
     dataDirection: 'none',
-    operationParameters: [],
-    responseParameters: [],
+    operationParameters: [] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const GetLiveViewImageEx = {
@@ -160,8 +160,8 @@ export const GetLiveViewImageEx = {
     description: 'Get live view image with metadata (LiveViewObject with version)',
     dataDirection: 'out',
     dataCodec: registry => new NikonLiveViewDatasetCodec(registry),
-    operationParameters: [],
-    responseParameters: [],
+    operationParameters: [] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const StartMovieRecord = {
@@ -169,8 +169,8 @@ export const StartMovieRecord = {
     name: 'StartMovieRecord',
     description: 'Start video recording (only accepted during live view)',
     dataDirection: 'none',
-    operationParameters: [],
-    responseParameters: [],
+    operationParameters: [] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const EndMovieRecord = {
@@ -178,8 +178,8 @@ export const EndMovieRecord = {
     name: 'EndMovieRecord',
     description: 'End video recording',
     dataDirection: 'none',
-    operationParameters: [],
-    responseParameters: [],
+    operationParameters: [] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const ChangeCameraMode = {
@@ -192,26 +192,26 @@ export const ChangeCameraMode = {
             name: 'Mode',
             description: 'Camera mode',
             codec: registry =>
-                new EnumCodec(
+                createEnumCodec(
                     registry,
                     [
                         {
                             value: 0x00,
-                            name: 'PC Camera Mode',
-                            description: 'host commands ignored and uses settings from dial/buttons',
+                            name: 'PC_CAMERA',
+                            description: 'PC Camera Mode: host commands ignored and uses settings from dial/buttons',
                         },
                         {
                             value: 0x01,
-                            name: 'Remote Mode',
-                            description: 'all dials/buttons ignored and uses commands from host',
+                            name: 'REMOTE',
+                            description: 'Remote Mode: all dials/buttons ignored and uses commands from host',
                         },
-                    ],
+                    ] as const,
                     registry.codecs.uint32
                 ),
             required: true,
         },
-    ],
-    responseParameters: [],
+    ] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const ChangeApplicationMode = {
@@ -224,7 +224,7 @@ export const ChangeApplicationMode = {
             name: 'Mode',
             description: 'Application Mode',
             codec: registry =>
-                new EnumCodec(
+                createEnumCodec(
                     registry,
                     [
                         {
@@ -237,13 +237,13 @@ export const ChangeApplicationMode = {
                             name: 'ON',
                             description: 'allows image playback, deletion, video recording on the camera',
                         },
-                    ],
+                    ] as const,
                     registry.codecs.uint32
                 ),
             required: true,
         },
-    ],
-    responseParameters: [],
+    ] as const,
+    responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
 export const nikonOperationRegistry = {
