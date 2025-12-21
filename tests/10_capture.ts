@@ -38,7 +38,7 @@ async function downloadAllObjects(camera: Camera, objects: Awaited<ReturnType<Ca
     }
 }
 
-const sonyCamera = new Camera(transport, logger, { usb: { filters: [{ vendorId: VendorIDs.SONY }] } })
+const sonyCamera = new Camera({ device: { usb: { filters: [{ vendorId: VendorIDs.SONY }] } } })
 await sonyCamera.connect()
 const { info: sonyLiveViewInfo, data: sonyLiveViewData } = await sonyCamera.captureLiveView()
 await fs.writeFileSync(path.join(capturedImagesDir, 'sony_liveview.jpg'), sonyLiveViewData!)
@@ -48,7 +48,7 @@ const sonyObjects = await sonyCamera.listObjects()
 await downloadAllObjects(sonyCamera, sonyObjects)
 await sonyCamera.disconnect()
 
-const nikonCamera = new Camera(transport, logger, { usb: { filters: [{ vendorId: VendorIDs.NIKON }] } })
+const nikonCamera = new Camera({ device: { usb: { filters: [{ vendorId: VendorIDs.NIKON }] } } })
 await nikonCamera.connect()
 const { info: nikonLiveViewInfo, data: nikonLiveViewData } = await nikonCamera.captureLiveView()
 await fs.writeFileSync(path.join(capturedImagesDir, 'nikon_liveview.jpg'), nikonLiveViewData!)
