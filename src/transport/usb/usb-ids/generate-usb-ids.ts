@@ -1,3 +1,5 @@
+import { writeFile } from 'fs/promises'
+
 interface Device {
   id: string;
   name: string;
@@ -101,9 +103,10 @@ async function main() {
   console.log(`Version: ${parsedData.version}`);
   console.log(`Date: ${parsedData.date}`);
 
-  await Bun.write(
+  await writeFile(
     "./src/transport/usb/usb-ids/usb-ids.json",
-    JSON.stringify(parsedData, null, 2)
+    JSON.stringify(parsedData, null, 2),
+    'utf-8'
   );
   console.log("\nGenerated src/transport/usb/usb-ids/usb-ids.json");
 

@@ -34,8 +34,8 @@ const eventMode = await canonCamera.send(CanonSetEventMode, { EventMode: 'ENABLE
 
 // https://julianschroden.com/post/2023-06-15-capturing-images-using-ptp-ip-on-canon-eos-cameras/
 // https://github.com/libmtp/libmtp/blob/e85d47e74ad6541a1213f25938a1f00b537b8110/src/ptp.h#L420
-await canonCamera.send(CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS' })
-await canonCamera.send(CanonRemoteReleaseOn, { ReleaseMode: 'SHUTTER' })
+await canonCamera.send(CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS', AFMode: 'AF' })
+await canonCamera.send(CanonRemoteReleaseOn, { ReleaseMode: 'SHUTTER', AFMode: 'AF' })
 await canonCamera.send(CanonRemoteReleaseOff, { ReleaseMode: 'SHUTTER' })
 await canonCamera.send(CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
 

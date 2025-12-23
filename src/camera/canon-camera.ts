@@ -179,13 +179,13 @@ export class CanonCamera extends GenericCamera {
         )
     }
 
-    async captureImage({ includeInfo = true, includeData = true }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
         return this.withoutPolling(async () => {
-            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'HALF', AFMode: 'AF' })
+            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS', AFMode: 'AF' })
             await new Promise(resolve => setTimeout(resolve, 1000))
-            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'FULL', AFMode: 'AF' })
-            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FULL' })
-            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'HALF' })
+            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'SHUTTER', AFMode: 'AF' })
+            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'SHUTTER' })
+            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
 
             return {}
         })

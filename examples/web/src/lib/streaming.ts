@@ -56,9 +56,9 @@ export const streamFrame = async (camera: Camera, ctx: CanvasRenderingContext2D)
         store.settings = newSettings
 
         const result = await cameraQueue.push(async () => await camera.captureLiveView())
-        if (result && store.streaming) {
+        if (result?.data && store.streaming) {
             // Decode JPEG binary data directly to ImageBitmap (no URLs!)
-            const blob = new Blob([new Uint8Array(result)], { type: 'image/jpeg' })
+            const blob = new Blob([new Uint8Array(result.data)], { type: 'image/jpeg' })
             const imageBitmap = await createImageBitmap(blob)
 
             // Set canvas dimensions to match image

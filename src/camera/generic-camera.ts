@@ -383,7 +383,7 @@ export class GenericCamera {
         return this.set(this.registry.properties.ExposureIndex, value)
     }
 
-    async captureImage({ includeInfo = true, includeData = true }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
         await this.send(this.registry.operations.InitiateCapture, {})
         const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle()
 
@@ -417,7 +417,7 @@ export class GenericCamera {
     async captureLiveView({
         includeInfo = true,
         includeData = true,
-    }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
         throw new Error('Live view capture not supported on generic PTP cameras')
     }
 

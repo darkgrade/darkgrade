@@ -94,9 +94,9 @@ export class USBTransport implements TransportInterface {
             device,
             vendorId: device.vendorId,
             productId: device.productId,
-            manufacturer: device.manufacturerName,
-            model: device.productName,
-            serialNumber: device.serialNumber,
+            manufacturer: device.manufacturerName ?? undefined,
+            model: device.productName ?? undefined,
+            serialNumber: device.serialNumber ?? undefined,
             classCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceClass,
             subclassCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceSubclass,
         }))

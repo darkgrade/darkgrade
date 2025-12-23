@@ -27,7 +27,7 @@ describe('SonyCamera', () => {
         logger = new Logger()
         camera = new SonyCamera(transport, logger)
 
-        await camera.connect({ vendorId: VendorIDs.SONY })
+        await camera.connect({ usb: { filters: [{ vendorId: VendorIDs.SONY }] } })
         connected = true
         console.log('✅ Camera connected and authenticated')
     }, 2000)
@@ -92,10 +92,10 @@ describe('SonyCamera', () => {
 
         expect(result).toBeDefined()
         expect(result?.data).toBeInstanceOf(Uint8Array)
-        expect(result?.info.filename).toBeDefined()
+        expect(result?.info?.filename).toBeDefined()
 
-        const photoPath = path.join(outputDir, result!.info.filename)
-        fs.writeFileSync(photoPath, result!.data)
+        const photoPath = path.join(outputDir, result!.info!.filename)
+        fs.writeFileSync(photoPath, result!.data!)
         console.log(`💾 PHOTO SAVED TO: ${photoPath}`)
     }, 2000)
 
@@ -103,21 +103,21 @@ describe('SonyCamera', () => {
         const result = await camera.captureLiveView()
 
         expect(result).toBeDefined()
-        expect(result).toBeInstanceOf(Uint8Array)
+        expect(result?.data).toBeInstanceOf(Uint8Array)
 
         const liveViewPath = path.join(outputDir, `liveview_${Date.now()}.jpg`)
-        fs.writeFileSync(liveViewPath, result)
+        fs.writeFileSync(liveViewPath, result!.data!)
         console.log(`💾 LIVE VIEW SAVED TO: ${liveViewPath}`)
     }, 2000)
 
     it('should stream live view', async () => {
-        const data = await camera.captureLiveView()
+        const result = await camera.captureLiveView()
 
-        expect(data).toBeInstanceOf(Uint8Array)
-        expect(data.length).toBeGreaterThan(0)
+        expect(result?.data).toBeInstanceOf(Uint8Array)
+        expect(result?.data?.length).toBeGreaterThan(0)
 
         const streamPath = path.join(outputDir, `stream_${Date.now()}.jpg`)
-        fs.writeFileSync(streamPath, data)
+        fs.writeFileSync(streamPath, result!.data!)
         console.log(`💾 STREAM SAVED TO: ${streamPath}`)
     }, 2000)
 

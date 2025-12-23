@@ -38,7 +38,7 @@ describe('GenericCamera', () => {
         logger = new Logger()
         camera = new GenericCamera(transport, logger)
 
-        await camera.connect({ vendorId: 0, productId: 0 })
+        await camera.connect({ usb: { filters: [{ classCode: 0x06, subclassCode: 0x01 }] } })
         console.log('✅ Camera connected')
 
         expect(transport.isConnected()).toBe(true)
@@ -50,7 +50,7 @@ describe('GenericCamera', () => {
         expect(camera.sessionId).toBeNull()
         console.log('✅ Camera disconnected')
 
-        await camera.connect({ vendorId: 0, productId: 0 })
+        await camera.connect({ usb: { filters: [{ classCode: 0x06, subclassCode: 0x01 }] } })
         expect(camera.sessionId).toBeTruthy()
         console.log('✅ Camera reconnected')
     })

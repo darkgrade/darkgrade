@@ -4,8 +4,9 @@
  */
 
 import { VendorNames } from '@ptp/definitions/vendor-ids'
-import { TransportType } from '@transport/interfaces/transport.interface'
+import { TransportType } from '@transport/interfaces/transport-types'
 import { TransportFactory } from '@transport/transport-factory'
+import { USBTransport } from '@transport/usb/usb-transport'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 // Set to true for verbose output
@@ -35,7 +36,7 @@ describe('USB Transport', () => {
         })
 
         it('should discover devices and interfaces', async () => {
-            const transport = await transportFactory.createUSBTransport()
+            const transport = (await transportFactory.createUSBTransport()) as USBTransport
             
             log('\nNote: In Node.js, discover() will use native USB API if WebUSB hasn\'t granted permissions yet.\n')
             
@@ -50,7 +51,7 @@ describe('USB Transport', () => {
             log(`Found ${devices.length} USB devices:`)
             log('----------------------------------------')
 
-            devices.forEach((device, index) => {
+            devices.forEach((device: any, index: number) => {
                 const vendorHex = device.vendorId?.toString(16).padStart(4, '0') || 'N/A'
                 const productHex = device.productId?.toString(16).padStart(4, '0') || 'N/A'
 
@@ -88,9 +89,9 @@ describe('USB Transport', () => {
             log(`\n[TEST: Camera Detection]`)
             log('----------------------------------------')
 
-            const transport = await transportFactory.createUSBTransport()
+            const transport = (await transportFactory.createUSBTransport()) as USBTransport
             const allDevices = await transport.discover()
-            const cameras = allDevices.filter(d => d.vendorId && d.vendorId !== 0)
+            const cameras = allDevices.filter((d: any) => d.vendorId && d.vendorId !== 0)
 
             log(`Found ${allDevices.length} total USB device(s)`)
             log(`Found ${cameras.length} camera device(s) (non-zero vendor ID)`)
@@ -99,10 +100,10 @@ describe('USB Transport', () => {
             expect(Array.isArray(cameras)).toBe(true)
             expect(cameras.length).toBeGreaterThanOrEqual(1)
 
-            cameras.forEach((device, index) => {
+            cameras.forEach((device: any, index: number) => {
                 const vendorHex = device.vendorId?.toString(16).padStart(4, '0') || 'N/A'
                 const productHex = device.productId?.toString(16).padStart(4, '0') || 'N/A'
-                const vendorName = VendorNames[device.vendorId!] || 'Unknown'
+                const vendorName = (device.vendorId && VendorNames[device.vendorId as keyof typeof VendorNames]) || 'Unknown'
 
                 log(
                     `\nCamera Device #${index + 1}:\n` +
@@ -121,9 +122,9 @@ describe('USB Transport', () => {
             log('----------------------------------------')
 
             log('Searching for camera devices...')
-            const transport = await transportFactory.createUSBTransport()
+            const transport = (await transportFactory.createUSBTransport()) as USBTransport
             const allDevices = await transport.discover()
-            const cameras = allDevices.filter(d => d.vendorId && d.vendorId !== 0)
+            const cameras = allDevices.filter((d: any) => d.vendorId && d.vendorId !== 0)
 
             log(`Found ${cameras.length} camera device(s)`)
 
@@ -134,7 +135,7 @@ describe('USB Transport', () => {
                     `\nCamera Details:\n` +
                         `  Vendor ID: 0x${camera.vendorId?.toString(16).padStart(4, '0') || 'N/A'} (${camera.vendorId || 'N/A'})\n` +
                         `  Product ID: 0x${camera.productId?.toString(16).padStart(4, '0') || 'N/A'} (${camera.productId || 'N/A'})\n` +
-                        `  Vendor: ${VendorNames[camera.vendorId!] || 'Unknown'}\n` +
+                        `  Vendor: ${(camera.vendorId && VendorNames[camera.vendorId as keyof typeof VendorNames]) || 'Unknown'}\n` +
                         `  Product Name: ${camera.model || 'Not available'}\n` +
                         `  Manufacturer: ${camera.manufacturer || 'Not available'}\n` +
                         `  Serial Number: ${camera.serialNumber || 'Not available'}`
@@ -185,11 +186,11 @@ describe('USB Transport', () => {
             log(`\n[TEST: USB Interface Claiming]`)
             log('----------------------------------------')
 
-            const transport = await transportFactory.createUSBTransport()
+            const transport = (await transportFactory.createUSBTransport()) as USBTransport
 
             log('Looking for camera device to test interface claiming...')
             const allDevices = await transport.discover()
-            const devices = allDevices.filter(d => d.vendorId && d.vendorId !== 0)
+            const devices = allDevices.filter((d: any) => d.vendorId && d.vendorId !== 0)
 
             if (devices.length > 0) {
                 const device = devices[0]
@@ -207,9 +208,13 @@ describe('USB Transport', () => {
                 try {
                     log('\n1. Connecting to device...')
                     await transport.connect({
-                        vendorId: device.vendorId,
-                        productId: device.productId,
-                        serialNumber: device.serialNumber,
+                        usb: {
+                            filters: [{
+                                vendorId: device.vendorId,
+                                productId: device.productId,
+                                serialNumber: device.serialNumber || undefined,
+                            }]
+                        }
                     })
 
                     // Check that we're connected

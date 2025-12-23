@@ -63,8 +63,8 @@ export const CanonRemoteReleaseOn = {
                 createEnumCodec(
                     registry,
                     [
-                        { value: 0x00000001, name: 'HALF', description: 'Half Press (Focus)' },
-                        { value: 0x00000002, name: 'FULL', description: 'Full Press (Shutter)' },
+                        { value: 0x00000001, name: 'FOCUS', description: 'Half Press (Focus)' },
+                        { value: 0x00000002, name: 'SHUTTER', description: 'Full Press (Shutter)' },
                     ] as const,
                     registry.codecs.uint32
                 ),
@@ -101,8 +101,8 @@ export const CanonRemoteReleaseOff = {
                 createEnumCodec(
                     registry,
                     [
-                        { value: 0x00000001, name: 'HALF', description: 'Release Half Press' },
-                        { value: 0x00000002, name: 'FULL', description: 'Release Full Press' },
+                        { value: 0x00000001, name: 'FOCUS', description: 'Release Half Press' },
+                        { value: 0x00000002, name: 'SHUTTER', description: 'Release Full Press' },
                     ] as const,
                     registry.codecs.uint32
                 ),

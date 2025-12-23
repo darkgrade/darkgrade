@@ -17,7 +17,7 @@ describe('Sony Property Formats', () => {
         logger = new Logger()
         camera = new SonyCamera(transport, logger)
 
-        await camera.connect({ vendorId: VendorIDs.SONY })
+        await camera.connect({ usb: { filters: [{ vendorId: VendorIDs.SONY }] } })
         console.log('✅ Camera connected and authenticated')
     }, 2000)
 

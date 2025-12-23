@@ -94,7 +94,7 @@ export class NikonCamera extends GenericCamera {
         }
     }
 
-    async captureImage({ includeInfo = true, includeData = true }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
         // TODO: Implement this
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
@@ -136,7 +136,7 @@ export class NikonCamera extends GenericCamera {
     async captureLiveView({
         includeInfo = true,
         includeData = true,
-    }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
         await this.enableLiveView()
 
         let info: ObjectInfo | undefined = undefined

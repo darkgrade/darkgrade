@@ -161,7 +161,7 @@ export class SonyCamera extends GenericCamera {
         return this.set(this.registry.properties.Iso, value)
     }
 
-    async captureImage({ includeInfo = true, includeData = true }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
         await this.disableContentTransferMode()
         await this.startLiveView()
 
@@ -199,7 +199,7 @@ export class SonyCamera extends GenericCamera {
     async captureLiveView({
         includeInfo = true,
         includeData = true,
-    }): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
         await this.disableContentTransferMode()
         await this.startLiveView()
 
