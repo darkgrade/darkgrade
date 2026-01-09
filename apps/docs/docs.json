@@ -1,13 +1,17 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Darkgrade Docs",
+  "name": "Darkgrade",
+  "logo": {
+    "light": "/assets/plus_darkgrade_dark.svg",
+    "dark": "/assets/plus_darkgrade_light.svg"
+  },
   "colors": {
     "primary": "#16A34A",
     "light": "#22C55E",
     "dark": "#15803D"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/assets/icon.jpg",
   "navigation": {
     "groups": [
       {
