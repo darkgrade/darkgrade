@@ -15,12 +15,18 @@ Open Session with Function Mode.
 
 ### Operation Parameters
 
-- **SessionId** (required): Unique session identifier
-- **FunctionMode** (required): Function mode
-  - Possible values:
-    - `0` (**REMOTE**): Remote Control Mode
-    - `1` (**CONTENT_TRANSFER**): Content Transfer Mode
-    - `2` (**REMOTE_AND_CONTENT_TRANSFER**): Remote Control with Transfer Mode
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **SessionId** | ✓ | Unique session identifier |
+| **FunctionMode** | ✓ | Function mode |
+
+**FunctionMode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | REMOTE | Remote Control Mode |
+| `1` | CONTENT_TRANSFER | Content Transfer Mode |
+| `2` | REMOTE_AND_CONTENT_TRANSFER | Remote Control with Transfer Mode |
 
 ### Response Parameters
 
@@ -38,17 +44,31 @@ This is for the Sony SDIO authentication handshake.
 
 ### Operation Parameters
 
-- **phaseType** (required): Connection phase (1, 2, or 3)
-  - Possible values:
-    - `1` (**PHASE_1**): Authentication Phase 1
-    - `2` (**PHASE_2**): Authentication Phase 2
-    - `3` (**PHASE_3**): Authentication Phase 3
-- **keyCode1** (required): KeyCode1 (always 0x00000000)
-  - Possible values:
-    - `0` (**DEFAULT**): Default key code
-- **keyCode2** (required): KeyCode2 (always 0x00000000)
-  - Possible values:
-    - `0` (**DEFAULT**): Default key code
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **phaseType** | ✓ | Connection phase (1, 2, or 3) |
+| **keyCode1** | ✓ | KeyCode1 (always 0x00000000) |
+| **keyCode2** | ✓ | KeyCode2 (always 0x00000000) |
+
+**phaseType values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `1` | PHASE_1 | Authentication Phase 1 |
+| `2` | PHASE_2 | Authentication Phase 2 |
+| `3` | PHASE_3 | Authentication Phase 3 |
+
+**keyCode1 values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | DEFAULT | Default key code |
+
+**keyCode2 values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | DEFAULT | Default key code |
 
 ### Response Parameters
 
@@ -66,13 +86,23 @@ Get the protocol version and the supported properties of the connected device.
 
 ### Operation Parameters
 
-- **initiatorVersion** (required): Initiator Protocol Version
-  - Possible values:
-    - `300` (**3.00**): Protocol Version 3.00
-- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
-  - Possible values:
-    - `0` (**DISABLE**): DISABLE
-    - `1` (**ENABLE**): ENABLE
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **initiatorVersion** | ✓ | Initiator Protocol Version |
+| **flagOfDevicePropertyOption** | ✓ | Enables extended SDIO Device Property / SDIControlCode |
+
+**initiatorVersion values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `300` | 3.00 | Protocol Version 3.00 |
+
+**flagOfDevicePropertyOption values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | DISABLE | DISABLE |
+| `1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -90,7 +120,9 @@ Get the DevicePropInfo.
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code to get
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to get |
 
 ### Response Parameters
 
@@ -108,11 +140,17 @@ Set a DevicePropValue for a device property.
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code to set
-- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
-  - Possible values:
-    - `0` (**DISABLE**): DISABLE
-    - `1` (**ENABLE**): ENABLE
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to set |
+| **flagOfDevicePropertyOption** | ✓ | Enables extended SDIO Device Property / SDIControlCode |
+
+**flagOfDevicePropertyOption values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | DISABLE | DISABLE |
+| `1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -130,11 +168,17 @@ Set the SDIControl value for the SDIControlCode.
 
 ### Operation Parameters
 
-- **sdiControlCode** (required): Control property code
-- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
-  - Possible values:
-    - `0` (**DISABLE**): DISABLE
-    - `1` (**ENABLE**): ENABLE
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **sdiControlCode** | ✓ | Control property code |
+| **flagOfDevicePropertyOption** | ✓ | Enables extended SDIO Device Property / SDIControlCode |
+
+**flagOfDevicePropertyOption values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | DISABLE | DISABLE |
+| `1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -152,11 +196,17 @@ Obtain all support DevicePropDescs at one time. The host will send this operatio
 
 ### Operation Parameters
 
-- **flagOfGetOnlyDifferenceData** (required): Flag of get only difference data
-- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
-  - Possible values:
-    - `0` (**DISABLE**): DISABLE
-    - `1` (**ENABLE**): ENABLE
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **flagOfGetOnlyDifferenceData** | ✓ | Flag of get only difference data |
+| **flagOfDevicePropertyOption** | ✓ | Enables extended SDIO Device Property / SDIControlCode |
+
+**flagOfDevicePropertyOption values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | DISABLE | DISABLE |
+| `1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -192,14 +242,18 @@ Get partial object from the device. Same as GetPartialObject on PIMA 15740 but w
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle
-- **OffsetLower** (required): Offset in bytes (lower 32 bits)
-- **OffsetUpper** (required): Offset in bytes (upper 32 bits)
-- **MaxBytes** (required): Maximum number of bytes to obtain (does not support 0xFFFFFFFF)
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+| **OffsetLower** | ✓ | Offset in bytes (lower 32 bits) |
+| **OffsetUpper** | ✓ | Offset in bytes (upper 32 bits) |
+| **MaxBytes** | ✓ | Maximum number of bytes to obtain (does not support 0xFFFFFFFF) |
 
 ### Response Parameters
 
-- **ActualBytesSent** (required): Actual number of bytes sent
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ActualBytesSent** | ✓ | Actual number of bytes sent |
 
 ---
 
@@ -213,19 +267,33 @@ Enable content transfer mode to access memory card content.
 
 ### Operation Parameters
 
-- **ContentsSelectType** (required): The Initiator should send this command with one of the following values:
-  - Possible values:
-    - `0` (**INVALID**): INVALID
-    - `1` (**CAMERA**): Select on the Camera
-    - `2` (**HOST**): Select on the Remote/Host Device
-- **TransferMode** (required): The Initiator should send this command with one of the following values:
-  - Possible values:
-    - `0` (**DISABLE**): DISABLE
-    - `1` (**ENABLE**): ENABLE
-- **AdditionalInformation** (required): The Initiator should send this command with one of the following values:
-  - Possible values:
-    - `0` (**NONE**): NONE
-    - `1` (**CANCEL**): CANCEL
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ContentsSelectType** | ✓ | The Initiator should send this command with one of the following values: |
+| **TransferMode** | ✓ | The Initiator should send this command with one of the following values: |
+| **AdditionalInformation** | ✓ | The Initiator should send this command with one of the following values: |
+
+**ContentsSelectType values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | INVALID | INVALID |
+| `1` | CAMERA | Select on the Camera |
+| `2` | HOST | Select on the Remote/Host Device |
+
+**TransferMode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | DISABLE | DISABLE |
+| `1` | ENABLE | ENABLE |
+
+**AdditionalInformation values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | NONE | NONE |
+| `1` | CANCEL | CANCEL |
 
 ### Response Parameters
 

@@ -308,42 +308,60 @@ ${def.description}
         if (def.properties.has('dataDirection')) {
             mdx += `### Operation Parameters\n\n`
             if (def.operationParameters && def.operationParameters.length > 0) {
+                mdx += `| Parameter | Required | Description |\n`
+                mdx += `| --------- | -------- | ----------- |\n`
+                
                 for (const param of def.operationParameters) {
-                    mdx += `- **${param.name}**${param.required ? ' (required)' : ' (optional)'}: ${param.description}\n`
-                    
-                    // Add enum values if they exist
+                    const required = param.required ? '✓' : ''
+                    mdx += `| **${param.name}** | ${required} | ${param.description} |\n`
+                }
+                mdx += '\n'
+                
+                // Add enum values table if any parameter has them
+                for (const param of def.operationParameters) {
                     if (param.enumValues && param.enumValues.length > 0) {
-                        mdx += `  - Possible values:\n`
+                        mdx += `**${param.name} values:**\n\n`
+                        mdx += `| Value | Name | Description |\n`
+                        mdx += `| ----- | ---- | ----------- |\n`
                         for (const enumValue of param.enumValues) {
-                            mdx += `    - \`${enumValue.value}\` (**${enumValue.name}**): ${enumValue.description}\n`
+                            mdx += `| \`${enumValue.value}\` | ${enumValue.name} | ${enumValue.description} |\n`
                         }
+                        mdx += '\n'
                     }
                 }
             } else {
-                mdx += `None\n`
+                mdx += `None\n\n`
             }
-            mdx += '\n'
         }
 
         // Add response parameters section (show even if empty for operations)
         if (def.properties.has('dataDirection')) {
             mdx += `### Response Parameters\n\n`
             if (def.responseParameters && def.responseParameters.length > 0) {
+                mdx += `| Parameter | Required | Description |\n`
+                mdx += `| --------- | -------- | ----------- |\n`
+                
                 for (const param of def.responseParameters) {
-                    mdx += `- **${param.name}**${param.required ? ' (required)' : ' (optional)'}: ${param.description}\n`
-                    
-                    // Add enum values if they exist
+                    const required = param.required ? '✓' : ''
+                    mdx += `| **${param.name}** | ${required} | ${param.description} |\n`
+                }
+                mdx += '\n'
+                
+                // Add enum values table if any parameter has them
+                for (const param of def.responseParameters) {
                     if (param.enumValues && param.enumValues.length > 0) {
-                        mdx += `  - Possible values:\n`
+                        mdx += `**${param.name} values:**\n\n`
+                        mdx += `| Value | Name | Description |\n`
+                        mdx += `| ----- | ---- | ----------- |\n`
                         for (const enumValue of param.enumValues) {
-                            mdx += `    - \`${enumValue.value}\` (**${enumValue.name}**): ${enumValue.description}\n`
+                            mdx += `| \`${enumValue.value}\` | ${enumValue.name} | ${enumValue.description} |\n`
                         }
+                        mdx += '\n'
                     }
                 }
             } else {
-                mdx += `None\n`
+                mdx += `None\n\n`
             }
-            mdx += '\n'
         }
         
         mdx += '---\n\n'

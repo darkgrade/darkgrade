@@ -51,7 +51,9 @@ Opens a session with the device
 
 ### Operation Parameters
 
-- **SessionID** (required): Session identifier
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **SessionID** | ✓ | Session identifier |
 
 ### Response Parameters
 
@@ -105,7 +107,9 @@ Returns StorageInfo data set for a storage area
 
 ### Operation Parameters
 
-- **StorageID** (required): Storage identifier
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage identifier |
 
 ### Response Parameters
 
@@ -123,13 +127,17 @@ Returns number of objects in storage
 
 ### Operation Parameters
 
-- **StorageID** (required): Storage identifier (0xFFFFFFFF for all)
-- **ObjectFormatCode** (optional): Filter by format code
-- **ParentObject** (optional): Parent association handle
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage identifier (0xFFFFFFFF for all) |
+| **ObjectFormatCode** |  | Filter by format code |
+| **ParentObject** |  | Parent association handle |
 
 ### Response Parameters
 
-- **NumObjects** (required): Number of objects
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **NumObjects** | ✓ | Number of objects |
 
 ---
 
@@ -143,9 +151,11 @@ Returns array of ObjectHandles in storage
 
 ### Operation Parameters
 
-- **StorageID** (required): Storage identifier (0xFFFFFFFF for all)
-- **ObjectFormatCode** (optional): Filter by format code
-- **ParentObject** (optional): Parent association handle
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage identifier (0xFFFFFFFF for all) |
+| **ObjectFormatCode** |  | Filter by format code |
+| **ParentObject** |  | Parent association handle |
 
 ### Response Parameters
 
@@ -163,7 +173,9 @@ Returns ObjectInfo data set for an object
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
 
 ### Response Parameters
 
@@ -181,7 +193,9 @@ Retrieves one object from the device
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
 
 ### Response Parameters
 
@@ -199,7 +213,9 @@ Retrieves thumbnail for an object
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
 
 ### Response Parameters
 
@@ -217,8 +233,10 @@ Deletes an object from the device
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle (0xFFFFFFFF for all)
-- **ObjectFormatCode** (optional): Filter by format code
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle (0xFFFFFFFF for all) |
+| **ObjectFormatCode** |  | Filter by format code |
 
 ### Response Parameters
 
@@ -236,14 +254,18 @@ Sends ObjectInfo before sending object
 
 ### Operation Parameters
 
-- **StorageID** (optional): Destination storage
-- **ParentObjectHandle** (optional): Parent object handle
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** |  | Destination storage |
+| **ParentObjectHandle** |  | Parent object handle |
 
 ### Response Parameters
 
-- **StorageID** (required): Actual storage ID
-- **ParentObjectHandle** (required): Actual parent handle
-- **ObjectHandle** (required): Reserved handle for object
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Actual storage ID |
+| **ParentObjectHandle** | ✓ | Actual parent handle |
+| **ObjectHandle** | ✓ | Reserved handle for object |
 
 ---
 
@@ -275,8 +297,10 @@ Initiates capture of new data objects
 
 ### Operation Parameters
 
-- **StorageID** (optional): Storage for capture
-- **ObjectFormatCode** (optional): Format for capture
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** |  | Storage for capture |
+| **ObjectFormatCode** |  | Format for capture |
 
 ### Response Parameters
 
@@ -294,8 +318,10 @@ Formats a storage device
 
 ### Operation Parameters
 
-- **StorageID** (required): Storage to format
-- **FilesystemType** (optional): Filesystem type
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage to format |
+| **FilesystemType** |  | Filesystem type |
 
 ### Response Parameters
 
@@ -331,7 +357,9 @@ Performs device self-test
 
 ### Operation Parameters
 
-- **SelfTestType** (optional): Type of self-test
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **SelfTestType** |  | Type of self-test |
 
 ### Response Parameters
 
@@ -349,8 +377,10 @@ Sets object protection status
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle
-- **ProtectionStatus** (required): Protection status
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+| **ProtectionStatus** | ✓ | Protection status |
 
 ### Response Parameters
 
@@ -386,7 +416,9 @@ Gets device property descriptor
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
 
 ### Response Parameters
 
@@ -404,7 +436,9 @@ Gets device property value
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
 
 ### Response Parameters
 
@@ -422,7 +456,9 @@ Sets device property value
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
 
 ### Response Parameters
 
@@ -440,7 +476,9 @@ Resets device property to default
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
 
 ### Response Parameters
 
@@ -458,7 +496,9 @@ Terminates an open capture
 
 ### Operation Parameters
 
-- **TransactionID** (required): Transaction ID of capture
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **TransactionID** | ✓ | Transaction ID of capture |
 
 ### Response Parameters
 
@@ -476,9 +516,11 @@ Moves object to new location
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object to move
-- **StorageID** (required): Destination storage
-- **ParentObjectHandle** (required): New parent object
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object to move |
+| **StorageID** | ✓ | Destination storage |
+| **ParentObjectHandle** | ✓ | New parent object |
 
 ### Response Parameters
 
@@ -496,13 +538,17 @@ Copies object to new location
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object to copy
-- **StorageID** (required): Destination storage
-- **ParentObjectHandle** (required): New parent object
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object to copy |
+| **StorageID** | ✓ | Destination storage |
+| **ParentObjectHandle** | ✓ | New parent object |
 
 ### Response Parameters
 
-- **ObjectHandle** (required): Handle of new copy
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Handle of new copy |
 
 ---
 
@@ -516,13 +562,17 @@ Gets partial object data
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle
-- **Offset** (required): Offset in bytes
-- **MaxBytes** (required): Maximum bytes to return
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+| **Offset** | ✓ | Offset in bytes |
+| **MaxBytes** | ✓ | Maximum bytes to return |
 
 ### Response Parameters
 
-- **ActualBytes** (required): Actual bytes returned
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ActualBytes** | ✓ | Actual bytes returned |
 
 ---
 
@@ -536,8 +586,10 @@ Initiates open-ended capture
 
 ### Operation Parameters
 
-- **StorageID** (required): Storage for capture
-- **ObjectFormatCode** (required): Format for capture
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage for capture |
+| **ObjectFormatCode** | ✓ | Format for capture |
 
 ### Response Parameters
 
@@ -555,13 +607,17 @@ Initiates an enumeration process for retrieving object handles in chunks (PTP v1
 
 ### Operation Parameters
 
-- **StorageID** (optional): Storage ID or 0xFFFFFFFF for all stores
-- **ObjectFormatCode** (optional): Filter by format or 0xFFFFFFFF for images only
-- **ParentObjectHandle** (optional): Parent association or 0xFFFFFFFF for root
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** |  | Storage ID or 0xFFFFFFFF for all stores |
+| **ObjectFormatCode** |  | Filter by format or 0xFFFFFFFF for images only |
+| **ParentObjectHandle** |  | Parent association or 0xFFFFFFFF for root |
 
 ### Response Parameters
 
-- **EnumID** (required): Unique enumeration identifier
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **EnumID** | ✓ | Unique enumeration identifier |
 
 ---
 
@@ -575,8 +631,10 @@ Returns a chunk of object handles from an active enumeration (PTP v1.1)
 
 ### Operation Parameters
 
-- **EnumID** (required): Enumeration identifier from StartEnumHandles
-- **MaxNumberHandles** (required): Maximum number of handles to return
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **EnumID** | ✓ | Enumeration identifier from StartEnumHandles |
+| **MaxNumberHandles** | ✓ | Maximum number of handles to return |
 
 ### Response Parameters
 
@@ -594,7 +652,9 @@ Closes an active enumeration process (PTP v1.1)
 
 ### Operation Parameters
 
-- **EnumID** (required): Enumeration identifier to close
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **EnumID** | ✓ | Enumeration identifier to close |
 
 ### Response Parameters
 
@@ -630,7 +690,9 @@ Retrieves DeviceInfo for a specific vendor extension (PTP v1.1)
 
 ### Operation Parameters
 
-- **VendorExtensionID** (required): Vendor extension ID
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **VendorExtensionID** | ✓ | Vendor extension ID |
 
 ### Response Parameters
 
@@ -648,15 +710,19 @@ Retrieves an image object at arbitrary resolution (PTP v1.1)
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Image object handle
-- **ImageWidth** (required): Desired width in pixels
-- **ImageHeight** (optional): Desired height in pixels (0 to maintain aspect ratio)
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Image object handle |
+| **ImageWidth** | ✓ | Desired width in pixels |
+| **ImageHeight** |  | Desired height in pixels (0 to maintain aspect ratio) |
 
 ### Response Parameters
 
-- **ActualBytes** (required): Number of bytes sent
-- **ActualWidth** (required): Actual width in pixels
-- **ActualHeight** (required): Actual height in pixels
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ActualBytes** | ✓ | Number of bytes sent |
+| **ActualWidth** | ✓ | Actual width in pixels |
+| **ActualHeight** | ✓ | Actual height in pixels |
 
 ---
 
@@ -670,9 +736,11 @@ Retrieves filesystem information in a single transaction (PTP v1.1)
 
 ### Operation Parameters
 
-- **StorageID** (required): Storage ID or 0xFFFFFFFF for all stores
-- **ObjectFormatCode** (optional): Filter by format
-- **ParentObjectHandle** (optional): Parent association handle
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage ID or 0xFFFFFFFF for all stores |
+| **ObjectFormatCode** |  | Filter by format |
+| **ParentObjectHandle** |  | Parent association handle |
 
 ### Response Parameters
 
@@ -690,7 +758,9 @@ Retrieves information about a stream (PTP v1.1)
 
 ### Operation Parameters
 
-- **StreamType** (required): Type of stream
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StreamType** | ✓ | Type of stream |
 
 ### Response Parameters
 
@@ -708,7 +778,9 @@ Retrieves streaming content (PTP v1.1)
 
 ### Operation Parameters
 
-- **StreamType** (required): Type of stream
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StreamType** | ✓ | Type of stream |
 
 ### Response Parameters
 

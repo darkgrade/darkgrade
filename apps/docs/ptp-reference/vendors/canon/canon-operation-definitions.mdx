@@ -15,10 +15,16 @@ Set Remote Mode.
 
 ### Operation Parameters
 
-- **RemoteMode** (required): Remote mode
-  - Possible values:
-    - `1` (**ENABLE**): Enable Remote Mode
-    - `0` (**DISABLE**): Disable Remote Mode
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **RemoteMode** | ✓ | Remote mode |
+
+**RemoteMode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `1` | ENABLE | Enable Remote Mode |
+| `0` | DISABLE | Disable Remote Mode |
 
 ### Response Parameters
 
@@ -36,10 +42,16 @@ Set Event Mode.
 
 ### Operation Parameters
 
-- **EventMode** (required): Event mode
-  - Possible values:
-    - `1` (**ENABLE**): Enable Event Mode
-    - `0` (**DISABLE**): Disable Event Mode
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **EventMode** | ✓ | Event mode |
+
+**EventMode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `1` | ENABLE | Enable Event Mode |
+| `0` | DISABLE | Disable Event Mode |
 
 ### Response Parameters
 
@@ -57,14 +69,24 @@ Remote Release On. First parameter: 1=half press, 2=full press, 3=half+full pres
 
 ### Operation Parameters
 
-- **ReleaseMode** (required): Release mode
-  - Possible values:
-    - `1` (**FOCUS**): Half Press (Focus)
-    - `2` (**SHUTTER**): Full Press (Shutter)
-- **AFMode** (required): Autofocus mode: 0=AF enabled, 1=AF disabled (Manual Focus)
-  - Possible values:
-    - `0` (**AF**): Autofocus Enabled
-    - `1` (**MF**): Manual Focus
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ReleaseMode** | ✓ | Release mode |
+| **AFMode** | ✓ | Autofocus mode: 0=AF enabled, 1=AF disabled (Manual Focus) |
+
+**ReleaseMode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `1` | FOCUS | Half Press (Focus) |
+| `2` | SHUTTER | Full Press (Shutter) |
+
+**AFMode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | AF | Autofocus Enabled |
+| `1` | MF | Manual Focus |
 
 ### Response Parameters
 
@@ -82,10 +104,16 @@ Remote Release Off. Parameter: 1=release half, 2=release full, 3=release all.
 
 ### Operation Parameters
 
-- **ReleaseMode** (required): Release mode
-  - Possible values:
-    - `1` (**FOCUS**): Release Half Press
-    - `2` (**SHUTTER**): Release Full Press
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ReleaseMode** | ✓ | Release mode |
+
+**ReleaseMode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `1` | FOCUS | Release Half Press |
+| `2` | SHUTTER | Release Full Press |
 
 ### Response Parameters
 
@@ -121,7 +149,9 @@ Request Property Value (Canon-specific). This operation requests the camera to s
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
 
 ### Response Parameters
 

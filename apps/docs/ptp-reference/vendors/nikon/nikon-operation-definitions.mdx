@@ -27,16 +27,20 @@ Get partial object with 64-bit offset support (extension of GetPartialObject)
 
 ### Operation Parameters
 
-- **ObjectHandle** (required): Object handle
-- **OffsetLower** (required): Offset in bytes (lower 32 bits)
-- **OffsetUpper** (required): Offset in bytes (upper 32 bits)
-- **MaxSizeLower** (required): Maximum bytes to return (lower 32 bits)
-- **MaxSizeUpper** (required): Maximum bytes to return (upper 32 bits)
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+| **OffsetLower** | ✓ | Offset in bytes (lower 32 bits) |
+| **OffsetUpper** | ✓ | Offset in bytes (upper 32 bits) |
+| **MaxSizeLower** | ✓ | Maximum bytes to return (lower 32 bits) |
+| **MaxSizeUpper** | ✓ | Maximum bytes to return (upper 32 bits) |
 
 ### Response Parameters
 
-- **ActualBytesSentLower** (required): Actual bytes sent (lower 32 bits)
-- **ActualBytesSentUpper** (required): Actual bytes sent (upper 32 bits)
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ActualBytesSentLower** | ✓ | Actual bytes sent (lower 32 bits) |
+| **ActualBytesSentUpper** | ✓ | Actual bytes sent (upper 32 bits) |
 
 ---
 
@@ -50,7 +54,9 @@ Get device property descriptor (4-byte extension)
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code to get descriptor for (4-byte extension)
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to get descriptor for (4-byte extension) |
 
 ### Response Parameters
 
@@ -68,7 +74,9 @@ Get device property value (4-byte extension)
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code to get (4-byte extension)
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to get (4-byte extension) |
 
 ### Response Parameters
 
@@ -86,7 +94,9 @@ Set device property value (4-byte extension)
 
 ### Operation Parameters
 
-- **DevicePropCode** (required): Property code to set (4-byte extension)
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to set (4-byte extension) |
 
 ### Response Parameters
 
@@ -212,10 +222,16 @@ Switch between PC camera mode and remote mode
 
 ### Operation Parameters
 
-- **Mode** (required): Camera mode
-  - Possible values:
-    - `0` (**PC_CAMERA**): PC Camera Mode: host commands ignored and uses settings from dial/buttons
-    - `1` (**REMOTE**): Remote Mode: all dials/buttons ignored and uses commands from host
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **Mode** | ✓ | Camera mode |
+
+**Mode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | PC_CAMERA | PC Camera Mode: host commands ignored and uses settings from dial/buttons |
+| `1` | REMOTE | Remote Mode: all dials/buttons ignored and uses commands from host |
 
 ### Response Parameters
 
@@ -233,10 +249,16 @@ Switch application mode on/off
 
 ### Operation Parameters
 
-- **Mode** (required): Application Mode
-  - Possible values:
-    - `0` (**OFF**): disallows image playback, deletion, video recording on the camera
-    - `1` (**ON**): allows image playback, deletion, video recording on the camera
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **Mode** | ✓ | Application Mode |
+
+**Mode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0` | OFF | disallows image playback, deletion, video recording on the camera |
+| `1` | ON | allows image playback, deletion, video recording on the camera |
 
 ### Response Parameters
 
