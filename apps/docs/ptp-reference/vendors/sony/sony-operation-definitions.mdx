@@ -13,11 +13,14 @@ Open Session with Function Mode.
 
 **Data Direction:** none
 
-**Value:** 0x00000000
-
 ### Operation Parameters
 
 - **SessionId** (required): Unique session identifier
+- **FunctionMode** (required): Function mode
+  - Possible values:
+    - `0` (**REMOTE**): Remote Control Mode
+    - `1` (**CONTENT_TRANSFER**): Content Transfer Mode
+    - `2` (**REMOTE_AND_CONTENT_TRANSFER**): Remote Control with Transfer Mode
 
 ### Response Parameters
 
@@ -33,11 +36,19 @@ This is for the Sony SDIO authentication handshake.
 
 **Data Direction:** out
 
-**Value:** 0x01
-
 ### Operation Parameters
 
-None
+- **phaseType** (required): Connection phase (1, 2, or 3)
+  - Possible values:
+    - `1` (**PHASE_1**): Authentication Phase 1
+    - `2` (**PHASE_2**): Authentication Phase 2
+    - `3` (**PHASE_3**): Authentication Phase 3
+- **keyCode1** (required): KeyCode1 (always 0x00000000)
+  - Possible values:
+    - `0` (**DEFAULT**): Default key code
+- **keyCode2** (required): KeyCode2 (always 0x00000000)
+  - Possible values:
+    - `0` (**DEFAULT**): Default key code
 
 ### Response Parameters
 
@@ -53,11 +64,15 @@ Get the protocol version and the supported properties of the connected device.
 
 **Data Direction:** out
 
-**Value:** 0x012c
-
 ### Operation Parameters
 
-None
+- **initiatorVersion** (required): Initiator Protocol Version
+  - Possible values:
+    - `300` (**3.00**): Protocol Version 3.00
+- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
+  - Possible values:
+    - `0` (**DISABLE**): DISABLE
+    - `1` (**ENABLE**): ENABLE
 
 ### Response Parameters
 
@@ -91,11 +106,13 @@ Set a DevicePropValue for a device property.
 
 **Data Direction:** in
 
-**Value:** 0x00000000
-
 ### Operation Parameters
 
 - **DevicePropCode** (required): Property code to set
+- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
+  - Possible values:
+    - `0` (**DISABLE**): DISABLE
+    - `1` (**ENABLE**): ENABLE
 
 ### Response Parameters
 
@@ -111,11 +128,13 @@ Set the SDIControl value for the SDIControlCode.
 
 **Data Direction:** in
 
-**Value:** 0x00000000
-
 ### Operation Parameters
 
 - **sdiControlCode** (required): Control property code
+- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
+  - Possible values:
+    - `0` (**DISABLE**): DISABLE
+    - `1` (**ENABLE**): ENABLE
 
 ### Response Parameters
 
@@ -131,11 +150,13 @@ Obtain all support DevicePropDescs at one time. The host will send this operatio
 
 **Data Direction:** out
 
-**Value:** 0x00000000
-
 ### Operation Parameters
 
 - **flagOfGetOnlyDifferenceData** (required): Flag of get only difference data
+- **flagOfDevicePropertyOption** (required): Enables extended SDIO Device Property / SDIControlCode
+  - Possible values:
+    - `0` (**DISABLE**): DISABLE
+    - `1` (**ENABLE**): ENABLE
 
 ### Response Parameters
 
@@ -190,11 +211,21 @@ Enable content transfer mode to access memory card content.
 
 **Data Direction:** none
 
-**Value:** 0x00000000
-
 ### Operation Parameters
 
-None
+- **ContentsSelectType** (required): The Initiator should send this command with one of the following values:
+  - Possible values:
+    - `0` (**INVALID**): INVALID
+    - `1` (**CAMERA**): Select on the Camera
+    - `2` (**HOST**): Select on the Remote/Host Device
+- **TransferMode** (required): The Initiator should send this command with one of the following values:
+  - Possible values:
+    - `0` (**DISABLE**): DISABLE
+    - `1` (**ENABLE**): ENABLE
+- **AdditionalInformation** (required): The Initiator should send this command with one of the following values:
+  - Possible values:
+    - `0` (**NONE**): NONE
+    - `1` (**CANCEL**): CANCEL
 
 ### Response Parameters
 

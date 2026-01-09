@@ -11,9 +11,9 @@ description: "PTP Sony definitions"
 
 Get/Set the aperture value.
 
-**Access:** GetSet
-
 **Datatype:** UINT16
+
+**Access:** GetSet
 
 ---
 
@@ -23,9 +23,9 @@ Get/Set the aperture value.
 
 Get/Set the shutter speed.
 
-**Access:** GetSet
-
 **Datatype:** UINT32
+
+**Access:** GetSet
 
 ---
 
@@ -35,21 +35,21 @@ Get/Set the shutter speed.
 
 Get/Set the ISO sensitivity.
 
-**Access:** GetSet
-
 **Datatype:** UINT32
+
+**Access:** GetSet
 
 ---
 
 ## Exposure
 
-**Code:** `0x0000`
+**Code:** `0x0`
 
 Exposure (either metered or manually set)
 
-**Access:** Get
-
 **Datatype:** INT16
+
+**Access:** Get
 
 ---
 
@@ -59,9 +59,9 @@ Exposure (either metered or manually set)
 
 AKA Metered Manual Level - Get the metered manual level.
 
-**Access:** GetSet
-
 **Datatype:** INT16
+
+**Access:** GetSet
 
 ---
 
@@ -71,9 +71,9 @@ AKA Metered Manual Level - Get the metered manual level.
 
 AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.
 
-**Access:** GetSet
-
 **Datatype:** INT16
+
+**Access:** GetSet
 
 ---
 
@@ -83,11 +83,9 @@ AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.
 
 Get/Set the drive mode.
 
-**Access:** GetSet
-
 **Datatype:** UINT32
 
-**Value:** 0x00000001
+**Access:** GetSet
 
 ---
 
@@ -97,11 +95,9 @@ Get/Set the drive mode.
 
 Get/Set the OSD image mode
 
-**Access:** GetSet
-
 **Datatype:** UINT8
 
-**Value:** 0x00
+**Access:** GetSet
 
 ---
 
@@ -111,11 +107,9 @@ Get/Set the OSD image mode
 
 Get the live view status.
 
-**Access:** Get
-
 **Datatype:** UINT8
 
-**Value:** 0x00
+**Access:** Get
 
 ---
 
@@ -125,11 +119,9 @@ Get the live view status.
 
 Get the information of still image save destination.
 
-**Access:** GetSet
-
 **Datatype:** UINT8
 
-**Value:** 0x0001
+**Access:** GetSet
 
 ---
 
@@ -139,11 +131,9 @@ Get the information of still image save destination.
 
 Get/Set the position key setting (controls which setting takes priority between host and camera)
 
-**Access:** GetSet
-
 **Datatype:** UINT8
 
-**Value:** 0x00
+**Access:** GetSet
 
 ---
 
@@ -151,13 +141,11 @@ Get/Set the position key setting (controls which setting takes priority between 
 
 **Code:** `0xd313`
 
-Set live view enable. When using Live View while connected in 
-
-**Access:** GetSet
+Set live view enable. When using Live View while connected in "Remote Control with Transfer Mode," it is necessary to enable the feature using this Control Code.
 
 **Datatype:** UINT16
 
-**Value:** 0x0001
+**Access:** GetSet
 
 ---
 
@@ -165,13 +153,11 @@ Set live view enable. When using Live View while connected in
 
 **Code:** `0xd312`
 
-Set post view enable. When using Live View while connected in 
-
-**Access:** GetSet
+Set post view enable. When using Live View while connected in "Remote Control with Transfer Mode," it is necessary to enable the feature using this Control Code.
 
 **Datatype:** UINT16
 
-**Value:** 0x0001
+**Access:** GetSet
 
 ---
 
@@ -181,9 +167,9 @@ Set post view enable. When using Live View while connected in
 
 Get the shooting file info. 0x0000 indicates no files are available, 0x0001 - 0x7FFF indicate files exist. 0x8001 and over indicate the files are ready for transfer.
 
-**Access:** Get
-
 **Datatype:** UINT16
+
+**Access:** Get
 
 ---
 
@@ -193,11 +179,9 @@ Get the shooting file info. 0x0000 indicates no files are available, 0x0001 - 0x
 
 Control shutter half-release (S1) (focus) button.
 
-**Access:** GetSet
-
 **Datatype:** UINT16
 
-**Value:** 0x0001
+**Access:** GetSet
 
 ---
 
@@ -207,11 +191,9 @@ Control shutter half-release (S1) (focus) button.
 
 Control shutter release (S2) button.
 
-**Access:** GetSet
-
 **Datatype:** UINT16
 
-**Value:** 0x0001
+**Access:** GetSet
 
 ---
 
@@ -221,11 +203,9 @@ Control shutter release (S2) button.
 
 Execute shutter half-release (S1) and shutter release (S2) buttons.
 
-**Access:** GetSet
-
 **Datatype:** UINT16
 
-**Value:** 0x0001
+**Access:** GetSet
 
 ---
 
@@ -235,11 +215,9 @@ Execute shutter half-release (S1) and shutter release (S2) buttons.
 
 Control movie record button (hold)
 
-**Access:** GetSet
-
 **Datatype:** UINT16
 
-**Value:** 0x0001
+**Access:** GetSet
 
 ---
 
@@ -249,11 +227,9 @@ Control movie record button (hold)
 
 Get/Set the live view image quality.
 
-**Access:** GetSet
-
 **Datatype:** UINT8
 
-**Value:** 0x01
+**Access:** GetSet
 
 ---
 
@@ -263,11 +239,9 @@ Get/Set the live view image quality.
 
 Get the contents transfer enabled status.
 
-**Access:** Get
-
 **Datatype:** UINT8
 
-**Value:** 0x00
+**Access:** Get
 
 ---
 
@@ -277,9 +251,9 @@ Get the contents transfer enabled status.
 
 Get the focus indication.
 
-**Access:** Get
-
 **Datatype:** UINT8
+
+**Access:** Get
 
 ---
 

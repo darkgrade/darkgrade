@@ -11,11 +11,9 @@ description: "PTP Nikon definitions"
 
 ISO sensitivity settings – Auto ISO sensitivity control
 
-**Access:** GetSet
-
 **Datatype:** UINT8
 
-**Value:** 0
+**Access:** GetSet
 
 ---
 
@@ -212,11 +210,12 @@ Switch between PC camera mode and remote mode
 
 **Data Direction:** none
 
-**Value:** 0x00
-
 ### Operation Parameters
 
-None
+- **Mode** (required): Camera mode
+  - Possible values:
+    - `0` (**PC_CAMERA**): PC Camera Mode: host commands ignored and uses settings from dial/buttons
+    - `1` (**REMOTE**): Remote Mode: all dials/buttons ignored and uses commands from host
 
 ### Response Parameters
 
@@ -232,11 +231,12 @@ Switch application mode on/off
 
 **Data Direction:** none
 
-**Value:** 0
-
 ### Operation Parameters
 
-None
+- **Mode** (required): Application Mode
+  - Possible values:
+    - `0` (**OFF**): disallows image playback, deletion, video recording on the camera
+    - `1` (**ON**): allows image playback, deletion, video recording on the camera
 
 ### Response Parameters
 

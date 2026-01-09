@@ -13,11 +13,12 @@ Set Remote Mode.
 
 **Data Direction:** none
 
-**Value:** 0x00000001
-
 ### Operation Parameters
 
-None
+- **RemoteMode** (required): Remote mode
+  - Possible values:
+    - `1` (**ENABLE**): Enable Remote Mode
+    - `0` (**DISABLE**): Disable Remote Mode
 
 ### Response Parameters
 
@@ -33,11 +34,12 @@ Set Event Mode.
 
 **Data Direction:** none
 
-**Value:** 0x00000001
-
 ### Operation Parameters
 
-None
+- **EventMode** (required): Event mode
+  - Possible values:
+    - `1` (**ENABLE**): Enable Event Mode
+    - `0` (**DISABLE**): Disable Event Mode
 
 ### Response Parameters
 
@@ -53,11 +55,16 @@ Remote Release On. First parameter: 1=half press, 2=full press, 3=half+full pres
 
 **Data Direction:** none
 
-**Value:** 0x00000001
-
 ### Operation Parameters
 
-None
+- **ReleaseMode** (required): Release mode
+  - Possible values:
+    - `1` (**FOCUS**): Half Press (Focus)
+    - `2` (**SHUTTER**): Full Press (Shutter)
+- **AFMode** (required): Autofocus mode: 0=AF enabled, 1=AF disabled (Manual Focus)
+  - Possible values:
+    - `0` (**AF**): Autofocus Enabled
+    - `1` (**MF**): Manual Focus
 
 ### Response Parameters
 
@@ -73,11 +80,12 @@ Remote Release Off. Parameter: 1=release half, 2=release full, 3=release all.
 
 **Data Direction:** none
 
-**Value:** 0x00000001
-
 ### Operation Parameters
 
-None
+- **ReleaseMode** (required): Release mode
+  - Possible values:
+    - `1` (**FOCUS**): Release Half Press
+    - `2` (**SHUTTER**): Release Full Press
 
 ### Response Parameters
 
@@ -128,42 +136,6 @@ None
 Get Event Data (Canon-specific event polling).
 
 **Data Direction:** out
-
-### Operation Parameters
-
-None
-
-### Response Parameters
-
-None
-
----
-
-## CanonMovieSelectSWOn
-
-**Code:** `0x9133`
-
-Start movie recording.
-
-**Data Direction:** none
-
-### Operation Parameters
-
-None
-
-### Response Parameters
-
-None
-
----
-
-## CanonMovieSelectSWOff
-
-**Code:** `0x9134`
-
-Stop movie recording.
-
-**Data Direction:** none
 
 ### Operation Parameters
 
