@@ -1,5 +1,5 @@
 {
-    "name": "@jpglab/fuse",
+    "name": "@darkgrade/fuse",
     "version": "0.0.1",
     "type": "module",
     "description": "Connect to & control your camera via PTP with 2 lines of TypeScript",
@@ -31,7 +31,7 @@
         "nodejs",
         "iso15740"
     ],
-    "author": "JPGLab",
+    "author": "darkgrade",
     "license": "MIT",
     "dependencies": {
         "ink": "^6.3.1",

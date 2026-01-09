@@ -6,6 +6,7 @@ dist/
 build/
 out/
 .turbo/
+.next/
 
 # env and SSL certificates
 *.env

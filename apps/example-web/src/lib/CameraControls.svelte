@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Camera } from '@jpglab/fuse'
+    import type { Camera } from '@darkgrade/fuse'
     import { store } from './store.svelte'
     import { cameraQueue } from './queue'
 

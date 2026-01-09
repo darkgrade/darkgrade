@@ -6,7 +6,7 @@ import { USBTransport } from '@transport/usb/usb-transport'
 
 import { NikonCamera } from '@camera/nikon-camera'
 
-const capturedImagesDir = '/Users/kevinschaich/repositories/jpglab/fuse/captured_images'
+const capturedImagesDir = '/Users/kevinschaich/repositories/darkgrade/fuse/captured_images'
 
 const logger = new Logger({
     expanded: true, // Show all details

@@ -1,5 +1,5 @@
 {
-    "name": "@jpglab/fuse-web-example",
+    "name": "@darkgrade/fuse-web-example",
     "version": "0.0.1",
     "private": true,
     "scripts": {
@@ -11,7 +11,7 @@
         "format": "prettier --write ."
     },
     "dependencies": {
-        "@jpglab/fuse": "workspace:*"
+        "@darkgrade/fuse": "workspace:*"
     },
     "devDependencies": {
         "@repo/typescript-config": "workspace:*",

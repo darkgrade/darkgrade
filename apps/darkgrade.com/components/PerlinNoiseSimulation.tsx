@@ -19,20 +19,20 @@ export default function PerlinNoiseSimulation() {
     const currentThresholdRef = useRef(0)
     const colsRef = useRef(0)
     const rowsRef = useRef(0)
+    const logicalWidthRef = useRef(0)
+    const logicalHeightRef = useRef(0)
 
     // Editable values
-    const thresholdIncrement = 6
+    const thresholdIncrement = 5
     const thickLineThresholdMultiple = 3
-    const res = 4 // Smaller resolution to fit more of the animation in view
-    const baseZOffset = 0.0005
-    const lineColor = '#3f3f46'
-    const thinLineColor = '#52525b'
-    const thickLineWidth = 3 // Thicker lines for pixel art
-    const thinLineWidth = 2
+    const res = 8 // divide canvas width/height by this, lower number means more cells to calculate/draw lines for
+    const baseZOffset = 0.0001 // how quickly the noise should move
+    const lineColor = '#ffffff' // White for thick lines
+    const thinLineColor = '#808080' // 50% gray for thin lines
+    const backgroundColor = '#000000' // Black background
+    const thickLineWidth = 1.5
+    const thinLineWidth = 1
     const mouseDown = true
-    
-    // Pixel art settings
-    const pixelScale = 8 // Slightly smaller pixels while keeping retro look
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -43,17 +43,19 @@ export default function PerlinNoiseSimulation() {
 
         const setupCanvas = () => {
             const rect = canvas.parentElement?.getBoundingClientRect() || canvas.getBoundingClientRect()
-            // Dramatically reduce resolution for obvious pixelation
-            const lowResWidth = Math.floor(rect.width / pixelScale)
-            const lowResHeight = Math.floor(rect.height / pixelScale)
+            const devicePixelRatio = window.devicePixelRatio || 1
             
-            canvas.width = lowResWidth
-            canvas.height = lowResHeight
+            logicalWidthRef.current = rect.width
+            logicalHeightRef.current = rect.height
+            
+            canvas.width = rect.width * devicePixelRatio
+            canvas.height = rect.height * devicePixelRatio
+            ctx.scale(devicePixelRatio, devicePixelRatio)
             canvas.style.width = rect.width + 'px'
             canvas.style.height = rect.height + 'px'
             
-            // Disable anti-aliasing for crisp pixels
-            ctx.imageSmoothingEnabled = false
+            // Enable anti-aliasing for smooth lines
+            ctx.imageSmoothingEnabled = true
             
             colsRef.current = Math.floor(canvas.width / res) + 1
             rowsRef.current = Math.floor(canvas.height / res) + 1
@@ -68,10 +70,9 @@ export default function PerlinNoiseSimulation() {
         }
 
         const handleMouseMove = (e: MouseEvent) => {
-            // Scale mouse position to match the low-res canvas
             mousePosRef.current = {
-                x: e.offsetX / pixelScale, 
-                y: e.offsetY / pixelScale
+                x: e.offsetX, 
+                y: e.offsetY
             }
         }
 
@@ -105,8 +106,8 @@ export default function PerlinNoiseSimulation() {
                 for (let x = 0; x <= colsRef.current; x++) {
                     inputValuesRef.current[y][x] =
                         ChriscoursesPerlinNoise.noise(
-                            x * 0.08, // Increased scale to fit more noise in smaller canvas
-                            y * 0.08, // Increased scale to fit more noise in smaller canvas
+                            x * 0.02,
+                            y * 0.02,
                             zOffsetRef.current + zBoostValuesRef.current[y]?.[x]
                         ) * 100
                     if (inputValuesRef.current[y][x] < noiseMinRef.current)
@@ -208,9 +209,9 @@ export default function PerlinNoiseSimulation() {
             ctx.strokeStyle = isThickLine ? lineColor : thinLineColor
             ctx.lineWidth = isThickLine ? thickLineWidth : thinLineWidth
             
-            // Ensure crisp pixel edges
-            ctx.lineCap = 'square'
-            ctx.lineJoin = 'miter'
+            // Smooth line rendering
+            ctx.lineCap = 'round'
+            ctx.lineJoin = 'round'
 
             for (let y = 0; y < inputValuesRef.current.length - 1; y++) {
                 for (let x = 0; x < inputValuesRef.current[y].length - 1; x++) {
@@ -248,7 +249,9 @@ export default function PerlinNoiseSimulation() {
             if (mouseDown) {
                 mouseOffset()
             }
-            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            // Fill with black background
+            ctx.fillStyle = backgroundColor
+            ctx.fillRect(0, 0, logicalWidthRef.current, logicalHeightRef.current)
 
             zOffsetRef.current += baseZOffset
             generateNoise()
@@ -282,10 +285,7 @@ export default function PerlinNoiseSimulation() {
             ref={canvasRef} 
             className="w-full h-full object-contain"
             style={{
-                imageRendering: 'pixelated',
                 filter: 'contrast(1.2) saturate(1.3)',
-                WebkitImageRendering: 'pixelated',
-                MozImageRendering: 'crisp-edges',
             } as React.CSSProperties} 
         />
     )

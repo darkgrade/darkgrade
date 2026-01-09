@@ -3,8 +3,8 @@
  * Implements the Logger interface without using Ink (which requires Node/terminal)
  */
 
-import type { LoggerConfig } from '@jpglab/fuse'
-import { defaultLoggerConfig } from '@jpglab/fuse'
+import type { LoggerConfig } from '@darkgrade/fuse'
+import { defaultLoggerConfig } from '@darkgrade/fuse'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 type DecodedData = number | bigint | string | Uint8Array | object | number[] | null | undefined

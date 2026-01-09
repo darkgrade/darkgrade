@@ -83,7 +83,7 @@ async function main() {
     const path = await import('path')
 
     // Ensure captured-images directory exists
-    const capturedImagesDir = '/Users/kevinschaich/repositories/jpglab/fuse/captured_images'
+    const capturedImagesDir = '/Users/kevinschaich/repositories/darkgrade/fuse/captured_images'
     if (!fs.existsSync(capturedImagesDir)) {
         fs.mkdirSync(capturedImagesDir, { recursive: true })
     }
