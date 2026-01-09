@@ -1,0 +1,285 @@
+---
+title: "Sony"
+description: "PTP Sony definitions"
+---
+
+# Sony
+
+## Aperture
+
+**Code:** `0x5007`
+
+Get/Set the aperture value.
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## ShutterSpeed
+
+**Code:** `0xd20d`
+
+Get/Set the shutter speed.
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## Iso
+
+**Code:** `0xd21e`
+
+Get/Set the ISO sensitivity.
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## Exposure
+
+**Code:** `0x0000`
+
+Exposure (either metered or manually set)
+
+**Access:** Get
+
+**Datatype:** INT16
+
+---
+
+## MeteredExposure
+
+**Code:** `0xd1b5`
+
+AKA Metered Manual Level - Get the metered manual level.
+
+**Access:** GetSet
+
+**Datatype:** INT16
+
+---
+
+## ExposureCompensation
+
+**Code:** `0x5010`
+
+AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.
+
+**Access:** GetSet
+
+**Datatype:** INT16
+
+---
+
+## StillCaptureMode
+
+**Code:** `0x5013`
+
+Get/Set the drive mode.
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+**Value:** 0x00000001
+
+---
+
+## OsdImageMode
+
+**Code:** `0xd207`
+
+Get/Set the OSD image mode
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+**Value:** 0x00
+
+---
+
+## LiveViewStatus
+
+**Code:** `0xd221`
+
+Get the live view status.
+
+**Access:** Get
+
+**Datatype:** UINT8
+
+**Value:** 0x00
+
+---
+
+## StillImageSaveDestination
+
+**Code:** `0xd222`
+
+Get the information of still image save destination.
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+**Value:** 0x0001
+
+---
+
+## PositionKeySetting
+
+**Code:** `0xd25a`
+
+Get/Set the position key setting (controls which setting takes priority between host and camera)
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+**Value:** 0x00
+
+---
+
+## SetLiveViewEnable
+
+**Code:** `0xd313`
+
+Set live view enable. When using Live View while connected in 
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+**Value:** 0x0001
+
+---
+
+## SetPostViewEnable
+
+**Code:** `0xd312`
+
+Set post view enable. When using Live View while connected in 
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+**Value:** 0x0001
+
+---
+
+## ShootingFileInfo
+
+**Code:** `0xd215`
+
+Get the shooting file info. 0x0000 indicates no files are available, 0x0001 - 0x7FFF indicate files exist. 0x8001 and over indicate the files are ready for transfer.
+
+**Access:** Get
+
+**Datatype:** UINT16
+
+---
+
+## ShutterHalfReleaseButton
+
+**Code:** `0xd2c1`
+
+Control shutter half-release (S1) (focus) button.
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+**Value:** 0x0001
+
+---
+
+## ShutterReleaseButton
+
+**Code:** `0xd2c2`
+
+Control shutter release (S2) button.
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+**Value:** 0x0001
+
+---
+
+## S1S2Button
+
+**Code:** `0xd2e6`
+
+Execute shutter half-release (S1) and shutter release (S2) buttons.
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+**Value:** 0x0001
+
+---
+
+## MovieRecButton
+
+**Code:** `0xd2c8`
+
+Control movie record button (hold)
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+**Value:** 0x0001
+
+---
+
+## LiveViewImageQuality
+
+**Code:** `0xd26a`
+
+Get/Set the live view image quality.
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+**Value:** 0x01
+
+---
+
+## ContentTransferEnable
+
+**Code:** `0xd295`
+
+Get the contents transfer enabled status.
+
+**Access:** Get
+
+**Datatype:** UINT8
+
+**Value:** 0x00
+
+---
+
+## FocusIndication
+
+**Code:** `0xd213`
+
+Get the focus indication.
+
+**Access:** Get
+
+**Datatype:** UINT8
+
+---
+

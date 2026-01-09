@@ -1,0 +1,551 @@
+---
+title: "Generic"
+description: "PTP Generic definitions"
+---
+
+# Generic
+
+## Undefined
+
+**Code:** `0x5000`
+
+Undefined property
+
+**Access:** Get
+
+**Datatype:** UNDEF
+
+---
+
+## BatteryLevel
+
+**Code:** `0x5001`
+
+Battery level percentage
+
+**Access:** Get
+
+**Datatype:** UINT8
+
+---
+
+## FunctionalMode
+
+**Code:** `0x5002`
+
+Functional mode of device
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## ImageSize
+
+**Code:** `0x5003`
+
+Image dimensions
+
+**Access:** GetSet
+
+**Datatype:** STRING
+
+---
+
+## CompressionSetting
+
+**Code:** `0x5004`
+
+Compression level
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+---
+
+## WhiteBalance
+
+**Code:** `0x5005`
+
+White balance setting
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## RGBGain
+
+**Code:** `0x5006`
+
+RGB gain values
+
+**Access:** GetSet
+
+**Datatype:** STRING
+
+---
+
+## FNumber
+
+**Code:** `0x5007`
+
+F-stop number (aperture)
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## FocalLength
+
+**Code:** `0x5008`
+
+Focal length in mm
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## FocusDistance
+
+**Code:** `0x5009`
+
+Focus distance in mm
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## FocusMode
+
+**Code:** `0x500a`
+
+Focus mode
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## ExposureMeteringMode
+
+**Code:** `0x500b`
+
+Exposure metering mode
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## FlashMode
+
+**Code:** `0x500c`
+
+Flash mode
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## ExposureTime
+
+**Code:** `0x500d`
+
+Exposure time (shutter speed)
+
+**Access:** GetSet
+
+**Value:** BULB
+
+**Datatype:** UINT32
+
+---
+
+## ExposureProgramMode
+
+**Code:** `0x500e`
+
+Exposure program mode
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## ExposureIndex
+
+**Code:** `0x500f`
+
+ISO speed
+
+**Access:** GetSet
+
+**Value:** ISO AUTO
+
+**Datatype:** UINT16
+
+---
+
+## ExposureBiasCompensation
+
+**Code:** `0x5010`
+
+Exposure bias compensation
+
+**Access:** GetSet
+
+**Datatype:** INT16
+
+---
+
+## DateTime
+
+**Code:** `0x5011`
+
+Device date and time
+
+**Access:** GetSet
+
+**Datatype:** STRING
+
+---
+
+## CaptureDelay
+
+**Code:** `0x5012`
+
+Capture delay in milliseconds
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## StillCaptureMode
+
+**Code:** `0x5013`
+
+Still capture mode
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## Contrast
+
+**Code:** `0x5014`
+
+Contrast setting
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+---
+
+## Sharpness
+
+**Code:** `0x5015`
+
+Sharpness setting
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+---
+
+## DigitalZoom
+
+**Code:** `0x5016`
+
+Digital zoom factor
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+---
+
+## EffectMode
+
+**Code:** `0x5017`
+
+Effect mode
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## BurstNumber
+
+**Code:** `0x5018`
+
+Number of burst shots
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## BurstInterval
+
+**Code:** `0x5019`
+
+Burst interval in milliseconds
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## TimelapseNumber
+
+**Code:** `0x501a`
+
+Number of timelapse shots
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## TimelapseInterval
+
+**Code:** `0x501b`
+
+Timelapse interval in milliseconds
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## FocusMeteringMode
+
+**Code:** `0x501c`
+
+Focus metering mode
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## UploadURL
+
+**Code:** `0x501d`
+
+Upload URL
+
+**Access:** GetSet
+
+**Datatype:** STRING
+
+---
+
+## Artist
+
+**Code:** `0x501e`
+
+Artist name
+
+**Access:** GetSet
+
+**Datatype:** STRING
+
+---
+
+## CopyrightInfo
+
+**Code:** `0x501f`
+
+Copyright information
+
+**Access:** GetSet
+
+**Datatype:** STRING
+
+---
+
+## SupportedStreams
+
+**Code:** `0x5020`
+
+Supported streams bitmask (PTP v1.1)
+
+**Access:** Get
+
+**Datatype:** UINT32
+
+---
+
+## EnabledStreams
+
+**Code:** `0x5021`
+
+Enabled streams bitmask (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## VideoFormat
+
+**Code:** `0x5022`
+
+Video format (FOURCC code) (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## VideoResolution
+
+**Code:** `0x5023`
+
+Video resolution (e.g., 
+
+**Access:** GetSet
+
+**Datatype:** STRING
+
+---
+
+## VideoQuality
+
+**Code:** `0x5024`
+
+Video quality level (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## VideoFrameRate
+
+**Code:** `0x5025`
+
+Video frame interval in microseconds (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## VideoContrast
+
+**Code:** `0x5026`
+
+Video contrast level (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## VideoBrightness
+
+**Code:** `0x5027`
+
+Video brightness level (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## AudioFormat
+
+**Code:** `0x5028`
+
+Audio format code from RIFF specification (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## AudioBitrate
+
+**Code:** `0x5029`
+
+Audio bitrate in bits per second (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## AudioSamplingRate
+
+**Code:** `0x502a`
+
+Audio sampling rate in hertz (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+
+## AudioBitPerSample
+
+**Code:** `0x502b`
+
+Audio bits per sample (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT16
+
+---
+
+## AudioVolume
+
+**Code:** `0x502c`
+
+Audio volume level (PTP v1.1)
+
+**Access:** GetSet
+
+**Datatype:** UINT32
+
+---
+

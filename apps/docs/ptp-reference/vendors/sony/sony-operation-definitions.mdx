@@ -1,0 +1,204 @@
+---
+title: "Sony"
+description: "PTP Sony definitions"
+---
+
+# Sony
+
+## SDIO_OpenSession
+
+**Code:** `0x9210`
+
+Open Session with Function Mode.
+
+**Data Direction:** none
+
+**Value:** 0x00000000
+
+### Operation Parameters
+
+- **SessionId** (required): Unique session identifier
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_Connect
+
+**Code:** `0x9201`
+
+This is for the Sony SDIO authentication handshake.
+
+**Data Direction:** out
+
+**Value:** 0x01
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_GetExtDeviceInfo
+
+**Code:** `0x9202`
+
+Get the protocol version and the supported properties of the connected device.
+
+**Data Direction:** out
+
+**Value:** 0x012c
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_GetExtDevicePropValue
+
+**Code:** `0x9251`
+
+Get the DevicePropInfo.
+
+**Data Direction:** out
+
+### Operation Parameters
+
+- **DevicePropCode** (required): Property code to get
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_SetExtDevicePropValue
+
+**Code:** `0x9205`
+
+Set a DevicePropValue for a device property.
+
+**Data Direction:** in
+
+**Value:** 0x00000000
+
+### Operation Parameters
+
+- **DevicePropCode** (required): Property code to set
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_ControlDevice
+
+**Code:** `0x9207`
+
+Set the SDIControl value for the SDIControlCode.
+
+**Data Direction:** in
+
+**Value:** 0x00000000
+
+### Operation Parameters
+
+- **sdiControlCode** (required): Control property code
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_GetAllExtDevicePropInfo
+
+**Code:** `0x9209`
+
+Obtain all support DevicePropDescs at one time. The host will send this operation at regular intervals to obtain the latest (current) camera settings.
+
+**Data Direction:** out
+
+**Value:** 0x00000000
+
+### Operation Parameters
+
+- **flagOfGetOnlyDifferenceData** (required): Flag of get only difference data
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_GetOsdImage
+
+**Code:** `0x9238`
+
+Get OSD image
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SDIO_GetPartialLargeObject
+
+**Code:** `0x9211`
+
+Get partial object from the device. Same as GetPartialObject on PIMA 15740 but with 64-bit offset support.
+
+**Data Direction:** out
+
+### Operation Parameters
+
+- **ObjectHandle** (required): Object handle
+- **OffsetLower** (required): Offset in bytes (lower 32 bits)
+- **OffsetUpper** (required): Offset in bytes (upper 32 bits)
+- **MaxBytes** (required): Maximum number of bytes to obtain (does not support 0xFFFFFFFF)
+
+### Response Parameters
+
+- **ActualBytesSent** (required): Actual number of bytes sent
+
+---
+
+## SDIO_SetContentsTransferMode
+
+**Code:** `0x9212`
+
+Enable content transfer mode to access memory card content.
+
+**Data Direction:** none
+
+**Value:** 0x00000000
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+

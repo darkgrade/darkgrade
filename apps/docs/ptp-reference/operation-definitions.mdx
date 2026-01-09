@@ -1,0 +1,705 @@
+---
+title: "Generic"
+description: "PTP Generic definitions"
+---
+
+# Generic
+
+## Undefined
+
+**Code:** `0x1000`
+
+Undefined operation
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetDeviceInfo
+
+**Code:** `0x1001`
+
+Returns information and capabilities about the responder device
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## OpenSession
+
+**Code:** `0x1002`
+
+Opens a session with the device
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## CloseSession
+
+**Code:** `0x1003`
+
+Closes the current session
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetStorageIDs
+
+**Code:** `0x1004`
+
+Returns list of currently valid StorageIDs
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetStorageInfo
+
+**Code:** `0x1005`
+
+Returns StorageInfo data set for a storage area
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetNumObjects
+
+**Code:** `0x1006`
+
+Returns number of objects in storage
+
+**Data Direction:** none
+
+**Default Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetObjectHandles
+
+**Code:** `0x1007`
+
+Returns array of ObjectHandles in storage
+
+**Data Direction:** out
+
+**Default Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetObjectInfo
+
+**Code:** `0x1008`
+
+Returns ObjectInfo data set for an object
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetObject
+
+**Code:** `0x1009`
+
+Retrieves one object from the device
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetThumb
+
+**Code:** `0x100a`
+
+Retrieves thumbnail for an object
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## DeleteObject
+
+**Code:** `0x100b`
+
+Deletes an object from the device
+
+**Data Direction:** none
+
+**Default Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SendObjectInfo
+
+**Code:** `0x100c`
+
+Sends ObjectInfo before sending object
+
+**Data Direction:** in
+
+**Default Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SendObject
+
+**Code:** `0x100d`
+
+Sends object data to the device
+
+**Data Direction:** in
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## InitiateCapture
+
+**Code:** `0x100e`
+
+Initiates capture of new data objects
+
+**Data Direction:** none
+
+**Default Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## FormatStore
+
+**Code:** `0x100f`
+
+Formats a storage device
+
+**Data Direction:** none
+
+**Default Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## ResetDevice
+
+**Code:** `0x1010`
+
+Resets device to default state
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SelfTest
+
+**Code:** `0x1011`
+
+Performs device self-test
+
+**Data Direction:** none
+
+**Default Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SetObjectProtection
+
+**Code:** `0x1012`
+
+Sets object protection status
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## PowerDown
+
+**Code:** `0x1013`
+
+Powers down the device
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetDevicePropDesc
+
+**Code:** `0x1014`
+
+Gets device property descriptor
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetDevicePropValue
+
+**Code:** `0x1015`
+
+Gets device property value
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SetDevicePropValue
+
+**Code:** `0x1016`
+
+Sets device property value
+
+**Data Direction:** in
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## ResetDevicePropValue
+
+**Code:** `0x1017`
+
+Resets device property to default
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## TerminateOpenCapture
+
+**Code:** `0x1018`
+
+Terminates an open capture
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## MoveObject
+
+**Code:** `0x1019`
+
+Moves object to new location
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## CopyObject
+
+**Code:** `0x101a`
+
+Copies object to new location
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetPartialObject
+
+**Code:** `0x101b`
+
+Gets partial object data
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## InitiateOpenCapture
+
+**Code:** `0x101c`
+
+Initiates open-ended capture
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## StartEnumHandles
+
+**Code:** `0x101d`
+
+Initiates an enumeration process for retrieving object handles in chunks (PTP v1.1)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## EnumHandles
+
+**Code:** `0x101e`
+
+Returns a chunk of object handles from an active enumeration (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## StopEnumHandles
+
+**Code:** `0x101f`
+
+Closes an active enumeration process (PTP v1.1)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetVendorExtensionMaps
+
+**Code:** `0x1020`
+
+Retrieves mapping of vendor extensions (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetVendorDeviceInfo
+
+**Code:** `0x1021`
+
+Retrieves DeviceInfo for a specific vendor extension (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetResizedImageObject
+
+**Code:** `0x1022`
+
+Retrieves an image object at arbitrary resolution (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetFilesystemManifest
+
+**Code:** `0x1023`
+
+Retrieves filesystem information in a single transaction (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetStreamInfo
+
+**Code:** `0x1024`
+
+Retrieves information about a stream (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetStream
+
+**Code:** `0x1025`
+
+Retrieves streaming content (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+

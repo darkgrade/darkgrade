@@ -1,0 +1,49 @@
+---
+title: "Nikon"
+description: "PTP Nikon definitions"
+---
+
+# Nikon
+
+## LiveViewStatus
+
+**Code:** `0xd1b8`
+
+Indicates the status of live view (ON or OFF)
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+**Value:** 0
+
+---
+
+## LiveViewSelector
+
+**Code:** `0xd1a6`
+
+Indicates the state of live view mode (Photo Lv or Video Lv)
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+**Value:** 0
+
+---
+
+## MovieRecProhibitionCondition
+
+**Code:** `0xd0a4`
+
+Indicates video recording prohibition conditions (bitfield, 0 = allowed, non-zero = prohibited)
+
+**Access:** Get
+
+**Datatype:** UINT32
+
+**Bit:** 0
+
+---
+

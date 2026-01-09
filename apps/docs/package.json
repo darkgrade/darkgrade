@@ -1,0 +1,17 @@
+{
+  "name": "docs",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "generate": "bun run generate-docs.ts",
+    "dev": "bun run generate && mint dev",
+    "preview": "mint dev"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

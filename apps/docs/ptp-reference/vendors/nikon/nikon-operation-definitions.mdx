@@ -1,0 +1,246 @@
+---
+title: "Nikon"
+description: "PTP Nikon definitions"
+---
+
+# Nikon
+
+## ISOAutoControl
+
+**Code:** `0xd054`
+
+ISO sensitivity settings – Auto ISO sensitivity control
+
+**Access:** GetSet
+
+**Datatype:** UINT8
+
+**Value:** 0
+
+---
+
+## GetPartialObjectEx
+
+**Code:** `0x9431`
+
+Get partial object with 64-bit offset support (extension of GetPartialObject)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+- **ObjectHandle** (required): Object handle
+- **OffsetLower** (required): Offset in bytes (lower 32 bits)
+- **OffsetUpper** (required): Offset in bytes (upper 32 bits)
+- **MaxSizeLower** (required): Maximum bytes to return (lower 32 bits)
+- **MaxSizeUpper** (required): Maximum bytes to return (upper 32 bits)
+
+### Response Parameters
+
+- **ActualBytesSentLower** (required): Actual bytes sent (lower 32 bits)
+- **ActualBytesSentUpper** (required): Actual bytes sent (upper 32 bits)
+
+---
+
+## GetDevicePropDescEx
+
+**Code:** `0x943a`
+
+Get device property descriptor (4-byte extension)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+- **DevicePropCode** (required): Property code to get descriptor for (4-byte extension)
+
+### Response Parameters
+
+None
+
+---
+
+## GetDevicePropValueEx
+
+**Code:** `0x943b`
+
+Get device property value (4-byte extension)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+- **DevicePropCode** (required): Property code to get (4-byte extension)
+
+### Response Parameters
+
+None
+
+---
+
+## SetDevicePropValueEx
+
+**Code:** `0x943c`
+
+Set device property value (4-byte extension)
+
+**Data Direction:** in
+
+### Operation Parameters
+
+- **DevicePropCode** (required): Property code to set (4-byte extension)
+
+### Response Parameters
+
+None
+
+---
+
+## DeviceReady
+
+**Code:** `0x90c8`
+
+Check status of activation-type command (e.g. StartLiveView, AfDrive)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## StartLiveView
+
+**Code:** `0x9201`
+
+Start remote live view mode (activation-type command)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## EndLiveView
+
+**Code:** `0x9202`
+
+End remote live view mode
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetLiveViewImageEx
+
+**Code:** `0x9428`
+
+Get live view image with metadata (LiveViewObject with version)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## StartMovieRecord
+
+**Code:** `0x920a`
+
+Start video recording (only accepted during live view)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## EndMovieRecord
+
+**Code:** `0x920b`
+
+End video recording
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## ChangeCameraMode
+
+**Code:** `0x90c2`
+
+Switch between PC camera mode and remote mode
+
+**Data Direction:** none
+
+**Value:** 0x00
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## ChangeApplicationMode
+
+**Code:** `0x9435`
+
+Switch application mode on/off
+
+**Data Direction:** none
+
+**Value:** 0
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
