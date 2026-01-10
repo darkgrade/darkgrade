@@ -5,7 +5,18 @@ export default function Home() {
         <div className="w-full h-screen relative">
             {/* Logo in upper left */}
             <div className="absolute top-0 left-0 z-[1000] text-white gap-[12px] flex items-center p-[64px]">
-                <img src="/plus_darkgrade_light.svg" alt="darkgrade" className="h-[28px] object-contain" />
+                <img src="/plus_darkgrade_light.svg" alt="darkgrade" className="h-[20px] object-contain" />
+            </div>
+
+            {/* Menu in upper right */}
+            <div className="absolute top-0 right-0 z-[1000] text-white gap-[12px] flex items-center p-[64px]">
+                <a
+                    href="https://coblocks-86fbefb0.mintlify.app/"
+                    target="_blank"
+                    className="text-white text-[14px] font-sans tracking-[6px] uppercase font-medium leading-none"
+                >
+                    Docs
+                </a>
             </div>
 
             {/* GitHub link in center */}
@@ -16,12 +27,7 @@ export default function Home() {
                 <h2 className="text-white text-[22px] leading-[28px] font-normal font-sans tracking-tight text-balance text-left">
                     We're building a protocol for large language models to directly interface with image sensors.
                 </h2>
-                <a
-                    href="https://github.com/darkgrade"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-zinc-900 mt-8 py-3 px-6 rounded-xl border border-zinc-700 flex flex-col items-center gap-4 max-w-[120px]"
-                >
+                <a href="https://github.com/darkgrade" target="_blank" rel="noopener noreferrer" className="mt-4">
                     <svg width="28" height="28" viewBox="0 0 98 96" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <g clipPath="url(#clip0_3_12)">
                             <path
@@ -37,7 +43,6 @@ export default function Home() {
                             </clipPath>
                         </defs>
                     </svg>
-                    <p className="text-white text-[16px] font-sans leading-none">GitHub</p>
                 </a>
             </div>
 
