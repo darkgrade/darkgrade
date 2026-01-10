@@ -15,10 +15,14 @@
   "navigation": {
     "groups": [
       {
-        "group": "Introduction",
+        "group": "Getting Started",
         "pages": [
           "index",
-          "api/camera"
+          "getting_started/installation",
+          "getting_started/quickstart",
+          "getting_started/what-is-ptp",
+          "getting_started/feature-compatibility",
+          "getting_started/camera"
         ]
       },
       {

@@ -1,0 +1,94 @@
+---
+title: "What is PTP?"
+description: "Understanding the Picture Transfer Protocol and how it enables camera control"
+---
+
+**PTP (Picture Transfer Protocol)** is a standardized protocol for transferring images and controlling digital cameras. Originally developed by the International Imaging Industry Association (I3A) and later standardized as **ISO 15740:2013**, PTP has become the foundation for camera communication across most major camera manufacturers.
+
+## History and Standardization
+
+PTP was first introduced in the early 2000s as a replacement for the proprietary protocols that camera manufacturers were using. The protocol was designed to:
+
+- Provide a **standardized way** to communicate with digital cameras
+- Enable **remote control** of camera settings and functions
+- Facilitate **image transfer** from camera to computer
+- Support **event-driven** communication for real-time updates
+
+The protocol was standardized as **ISO 15740:2013**, which defines the core operations, properties, events, and data formats that cameras and host devices use to communicate.
+
+## How PTP Works
+
+PTP operates on a **request-response model** where a host device (like your computer) sends operations to the camera, and the camera responds with data or status information. The protocol defines several key components:
+
+### Operations
+
+Operations are commands sent from the host to the camera. Common operations include:
+
+- **GetDeviceInfo** - Retrieve information about the camera
+- **GetObject** - Download an image or file from the camera
+- **GetProperty** - Read a camera setting (ISO, aperture, shutter speed, etc.)
+- **SetProperty** - Change a camera setting
+- **CaptureImage** - Trigger the camera to take a photo
+
+### Properties
+
+Properties represent camera settings and state. Standard PTP properties include:
+
+- **ExposureIndex** (ISO)
+- **FNumber** (Aperture)
+- **ExposureTime** (Shutter Speed)
+- **WhiteBalance**
+- **FocusMode**
+
+### Events
+
+Events allow cameras to notify the host about changes without polling:
+
+- **ObjectAdded** - A new image was captured
+- **PropertyChanged** - A camera setting was modified
+- **DevicePropChanged** - Device property was updated
+
+### Data Formats
+
+PTP defines standard data formats for transferring images and metadata:
+
+- **JPEG** - Standard image format
+- **RAW** - Unprocessed sensor data
+- **ObjectInfo** - Metadata about stored images
+
+## Vendor Extensions
+
+While ISO 15740:2013 provides the foundation, most camera manufacturers extend PTP with **vendor-specific operations and properties** to support advanced features:
+
+- **Sony** - Live view streaming, video recording, SDIO operations
+- **Nikon** - Extended property definitions, advanced live view
+- **Canon** - Remote control operations, event polling enhancements
+
+These extensions allow manufacturers to support features beyond the base PTP specification while maintaining compatibility with the core protocol.
+
+## Why PTP Matters
+
+PTP has become the de facto standard for camera communication because:
+
+1. **Universal Support** - Most digital cameras from the last two decades support PTP
+2. **Standardized Interface** - Provides a consistent way to interact with cameras regardless of manufacturer
+3. **Remote Control** - Enables programmatic control of camera settings and capture
+4. **Event-Driven** - Supports real-time updates without constant polling
+5. **Extensible** - Allows vendors to add proprietary features while maintaining compatibility
+
+## PTP in Darkgrade Fuse
+
+Darkgrade Fuse implements the ISO 15740:2013 specification along with vendor-specific extensions for Sony, Nikon, and Canon cameras. The library provides:
+
+- **Type-safe** PTP operations and properties
+- **Automatic vendor detection** and feature selection
+- **High-level abstractions** for common camera operations
+- **Direct access** to low-level PTP operations when needed
+
+This allows you to work with PTP cameras using modern TypeScript while maintaining full access to the underlying protocol when needed.
+
+## Further Reading
+
+- [ISO 15740:2013](https://www.iso.org/standard/59890.html) - The official PTP specification
+- [PTP Reference Documentation](/ptp-reference/property-definitions) - Complete reference for PTP operations, properties, and events
+- [Camera API Documentation](/getting_started/camera) - Learn how to use PTP with Darkgrade Fuse

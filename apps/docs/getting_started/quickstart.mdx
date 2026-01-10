@@ -1,0 +1,163 @@
+---
+title: "Quickstart"
+description: "Get started with Darkgrade Fuse in minutes"
+---
+
+## Basic Usage
+
+```typescript
+import { Camera } from '@darkgrade/fuse'
+
+const camera = new Camera()
+await camera.connect()
+
+// Control camera settings
+await camera.setIso('800')
+await camera.setShutterSpeed('1/250')
+await camera.setAperture('f/2.8')
+
+// Capture an image
+const { data } = await camera.captureImage()
+
+await camera.disconnect()
+```
+
+That's it! The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. No configuration needed.
+
+## How It Works
+
+When you call `connect()`, Darkgrade Fuse:
+
+1. Scans for connected USB devices
+2. Identifies the camera's vendor ID
+3. Selects the appropriate vendor-specific implementation:
+   - **Sony ⍺ Series** → `SonyCamera` with live view, video recording, SDIO
+   - **Nikon Z Series** → `NikonCamera` with extended properties
+   - **Canon EOS R Series** → `CanonCamera` with remote control
+   - **Other PTP Cameras** → `GenericCamera` with standard PTP operations
+4. Enables vendor-specific features automatically
+
+## Common Examples
+
+### Camera Settings
+
+```typescript
+// Get current settings
+const currentIso = await camera.getIso()
+const currentShutter = await camera.getShutterSpeed()
+const currentAperture = await camera.getAperture()
+
+// Set new values
+await camera.setIso('1600')
+await camera.setShutterSpeed('1/500')
+await camera.setAperture('f/4.0')
+```
+
+### Event Handling
+
+```typescript
+// Listen for camera events
+camera.on(camera.getInstance().registry.events.ObjectAdded, event => {
+    console.log('New object added:', event.ObjectHandle)
+})
+
+camera.on(camera.getInstance().registry.events.PropertyChanged, event => {
+    console.log('Property changed:', event.PropertyName)
+})
+
+// Remove event listeners
+camera.off(camera.getInstance().registry.events.ObjectAdded)
+```
+
+### Live View
+
+Capture live view frames (Sony & Nikon only):
+
+```typescript
+const { data: liveViewFrame } = await camera.captureLiveView()
+fs.writeFileSync('liveview.jpg', liveViewFrame)
+```
+
+### Video Recording
+
+Start and stop video recording (Sony & Canon only):
+
+```typescript
+await camera.startRecording()
+// ... record for some duration ...
+await camera.stopRecording()
+```
+
+### File Management
+
+List and download files from the camera:
+
+```typescript
+const objects = await camera.listObjects()
+
+for (const [storageId, storage] of Object.entries(objects)) {
+    console.log(`Storage ${storageId}: ${storage.info.storageDescription}`)
+    
+    for (const [handle, info] of Object.entries(storage.objects)) {
+        console.log(`  - ${info.filename} (${info.objectCompressedSize} bytes)`)
+        
+        // Download a specific object
+        const fileData = await camera.getObject(Number(handle), info.objectCompressedSize)
+        fs.writeFileSync(info.filename, fileData)
+    }
+}
+```
+
+### Advanced Property Access
+
+Access vendor-specific properties directly:
+
+```typescript
+const registry = camera.getInstance().registry
+
+// Get property with type safety
+const propValue = await camera.get(registry.properties.ExposureIndex)
+
+// Set property
+await camera.set(registry.properties.ExposureIndex, '3200')
+```
+
+## Advanced Usage
+
+### Using Vendor-Specific Classes
+
+Import vendor-specific camera classes directly:
+
+```typescript
+import { SonyCamera, NikonCamera, CanonCamera, GenericCamera } from '@darkgrade/fuse'
+
+const camera = new SonyCamera()
+await camera.connect()
+```
+
+### Manual Configuration
+
+Specify device filters and logging options:
+
+```typescript
+import { Camera, VendorIDs } from '@darkgrade/fuse'
+
+const camera = new Camera({
+    device: {
+        usb: {
+            filters: [{ vendorId: VendorIDs.SONY }], // VendorIDs.NIKON, VendorIDs.CANON
+        },
+    },
+    logger: {
+        expanded: true, // Show detailed logging
+    },
+})
+
+await camera.connect()
+```
+
+## Next Steps
+
+- Learn about [PTP](/getting_started/what-is-ptp) - Understanding the protocol
+- Check [Feature Compatibility](/getting_started/feature-compatibility) - See what your camera supports
+- Explore the [Camera API](/getting_started/camera) - Complete API reference
