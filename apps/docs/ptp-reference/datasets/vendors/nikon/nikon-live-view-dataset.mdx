@@ -1,0 +1,62 @@
+---
+title: "Nikon Nikon Live View Dataset"
+description: "PTP Nikon Nikon Live View Dataset dataset structures"
+---
+
+# Nikon Nikon Live View Dataset
+
+Dataset structures define the format of complex data returned by PTP operations.
+
+## NikonLiveViewDataset
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **majorVersion** | `number` | ✓ |
+| **minorVersion** | `number` | ✓ |
+| **displayInfoSize** | `number` | ✓ |
+| **liveViewImageSize** | `number` | ✓ |
+| **wholeSize** | `object` | ✓ |
+| **displayAreaSize** | `object` | ✓ |
+| **displayCenterCoords** | `object` | ✓ |
+| **liveViewImageImageSize** | `object` | ✓ |
+| **liveViewImageQuality** | `number` | ✓ |
+| **afDrivingEnabled** | `number` | ✓ |
+| **focusDrivingStatus** | `number` | ✓ |
+| **focusingJudgementResult** | `number` | ✓ |
+| **afModeState** | `number` | ✓ |
+| **afAreaNumber** | `number` | ✓ |
+| **selectedSubjectIndex** | `number` | ✓ |
+| **trackingState** | `number` | ✓ |
+| **afFrameSize** | `object` | ✓ |
+| **afFrameCenterCoords** | `object` | ✓ |
+| **remainingVideoTime** | `number` | ✓ |
+| **elapsedVideoTime** | `number` | ✓ |
+| **soundIndicatorPeakL** | `number` | ✓ |
+| **soundIndicatorPeakR** | `number` | ✓ |
+| **soundIndicatorCurrentL** | `number` | ✓ |
+| **soundIndicatorCurrentR** | `number` | ✓ |
+| **videoRecordingInfo** | `number` | ✓ |
+| **syncRecordingState** | `number` | ✓ |
+| **timecodeStatus** | `number` | ✓ |
+| **timecodeHour** | `number` | ✓ |
+| **timecodeMinute** | `number` | ✓ |
+| **timecodeSecond** | `number` | ✓ |
+| **timecodeFrame** | `number` | ✓ |
+| **countdownTime** | `number` | ✓ |
+| **spotWbCondition** | `number` | ✓ |
+| **rotation** | `number` | ✓ |
+| **levelAngleRolling** | `number` | ✓ |
+| **levelAnglePitching** | `number` | ✓ |
+| **levelAngleYawing** | `number` | ✓ |
+| **usingWhiteBalanceForPhotoLv** | `number` | ✓ |
+| **imagingTemperatureStatus** | `number` | ✓ |
+| **reserved** | `Uint8Array` | ✓ |
+| **afFrameData** | `Uint8Array` | ✓ |
+| **autoCaptureSubjectDetection** | `Uint8Array` | ✓ |
+| **reservedEnd** | `Uint8Array` | ✓ |
+| **liveViewImage** | `Uint8Array` | ✓ |
+
+---
+

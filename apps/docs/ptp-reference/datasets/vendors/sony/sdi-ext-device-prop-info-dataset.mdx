@@ -1,0 +1,30 @@
+---
+title: "Sony Sdi Ext Device Prop Info Dataset"
+description: "PTP Sony Sdi Ext Device Prop Info Dataset dataset structures"
+---
+
+# Sony Sdi Ext Device Prop Info Dataset
+
+Dataset structures define the format of complex data returned by PTP operations.
+
+## SonyDevicePropDesc
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **vendorExtensions** | `object` | ✓ |
+
+---
+
+## SDIDevicePropInfoArray
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **numOfElements** | `number` | ✓ |
+| **properties** | `SonyDevicePropDesc[]` | ✓ |
+
+---
+

@@ -1,0 +1,270 @@
+---
+title: "Cameras"
+description: "The Camera class provides a high-level interface for interacting with PTP-compatible cameras. It automatically selects the appropriate vendor-specific implementation (Sony, Nikon, Canon, or Generic) based on the connected device."
+---
+
+## Import
+
+```typescript
+import { Camera } from '@packages/fuse/src/camera'
+```
+
+## Constructor
+
+```typescript
+constructor(options?: CameraOptions)
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **options** | `CameraOptions` |  | Optional configuration for the camera instance. |
+| **options.logger** | `Partial&lt;LoggerConfig&gt;` |  | Logger configuration for debugging and logging. |
+| **options.device** | `DeviceDescriptor` |  | Device descriptor for the camera. If provided, the appropriate vendor-specific implementation will be selected automatically. |
+
+## Methods
+
+### connect
+
+Connect to a camera device.
+
+```typescript
+async connect(device?: DeviceDescriptor): Promise&lt;void&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **device** | `DeviceDescriptor` |  | Optional device descriptor. If not provided, uses the device from the constructor options. |
+
+### disconnect
+
+Disconnect from the camera device.
+
+```typescript
+async disconnect(): Promise&lt;void&gt;
+```
+
+### send
+
+Send a PTP operation to the camera.
+
+```typescript
+async send(
+  operation: OperationDefinition,
+  params: any,
+  data?: Uint8Array,
+  maxDataLength?: number
+): Promise&lt;any&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **operation** | `OperationDefinition` | ✓ | The operation definition to send. |
+| **params** | `any` | ✓ | Parameters for the operation. |
+| **data** | `Uint8Array` |  | Optional data payload. |
+| **maxDataLength** | `number` |  | Optional maximum data length. |
+
+### get
+
+Get a camera property value.
+
+```typescript
+async get(property: PropertyDefinition): Promise&lt;any&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **property** | `PropertyDefinition` | ✓ | The property definition to get. |
+
+### set
+
+Set a camera property value.
+
+```typescript
+async set(
+  property: PropertyDefinition,
+  value: any
+): Promise&lt;void&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **property** | `PropertyDefinition` | ✓ | The property definition to set. |
+| **value** | `any` | ✓ | The value to set. |
+
+### on
+
+Register an event handler.
+
+```typescript
+on(
+  event: EventDefinition,
+  handler: function
+): void
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **event** | `EventDefinition` | ✓ | The event definition to listen for. |
+| **handler** | `function` | ✓ | The handler function to call when the event occurs. |
+
+### off
+
+Unregister an event handler.
+
+```typescript
+off(
+  event: EventDefinition,
+  handler?: function
+): void
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **event** | `EventDefinition` | ✓ | The event definition to stop listening for. |
+| **handler** | `function` |  | Optional handler function. If not provided, all handlers for the event are removed. |
+
+### getAperture
+
+Get the current aperture value.
+
+```typescript
+async getAperture(): Promise&lt;string&gt;
+```
+
+### setAperture
+
+Set the aperture value.
+
+```typescript
+async setAperture(value: string): Promise&lt;void&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **value** | `string` | ✓ | The aperture value to set. |
+
+### getShutterSpeed
+
+Get the current shutter speed value.
+
+```typescript
+async getShutterSpeed(): Promise&lt;string&gt;
+```
+
+### setShutterSpeed
+
+Set the shutter speed value.
+
+```typescript
+async setShutterSpeed(value: string): Promise&lt;void&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **value** | `string` | ✓ | The shutter speed value to set. |
+
+### getIso
+
+Get the current ISO value.
+
+```typescript
+async getIso(): Promise&lt;string&gt;
+```
+
+### setIso
+
+Set the ISO value.
+
+```typescript
+async setIso(value: string): Promise&lt;void&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **value** | `string` | ✓ | The ISO value to set. |
+
+### captureImage
+
+Capture an image from the camera.
+
+```typescript
+async captureImage(params?: object)
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **params** | `object` |  | Capture parameters. |
+| **params.includeInfo** | `boolean` |  | Whether to include object info in the response. Defaults to `true`. |
+| **params.includeData** | `boolean` |  | Whether to include image data in the response. Defaults to `true`. |
+
+### captureLiveView
+
+Capture a live view frame from the camera.
+
+```typescript
+async captureLiveView(params?: object)
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **params** | `object` |  | Live view capture parameters. |
+| **params.includeInfo** | `boolean` |  | Whether to include object info in the response. Defaults to `true`. |
+| **params.includeData** | `boolean` |  | Whether to include image data in the response. Defaults to `true`. |
+
+### startRecording
+
+Start video recording.
+
+```typescript
+async startRecording(): Promise&lt;void&gt;
+```
+
+### stopRecording
+
+Stop video recording.
+
+```typescript
+async stopRecording(): Promise&lt;void&gt;
+```
+
+### listObjects
+
+List all objects stored on the camera.
+
+```typescript
+async listObjects(): Promise&lt;object&gt;
+```
+
+### getObject
+
+Retrieve an object from the camera.
+
+```typescript
+async getObject(
+  objectHandle: number,
+  objectSize: number
+): Promise&lt;Uint8Array&gt;
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| **objectHandle** | `number` | ✓ | The handle of the object to retrieve. |
+| **objectSize** | `number` | ✓ | The size of the object in bytes. |
+
+## Exports
+
+The module also exports the vendor-specific camera implementations:
+
+- `CanonCamera`
+- `GenericCamera`
+- `NikonCamera`
+- `SonyCamera`
+
+These can be imported directly if you need vendor-specific functionality:
+
+```typescript
+import { SonyCamera } from '@packages/fuse/src/camera'
+import { GenericCamera } from '@packages/fuse/src/camera'
+```

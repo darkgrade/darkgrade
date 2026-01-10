@@ -1,13 +1,8 @@
 ---
-title: "Sony"
-description: "PTP Sony definitions"
+title: "Sony Operations"
 ---
 
-# Sony
-
-## SDIO_OpenSession
-
-**Code:** `0x9210`
+## SDIO_OpenSession (`0x9210`)
 
 Open Session with Function Mode.
 
@@ -24,9 +19,9 @@ Open Session with Function Mode.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | REMOTE | Remote Control Mode |
-| `1` | CONTENT_TRANSFER | Content Transfer Mode |
-| `2` | REMOTE_AND_CONTENT_TRANSFER | Remote Control with Transfer Mode |
+| `0x0` | REMOTE | Remote Control Mode |
+| `0x1` | CONTENT_TRANSFER | Content Transfer Mode |
+| `0x2` | REMOTE_AND_CONTENT_TRANSFER | Remote Control with Transfer Mode |
 
 ### Response Parameters
 
@@ -34,13 +29,13 @@ None
 
 ---
 
-## SDIO_Connect
-
-**Code:** `0x9201`
+## SDIO_Connect (`0x9201`)
 
 This is for the Sony SDIO authentication handshake.
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -54,21 +49,21 @@ This is for the Sony SDIO authentication handshake.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `1` | PHASE_1 | Authentication Phase 1 |
-| `2` | PHASE_2 | Authentication Phase 2 |
-| `3` | PHASE_3 | Authentication Phase 3 |
+| `0x1` | PHASE_1 | Authentication Phase 1 |
+| `0x2` | PHASE_2 | Authentication Phase 2 |
+| `0x3` | PHASE_3 | Authentication Phase 3 |
 
 **keyCode1 values:**
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | DEFAULT | Default key code |
+| `0x0` | DEFAULT | Default key code |
 
 **keyCode2 values:**
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | DEFAULT | Default key code |
+| `0x0` | DEFAULT | Default key code |
 
 ### Response Parameters
 
@@ -76,9 +71,7 @@ None
 
 ---
 
-## SDIO_GetExtDeviceInfo
-
-**Code:** `0x9202`
+## SDIO_GetExtDeviceInfo (`0x9202`)
 
 Get the protocol version and the supported properties of the connected device.
 
@@ -95,14 +88,14 @@ Get the protocol version and the supported properties of the connected device.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `300` | 3.00 | Protocol Version 3.00 |
+| `0x12c` | 3.00 | Protocol Version 3.00 |
 
 **flagOfDevicePropertyOption values:**
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | DISABLE | DISABLE |
-| `1` | ENABLE | ENABLE |
+| `0x0` | DISABLE | DISABLE |
+| `0x1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -110,13 +103,13 @@ None
 
 ---
 
-## SDIO_GetExtDevicePropValue
-
-**Code:** `0x9251`
+## SDIO_GetExtDevicePropValue (`0x9251`)
 
 Get the DevicePropInfo.
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -130,9 +123,7 @@ None
 
 ---
 
-## SDIO_SetExtDevicePropValue
-
-**Code:** `0x9205`
+## SDIO_SetExtDevicePropValue (`0x9205`)
 
 Set a DevicePropValue for a device property.
 
@@ -149,8 +140,8 @@ Set a DevicePropValue for a device property.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | DISABLE | DISABLE |
-| `1` | ENABLE | ENABLE |
+| `0x0` | DISABLE | DISABLE |
+| `0x1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -158,9 +149,7 @@ None
 
 ---
 
-## SDIO_ControlDevice
-
-**Code:** `0x9207`
+## SDIO_ControlDevice (`0x9207`)
 
 Set the SDIControl value for the SDIControlCode.
 
@@ -177,8 +166,8 @@ Set the SDIControl value for the SDIControlCode.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | DISABLE | DISABLE |
-| `1` | ENABLE | ENABLE |
+| `0x0` | DISABLE | DISABLE |
+| `0x1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -186,9 +175,7 @@ None
 
 ---
 
-## SDIO_GetAllExtDevicePropInfo
-
-**Code:** `0x9209`
+## SDIO_GetAllExtDevicePropInfo (`0x9209`)
 
 Obtain all support DevicePropDescs at one time. The host will send this operation at regular intervals to obtain the latest (current) camera settings.
 
@@ -205,8 +192,8 @@ Obtain all support DevicePropDescs at one time. The host will send this operatio
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | DISABLE | DISABLE |
-| `1` | ENABLE | ENABLE |
+| `0x0` | DISABLE | DISABLE |
+| `0x1` | ENABLE | ENABLE |
 
 ### Response Parameters
 
@@ -214,9 +201,7 @@ None
 
 ---
 
-## SDIO_GetOsdImage
-
-**Code:** `0x9238`
+## SDIO_GetOsdImage (`0x9238`)
 
 Get OSD image
 
@@ -232,9 +217,7 @@ None
 
 ---
 
-## SDIO_GetPartialLargeObject
-
-**Code:** `0x9211`
+## SDIO_GetPartialLargeObject (`0x9211`)
 
 Get partial object from the device. Same as GetPartialObject on PIMA 15740 but with 64-bit offset support.
 
@@ -257,9 +240,7 @@ Get partial object from the device. Same as GetPartialObject on PIMA 15740 but w
 
 ---
 
-## SDIO_SetContentsTransferMode
-
-**Code:** `0x9212`
+## SDIO_SetContentsTransferMode (`0x9212`)
 
 Enable content transfer mode to access memory card content.
 
@@ -277,23 +258,23 @@ Enable content transfer mode to access memory card content.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | INVALID | INVALID |
-| `1` | CAMERA | Select on the Camera |
-| `2` | HOST | Select on the Remote/Host Device |
+| `0x0` | INVALID | INVALID |
+| `0x1` | CAMERA | Select on the Camera |
+| `0x2` | HOST | Select on the Remote/Host Device |
 
 **TransferMode values:**
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | DISABLE | DISABLE |
-| `1` | ENABLE | ENABLE |
+| `0x0` | DISABLE | DISABLE |
+| `0x1` | ENABLE | ENABLE |
 
 **AdditionalInformation values:**
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | NONE | NONE |
-| `1` | CANCEL | CANCEL |
+| `0x0` | NONE | NONE |
+| `0x1` | CANCEL | CANCEL |
 
 ### Response Parameters
 

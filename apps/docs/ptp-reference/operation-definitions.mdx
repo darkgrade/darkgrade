@@ -1,13 +1,8 @@
 ---
-title: "Generic"
-description: "PTP Generic definitions"
+title: "Generic Operations"
 ---
 
-# Generic
-
-## Undefined
-
-**Code:** `0x1000`
+## Undefined (`0x1000`)
 
 Undefined operation
 
@@ -23,13 +18,13 @@ None
 
 ---
 
-## GetDeviceInfo
-
-**Code:** `0x1001`
+## GetDeviceInfo (`0x1001`)
 
 Returns information and capabilities about the responder device
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -41,9 +36,7 @@ None
 
 ---
 
-## OpenSession
-
-**Code:** `0x1002`
+## OpenSession (`0x1002`)
 
 Opens a session with the device
 
@@ -61,9 +54,7 @@ None
 
 ---
 
-## CloseSession
-
-**Code:** `0x1003`
+## CloseSession (`0x1003`)
 
 Closes the current session
 
@@ -79,13 +70,13 @@ None
 
 ---
 
-## GetStorageIDs
-
-**Code:** `0x1004`
+## GetStorageIDs (`0x1004`)
 
 Returns list of currently valid StorageIDs
 
 **Data Direction:** out
+
+**Codec Type:** Array Codec
 
 ### Operation Parameters
 
@@ -97,13 +88,13 @@ None
 
 ---
 
-## GetStorageInfo
-
-**Code:** `0x1005`
+## GetStorageInfo (`0x1005`)
 
 Returns StorageInfo data set for a storage area
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -117,9 +108,7 @@ None
 
 ---
 
-## GetNumObjects
-
-**Code:** `0x1006`
+## GetNumObjects (`0x1006`)
 
 Returns number of objects in storage
 
@@ -130,8 +119,8 @@ Returns number of objects in storage
 | Parameter | Required | Description |
 | --------- | -------- | ----------- |
 | **StorageID** | ✓ | Storage identifier (0xFFFFFFFF for all) |
-| **ObjectFormatCode** |  | Filter by format code |
-| **ParentObject** |  | Parent association handle |
+| **ObjectFormatCode** |  | Filter by format code (default: `0`) |
+| **ParentObject** |  | Parent association handle (default: `0`) |
 
 ### Response Parameters
 
@@ -141,21 +130,21 @@ Returns number of objects in storage
 
 ---
 
-## GetObjectHandles
-
-**Code:** `0x1007`
+## GetObjectHandles (`0x1007`)
 
 Returns array of ObjectHandles in storage
 
 **Data Direction:** out
+
+**Codec Type:** Array Codec
 
 ### Operation Parameters
 
 | Parameter | Required | Description |
 | --------- | -------- | ----------- |
 | **StorageID** | ✓ | Storage identifier (0xFFFFFFFF for all) |
-| **ObjectFormatCode** |  | Filter by format code |
-| **ParentObject** |  | Parent association handle |
+| **ObjectFormatCode** |  | Filter by format code (default: `0`) |
+| **ParentObject** |  | Parent association handle (default: `0`) |
 
 ### Response Parameters
 
@@ -163,13 +152,13 @@ None
 
 ---
 
-## GetObjectInfo
-
-**Code:** `0x1008`
+## GetObjectInfo (`0x1008`)
 
 Returns ObjectInfo data set for an object
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -183,9 +172,7 @@ None
 
 ---
 
-## GetObject
-
-**Code:** `0x1009`
+## GetObject (`0x1009`)
 
 Retrieves one object from the device
 
@@ -203,9 +190,7 @@ None
 
 ---
 
-## GetThumb
-
-**Code:** `0x100a`
+## GetThumb (`0x100a`)
 
 Retrieves thumbnail for an object
 
@@ -223,9 +208,7 @@ None
 
 ---
 
-## DeleteObject
-
-**Code:** `0x100b`
+## DeleteObject (`0x100b`)
 
 Deletes an object from the device
 
@@ -236,7 +219,7 @@ Deletes an object from the device
 | Parameter | Required | Description |
 | --------- | -------- | ----------- |
 | **ObjectHandle** | ✓ | Object handle (0xFFFFFFFF for all) |
-| **ObjectFormatCode** |  | Filter by format code |
+| **ObjectFormatCode** |  | Filter by format code (default: `0`) |
 
 ### Response Parameters
 
@@ -244,9 +227,7 @@ None
 
 ---
 
-## SendObjectInfo
-
-**Code:** `0x100c`
+## SendObjectInfo (`0x100c`)
 
 Sends ObjectInfo before sending object
 
@@ -256,8 +237,8 @@ Sends ObjectInfo before sending object
 
 | Parameter | Required | Description |
 | --------- | -------- | ----------- |
-| **StorageID** |  | Destination storage |
-| **ParentObjectHandle** |  | Parent object handle |
+| **StorageID** |  | Destination storage (default: `0`) |
+| **ParentObjectHandle** |  | Parent object handle (default: `0`) |
 
 ### Response Parameters
 
@@ -269,9 +250,7 @@ Sends ObjectInfo before sending object
 
 ---
 
-## SendObject
-
-**Code:** `0x100d`
+## SendObject (`0x100d`)
 
 Sends object data to the device
 
@@ -287,9 +266,7 @@ None
 
 ---
 
-## InitiateCapture
-
-**Code:** `0x100e`
+## InitiateCapture (`0x100e`)
 
 Initiates capture of new data objects
 
@@ -299,8 +276,8 @@ Initiates capture of new data objects
 
 | Parameter | Required | Description |
 | --------- | -------- | ----------- |
-| **StorageID** |  | Storage for capture |
-| **ObjectFormatCode** |  | Format for capture |
+| **StorageID** |  | Storage for capture (default: `0`) |
+| **ObjectFormatCode** |  | Format for capture (default: `0`) |
 
 ### Response Parameters
 
@@ -308,9 +285,7 @@ None
 
 ---
 
-## FormatStore
-
-**Code:** `0x100f`
+## FormatStore (`0x100f`)
 
 Formats a storage device
 
@@ -321,7 +296,7 @@ Formats a storage device
 | Parameter | Required | Description |
 | --------- | -------- | ----------- |
 | **StorageID** | ✓ | Storage to format |
-| **FilesystemType** |  | Filesystem type |
+| **FilesystemType** |  | Filesystem type (default: `0`) |
 
 ### Response Parameters
 
@@ -329,9 +304,7 @@ None
 
 ---
 
-## ResetDevice
-
-**Code:** `0x1010`
+## ResetDevice (`0x1010`)
 
 Resets device to default state
 
@@ -347,9 +320,7 @@ None
 
 ---
 
-## SelfTest
-
-**Code:** `0x1011`
+## SelfTest (`0x1011`)
 
 Performs device self-test
 
@@ -359,7 +330,7 @@ Performs device self-test
 
 | Parameter | Required | Description |
 | --------- | -------- | ----------- |
-| **SelfTestType** |  | Type of self-test |
+| **SelfTestType** |  | Type of self-test (default: `0`) |
 
 ### Response Parameters
 
@@ -367,9 +338,7 @@ None
 
 ---
 
-## SetObjectProtection
-
-**Code:** `0x1012`
+## SetObjectProtection (`0x1012`)
 
 Sets object protection status
 
@@ -388,9 +357,7 @@ None
 
 ---
 
-## PowerDown
-
-**Code:** `0x1013`
+## PowerDown (`0x1013`)
 
 Powers down the device
 
@@ -406,13 +373,13 @@ None
 
 ---
 
-## GetDevicePropDesc
-
-**Code:** `0x1014`
+## GetDevicePropDesc (`0x1014`)
 
 Gets device property descriptor
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -426,9 +393,7 @@ None
 
 ---
 
-## GetDevicePropValue
-
-**Code:** `0x1015`
+## GetDevicePropValue (`0x1015`)
 
 Gets device property value
 
@@ -446,9 +411,7 @@ None
 
 ---
 
-## SetDevicePropValue
-
-**Code:** `0x1016`
+## SetDevicePropValue (`0x1016`)
 
 Sets device property value
 
@@ -466,9 +429,7 @@ None
 
 ---
 
-## ResetDevicePropValue
-
-**Code:** `0x1017`
+## ResetDevicePropValue (`0x1017`)
 
 Resets device property to default
 
@@ -486,9 +447,7 @@ None
 
 ---
 
-## TerminateOpenCapture
-
-**Code:** `0x1018`
+## TerminateOpenCapture (`0x1018`)
 
 Terminates an open capture
 
@@ -506,9 +465,7 @@ None
 
 ---
 
-## MoveObject
-
-**Code:** `0x1019`
+## MoveObject (`0x1019`)
 
 Moves object to new location
 
@@ -528,9 +485,7 @@ None
 
 ---
 
-## CopyObject
-
-**Code:** `0x101a`
+## CopyObject (`0x101a`)
 
 Copies object to new location
 
@@ -552,9 +507,7 @@ Copies object to new location
 
 ---
 
-## GetPartialObject
-
-**Code:** `0x101b`
+## GetPartialObject (`0x101b`)
 
 Gets partial object data
 
@@ -576,9 +529,7 @@ Gets partial object data
 
 ---
 
-## InitiateOpenCapture
-
-**Code:** `0x101c`
+## InitiateOpenCapture (`0x101c`)
 
 Initiates open-ended capture
 
@@ -597,9 +548,7 @@ None
 
 ---
 
-## StartEnumHandles
-
-**Code:** `0x101d`
+## StartEnumHandles (`0x101d`)
 
 Initiates an enumeration process for retrieving object handles in chunks (PTP v1.1)
 
@@ -621,13 +570,13 @@ Initiates an enumeration process for retrieving object handles in chunks (PTP v1
 
 ---
 
-## EnumHandles
-
-**Code:** `0x101e`
+## EnumHandles (`0x101e`)
 
 Returns a chunk of object handles from an active enumeration (PTP v1.1)
 
 **Data Direction:** out
+
+**Codec Type:** Array Codec
 
 ### Operation Parameters
 
@@ -642,9 +591,7 @@ None
 
 ---
 
-## StopEnumHandles
-
-**Code:** `0x101f`
+## StopEnumHandles (`0x101f`)
 
 Closes an active enumeration process (PTP v1.1)
 
@@ -662,9 +609,7 @@ None
 
 ---
 
-## GetVendorExtensionMaps
-
-**Code:** `0x1020`
+## GetVendorExtensionMaps (`0x1020`)
 
 Retrieves mapping of vendor extensions (PTP v1.1)
 
@@ -680,9 +625,7 @@ None
 
 ---
 
-## GetVendorDeviceInfo
-
-**Code:** `0x1021`
+## GetVendorDeviceInfo (`0x1021`)
 
 Retrieves DeviceInfo for a specific vendor extension (PTP v1.1)
 
@@ -700,9 +643,7 @@ None
 
 ---
 
-## GetResizedImageObject
-
-**Code:** `0x1022`
+## GetResizedImageObject (`0x1022`)
 
 Retrieves an image object at arbitrary resolution (PTP v1.1)
 
@@ -726,9 +667,7 @@ Retrieves an image object at arbitrary resolution (PTP v1.1)
 
 ---
 
-## GetFilesystemManifest
-
-**Code:** `0x1023`
+## GetFilesystemManifest (`0x1023`)
 
 Retrieves filesystem information in a single transaction (PTP v1.1)
 
@@ -748,9 +687,7 @@ None
 
 ---
 
-## GetStreamInfo
-
-**Code:** `0x1024`
+## GetStreamInfo (`0x1024`)
 
 Retrieves information about a stream (PTP v1.1)
 
@@ -768,9 +705,7 @@ None
 
 ---
 
-## GetStream
-
-**Code:** `0x1025`
+## GetStream (`0x1025`)
 
 Retrieves streaming content (PTP v1.1)
 

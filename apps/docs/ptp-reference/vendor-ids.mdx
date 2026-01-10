@@ -1,0 +1,25 @@
+---
+title: "Vendor IDs"
+description: "PTP Vendor ID mappings"
+---
+
+# Vendor IDs
+
+This document lists all supported vendor IDs and their corresponding vendor names.
+
+## Vendor ID Mappings
+
+| Vendor ID | Name | Vendor Name |
+| --------- | ---- | ----------- |
+| `0x54c` | **SONY** | Sony Group Corporation |
+| `0x4a9` | **CANON** | Canon Inc. |
+| `0x4b0` | **NIKON** | Nikon Corporation |
+| `0x4cb` | **FUJIFILM** | Fujifilm Corporation |
+| `0x4da` | **PANASONIC** | Panasonic Corporation |
+| `0x7b4` | **OLYMPUS** | Olympus Corporation |
+
+## Helper Functions
+
+- `getVendorName(vendorId: number): string` - Returns the vendor name for a given vendor ID
+- `isSupportedVendor(vendorId: number): boolean` - Checks if a vendor ID is supported
+

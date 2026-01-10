@@ -1,293 +1,218 @@
 ---
-title: "Generic"
-description: "PTP Generic definitions"
+title: "Generic Responses"
 ---
 
-# Generic
-
-## Undefined
-
-**Code:** `0x2000`
+## Undefined (`0x2000`)
 
 Undefined response
 
 ---
 
-## OK
-
-**Code:** `0x2001`
+## OK (`0x2001`)
 
 Operation completed successfully
 
 ---
 
-## GeneralError
-
-**Code:** `0x2002`
+## GeneralError (`0x2002`)
 
 Operation did not complete, unknown error
 
 ---
 
-## SessionNotOpen
-
-**Code:** `0x2003`
+## SessionNotOpen (`0x2003`)
 
 Session handle is not a currently open session
 
 ---
 
-## InvalidTransactionID
-
-**Code:** `0x2004`
+## InvalidTransactionID (`0x2004`)
 
 TransactionID is zero or does not refer to a valid transaction
 
 ---
 
-## OperationNotSupported
-
-**Code:** `0x2005`
+## OperationNotSupported (`0x2005`)
 
 OperationCode appears valid but responder does not support it
 
 ---
 
-## ParameterNotSupported
-
-**Code:** `0x2006`
+## ParameterNotSupported (`0x2006`)
 
 Non-zero parameter specified but not used for this operation
 
 ---
 
-## IncompleteTransfer
-
-**Code:** `0x2007`
+## IncompleteTransfer (`0x2007`)
 
 Transfer did not complete, data should be discarded
 
 ---
 
-## InvalidStorageID
-
-**Code:** `0x2008`
+## InvalidStorageID (`0x2008`)
 
 StorageID does not refer to a valid store on the device
 
 ---
 
-## InvalidObjectHandle
-
-**Code:** `0x2009`
+## InvalidObjectHandle (`0x2009`)
 
 ObjectHandle does not refer to a valid object on the device
 
 ---
 
-## DevicePropNotSupported
-
-**Code:** `0x200a`
+## DevicePropNotSupported (`0x200a`)
 
 DevicePropCode appears valid but not supported by device
 
 ---
 
-## InvalidObjectFormatCode
-
-**Code:** `0x200b`
+## InvalidObjectFormatCode (`0x200b`)
 
 Device does not support the ObjectFormatCode in this context
 
 ---
 
-## StoreFull
-
-**Code:** `0x200c`
+## StoreFull (`0x200c`)
 
 Store referred to by operation is full
 
 ---
 
-## ObjectWriteProtected
-
-**Code:** `0x200d`
+## ObjectWriteProtected (`0x200d`)
 
 Object referred to by operation is write-protected
 
 ---
 
-## StoreReadOnly
-
-**Code:** `0x200e`
+## StoreReadOnly (`0x200e`)
 
 Store referred to by operation is read-only
 
 ---
 
-## AccessDenied
-
-**Code:** `0x200f`
+## AccessDenied (`0x200f`)
 
 Access to data has been denied
 
 ---
 
-## NoThumbnailPresent
-
-**Code:** `0x2010`
+## NoThumbnailPresent (`0x2010`)
 
 Object exists but contains no producible thumbnail
 
 ---
 
-## SelfTestFailed
-
-**Code:** `0x2011`
+## SelfTestFailed (`0x2011`)
 
 Device failed internal self-test
 
 ---
 
-## PartialDeletion
-
-**Code:** `0x2012`
+## PartialDeletion (`0x2012`)
 
 Only a subset of objects were deleted
 
 ---
 
-## StoreNotAvailable
-
-**Code:** `0x2013`
+## StoreNotAvailable (`0x2013`)
 
 Store is not physically available
 
 ---
 
-## SpecificationByFormatUnsupported
-
-**Code:** `0x2014`
+## SpecificationByFormatUnsupported (`0x2014`)
 
 Operation cannot specify action by format
 
 ---
 
-## NoValidObjectInfo
-
-**Code:** `0x2015`
+## NoValidObjectInfo (`0x2015`)
 
 SendObject attempted without successful SendObjectInfo
 
 ---
 
-## InvalidCodeFormat
-
-**Code:** `0x2016`
+## InvalidCodeFormat (`0x2016`)
 
 Data code does not have correct format
 
 ---
 
-## UnknownVendorCode
-
-**Code:** `0x2017`
+## UnknownVendorCode (`0x2017`)
 
 Vendor-extended code not supported by device
 
 ---
 
-## CaptureAlreadyTerminated
-
-**Code:** `0x2018`
+## CaptureAlreadyTerminated (`0x2018`)
 
 Capture session already terminated
 
 ---
 
-## DeviceBusy
-
-**Code:** `0x2019`
+## DeviceBusy (`0x2019`)
 
 Device or store is busy
 
 ---
 
-## InvalidParentObject
-
-**Code:** `0x201a`
+## InvalidParentObject (`0x201a`)
 
 Object is not of type Association
 
 ---
 
-## InvalidDevicePropFormat
-
-**Code:** `0x201b`
+## InvalidDevicePropFormat (`0x201b`)
 
 DevicePropDesc data set is incorrect size or format
 
 ---
 
-## InvalidDevicePropValue
-
-**Code:** `0x201c`
+## InvalidDevicePropValue (`0x201c`)
 
 DeviceProperty value not permitted by device
 
 ---
 
-## InvalidParameter
-
-**Code:** `0x201d`
+## InvalidParameter (`0x201d`)
 
 Parameter value is not legal
 
 ---
 
-## SessionAlreadyOpen
-
-**Code:** `0x201e`
+## SessionAlreadyOpen (`0x201e`)
 
 Session is already open
 
 ---
 
-## TransactionCancelled
-
-**Code:** `0x201f`
+## TransactionCancelled (`0x201f`)
 
 Operation interrupted by manual cancellation
 
 ---
 
-## SpecificationOfDestinationUnsupported
-
-**Code:** `0x2020`
+## SpecificationOfDestinationUnsupported (`0x2020`)
 
 Responder does not support initiator-specified destination
 
 ---
 
-## InvalidEnumHandle
-
-**Code:** `0x2021`
+## InvalidEnumHandle (`0x2021`)
 
 EnumID parameter is invalid
 
 ---
 
-## NoStreamEnabled
-
-**Code:** `0x2022`
+## NoStreamEnabled (`0x2022`)
 
 Streaming operation started without enabled streams
 
 ---
 
-## InvalidDataset
-
-**Code:** `0x2023`
+## InvalidDataset (`0x2023`)
 
 Data set is malformed or has incorrect size
 

@@ -1,0 +1,46 @@
+---
+title: "Event"
+description: "PTP Event type definitions"
+---
+
+# Event
+
+## EventParameter
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **name** | `string` | ✓ |
+| **description** | `string` | ✓ |
+| **codec** | `CodecDefinition&lt;T&gt;` | ✓ |
+
+---
+
+## EventDefinition
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **code** | `number` | ✓ |
+| **name** | `string` | ✓ |
+| **description** | `string` | ✓ |
+| **sessionId** | `string` |  |
+| **transactionId** | `string` |  |
+| **parameters** | `[EventParameter?, EventParameter?, EventParameter?]` | ✓ |
+
+---
+
+## EventCode
+
+**Type:** `number`
+
+---
+
+## EventData
+
+**Type:** `number | string | object | number[] | Record&lt;string, any&gt;`
+
+---
+

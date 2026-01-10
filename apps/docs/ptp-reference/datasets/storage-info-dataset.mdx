@@ -1,0 +1,26 @@
+---
+title: "Storage Info Dataset"
+description: "PTP Storage Info Dataset dataset structures"
+---
+
+# Storage Info Dataset
+
+Dataset structures define the format of complex data returned by PTP operations.
+
+## StorageInfo
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **storageType** | `number` | ✓ |
+| **filesystemType** | `number` | ✓ |
+| **accessCapability** | `number` | ✓ |
+| **maxCapacity** | `bigint` | ✓ |
+| **freeSpaceInBytes** | `bigint` | ✓ |
+| **freeSpaceInImages** | `number` | ✓ |
+| **storageDescription** | `string` | ✓ |
+| **volumeLabel** | `string` | ✓ |
+
+---
+

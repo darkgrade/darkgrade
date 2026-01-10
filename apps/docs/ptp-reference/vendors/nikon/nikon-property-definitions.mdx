@@ -1,13 +1,8 @@
 ---
-title: "Nikon"
-description: "PTP Nikon definitions"
+title: "Nikon Properties"
 ---
 
-# Nikon
-
-## LiveViewStatus
-
-**Code:** `0xd1b8`
+## LiveViewStatus (`0xd1b8`)
 
 Indicates the status of live view (ON or OFF)
 
@@ -15,11 +10,18 @@ Indicates the status of live view (ON or OFF)
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | OFF | Live view is disabled |
+| `0x1` | ON | Live view is enabled |
+
 ---
 
-## LiveViewSelector
-
-**Code:** `0xd1a6`
+## LiveViewSelector (`0xd1a6`)
 
 Indicates the state of live view mode (Photo Lv or Video Lv)
 
@@ -27,17 +29,26 @@ Indicates the state of live view mode (Photo Lv or Video Lv)
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | PHOTO | Photo live view mode |
+| `0x1` | VIDEO | Video live view mode |
+
 ---
 
-## MovieRecProhibitionCondition
-
-**Code:** `0xd0a4`
+## MovieRecProhibitionCondition (`0xd0a4`)
 
 Indicates video recording prohibition conditions (bitfield, 0 = allowed, non-zero = prohibited)
 
 **Datatype:** UINT32
 
 **Access:** Get
+
+**Codec Type:** Custom Codec
 
 ---
 

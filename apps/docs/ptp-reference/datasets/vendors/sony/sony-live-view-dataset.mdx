@@ -1,0 +1,35 @@
+---
+title: "Sony Sony Live View Dataset"
+description: "PTP Sony Sony Live View Dataset dataset structures"
+---
+
+# Sony Sony Live View Dataset
+
+Dataset structures define the format of complex data returned by PTP operations.
+
+## FocalFrameInfo
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **data** | `Uint8Array` | ✓ |
+
+---
+
+## LiveViewDataset
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **offsetToLiveViewImage** | `number` | ✓ |
+| **liveViewImageSize** | `number` | ✓ |
+| **offsetToFocalFrameInfo** | `number` | ✓ |
+| **focalFrameInfoSize** | `number` | ✓ |
+| **reserved** | `Uint8Array` | ✓ |
+| **liveViewImage** | `Uint8Array` | ✓ |
+| **focalFrameInfo** | `FocalFrameInfo | null` | ✓ |
+
+---
+

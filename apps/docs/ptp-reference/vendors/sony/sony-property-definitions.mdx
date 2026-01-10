@@ -1,13 +1,8 @@
 ---
-title: "Sony"
-description: "PTP Sony definitions"
+title: "Sony Properties"
 ---
 
-# Sony
-
-## Aperture
-
-**Code:** `0x5007`
+## Aperture (`0x5007`)
 
 Get/Set the aperture value.
 
@@ -15,11 +10,11 @@ Get/Set the aperture value.
 
 **Access:** GetSet
 
+**Codec Type:** Custom Codec
+
 ---
 
-## ShutterSpeed
-
-**Code:** `0xd20d`
+## ShutterSpeed (`0xd20d`)
 
 Get/Set the shutter speed.
 
@@ -27,11 +22,11 @@ Get/Set the shutter speed.
 
 **Access:** GetSet
 
+**Codec Type:** Custom Codec
+
 ---
 
-## Iso
-
-**Code:** `0xd21e`
+## Iso (`0xd21e`)
 
 Get/Set the ISO sensitivity.
 
@@ -39,11 +34,11 @@ Get/Set the ISO sensitivity.
 
 **Access:** GetSet
 
+**Codec Type:** Custom Codec
+
 ---
 
-## Exposure
-
-**Code:** `0x0`
+## Exposure (`0x0`)
 
 Exposure (either metered or manually set)
 
@@ -51,11 +46,11 @@ Exposure (either metered or manually set)
 
 **Access:** Get
 
+**Codec Type:** Base Codec
+
 ---
 
-## MeteredExposure
-
-**Code:** `0xd1b5`
+## MeteredExposure (`0xd1b5`)
 
 AKA Metered Manual Level - Get the metered manual level.
 
@@ -63,11 +58,11 @@ AKA Metered Manual Level - Get the metered manual level.
 
 **Access:** GetSet
 
+**Codec Type:** Custom Codec
+
 ---
 
-## ExposureCompensation
-
-**Code:** `0x5010`
+## ExposureCompensation (`0x5010`)
 
 AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.
 
@@ -75,11 +70,11 @@ AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.
 
 **Access:** GetSet
 
+**Codec Type:** Custom Codec
+
 ---
 
-## StillCaptureMode
-
-**Code:** `0x5013`
+## StillCaptureMode (`0x5013`)
 
 Get/Set the drive mode.
 
@@ -87,11 +82,169 @@ Get/Set the drive mode.
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | Normal | Normal |
+| `0x10002` | Continuous Shooting Hi | Continuous Shooting Hi |
+| `0x18010` | Continuous Shooting Hi+ | Continuous Shooting Hi+ |
+| `0x18011` | Continuous Shooting Hi-Live | Continuous Shooting Hi-Live |
+| `0x18012` | Continuous Shooting Lo | Continuous Shooting Lo |
+| `0x18013` | Continuous Shooting | Continuous Shooting |
+| `0x18014` | Continuous Shooting Speed Priority | Continuous Shooting Speed Priority |
+| `0x18015` | Continuous Shooting Mid | Continuous Shooting Mid |
+| `0x18016` | Continuous Shooting Mid-Live | Continuous Shooting Mid-Live |
+| `0x18017` | Continuous Shooting Lo-Live | Continuous Shooting Lo-Live |
+| `0x20003` | Timelapse | Timelapse |
+| `0x38003` | Self Timer 5 Sec. | Self Timer 5 Sec. |
+| `0x38004` | Self Timer 10 Sec. | Self Timer 10 Sec. |
+| `0x38005` | Self Timer 2 Sec. | Self Timer 2 Sec. |
+| `0x4c237` | Continuous Bracket 0.3 EV 2 Img. + | Continuous Bracket 0.3 EV 2 Img. + |
+| `0x4c23f` | Continuous Bracket 0.3 EV 2 Img. - | Continuous Bracket 0.3 EV 2 Img. - |
+| `0x48337` | Continuous Bracket 0.3 EV 3 Img. | Continuous Bracket 0.3 EV 3 Img. |
+| `0x48537` | Continuous Bracket 0.3 EV 5 Img. | Continuous Bracket 0.3 EV 5 Img. |
+| `0x48737` | Continuous Bracket 0.3 EV 7 Img. | Continuous Bracket 0.3 EV 7 Img. |
+| `0x48937` | Continuous Bracket 0.3 EV 9 Img. | Continuous Bracket 0.3 EV 9 Img. |
+| `0x4c257` | Continuous Bracket 0.5 EV 2 Img. + | Continuous Bracket 0.5 EV 2 Img. + |
+| `0x4c25f` | Continuous Bracket 0.5 EV 2 Img. - | Continuous Bracket 0.5 EV 2 Img. - |
+| `0x48357` | Continuous Bracket 0.5 EV 3 Img. | Continuous Bracket 0.5 EV 3 Img. |
+| `0x48557` | Continuous Bracket 0.5 EV 5 Img. | Continuous Bracket 0.5 EV 5 Img. |
+| `0x48757` | Continuous Bracket 0.5 EV 7 Img. | Continuous Bracket 0.5 EV 7 Img. |
+| `0x48957` | Continuous Bracket 0.5 EV 9 Img. | Continuous Bracket 0.5 EV 9 Img. |
+| `0x4c277` | Continuous Bracket 0.7 EV 2 Img. + | Continuous Bracket 0.7 EV 2 Img. + |
+| `0x4c27f` | Continuous Bracket 0.7 EV 2 Img. - | Continuous Bracket 0.7 EV 2 Img. - |
+| `0x48377` | Continuous Bracket 0.7 EV 3 Img. | Continuous Bracket 0.7 EV 3 Img. |
+| `0x48577` | Continuous Bracket 0.7 EV 5 Img. | Continuous Bracket 0.7 EV 5 Img. |
+| `0x48777` | Continuous Bracket 0.7 EV 7 Img. | Continuous Bracket 0.7 EV 7 Img. |
+| `0x48977` | Continuous Bracket 0.7 EV 9 Img. | Continuous Bracket 0.7 EV 9 Img. |
+| `0x4c211` | Continuous Bracket 1.0 EV 2 Img. + | Continuous Bracket 1.0 EV 2 Img. + |
+| `0x4c219` | Continuous Bracket 1.0 EV 2 Img. - | Continuous Bracket 1.0 EV 2 Img. - |
+| `0x48311` | Continuous Bracket 1.0 EV 3 Img. | Continuous Bracket 1.0 EV 3 Img. |
+| `0x48511` | Continuous Bracket 1.0 EV 5 Img. | Continuous Bracket 1.0 EV 5 Img. |
+| `0x48711` | Continuous Bracket 1.0 EV 7 Img. | Continuous Bracket 1.0 EV 7 Img. |
+| `0x48911` | Continuous Bracket 1.0 EV 9 Img. | Continuous Bracket 1.0 EV 9 Img. |
+| `0x4c241` | Continuous Bracket 1.3 EV 2 Img. + | Continuous Bracket 1.3 EV 2 Img. + |
+| `0x4c249` | Continuous Bracket 1.3 EV 2 Img. - | Continuous Bracket 1.3 EV 2 Img. - |
+| `0x48341` | Continuous Bracket 1.3 EV 3 Img. | Continuous Bracket 1.3 EV 3 Img. |
+| `0x48541` | Continuous Bracket 1.3 EV 5 Img. | Continuous Bracket 1.3 EV 5 Img. |
+| `0x48741` | Continuous Bracket 1.3 EV 7 Img. | Continuous Bracket 1.3 EV 7 Img. |
+| `0x4c261` | Continuous Bracket 1.5 EV 2 Img. + | Continuous Bracket 1.5 EV 2 Img. + |
+| `0x4c269` | Continuous Bracket 1.5 EV 2 Img. - | Continuous Bracket 1.5 EV 2 Img. - |
+| `0x48361` | Continuous Bracket 1.5 EV 3 Img. | Continuous Bracket 1.5 EV 3 Img. |
+| `0x48561` | Continuous Bracket 1.5 EV 5 Img. | Continuous Bracket 1.5 EV 5 Img. |
+| `0x48761` | Continuous Bracket 1.5 EV 7 Img. | Continuous Bracket 1.5 EV 7 Img. |
+| `0x4c281` | Continuous Bracket 1.7 EV 2 Img. + | Continuous Bracket 1.7 EV 2 Img. + |
+| `0x4c289` | Continuous Bracket 1.7 EV 2 Img. - | Continuous Bracket 1.7 EV 2 Img. - |
+| `0x48381` | Continuous Bracket 1.7 EV 3 Img. | Continuous Bracket 1.7 EV 3 Img. |
+| `0x48581` | Continuous Bracket 1.7 EV 5 Img. | Continuous Bracket 1.7 EV 5 Img. |
+| `0x48781` | Continuous Bracket 1.7 EV 7 Img. | Continuous Bracket 1.7 EV 7 Img. |
+| `0x4c221` | Continuous Bracket 2.0 EV 2 Img. + | Continuous Bracket 2.0 EV 2 Img. + |
+| `0x4c229` | Continuous Bracket 2.0 EV 2 Img. - | Continuous Bracket 2.0 EV 2 Img. - |
+| `0x48321` | Continuous Bracket 2.0 EV 3 Img. | Continuous Bracket 2.0 EV 3 Img. |
+| `0x48521` | Continuous Bracket 2.0 EV 5 Img. | Continuous Bracket 2.0 EV 5 Img. |
+| `0x48721` | Continuous Bracket 2.0 EV 7 Img. | Continuous Bracket 2.0 EV 7 Img. |
+| `0x4c251` | Continuous Bracket 2.3 EV 2 Img. + | Continuous Bracket 2.3 EV 2 Img. + |
+| `0x4c259` | Continuous Bracket 2.3 EV 2 Img. - | Continuous Bracket 2.3 EV 2 Img. - |
+| `0x48351` | Continuous Bracket 2.3 EV 3 Img. | Continuous Bracket 2.3 EV 3 Img. |
+| `0x48551` | Continuous Bracket 2.3 EV 5 Img. | Continuous Bracket 2.3 EV 5 Img. |
+| `0x4c271` | Continuous Bracket 2.5 EV 2 Img. + | Continuous Bracket 2.5 EV 2 Img. + |
+| `0x4c279` | Continuous Bracket 2.5 EV 2 Img. - | Continuous Bracket 2.5 EV 2 Img. - |
+| `0x48371` | Continuous Bracket 2.5 EV 3 Img. | Continuous Bracket 2.5 EV 3 Img. |
+| `0x48571` | Continuous Bracket 2.5 EV 5 Img. | Continuous Bracket 2.5 EV 5 Img. |
+| `0x4c291` | Continuous Bracket 2.7 EV 2 Img. + | Continuous Bracket 2.7 EV 2 Img. + |
+| `0x4c299` | Continuous Bracket 2.7 EV 2 Img. - | Continuous Bracket 2.7 EV 2 Img. - |
+| `0x48391` | Continuous Bracket 2.7 EV 3 Img. | Continuous Bracket 2.7 EV 3 Img. |
+| `0x48591` | Continuous Bracket 2.7 EV 5 Img. | Continuous Bracket 2.7 EV 5 Img. |
+| `0x4c231` | Continuous Bracket 3.0 EV 2 Img. + | Continuous Bracket 3.0 EV 2 Img. + |
+| `0x4c239` | Continuous Bracket 3.0 EV 2 Img. - | Continuous Bracket 3.0 EV 2 Img. - |
+| `0x48331` | Continuous Bracket 3.0 EV 3 Img. | Continuous Bracket 3.0 EV 3 Img. |
+| `0x48531` | Continuous Bracket 3.0 EV 5 Img. | Continuous Bracket 3.0 EV 5 Img. |
+| `0x5c236` | Single Bracket 0.3 EV 2 Img. + | Single Bracket 0.3 EV 2 Img. + |
+| `0x5c23e` | Single Bracket 0.3 EV 2 Img. - | Single Bracket 0.3 EV 2 Img. - |
+| `0x58336` | Single Bracket 0.3 EV 3 Img. | Single Bracket 0.3 EV 3 Img. |
+| `0x58536` | Single Bracket 0.3 EV 5 Img. | Single Bracket 0.3 EV 5 Img. |
+| `0x58736` | Single Bracket 0.3 EV 7 Img. | Single Bracket 0.3 EV 7 Img. |
+| `0x58936` | Single Bracket 0.3 EV 9 Img. | Single Bracket 0.3 EV 9 Img. |
+| `0x5c256` | Single Bracket 0.5 EV 2 Img. + | Single Bracket 0.5 EV 2 Img. + |
+| `0x5c25e` | Single Bracket 0.5 EV 2 Img. - | Single Bracket 0.5 EV 2 Img. - |
+| `0x58356` | Single Bracket 0.5 EV 3 Img. | Single Bracket 0.5 EV 3 Img. |
+| `0x58556` | Single Bracket 0.5 EV 5 Img. | Single Bracket 0.5 EV 5 Img. |
+| `0x58756` | Single Bracket 0.5 EV 7 Img. | Single Bracket 0.5 EV 7 Img. |
+| `0x58956` | Single Bracket 0.5 EV 9 Img. | Single Bracket 0.5 EV 9 Img. |
+| `0x5c276` | Single Bracket 0.7 EV 2 Img. + | Single Bracket 0.7 EV 2 Img. + |
+| `0x5c27e` | Single Bracket 0.7 EV 2 Img. - | Single Bracket 0.7 EV 2 Img. - |
+| `0x58376` | Single Bracket 0.7 EV 3 Img. | Single Bracket 0.7 EV 3 Img. |
+| `0x58576` | Single Bracket 0.7 EV 5 Img. | Single Bracket 0.7 EV 5 Img. |
+| `0x58776` | Single Bracket 0.7 EV 7 Img. | Single Bracket 0.7 EV 7 Img. |
+| `0x58976` | Single Bracket 0.7 EV 9 Img. | Single Bracket 0.7 EV 9 Img. |
+| `0x5c210` | Single Bracket 1.0 EV 2 Img. + | Single Bracket 1.0 EV 2 Img. + |
+| `0x5c218` | Single Bracket 1.0 EV 2 Img. - | Single Bracket 1.0 EV 2 Img. - |
+| `0x58310` | Single Bracket 1.0 EV 3 Img. | Single Bracket 1.0 EV 3 Img. |
+| `0x58510` | Single Bracket 1.0 EV 5 Img. | Single Bracket 1.0 EV 5 Img. |
+| `0x58710` | Single Bracket 1.0 EV 7 Img. | Single Bracket 1.0 EV 7 Img. |
+| `0x58910` | Single Bracket 1.0 EV 9 Img. | Single Bracket 1.0 EV 9 Img. |
+| `0x5c240` | Single Bracket 1.3 EV 2 Img. + | Single Bracket 1.3 EV 2 Img. + |
+| `0x5c248` | Single Bracket 1.3 EV 2 Img. - | Single Bracket 1.3 EV 2 Img. - |
+| `0x58340` | Single Bracket 1.3 EV 3 Img. | Single Bracket 1.3 EV 3 Img. |
+| `0x58540` | Single Bracket 1.3 EV 5 Img. | Single Bracket 1.3 EV 5 Img. |
+| `0x58740` | Single Bracket 1.3 EV 7 Img. | Single Bracket 1.3 EV 7 Img. |
+| `0x5c260` | Single Bracket 1.5 EV 2 Img. + | Single Bracket 1.5 EV 2 Img. + |
+| `0x5c268` | Single Bracket 1.5 EV 2 Img. - | Single Bracket 1.5 EV 2 Img. - |
+| `0x58360` | Single Bracket 1.5 EV 3 Img. | Single Bracket 1.5 EV 3 Img. |
+| `0x58560` | Single Bracket 1.5 EV 5 Img. | Single Bracket 1.5 EV 5 Img. |
+| `0x58760` | Single Bracket 1.5 EV 7 Img. | Single Bracket 1.5 EV 7 Img. |
+| `0x5c280` | Single Bracket 1.7 EV 2 Img. + | Single Bracket 1.7 EV 2 Img. + |
+| `0x5c288` | Single Bracket 1.7 EV 2 Img. - | Single Bracket 1.7 EV 2 Img. - |
+| `0x58380` | Single Bracket 1.7 EV 3 Img. | Single Bracket 1.7 EV 3 Img. |
+| `0x58580` | Single Bracket 1.7 EV 5 Img. | Single Bracket 1.7 EV 5 Img. |
+| `0x58780` | Single Bracket 1.7 EV 7 Img. | Single Bracket 1.7 EV 7 Img. |
+| `0x5c220` | Single Bracket 2.0 EV 2 Img. + | Single Bracket 2.0 EV 2 Img. + |
+| `0x5c228` | Single Bracket 2.0 EV 2 Img. - | Single Bracket 2.0 EV 2 Img. - |
+| `0x58320` | Single Bracket 2.0 EV 3 Img. | Single Bracket 2.0 EV 3 Img. |
+| `0x58520` | Single Bracket 2.0 EV 5 Img. | Single Bracket 2.0 EV 5 Img. |
+| `0x58720` | Single Bracket 2.0 EV 7 Img. | Single Bracket 2.0 EV 7 Img. |
+| `0x5c250` | Single Bracket 2.3 EV 2 Img. + | Single Bracket 2.3 EV 2 Img. + |
+| `0x5c258` | Single Bracket 2.3 EV 2 Img. - | Single Bracket 2.3 EV 2 Img. - |
+| `0x58350` | Single Bracket 2.3 EV 3 Img. | Single Bracket 2.3 EV 3 Img. |
+| `0x58550` | Single Bracket 2.3 EV 5 Img. | Single Bracket 2.3 EV 5 Img. |
+| `0x5c270` | Single Bracket 2.5 EV 2 Img. + | Single Bracket 2.5 EV 2 Img. + |
+| `0x5c278` | Single Bracket 2.5 EV 2 Img. - | Single Bracket 2.5 EV 2 Img. - |
+| `0x58370` | Single Bracket 2.5 EV 3 Img. | Single Bracket 2.5 EV 3 Img. |
+| `0x58570` | Single Bracket 2.5 EV 5 Img. | Single Bracket 2.5 EV 5 Img. |
+| `0x5c290` | Single Bracket 2.7 EV 2 Img. + | Single Bracket 2.7 EV 2 Img. + |
+| `0x5c298` | Single Bracket 2.7 EV 2 Img. - | Single Bracket 2.7 EV 2 Img. - |
+| `0x58390` | Single Bracket 2.7 EV 3 Img. | Single Bracket 2.7 EV 3 Img. |
+| `0x58590` | Single Bracket 2.7 EV 5 Img. | Single Bracket 2.7 EV 5 Img. |
+| `0x5c230` | Single Bracket 3.0 EV 2 Img. + | Single Bracket 3.0 EV 2 Img. + |
+| `0x5c238` | Single Bracket 3.0 EV 2 Img. - | Single Bracket 3.0 EV 2 Img. - |
+| `0x58330` | Single Bracket 3.0 EV 3 Img. | Single Bracket 3.0 EV 3 Img. |
+| `0x58530` | Single Bracket 3.0 EV 5 Img. | Single Bracket 3.0 EV 5 Img. |
+| `0x68018` | White Balance Bracket Lo | White Balance Bracket Lo |
+| `0x68028` | White Balance Bracket Hi | White Balance Bracket Hi |
+| `0x78019` | DRO Bracket Lo | DRO Bracket Lo |
+| `0x78029` | DRO Bracket Hi | DRO Bracket Hi |
+| `0x7801a` | LPF Bracket | LPF Bracket |
+| `0x7800a` | Remote Commander | Remote Commander |
+| `0x7800b` | Mirror Up | Mirror Up |
+| `0x78006` | Self Portrait 1 Person | Self Portrait 1 Person |
+| `0x78007` | Self Portrait 2 People | Self Portrait 2 People |
+| `0x88008` | Continuous Self Timer 3 Img. | Continuous Self Timer 3 Img. |
+| `0x88009` | Continuous Self Timer 5 Img. | Continuous Self Timer 5 Img. |
+| `0x8800c` | Continuous Self Timer 3 Img. 5 Sec. | Continuous Self Timer 3 Img. 5 Sec. |
+| `0x8800d` | Continuous Self Timer 5 Img. 5 Sec. | Continuous Self Timer 5 Img. 5 Sec. |
+| `0x8800e` | Continuous Self Timer 3 Img. 2 Sec. | Continuous Self Timer 3 Img. 2 Sec. |
+| `0x8800f` | Continuous Self Timer 5 Img. 2 Sec. | Continuous Self Timer 5 Img. 2 Sec. |
+| `0x98030` | Spot Burst Shooting Lo | Spot Burst Shooting Lo |
+| `0x98031` | Spot Burst Shooting Mid | Spot Burst Shooting Mid |
+| `0x98032` | Spot Burst Shooting Hi | Spot Burst Shooting Hi |
+| `0xa8040` | Focus Bracket | Focus Bracket |
+
 ---
 
-## OsdImageMode
-
-**Code:** `0xd207`
+## OsdImageMode (`0xd207`)
 
 Get/Set the OSD image mode
 
@@ -99,11 +252,18 @@ Get/Set the OSD image mode
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | OFF | OFF |
+| `0x1` | ON | ON |
+
 ---
 
-## LiveViewStatus
-
-**Code:** `0xd221`
+## LiveViewStatus (`0xd221`)
 
 Get the live view status.
 
@@ -111,11 +271,19 @@ Get the live view status.
 
 **Access:** Get
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | SUPPORTED_DISABLED | SUPPORTED_DISABLED |
+| `0x1` | SUPPORTED_ENABLED | SUPPORTED_ENABLED |
+| `0x2` | NOT_SUPPORTED | NOT_SUPPORTED |
+
 ---
 
-## StillImageSaveDestination
-
-**Code:** `0xd222`
+## StillImageSaveDestination (`0xd222`)
 
 Get the information of still image save destination.
 
@@ -123,11 +291,19 @@ Get the information of still image save destination.
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | CAMERA_DEVICE | CAMERA_DEVICE |
+| `0x10` | HOST_DEVICE | HOST_DEVICE |
+| `0x11` | BOTH_DEVICES | BOTH_DEVICES |
+
 ---
 
-## PositionKeySetting
-
-**Code:** `0xd25a`
+## PositionKeySetting (`0xd25a`)
 
 Get/Set the position key setting (controls which setting takes priority between host and camera)
 
@@ -135,11 +311,18 @@ Get/Set the position key setting (controls which setting takes priority between 
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | CAMERA_PRIORITY | CAMERA_PRIORITY |
+| `0x1` | HOST_PRIORITY | HOST_PRIORITY |
+
 ---
 
-## SetLiveViewEnable
-
-**Code:** `0xd313`
+## SetLiveViewEnable (`0xd313`)
 
 Set live view enable. When using Live View while connected in "Remote Control with Transfer Mode," it is necessary to enable the feature using this Control Code.
 
@@ -147,11 +330,18 @@ Set live view enable. When using Live View while connected in "Remote Control wi
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | DISABLE | DISABLE |
+| `0x2` | ENABLE | ENABLE |
+
 ---
 
-## SetPostViewEnable
-
-**Code:** `0xd312`
+## SetPostViewEnable (`0xd312`)
 
 Set post view enable. When using Live View while connected in "Remote Control with Transfer Mode," it is necessary to enable the feature using this Control Code.
 
@@ -159,11 +349,18 @@ Set post view enable. When using Live View while connected in "Remote Control wi
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | DISABLE | DISABLE |
+| `0x2` | ENABLE | ENABLE |
+
 ---
 
-## ShootingFileInfo
-
-**Code:** `0xd215`
+## ShootingFileInfo (`0xd215`)
 
 Get the shooting file info. 0x0000 indicates no files are available, 0x0001 - 0x7FFF indicate files exist. 0x8001 and over indicate the files are ready for transfer.
 
@@ -171,11 +368,11 @@ Get the shooting file info. 0x0000 indicates no files are available, 0x0001 - 0x
 
 **Access:** Get
 
+**Codec Type:** Base Codec
+
 ---
 
-## ShutterHalfReleaseButton
-
-**Code:** `0xd2c1`
+## ShutterHalfReleaseButton (`0xd2c1`)
 
 Control shutter half-release (S1) (focus) button.
 
@@ -183,11 +380,18 @@ Control shutter half-release (S1) (focus) button.
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | UP | UP |
+| `0x2` | DOWN | DOWN |
+
 ---
 
-## ShutterReleaseButton
-
-**Code:** `0xd2c2`
+## ShutterReleaseButton (`0xd2c2`)
 
 Control shutter release (S2) button.
 
@@ -195,11 +399,18 @@ Control shutter release (S2) button.
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | UP | UP |
+| `0x2` | DOWN | DOWN |
+
 ---
 
-## S1S2Button
-
-**Code:** `0xd2e6`
+## S1S2Button (`0xd2e6`)
 
 Execute shutter half-release (S1) and shutter release (S2) buttons.
 
@@ -207,11 +418,18 @@ Execute shutter half-release (S1) and shutter release (S2) buttons.
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | UP | UP |
+| `0x2` | DOWN | DOWN |
+
 ---
 
-## MovieRecButton
-
-**Code:** `0xd2c8`
+## MovieRecButton (`0xd2c8`)
 
 Control movie record button (hold)
 
@@ -219,11 +437,18 @@ Control movie record button (hold)
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | UP | UP |
+| `0x2` | DOWN | DOWN |
+
 ---
 
-## LiveViewImageQuality
-
-**Code:** `0xd26a`
+## LiveViewImageQuality (`0xd26a`)
 
 Get/Set the live view image quality.
 
@@ -231,11 +456,18 @@ Get/Set the live view image quality.
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x1` | LOW | LOW |
+| `0x2` | HIGH | HIGH |
+
 ---
 
-## ContentTransferEnable
-
-**Code:** `0xd295`
+## ContentTransferEnable (`0xd295`)
 
 Get the contents transfer enabled status.
 
@@ -243,11 +475,18 @@ Get the contents transfer enabled status.
 
 **Access:** Get
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | DISABLE | DISABLE |
+| `0x1` | ENABLE | ENABLE |
+
 ---
 
-## FocusIndication
-
-**Code:** `0xd213`
+## FocusIndication (`0xd213`)
 
 Get the focus indication.
 

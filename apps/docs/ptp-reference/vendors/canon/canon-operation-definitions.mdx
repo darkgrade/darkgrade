@@ -1,13 +1,8 @@
 ---
-title: "Canon"
-description: "PTP Canon definitions"
+title: "Canon Operations"
 ---
 
-# Canon
-
-## CanonSetRemoteMode
-
-**Code:** `0x9114`
+## CanonSetRemoteMode (`0x9114`)
 
 Set Remote Mode.
 
@@ -23,8 +18,8 @@ Set Remote Mode.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `1` | ENABLE | Enable Remote Mode |
-| `0` | DISABLE | Disable Remote Mode |
+| `0x1` | ENABLE | Enable Remote Mode |
+| `0x0` | DISABLE | Disable Remote Mode |
 
 ### Response Parameters
 
@@ -32,9 +27,7 @@ None
 
 ---
 
-## CanonSetEventMode
-
-**Code:** `0x9115`
+## CanonSetEventMode (`0x9115`)
 
 Set Event Mode.
 
@@ -50,8 +43,8 @@ Set Event Mode.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `1` | ENABLE | Enable Event Mode |
-| `0` | DISABLE | Disable Event Mode |
+| `0x1` | ENABLE | Enable Event Mode |
+| `0x0` | DISABLE | Disable Event Mode |
 
 ### Response Parameters
 
@@ -59,9 +52,7 @@ None
 
 ---
 
-## CanonRemoteReleaseOn
-
-**Code:** `0x9128`
+## CanonRemoteReleaseOn (`0x9128`)
 
 Remote Release On. First parameter: 1=half press, 2=full press, 3=half+full press. Second parameter: 0=AF enabled, 1=AF disabled (MF).
 
@@ -78,15 +69,15 @@ Remote Release On. First parameter: 1=half press, 2=full press, 3=half+full pres
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `1` | FOCUS | Half Press (Focus) |
-| `2` | SHUTTER | Full Press (Shutter) |
+| `0x1` | FOCUS | Half Press (Focus) |
+| `0x2` | SHUTTER | Full Press (Shutter) |
 
 **AFMode values:**
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | AF | Autofocus Enabled |
-| `1` | MF | Manual Focus |
+| `0x0` | AF | Autofocus Enabled |
+| `0x1` | MF | Manual Focus |
 
 ### Response Parameters
 
@@ -94,9 +85,7 @@ None
 
 ---
 
-## CanonRemoteReleaseOff
-
-**Code:** `0x9129`
+## CanonRemoteReleaseOff (`0x9129`)
 
 Remote Release Off. Parameter: 1=release half, 2=release full, 3=release all.
 
@@ -112,8 +101,8 @@ Remote Release Off. Parameter: 1=release half, 2=release full, 3=release all.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `1` | FOCUS | Release Half Press |
-| `2` | SHUTTER | Release Full Press |
+| `0x1` | FOCUS | Release Half Press |
+| `0x2` | SHUTTER | Release Full Press |
 
 ### Response Parameters
 
@@ -121,9 +110,7 @@ None
 
 ---
 
-## CanonSetPropValue
-
-**Code:** `0x9110`
+## CanonSetPropValue (`0x9110`)
 
 Set Property Value (Canon-specific).
 
@@ -139,9 +126,7 @@ None
 
 ---
 
-## CanonRequestDevicePropValue
-
-**Code:** `0x9127`
+## CanonRequestDevicePropValue (`0x9127`)
 
 Request Property Value (Canon-specific). This operation requests the camera to send a property value via an event, it does not return the value directly.
 
@@ -159,13 +144,13 @@ None
 
 ---
 
-## CanonGetEventData
-
-**Code:** `0x9116`
+## CanonGetEventData (`0x9116`)
 
 Get Event Data (Canon-specific event polling).
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 

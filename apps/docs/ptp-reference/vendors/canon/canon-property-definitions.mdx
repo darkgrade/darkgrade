@@ -1,297 +1,502 @@
 ---
-title: "Canon"
-description: "PTP Canon definitions"
+title: "Canon Properties"
 ---
 
-# Canon
-
-## CanonAperture
-
-**Code:** `0xd101`
+## CanonAperture (`0xd101`)
 
 Canon Aperture (f-stop)
 
 **Datatype:** UINT16
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | auto | Implicit Auto |
+| `0xffff` | auto | Auto |
+| `0xb0` | auto | Auto |
+| `0x8` | f/1 | f/1.0 |
+| `0xb` | f/1.1 | f/1.1 |
+| `0xc` | f/1.2 | f/1.2 |
+| `0xd` | f/1.2 | f/1.2 (1/3) |
+| `0x10` | f/1.4 | f/1.4 |
+| `0x13` | f/1.6 | f/1.6 |
+| `0x14` | f/1.8 | f/1.8 |
+| `0x15` | f/1.8 | f/1.8 (1/3) |
+| `0x18` | f/2 | f/2.0 |
+| `0x1b` | f/2.2 | f/2.2 |
+| `0x1c` | f/2.5 | f/2.5 |
+| `0x1d` | f/2.5 | f/2.5 (1/3) |
+| `0x20` | f/2.8 | f/2.8 |
+| `0x23` | f/3.2 | f/3.2 |
+| `0x24` | f/3.5 | f/3.5 |
+| `0x25` | f/3.5 | f/3.5 (1/3) |
+| `0x28` | f/4 | f/4.0 |
+| `0x2b` | f/4.5 | f/4.5 |
+| `0x2c` | f/4.5 | f/4.5 |
+| `0x2d` | f/5.0 | f/5.0 |
+| `0x30` | f/5.6 | f/5.6 |
+| `0x33` | f/6.3 | f/6.3 |
+| `0x34` | f/6.7 | f/6.7 |
+| `0x35` | f/7.1 | f/7.1 |
+| `0x38` | f/8 | f/8.0 |
+| `0x3b` | f/9 | f/9.0 |
+| `0x3c` | f/9.5 | f/9.5 |
+| `0x3d` | f/10 | f/10 |
+| `0x40` | f/11 | f/11 |
+| `0x43` | f/13 | f/13 |
+| `0x44` | f/13 | f/13 (1/3) |
+| `0x45` | f/14 | f/14 |
+| `0x48` | f/16 | f/16 |
+| `0x4b` | f/18 | f/18 |
+| `0x4c` | f/19 | f/19 |
+| `0x4d` | f/20 | f/20 |
+| `0x50` | f/22 | f/22 |
+| `0x53` | f/25 | f/25 |
+| `0x54` | f/27 | f/27 |
+| `0x55` | f/29 | f/29 |
+| `0x58` | f/32 | f/32 |
+| `0x5b` | f/36 | f/36 |
+| `0x5c` | f/38 | f/38 |
+| `0x5d` | f/40 | f/40 |
+| `0x60` | f/45 | f/45 |
+| `0x63` | f/51 | f/51 |
+| `0x64` | f/54 | f/54 |
+| `0x65` | f/57 | f/57 |
+| `0x68` | f/64 | f/64 |
+| `0x6b` | f/72 | f/72 |
+| `0x6c` | f/76 | f/76 |
+| `0x6d` | f/81 | f/81 |
+| `0x70` | f/91 | f/91 |
+
 ---
 
-## CanonShutterSpeed
-
-**Code:** `0xd102`
+## CanonShutterSpeed (`0xd102`)
 
 Canon Shutter Speed
 
 **Datatype:** UINT16
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | auto | Auto |
+| `0x4` | bulb | Bulb |
+| `0xc` | bulb | Bulb |
+| `0x10` | 30 | 30" |
+| `0x13` | 25 | 25" |
+| `0x14` | 20.3 | 20.3" (+1/3) |
+| `0x15` | 20 | 20" |
+| `0x18` | 15 | 15" |
+| `0x1b` | 13 | 13" |
+| `0x1c` | 10 | 10" |
+| `0x1d` | 10.3 | 10.4" |
+| `0x20` | 8 | 8" |
+| `0x23` | 6.3 | 6.3" (+1/3) |
+| `0x24` | 6 | 6" |
+| `0x25` | 5 | 5" |
+| `0x28` | 4 | 4" |
+| `0x2b` | 3.2 | 3.2" |
+| `0x2c` | 3 | 3" |
+| `0x2d` | 2.5 | 2.5" |
+| `0x30` | 2 | 2" |
+| `0x33` | 1.6 | 1.6" |
+| `0x34` | 1.5 | 1.5" |
+| `0x35` | 1.3 | 1.3" |
+| `0x38` | 1 | 1" |
+| `0x3b` | 0.8 | 0.8" |
+| `0x3c` | 0.7 | 0.7" |
+| `0x3d` | 0.6 | 0.6" |
+| `0x40` | 0.5 | 0.5" |
+| `0x43` | 0.4 | 0.4" |
+| `0x44` | 0.3 | 0.3" |
+| `0x45` | 0.3 | 0.3" (1/3) |
+| `0x48` | 1/4 | 1/4 |
+| `0x4b` | 1/5 | 1/5 |
+| `0x4c` | 1/6 | 1/6 |
+| `0x4d` | 1/6 | 1/6 (1/3) |
+| `0x50` | 1/8 | 1/8 |
+| `0x53` | 1/10 | 1/10 (1/3) |
+| `0x54` | 1/10 | 1/10 |
+| `0x55` | 1/13 | 1/13 |
+| `0x58` | 1/15 | 1/15 |
+| `0x5b` | 1/20 | 1/20 (1/3) |
+| `0x5c` | 1/20 | 1/20 |
+| `0x5d` | 1/25 | 1/25 |
+| `0x60` | 1/30 | 1/30 |
+| `0x63` | 1/40 | 1/40 |
+| `0x64` | 1/45 | 1/45 |
+| `0x65` | 1/50 | 1/50 |
+| `0x68` | 1/60 | 1/60 |
+| `0x6b` | 1/80 | 1/80 |
+| `0x6c` | 1/90 | 1/90 |
+| `0x6d` | 1/100 | 1/100 |
+| `0x70` | 1/125 | 1/125 |
+| `0x73` | 1/160 | 1/160 |
+| `0x74` | 1/180 | 1/180 |
+| `0x75` | 1/200 | 1/200 |
+| `0x78` | 1/250 | 1/250 |
+| `0x7b` | 1/320 | 1/320 |
+| `0x7c` | 1/350 | 1/350 |
+| `0x7d` | 1/400 | 1/400 |
+| `0x80` | 1/500 | 1/500 |
+| `0x83` | 1/640 | 1/640 |
+| `0x84` | 1/750 | 1/750 |
+| `0x85` | 1/800 | 1/800 |
+| `0x88` | 1/1000 | 1/1000 |
+| `0x8b` | 1/1250 | 1/1250 |
+| `0x8c` | 1/1500 | 1/1500 |
+| `0x8d` | 1/1600 | 1/1600 |
+| `0x90` | 1/2000 | 1/2000 |
+| `0x93` | 1/2500 | 1/2500 |
+| `0x94` | 1/3000 | 1/3000 |
+| `0x95` | 1/3200 | 1/3200 |
+| `0x98` | 1/4000 | 1/4000 |
+| `0x9b` | 1/5000 | 1/5000 |
+| `0x9c` | 1/6000 | 1/6000 |
+| `0x9d` | 1/6400 | 1/6400 |
+| `0xa0` | 1/8000 | 1/8000 |
+| `0xa8` | 1/16000 | 1/16000 |
+
 ---
 
-## CanonIso
-
-**Code:** `0xd103`
+## CanonIso (`0xd103`)
 
 Canon ISO Sensitivity
 
 **Datatype:** UINT16
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0xffff` | factory_default | Factory Default |
+| `0x0` | auto | Auto |
+| `0x1` | auto_iso | Auto ISO |
+| `0x28` | 6 | ISO 6 |
+| `0x30` | 12 | ISO 12 |
+| `0x38` | 25 | ISO 25 |
+| `0x40` | 50 | ISO 50 |
+| `0x43` | 64 | ISO 64 |
+| `0x45` | 80 | ISO 80 |
+| `0x48` | 100 | ISO 100 |
+| `0x4b` | 125 | ISO 125 |
+| `0x4d` | 160 | ISO 160 |
+| `0x50` | 200 | ISO 200 |
+| `0x53` | 250 | ISO 250 |
+| `0x55` | 320 | ISO 320 |
+| `0x58` | 400 | ISO 400 |
+| `0x5b` | 500 | ISO 500 |
+| `0x5d` | 640 | ISO 640 |
+| `0x60` | 800 | ISO 800 |
+| `0x63` | 1000 | ISO 1000 |
+| `0x65` | 1250 | ISO 1250 |
+| `0x68` | 1600 | ISO 1600 |
+| `0x6b` | 2000 | ISO 2000 |
+| `0x6d` | 2500 | ISO 2500 |
+| `0x70` | 3200 | ISO 3200 |
+| `0x73` | 4000 | ISO 4000 |
+| `0x75` | 5000 | ISO 5000 |
+| `0x78` | 6400 | ISO 6400 |
+| `0x7b` | 8000 | ISO 8000 |
+| `0x7d` | 10000 | ISO 10000 |
+| `0x80` | 12800 | ISO 12800 |
+| `0x83` | 16000 | ISO 16000 |
+| `0x85` | 20000 | ISO 20000 |
+| `0x88` | 25600 | ISO 25600 |
+| `0x8b` | 32000 | ISO 32000 |
+| `0x8d` | 40000 | ISO 40000 |
+| `0x90` | 51200 | ISO 51200 |
+| `0x93` | 64000 | ISO 64000 |
+| `0x95` | 80000 | ISO 80000 |
+| `0x98` | 102400 | ISO 102400 |
+| `0xa0` | 204800 | ISO 204800 |
+| `0xa8` | 409600 | ISO 409600 |
+| `0xb0` | 819200 | ISO 819200 |
+
 ---
 
-## CanonExpCompensation
-
-**Code:** `0xd104`
+## CanonExpCompensation (`0xd104`)
 
 Canon Exposure Compensation
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonAutoExposureMode
-
-**Code:** `0xd105`
+## CanonAutoExposureMode (`0xd105`)
 
 Canon Auto Exposure Mode
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonDriveMode
-
-**Code:** `0xd106`
+## CanonDriveMode (`0xd106`)
 
 Canon Drive Mode
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonMeteringMode
-
-**Code:** `0xd107`
+## CanonMeteringMode (`0xd107`)
 
 Canon Metering Mode
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonFocusMode
-
-**Code:** `0xd108`
+## CanonFocusMode (`0xd108`)
 
 Canon Focus Mode
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonWhiteBalance
-
-**Code:** `0xd109`
+## CanonWhiteBalance (`0xd109`)
 
 Canon White Balance
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonWhiteBalanceAdjustA
-
-**Code:** `0xd10b`
+## CanonWhiteBalanceAdjustA (`0xd10b`)
 
 Canon White Balance Adjust A
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonWhiteBalanceAdjustB
-
-**Code:** `0xd10c`
+## CanonWhiteBalanceAdjustB (`0xd10c`)
 
 Canon White Balance Adjust B
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonWhiteBalanceXA
-
-**Code:** `0xd10d`
+## CanonWhiteBalanceXA (`0xd10d`)
 
 Canon White Balance X A
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonWhiteBalanceXB
-
-**Code:** `0xd10e`
+## CanonWhiteBalanceXB (`0xd10e`)
 
 Canon White Balance X B
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonColorSpace
-
-**Code:** `0xd10f`
+## CanonColorSpace (`0xd10f`)
 
 Canon Color Space
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonPictureStyle
-
-**Code:** `0xd110`
+## CanonPictureStyle (`0xd110`)
 
 Canon Picture Style
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonAutoPowerOff
-
-**Code:** `0xd114`
+## CanonAutoPowerOff (`0xd114`)
 
 Canon Auto Power Off
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonModelId
-
-**Code:** `0xd116`
+## CanonModelId (`0xd116`)
 
 Canon Model ID
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonAvailableShots
-
-**Code:** `0xd11b`
+## CanonAvailableShots (`0xd11b`)
 
 Canon Available Shots
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonAeModeDial
-
-**Code:** `0xd138`
+## CanonAeModeDial (`0xd138`)
 
 Canon AE Mode Dial
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonPictureStyleExStandard
-
-**Code:** `0xd157`
+## CanonPictureStyleExStandard (`0xd157`)
 
 Canon Picture Style Ex Standard
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonExposureSimMode
-
-**Code:** `0xd1b7`
+## CanonExposureSimMode (`0xd1b7`)
 
 Canon Exposure Simulation Mode
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonLiveViewMode
-
-**Code:** `0xd1b0`
+## CanonLiveViewMode (`0xd1b0`)
 
 Set live view mode.
 
 **Datatype:** UINT16
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | NONE | None |
+| `0x1` | CAMERA | Camera |
+| `0x2` | HOST | Host |
+| `0x3` | CAMERA_AND_HOST | Camera and Host |
+
 ---
 
-## CanonRecordingDestination
-
-**Code:** `0xd1b8`
+## CanonRecordingDestination (`0xd1b8`)
 
 Movie recording destination.
 
 **Datatype:** UINT16
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | NONE | None (not recording) |
+| `0x3` | SDRAM | Camera memory |
+| `0x4` | CARD | Memory card |
+
 ---
 
-## CanonLvViewTypeSelect
-
-**Code:** `0xd1bc`
+## CanonLvViewTypeSelect (`0xd1bc`)
 
 Canon Live View Type Select
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonFlashChargingState
-
-**Code:** `0xd1c0`
+## CanonFlashChargingState (`0xd1c0`)
 
 Canon Flash Charging State
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonAloMode
-
-**Code:** `0xd1c1`
+## CanonAloMode (`0xd1c1`)
 
 Canon ALO Mode
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonOneShotRawOn
-
-**Code:** `0xd1c3`
+## CanonOneShotRawOn (`0xd1c3`)
 
 Canon One Shot RAW On
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonBrightness
-
-**Code:** `0xd1d5`
+## CanonBrightness (`0xd1d5`)
 
 Canon Brightness
 
 **Datatype:** 4
 
+**Codec Type:** Custom Codec
+
 ---
 
-## CanonAeb
-
-**Code:** `0xd1d9`
+## CanonAeb (`0xd1d9`)
 
 Canon Auto Exposure Bracketing
 
 **Datatype:** 4
+
+**Codec Type:** Custom Codec
 
 ---
 

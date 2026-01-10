@@ -1,13 +1,8 @@
 ---
-title: "Nikon"
-description: "PTP Nikon definitions"
+title: "Nikon Operations"
 ---
 
-# Nikon
-
-## ISOAutoControl
-
-**Code:** `0xd054`
+## ISOAutoControl (`0xd054`)
 
 ISO sensitivity settings – Auto ISO sensitivity control
 
@@ -15,11 +10,18 @@ ISO sensitivity settings – Auto ISO sensitivity control
 
 **Access:** GetSet
 
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | OFF | Auto ISO control disabled |
+| `0x1` | ON | Auto ISO control enabled |
+
 ---
 
-## GetPartialObjectEx
-
-**Code:** `0x9431`
+## GetPartialObjectEx (`0x9431`)
 
 Get partial object with 64-bit offset support (extension of GetPartialObject)
 
@@ -44,13 +46,13 @@ Get partial object with 64-bit offset support (extension of GetPartialObject)
 
 ---
 
-## GetDevicePropDescEx
-
-**Code:** `0x943a`
+## GetDevicePropDescEx (`0x943a`)
 
 Get device property descriptor (4-byte extension)
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -64,9 +66,7 @@ None
 
 ---
 
-## GetDevicePropValueEx
-
-**Code:** `0x943b`
+## GetDevicePropValueEx (`0x943b`)
 
 Get device property value (4-byte extension)
 
@@ -84,9 +84,7 @@ None
 
 ---
 
-## SetDevicePropValueEx
-
-**Code:** `0x943c`
+## SetDevicePropValueEx (`0x943c`)
 
 Set device property value (4-byte extension)
 
@@ -104,9 +102,7 @@ None
 
 ---
 
-## DeviceReady
-
-**Code:** `0x90c8`
+## DeviceReady (`0x90c8`)
 
 Check status of activation-type command (e.g. StartLiveView, AfDrive)
 
@@ -122,9 +118,7 @@ None
 
 ---
 
-## StartLiveView
-
-**Code:** `0x9201`
+## StartLiveView (`0x9201`)
 
 Start remote live view mode (activation-type command)
 
@@ -140,9 +134,7 @@ None
 
 ---
 
-## EndLiveView
-
-**Code:** `0x9202`
+## EndLiveView (`0x9202`)
 
 End remote live view mode
 
@@ -158,13 +150,13 @@ None
 
 ---
 
-## GetLiveViewImageEx
-
-**Code:** `0x9428`
+## GetLiveViewImageEx (`0x9428`)
 
 Get live view image with metadata (LiveViewObject with version)
 
 **Data Direction:** out
+
+**Codec Type:** Custom Codec
 
 ### Operation Parameters
 
@@ -176,9 +168,7 @@ None
 
 ---
 
-## StartMovieRecord
-
-**Code:** `0x920a`
+## StartMovieRecord (`0x920a`)
 
 Start video recording (only accepted during live view)
 
@@ -194,9 +184,7 @@ None
 
 ---
 
-## EndMovieRecord
-
-**Code:** `0x920b`
+## EndMovieRecord (`0x920b`)
 
 End video recording
 
@@ -212,9 +200,7 @@ None
 
 ---
 
-## ChangeCameraMode
-
-**Code:** `0x90c2`
+## ChangeCameraMode (`0x90c2`)
 
 Switch between PC camera mode and remote mode
 
@@ -230,8 +216,8 @@ Switch between PC camera mode and remote mode
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | PC_CAMERA | PC Camera Mode: host commands ignored and uses settings from dial/buttons |
-| `1` | REMOTE | Remote Mode: all dials/buttons ignored and uses commands from host |
+| `0x0` | PC_CAMERA | PC Camera Mode: host commands ignored and uses settings from dial/buttons |
+| `0x1` | REMOTE | Remote Mode: all dials/buttons ignored and uses commands from host |
 
 ### Response Parameters
 
@@ -239,9 +225,7 @@ None
 
 ---
 
-## ChangeApplicationMode
-
-**Code:** `0x9435`
+## ChangeApplicationMode (`0x9435`)
 
 Switch application mode on/off
 
@@ -257,8 +241,8 @@ Switch application mode on/off
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0` | OFF | disallows image playback, deletion, video recording on the camera |
-| `1` | ON | allows image playback, deletion, video recording on the camera |
+| `0x0` | OFF | disallows image playback, deletion, video recording on the camera |
+| `0x1` | ON | allows image playback, deletion, video recording on the camera |
 
 ### Response Parameters
 

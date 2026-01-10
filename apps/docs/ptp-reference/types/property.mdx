@@ -1,0 +1,36 @@
+---
+title: "Property"
+description: "PTP Property type definitions"
+---
+
+# Property
+
+## PropertyAccess
+
+**Type:** `"Get" | "GetSet"`
+
+---
+
+## PropertyDefinition
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **code** | `number` | ✓ |
+| **name** | `string` | ✓ |
+| **description** | `string` | ✓ |
+| **datatype** | `number` | ✓ |
+| **access** | `PropertyAccess` | ✓ |
+| **codec** | `CodecDefinition&lt;T&gt;` | ✓ |
+| **defaultValue** | `T` |  |
+| **currentValue** | `T` |  |
+
+---
+
+## DevicePropCode
+
+**Type:** `number`
+
+---
+

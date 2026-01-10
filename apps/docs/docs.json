@@ -15,9 +15,10 @@
   "navigation": {
     "groups": [
       {
-        "group": "Getting Started",
+        "group": "Introduction",
         "pages": [
-          "index"
+          "index",
+          "api/camera"
         ]
       },
       {
@@ -59,6 +60,51 @@
         "pages": [
           "ptp-reference/format-definitions",
           "ptp-reference/vendors/sony/sony-format-definitions"
+        ]
+      },
+      {
+        "group": "Datatypes",
+        "pages": [
+          "ptp-reference/datatype-definitions"
+        ]
+      },
+      {
+        "group": "Vendor IDs",
+        "pages": [
+          "ptp-reference/vendor-ids"
+        ]
+      },
+      {
+        "group": "Types",
+        "pages": [
+          "ptp-reference/types/operation",
+          "ptp-reference/types/property",
+          "ptp-reference/types/event",
+          "ptp-reference/types/format",
+          "ptp-reference/types/response",
+          "ptp-reference/types/datatype",
+          "ptp-reference/types/parameter",
+          "ptp-reference/types/codec",
+          "ptp-reference/types/type-helpers"
+        ]
+      },
+      {
+        "group": "Datasets",
+        "pages": [
+          "ptp-reference/datasets/device-info-dataset",
+          "ptp-reference/datasets/device-prop-desc-dataset",
+          "ptp-reference/datasets/object-info-dataset",
+          "ptp-reference/datasets/storage-info-dataset",
+          "ptp-reference/datasets/codecs/variable-value-codec",
+          {
+            "group": "Vendor Datasets",
+            "pages": [
+              "ptp-reference/datasets/vendors/canon/canon-event-data-dataset",
+              "ptp-reference/datasets/vendors/nikon/nikon-live-view-dataset",
+              "ptp-reference/datasets/vendors/sony/sony-live-view-dataset",
+              "ptp-reference/datasets/vendors/sony/sdi-ext-device-prop-info-dataset"
+            ]
+          }
         ]
       }
     ]

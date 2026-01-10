@@ -1,0 +1,35 @@
+---
+title: "Operation"
+description: "PTP Operation type definitions"
+---
+
+# Operation
+
+## DataDirection
+
+**Type:** `"none" | "in" | "out"`
+
+---
+
+## OperationDefinition
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **code** | `number` | ✓ |
+| **name** | `string` | ✓ |
+| **description** | `string` | ✓ |
+| **dataDirection** | `DataDirection` | ✓ |
+| **dataCodec** | `CodecDefinition&lt;T&gt;` |  |
+| **operationParameters** | `[ParameterDefinition?, ParameterDefinition?, ParameterDefinition?, ParameterDefinition?, ParameterDefinition?]` | ✓ |
+| **responseParameters** | `[ParameterDefinition?, ParameterDefinition?, ParameterDefinition?, ParameterDefinition?, ParameterDefinition?]` | ✓ |
+
+---
+
+## OperationCode
+
+**Type:** `number`
+
+---
+
