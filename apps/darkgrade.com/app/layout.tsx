@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <html lang="en" className="h-screen overflow-hidden w-full m-0 p-0 bg-black">
             <head>
                 <meta charSet="utf-8" />
-                <link rel="icon" type="image/svg+xml" href="/plus_light.svg" />
+                <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
                 <meta name="viewport" content="width=device-width" />
                 <title>darkgrade</title>
                 <meta
