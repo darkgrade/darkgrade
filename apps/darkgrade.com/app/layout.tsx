@@ -1,5 +1,6 @@
 import { Geist as SansFont } from 'next/font/google'
 import './globals.css'
+import { Analytics } from '@vercel/analytics/next'
 
 const sans = SansFont({
     subsets: ['latin'],
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 className={`${sans.variable} flex flex-col overflow-hidden w-full h-screen relative m-0 p-0 border-none`}
             >
                 {children}
+                <Analytics />
             </body>
         </html>
     )
