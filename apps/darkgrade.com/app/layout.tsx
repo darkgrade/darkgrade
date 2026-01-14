@@ -19,19 +19,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <meta charSet="utf-8" />
                 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
                 <meta name="viewport" content="width=device-width" />
-                <title>darkgrade</title>
+                <title>Darkgrade | Let your camera understand the world</title>
                 <meta
                     name="description"
-                    content="we're building a protocol for large language models to directly interface with image sensors."
+                    content="Let your camera understand the world. We're building a protocol for large language models to directly interface with image sensors."
                 />
                 <meta property="og:title" content="darkgrade" />
                 <meta
                     property="og:description"
-                    content="we're building a protocol for large language models to directly interface with image sensors."
+                    content="Let your camera understand the world. We're building a protocol for large language models to directly interface with image sensors."
                 />
-                <meta property="og:image" content="https://darkgrade.ai/opengraph.jpg" />
+                <meta property="og:image" content="https://darkgrade.com/opengraph.jpg" />
                 <meta property="og:type" content="website" />
-                <meta property="og:url" content="https://darkgrade.ai" />
+                <meta property="og:url" content="https://darkgrade.com" />
                 <meta name="twitter:card" content="summary_large_image" />
             </head>
             <body

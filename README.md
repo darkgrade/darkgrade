@@ -1,4 +1,5 @@
-# @darkgrade/fuse
+# <img src="apps/darkgrade.com/public/plus_darkgrade_dark.svg" alt="darkgrade" style="height:20px;" />
+
 
 **Connect to & control your camera with TypeScript**
 
@@ -209,4 +210,4 @@ await camera.connect()
 
 ---
 
-made with ❤️ by [darkgrade](https:/darkgrade.ai)
+made with ❤️ by [darkgrade](https:/darkgrade.com)

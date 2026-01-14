@@ -1,4 +1,4 @@
-# docs
+# <img src="assets/plus_darkgrade_dark.svg" alt="darkgrade" style="height:20px;" />
 
 To install dependencies:
 
