@@ -1,16 +1,15 @@
 # <img src="apps/darkgrade.com/public/plus_darkgrade_dark.svg" alt="darkgrade" style="height:20px;" />
 
-
 **Connect to & control your camera with TypeScript**
 
-> **Note:** Fuse is in alpha and APIs may change without backwards compatibility.
+> **Note:** Link is in alpha and APIs may change without backwards compatibility.
 
 This library is a comprehensive TypeScript implementation of [ISO-15740:2013](https://www.iso.org/standard/63602.html) which most camera manufacturers from the last 2 decades have used under the hood to accept commands and transmit information. It also contains a partial implementation of various vendor specifications. [`libgphoto2`](https://github.com/gphoto/libgphoto2) and its command line tool [`gphoto2`](https://github.com/gphoto/gphoto2) also use these libraries under the hood.
 
-[![npm version](https://img.shields.io/npm/v/@darkgrade/fuse)](https://www.npmjs.com/package/@darkgrade/fuse)
-[![Bundle Size](https://img.shields.io/badge/bundle%20size-55kB-green)](https://bundlephobia.com/package/@darkgrade/fuse)
+[![npm version](https://img.shields.io/npm/v/@darkgrade/link)](https://www.npmjs.com/package/@darkgrade/link)
+[![Bundle Size](https://img.shields.io/badge/bundle%20size-55kB-green)](https://bundlephobia.com/package/@darkgrade/link)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
-[![Dependencies](https://img.shields.io/badge/dependencies-1-brightgreen)](https://www.npmjs.com/package/@darkgrade/fuse)
+[![Dependencies](https://img.shields.io/badge/dependencies-1-brightgreen)](https://www.npmjs.com/package/@darkgrade/link)
 
 ## ✨ Highlights
 
@@ -30,13 +29,13 @@ This library is a comprehensive TypeScript implementation of [ISO-15740:2013](ht
 ### Installation
 
 ```bash
-npm install @darkgrade/fuse
+npm install @darkgrade/link
 ```
 
 ### Basic Usage
 
 ```typescript
-import { Camera } from '@darkgrade/fuse'
+import { Camera } from '@darkgrade/link'
 
 const camera = new Camera()
 await camera.connect()
@@ -71,7 +70,7 @@ await camera.setAperture('f/4.0')
 ### Event Handling
 
 ```typescript
-import { Camera } from '@darkgrade/fuse'
+import { Camera } from '@darkgrade/link'
 
 const camera = new Camera()
 await camera.connect()
@@ -155,14 +154,14 @@ The `Camera` class automatically detects your connected camera's brand and uses 
 You can also import and use vendor-specific camera classes directly:
 
 ```typescript
-import { SonyCamera } from '@darkgrade/fuse'
+import { SonyCamera } from '@darkgrade/link'
 // or NikonCamera, CanonCamera, GenericCamera
 ```
 
 Or specify a device descriptor when initializing the `Camera` constructor:
 
 ```typescript
-import { Camera, VendorIDs } from '@darkgrade/fuse'
+import { Camera, VendorIDs } from '@darkgrade/link'
 
 // Specify a camera brand for vendor-specific features
 const camera = new Camera({

@@ -2,7 +2,7 @@ import { readdir, readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import ts from 'typescript'
 
-const PTP_SOURCE_DIR = join(__dirname, '../../packages/fuse/src/ptp')
+const PTP_SOURCE_DIR = join(__dirname, '../../packages/link/src/ptp')
 const DOCS_OUTPUT_DIR = join(__dirname, 'ptp-reference')
 
 interface ParameterEnumValue {

@@ -1,5 +1,5 @@
 {
-    "name": "@darkgrade/fuse",
+    "name": "@darkgrade/link",
     "version": "0.0.1",
     "type": "module",
     "description": "Connect to & control your camera via PTP with 2 lines of TypeScript",

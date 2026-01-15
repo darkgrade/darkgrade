@@ -1,5 +1,5 @@
 {
-    "name": "@darkgrade/fuse-web-example",
+    "name": "@darkgrade/link-web-example",
     "version": "0.0.1",
     "private": true,
     "scripts": {
@@ -11,7 +11,7 @@
         "format": "prettier --write ."
     },
     "dependencies": {
-        "@darkgrade/fuse": "workspace:*"
+        "@darkgrade/link": "workspace:*"
     },
     "devDependencies": {
         "@repo/typescript-config": "workspace:*",

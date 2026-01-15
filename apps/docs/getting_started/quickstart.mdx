@@ -1,12 +1,12 @@
 ---
 title: "Quickstart"
-description: "Get started with Darkgrade Fuse in minutes"
+description: "Get started with Darkgrade Link in minutes"
 ---
 
 ## Basic Usage
 
 ```typescript
-import { Camera } from '@darkgrade/fuse'
+import { Camera } from '@darkgrade/link'
 
 const camera = new Camera()
 await camera.connect()
@@ -26,7 +26,7 @@ That's it! The `Camera` class automatically detects your camera's brand and uses
 
 ## How It Works
 
-When you call `connect()`, Darkgrade Fuse:
+When you call `connect()`, Darkgrade Link:
 
 1. Scans for connected USB devices
 2. Identifies the camera's vendor ID
@@ -129,7 +129,7 @@ await camera.set(registry.properties.ExposureIndex, '3200')
 Import vendor-specific camera classes directly:
 
 ```typescript
-import { SonyCamera, NikonCamera, CanonCamera, GenericCamera } from '@darkgrade/fuse'
+import { SonyCamera, NikonCamera, CanonCamera, GenericCamera } from '@darkgrade/link'
 
 const camera = new SonyCamera()
 await camera.connect()
@@ -140,7 +140,7 @@ await camera.connect()
 Specify device filters and logging options:
 
 ```typescript
-import { Camera, VendorIDs } from '@darkgrade/fuse'
+import { Camera, VendorIDs } from '@darkgrade/link'
 
 const camera = new Camera({
     device: {

@@ -1,71 +1,59 @@
-import { SonyCamera } from '@camera/sony-camera'
 import { Logger } from '@core/logger'
 import * as Ops from '@ptp/definitions/operation-definitions'
-import * as SonyOps from '@ptp/definitions/vendors/sony/sony-operation-definitions'
-import * as SonyProps from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import * as Props from '@ptp/definitions/property-definitions'
+import * as NikonOps from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import { USBTransport } from '@transport/usb/usb-transport'
-import { ObjectInfo } from 'src'
+
+import { NikonCamera } from '@camera/nikon-camera'
+
+const capturedImagesDir = '/Users/kevinschaich/repositories/darkgrade/packages/link/captured_images'
 
 const logger = new Logger({
     expanded: true, // Show all details
 })
 const transport = new USBTransport(logger)
-const camera = new SonyCamera(transport, logger)
-
-const SONY_CAPTURED_IMAGE_OBJECT_HANDLE = 0xffffc001
-const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
+const camera = new NikonCamera(transport, logger)
 
 async function main() {
     await camera.connect()
 
+    const deviceInfo = await camera.send(Ops.GetDeviceInfo, {})
+    const exposureTime = await camera.get(Props.ExposureTime)
+    const exposureIndex = await camera.get(Props.ExposureIndex)
+    const fNumber = await camera.get(Props.FNumber)
+
+    // Register event handlers to see what events come through
     camera.on(camera.registry.events.ObjectAdded, event => {
-        console.log('ObjectAdded event:', event)
+        console.log('📸 ObjectAdded event:', event)
     })
 
     camera.on(camera.registry.events.CaptureComplete, event => {
-        console.log('CaptureComplete event:', event)
-    })
-    camera.on(camera.registry.events.StoreAdded, event => {
-        console.log('StoreAdded event:', event)
-    })
-    camera.on(camera.registry.events.StoreRemoved, event => {
-        console.log('StoreRemoved event:', event)
+        console.log('✅ CaptureComplete event:', event)
     })
 
-    // test sony ext-device-prop-info dataset
-    const iso = await camera.get(SonyProps.Iso)
-    const shutterSpeed = await camera.get(SonyProps.ShutterSpeed)
-    const aperture = await camera.get(SonyProps.Aperture)
+    const capture = await camera.send(Ops.InitiateCapture, {})
 
-    // test device-info dataset
-    const deviceInfo = await camera.send(Ops.GetDeviceInfo, {})
+    // wait 1 second for the events to fire
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
-    // enable live view
-    await camera.set(SonyProps.SetLiveViewEnable, 'ENABLE')
-
-    await camera.send(SonyOps.SDIO_SetContentsTransferMode, {
-        ContentsSelectType: 'HOST',
-        TransferMode: 'ENABLE',
-        AdditionalInformation: 'NONE',
-    })
-
-    while ((await camera.get(SonyProps.ContentTransferEnable)) === 'DISABLE') {
-        console.log('waiting...')
-        await new Promise(resolve => setTimeout(resolve, 10))
-    }
-
+    // Get storage IDs
     const storageIds = await camera.send(Ops.GetStorageIDs, {})
+    console.log('Storage IDs:', storageIds.data)
 
-    // test storage-info dataset
+    // Get storage info for first storage
     const storageInfo = await camera.send(Ops.GetStorageInfo, {
         StorageID: storageIds.data[0],
     })
+    console.log('Storage Info:', storageInfo.data)
 
+    // Get all object handles
     const objectIds = await camera.send(Ops.GetObjectHandles, {
         StorageID: storageIds.data[0],
     })
+    console.log(`Found ${objectIds.data.length} objects`)
 
-    const objectInfos: { [ObjectHandle: number]: ObjectInfo } = {}
+    // Get object info for each object
+    const objectInfos: { [ObjectHandle: number]: any } = {}
 
     for await (const objectId of objectIds.data) {
         const objectInfo = await camera.send(Ops.GetObjectInfo, {
@@ -74,50 +62,61 @@ async function main() {
         objectInfos[objectId] = objectInfo.data
     }
 
+    // Filter out association objects (folders)
     const nonAssociationObjectIds = Object.keys(objectInfos)
         .map(Number)
         .filter(id => objectInfos[id].associationType === 0)
 
-    // Import fs and path once
+    console.log(`Found ${nonAssociationObjectIds.length} files to download`)
+
+    // Import fs and path
     const fs = await import('fs')
     const path = await import('path')
 
     // Ensure captured-images directory exists
-    const capturedImagesDir = '/Users/kevinschaich/repositories/darkgrade/fuse/captured_images'
     if (!fs.existsSync(capturedImagesDir)) {
         fs.mkdirSync(capturedImagesDir, { recursive: true })
     }
 
-    // Download all files
+    // Download all files using Nikon's GetPartialObjectEx (64-bit offset support)
     for (const objectId of nonAssociationObjectIds) {
         const objectSize = objectInfos[objectId].objectCompressedSize
         const filename = objectInfos[objectId].filename
         const outputPath = path.join(capturedImagesDir, filename)
 
-        // Use Sony's SDIO_GetPartialLargeObject to retrieve the file in chunks
-        const CHUNK_SIZE = 1024 * 1024 * 10 // 10MB chunks
+        console.log(`Downloading ${filename} (${objectSize} bytes)...`)
+
+        // Use Nikon's GetPartialObjectEx to retrieve the file in chunks
+        const CHUNK_SIZE = 1024 * 1024 * 10 // 10MB chunks (like Sony, thanks to 64-bit offset support)
         const chunks: Uint8Array[] = []
         let offset = 0
 
         while (offset < objectSize) {
             const bytesToRead = Math.min(CHUNK_SIZE, objectSize - offset)
 
-            // Split 64-bit offset into two 32-bit values
+            // Split offset and size into lower/upper 32-bit values
             const offsetLower = offset & 0xffffffff
-            const offsetUpper = Math.floor(offset / 0x100000000) // Divide by 2^32 to get upper 32 bits
+            const offsetUpper = Math.floor(offset / 0x100000000)
+            const maxSizeLower = bytesToRead & 0xffffffff
+            const maxSizeUpper = Math.floor(bytesToRead / 0x100000000)
 
             const chunkResponse = await camera.send(
-                SonyOps.SDIO_GetPartialLargeObject,
+                NikonOps.GetPartialObjectEx,
                 {
                     ObjectHandle: objectId,
                     OffsetLower: offsetLower,
                     OffsetUpper: offsetUpper,
-                    MaxBytes: bytesToRead,
+                    MaxSizeLower: maxSizeLower,
+                    MaxSizeUpper: maxSizeUpper,
                 },
                 undefined,
                 // Add 12 bytes for PTP container header (length + type + code + transactionId)
                 offset === 0 ? objectSize + 12 : bytesToRead + 12
             )
+
+            if (!chunkResponse.data) {
+                throw new Error('No data received from GetPartialObjectEx')
+            }
 
             chunks.push(chunkResponse.data)
             offset += chunkResponse.data.length
@@ -134,13 +133,8 @@ async function main() {
 
         // Write file
         fs.writeFileSync(outputPath, completeFile)
+        console.log(`✓ Saved ${filename}`)
     }
-
-    await camera.send(SonyOps.SDIO_SetContentsTransferMode, {
-        ContentsSelectType: 'HOST',
-        TransferMode: 'DISABLE',
-        AdditionalInformation: 'NONE',
-    })
 
     await camera.disconnect()
 }
