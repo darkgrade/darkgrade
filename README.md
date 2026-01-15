@@ -206,7 +206,7 @@ await camera.connect()
 
 ## 📚 Reference
 
-[ISO 15740:2013](https://www.iso.org/standard/59890.html) - PTP specification
+[ISO 15740:2013](https://www.iso.org/standard/63602.html) - PTP specification
 
 ---
 
