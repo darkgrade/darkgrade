@@ -11,7 +11,7 @@ export default function Home() {
             {/* Menu in upper right */}
             <div className="absolute top-0 right-0 z-[1000] text-white gap-[12px] hidden md:flex items-center p-[24px] md:p-[64px]">
                 <a
-                    href="https://coblocks-86fbefb0.mintlify.app/"
+                    href="https://docs.darkgrade.com"
                     target="_blank"
                     className="text-white text-[14px] font-sans tracking-[6px] uppercase font-medium leading-none"
                 >
