@@ -4,12 +4,12 @@ export default function Home() {
     return (
         <div className="w-full h-screen relative">
             {/* Logo in upper left */}
-            <div className="absolute top-0 left-0 z-[1000] text-white gap-[12px] flex items-center p-[64px]">
+            <div className="absolute top-0 left-0 z-[1000] text-white gap-[12px] flex items-center p-[24px] md:p-[64px]">
                 <img src="/plus_darkgrade_light.svg" alt="darkgrade" className="h-[20px] object-contain" />
             </div>
 
             {/* Menu in upper right */}
-            <div className="absolute top-0 right-0 z-[1000] text-white gap-[12px] flex items-center p-[64px]">
+            <div className="absolute top-0 right-0 z-[1000] text-white gap-[12px] hidden md:flex items-center p-[24px] md:p-[64px]">
                 <a
                     href="https://coblocks-86fbefb0.mintlify.app/"
                     target="_blank"
@@ -20,11 +20,11 @@ export default function Home() {
             </div>
 
             {/* GitHub link in center */}
-            <div className="absolute top-0 left-0 z-[1000] w-full h-full flex flex-col justify-center p-[64px] max-w-[800px] gap-[24px]">
-                <h1 className="text-white text-[72px] leading-[84px] font-medium font-sans tracking-tighter text-balance text-left">
+            <div className="absolute top-0 left-0 z-[1000] w-full h-full flex flex-col justify-center p-[24px] md:p-[64px] max-w-[800px] gap-[16px] md:gap-[24px]">
+                <h1 className="text-white text-[32px] leading-[40px] md:text-[72px] md:leading-[84px] font-medium font-sans tracking-tighter text-balance text-left">
                     Let your camera understand the world
                 </h1>
-                <h2 className="text-white text-[22px] leading-[28px] font-normal font-sans tracking-tight text-balance text-left">
+                <h2 className="text-white text-[16px] leading-[22px] md:text-[22px] md:leading-[28px] font-normal font-sans tracking-tight text-balance text-left">
                     We're building a protocol for large language models to directly interface with image sensors.
                 </h2>
                 <a href="https://github.com/darkgrade" target="_blank" rel="noopener noreferrer" className="mt-4">
