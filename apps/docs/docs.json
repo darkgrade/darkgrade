@@ -1,114 +1,128 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "almond",
   "name": "Darkgrade",
   "logo": {
     "light": "/assets/plus_darkgrade_dark.svg",
     "dark": "/assets/plus_darkgrade_light.svg"
   },
   "colors": {
-    "primary": "#16A34A",
-    "light": "#22C55E",
-    "dark": "#15803D"
+    "primary": "#0969DA",
+    "light": "#60A5FA",
+    "dark": "#0969DA"
   },
+  "fonts": {
+  "family": "Geist"
+},
   "favicon": "/assets/icon.jpg",
   "navigation": {
-    "groups": [
+    "products": [
       {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "getting_started/installation",
-          "getting_started/quickstart",
-          "getting_started/what-is-ptp",
-          "getting_started/feature-compatibility",
-          "getting_started/camera"
-        ]
-      },
-      {
-        "group": "Properties",
-        "pages": [
-          "ptp-reference/property-definitions",
-          "ptp-reference/vendors/canon/canon-property-definitions",
-          "ptp-reference/vendors/sony/sony-property-definitions",
-          "ptp-reference/vendors/nikon/nikon-property-definitions"
-        ]
-      },
-      {
-        "group": "Operations",
-        "pages": [
-          "ptp-reference/operation-definitions",
-          "ptp-reference/vendors/canon/canon-operation-definitions",
-          "ptp-reference/vendors/sony/sony-operation-definitions",
-          "ptp-reference/vendors/nikon/nikon-operation-definitions"
-        ]
-      },
-      {
-        "group": "Events",
-        "pages": [
-          "ptp-reference/event-definitions",
-          "ptp-reference/vendors/canon/canon-event-definitions",
-          "ptp-reference/vendors/sony/sony-event-definitions"
-        ]
-      },
-      {
-        "group": "Responses",
-        "pages": [
-          "ptp-reference/response-definitions",
-          "ptp-reference/vendors/sony/sony-response-definitions",
-          "ptp-reference/vendors/nikon/nikon-response-definitions"
-        ]
-      },
-      {
-        "group": "Formats",
-        "pages": [
-          "ptp-reference/format-definitions",
-          "ptp-reference/vendors/sony/sony-format-definitions"
-        ]
-      },
-      {
-        "group": "Datatypes",
-        "pages": [
-          "ptp-reference/datatype-definitions"
-        ]
-      },
-      {
-        "group": "Vendor IDs",
-        "pages": [
-          "ptp-reference/vendor-ids"
-        ]
-      },
-      {
-        "group": "Types",
-        "pages": [
-          "ptp-reference/types/operation",
-          "ptp-reference/types/property",
-          "ptp-reference/types/event",
-          "ptp-reference/types/format",
-          "ptp-reference/types/response",
-          "ptp-reference/types/datatype",
-          "ptp-reference/types/parameter",
-          "ptp-reference/types/codec",
-          "ptp-reference/types/type-helpers"
-        ]
-      },
-      {
-        "group": "Datasets",
-        "pages": [
-          "ptp-reference/datasets/device-info-dataset",
-          "ptp-reference/datasets/device-prop-desc-dataset",
-          "ptp-reference/datasets/object-info-dataset",
-          "ptp-reference/datasets/storage-info-dataset",
-          "ptp-reference/datasets/codecs/variable-value-codec",
+        "product": "Darkgrade Link",
+        "groups": [
           {
-            "group": "Vendor Datasets",
+            "group": "Getting Started",
             "pages": [
-              "ptp-reference/datasets/vendors/canon/canon-event-data-dataset",
-              "ptp-reference/datasets/vendors/nikon/nikon-live-view-dataset",
-              "ptp-reference/datasets/vendors/sony/sony-live-view-dataset",
-              "ptp-reference/datasets/vendors/sony/sdi-ext-device-prop-info-dataset"
+              "link/index",
+              "link/getting_started/installation",
+              "link/getting_started/quickstart",
+              "link/getting_started/what-is-ptp",
+              "link/getting_started/feature-compatibility",
+              "link/getting_started/camera"
+            ]
+          },
+          {
+            "group": "Properties",
+            "pages": [
+              "link/ptp-reference/property-definitions",
+              "link/ptp-reference/vendors/canon/canon-property-definitions",
+              "link/ptp-reference/vendors/sony/sony-property-definitions",
+              "link/ptp-reference/vendors/nikon/nikon-property-definitions"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "link/ptp-reference/operation-definitions",
+              "link/ptp-reference/vendors/canon/canon-operation-definitions",
+              "link/ptp-reference/vendors/sony/sony-operation-definitions",
+              "link/ptp-reference/vendors/nikon/nikon-operation-definitions"
+            ]
+          },
+          {
+            "group": "Events",
+            "pages": [
+              "link/ptp-reference/event-definitions",
+              "link/ptp-reference/vendors/canon/canon-event-definitions",
+              "link/ptp-reference/vendors/sony/sony-event-definitions"
+            ]
+          },
+          {
+            "group": "Responses",
+            "pages": [
+              "link/ptp-reference/response-definitions",
+              "link/ptp-reference/vendors/sony/sony-response-definitions",
+              "link/ptp-reference/vendors/nikon/nikon-response-definitions"
+            ]
+          },
+          {
+            "group": "Formats",
+            "pages": [
+              "link/ptp-reference/format-definitions",
+              "link/ptp-reference/vendors/sony/sony-format-definitions"
+            ]
+          },
+          {
+            "group": "Datatypes",
+            "pages": [
+              "link/ptp-reference/datatype-definitions"
+            ]
+          },
+          {
+            "group": "Vendor IDs",
+            "pages": [
+              "link/ptp-reference/vendor-ids"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "link/ptp-reference/types/operation",
+              "link/ptp-reference/types/property",
+              "link/ptp-reference/types/event",
+              "link/ptp-reference/types/format",
+              "link/ptp-reference/types/response",
+              "link/ptp-reference/types/datatype",
+              "link/ptp-reference/types/parameter",
+              "link/ptp-reference/types/codec",
+              "link/ptp-reference/types/type-helpers"
+            ]
+          },
+          {
+            "group": "Datasets",
+            "pages": [
+              "link/ptp-reference/datasets/device-info-dataset",
+              "link/ptp-reference/datasets/device-prop-desc-dataset",
+              "link/ptp-reference/datasets/object-info-dataset",
+              "link/ptp-reference/datasets/storage-info-dataset",
+              "link/ptp-reference/datasets/codecs/variable-value-codec",
+              {
+                "group": "Vendor Datasets",
+                "pages": [
+                  "link/ptp-reference/datasets/vendors/canon/canon-event-data-dataset",
+                  "link/ptp-reference/datasets/vendors/nikon/nikon-live-view-dataset",
+                  "link/ptp-reference/datasets/vendors/sony/sony-live-view-dataset",
+                  "link/ptp-reference/datasets/vendors/sony/sdi-ext-device-prop-info-dataset"
+                ]
+              }
             ]
           }
+        ]
+      },
+      {
+        "product": "Darkgrade Studio",
+        "pages": [
+          "studio/index"
         ]
       }
     ]
