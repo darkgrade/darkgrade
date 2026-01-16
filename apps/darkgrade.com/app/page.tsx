@@ -11,7 +11,7 @@ export default function Home() {
             {/* Menu in upper right */}
             <div className="absolute top-0 right-0 z-[1000] text-white gap-[12px] hidden md:flex items-center p-[24px] md:p-[64px]">
                 <a
-                    href="https://docs.darkgrade.com"
+                    href="https://darkgrade.com/docs"
                     target="_blank"
                     className="text-white text-[14px] font-sans tracking-[6px] uppercase font-medium leading-none"
                 >
