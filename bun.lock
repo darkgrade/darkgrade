@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "@darkgrade/darkgrade",
@@ -45,10 +46,10 @@
       },
     },
     "apps/example-web": {
-      "name": "@darkgrade/fuse-web-example",
+      "name": "@darkgrade/link-web-example",
       "version": "0.0.1",
       "dependencies": {
-        "@darkgrade/fuse": "workspace:*",
+        "@darkgrade/link": "workspace:*",
       },
       "devDependencies": {
         "@repo/typescript-config": "workspace:*",
@@ -68,8 +69,8 @@
         "vite-plugin-devtools-json": "^1.0.0",
       },
     },
-    "packages/fuse": {
-      "name": "@darkgrade/fuse",
+    "packages/link": {
+      "name": "@darkgrade/link",
       "version": "0.0.1",
       "dependencies": {
         "ink": "^6.3.1",
@@ -113,9 +114,9 @@
 
     "@chriscourses/perlin-noise": ["@chriscourses/perlin-noise@1.0.6", "", {}, "sha512-q9CgS+02HU8x7PZmKLvB/m3OfcgA5Z93NSKuH1bcWL44u883u5qmMpVVG47GfF667mAhejHVT2jzMleeAUMMPw=="],
 
-    "@darkgrade/fuse": ["@darkgrade/fuse@workspace:packages/fuse"],
+    "@darkgrade/link": ["@darkgrade/link@workspace:packages/link"],
 
-    "@darkgrade/fuse-web-example": ["@darkgrade/fuse-web-example@workspace:apps/example-web"],
+    "@darkgrade/link-web-example": ["@darkgrade/link-web-example@workspace:apps/example-web"],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.8.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-mehfKSMWjjNol8659Z8KxEMrdSJDDot5SXMq00dM8BN4o+CLNXQ0xH2V7EchNHV4RmbZLmmPdEaXZc5H2FXmDg=="],
 

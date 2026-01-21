@@ -47,7 +47,7 @@ export default function Home() {
             </div>
 
             {/* Perlin noise simulation as background */}
-            <div className="absolute top-0 left-0 w-full h-full opacity-15">
+            <div className="absolute top-0 left-0 w-full h-full opacity-30">
                 <PerlinNoiseSimulation />
             </div>
         </div>

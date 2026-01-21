@@ -26,7 +26,7 @@ export default function PerlinNoiseSimulation() {
     const thresholdIncrement = 5
     const thickLineThresholdMultiple = 3
     const res = 8 // divide canvas width/height by this, lower number means more cells to calculate/draw lines for
-    const baseZOffset = 0.0001 // how quickly the noise should move
+    const baseZOffset = 0.00025 // how quickly the noise should move
     const lineColor = '#ffffff' // White for thick lines
     const thinLineColor = '#808080' // 50% gray for thin lines
     const backgroundColor = '#000000' // Black background
