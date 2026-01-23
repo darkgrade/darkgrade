@@ -1,4 +1,4 @@
-import { Geist as SansFont } from 'next/font/google'
+import { Lexend as SansFont } from 'next/font/google'
 import './globals.css'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
@@ -6,7 +6,7 @@ import { SpeedInsights } from '@vercel/speed-insights/next'
 const sans = SansFont({
     subsets: ['latin'],
     variable: '--font-sans',
-    weight: ['400', '500', '600'],
+    weight: 'variable',
 })
 
 export const metadata = {

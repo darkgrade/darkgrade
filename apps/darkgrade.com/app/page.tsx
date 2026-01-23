@@ -3,28 +3,24 @@ import PerlinNoiseSimulation from '../components/PerlinNoiseSimulation'
 export default function Home() {
     return (
         <div className="w-full h-screen relative">
-            {/* Logo in upper left */}
-            <div className="absolute top-0 left-0 z-[1000] text-white gap-[12px] flex items-center p-[24px] md:p-[64px]">
+            {/* Logo and menu */}
+            <div className="absolute top-0 left-0 right-0 z-1000 text-white flex items-center justify-between p-[24px] md:p-[64px]">
                 <img src="/plus_darkgrade_light.svg" alt="darkgrade" className="h-[20px] object-contain" />
-            </div>
-
-            {/* Menu in upper right */}
-            <div className="absolute top-0 right-0 z-[1000] text-white gap-[12px] hidden md:flex items-center p-[24px] md:p-[64px]">
                 <a
                     href="https://darkgrade.com/docs"
                     target="_blank"
-                    className="text-white text-[14px] font-sans tracking-[6px] uppercase font-medium leading-none"
+                    className="text-white text-[16px] font-sans tracking-[6px] uppercase font-medium leading-none"
                 >
                     Docs
                 </a>
             </div>
 
             {/* GitHub link in center */}
-            <div className="absolute top-0 left-0 z-[1000] w-full h-full flex flex-col justify-center p-[24px] md:p-[64px] max-w-[800px] gap-[16px] md:gap-[24px]">
-                <h1 className="text-white text-[32px] leading-[40px] md:text-[72px] md:leading-[84px] font-medium font-sans tracking-tighter text-balance text-left">
+            <div className="absolute top-0 left-0 z-1000 w-full h-full flex flex-col justify-center p-[24px] md:p-[64px] max-w-[600px] md:max-w-[800px] gap-[16px] md:gap-[24px]">
+                <h1 className="text-white text-[32px] leading-[40px] md:text-[64px] md:leading-[72px] font-semibold font-sans tracking-tighter text-balance text-left">
                     Let your camera understand the world
                 </h1>
-                <h2 className="text-white text-[16px] leading-[22px] md:text-[22px] md:leading-[28px] font-normal font-sans tracking-tight text-balance text-left">
+                <h2 className="text-white text-[16px] leading-[20px] md:text-[18px] md:leading-[24px] font-light font-sans tracking-tight text-balance text-left">
                     We're building a protocol for large language models to directly interface with image sensors.
                 </h2>
                 <a href="https://github.com/darkgrade" target="_blank" rel="noopener noreferrer" className="mt-4">
