@@ -1,12 +1,12 @@
-import { Lexend as SansFont } from 'next/font/google'
-import './globals.css'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
+import localFont from 'next/font/local'
+import './globals.css'
 
-const sans = SansFont({
-    subsets: ['latin'],
-    variable: '--font-sans',
-    weight: 'variable',
+const sans = localFont({
+    src: './fonts/GoogleSansFlex.woff2',
+    preload: true,
+    display: 'swap',
 })
 
 export const metadata = {
@@ -16,7 +16,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en" className="h-screen overflow-hidden w-full m-0 p-0 bg-black">
+        <html lang="en" className={`${sans.className} h-screen overflow-hidden w-full m-0 p-0 bg-black`}>
             <head>
                 <meta charSet="utf-8" />
                 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -36,9 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <meta property="og:url" content="https://darkgrade.com" />
                 <meta name="twitter:card" content="summary_large_image" />
             </head>
-            <body
-                className={`${sans.variable} flex flex-col overflow-hidden w-full h-screen relative m-0 p-0 border-none`}
-            >
+            <body className="flex flex-col overflow-hidden w-full h-screen relative m-0 p-0 border-none">
                 {children}
                 <Analytics />
                 <SpeedInsights />
