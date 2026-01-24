@@ -1,6 +1,11 @@
 {
-    "name": "@repo/typescript-config",
+    "name": "@darkgrade/typescript-config",
     "version": "0.0.0",
     "private": true,
-    "files": ["base.json", "library.json", "app.json"]
+    "files": ["base.json", "library.json", "app.json"],
+    "exports": {
+        "./base.json": "./base.json",
+        "./library.json": "./library.json",
+        "./app.json": "./app.json"
+    }
 }

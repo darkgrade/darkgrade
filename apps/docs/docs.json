@@ -3,8 +3,8 @@
     "theme": "almond",
     "name": "Darkgrade",
     "logo": {
-        "light": "/assets/plus_darkgrade_dark.svg",
-        "dark": "/assets/plus_darkgrade_light.svg"
+        "light": "/assets/darkgrade_combo_light.svg",
+        "dark": "/assets/darkgrade_combo_dark.svg"
     },
     "colors": {
         "primary": "#0969DA",
@@ -14,7 +14,7 @@
     "fonts": {
         "family": "Google Sans"
     },
-    "favicon": "/assets/favicon.svg",
+    "favicon": "/assets/darkgrade_favicon_dark.svg",
     "integrations": {
         "posthog": {
             "apiKey": "phc_eOW21t5JEdgDB5lue4y9GuJhltWD5miYyLw86JkMN6g",

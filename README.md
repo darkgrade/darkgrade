@@ -1,4 +1,4 @@
-# <img src="apps/darkgrade.com/public/plus_darkgrade_dark.svg" alt="darkgrade" style="height:20px;" />
+# <img src="apps/darkgrade.com/public/darkgrade_combo_light.svg" alt="darkgrade" style="height:20px;" />
 
 **Connect to & control your camera with TypeScript**
 

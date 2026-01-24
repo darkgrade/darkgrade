@@ -1,0 +1,30 @@
+{
+  "name": "drkgrd.co",
+  "version": "1.0.0",
+  "description": "drkgrd.co",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@tailwindcss/postcss": "^4.1.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@darkgrade/ui": "workspace:*",
+    "@types/react": "^19.1.11",
+    "@types/react-dom": "^19.1.8",
+    "next": "^15.5.0",
+    "posthog-js": "^1.334.1",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  }
+}

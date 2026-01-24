@@ -1,5 +1,5 @@
 {
-    "extends": ["@repo/typescript-config/app.json", "./.svelte-kit/tsconfig.json"],
+    "extends": ["@darkgrade/typescript-config/app.json", "./.svelte-kit/tsconfig.json"],
     "include": ["src/**/*", ".svelte-kit/**/*"],
     "compilerOptions": {
         "verbatimModuleSyntax": false,

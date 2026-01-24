@@ -3,7 +3,6 @@
     "extends": "./base.json",
     "compilerOptions": {
         "declaration": true,
-        "declarationMap": true,
-        "types": ["w3c-web-usb"]
+        "declarationMap": true
     }
 }

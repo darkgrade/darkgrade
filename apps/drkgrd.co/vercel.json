@@ -1,0 +1,12 @@
+{
+    "rewrites": [
+        {
+            "source": "/docs",
+            "destination": "https://darkgrade.mintlify.dev/docs"
+        },
+        {
+            "source": "/docs/:match*",
+            "destination": "https://darkgrade.mintlify.dev/docs/:match*"
+        }
+    ]
+}
