@@ -10,8 +10,9 @@ const sans = localFont({
 })
 
 export const metadata = {
-    title: 'darkgrade',
-    description: 'darkgrade',
+    title: 'Darkgrade | Let your camera understand the world',
+    description:
+        "Let your camera understand the world. We're building a protocol for large language models to directly interface with image sensors.",
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -20,13 +21,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <head>
                 <meta charSet="utf-8" />
                 <link rel="icon" type="image/svg+xml" href="/darkgrade_favicon_dark.svg" />
-                <meta name="viewport" content="width=device-width" />
-                <title>Darkgrade | Let your camera understand the world</title>
-                <meta
-                    name="description"
-                    content="Let your camera understand the world. We're building a protocol for large language models to directly interface with image sensors."
-                />
-                <meta property="og:title" content="darkgrade" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+                <meta property="og:title" content="Darkgrade | Let your camera understand the world" />
                 <meta
                     property="og:description"
                     content="Let your camera understand the world. We're building a protocol for large language models to directly interface with image sensors."

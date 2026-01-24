@@ -12,7 +12,7 @@ export const metadata = {
     description: process.env.NEXT_PUBLIC_DOMAIN,
 }
 
-export default function RootLayout({children}: {children: React.ReactNode}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" className={`${sans.className} bg-black overflow-x-hidden`}>
             <head>
@@ -20,12 +20,27 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
                 <link
                     rel="icon"
                     type="image/svg+xml"
-                    href={process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co' ? '/darkgrade_favicon_dark.svg' : '/ks_favicon_dark.svg'}
+                    href={
+                        process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co'
+                            ? '/darkgrade_favicon_dark.svg'
+                            : '/ks_favicon_dark.svg'
+                    }
                 />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+                <meta property="og:title" content={process.env.NEXT_PUBLIC_DOMAIN} />
+                <meta property="og:description" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta
-                    name="viewport"
-                    content="width=device-width, initial-scale=1.0"
+                    property="og:image"
+                    content={
+                        process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co'
+                            ? process.env.NEXT_PUBLIC_DOMAIN + '/darkgrade_opengraph_dark.png'
+                            : process.env.NEXT_PUBLIC_DOMAIN + '/ks_opengraph_dark.png'
+                    }
                 />
+                <meta property="og:type" content="website" />
+                <meta property="og:url" content="https://darkgrade.com" />
+                <meta name="twitter:card" content="summary_large_image" />
             </head>
             <body className="overflow-x-hidden">{children}</body>
         </html>
