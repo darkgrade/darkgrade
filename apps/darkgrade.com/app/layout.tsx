@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
                 <meta property="og:title" content="Darkgrade | Let your camera understand the world" />
+                <meta property="og:site_name" content="Darkgrade | Let your camera understand the world" />
                 <meta
                     property="og:description"
                     content="Let your camera understand the world. We're building a protocol for large language models to directly interface with image sensors."
@@ -29,6 +30,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <meta property="og:image" content="https://darkgrade.com/darkgrade_opengraph_dark.png" />
                 <meta property="og:type" content="website" />
                 <meta property="og:url" content="https://darkgrade.com" />
+
+                <meta property="twitter:image" content="https://darkgrade.com/darkgrade_opengraph_dark.png" />
+                <meta property="twitter:title" content="Darkgrade | Let your camera understand the world" />
+                <meta property="twitter:description" content="Let your camera understand the world. We're building a protocol for large language models to directly interface with image sensors." />
                 <meta name="twitter:card" content="summary_large_image" />
             </head>
             <body className="flex flex-col overflow-hidden w-full h-screen relative m-0 p-0 border-none">

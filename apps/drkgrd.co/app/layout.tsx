@@ -42,6 +42,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <meta property="og:type" content="website" />
                 <meta property="og:url" content={'https://' + process.env.NEXT_PUBLIC_DOMAIN} />
 
+                <meta
+                    property="twitter:image"
+                    content={
+                        process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co'
+                            ? 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/darkgrade_opengraph_dark.png'
+                            : 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/ks_opengraph_dark.png'
+                    }
+                />
                 <meta property="twitter:title" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta property="twitter:description" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta name="twitter:card" content="summary_large_image" />
