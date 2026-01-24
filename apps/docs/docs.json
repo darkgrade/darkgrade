@@ -14,12 +14,36 @@
     "fonts": {
         "family": "Google Sans"
     },
-    "favicon": "/assets/icon.jpg",
+    "favicon": "/assets/favicon.svg",
     "integrations": {
         "posthog": {
             "apiKey": "phc_eOW21t5JEdgDB5lue4y9GuJhltWD5miYyLw86JkMN6g",
             "apiHost": "https://ph.darkgrade.com",
             "sessionRecording": false
+        }
+    },
+    "navbar": {
+        "links": [
+            {
+                "label": "darkgrade.com",
+                "icon": "globe",
+                "href": "https://darkgrade.com"
+            },
+            {
+                "label": "YouTube",
+                "icon": "youtube",
+                "href": "https://youtube.com/@KevinSchaich"
+            },
+            {
+                "label": "Discord",
+                "icon": "discord",
+                "href": "https://discord.gg/fbDbdJv9dX"
+            }
+        ],
+        "primary": {
+            "label": "Star Darkgrade on GitHub",
+            "type": "github",
+            "href": "https://github.com/darkgrade/darkgrade"
         }
     },
     "navigation": {
