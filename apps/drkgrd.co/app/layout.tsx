@@ -29,17 +29,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
                 <meta property="og:title" content={process.env.NEXT_PUBLIC_DOMAIN} />
+                <meta property="og:site_name" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta property="og:description" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta
                     property="og:image"
                     content={
                         process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co'
-                            ? process.env.NEXT_PUBLIC_DOMAIN + '/darkgrade_opengraph_dark.png'
-                            : process.env.NEXT_PUBLIC_DOMAIN + '/ks_opengraph_dark.png'
+                            ? 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/darkgrade_opengraph_dark.png'
+                            : 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/ks_opengraph_dark.png'
                     }
                 />
                 <meta property="og:type" content="website" />
-                <meta property="og:url" content="https://darkgrade.com" />
+                <meta property="og:url" content={'https://' + process.env.NEXT_PUBLIC_DOMAIN} />
+
+                <meta property="twitter:title" content={process.env.NEXT_PUBLIC_DOMAIN} />
+                <meta property="twitter:description" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta name="twitter:card" content="summary_large_image" />
             </head>
             <body className="overflow-x-hidden">{children}</body>
