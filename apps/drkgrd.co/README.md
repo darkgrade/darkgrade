@@ -1,3 +1,3 @@
-# <img src="public/darkgrade_combo_light.svg" alt="darkgrade" style="height:20px;" />
+# <a href="https://darkgrade.com" target="_blank"><picture><source media="(prefers-color-scheme: dark)" srcset="apps/darkgrade.com/public/darkgrade_combo_dark.svg"><img style="height:30px;" src="apps/darkgrade.com/public/darkgrade_combo_light.svg"></picture></a>
 
-we're building a protocol for large language models to directly interface with image sensors.
+Darkgrade Links
