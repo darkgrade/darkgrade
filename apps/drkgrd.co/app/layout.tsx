@@ -20,13 +20,13 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
                 <link
                     rel="icon"
                     type="image/svg+xml"
-                    href={process.env.DOMAIN === 'drkgrd.co' ? '/darkgrade_favicon_dark.svg' : '/ks_favicon_dark.svg'}
+                    href={process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co' ? '/darkgrade_favicon_dark.svg' : '/ks_favicon_dark.svg'}
                 />
                 <meta name="viewport" content="width=device-width" />
                 <title>
-                    {process.env.DOMAIN}
+                    {process.env.NEXT_PUBLIC_DOMAIN}
                 </title>
-                <meta name="description" content={process.env.DOMAIN} />
+                <meta name="description" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta
                     name="viewport"
                     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
