@@ -8,8 +8,8 @@ const sans = localFont({
 })
 
 export const metadata = {
-    title: 'schaich.co',
-    description: 'schaich.co',
+    title: process.env.NEXT_PUBLIC_DOMAIN,
+    description: process.env.NEXT_PUBLIC_DOMAIN,
 }
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
@@ -22,14 +22,9 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
                     type="image/svg+xml"
                     href={process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co' ? '/darkgrade_favicon_dark.svg' : '/ks_favicon_dark.svg'}
                 />
-                <meta name="viewport" content="width=device-width" />
-                <title>
-                    {process.env.NEXT_PUBLIC_DOMAIN}
-                </title>
-                <meta name="description" content={process.env.NEXT_PUBLIC_DOMAIN} />
                 <meta
                     name="viewport"
-                    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+                    content="width=device-width, initial-scale=1.0"
                 />
             </head>
             <body className="overflow-x-hidden">{children}</body>
