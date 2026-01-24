@@ -1,5 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
-import { SpeedInsights } from '@vercel/speed-insights/next'
 import localFont from 'next/font/local'
 import './globals.css'
 
@@ -35,8 +33,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </head>
             <body className="flex flex-col overflow-hidden w-full h-screen relative m-0 p-0 border-none">
                 {children}
-                <Analytics />
-                <SpeedInsights />
             </body>
         </html>
     )
