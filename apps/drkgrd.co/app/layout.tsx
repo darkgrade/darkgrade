@@ -21,9 +21,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     rel="icon"
                     type="image/svg+xml"
                     href={
-                        process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co'
-                            ? '/darkgrade_favicon_dark.svg'
-                            : '/ks_favicon_dark.svg'
+                        process.env.NEXT_PUBLIC_DOMAIN === 'kevinschaich.com'
+                        ? '/ks_favicon_dark.svg'
+                        : '/darkgrade_favicon_dark.svg'
                     }
                 />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
