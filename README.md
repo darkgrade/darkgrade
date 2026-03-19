@@ -180,19 +180,19 @@ await camera.connect()
 
 ## 📊 Feature Compatibility
 
-| Feature                   | Generic PTP     | Sony  | Nikon           | Canon         |
-| ------------------------- | --------------- | ----- | --------------- | ------------- |
-| **Connection**            | ✅              | ✅    | ✅              | ✅            |
-| **Get/Set Properties**    | ✅              | ✅    | ✅              | ✅            |
-| **Event Handling**        | ✅              | ✅    | ✅              | ✅            |
-| **Aperture Control**      | ✅              | ✅    | ✅              | ✅            |
-| **Shutter Speed Control** | ✅              | ✅    | ✅              | ✅            |
-| **ISO Control**           | ✅              | ✅    | ✅              | ✅            |
-| **Capture Image**         | ✅              | ✅    | ✅              | ✅            |
-| **List Objects**          | ✅              | ✅    | ✅              | 🟡            |
-| **Download Objects**      | ✅              | ✅    | ✅              | 🟡            |
-| **Live View**             | ❌ <sup>1</sup> | ✅    | ✅              | 🟡            |
-| **Video Recording**       | ❌ <sup>2</sup> | ✅    | ✅ <sup>3</sup> | 🟡            |
+| Feature                   | Generic PTP     | Sony                     | Nikon           | Canon         |
+| ------------------------- | --------------- | ------------------------ | --------------- | ------------- |
+| **Connection**            | ✅              | ✅                       | ✅              | ✅            |
+| **Get/Set Properties**    | ✅              | ✅                       | ✅              | ✅            |
+| **Event Handling**        | ✅              | ✅                       | ✅              | ✅            |
+| **Aperture Control**      | ✅              | ✅                       | ✅              | ✅            |
+| **Shutter Speed Control** | ✅              | ✅                       | ✅              | ✅            |
+| **ISO Control**           | ✅              | ✅                       | ✅              | ✅            |
+| **Capture Image**         | ✅              | ✅                       | ✅              | ✅            |
+| **List Objects**          | ✅              | ✅                       | ✅              | ✅            |
+| **Download Objects**      | ✅              | ✅                       | ✅              | ✅            |
+| **Live View**             | ❌ <sup>1</sup> | ✅                       | ✅              | 🟡            |
+| **Video Recording**       | ❌ <sup>2</sup> | ✅                       | ✅ <sup>3</sup> | 🟡            |
 | Tested with:              |                 | α6700<br/>α7 IV<br/>α7 V | Z6 III          | EOS R6 Mk.III |
 
 **Notes**
