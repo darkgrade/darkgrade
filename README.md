@@ -121,7 +121,7 @@ await camera.disconnect()
 
 The transport pairs separate command and event TCP connections, uses a stable client identity, supports camera-to-host and host-to-camera data phases, responds to PTP/IP ping packets, and handles fragmented or coalesced TCP frames. It is Node.js-only because it uses `node:net`. The camera must first expose its PTP/IP service and may require approval on its body; on the EOS 80D that means **Wi-Fi function → Remote control (EOS Utility) → Easy connection** after physically disconnecting USB.
 
-This standard PTP/IP example is currently validated for the Canon-oriented pairing path, not modern Sony PC Remote. The α6700 documents **Wi-Fi Connect**, **PC Remote Function**, **Wi-Fi Direct Info**, and **Access Authen Info** credentials/fingerprint; Darkgrade has not yet implemented or physically validated that authenticated Sony session. Use USB for the Sony controls above until that boundary is complete.
+This standard PTP/IP example is currently validated for the Canon-oriented pairing path, not modern Sony PC Remote. The α6700 documents **Wi-Fi Connect**, **PC Remote Function**, **Wi-Fi Direct Info**, and **Access Authen Info** credentials/fingerprint; Darkgrade has not yet implemented or physically validated that authenticated Sony session. Use USB for the Sony controls above until that boundary is complete. The current negative hardware result and next experiment are recorded in [Sony Wi-Fi WIP](apps/docs/link/getting_started/sony-wifi-wip.mdx).
 
 Physical EOS 80D first-pairing validation is still WIP on the reference test bench. On
 2026-08-25, the isolated adapter joined the camera AP and routed the camera host correctly,
