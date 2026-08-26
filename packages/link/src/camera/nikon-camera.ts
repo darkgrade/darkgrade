@@ -1,8 +1,9 @@
 import { Logger } from '@core/logger'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import { OK } from '@ptp/definitions/response-definitions'
+import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { ISOAutoControl } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
+import { NotLiveView } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { createNikonRegistry, type NikonRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
@@ -27,7 +28,7 @@ export class NikonCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
-        await this.disableLiveView()
+        if (this.liveViewStatus === 'ON') await this.disableLiveView()
         await super.disconnect()
     }
 
@@ -104,13 +105,26 @@ export class NikonCamera extends GenericCamera {
 
         // Setup capture
 
-        // update live view status and mode
-        await this.getLiveViewStatus()
+        // Older Nikon bodies can support StartLiveView/InitiateCapture while returning
+        // no data for the newer GetDevicePropDescEx status properties. In that case,
+        // use the photo-capture path directly instead of failing before the shutter.
+        try {
+            await this.getLiveViewStatus()
+        } catch (error) {
+            if (!(error instanceof Error) || !error.message.includes('No data received from GetDevicePropDescEx')) {
+                throw error
+            }
+            await this.enableLiveView()
+            await this.send(this.registry.operations.InitiateCapture, {})
+            await this.waitForDeviceReady()
+            return { info, data }
+        }
 
         // camera's hardware dial is in photo mode, great, screen will stay on
         if (this.liveViewMode === 'PHOTO') {
             await this.enableLiveView()
-            const response = await this.send(this.registry.operations.InitiateCapture, {})
+            await this.send(this.registry.operations.InitiateCapture, {})
+            await this.waitForDeviceReady()
         }
 
         // camera's hardware dial is not in photo mode
@@ -119,7 +133,7 @@ export class NikonCamera extends GenericCamera {
             await this.enableRemoteMode()
             await this.enablePhotoMode()
             await this.enableLiveView()
-            const response = await this.send(this.registry.operations.InitiateCapture, {})
+            await this.send(this.registry.operations.InitiateCapture, {})
             await this.waitForDeviceReady()
             await this.waitForImageBufferReady()
             await this.enablePcCameraMode()
@@ -149,12 +163,27 @@ export class NikonCamera extends GenericCamera {
             // Nikon does not support this for live view images
         }
         if (includeData) {
-            const response = await this.send(
-                this.registry.operations.GetLiveViewImageEx,
-                {},
-                undefined,
-                this.liveViewBufferSize + this.bufferPadding
-            )
+            let response: Awaited<ReturnType<typeof this.send<typeof this.registry.operations.GetLiveViewImageEx>>> | undefined
+            for (let attempt = 0; attempt < 20; attempt += 1) {
+                response = await this.send(
+                    this.registry.operations.GetLiveViewImageEx,
+                    {},
+                    undefined,
+                    this.liveViewBufferSize + this.bufferPadding
+                )
+                if (response.code === NotLiveView.code) {
+                    this.liveViewStatus = 'OFF'
+                    await this.enableLiveView()
+                    continue
+                }
+                if (response.code !== DeviceBusy.code) break
+                await this.waitMs(10)
+            }
+            if (!response || response.code !== OK.code || !response.data?.liveViewImage) {
+                throw new Error(
+                    `Nikon GetLiveViewImageEx failed with response ${response ? `0x${response.code.toString(16)}` : 'unknown'}`
+                )
+            }
             data = response.data.liveViewImage
         }
 
@@ -312,7 +341,10 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
-        await this.send(this.registry.operations.StartLiveView, {})
+        const response = await this.send(this.registry.operations.StartLiveView, {})
+        if (response.code !== OK.code && response.code !== DeviceBusy.code) {
+            throw new Error(`Nikon StartLiveView failed with response 0x${response.code.toString(16)}`)
+        }
         await this.waitForDeviceReady()
         this.liveViewStatus = 'ON'
     }
@@ -328,11 +360,12 @@ export class NikonCamera extends GenericCamera {
     }
 
     private async disableLiveView(): Promise<void> {
-        if (this.liveViewStatus === 'OFF') {
-            return
-        }
+        if (this.liveViewStatus !== 'ON') return
 
-        await this.send(this.registry.operations.EndLiveView, {})
+        const response = await this.send(this.registry.operations.EndLiveView, {})
+        if (response.code !== OK.code && response.code !== NotLiveView.code) {
+            throw new Error(`Nikon EndLiveView failed with response 0x${response.code.toString(16)}`)
+        }
         await this.waitForDeviceReady()
         this.liveViewStatus = 'OFF'
     }
