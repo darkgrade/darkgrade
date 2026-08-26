@@ -17,6 +17,7 @@
         "build": "vite build && tsc --emitDeclarationOnly",
         "dev": "vite build --watch",
         "test": "vitest run",
+        "bench:probe": "bun run tests/bench-probe.ts",
         "lint": "eslint . --ext .ts,.tsx",
         "format": "prettier --write .",
         "usb-ids": "bun run src/transport/usb/usb-ids/generate-usb-ids.ts"

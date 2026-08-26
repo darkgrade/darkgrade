@@ -1,0 +1,15 @@
+[mcp_servers.darkgrade_testbench]
+url = "http://127.0.0.1:8790/mcp"
+required = true
+startup_timeout_sec = 20
+tool_timeout_sec = 180
+default_tools_approval_mode = "auto"
+
+[mcp_servers.darkgrade_testbench.tools.camera_recover]
+approval_mode = "approve"
+
+[mcp_servers.darkgrade_testbench.tools.camera_usb_reconnect]
+approval_mode = "approve"
+
+[mcp_servers.darkgrade_testbench.tools.camera_power]
+approval_mode = "approve"
