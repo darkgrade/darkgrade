@@ -3,6 +3,7 @@ import { baseCodecs, createEnumCodec, CustomCodec, EnumCodec, PTPRegistry } from
 import { PropertyDefinition } from '@ptp/types/property'
 
 const UNDEF = getDatatypeByName('UNDEF')!.code
+const INT8 = getDatatypeByName('INT8')!.code
 const UINT8 = getDatatypeByName('UINT8')!.code
 const UINT16 = getDatatypeByName('UINT16')!.code
 const INT16 = getDatatypeByName('INT16')!.code
@@ -167,6 +168,343 @@ class ExposureValueCodec extends CustomCodec<string> {
         return { value: `${decoded < 0 ? '-' : '+'}${Math.abs(decoded)} EV`, bytesRead: result.bytesRead }
     }
 }
+
+class SonyZoomPositionCodec extends CustomCodec<number> {
+    encode(value: number): Uint8Array {
+        if (!Number.isFinite(value) || value < 0) {
+            throw new Error(`Sony zoom position must be a non-negative number, received ${value}`)
+        }
+        return this.baseCodecs.uint32.encode(Math.round(value * 1_000_000))
+    }
+
+    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
+        const result = this.baseCodecs.uint32.decode(buffer, offset)
+        return { value: result.value / 1_000_000, bytesRead: result.bytesRead }
+    }
+}
+
+export const WhiteBalance = {
+    code: 0x5005,
+    name: 'WhiteBalance',
+    description: 'Sony white-balance mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0002, name: 'Auto', description: 'Automatic white balance' },
+                { value: 0x0004, name: 'Daylight', description: 'Daylight' },
+                { value: 0x8011, name: 'Shade', description: 'Shade' },
+                { value: 0x8010, name: 'Cloudy', description: 'Cloudy' },
+                { value: 0x0006, name: 'Tungsten', description: 'Tungsten / incandescent' },
+                { value: 0x8001, name: 'Fluorescent Warm White', description: 'Warm-white fluorescent' },
+                { value: 0x8002, name: 'Fluorescent Cool White', description: 'Cool-white fluorescent' },
+                { value: 0x8003, name: 'Fluorescent Day White', description: 'Day-white fluorescent' },
+                { value: 0x8004, name: 'Fluorescent Daylight', description: 'Daylight fluorescent' },
+                { value: 0x0007, name: 'Flash', description: 'Flash' },
+                { value: 0x8030, name: 'Underwater Auto', description: 'Underwater automatic' },
+                { value: 0x8012, name: 'Color Temperature', description: 'Explicit color temperature' },
+                { value: 0x8020, name: 'Preset 1', description: 'Custom white-balance preset 1' },
+                { value: 0x8021, name: 'Preset 2', description: 'Custom white-balance preset 2' },
+                { value: 0x8022, name: 'Preset 3', description: 'Custom white-balance preset 3' },
+                { value: 0x8023, name: 'Preset', description: 'Custom white-balance preset' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const FocusMode = {
+    code: 0x500a,
+    name: 'FocusMode',
+    description: 'Sony focus mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'Manual', description: 'Manual focus' },
+                { value: 0x0002, name: 'AF-S', description: 'Single-shot autofocus' },
+                { value: 0x8004, name: 'AF-C', description: 'Continuous autofocus' },
+                { value: 0x8005, name: 'AF-A', description: 'Automatic AF-S / AF-C selection' },
+                { value: 0x8006, name: 'DMF', description: 'Direct manual focus' },
+                { value: 0x8007, name: 'Manual Reverse', description: 'Reverse manual focus' },
+                { value: 0x8008, name: 'AF-D', description: 'Depth-map assisted autofocus' },
+                { value: 0x8009, name: 'Preset Focus', description: 'Preset focus' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const CompressionSetting = {
+    code: 0x5004,
+    name: 'CompressionSetting',
+    description: 'Sony still-image recording format and JPEG/HEIF quality.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'JPEG Light', description: 'JPEG Light' },
+                { value: 0x02, name: 'JPEG Standard', description: 'JPEG Standard' },
+                { value: 0x03, name: 'JPEG Fine', description: 'JPEG Fine' },
+                { value: 0x04, name: 'JPEG Extra Fine', description: 'JPEG Extra Fine' },
+                { value: 0x10, name: 'RAW', description: 'RAW' },
+                { value: 0x11, name: 'RAW + JPEG Light', description: 'RAW plus JPEG Light' },
+                { value: 0x12, name: 'RAW + JPEG Standard', description: 'RAW plus JPEG Standard' },
+                { value: 0x13, name: 'RAW + JPEG Fine', description: 'RAW plus JPEG Fine' },
+                { value: 0x14, name: 'RAW + JPEG Extra Fine', description: 'RAW plus JPEG Extra Fine' },
+                { value: 0x31, name: 'HEIF Light', description: 'HEIF Light' },
+                { value: 0x32, name: 'HEIF Standard', description: 'HEIF Standard' },
+                { value: 0x33, name: 'HEIF Fine', description: 'HEIF Fine' },
+                { value: 0x34, name: 'HEIF Extra Fine', description: 'HEIF Extra Fine' },
+                { value: 0x41, name: 'RAW + HEIF Light', description: 'RAW plus HEIF Light' },
+                { value: 0x42, name: 'RAW + HEIF Standard', description: 'RAW plus HEIF Standard' },
+                { value: 0x43, name: 'RAW + HEIF Fine', description: 'RAW plus HEIF Fine' },
+                { value: 0x44, name: 'RAW + HEIF Extra Fine', description: 'RAW plus HEIF Extra Fine' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const SonyImageSize = {
+    code: 0xd203,
+    name: 'SonyImageSize',
+    description: 'Sony still-image size.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Large', description: 'Large' },
+                { value: 0x02, name: 'Medium', description: 'Medium' },
+                { value: 0x03, name: 'Small', description: 'Small' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const AspectRatio = {
+    code: 0xd211,
+    name: 'AspectRatio',
+    description: 'Sony still-image aspect ratio.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: '3:2', description: '3:2' },
+                { value: 0x02, name: '16:9', description: '16:9' },
+                { value: 0x03, name: '4:3', description: '4:3' },
+                { value: 0x04, name: '1:1', description: '1:1' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ColorTemperature = {
+    code: 0xd20f,
+    name: 'ColorTemperature',
+    description: 'Sony white-balance color temperature in kelvin.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: baseCodecs.uint16,
+} as const satisfies PropertyDefinition
+
+export const ZoomPosition = {
+    code: 0xd214,
+    name: 'ZoomPosition',
+    description: 'Sony lens zoom/focal position reported in millimetres.',
+    datatype: UINT32,
+    access: 'Get',
+    codec: registry => new SonyZoomPositionCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const StillFileFormat = {
+    code: 0xd253,
+    name: 'StillFileFormat',
+    description: 'Sony still-image file format used by current protocol-v3 bodies.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'RAW', description: 'RAW' },
+                { value: 0x02, name: 'RAW + JPEG', description: 'RAW plus JPEG' },
+                { value: 0x03, name: 'JPEG', description: 'JPEG' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const JpegQuality = {
+    code: 0xd252,
+    name: 'JpegQuality',
+    description: 'Sony JPEG quality for protocol-v3 bodies.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Extra Fine', description: 'Extra Fine' },
+                { value: 0x02, name: 'Fine', description: 'Fine' },
+                { value: 0x03, name: 'Standard', description: 'Standard' },
+                { value: 0x04, name: 'Light', description: 'Light' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieFileFormat = {
+    code: 0xd241,
+    name: 'MovieFileFormat',
+    description: 'Sony movie codec/container family.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x03, name: 'AVCHD', description: 'AVCHD' },
+                { value: 0x08, name: 'XAVC S 4K', description: 'XAVC S 4K' },
+                { value: 0x09, name: 'XAVC S HD', description: 'XAVC S HD' },
+                { value: 0x0a, name: 'XAVC HS 8K', description: 'XAVC HS 8K' },
+                { value: 0x0b, name: 'XAVC HS 4K', description: 'XAVC HS 4K' },
+                { value: 0x0c, name: 'XAVC S 4K (modern)', description: 'XAVC S 4K on newer Sony bodies' },
+                { value: 0x0d, name: 'XAVC S HD (modern)', description: 'XAVC S HD on newer Sony bodies' },
+                { value: 0x0e, name: 'XAVC S-I 4K', description: 'XAVC S-I 4K' },
+                { value: 0x0f, name: 'XAVC S-I HD', description: 'XAVC S-I HD' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieRecordingSetting = {
+    code: 0xd242,
+    name: 'MovieRecordingSetting',
+    description: 'Sony movie bitrate, chroma sampling, and bit-depth profile; exact bitrate depends on file format and frame rate.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 52, name: 'High bitrate · 4:2:2 10-bit', description: 'High-bitrate 4:2:2 10-bit profile' },
+                { value: 56, name: 'Standard bitrate · 4:2:0 8-bit', description: 'Standard-bitrate 4:2:0 8-bit profile' },
+                { value: 60, name: 'Low bitrate · 4:2:0 8-bit', description: 'Low-bitrate 4:2:0 8-bit profile' },
+                { value: 61, name: '50M · 4:2:2 10-bit', description: '50 Mbps 4:2:2 10-bit profile' },
+                { value: 63, name: '50M · 4:2:0 8-bit', description: '50 Mbps 4:2:0 8-bit profile' },
+                { value: 66, name: 'Low bitrate · 4:2:0 8-bit', description: 'Frame-rate-dependent lower bitrate 4:2:0 8-bit profile' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieRecordingState = {
+    code: 0xd21d,
+    name: 'MovieRecordingState',
+    description: 'Sony movie-recording state.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'Idle', description: 'Not recording' },
+                { value: 1, name: 'Recording', description: 'Recording' },
+                { value: 2, name: 'Starting', description: 'Starting recording' },
+                { value: 3, name: 'Stopping', description: 'Stopping recording' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ZoomEnableStatus = {
+    code: 0xd25b,
+    name: 'ZoomEnableStatus',
+    description: 'Whether the attached lens/configuration accepts remote zoom.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'Unavailable', description: 'Remote zoom unavailable' },
+                { value: 1, name: 'Enabled', description: 'Remote zoom enabled' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ZoomScale = {
+    code: 0xd25c,
+    name: 'ZoomScale',
+    description: 'Sony zoom scale in thousandths.',
+    datatype: UINT32,
+    access: 'Get',
+    codec: baseCodecs.uint32,
+} as const satisfies PropertyDefinition
+
+export const ZoomBarInfo = {
+    code: 0xd25d,
+    name: 'ZoomBarInfo',
+    description: 'Sony packed zoom-bar position information.',
+    datatype: UINT32,
+    access: 'Get',
+    codec: baseCodecs.uint32,
+} as const satisfies PropertyDefinition
+
+export const ZoomSpeed = {
+    code: 0xd25e,
+    name: 'ZoomSpeed',
+    description: 'Current Sony remote zoom direction/speed.',
+    datatype: INT8,
+    access: 'Get',
+    codec: baseCodecs.int8,
+} as const satisfies PropertyDefinition
+
+export const ZoomSetting = {
+    code: 0xd25f,
+    name: 'ZoomSetting',
+    description: 'Sony zoom range/type setting.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 1, name: 'Optical Zoom Only', description: 'Optical zoom only' },
+                { value: 3, name: 'Clear Image Zoom', description: 'Optical plus Clear Image Zoom' },
+                { value: 4, name: 'Digital Zoom', description: 'Optical plus digital zoom' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ZoomTypeStatus = {
+    code: 0xd260,
+    name: 'ZoomTypeStatus',
+    description: 'Active Sony zoom type.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 1, name: 'Optical', description: 'Optical zoom' },
+                { value: 2, name: 'Smart Zoom', description: 'Smart Zoom' },
+                { value: 3, name: 'Clear Image Zoom', description: 'Clear Image Zoom' },
+                { value: 4, name: 'Digital Zoom', description: 'Digital zoom' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
 
 export const Aperture = {
     code: 0x5007,
@@ -941,7 +1279,7 @@ export const StillImageSaveDestination = {
     code: 0xd222,
     name: 'StillImageSaveDestination',
     description: 'Get the information of still image save destination.',
-    datatype: UINT8,
+    datatype: UINT16,
     access: 'GetSet',
     codec: registry =>
         new EnumCodec(
@@ -951,7 +1289,7 @@ export const StillImageSaveDestination = {
                 { value: 0x0010, name: 'HOST_DEVICE', description: 'HOST_DEVICE' },
                 { value: 0x0011, name: 'BOTH_DEVICES', description: 'BOTH_DEVICES' },
             ] as const,
-            registry.codecs.uint8
+            registry.codecs.uint16
         ),
 } as const satisfies PropertyDefinition
 
@@ -1150,6 +1488,24 @@ export const sonyPropertyRegistry = {
     Aperture,
     ShutterSpeed,
     Iso,
+    WhiteBalance,
+    FocusMode,
+    CompressionSetting,
+    SonyImageSize,
+    AspectRatio,
+    ColorTemperature,
+    ZoomPosition,
+    StillFileFormat,
+    JpegQuality,
+    MovieFileFormat,
+    MovieRecordingSetting,
+    MovieRecordingState,
+    ZoomEnableStatus,
+    ZoomScale,
+    ZoomBarInfo,
+    ZoomSpeed,
+    ZoomSetting,
+    ZoomTypeStatus,
     Exposure,
     MeteredExposure,
     ExposureCompensation,
