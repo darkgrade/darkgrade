@@ -23,9 +23,9 @@ import { GenericCamera } from './generic-camera'
  */
 export class CanonCamera extends GenericCamera {
     private async withoutPolling<T>(fn: () => Promise<T>): Promise<T> {
-        const wasPolling = !!this.pollingInterval
+        const wasPolling = this.polling
         if (wasPolling) {
-            this.stopPolling()
+            await this.stopPolling()
         }
         try {
             return await fn()
@@ -35,7 +35,8 @@ export class CanonCamera extends GenericCamera {
             }
         }
     }
-    private pollingInterval?: NodeJS.Timeout
+    private polling = false
+    private pollingLoop?: Promise<void>
     private liveViewEnabled = false
     private propertyCache = new Map<
         PropertyDefinition,
@@ -67,7 +68,7 @@ export class CanonCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
-        this.stopPolling()
+        await this.stopPolling()
         await this.disableLiveView()
         await this.disableRemoteMode()
         await this.disableEventMode()
@@ -294,26 +295,40 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
+    /**
+     * Polls the camera's event queue. Each round is scheduled only after the previous one
+     * finishes: setInterval does not wait for an async callback, so when a poll takes longer than
+     * the interval it stacks up requests faster than the bus can drain them and starves every
+     * other operation.
+     */
     private startPolling(intervalMs: number = 200): void {
-        if (this.pollingInterval) {
+        if (this.polling) {
             return
         }
 
-        this.pollingInterval = setInterval(async () => {
+        this.polling = true
+        this.pollingLoop = this.runPollingLoop(intervalMs)
+    }
+
+    private async runPollingLoop(intervalMs: number): Promise<void> {
+        while (this.polling) {
             try {
                 const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-                if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+                if (this.polling && response.data && Array.isArray(response.data) && response.data.length > 0) {
                     this.processEvents(response.data, true)
                 }
             } catch (error) {}
-        }, intervalMs)
+
+            if (!this.polling) return
+
+            await new Promise(resolve => setTimeout(resolve, intervalMs))
+        }
     }
 
-    private stopPolling(): void {
-        if (this.pollingInterval) {
-            clearInterval(this.pollingInterval)
-            this.pollingInterval = undefined
-        }
+    private async stopPolling(): Promise<void> {
+        this.polling = false
+        await this.pollingLoop
+        this.pollingLoop = undefined
     }
 
     private async flushInitialEvents(): Promise<void> {

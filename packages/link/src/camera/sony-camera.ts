@@ -252,7 +252,7 @@ export class SonyCamera extends GenericCamera {
         await this.enableContentTransferMode()
 
         // Start transfer tracking
-        this.logger.startTransfer(objectHandle, this.sessionId, 0, 'SDIO_GetPartialLargeObject', objectSize)
+        this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'SDIO_GetPartialLargeObject', objectSize)
 
         const chunks: Uint8Array[] = []
         let offset = 0

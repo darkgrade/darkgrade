@@ -15,8 +15,9 @@ import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.in
 export class GenericCamera {
     protected emitter = new EventEmitter()
     public vendorId: number | null = null
-    public sessionId = 0
+    public sessionId: number | null = null
     private transactionId = 0
+    private transactionQueue: Promise<void> = Promise.resolve()
     public transport: TransportInterface
     protected logger: Logger
     public registry: Registry
@@ -56,11 +57,38 @@ export class GenericCamera {
             await this.send(this.registry.operations.CloseSession, {})
         }
 
-        this.sessionId = 0
+        this.sessionId = null
         await this.transport.disconnect()
     }
 
+    /**
+     * PTP is strictly request/response over a single pair of bulk endpoints, so only one
+     * transaction may be in flight at a time. Vendor subclasses poll for events on a timer, and
+     * setInterval does not wait for its async callback, so polls can overlap each other and any
+     * caller-initiated operation. Overlapping transactions interleave on the shared endpoints and
+     * abort libusb. Queueing every transaction here keeps the bus serialized.
+     */
     async send<Op extends OperationDefinition>(
+        operation: Op,
+        params: OperationParams<Op>,
+        data?: Uint8Array,
+        maxDataLength?: number
+    ): Promise<OperationResponse<Op>> {
+        const result = this.transactionQueue.then(
+            () => this.sendTransaction(operation, params, data, maxDataLength),
+            () => this.sendTransaction(operation, params, data, maxDataLength)
+        )
+
+        // Keep the chain alive after a rejection so one failed transaction cannot wedge the queue.
+        this.transactionQueue = result.then(
+            () => undefined,
+            () => undefined
+        )
+
+        return result
+    }
+
+    private async sendTransaction<Op extends OperationDefinition>(
         operation: Op,
         params: OperationParams<Op>,
         data?: Uint8Array,
@@ -487,7 +515,7 @@ export class GenericCamera {
 
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
         // Start transfer tracking
-        this.logger.startTransfer(objectHandle, this.sessionId, 0, 'GetPartialObject', objectSize)
+        this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObject', objectSize)
 
         const chunks: Uint8Array[] = []
         let offset = 0
@@ -583,7 +611,7 @@ export class GenericCamera {
         this.logger.addLog({
             type: 'ptp_event',
             level: 'info',
-            sessionId: this.sessionId,
+            sessionId: this.sessionId!,
             eventCode: eventDef.code,
             eventName: eventDef.name,
             encodedParams,

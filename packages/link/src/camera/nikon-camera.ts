@@ -214,7 +214,7 @@ export class NikonCamera extends GenericCamera {
 
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
         // Start transfer tracking
-        this.logger.startTransfer(objectHandle, this.sessionId, 0, 'GetPartialObjectEx', objectSize)
+        this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObjectEx', objectSize)
 
         const chunks: Uint8Array[] = []
         let offset = 0

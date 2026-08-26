@@ -2,7 +2,7 @@ import { Logger } from '@core/logger'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
-import { LibUSBException } from 'usb'
+import { InEndpoint, Interface, LibUSBException, usb } from 'usb'
 import { USBContainerBuilder, USBContainerType } from './usb-container'
 import { formatDeviceTable } from './usb-device-table'
 
@@ -37,6 +37,8 @@ export interface ExtendedEventData {
 
 export const USB_LIMITS = { MAX_USB_TRANSFER: 1024 * 1024 * 1024, DEFAULT_BULK_SIZE: 8192 } as const
 
+const LIBUSB_ENDPOINT_IN = usb.LIBUSB_ENDPOINT_IN
+
 export class USBTransport implements TransportInterface {
     private device: USBDevice | null = null
     private interfaceNumber = 0
@@ -44,6 +46,7 @@ export class USBTransport implements TransportInterface {
     private connected = false
     private usb: USB | null = null
     private eventHandler: ((event: PTPEvent) => void) | null = null
+    private pollingEndpoint: InEndpoint | null = null
 
     constructor(private logger: Logger) {}
 
@@ -61,7 +64,17 @@ export class USBTransport implements TransportInterface {
 
     private async getUSB(): Promise<USB> {
         if (this.usb) return this.usb
-        this.usb = typeof navigator !== 'undefined' && 'usb' in navigator ? navigator.usb : (await import('usb')).webusb
+
+        if (typeof navigator !== 'undefined' && 'usb' in navigator) {
+            this.usb = navigator.usb
+            return this.usb
+        }
+
+        // node-usb's default `webusb` export is built with allowAllDevices: false, so its
+        // getDevices() only ever returns previously-granted devices — an empty list under
+        // Node. Enumerating requires an instance that opts into exposing all devices.
+        const { WebUSB } = await import('usb')
+        this.usb = new WebUSB({ allowAllDevices: true })
         return this.usb
     }
 
@@ -156,7 +169,7 @@ export class USBTransport implements TransportInterface {
         this.connected = true
         // await this.nukeDevice()
 
-        this.listenForInterrupt()
+        this.startInterruptListener()
     }
 
     async disconnect(): Promise<void> {
@@ -164,6 +177,11 @@ export class USBTransport implements TransportInterface {
 
         this.connected = false
         this.eventHandler = null
+
+        // Cancel the interrupt listener before closing. An interrupt read stays pending until
+        // the camera sends an event, and libusb refuses to close a device that still has one
+        // outstanding.
+        await this.stopInterruptListener()
 
         // give events 100ms to complete if any are pending
         await new Promise(resolve => setTimeout(resolve, 100))
@@ -370,6 +388,62 @@ export class USBTransport implements TransportInterface {
         return { code, parameters }
     }
 
+    private startInterruptListener(): void {
+        const pollableEndpoint = this.findPollableInterruptEndpoint()
+
+        if (!pollableEndpoint) {
+            this.listenForInterrupt()
+            return
+        }
+
+        this.pollingEndpoint = pollableEndpoint
+        pollableEndpoint.on('data', (data: Buffer) => this.handleInterruptData(new Uint8Array(data), 'ok'))
+        pollableEndpoint.on('error', error => {
+            if (!this.connected) return
+
+            console.error('Error listening for interrupt: ', error)
+        })
+        pollableEndpoint.startPoll(1, 64)
+    }
+
+    /**
+     * Under Node the WebUSB device wraps a node-usb device. WebUSB offers no way to cancel an
+     * in-flight transferIn, and an interrupt read stays pending until the camera sends an event,
+     * so a plain transferIn loop leaves a request outstanding that makes close() fail with
+     * "Can't close device with a pending request". node-usb's polling API is cancellable via
+     * stopPoll(), so prefer it whenever the underlying endpoint is reachable. Browsers have no
+     * such endpoint and fall back to the transferIn loop.
+     */
+    private findPollableInterruptEndpoint(): InEndpoint | null {
+        if (!this.device || !this.endpoints) return null
+
+        const nodeUsbDevice = (this.device as unknown as { device?: { interfaces?: Interface[] } }).device
+        if (!nodeUsbDevice?.interfaces) return null
+
+        const address = this.endpoints.interrupt.endpointNumber | LIBUSB_ENDPOINT_IN
+
+        for (const usbInterface of nodeUsbDevice.interfaces) {
+            const endpoint = usbInterface.endpoint(address)
+            if (endpoint && endpoint.direction === 'in') return endpoint as InEndpoint
+        }
+
+        return null
+    }
+
+    private async stopInterruptListener(): Promise<void> {
+        const endpoint = this.pollingEndpoint
+        this.pollingEndpoint = null
+
+        if (!endpoint) return
+
+        if (endpoint.pollActive) {
+            await new Promise<void>(resolve => endpoint.stopPoll(() => resolve()))
+        }
+
+        endpoint.removeAllListeners('data')
+        endpoint.removeAllListeners('error')
+    }
+
     private async listenForInterrupt(): Promise<void> {
         while (this.connected && this.device && this.endpoints) {
             try {
@@ -377,37 +451,7 @@ export class USBTransport implements TransportInterface {
 
                 if (result.data) {
                     const data = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength)
-                    const container = USBContainerBuilder.parseEvent(data)
-                    const view = new DataView(
-                        container.payload.buffer,
-                        container.payload.byteOffset,
-                        container.payload.byteLength
-                    )
-                    const event: PTPEvent = {
-                        code: container.code,
-                        transactionId: container.transactionId,
-                        parameters: [],
-                    }
-
-                    for (let i = 0; i + 4 <= container.payload.length && event.parameters.length < 5; i += 4) {
-                        event.parameters.push(view.getUint32(i, true))
-                    }
-                    this.logger.addLog({
-                        type: 'usb_transfer',
-                        level: 'info',
-                        bytes: data.length,
-                        direction: 'receive',
-                        endpoint: 'interrupt',
-                        endpointAddress: `0x${this.endpoints.interrupt.endpointNumber.toString(16)}`,
-                        sessionId: event.transactionId >> 16,
-                        transactionId: event.transactionId,
-                        phase: 'response',
-                        status: result.status,
-                    })
-
-                    if (this.eventHandler) {
-                        this.eventHandler(event)
-                    }
+                    this.handleInterruptData(data, result.status)
                 }
             } catch (error) {
                 // halt will be cleared when device is disconnected, ignore
@@ -415,6 +459,38 @@ export class USBTransport implements TransportInterface {
 
                 console.error('Error listening for interrupt: ', error)
             }
+        }
+    }
+
+    private handleInterruptData(data: Uint8Array, status: USBTransferStatus): void {
+        if (!this.endpoints) return
+
+        const container = USBContainerBuilder.parseEvent(data)
+        const view = new DataView(container.payload.buffer, container.payload.byteOffset, container.payload.byteLength)
+        const event: PTPEvent = {
+            code: container.code,
+            transactionId: container.transactionId,
+            parameters: [],
+        }
+
+        for (let i = 0; i + 4 <= container.payload.length && event.parameters.length < 5; i += 4) {
+            event.parameters.push(view.getUint32(i, true))
+        }
+        this.logger.addLog({
+            type: 'usb_transfer',
+            level: 'info',
+            bytes: data.length,
+            direction: 'receive',
+            endpoint: 'interrupt',
+            endpointAddress: `0x${this.endpoints.interrupt.endpointNumber.toString(16)}`,
+            sessionId: event.transactionId >> 16,
+            transactionId: event.transactionId,
+            phase: 'response',
+            status,
+        })
+
+        if (this.eventHandler) {
+            this.eventHandler(event)
         }
     }
 }
