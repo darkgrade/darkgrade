@@ -13,6 +13,7 @@ type ProbeOutput = {
         serialNumber?: string
         vendorId: number
         productId: number
+        operationsSupportedRaw: number[]
     }
 }
 
@@ -63,6 +64,7 @@ try {
             manufacturer: response.data.manufacturer,
             model: response.data.model,
             serialNumber: response.data.serialNumber,
+            operationsSupportedRaw: response.data.operationsSupportedRaw,
             ...identifier,
         },
     }

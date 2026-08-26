@@ -1,7 +1,7 @@
 import { Logger } from '@core/logger'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
-import { SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
+import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
 import { createPTPRegistry, Registry } from '@ptp/registry'
 import type { CodecDefinition, CodecInstance, CodecType } from '@ptp/types/codec'
@@ -420,8 +420,15 @@ export class GenericCamera {
         info?: ObjectInfo
         data?: Uint8Array
     }> {
-        await this.send(this.registry.operations.InitiateCapture, {})
-        const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle()
+        if (!includeInfo && !includeData) {
+            const captureResponse = await this.send(this.registry.operations.InitiateCapture, {})
+            if (captureResponse.code !== OK.code) {
+                throw new Error(`InitiateCapture returned 0x${captureResponse.code.toString(16)}`)
+            }
+            return {}
+        }
+
+        const capturedImageObjectHandle = await this.initiateCaptureAndWaitForObjectHandle()
 
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
@@ -621,19 +628,34 @@ export class GenericCamera {
         this.emitter.emit<Record<string, number | bigint | string>>(eventDef.name, decodedParams)
     }
 
-    protected async waitForCapturedImageObjectHandle(): Promise<number> {
-        let capturedImageObjectHandle: number | null = null
-        this.on(this.registry.events.ObjectAdded, event => {
-            if (event.ObjectHandle) {
-                capturedImageObjectHandle = event.ObjectHandle
+    protected initiateCaptureAndWaitForObjectHandle(timeoutMilliseconds = 15_000): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const objectAdded = this.registry.events.ObjectAdded
+            const cleanup = () => {
+                clearTimeout(timeout)
+                this.off(objectAdded, handleObjectAdded)
             }
-        })
-        while (!capturedImageObjectHandle) {
-            await this.waitMs(10)
-        }
-        this.off(this.registry.events.CaptureComplete)
+            const fail = (error: unknown) => {
+                cleanup()
+                reject(error instanceof Error ? error : new Error(String(error)))
+            }
+            const handleObjectAdded = (event: { ObjectHandle?: number }) => {
+                if (!event.ObjectHandle) return
+                cleanup()
+                resolve(event.ObjectHandle)
+            }
+            const timeout = setTimeout(
+                () => fail(new Error(`Timed out after ${timeoutMilliseconds}ms waiting for the captured image object`)),
+                timeoutMilliseconds
+            )
 
-        return capturedImageObjectHandle
+            this.on(objectAdded, handleObjectAdded)
+            void this.send(this.registry.operations.InitiateCapture, {})
+                .then(response => {
+                    if (response.code !== OK.code) fail(new Error(`InitiateCapture returned 0x${response.code.toString(16)}`))
+                })
+                .catch(fail)
+        })
     }
 
     protected getCurrentTransactionId(): number {

@@ -1,6 +1,7 @@
 import { Logger } from '@core/logger'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import { OK } from '@ptp/definitions/response-definitions'
 import { CanonRegistry, createCanonRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
@@ -191,11 +192,50 @@ export class CanonCamera extends GenericCamera {
         data?: Uint8Array
     }> {
         return this.withoutPolling(async () => {
-            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS', AFMode: 'AF' })
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'SHUTTER', AFMode: 'AF' })
-            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'SHUTTER' })
-            await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
+            const release = async (afMode: 'AF' | 'MF') => {
+                let focusPressed = false
+                let shutterPressed = false
+                try {
+                    const focus = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
+                        ReleaseMode: 'FOCUS',
+                        AFMode: afMode,
+                    })
+                    if (focus.code !== OK.code) {
+                        throw new Error(`Canon ${afMode} focus press returned 0x${focus.code.toString(16)}`)
+                    }
+                    focusPressed = true
+                    await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
+
+                    const shutter = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
+                        ReleaseMode: 'SHUTTER',
+                        AFMode: afMode,
+                    })
+                    if (shutter.code !== OK.code) {
+                        throw new Error(`Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`)
+                    }
+                    shutterPressed = true
+                } finally {
+                    if (shutterPressed) {
+                        await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'SHUTTER' }).catch(
+                            () => undefined
+                        )
+                    }
+                    if (focusPressed) {
+                        await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' }).catch(
+                            () => undefined
+                        )
+                    }
+                }
+            }
+
+            try {
+                await release('AF')
+            } catch (error) {
+                if (!(error instanceof Error) || !error.message.includes('AF shutter press returned 0x2019')) throw error
+                // DeviceBusy at full press generally means the body could not lock focus.
+                // Canon's second release parameter explicitly permits a no-AF fallback.
+                await release('MF')
+            }
 
             return {}
         })

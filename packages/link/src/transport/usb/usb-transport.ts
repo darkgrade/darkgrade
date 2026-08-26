@@ -37,6 +37,13 @@ export interface ExtendedEventData {
 
 export const USB_LIMITS = { MAX_USB_TRANSFER: 1024 * 1024 * 1024, DEFAULT_BULK_SIZE: 8192 } as const
 
+export const PTP_DISCOVERY_VENDORS = [
+    { vendorId: 0x04b0, name: 'Nikon' },
+    { vendorId: 0x054c, name: 'Sony' },
+    { vendorId: 0x04a9, name: 'Canon' },
+    { vendorId: 0x07b4, name: 'Olympus' },
+] as const
+
 const LIBUSB_ENDPOINT_IN = usb.LIBUSB_ENDPOINT_IN
 
 export class USBTransport implements TransportInterface {
@@ -82,13 +89,7 @@ export class USBTransport implements TransportInterface {
         const usb = await this.getUSB()
 
         // Request devices for common camera vendors with PTP/Still Image class
-        const cameraVendors = [
-            { vendorId: 0x04b0, name: 'Nikon' }, // Nikon
-            { vendorId: 0x054c, name: 'Sony' }, // Sony
-            { vendorId: 0x04a9, name: 'Canon' }, // Canon
-        ]
-
-        for (const vendor of cameraVendors) {
+        for (const vendor of PTP_DISCOVERY_VENDORS) {
             try {
                 await usb.requestDevice({
                     filters: [
