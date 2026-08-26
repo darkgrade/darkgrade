@@ -1,24 +1,29 @@
 ---
-title: "Feature Compatibility"
-description: "Camera feature compatibility matrix for Darkgrade Link"
+title: 'Feature Compatibility'
+description: 'Camera feature compatibility matrix for Darkgrade Link'
 ---
 
 ## Feature Compatibility
 
-| Feature                   | Generic PTP     | Sony  | Nikon           | Canon         |
-| ------------------------- | --------------- | ----- | --------------- | ------------- |
-| **Connection**            | ✅              | ✅    | ✅              | ✅            |
-| **Get/Set Properties**    | ✅              | ✅    | ✅              | ✅            |
-| **Event Handling**        | ✅              | ✅    | ✅              | ✅            |
-| **Aperture Control**      | ✅              | ✅    | ✅              | ✅            |
-| **Shutter Speed Control** | ✅              | ✅    | ✅              | ✅            |
-| **ISO Control**           | ✅              | ✅    | ✅              | ✅            |
-| **Capture Image**         | ✅              | ✅    | ✅              | ✅            |
-| **List Objects**          | ✅              | ✅    | ✅              | 🟡            |
-| **Download Objects**      | ✅              | ✅    | ✅              | 🟡            |
-| **Live View**             | ❌ <sup>1</sup> | ✅    | ✅              | 🟡            |
-| **Video Recording**       | ❌ <sup>2</sup> | ✅    | ✅ <sup>3</sup> | 🟡            |
-| Tested with:              |                 | ⍺6700<br/>⍺7 IV<br/>⍺7 V | Z6 III          | EOS R6 Mk.III |
+| Feature                       | Generic PTP                | Sony                      | Nikon           | Canon           | Olympus                    |
+| ----------------------------- | -------------------------- | ------------------------- | --------------- | --------------- | -------------------------- |
+| **USB connection**            | ✅                         | ✅                        | ✅              | ✅              | ✅                         |
+| **Standard PTP/IP transport** | ✅                         | ❌ <sup>5</sup>           | 🟡              | 🟡 <sup>5</sup> | Body-dependent             |
+| **Get/Set Properties**        | ✅ advertised only         | ✅                        | ✅              | ✅              | ✅ advertised only <sup>6</sup> |
+| **Event Handling**            | ✅                         | ✅                        | ✅              | ✅              | ✅ when advertised         |
+| **Aperture Control**          | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
+| **Shutter Speed Control**     | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
+| **ISO Control**               | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
+| **Capture Image**             | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
+| **List Objects**              | ✅                         | ✅                        | ✅              | 🟡              | ✅                         |
+| **Download Objects**          | ✅                         | ✅                        | ✅              | 🟡              | ✅                         |
+| **Live View**                 | ❌ <sup>1</sup>            | ✅                        | ✅              | 🟡              | ❌ on E-PL5                |
+| **Video Recording**           | ❌ <sup>2</sup>            | ✅                        | ✅ <sup>3</sup> | 🟡              | ❌ on E-PL5                |
+| **Mode-aware control inventory** | ✅ standard descriptors | ✅ <sup>5</sup>           | ❌              | ✅              | ✅ standard descriptors    |
+| **Still/movie format controls** | When advertised         | ✅ <sup>5</sup>           | ❌              | ✅              | When advertised            |
+| **Remote power zoom**         | ❌                         | 🟡 <sup>5</sup>           | ❌              | ❌              | ❌                         |
+| **Prompt-free USB reconnect** | Body setting               | Body setting <sup>4</sup> | Body setting    | Body setting    | Body setting               |
+| Tested with:                  |                            | ⍺6700<br/>⍺7 IV<br/>⍺7 V  | Z6 III          | EOS R6 Mk.III   | E-PL5                     |
 
 ## Notes
 
@@ -27,8 +32,14 @@ description: "Camera feature compatibility matrix for Darkgrade Link"
 2. Same as (1) above
 
 3. Nikon cameras differentiate between "photo mode" and "video mode" with an on-camera hardware switch and do not typically allow capture of (a) videos while in photo mode or (b) photos while in video mode. There are two workarounds we support:
-   - You accept this limitation and get full feature support for photo OR video, but not both at the same time, via the hardware switch. This is optimal if you don't plan to do hybrid shooting within the same session.
-   - We allow you to do both at the same time in either switch mode, however when you are capturing in the "wrong" mode" (e.g. you start recording a video while in photo mode), the on-screen display on your camera will be blank and say "Connected to Computer."
+    - You accept this limitation and get full feature support for photo OR video, but not both at the same time, via the hardware switch. This is optimal if you don't plan to do hybrid shooting within the same session.
+    - We allow you to do both at the same time in either switch mode, however when you are capturing in the "wrong" mode" (e.g. you start recording a video while in photo mode), the on-screen display on your camera will be blank and say "Connected to Computer."
+
+4. A physical α6700 test found no advertised persistent USB-mode property or `USBConnectionModeRequest` control. Sending the unadvertised request returned PTP `OK` but the next reconnect still opened the mode chooser; requesting the advertised OSD image restarted the body into its pre-PTP HID mode. With USB unplugged, setting **Setup → USB → USB Connection Mode → Remote Shoot (PC Remote)** on the body was then verified to make the next connection enumerate automatically without a prompt. PTP cannot configure the mode that must be selected before the PTP interface exists.
+
+5. The physical α6700 verified mode-aware focus, still-format, movie-format, and aspect-ratio round trips. White balance was display-only in the tested body mode. The attached lens advertised remote zoom but did not move through either control method, so the API returned an error. Modern α6700 PC Remote uses Sony access authentication and is not implemented by the standard PTP/IP transport; Canon PTP/IP passes simulator tests but EOS 80D first pairing remains physically unverified.
+
+6. The physical E-PL5 MTP mode publishes battery and date/time but no exposure, focus, or capture property. Darkgrade exposes the capability boundary instead of treating Olympus recognition as proof of control support.
 
 ## Legend
 

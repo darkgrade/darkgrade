@@ -437,6 +437,17 @@ export class CanonCamera extends GenericCamera {
         await this.set(this.registry.properties.CanonRecordingDestination, 'NONE')
     }
 
+    async getHdmiLiveViewMode(): Promise<string> {
+        return this.get(this.registry.properties.CanonLiveViewMode)
+    }
+
+    async setHdmiLiveViewMode(value: string): Promise<void> {
+        await this.set(
+            this.registry.properties.CanonLiveViewMode,
+            value as CodecType<typeof this.registry.properties.CanonLiveViewMode.codec>
+        )
+    }
+
     getPropertyAllowedValues<P extends PropertyDefinition>(property: P): CodecType<P['codec']>[] | undefined {
         const cached = this.propertyCache.get(property)
         if (!cached?.allowed) {
