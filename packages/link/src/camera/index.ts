@@ -109,6 +109,13 @@ export class Camera {
         return this.instance.setIso(value)
     }
 
+    async keepDeviceOn(): Promise<void> {
+        if (!(this.instance instanceof CanonCamera)) {
+            throw new Error('KeepDeviceOn is only available for Canon EOS cameras')
+        }
+        return this.instance.keepDeviceOn()
+    }
+
     async captureImage(params?: { includeInfo?: boolean; includeData?: boolean }) {
         return this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
     }

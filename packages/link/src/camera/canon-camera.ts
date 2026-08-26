@@ -180,6 +180,12 @@ export class CanonCamera extends GenericCamera {
         )
     }
 
+    async keepDeviceOn(): Promise<void> {
+        await this.withoutPolling(async () => {
+            await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+        })
+    }
+
     async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array

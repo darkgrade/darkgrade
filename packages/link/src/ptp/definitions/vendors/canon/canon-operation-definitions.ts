@@ -50,6 +50,15 @@ export const CanonSetEventMode = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+export const CanonKeepDeviceOn = {
+    code: 0x911d,
+    name: 'CanonKeepDeviceOn',
+    description: 'Reset the Canon EOS automatic power-off timer.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const CanonRemoteReleaseOn = {
     code: 0x9128,
     name: 'CanonRemoteReleaseOn',
@@ -189,6 +198,7 @@ export const CanonGetEventData = {
 export const canonOperationRegistry = {
     CanonSetRemoteMode,
     CanonSetEventMode,
+    CanonKeepDeviceOn,
     CanonRemoteReleaseOn,
     CanonRemoteReleaseOff,
     CanonSetDevicePropValue,
