@@ -22,7 +22,17 @@ const { data } = await camera.captureImage()
 await camera.disconnect()
 ```
 
-That's it! The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. No configuration needed.
+The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. The example assumes the body advertises those controls and remote capture; camera model, USB mode, and shooting mode can change the available surface.
+
+For a generic or Olympus body, inspect the live standard-property inventory first:
+
+```typescript
+const properties = await camera.getStandardPropertyStates()
+const iso = properties.find(property => property.name === 'ExposureIndex')
+if (iso?.writable) await camera.setStandardProperty('ExposureIndex', 'ISO 800')
+```
+
+This prevents an application from presenting ISO, aperture, or focus controls solely because it recognizes a vendor name. For example, the physically tested Olympus E-PL5 MTP mode publishes battery and camera date/time but no exposure or remote-capture property.
 
 ## How It Works
 
@@ -34,7 +44,7 @@ When you call `connect()`, Darkgrade Link:
    - **Sony ⍺ Series** → `SonyCamera` with live view, video recording, SDIO
    - **Nikon Z Series** → `NikonCamera` with extended properties
    - **Canon EOS R Series** → `CanonCamera` with remote control
-   - **Other PTP Cameras** → `GenericCamera` with standard PTP operations
+   - **Olympus and other PTP cameras** → `GenericCamera` with a capability-driven standard-property inventory
 4. Enables vendor-specific features automatically
 
 ## Common Examples

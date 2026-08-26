@@ -1,4 +1,6 @@
 import { Logger } from '@core/logger'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
+import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
@@ -11,6 +13,21 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
+
+export interface StandardPropertyState {
+    code: number
+    codeHex: string
+    name: string
+    description: string
+    value: number | bigint | string
+    rawValue: number | bigint | string
+    writable: boolean
+    form: 'none' | 'range' | 'enum'
+    allowedValues?: (number | bigint | string)[]
+    minimumValue?: number | bigint | string
+    maximumValue?: number | bigint | string
+    stepSize?: number | bigint | string
+}
 
 export class GenericCamera {
     protected emitter = new EventEmitter()
@@ -181,12 +198,23 @@ export class GenericCamera {
                 if (propCode !== undefined) {
                     const property = Object.values(this.registry.properties).find((p: any) => p.code === propCode)
                     if (property) {
-                        const codec = this.resolveCodec(property.codec)
-                        const result = codec.decode(data)
-                        decodedData = {
-                            propertyName: property.name,
-                            propertyCode: propCode,
-                            value: result.value,
+                        try {
+                            const codec = this.resolveCodec(property.codec)
+                            const result = codec.decode(data)
+                            decodedData = {
+                                propertyName: property.name,
+                                propertyCode: propCode,
+                                value: result.value,
+                            }
+                        } catch {
+                            // Sony SDIO_ControlDevice uses a small signed direction
+                            // payload for otherwise UINT16/UINT32 properties. Logging
+                            // must never prevent the correctly encoded transaction.
+                            decodedData = {
+                                propertyName: property.name,
+                                propertyCode: propCode,
+                                controlPayload: [...data],
+                            }
                         }
                     }
                 }
@@ -365,8 +393,8 @@ export class GenericCamera {
             throw new Error('No data received from GetDevicePropDesc')
         }
 
-        // Cast needed: TypeScript knows data exists but can't narrow to specific property's codec type
-        return response.data as CodecType<P['codec']>
+        // DevicePropDesc uses the registered property codec for the decoded current value.
+        return response.data.currentValueDecoded as CodecType<P['codec']>
     }
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
@@ -378,6 +406,89 @@ export class GenericCamera {
         const encodedValue = codec.encode(value)
 
         await this.send(this.registry.operations.SetDevicePropValue, { DevicePropCode: property.code }, encodedValue)
+    }
+
+    async getStandardPropertyStates(): Promise<StandardPropertyState[]> {
+        const deviceInfoResponse = await this.send(this.registry.operations.GetDeviceInfo, {})
+        if (!deviceInfoResponse.data) throw new Error('GetDeviceInfo returned no device dataset')
+
+        const deviceInfo = deviceInfoResponse.data as DeviceInfo
+        const states: StandardPropertyState[] = []
+        for (const code of deviceInfo.devicePropertiesSupported) {
+            const property = Object.values(this.registry.properties).find(candidate => candidate.code === code)
+            if (!property) continue
+
+            try {
+                const response = await this.send(this.registry.operations.GetDevicePropDesc, { DevicePropCode: code })
+                if (!response.data) continue
+                states.push(this.standardPropertyState(response.data as DevicePropDesc))
+            } catch (error) {
+                this.logger.addLog({
+                    type: 'console',
+                    level: 'warn',
+                    consoleLevel: 'warn',
+                    args: [
+                        `Could not decode advertised property 0x${code.toString(16).padStart(4, '0')}`,
+                        error instanceof Error ? error.message : String(error),
+                    ],
+                })
+            }
+        }
+        return states
+    }
+
+    async setStandardProperty(propertyNameOrCode: string | number, requestedValue: string | number): Promise<void> {
+        const states = await this.getStandardPropertyStates()
+        const requestedName = String(propertyNameOrCode).toLowerCase()
+        const state = states.find(candidate =>
+            typeof propertyNameOrCode === 'number'
+                ? candidate.code === propertyNameOrCode
+                : candidate.name.toLowerCase() === requestedName || candidate.codeHex.toLowerCase() === requestedName
+        )
+        if (!state) throw new Error(`The attached camera does not advertise ${propertyNameOrCode}`)
+        if (!state.writable) throw new Error(`${state.name} is read-only on the attached camera`)
+
+        const property = Object.values(this.registry.properties).find(candidate => candidate.code === state.code)
+        if (!property) throw new Error(`${state.codeHex} has no standard PTP property definition`)
+
+        let value: number | bigint | string = requestedValue
+        if (state.allowedValues?.length) {
+            const matched = state.allowedValues.find(candidate => String(candidate) === String(requestedValue))
+            if (matched === undefined) {
+                throw new Error(
+                    `${requestedValue} is not advertised for ${state.name}; choose ${state.allowedValues.map(String).join(', ')}`
+                )
+            }
+            value = matched
+        }
+
+        const codec = this.resolveCodec(property.codec)
+        const encodedValue = codec.encode(value)
+        const response = await this.send(
+            this.registry.operations.SetDevicePropValue,
+            { DevicePropCode: property.code },
+            encodedValue
+        )
+        if (response.code !== OK.code) {
+            throw new Error(`SetDevicePropValue for ${state.name} returned 0x${response.code.toString(16)}`)
+        }
+    }
+
+    private standardPropertyState(descriptor: DevicePropDesc): StandardPropertyState {
+        return {
+            code: descriptor.devicePropertyCode,
+            codeHex: `0x${descriptor.devicePropertyCode.toString(16).padStart(4, '0')}`,
+            name: descriptor.devicePropertyName,
+            description: descriptor.devicePropertyDescription,
+            value: descriptor.currentValueDecoded,
+            rawValue: descriptor.currentValueRaw,
+            writable: descriptor.getSet === 'GET_SET',
+            form: descriptor.formFlag === 0x02 ? 'enum' : descriptor.formFlag === 0x01 ? 'range' : 'none',
+            ...(descriptor.supportedValuesDecoded ? { allowedValues: descriptor.supportedValuesDecoded } : {}),
+            ...(descriptor.minimumValue !== undefined ? { minimumValue: descriptor.minimumValue } : {}),
+            ...(descriptor.maximumValue !== undefined ? { maximumValue: descriptor.maximumValue } : {}),
+            ...(descriptor.stepSize !== undefined ? { stepSize: descriptor.stepSize } : {}),
+        }
     }
 
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
@@ -397,7 +508,7 @@ export class GenericCamera {
     }
 
     async setAperture(value: string): Promise<void> {
-        return this.set(this.registry.properties.FNumber, value)
+        return this.setStandardProperty('FNumber', value)
     }
 
     async getShutterSpeed(): Promise<string> {
@@ -405,7 +516,7 @@ export class GenericCamera {
     }
 
     async setShutterSpeed(value: string): Promise<void> {
-        return this.set(this.registry.properties.ExposureTime, value)
+        return this.setStandardProperty('ExposureTime', value)
     }
 
     async getIso(): Promise<string> {
@@ -413,7 +524,7 @@ export class GenericCamera {
     }
 
     async setIso(value: string): Promise<void> {
-        return this.set(this.registry.properties.ExposureIndex, value)
+        return this.setStandardProperty('ExposureIndex', value)
     }
 
     async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{

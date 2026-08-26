@@ -93,6 +93,36 @@ async set(
 | **property** | `PropertyDefinition` | ✓ | The property definition to set. |
 | **value** | `any` | ✓ | The value to set. |
 
+### getStandardPropertyStates
+
+Read the standard PTP properties advertised by the connected body and current USB mode. Each state includes `code`, `codeHex`, `name`, decoded `value`, raw value, `writable`, form (`none`, `range`, or `enum`), and any advertised choices/range.
+
+```typescript
+async getStandardPropertyStates(): Promise&lt;StandardPropertyState[]&gt;
+```
+
+Use this method before building controls for a generic or Olympus camera. Vendor recognition alone does not prove that a body publishes ISO, aperture, focus, or capture operations.
+
+### setStandardProperty
+
+Set one recognized standard property. Darkgrade re-reads the live property descriptors, rejects absent and read-only properties, and rejects enum values the body did not advertise.
+
+```typescript
+async setStandardProperty(
+  propertyNameOrCode: string | number,
+  value: string | number
+): Promise&lt;void&gt;
+```
+
+```typescript
+const properties = await camera.getStandardPropertyStates()
+if (properties.find(property => property.name === 'ExposureIndex')?.writable) {
+  await camera.setStandardProperty('ExposureIndex', 'ISO 400')
+}
+```
+
+The physically tested Olympus E-PL5 MTP mode publishes battery level and writable date/time, but no exposure, focus, or remote-capture control. Newer Olympus bodies automatically expose any standard properties they actually advertise.
+
 ### on
 
 Register an event handler.
