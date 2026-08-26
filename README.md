@@ -51,6 +51,57 @@ const { data } = await camera.captureImage()
 await camera.disconnect()
 ```
 
+### PTP/IP over camera Wi-Fi (Node.js)
+
+Darkgrade can use the standard PTP/IP command and event channels instead of USB. Bind the socket to a secondary adapter so joining a camera access point cannot move the controller's normal route:
+
+```typescript
+import { Camera, IPTransport, VendorIDs } from '@darkgrade/link'
+
+const host = '192.168.1.1' // camera address after Wi-Fi pairing
+const localAddress = '192.168.1.2' // address assigned to the isolated adapter
+const transport = new IPTransport({
+    address: host,
+    localAddress,
+    clientName: 'Darkgrade darkgrade01',
+})
+const camera = new Camera({ transport, vendorId: VendorIDs.CANON })
+
+await camera.connect({ ip: { host, port: 15740, protocol: 'ptp/ip', localAddress } })
+const instance = camera.getInstance()
+const deviceInfo = await camera.send(instance.registry.operations.GetDeviceInfo, {})
+await camera.autofocus()
+await camera.keepDeviceOn()
+await camera.disconnect()
+```
+
+The transport pairs separate command and event TCP connections, uses a stable client identity, supports camera-to-host and host-to-camera data phases, responds to PTP/IP ping packets, and handles fragmented or coalesced TCP frames. It is Node.js-only because it uses `node:net`. The camera must first expose its PTP/IP service and may require approval on its body; on the EOS 80D that means **Wi-Fi function → Remote control (EOS Utility) → Easy connection** after physically disconnecting USB.
+
+Physical EOS 80D first-pairing validation is still WIP on the reference test bench. On
+2026-08-25, the isolated adapter joined the camera AP and routed the camera host correctly,
+but the body emitted repeated `ssdp:byebye` notifications, never the expected alive
+announcement, and displayed **Connection target not found** before presenting the
+Darkgrade client for approval. The transport tests prove protocol behavior against a
+two-channel simulator; they do not constitute a successful physical Wi-Fi session.
+
+For a bounded bench command:
+
+```bash
+bun run --cwd packages/link bench:ptpip -- \
+  --host 192.168.1.1 --local-address 192.168.1.2 --action probe
+```
+
+Supported actions are `probe`, `canon-status`, `exposure-status`, `autofocus`, `keep-awake`, `set-focus-mode`, `set-white-balance`, `set-image-format`, `set-continuous-autofocus`, `set-movie-servo-autofocus`, `probe-movie-mode`, `set-movie-format`, `set-iso`, `set-aperture`, `set-shutter-speed`, `storage-status`, `recent-images`, `capture`, `capture-download`, `download-latest`, and `record-clip`. Setters require exact camera-advertised values; recent-object scans are bounded; capture success requires a new card object; movie recording is limited to 1–30 seconds with stop/restoration cleanup. Use `--value`, `--limit`, `--duration-ms`, and `--output` where applicable. The testbench MCP exposes one dedicated tool per action and restores USB separately when the Wi-Fi session is finished.
+
+Canon USB sessions also expose the raw network properties the body publishes:
+
+```typescript
+const network = camera.getCanonNetworkState()
+// { communicationMode, communicationModeChoices, serverRegion, wftStatus }
+```
+
+`camera.setCanonNetworkCommunicationMode(value)` accepts only a mode advertised by that camera. Passing `true` as its second argument bypasses that guard for controlled reverse-engineering only; it is not a general Wi-Fi switch. On the tested EOS 80D, forcing mode `1` was accepted for the USB session but did not advertise an AP or TCP/15740 endpoint and reset to `0` after reboot. Use `bun run --cwd packages/link bench:canon -- --network-only` to inspect these properties; add `--force-network-mode <uint32>` only while recording the USB exchange and with a recovery path available.
+
 ## 📖 Usage Examples
 
 ### Camera Settings
@@ -182,7 +233,7 @@ await camera.connect()
 
 | Feature                   | Generic PTP     | Sony                     | Nikon           | Canon         |
 | ------------------------- | --------------- | ------------------------ | --------------- | ------------- |
-| **Connection**            | ✅              | ✅                       | ✅              | ✅            |
+| **USB / PTP-IP connection** | ✅            | ✅                       | ✅              | ✅            |
 | **Get/Set Properties**    | ✅              | ✅                       | ✅              | ✅            |
 | **Event Handling**        | ✅              | ✅                       | ✅              | ✅            |
 | **Aperture Control**      | ✅              | ✅                       | ✅              | ✅            |

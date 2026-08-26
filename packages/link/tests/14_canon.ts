@@ -3,67 +3,114 @@ import { Logger } from '@core/logger'
 import { USBTransport } from '@transport/usb/usb-transport'
 
 const logger = new Logger({
-    expanded: true,
+    expanded: false,
+    captureConsole: false,
+    renderInTerminal: false,
 })
 const transport = new USBTransport(logger)
-
 const canonCamera = new CanonCamera(transport, logger)
-await canonCamera.connect()
+const argumentsSet = new Set(process.argv.slice(2))
+const timeout = setTimeout(() => {
+    process.stderr.write('Canon capability probe exceeded 30 seconds\n')
+    process.exit(2)
+}, 30_000)
 
-// await canonCamera.send(GetDeviceInfo, {})
-
-console.log('\n=== Monitoring camera settings (press Ctrl+C to exit) ===\n')
-
-let lastAperture = ''
-let lastShutter = ''
-let lastISO = ''
-
-// Poll every second and print when values change
-const intervalId = setInterval(async () => {
-    try {
-        const aperture = await canonCamera.getAperture()
-        const shutter = await canonCamera.getShutterSpeed()
-        const iso = await canonCamera.getIso()
-
-        if (aperture !== lastAperture || shutter !== lastShutter || iso !== lastISO) {
-            lastAperture = aperture
-            lastShutter = shutter
-            lastISO = iso
-        }
-    } catch (error) {
-        console.error('Error reading settings:', error)
+try {
+    await canonCamera.connect()
+    const initialWhiteBalance = await canonCamera.getWhiteBalance().catch(() => undefined)
+    const whiteBalanceChoices = canonCamera.getPropertyAllowedValues(canonCamera.registry.properties.CanonWhiteBalance)
+    const initialImageFormat = await canonCamera.getImageFormat().catch(() => undefined)
+    const imageFormatProperty = canonCamera.listPropertyStates().find(property =>
+        ['CanonImageFormat', 'CanonImageFormatSd'].includes(property.name)
+    )
+    const imageFormatChoices = imageFormatProperty?.allowedValues as
+        | Array<{ packed: number; label: string }>
+        | undefined
+    const report: Record<string, unknown> = {
+        ...(!argumentsSet.has('--network-only')
+            ? {
+                  properties: canonCamera.listPropertyStates(),
+                  unknownProperties: canonCamera.listUnknownPropertyStates(),
+              }
+            : {}),
+        networkState: canonCamera.getNetworkState(),
+        autofocus: 'not-requested',
+        whiteBalanceRoundTrip: 'not-requested',
+        imageFormatRoundTrip: 'not-requested',
+        movieModeProbe: 'not-requested',
     }
-}, 1000)
 
-// // test setting iso, shutter, aperture a few times each with delasy in between
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-// await delay(1000)
-// await canonCamera.setIso('100')
-// await delay(1000)
-// await canonCamera.setShutterSpeed('1/30')
-// await delay(1000)
-// await canonCamera.setAperture('f/4')
-// await delay(1000)
-// await canonCamera.setIso('200')
-// await delay(1000)
-// await canonCamera.setShutterSpeed('1/60')
-// await delay(1000)
-// await canonCamera.setAperture('f/8')
-// await delay(1000)
-// await canonCamera.setIso('400')
-// await delay(1000)
+    const forceNetworkMode = process.argv.indexOf('--force-network-mode')
+    if (forceNetworkMode >= 0) {
+        const value = Number(process.argv[forceNetworkMode + 1])
+        if (!Number.isInteger(value)) throw new Error('--force-network-mode requires a uint32 value')
+        report.networkModeAttempt = { requested: value, before: canonCamera.getNetworkState() }
+        await canonCamera.setNetworkCommunicationMode(value, true)
+        report.networkModeAttempt = { ...(report.networkModeAttempt as object), accepted: true, after: canonCamera.getNetworkState() }
+    }
 
-await canonCamera.captureImage({ includeInfo: true, includeData: true })
-await delay(1000)
+    if (argumentsSet.has('--autofocus')) {
+        await canonCamera.autofocus()
+        report.autofocus = 'completed'
+    }
 
-await canonCamera.startRecording()
-await delay(5000)
-await canonCamera.stopRecording()
+    if (argumentsSet.has('--round-trip-white-balance')) {
+        if (!initialWhiteBalance) throw new Error('The attached camera did not report white balance')
+        // Older EOS bodies report a current WB value but omit the allowed-values
+        // event. Daylight is a documented Canon value and provides a reversible
+        // empirical test when that enumeration is absent.
+        const alternate =
+            whiteBalanceChoices?.find(value => value !== initialWhiteBalance) ||
+            (initialWhiteBalance === 'daylight' ? 'auto' : 'daylight')
+        try {
+            await canonCamera.setWhiteBalance(alternate)
+            report.whiteBalanceRoundTrip = { initial: initialWhiteBalance, selected: alternate }
+        } finally {
+            await canonCamera.setWhiteBalance(initialWhiteBalance)
+        }
+        report.whiteBalanceRoundTrip = { ...(report.whiteBalanceRoundTrip as object), restored: initialWhiteBalance }
+    }
 
-// Handle Ctrl+C gracefully
-process.on('SIGINT', async () => {
-    console.log('\n\nDisconnecting...')
-    clearInterval(intervalId)
-    await canonCamera.disconnect()
-    process.exit(0)
-})
+    if (argumentsSet.has('--round-trip-image-format')) {
+        if (!initialImageFormat) throw new Error('The attached camera did not report an image format')
+        const alternate = imageFormatChoices?.find(value => value.packed !== initialImageFormat.packed)
+        if (!alternate) throw new Error('The attached camera did not report an alternate image format')
+        try {
+            await canonCamera.setImageFormat(alternate.packed)
+            report.imageFormatRoundTrip = {
+                initial: { packed: initialImageFormat.packed, label: initialImageFormat.label },
+                selected: alternate,
+            }
+        } finally {
+            await canonCamera.setImageFormat(initialImageFormat.packed)
+        }
+        report.imageFormatRoundTrip = {
+            ...(report.imageFormatRoundTrip as object),
+            restored: { packed: initialImageFormat.packed, label: initialImageFormat.label },
+        }
+    }
+
+    if (argumentsSet.has('--probe-movie-mode')) {
+        try {
+            await canonCamera.enterMovieMode()
+            await new Promise(resolve => setTimeout(resolve, 1_000))
+            report.movieModeProbe = {
+                status: 'entered',
+                properties: canonCamera.listPropertyStates().filter(property =>
+                    ['CanonMovieSize', 'CanonMovieServoAutofocus', 'CanonRecordingDestination'].includes(property.name)
+                ),
+                rawMovieProperties: canonCamera
+                    .listUnknownPropertyStates()
+                    .filter(property => [0xd1bb, 0xd1be, 0xd1ca, 0xd1cc, 0xd1cd].includes(property.code)),
+            }
+        } finally {
+            await canonCamera.leaveMovieMode()
+        }
+        report.movieModeProbe = { ...(report.movieModeProbe as object), restored: 'still-photo-mode' }
+    }
+
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+} finally {
+    clearTimeout(timeout)
+    await canonCamera.disconnect().catch(() => undefined)
+}

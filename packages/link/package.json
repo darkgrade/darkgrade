@@ -18,6 +18,8 @@
         "dev": "vite build --watch",
         "test": "vitest run",
         "bench:probe": "bun run tests/bench-probe.ts",
+        "bench:canon": "bun run tests/14_canon.ts",
+        "bench:ptpip": "bun run tests/bench-ptpip.ts",
         "lint": "eslint . --ext .ts,.tsx",
         "format": "prettier --write .",
         "usb-ids": "bun run src/transport/usb/usb-ids/generate-usb-ids.ts"

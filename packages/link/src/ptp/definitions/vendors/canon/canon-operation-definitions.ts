@@ -122,6 +122,24 @@ export const CanonRemoteReleaseOff = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+export const CanonDoAutofocus = {
+    code: 0x9154,
+    name: 'CanonDoAutofocus',
+    description: 'Drive Canon EOS autofocus without releasing the shutter.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const CanonCancelAutofocus = {
+    code: 0x9160,
+    name: 'CanonCancelAutofocus',
+    description: 'Release a Canon EOS autofocus drive.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const CanonSetDevicePropValue = {
     code: 0x9110,
     name: 'CanonSetPropValue',
@@ -176,24 +194,23 @@ export const CanonGetEventData = {
     dataCodec: (registry: PTPRegistry) => new CanonEventDataCodec(registry),
 } as const satisfies OperationDefinition
 
-// not working
-// export const CanonMovieSelectSWOn = {
-//     code: 0x9133,
-//     name: 'CanonMovieSelectSWOn',
-//     description: 'Start movie recording.',
-//     dataDirection: 'none',
-//     operationParameters: [] as const,
-//     responseParameters: [] as const,
-// } as const satisfies OperationDefinition
+export const CanonMovieSelectSwitchOn = {
+    code: 0x9133,
+    name: 'CanonMovieSelectSwitchOn',
+    description: 'Switch a Canon EOS body into its movie-select mode; this does not start recording.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
 
-// export const CanonMovieSelectSWOff = {
-//     code: 0x9134,
-//     name: 'CanonMovieSelectSWOff',
-//     description: 'Stop movie recording.',
-//     dataDirection: 'none',
-//     operationParameters: [] as const,
-//     responseParameters: [] as const,
-// } as const satisfies OperationDefinition
+export const CanonMovieSelectSwitchOff = {
+    code: 0x9134,
+    name: 'CanonMovieSelectSwitchOff',
+    description: 'Leave Canon EOS movie-select mode; this does not stop an active recording.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
 
 export const canonOperationRegistry = {
     CanonSetRemoteMode,
@@ -201,11 +218,13 @@ export const canonOperationRegistry = {
     CanonKeepDeviceOn,
     CanonRemoteReleaseOn,
     CanonRemoteReleaseOff,
+    CanonDoAutofocus,
+    CanonCancelAutofocus,
     CanonSetDevicePropValue,
     CanonRequestDevicePropValue,
     CanonGetEventData,
-    // CanonMovieSelectSWOn,
-    // CanonMovieSelectSWOff,
+    CanonMovieSelectSwitchOn,
+    CanonMovieSelectSwitchOff,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type CanonOperationDef = (typeof canonOperationRegistry)[keyof typeof canonOperationRegistry]
