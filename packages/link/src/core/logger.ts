@@ -111,9 +111,11 @@ export class Logger {
         this.config = { ...defaultLoggerConfig, ...config }
 
         if (typeof window === 'undefined' && typeof process !== 'undefined') {
-            this.captureConsole()
-            this.setupInkRenderer()
-            this.setupExitHandler()
+            if (this.config.captureConsole) this.captureConsole()
+            if (this.config.renderInTerminal) {
+                this.setupInkRenderer()
+                this.setupExitHandler()
+            }
         }
     }
 

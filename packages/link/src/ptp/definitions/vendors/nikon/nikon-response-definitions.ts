@@ -7,7 +7,7 @@ export const InvalidStatus = {
 } as const satisfies ResponseDefinition
 
 export const NotLiveView = {
-    code: 0xa00e,
+    code: 0xa00b,
     name: 'NotLiveView',
     description: 'The camera is not in live view mode.',
 } as const satisfies ResponseDefinition

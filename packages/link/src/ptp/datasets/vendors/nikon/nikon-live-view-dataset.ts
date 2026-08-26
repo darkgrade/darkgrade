@@ -256,18 +256,20 @@ export class NikonLiveViewDatasetCodec extends CustomCodec<NikonLiveViewDataset>
         const reservedEnd = buffer.slice(currentOffset, currentOffset + 118)
         currentOffset += 118
 
-        // Live view image starts at offset 1024
+        // The image begins after the camera-declared display-info block. Newer bodies
+        // commonly report 1024 bytes, while older models such as the Z 7 report 512.
+        // Hardcoding 1024 silently dropped otherwise valid JPEG frames from those bodies.
         // NOTE: JPEG image data - JPEG format is inherently big-endian
         // No endianness conversion needed.
         let liveViewImage: Uint8Array = new Uint8Array()
-        const imageStartOffset = offset + 1024
+        const imageStartOffset = offset + (displayInfoSize || 1024)
         const expectedEndOffset = imageStartOffset + liveViewImageSize
 
         if (liveViewImageSize > 0 && buffer.length >= expectedEndOffset) {
             liveViewImage = buffer.slice(imageStartOffset, expectedEndOffset)
         }
 
-        const bytesRead = Math.max(1024 + liveViewImageSize, buffer.length - offset)
+        const bytesRead = Math.max(imageStartOffset - offset + liveViewImageSize, buffer.length - offset)
 
         return {
             value: {

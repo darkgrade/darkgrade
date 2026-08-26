@@ -21,5 +21,6 @@ export interface DeviceDescriptor {
         host: string
         port?: number
         protocol?: 'ptp/ip' | 'upnp'
+        localAddress?: string
     }
 }

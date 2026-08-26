@@ -2,10 +2,15 @@ import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import * as SonyProps from '@ptp/definitions/vendors/sony/sony-property-definitions'
 import { TransportFactory } from '@transport/transport-factory'
+import { WebUSB } from 'usb'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SonyCamera } from '../src/camera/sony-camera'
 
-describe('Sony Property Formats', () => {
+const sonyConnected = (await new WebUSB({ allowAllDevices: true }).getDevices()).some(
+    device => device.vendorId === VendorIDs.SONY
+)
+
+describe.skipIf(!sonyConnected)('Sony Property Formats', () => {
     let camera: SonyCamera
     let transport: any
     let logger: Logger
