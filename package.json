@@ -8,7 +8,12 @@
         "dev": "turbo dev",
         "test": "turbo test",
         "lint": "turbo lint",
-        "format": "turbo format"
+        "format": "turbo format",
+        "studio": "bun run --cwd apps/studio dev"
+    },
+    "trustedDependencies": ["electron", "electron-builder", "esbuild"],
+    "overrides": {
+        "esbuild": "~0.27.0"
     },
     "devDependencies": {
         "turbo": "^2.3.3",

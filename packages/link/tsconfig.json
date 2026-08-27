@@ -3,7 +3,7 @@
     "compilerOptions": {
         "lib": ["ES2022", "DOM"],
         "jsx": "react-jsx",
-        "types": ["w3c-web-usb"],
+        "types": ["w3c-web-usb", "node"],
         "declaration": true,
         "declarationMap": true,
         "outDir": "./dist",
