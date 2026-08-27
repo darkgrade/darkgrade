@@ -1,3 +1,322 @@
 @import 'tailwindcss';
 
-@source "../../../packages/ui/src";
+/* ============================================================================
+   MONOLITH x LAMP - cinematic dark, lit from within.
+
+   Everything that can be a utility lives on the elements. What stays here is
+   the part Tailwind has no vocabulary for:
+     - design tokens (@theme), so utilities like text-ink-55 / font-serif exist
+     - the lamp: multi-layer glow atoms, as @utility so --gI still dims them all
+     - the reveal engine: attribute-selector state driven by custom properties
+       that JS writes per frame
+   ========================================================================== */
+@theme {
+    --color-bg: #0a0a0b;
+    --color-bg-2: #101012;
+    --color-ink: #eae6dc;
+    --color-ink-55: rgba(234, 230, 220, 0.55);
+    --color-ink-35: rgba(234, 230, 220, 0.35);
+    --color-hair: rgba(234, 230, 220, 0.13);
+    --color-gold: #f6dda8;
+    --color-gold-dim: rgba(246, 221, 168, 0.13);
+    --color-obsidian: #0b0b0c; /* type sitting on a lit surface */
+    --color-rec: #e0483e;
+
+    --font-serif: var(--font-instrument-serif), Georgia, serif;
+    --font-sans: var(--font-inter-tight), system-ui, sans-serif;
+    --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+    --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
+
+    --animate-drip: drip 2.2s var(--ease-lamp) infinite;
+    --animate-blink: blink 1.6s ease-in-out infinite;
+}
+
+@keyframes drip {
+    0% {
+        top: -100%;
+    }
+    55% {
+        top: 0;
+    }
+    100% {
+        top: 100%;
+    }
+}
+
+@keyframes blink {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.15;
+    }
+}
+
+@layer base {
+    :root {
+        --mq-h: 62px; /* marquee height - the hero subtracts it so both fit one screen */
+        --gI: 1; /* lamp intensity - one knob for every gold glow on the page */
+    }
+
+    html,
+    body {
+        background: var(--color-bg);
+        color: var(--color-ink);
+    }
+    body {
+        font-family: var(--font-sans);
+        font-weight: 340;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: clip;
+    }
+    a {
+        color: inherit;
+        text-decoration: none;
+    }
+
+    html {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(234, 230, 220, 0.25) transparent;
+    }
+    ::-webkit-scrollbar {
+        width: 9px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: rgba(234, 230, 220, 0.18);
+        border-radius: 9px;
+        border: 2px solid var(--color-bg);
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::selection {
+        background: var(--color-gold);
+        color: var(--color-bg);
+    }
+
+    /* lenis (bundled inside locomotive-scroll) - from dist/locomotive-scroll.css */
+    html.lenis,
+    html.lenis body {
+        height: auto;
+    }
+    .lenis:not(.lenis-autoToggle).lenis-stopped {
+        overflow: clip;
+    }
+    .lenis [data-lenis-prevent-touch],
+    .lenis [data-lenis-prevent-wheel],
+    .lenis [data-lenis-prevent] {
+        overscroll-behavior: contain;
+    }
+    .lenis.lenis-smooth iframe {
+        pointer-events: none;
+    }
+    .lenis.lenis-autoToggle {
+        transition-behavior: allow-discrete;
+        transition-duration: 1ms;
+        transition-property: overflow;
+    }
+}
+
+/* ---------- the page grid ----------
+   NOT called `container`: Tailwind ships a utility of that name (width:100%
+   plus breakpoint max-widths) which would cap this. */
+@utility shell {
+    width: min(1560px, calc(100% - clamp(40px, 6vw, 128px)));
+    margin-inline: auto;
+}
+
+/* ---------- the lamp ----------
+   one gold light source; everything accent-coloured catches a little of it.
+   these are utilities rather than inline shadow-[...] so --gI stays a single
+   knob and the stacked layers stay readable.
+
+   The radii are absolute px, so the glow does NOT scale with font size - it is
+   tuned for display type. Two tiers:
+     glow-hot  display type, roughly 32-90px (the manifesto, the section
+               headings, the closing punch line)
+     glow-sm   small type, under ~40px (the stat units). Same alphas, radii cut
+               ~2.5x and the widest layer dropped: at 24px a 70px bloom is
+               almost 3x the glyph height and reads as haze, not a halo.
+   The hero highlight is a third case - see glow-ramp below. */
+@utility glow-hot {
+    color: var(--color-gold);
+    text-shadow:
+        0 0 1px rgba(255, 247, 230, calc(0.85 * var(--gI))),
+        0 0 5px rgba(255, 238, 205, calc(0.7 * var(--gI))),
+        0 0 14px rgba(244, 198, 110, calc(0.55 * var(--gI))),
+        0 0 34px rgba(216, 150, 60, calc(0.34 * var(--gI))),
+        0 1px 76px rgba(190, 105, 30, calc(0.2 * var(--gI)));
+}
+
+/* the same light, at a size where the wide layers would only smear. the 76px
+   layer is gone rather than scaled: below ~40px it contributes haze and no
+   readable edge. */
+@utility glow-sm {
+    color: var(--color-gold);
+    text-shadow:
+        0 0 1px rgba(255, 247, 230, calc(0.85 * var(--gI))),
+        0 0 3px rgba(255, 238, 205, calc(0.7 * var(--gI))),
+        0 0 8px rgba(244, 198, 110, calc(0.55 * var(--gI))),
+        0 0 18px rgba(216, 150, 60, calc(0.34 * var(--gI)));
+}
+
+/* the same lamp as box-shadow, for elements with no glyphs to cast a
+   text-shadow: the gold rules and the loader bar. Radii sit between glow-sm and
+   glow-hot - a 1px rule has no mass of its own, so the bloom is the whole
+   effect. Note this is the element's OWN shadow, which its own overflow never
+   clips; a glow on a clipped child is invisible. */
+@utility glow-line {
+    box-shadow:
+        0 0 1px rgba(255, 247, 230, calc(0.85 * var(--gI))),
+        0 0 4px rgba(255, 238, 205, calc(0.7 * var(--gI))),
+        0 0 10px rgba(244, 198, 110, calc(0.55 * var(--gI))),
+        0 0 24px rgba(216, 150, 60, calc(0.3 * var(--gI)));
+}
+
+/* the hero highlight. its own shadow would be clipped into a visible rectangle
+   by the reveal mask's overflow, so the whole stack is scaled by --glow, which
+   the intro timeline ramps 0 -> 1 once the mask opens. keeps the gold, then
+   blooms. the last two layers are in em so halation tracks the clamp()'d size. */
+@utility glow-ramp {
+    --glow: 0;
+    color: var(--color-gold);
+    text-shadow:
+        0 0 1px rgba(255, 247, 230, calc(0.85 * var(--gI) * var(--glow))),
+        0 0 5px rgba(255, 238, 205, calc(0.7 * var(--gI) * var(--glow))),
+        0 0 14px rgba(244, 198, 110, calc(0.55 * var(--gI) * var(--glow))),
+        0 0 34px rgba(216, 150, 60, calc(0.34 * var(--gI) * var(--glow))),
+        0 1px 76px rgba(190, 105, 30, calc(0.2 * var(--gI) * var(--glow))),
+        0 0 0.12em rgba(208, 139, 52, calc(0.55 * var(--gI) * var(--glow))),
+        0 0 0.3em rgba(180, 87, 28, calc(0.4 * var(--gI) * var(--glow)));
+}
+
+/* a hairline that carries a little light */
+@utility lit-rule {
+    background: linear-gradient(90deg, rgba(244, 198, 110, 0.55), rgba(244, 198, 110, 0.06));
+    box-shadow: 0 0 calc(8px * var(--gI)) rgba(244, 198, 110, 0.22);
+}
+
+/* the wordmark, catching the lamp */
+@utility mark-glow {
+    filter: drop-shadow(0 0 calc(6px * var(--gI)) rgba(234, 230, 220, 0.16))
+        drop-shadow(0 0 calc(22px * var(--gI)) rgba(244, 198, 110, 0.1));
+}
+
+@utility mark-glow-soft {
+    filter: drop-shadow(0 0 calc(8px * var(--gI)) rgba(244, 198, 110, 0.12));
+}
+
+/* ============================================================================
+   THE REVEAL ENGINE
+   Not utility-expressible: locomotive writes --progress (0..1) onto each tagged
+   element as it crosses the viewport, and these rules remap that into transform,
+   opacity and a soft mask edge. State arrives as attributes and JS-toggled
+   classes, and the per-line stagger reads an --i that JS assigns after it splits
+   the text. Everything below is that machine; nothing here is page styling.
+   ========================================================================== */
+@layer components {
+    /* masked reveal atoms */
+    .mask {
+        display: block;
+        overflow: hidden;
+    }
+    .mask > span {
+        display: block;
+        will-change: transform;
+    }
+    .ln-mask {
+        display: block;
+        overflow: hidden;
+        padding-bottom: 0.08em;
+        margin-bottom: -0.08em;
+    }
+    /* once a block has landed the mask comes off so the glow can bleed past it */
+    .mask.open,
+    .ln-mask.open {
+        overflow: visible;
+    }
+
+    .js [data-reveal] .mask > span {
+        transform: translateY(115%);
+    }
+    .js [data-fade] {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+    .js .hero-title {
+        opacity: 0;
+    }
+
+    /* --p remaps the raw scroll progress to the band we animate over, so
+       scrolling down reveals and scrolling up hides, in lockstep. */
+    .js .rv {
+        --p: clamp(0, calc((var(--progress, 0) - var(--p0, 0.1)) / var(--pw, 0.28)), 1);
+    }
+    .js .rv.tail {
+        --p0: 0;
+        --pw: 1;
+    } /* last screenful: shorter, reachable band */
+    .js .rv.shown {
+        --p: 1;
+    } /* fallback if locomotive never loads */
+
+    .js [data-fade].rv {
+        opacity: var(--p);
+        transform: translateY(calc((1 - var(--p)) * 24px));
+    }
+
+    .js [data-reveal-lines] .line-inner {
+        transform: translateY(115%);
+    }
+    .js [data-reveal-lines].rv .line-inner {
+        --lp: clamp(0, calc((var(--p) - var(--i, 0) * 0.14) / 0.58), 1);
+        /* ease-out quart, the curve GSAP's power4.out drew. a straight ramp is
+           what made this read cheap: the line arrived at a constant speed and
+           stopped dead. this covers most of the distance early, then settles. */
+        --u: calc(1 - var(--lp));
+        --u2: calc(var(--u) * var(--u));
+        --ease: calc(var(--u2) * var(--u2));
+        transform: translateY(calc(var(--ease) * 115%));
+        opacity: clamp(0, calc(var(--lp) * 2.2), 1);
+        /* the clip edge, in this line's own coordinates: the point that
+           currently sits on the mask's bottom. fading to transparent there
+           means the overflow cut never shows as a hard slice through the
+           glyphs. the fade shrinks to nothing as the line settles. */
+        --clip: calc((1 - var(--ease) * 1.15) * 100%);
+        --soft: calc(var(--ease) * 0.9em);
+        -webkit-mask-image: linear-gradient(to bottom, #000 calc(var(--clip) - var(--soft)), transparent var(--clip));
+        mask-image: linear-gradient(to bottom, #000 calc(var(--clip) - var(--soft)), transparent var(--clip));
+    }
+    .js [data-reveal-lines].rv .ln-mask.open .line-inner {
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    .js [data-reveal] .mask > span,
+    .js [data-reveal-lines] .line-inner {
+        transform: none;
+    }
+    .js [data-fade] {
+        opacity: 1;
+        transform: none;
+    }
+    .js .hero-title {
+        opacity: 1;
+    }
+    .mask,
+    .ln-mask {
+        overflow: visible;
+    }
+}
