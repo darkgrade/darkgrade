@@ -37,7 +37,7 @@ const jetbrainsMono = localFont({
 
 const TITLE = 'Darkgrade — Shoot more. Edit less.'
 const DESCRIPTION =
-    'Local-first AI for making video. It dials in your camera, captures the shot, and turns raw footage into a finished first cut — on your own machine.'
+    'Local-first AI for creative professionals.'
 const OG_IMAGE = 'https://darkgrade.com/darkgrade_opengraph_dark.png'
 
 export const metadata: Metadata = {

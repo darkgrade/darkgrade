@@ -7,6 +7,33 @@ import { createBackgrounds } from './backgrounds'
 import { CONTOUR_BACKGROUND_ENABLED } from './backgrounds/field'
 
 /**
+ * How fast the opening plays. 1 is the original pacing; 2 halves the whole
+ * sequence - the count and every beat of the intro together - by scaling the
+ * timeline rather than editing ten durations, so the overlaps it was tuned
+ * around stay exactly where they were.
+ *
+ * Speed Index is dominated by this: until the loader clears, the filmstrip is
+ * all preloader, so this knob is the page's main lever on that metric.
+ */
+const INTRO_SPEED = 2
+
+/**
+ * The headline beat. These four are locked together, so move them as a group:
+ * `less.` cannot start glowing until its mask is open (a text-shadow inside
+ * overflow:hidden is clipped into a visible rectangle - that is what the
+ * --glow ramp exists to hold back), and the mask cannot open until the line is
+ * nearly home, or the still-rising glyphs spill out of the box.
+ *
+ * power4.out leaves (1 - t)^4 of the travel to go, so opening at t = 0.65 of
+ * the trailing line's rise leaves ~1.8% - roughly 3px at the desktop size,
+ * which reads as nothing.
+ */
+const HERO_RISE_AT = 0.7
+const HERO_RISE_DURATION = 0.7
+const HERO_STAGGER = 0.05
+const HERO_LIT_AT = HERO_RISE_AT + HERO_STAGGER + HERO_RISE_DURATION * 0.65
+
+/**
  * Every moving part of the page: the WebGL silk backdrop, the GSAP preloader
  * and intro, the custom cursor, Locomotive's scrubbed scroll reveals, the
  * scroll-reactive marquee, line splitting, the stat counters and the npm copy
@@ -441,6 +468,7 @@ export function SiteEffects() {
             const intro = () => {
                 document.documentElement.classList.remove('preload')
                 const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
+                tl.timeScale(INTRO_SPEED)
                 teardown.push(() => {
                     tl.kill()
                 })
@@ -454,24 +482,28 @@ export function SiteEffects() {
                     // the headline lands first and alone - everything else
                     // follows it in. loader is clear at .9; the headline picks
                     // it straight up
-                    tl.to('.hero-title', { opacity: 1, duration: 0.8, ease: 'power2.out' }, 0.95)
+                    tl.to('.hero-title', { opacity: 1, duration: 0.8, ease: 'power2.out' }, HERO_RISE_AT)
                         .to(
                             '.hero .mask>span',
-                            { yPercent: 0, duration: 0.85, stagger: 0.05, ease: 'power4.out' },
-                            0.95
+                            {
+                                yPercent: 0,
+                                duration: HERO_RISE_DURATION,
+                                stagger: HERO_STAGGER,
+                                ease: 'power4.out',
+                            },
+                            HERO_RISE_AT
                         )
                         // the rest overlaps the headline instead of queueing behind it
                         .to(
                             '.hero [data-fade]',
                             { opacity: 1, y: 0, duration: 0.9, stagger: 0.07, ease: 'power3.out' },
-                            1.15
+                            HERO_RISE_AT + 0.2
                         )
-                        .from('#hdr', { y: -30, opacity: 0, duration: 0.7, ease: 'power3.out' }, 1.35)
-                        // power4.out leaves both lines ~1.5% from home by 1.55,
-                        // so the masks open and the glow starts while the rise
-                        // is still finishing
-                        .call(() => heroMasks().forEach(m => m.classList.add('open')), undefined, 1.55)
-                        .to('#hl-hot', { '--glow': 1, duration: 0.7, ease: 'power2.out' }, 1.55)
+                        .from('#hdr', { y: -30, opacity: 0, duration: 0.7, ease: 'power3.out' }, HERO_RISE_AT + 0.4)
+                        // the masks come off and the gold lights while the rise
+                        // is still settling its last ~1.8%
+                        .call(() => heroMasks().forEach(m => m.classList.add('open')), undefined, HERO_LIT_AT)
+                        .to('#hl-hot', { '--glow': 1, duration: 0.5, ease: 'power2.out' }, HERO_LIT_AT)
                 } else {
                     gsap.set('.hero-title', { opacity: 1 })
                     gsap.set('#hl-hot', { '--glow': 1 })
@@ -488,14 +520,14 @@ export function SiteEffects() {
                 const o = { v: 0 }
                 const count = gsap.to(o, {
                     v: 100,
-                    duration: 1,
+                    duration: 1 / INTRO_SPEED,
                     ease: 'power2.inOut',
                     onUpdate: () => {
                         showCount(o.v)
                         if (lbar) gsap.set(lbar, { scaleX: o.v / 100 })
                     },
                     onComplete: () => {
-                        const t = setTimeout(intro, 40)
+                        const t = setTimeout(intro, 40 / INTRO_SPEED)
                         teardown.push(() => clearTimeout(t))
                     },
                 })

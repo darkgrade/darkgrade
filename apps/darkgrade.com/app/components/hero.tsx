@@ -8,7 +8,7 @@ export function Hero() {
             <div className="shell">
                 <div className="mb-[clamp(20px,3vh,36px)] flex items-center gap-4" data-fade>
                     <span className="glow-line h-px w-[56px] bg-gold" />
-                    <span className={`${LABEL} text-ink-55`}>Local-first AI for making video</span>
+                    <span className={`${LABEL} text-ink-55`}>Local-first AI for creative professionals</span>
                 </div>
 
                 <h1
