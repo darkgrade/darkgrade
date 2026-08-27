@@ -52,7 +52,7 @@ export function Hero() {
                 <div className="mt-[clamp(40px,7vh,84px)] flex items-end justify-between" data-fade>
                     <div className="flex items-center gap-[14px] text-[10.5px] tracking-[.3em] text-ink-35 uppercase">
                         <span>Scroll</span>
-                        <span className="glow-line relative h-[44px] w-px overflow-hidden bg-hair after:absolute after:top-[-100%] after:left-0 after:h-full after:w-full after:animate-drip after:bg-gold after:shadow-[0_0_10px_rgba(244,198,110,.6)] after:content-['']" />
+                        <span className="glow-line relative h-[44px] w-px overflow-hidden bg-hair after:absolute after:top-0 after:left-0 after:h-full after:w-full after:animate-drip after:bg-gold after:shadow-[0_0_10px_rgba(244,198,110,.6)] after:content-['']" />
                     </div>
                     <div className="text-right font-mono text-[11px] tracking-[.12em] text-ink-35 max-[700px]:hidden">
                         TESTED ON

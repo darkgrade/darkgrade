@@ -1,0 +1,18 @@
+appId: com.darkgrade.studio
+productName: Darkgrade Studio
+directories:
+    output: release
+files:
+    - out/**
+    - package.json
+asarUnpack:
+    # node-usb ships native prebuilds that must live outside the asar
+    - '**/node_modules/usb/**'
+mac:
+    category: public.app-category.photography
+    target:
+        - dmg
+        - zip
+    extendInfo:
+        NSMicrophoneUsageDescription: Darkgrade Studio uses the microphone for local, on-device voice control. Audio never leaves your Mac.
+npmRebuild: false

@@ -1,0 +1,15 @@
+{
+    "extends": "@darkgrade/typescript-config/app.json",
+    "compilerOptions": {
+        "composite": true,
+        "noEmit": true,
+        "jsx": "react-jsx",
+        "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+        "paths": {
+            "@shared/*": ["./src/shared/*"],
+            "@renderer/*": ["./src/renderer/src/*"],
+            "@voice/*": ["./src/renderer/src/voice/*"]
+        }
+    },
+    "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/index.d.ts"]
+}

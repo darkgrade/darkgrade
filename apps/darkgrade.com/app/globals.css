@@ -32,15 +32,17 @@
     --animate-blink: blink 1.6s ease-in-out infinite;
 }
 
+/* transform, not `top`: animating top is a layout property, so the scroll cue
+   was the one non-composited animation on the page. */
 @keyframes drip {
     0% {
-        top: -100%;
+        transform: translateY(-100%);
     }
     55% {
-        top: 0;
+        transform: translateY(0);
     }
     100% {
-        top: 100%;
+        transform: translateY(100%);
     }
 }
 

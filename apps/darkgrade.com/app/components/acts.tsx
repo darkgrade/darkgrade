@@ -68,7 +68,7 @@ export function Acts() {
                         </div>
 
                         <div>
-                            <h3 className="flex flex-wrap items-center gap-[22px] font-serif text-[clamp(40px,5vw,72px)] leading-none font-normal tracking-[-.01em]">
+                            <h2 className="flex flex-wrap items-center gap-[22px] font-serif text-[clamp(40px,5vw,72px)] leading-none font-normal tracking-[-.01em]">
                                 {act.title}{' '}
                                 {act.chip === 'shipping' ? (
                                     <span
@@ -83,7 +83,7 @@ export function Acts() {
                                         {act.chip}
                                     </span>
                                 )}
-                            </h3>
+                            </h2>
 
                             <p className="mt-[14px] max-w-[52ch] text-[15.5px] text-ink-55">{act.body}</p>
 

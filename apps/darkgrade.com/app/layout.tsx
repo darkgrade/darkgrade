@@ -13,11 +13,11 @@ const instrumentSerif = localFont({
     fallback: ['Georgia', 'serif'],
 })
 
+// No italic face: every italic on this page is set in the serif, so shipping
+// inter-tight-latin-wght-italic.woff2 cost 48 KB and a preload for nothing.
+// Add the entry back if body copy ever needs a true italic.
 const interTight = localFont({
-    src: [
-        { path: './fonts/inter-tight-latin-wght-normal.woff2', weight: '100 900', style: 'normal' },
-        { path: './fonts/inter-tight-latin-wght-italic.woff2', weight: '100 900', style: 'italic' },
-    ],
+    src: [{ path: './fonts/inter-tight-latin-wght-normal.woff2', weight: '100 900', style: 'normal' }],
     variable: '--font-inter-tight',
     display: 'swap',
     preload: true,
