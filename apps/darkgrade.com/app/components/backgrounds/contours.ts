@@ -98,11 +98,11 @@ export function createContours(canvas: HTMLCanvasElement): ContourRenderer | nul
             const row = y * stride
             for (let x = 0; x < stride; x++) {
                 const i = row + x
-                const v = noise(x * 0.02, y * 0.02, z + boost[i]!) * 100
+                const v = noise(x * 0.02, y * 0.02, z + boost[i]) * 100
                 values[i] = v
                 if (v < min) min = v
                 if (v > max) max = v
-                if (boost[i]! > 0) boost[i]! *= 0.99
+                if (boost[i] > 0) boost[i] *= 0.99
             }
         }
         return { min, max }
@@ -112,10 +112,10 @@ export function createContours(canvas: HTMLCanvasElement): ContourRenderer | nul
 
     const marchCell = (kind: number, x: number, y: number) => {
         const i = y * stride + x
-        const nw = values[i]!
-        const ne = values[i + 1]!
-        const sw = values[i + stride]!
-        const se = values[i + stride + 1]!
+        const nw = values[i]
+        const ne = values[i + 1]
+        const sw = values[i + stride]
+        const se = values[i + stride + 1]
         const x0 = x * res
         const y0 = y * res
         const x1 = x0 + res
@@ -179,10 +179,10 @@ export function createContours(canvas: HTMLCanvasElement): ContourRenderer | nul
             const row = y * stride
             for (let x = 0; x < stride - 1; x++) {
                 const i = row + x
-                const nw = values[i]! > threshold
-                const ne = values[i + 1]! > threshold
-                const se = values[i + stride + 1]! > threshold
-                const sw = values[i + stride]! > threshold
+                const nw = values[i] > threshold
+                const ne = values[i + 1] > threshold
+                const se = values[i + stride + 1] > threshold
+                const sw = values[i + stride] > threshold
                 // wholly above or wholly below: no contour crosses this cell
                 if (nw === ne && ne === se && se === sw) continue
                 marchCell(((nw ? 8 : 0) | (ne ? 4 : 0) | (se ? 2 : 0) | (sw ? 1 : 0)) >>> 0, x, y)

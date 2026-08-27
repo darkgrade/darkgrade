@@ -70,7 +70,7 @@ export function SiteEffects() {
             // is always shorter than the viewport so the ratio spans 1 -> 0.
             const heroEl = document.querySelector('.hero')
             if (heroEl && 'IntersectionObserver' in window) {
-                const io = new IntersectionObserver(es => layers.setScroll(1 - es[0]!.intersectionRatio), {
+                const io = new IntersectionObserver(es => layers.setScroll(1 - es[0].intersectionRatio), {
                     threshold: Array.from({ length: 101 }, (_, i) => i / 100),
                 })
                 io.observe(heroEl)
@@ -204,7 +204,7 @@ export function SiteEffects() {
                     const inner = document.createElement('span')
                     inner.style.cssText = 'display:block'
                     inner.className = 'line-inner'
-                    ws[0]!.before(mask)
+                    ws[0].before(mask)
                     mask.appendChild(inner)
                     ws.forEach((w, i) => {
                         inner.appendChild(w)
@@ -252,7 +252,7 @@ export function SiteEffects() {
         const hdr = document.getElementById('hdr')
         const mark = document.getElementById('top-mark')
         if (hdr && mark && 'IntersectionObserver' in window) {
-            const io = new IntersectionObserver(es => hdr.classList.toggle('scrolled', !es[0]!.isIntersecting))
+            const io = new IntersectionObserver(es => hdr.classList.toggle('scrolled', !es[0].isIntersecting))
             io.observe(mark)
             teardown.push(() => io.disconnect())
         }
@@ -386,12 +386,16 @@ export function SiteEffects() {
                     })
                     document.documentElement.addEventListener(
                         'pointerleave',
-                        () => gsap.to([dot, ring], { opacity: 0, duration: 0.3 }),
+                        () => {
+                            gsap.to([dot, ring], { opacity: 0, duration: 0.3 })
+                        },
                         { signal }
                     )
                     document.documentElement.addEventListener(
                         'pointerenter',
-                        () => gsap.to([dot, ring], { opacity: 1, duration: 0.3 }),
+                        () => {
+                            gsap.to([dot, ring], { opacity: 1, duration: 0.3 })
+                        },
                         { signal }
                     )
                 }
@@ -437,7 +441,9 @@ export function SiteEffects() {
             const intro = () => {
                 document.documentElement.classList.remove('preload')
                 const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
-                teardown.push(() => tl.kill())
+                teardown.push(() => {
+                    tl.kill()
+                })
                 // every beat starts before the one before it finishes, so the
                 // whole thing reads as one move rather than a queue
                 tl.to(loader, { yPercent: -100, duration: 0.9, ease: 'power3.inOut' }, 0)
@@ -493,7 +499,9 @@ export function SiteEffects() {
                         teardown.push(() => clearTimeout(t))
                     },
                 })
-                teardown.push(() => count.kill())
+                teardown.push(() => {
+                    count.kill()
+                })
             }
         })().catch(err => {
             // never leave the page locked or invisible because a chunk failed

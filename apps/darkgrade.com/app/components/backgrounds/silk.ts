@@ -160,7 +160,8 @@ export function createSilk(canvas: HTMLCanvasElement): SilkRenderer | null {
     ctx.enableVertexAttribArray(aPos)
     ctx.vertexAttribPointer(aPos, 2, ctx.FLOAT, false, 0, 0)
 
-    const loc = (n: string) => ctx.getUniformLocation(prog!, n)
+    const program = prog
+    const loc = (n: string) => ctx.getUniformLocation(program, n)
     const uTime = loc('uTime')
     const uRes = loc('uRes')
     const uMouse = loc('uMouse')
@@ -201,7 +202,7 @@ export function createSilk(canvas: HTMLCanvasElement): SilkRenderer | null {
         },
         destroy() {
             ctx.deleteBuffer(buf)
-            if (prog) ctx.deleteProgram(prog)
+            ctx.deleteProgram(program)
         },
     }
 }

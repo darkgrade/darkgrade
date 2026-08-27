@@ -9,7 +9,7 @@
  * first time it is called, so the old background was a different drawing every
  * page load), and that re-rolling this one number re-rolls both together.
  */
-export const NOISE_SEED = 0
+export const NOISE_SEED: number = 0
 
 /**
  * PARKED. The topographic backdrop and the header switch that cross-fades to
@@ -17,7 +17,7 @@ export const NOISE_SEED = 0
  * Flip this to true to bring back the canvas, the toggle and the crossfade;
  * nothing else needs touching.
  */
-export const CONTOUR_BACKGROUND_ENABLED = false
+export const CONTOUR_BACKGROUND_ENABLED: boolean = false
 
 const frac = (x: number) => x - Math.floor(x)
 
