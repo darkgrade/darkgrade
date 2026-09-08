@@ -1,10 +1,16 @@
 import { resolve } from 'path'
 import { defineConfig } from 'vite'
+import dts from 'vite-plugin-dts'
 
 export default defineConfig({
     define: {
         global: 'globalThis',
     },
+    plugins: [
+        // Emits dist/index.d.ts (+ tree) with @camera/@core/... aliases
+        // rewritten to relative paths so consumers can resolve them.
+        dts({ include: ['src'], entryRoot: 'src' }),
+    ],
     resolve: {
         alias: {
             '@camera': resolve(__dirname, './src/camera'),

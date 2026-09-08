@@ -1,0 +1,24 @@
+{
+    "extends": "@darkgrade/typescript-config/base.json",
+    "compilerOptions": {
+        "composite": true,
+        "noEmit": true,
+        "types": ["node", "w3c-web-usb"],
+        "paths": {
+            "@shared/*": ["./src/shared/*"],
+            "@main/*": ["./src/main/*"],
+            "@voice/*": ["./src/renderer/src/voice/*"],
+            "@renderer/*": ["./src/renderer/src/*"]
+        }
+    },
+    "include": [
+        "src/main/**/*",
+        "src/preload/**/*",
+        "src/shared/**/*",
+        "src/renderer/src/voice/intent-parser.ts",
+        "src/renderer/src/voice/number-words.ts",
+        "src/renderer/src/lib/exposure-stops.ts",
+        "electron.vite.config.ts",
+        "tests/**/*"
+    ]
+}

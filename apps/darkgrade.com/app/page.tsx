@@ -1,35 +1,44 @@
-import { CTA, PerlinNoiseSimulation } from '@darkgrade/ui'
+import { Acts } from './components/acts'
+import { Dream } from './components/dream'
+import { Hero } from './components/hero'
+import { Loader } from './components/loader'
+import { Manifesto } from './components/manifesto'
+import { Marquee } from './components/marquee'
+import { Principles } from './components/principles'
+import { Roadmap } from './components/roadmap'
+import { SiteEffects } from './components/site-effects'
+import { SiteFooter } from './components/site-footer'
+import { SiteHeader } from './components/site-header'
+import { Stats } from './components/stats'
+import { WordmarkSprite } from './components/wordmark'
 
 export default function Home() {
     return (
-        <div className="w-full h-screen relative">
-            {/* Logo and menu */}
-            <div className="absolute top-0 left-0 right-0 z-1000 text-white flex items-center justify-between p-[24px] md:p-[64px]">
-                <img src="/darkgrade_combo_dark.svg" alt="darkgrade" className="h-[20px] object-contain" />
-                <a
-                    href="https://darkgrade.com/docs"
-                    target="_blank"
-                    className="text-white text-[16px] font-medium leading-none"
-                >
-                    Docs
-                </a>    
-            </div>
+        <>
+            <WordmarkSprite />
+            <SiteEffects />
+            <Loader />
+            <SiteHeader />
 
-            {/* GitHub link in center */}
-            <div className="absolute top-0 left-0 z-1000 w-full h-full flex flex-col justify-center p-[24px] md:p-[64px] max-w-[600px] md:max-w-[800px] gap-[16px] md:gap-[24px]">
-                <h1 className="text-white text-[32px] leading-[40px] md:text-[64px] md:leading-[72px] font-medium tracking-tighter text-balance text-left">
-                    Let your camera understand the world
-                </h1>
-                <h2 className="text-white text-[16px] leading-[20px] md:text-[18px] md:leading-[24px] font-regular tracking-tight text-balance text-left mb-4">
-                    We're building a protocol for large language models to directly interface with image sensors.
-                </h2>
-                <CTA />
-            </div>
+            <main className="relative z-[2]">
+                {/* a 1px marker parked 40px down the document - the header
+                    switches to its scrolled state when this leaves the viewport */}
+                <span
+                    id="top-mark"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-0 top-10 h-px w-px"
+                />
 
-            {/* Perlin noise simulation as background */}
-            <div className="fixed inset-0 opacity-20 pointer-events-none">
-                <PerlinNoiseSimulation />
-            </div>
-        </div>
+                <Hero />
+                <Marquee />
+                <Manifesto />
+                <Acts />
+                <Stats />
+                <Roadmap />
+                <Principles />
+                <Dream />
+                <SiteFooter />
+            </main>
+        </>
     )
 }

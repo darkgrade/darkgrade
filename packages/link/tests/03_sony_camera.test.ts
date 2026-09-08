@@ -1,7 +1,7 @@
 import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import * as SonyProps from '@ptp/definitions/vendors/sony/sony-property-definitions'
-import { TransportFactory } from '@transport/transport-factory'
+import { USBTransport } from '@transport/usb/usb-transport'
 import * as fs from 'fs'
 import * as path from 'path'
 import { WebUSB } from 'usb'
@@ -11,6 +11,8 @@ import { SonyCamera } from '../src/camera/sony-camera'
 const sonyConnected = (await new WebUSB({ allowAllDevices: true }).getDevices()).some(
     device => device.vendorId === VendorIDs.SONY
 )
+const hardwareOperationTimeoutMilliseconds = 15_000
+const captureTimeoutMilliseconds = 30_000
 
 describe.skipIf(!sonyConnected)('SonyCamera', () => {
     let transport: any
@@ -18,6 +20,9 @@ describe.skipIf(!sonyConnected)('SonyCamera', () => {
     let logger: Logger
     let outputDir: string
     let connected = false
+    let initialAperture: string | undefined
+    let initialIso: string | undefined
+    let initialShutterSpeed: string | undefined
 
     beforeAll(async () => {
         outputDir = path.join(process.cwd(), 'captured_images')
@@ -26,23 +31,46 @@ describe.skipIf(!sonyConnected)('SonyCamera', () => {
         }
         console.log(`📁 Output directory: ${outputDir}`)
 
-        const transportFactory = new TransportFactory()
-        transport = await transportFactory.createUSBTransport()
-
-        logger = new Logger()
+        logger = new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
+        transport = new USBTransport(logger)
         camera = new SonyCamera(transport, logger)
 
         await camera.connect({ usb: { filters: [{ vendorId: VendorIDs.SONY }] } })
         connected = true
+        initialAperture = await camera.get(SonyProps.Aperture)
+        initialIso = await camera.get(SonyProps.Iso)
+        initialShutterSpeed = await camera.get(SonyProps.ShutterSpeed)
+        await camera.set(SonyProps.ShutterSpeed, '1/60')
+        await camera.set(SonyProps.Iso, 'ISO AUTO')
+        await camera.set(SonyProps.Aperture, 'f/5.6')
         console.log('✅ Camera connected and authenticated')
-    }, 2000)
+    }, hardwareOperationTimeoutMilliseconds)
 
     afterAll(async () => {
         if (connected && camera) {
+            const restore = async (
+                label: string,
+                value: string | undefined,
+                action: (value: string) => Promise<void>
+            ) => {
+                if (!value) return
+                try {
+                    await action(value)
+                } catch (error: any) {
+                    console.log(`Note: could not restore ${label}:`, error.message)
+                }
+            }
+
+            await restore('shutter speed', initialShutterSpeed, value => camera.set(SonyProps.ShutterSpeed, value))
+            await restore('ISO', initialIso, value => camera.set(SonyProps.Iso, value))
+            await restore('aperture', initialAperture, value => camera.set(SonyProps.Aperture, value))
+
             try {
                 await Promise.race([
                     camera.disconnect(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Disconnect timeout')), 2000)),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Disconnect timeout')), hardwareOperationTimeoutMilliseconds)
+                    ),
                 ])
                 console.log('✅ Camera disconnected')
             } catch (e: any) {
@@ -67,7 +95,7 @@ describe.skipIf(!sonyConnected)('SonyCamera', () => {
             })
             console.log('============================================================')
         }
-    }, 2000)
+    }, hardwareOperationTimeoutMilliseconds)
 
     it('should be connected and authenticated', async () => {
         expect(camera.sessionId).toBeTruthy()
@@ -92,45 +120,61 @@ describe.skipIf(!sonyConnected)('SonyCamera', () => {
         console.log(`  Current aperture: ${aperture}`)
     })
 
-    it('should capture a photo', async () => {
-        const result = await camera.captureImage()
+    it(
+        'should capture a photo',
+        async () => {
+            const result = await camera.captureImage()
 
-        expect(result).toBeDefined()
-        expect(result?.data).toBeInstanceOf(Uint8Array)
-        expect(result?.info?.filename).toBeDefined()
+            expect(result).toBeDefined()
+            expect(result?.data).toBeInstanceOf(Uint8Array)
+            expect(result?.info?.filename).toBeDefined()
 
-        const photoPath = path.join(outputDir, result!.info!.filename)
-        fs.writeFileSync(photoPath, result!.data!)
-        console.log(`💾 PHOTO SAVED TO: ${photoPath}`)
-    }, 2000)
+            const photoPath = path.join(outputDir, result!.info!.filename)
+            fs.writeFileSync(photoPath, result!.data!)
+            console.log(`💾 PHOTO SAVED TO: ${photoPath}`)
+        },
+        captureTimeoutMilliseconds
+    )
 
-    it('should capture a live view image', async () => {
-        const result = await camera.captureLiveView()
+    it(
+        'should capture a live view image',
+        async () => {
+            const result = await camera.captureLiveView()
 
-        expect(result).toBeDefined()
-        expect(result?.data).toBeInstanceOf(Uint8Array)
+            expect(result).toBeDefined()
+            expect(result?.data).toBeInstanceOf(Uint8Array)
 
-        const liveViewPath = path.join(outputDir, `liveview_${Date.now()}.jpg`)
-        fs.writeFileSync(liveViewPath, result!.data!)
-        console.log(`💾 LIVE VIEW SAVED TO: ${liveViewPath}`)
-    }, 2000)
+            const liveViewPath = path.join(outputDir, `liveview_${Date.now()}.jpg`)
+            fs.writeFileSync(liveViewPath, result!.data!)
+            console.log(`💾 LIVE VIEW SAVED TO: ${liveViewPath}`)
+        },
+        hardwareOperationTimeoutMilliseconds
+    )
 
-    it('should stream live view', async () => {
-        const result = await camera.captureLiveView()
+    it(
+        'should stream live view',
+        async () => {
+            const result = await camera.captureLiveView()
 
-        expect(result?.data).toBeInstanceOf(Uint8Array)
-        expect(result?.data?.length).toBeGreaterThan(0)
+            expect(result?.data).toBeInstanceOf(Uint8Array)
+            expect(result?.data?.length).toBeGreaterThan(0)
 
-        const streamPath = path.join(outputDir, `stream_${Date.now()}.jpg`)
-        fs.writeFileSync(streamPath, result!.data!)
-        console.log(`💾 STREAM SAVED TO: ${streamPath}`)
-    }, 2000)
+            const streamPath = path.join(outputDir, `stream_${Date.now()}.jpg`)
+            fs.writeFileSync(streamPath, result!.data!)
+            console.log(`💾 STREAM SAVED TO: ${streamPath}`)
+        },
+        hardwareOperationTimeoutMilliseconds
+    )
 
-    it('should handle multiple operations in sequence', async () => {
-        const iso1 = await camera.get(SonyProps.Iso)
-        const iso2 = await camera.get(SonyProps.Iso)
-        expect(iso1).toEqual(iso2)
+    it(
+        'should handle multiple operations in sequence',
+        async () => {
+            const iso1 = await camera.get(SonyProps.Iso)
+            const iso2 = await camera.get(SonyProps.Iso)
+            expect(iso1).toEqual(iso2)
 
-        console.log('✅ Sequential operations completed successfully')
-    }, 2000)
+            console.log('✅ Sequential operations completed successfully')
+        },
+        hardwareOperationTimeoutMilliseconds
+    )
 })

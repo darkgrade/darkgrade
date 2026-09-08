@@ -7,6 +7,7 @@ build/
 out/
 .turbo/
 .next/
+*.tsbuildinfo
 
 # env and SSL certificates
 *.env

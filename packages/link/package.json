@@ -1,6 +1,6 @@
 {
     "name": "@darkgrade/link",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "type": "module",
     "description": "Connect to & control your camera via PTP with 2 lines of TypeScript",
     "exports": {
@@ -14,7 +14,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "vite build && tsc --emitDeclarationOnly",
+        "build": "vite build",
         "dev": "vite build --watch",
         "test": "vitest run",
         "bench:probe": "bun run tests/bench-probe.ts",
@@ -53,7 +53,8 @@
         "glob": "^11.0.3",
         "string-similarity": "^4.0.4",
         "vite": "^7.1.7",
-        "vitest": "^1.2.0"
+        "vitest": "^1.2.0",
+        "vite-plugin-dts": "^5.0.3"
     },
     "engines": {
         "node": ">=18"
