@@ -2,7 +2,7 @@ import { CodecDefinition } from '@ptp/types/codec'
 
 export type PropertyAccess = 'Get' | 'GetSet'
 
-export interface PropertyDefinition<T = number | bigint | string> {
+export interface PropertyDefinition<T = any> {
     code: number
     name: string
     description: string

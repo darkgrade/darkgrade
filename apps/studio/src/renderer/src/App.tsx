@@ -98,8 +98,7 @@ export function App(): React.JSX.Element {
                 log('system', `Auto-connect: ${connected.error} — plug in a camera and it will connect automatically`)
             }
         })()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [api, log])
 
     // ----------------------------------------------------------------- actions
 
@@ -180,11 +179,13 @@ export function App(): React.JSX.Element {
                     cameraState={cameraState}
                     busy={busy}
                     voiceListening={voice.mode === 'continuous' || voice.pttActive}
-                    onConnect={() => void run(api.connect)}
-                    onDisconnect={() => void run(api.disconnect)}
-                    onKillDaemon={async () => {
-                        const message = await run(api.killCameraDaemon)
-                        if (message) log('system', message)
+                    onConnect={() => void run(() => api.connect())}
+                    onDisconnect={() => void run(() => api.disconnect())}
+                    onKillDaemon={() => {
+                        void (async () => {
+                            const message = await run(() => api.killCameraDaemon())
+                            if (message) log('system', message)
+                        })()
                     }}
                 />
                 <main className="layout">
@@ -195,11 +196,11 @@ export function App(): React.JSX.Element {
                             lastCapture={lastCapture}
                             capturePreviewUrl={capturePreviewUrl}
                             busy={busy}
-                            onRetryLiveView={() => void run(api.liveViewStart)}
-                            onFocus={() => void run(api.focus)}
-                            onCapture={() => void run(api.capture)}
-                            onStartRecording={() => void run(api.recordStart)}
-                            onStopRecording={() => void run(api.recordStop)}
+                            onRetryLiveView={() => void run(() => api.liveViewStart())}
+                            onFocus={() => void run(() => api.focus())}
+                            onCapture={() => void run(() => api.capture())}
+                            onStartRecording={() => void run(() => api.recordStart())}
+                            onStopRecording={() => void run(() => api.recordStop())}
                             onRevealCapture={path => void api.revealPath(path)}
                         />
                         <EventLog logs={logs} />
@@ -211,7 +212,7 @@ export function App(): React.JSX.Element {
                             onSetIso={value => void run(() => api.setIso(value))}
                             onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
                             onSetAperture={value => void run(() => api.setAperture(value))}
-                            onRefresh={() => void run(api.getSettings)}
+                            onRefresh={() => void run(() => api.getSettings())}
                         />
                         <FilesPanel
                             cameraState={cameraState}
@@ -220,8 +221,8 @@ export function App(): React.JSX.Element {
                             downloadProgress={downloadProgress}
                             onRefresh={() => void refreshFiles()}
                             onDownload={entry => void run(() => api.downloadFile(entry))}
-                            onDownloadAll={() => void run(api.downloadAll)}
-                            onChooseDir={() => void run(api.chooseDownloadDir)}
+                            onDownloadAll={() => void run(() => api.downloadAll())}
+                            onChooseDir={() => void run(() => api.chooseDownloadDir())}
                             onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
                         />
                     </section>

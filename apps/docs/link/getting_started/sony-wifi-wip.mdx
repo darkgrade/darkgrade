@@ -1,0 +1,30 @@
+---
+title: 'Sony Wi-Fi WIP'
+description: 'Current Sony PC Remote Wi-Fi validation status'
+---
+
+## Current status
+
+Sony USB controls are hardware-verified on the α6700. Wi-Fi controls are not.
+
+On 2026-08-26, the mapped Shelly output was enabled, but the body drew 0 W and exposed only the `054c:0d68` standby HID interface. USB reconnect and a full power cycle did not restore the `054c:0e78` PTP interface. The isolated adapter found no Sony access point, `_ptp._tcp` service, or SSDP announcement. No Wi-Fi command was sent.
+
+The body must boot and the dummy battery must draw power before this test can continue.
+
+## Next test
+
+1. Verify α6700 firmware 2.00.
+2. Enable **Wi-Fi Connect** and **PC Remote** on the body.
+3. Use **Wi-Fi Direct Info** to join the camera through the isolated adapter.
+4. Temporarily disable **Access Authen.** only on the isolated lab network.
+5. Try Darkgrade's PTP/IP transport with `VendorIDs.SONY`.
+6. Require `GetDeviceInfo` and the Sony SDIO handshake to complete before testing a control.
+7. Restore access authentication after the experiment.
+
+Sony documents that disabling access authentication removes SSH authentication and encryption. Do not use that mode on a shared network.
+
+## Authenticated path
+
+The authenticated workflow uses the camera username, password, and fingerprint. Darkgrade's standard PTP/IP transport does not implement that SSH boundary. The production path should use Sony's Camera Remote SDK or a separately validated compatible implementation.
+
+See Sony's [α6700 PC Remote guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/0903_pc_remote_function.html), [access authentication guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/221h_access_authentication_information.html), and [firmware page](https://www.sony.com/electronics/support/software/00298441).

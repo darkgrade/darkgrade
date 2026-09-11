@@ -27,6 +27,25 @@
 - Everything runnable via npm scripts
 - Easy setup and execution
 
+## Physical Testbench
+
+This checkout uses the project-scoped `darkgrade_testbench` MCP server from `.codex/config.toml`.
+Before touching a camera, call `bench_status`, start a leased job with `agent_job_start`, and keep
+the job alive with `agent_job_heartbeat`. A camera is healthy only when `camera_probe` completes a
+PTP `GetDeviceInfo`; USB enumeration alone is insufficient.
+
+If a transaction times out or the camera remains busy, call `camera_recover` with `strategy=auto`.
+It verifies the baseline, emulates a genuine USB unplug/replug on both hub halves, re-runs this
+checkout's `packages/link/tests/bench-probe.ts`, and escalates to the camera's mapped Shelly power
+feed only if necessary. Always call `agent_job_finish`, including on failure, so the dashboard and
+blink(1) return to the correct state.
+
+Run the same bounded health probe directly with:
+
+```sh
+bun run --cwd packages/link bench:probe -- --camera 04a9:32f5
+```
+
 # Software Engineering Principles for Agents
 
 **Core Philosophy**: Prioritize readability and maintainability over premature optimization. Code is written for humans to understand.

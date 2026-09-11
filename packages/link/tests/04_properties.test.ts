@@ -1,45 +1,74 @@
 import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import * as SonyProps from '@ptp/definitions/vendors/sony/sony-property-definitions'
-import { TransportFactory } from '@transport/transport-factory'
+import { USBTransport } from '@transport/usb/usb-transport'
+import { WebUSB } from 'usb'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SonyCamera } from '../src/camera/sony-camera'
 
-describe('Sony Property Formats', () => {
+const sonyConnected = (await new WebUSB({ allowAllDevices: true }).getDevices()).some(
+    device => device.vendorId === VendorIDs.SONY
+)
+const hardwareOperationTimeoutMilliseconds = 15_000
+
+describe.skipIf(!sonyConnected)('Sony Property Formats', () => {
     let camera: SonyCamera
     let transport: any
     let logger: Logger
+    let initialAperture: string | undefined
+    let initialIso: string | undefined
+    let initialShutterSpeed: string | undefined
 
     beforeAll(async () => {
-        const transportFactory = new TransportFactory()
-        transport = await transportFactory.createUSBTransport()
-
-        logger = new Logger()
+        logger = new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
+        transport = new USBTransport(logger)
         camera = new SonyCamera(transport, logger)
 
         await camera.connect({ usb: { filters: [{ vendorId: VendorIDs.SONY }] } })
+        initialAperture = await camera.get(SonyProps.Aperture)
+        initialIso = await camera.get(SonyProps.Iso)
+        initialShutterSpeed = await camera.get(SonyProps.ShutterSpeed)
         console.log('✅ Camera connected and authenticated')
-    }, 2000)
+    }, hardwareOperationTimeoutMilliseconds)
 
     afterAll(async () => {
         if (camera) {
+            const restore = async (
+                label: string,
+                value: string | undefined,
+                action: (value: string) => Promise<void>
+            ) => {
+                if (!value) return
+                try {
+                    await action(value)
+                } catch (error: any) {
+                    console.log(`Note: could not restore ${label}:`, error.message)
+                }
+            }
+
+            await restore('shutter speed', initialShutterSpeed, value => camera.set(SonyProps.ShutterSpeed, value))
+            await restore('ISO', initialIso, value => camera.set(SonyProps.Iso, value))
+            await restore('aperture', initialAperture, value => camera.set(SonyProps.Aperture, value))
+
             try {
                 await Promise.race([
                     camera.disconnect(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Disconnect timeout')), 2000)),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Disconnect timeout')), hardwareOperationTimeoutMilliseconds)
+                    ),
                 ])
                 console.log('✅ Camera disconnected')
             } catch (e: any) {
                 console.log('Note: disconnect error:', e.message)
             }
         }
-    })
+    }, hardwareOperationTimeoutMilliseconds)
 
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
     describe('Aperture formats', () => {
         const apertureTests = [
-            { input: '2.8', expected: 'f/2.8' },
+            { input: '3.5', expected: 'f/3.5' },
             { input: 'f/4', expected: 'f/4' },
             { input: 'f5.6', expected: 'f/5.6' },
             { input: 'f 8', expected: 'f/8' },

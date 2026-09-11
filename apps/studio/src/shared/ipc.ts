@@ -48,7 +48,7 @@ export interface CameraState {
     recording: boolean
     settings: CameraSettings
     downloadDir: string
-    platform: NodeJS.Platform | string
+    platform: NodeJS.Platform | ''
 }
 
 export interface LogEntry {

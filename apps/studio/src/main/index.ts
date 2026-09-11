@@ -55,7 +55,7 @@ if (!hasSingleInstanceLock) {
         }
     })
 
-    app.whenReady().then(async () => {
+    void app.whenReady().then(async () => {
         // macOS respawns its PTP daemon continuously and it will clobber our
         // camera access — kill it every second for the entire app lifetime.
         startCameraDaemonKillerLoop(killed =>

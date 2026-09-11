@@ -7,6 +7,10 @@ export { SonyCamera } from '@camera/sony-camera'
 
 // Transport implementations
 export { USBTransport } from '@transport/usb/usb-transport'
+export { IPTransport } from '@transport/ip/ip-transport'
+export type { IPTransportOptions } from '@transport/ip/ip-transport'
+export { TransportFactory } from '@transport/transport-factory'
+export { TransportType } from '@transport/interfaces/transport-types'
 
 // Logger configuration
 export { defaultLoggerConfig } from '@core/logger-config'

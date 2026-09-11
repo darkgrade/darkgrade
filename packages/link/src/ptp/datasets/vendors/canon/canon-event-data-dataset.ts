@@ -3,11 +3,16 @@ import { CustomCodec } from '@ptp/types/codec'
 export interface CanonEventRecord {
     code: number
     parameters: (number | bigint)[]
+    valueData?: Uint8Array
     allowedValues?: number[]
+    allowedValueData?: Uint8Array[]
 }
 
+const imageFormatPropertyCodes = new Set([0xd120, 0xd121, 0xd122, 0xd123])
+const lengthPrefixedPropertyCodes = new Set([0xd1cd])
+
 export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
-    encode(value: CanonEventRecord[]): Uint8Array {
+    encode(_value: CanonEventRecord[]): Uint8Array {
         throw new Error('CanonEventDataCodec.encode is not implemented')
     }
 
@@ -17,7 +22,8 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
         const u16 = this.codecs.uint16
         const u32 = this.codecs.uint32
 
-        while (currentOffset < buffer.length - 8) {
+        while (currentOffset <= buffer.length - 8) {
+            const eventOffset = currentOffset
             const sizeResult = u32.decode(buffer, currentOffset)
             const size = sizeResult.value
             currentOffset += sizeResult.bytesRead
@@ -26,7 +32,8 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                 break
             }
 
-            if (size > buffer.length - (currentOffset - sizeResult.bytesRead)) {
+            const eventEnd = eventOffset + size
+            if (eventEnd > buffer.length) {
                 break
             }
 
@@ -40,29 +47,22 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
 
             currentOffset += 2
 
-            const payloadSize = size - 8
-
             if (eventCode === 0xc189) {
-                const propCodeResult = u16.decode(buffer, currentOffset)
+                const propCodeResult = u32.decode(buffer, currentOffset)
                 const propCode = propCodeResult.value
                 currentOffset += propCodeResult.bytesRead
-
-                currentOffset += 2
-
-                const valueResult = u32.decode(buffer, currentOffset)
-                const value = valueResult.value
-                currentOffset += valueResult.bytesRead
+                const valueData = buffer.slice(currentOffset, eventEnd)
+                const value = valueData.length >= 4 ? u32.decode(valueData).value : 0
 
                 events.push({
                     code: eventCode,
                     parameters: [propCode, value],
+                    valueData,
                 })
             } else if (eventCode === 0xc18a) {
-                const propCodeResult = u16.decode(buffer, currentOffset)
+                const propCodeResult = u32.decode(buffer, currentOffset)
                 const propCode = propCodeResult.value
                 currentOffset += propCodeResult.bytesRead
-
-                currentOffset += 2
 
                 const typeResult = u32.decode(buffer, currentOffset)
                 const type = typeResult.value
@@ -73,12 +73,27 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                 currentOffset += countResult.bytesRead
 
                 const allowedValues: number[] = []
+                const allowedValueData: Uint8Array[] = []
 
                 if (type === 3 && count > 0 && count < 256) {
-                    for (let i = 0; i < count; i++) {
-                        const valueResult = u32.decode(buffer, currentOffset)
-                        allowedValues.push(valueResult.value)
-                        currentOffset += valueResult.bytesRead
+                    for (let index = 0; index < count && currentOffset < eventEnd; index++) {
+                        if (imageFormatPropertyCodes.has(propCode)) {
+                            const entryCount = u32.decode(buffer, currentOffset).value
+                            const valueSize = 4 + entryCount * 16
+                            if ((entryCount !== 1 && entryCount !== 2) || currentOffset + valueSize > eventEnd) break
+                            allowedValueData.push(buffer.slice(currentOffset, currentOffset + valueSize))
+                            currentOffset += valueSize
+                        } else if (lengthPrefixedPropertyCodes.has(propCode)) {
+                            const valueSize = u32.decode(buffer, currentOffset).value
+                            if (valueSize < 4 || valueSize % 4 !== 0 || currentOffset + valueSize > eventEnd) break
+                            allowedValueData.push(buffer.slice(currentOffset, currentOffset + valueSize))
+                            currentOffset += valueSize
+                        } else {
+                            const valueResult = u32.decode(buffer, currentOffset)
+                            allowedValues.push(valueResult.value)
+                            allowedValueData.push(buffer.slice(currentOffset, currentOffset + 4))
+                            currentOffset += 4
+                        }
                     }
                 }
 
@@ -86,10 +101,10 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                     code: eventCode,
                     parameters: [propCode],
                     allowedValues: allowedValues.length > 0 ? allowedValues : undefined,
+                    allowedValueData: allowedValueData.length > 0 ? allowedValueData : undefined,
                 })
-            } else {
-                currentOffset += payloadSize
             }
+            currentOffset = eventEnd
         }
 
         return {

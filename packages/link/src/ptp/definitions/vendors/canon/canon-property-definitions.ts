@@ -1,8 +1,12 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
+import { CanonImageFormatCodec } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
+import { CanonMovieFormatCodec } from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
 import { createEnumCodec } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
 
 const UINT16 = getDatatypeByName('UINT16')!.code
+const UINT8 = getDatatypeByName('UINT8')!.code
+const UINT32 = getDatatypeByName('UINT32')!.code
 
 export const CanonAperture = {
     code: 0xd101,
@@ -265,8 +269,18 @@ export const CanonFocusMode = {
     code: 0xd108,
     name: 'CanonFocusMode',
     description: 'Canon Focus Mode',
-    datatype: 0x0004,
-    codec: registry => registry.codecs.uint16,
+    datatype: UINT32,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0, name: 'one-shot', description: 'One-Shot AF' },
+                { value: 0x1, name: 'ai-servo', description: 'AI Servo AF' },
+                { value: 0x2, name: 'ai-focus', description: 'AI Focus AF' },
+                { value: 0x3, name: 'manual', description: 'Manual focus' },
+            ] as const,
+            registry.codecs.uint32
+        ),
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
@@ -274,8 +288,34 @@ export const CanonWhiteBalance = {
     code: 0xd109,
     name: 'CanonWhiteBalance',
     description: 'Canon White Balance',
-    datatype: 0x0004,
-    codec: registry => registry.codecs.uint16,
+    datatype: UINT8,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'auto', description: 'Auto white balance' },
+                { value: 1, name: 'daylight', description: 'Daylight' },
+                { value: 2, name: 'cloudy', description: 'Cloudy' },
+                { value: 3, name: 'tungsten', description: 'Tungsten light' },
+                { value: 4, name: 'fluorescent', description: 'White fluorescent light' },
+                { value: 5, name: 'flash', description: 'Flash' },
+                { value: 6, name: 'manual', description: 'Custom white balance' },
+                { value: 7, name: 'unknown-7', description: 'Camera-specific white balance mode 7' },
+                { value: 8, name: 'shade', description: 'Shade' },
+                { value: 9, name: 'color-temperature', description: 'Color temperature' },
+                { value: 10, name: 'pc-1', description: 'PC custom white balance 1' },
+                { value: 11, name: 'pc-2', description: 'PC custom white balance 2' },
+                { value: 12, name: 'pc-3', description: 'PC custom white balance 3' },
+                { value: 15, name: 'manual-2', description: 'Custom white balance 2' },
+                { value: 16, name: 'manual-3', description: 'Custom white balance 3' },
+                { value: 18, name: 'manual-4', description: 'Custom white balance 4' },
+                { value: 19, name: 'manual-5', description: 'Custom white balance 5' },
+                { value: 20, name: 'pc-4', description: 'PC custom white balance 4' },
+                { value: 21, name: 'pc-5', description: 'PC custom white balance 5' },
+                { value: 23, name: 'auto-white', description: 'Auto white balance, white priority' },
+            ] as const,
+            registry.codecs.uint8
+        ),
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
@@ -360,6 +400,24 @@ export const CanonAvailableShots = {
     access: 'Get' as const,
 } as const satisfies PropertyDefinition
 
+export const CanonImageFormat = {
+    code: 0xd120,
+    name: 'CanonImageFormat',
+    description: 'Canon still-image recording format',
+    datatype: UINT16,
+    codec: registry => new CanonImageFormatCodec(registry),
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
+export const CanonImageFormatSd = {
+    code: 0xd122,
+    name: 'CanonImageFormatSd',
+    description: 'Canon still-image recording format for the SD card',
+    datatype: UINT16,
+    codec: registry => new CanonImageFormatCodec(registry),
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
 export const CanonAeModeDial = {
     code: 0xd138,
     name: 'CanonAeModeDial',
@@ -384,6 +442,23 @@ export const CanonExposureSimMode = {
     description: 'Canon Exposure Simulation Mode',
     datatype: 0x0004,
     codec: registry => registry.codecs.uint16,
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
+export const CanonMovieServoAutofocus = {
+    code: 0xd179,
+    name: 'CanonMovieServoAutofocus',
+    description: 'Canon Movie Servo AF',
+    datatype: UINT32,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'off', description: 'Movie Servo AF off' },
+                { value: 1, name: 'on', description: 'Movie Servo AF on' },
+            ] as const,
+            registry.codecs.uint32
+        ),
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
@@ -437,6 +512,41 @@ export const CanonLvViewTypeSelect = {
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
+export const CanonMovieSize = {
+    code: 0xd1bb,
+    name: 'CanonMovieSize',
+    description: 'Canon movie recording size/format (camera-specific raw value)',
+    datatype: UINT32,
+    codec: registry => registry.codecs.uint32,
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
+export const CanonMovieFormat = {
+    code: 0xd1cd,
+    name: 'CanonMovieFormat',
+    description: 'Canon movie resolution, frame rate, container, and compression',
+    datatype: UINT32,
+    codec: registry => new CanonMovieFormatCodec(registry),
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
+export const CanonContinuousAutofocus = {
+    code: 0xd1c9,
+    name: 'CanonContinuousAutofocus',
+    description: 'Canon continuous autofocus mode',
+    datatype: UINT32,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'off', description: 'Continuous autofocus off' },
+                { value: 1, name: 'on', description: 'Continuous autofocus on' },
+            ] as const,
+            registry.codecs.uint32
+        ),
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
 export const CanonFlashChargingState = {
     code: 0xd1c0,
     name: 'CanonFlashChargingState',
@@ -482,6 +592,33 @@ export const CanonAeb = {
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
+export const CanonNetworkServerRegion = {
+    code: 0xd14a,
+    name: 'CanonNetworkServerRegion',
+    description: 'Canon network server region',
+    datatype: UINT32,
+    codec: registry => registry.codecs.uint32,
+    access: 'Get' as const,
+} as const satisfies PropertyDefinition
+
+export const CanonNetworkCommunicationMode = {
+    code: 0xd175,
+    name: 'CanonNetworkCommunicationMode',
+    description: 'Canon network communication mode',
+    datatype: UINT32,
+    codec: registry => registry.codecs.uint32,
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
+export const CanonWftStatus = {
+    code: 0xd1a3,
+    name: 'CanonWftStatus',
+    description: 'Canon wireless file transmitter status',
+    datatype: UINT32,
+    codec: registry => registry.codecs.uint32,
+    access: 'Get' as const,
+} as const satisfies PropertyDefinition
+
 export const canonPropertyRegistry = {
     CanonAperture,
     CanonShutterSpeed,
@@ -501,17 +638,26 @@ export const canonPropertyRegistry = {
     CanonAutoPowerOff,
     CanonModelId,
     CanonAvailableShots,
+    CanonImageFormat,
+    CanonImageFormatSd,
     CanonAeModeDial,
     CanonPictureStyleExStandard,
     CanonExposureSimMode,
+    CanonMovieServoAutofocus,
     CanonLiveViewMode,
     CanonRecordingDestination,
     CanonLvViewTypeSelect,
+    CanonMovieSize,
+    CanonMovieFormat,
+    CanonContinuousAutofocus,
     CanonFlashChargingState,
     CanonAloMode,
     CanonOneShotRawOn,
     CanonBrightness,
     CanonAeb,
+    CanonNetworkServerRegion,
+    CanonNetworkCommunicationMode,
+    CanonWftStatus,
 } as const satisfies { [key: string]: PropertyDefinition }
 
 export type CanonPropertyDef = (typeof canonPropertyRegistry)[keyof typeof canonPropertyRegistry]

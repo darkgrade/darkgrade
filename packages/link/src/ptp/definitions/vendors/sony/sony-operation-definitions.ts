@@ -1,4 +1,7 @@
-import { SDIExtDevicePropInfoCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import {
+    SDIDevicePropInfoArrayCodec,
+    SDIExtDevicePropInfoCodec,
+} from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import { baseCodecs, createEnumCodec } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 
@@ -197,12 +200,29 @@ export const SDIO_ControlDevice = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+export const SDIO_GetControlDeviceDesc = {
+    code: 0x9206,
+    name: 'SDIO_GetControlDeviceDesc',
+    description: 'Read the descriptor and accepted values for a Sony momentary control.',
+    dataDirection: 'out',
+    operationParameters: [
+        {
+            name: 'sdiControlCode',
+            description: 'Sony control code to describe',
+            codec: baseCodecs.uint32,
+            required: true,
+        },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const SDIO_GetAllExtDevicePropInfo = {
     code: 0x9209,
     name: 'SDIO_GetAllExtDevicePropInfo',
     description:
         'Obtain all support DevicePropDescs at one time. The host will send this operation at regular intervals to obtain the latest (current) camera settings.',
     dataDirection: 'out',
+    dataCodec: registry => new SDIDevicePropInfoArrayCodec(registry),
     operationParameters: [
         {
             name: 'flagOfGetOnlyDifferenceData',
@@ -339,6 +359,7 @@ export const sonyOperationRegistry = {
     SDIO_GetExtDevicePropValue,
     SDIO_SetExtDevicePropValue,
     SDIO_ControlDevice,
+    SDIO_GetControlDeviceDesc,
     SDIO_GetAllExtDevicePropInfo,
     SDIO_GetOsdImage,
     SDIO_GetPartialLargeObject,

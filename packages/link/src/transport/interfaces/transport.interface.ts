@@ -21,7 +21,7 @@ export interface TransportInterface {
 
     /**
      * Get endianness for this transport
-     * USB uses little-endian (per PIMA 15740), IP uses big-endian (per PTP spec)
+     * PTP datasets and both USB and PTP/IP packet fields use little-endian encoding.
      */
     isLittleEndian(): boolean
 

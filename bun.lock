@@ -16,12 +16,14 @@
     },
     "apps/darkgrade.com": {
       "name": "darkgrade.com",
-      "version": "1.0.0",
+      "version": "0.1.0",
       "dependencies": {
-        "@chriscourses/perlin-noise": "^1.0.0",
+        "@chriscourses/perlin-noise": "^1.0.6",
         "@darkgrade/ui": "workspace:*",
         "@types/react": "^19.1.11",
         "@types/react-dom": "^19.1.8",
+        "gsap": "^3.13.0",
+        "locomotive-scroll": "^5.0.1",
         "next": "^15.5.0",
         "posthog-js": "^1.334.1",
         "react": "19.1.1",
@@ -47,7 +49,7 @@
     },
     "apps/drkgrd.co": {
       "name": "drkgrd.co",
-      "version": "1.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@darkgrade/ui": "workspace:*",
         "@types/react": "^19.1.11",
@@ -68,7 +70,7 @@
     },
     "apps/example-web": {
       "name": "@darkgrade/link-web-example",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@darkgrade/link": "workspace:*",
       },
@@ -92,7 +94,7 @@
     },
     "apps/studio": {
       "name": "@darkgrade/studio",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@darkgrade/link": "workspace:*",
         "@huggingface/transformers": "^4.2.0",
@@ -118,7 +120,7 @@
     },
     "packages/link": {
       "name": "@darkgrade/link",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "ink": "^6.3.1",
         "ink-spinner": "^5.0.0",
@@ -128,7 +130,7 @@
       "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",
         "@types/node": "^20.11.0",
-        "@types/react": "^19",
+        "@types/react": "^19.1.11",
         "@types/usb": "^2.0.0",
         "@types/w3c-web-usb": "^1.0.13",
         "@vitest/coverage-v8": "^1.2.0",
@@ -142,11 +144,11 @@
     },
     "packages/typescript-config": {
       "name": "@darkgrade/typescript-config",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/ui": {
       "name": "@darkgrade/ui",
-      "version": "1.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@chriscourses/perlin-noise": "^1.0.0",
         "@types/react": "^19.1.11",
@@ -1025,6 +1027,8 @@
 
     "graphemer": ["graphemer@1.4.0", "", {}, "sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag=="],
 
+    "gsap": ["gsap@3.15.0", "", {}, "sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A=="],
+
     "guid-typescript": ["guid-typescript@1.0.9", "", {}, "sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ=="],
 
     "has-flag": ["has-flag@4.0.0", "", {}, "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="],
@@ -1135,6 +1139,8 @@
 
     "lazy-val": ["lazy-val@1.0.5", "", {}, "sha512-0/BnGCCfyUMkBpeDgWihanIAF9JmZhHBgUhEqzvf+adhNGLoP6TaiI5oF8oyb3I45P+PcnrqihSf01M0l0G5+Q=="],
 
+    "lenis": ["lenis@1.3.17", "", { "peerDependencies": { "@nuxt/kit": ">=3.0.0", "react": ">=17.0.0", "vue": ">=3.0.0" }, "optionalPeers": ["@nuxt/kit", "react", "vue"] }, "sha512-k9T9rgcxne49ggJOvXCraWn5dt7u2mO+BNkhyu6yxuEnm9c092kAW5Bus5SO211zUvx7aCCEtzy9UWr0RB+oJw=="],
+
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 
     "lightningcss": ["lightningcss@1.32.0", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.32.0", "lightningcss-darwin-arm64": "1.32.0", "lightningcss-darwin-x64": "1.32.0", "lightningcss-freebsd-x64": "1.32.0", "lightningcss-linux-arm-gnueabihf": "1.32.0", "lightningcss-linux-arm64-gnu": "1.32.0", "lightningcss-linux-arm64-musl": "1.32.0", "lightningcss-linux-x64-gnu": "1.32.0", "lightningcss-linux-x64-musl": "1.32.0", "lightningcss-win32-arm64-msvc": "1.32.0", "lightningcss-win32-x64-msvc": "1.32.0" } }, "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="],
@@ -1166,6 +1172,8 @@
     "locate-character": ["locate-character@3.0.0", "", {}, "sha512-SW13ws7BjaeJ6p7Q6CO2nchbYEc3X3J6WrmTTDto7yMPqVSZTUyY5Tjbid+Ab8gLnATtygYtiDIJGQRRn2ZOiA=="],
 
     "locate-path": ["locate-path@6.0.0", "", { "dependencies": { "p-locate": "^5.0.0" } }, "sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw=="],
+
+    "locomotive-scroll": ["locomotive-scroll@5.0.1", "", { "dependencies": { "lenis": "1.3.17" } }, "sha512-dCgGixh7Xu3AVrG/N8HCXImN5MrqkuI1mnjejbsMWDB7CIYy7ekd5JtglI9mfdCVReCgHdsyQ1a7We31HfNyrg=="],
 
     "lodash": ["lodash@4.18.1", "", {}, "sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q=="],
 

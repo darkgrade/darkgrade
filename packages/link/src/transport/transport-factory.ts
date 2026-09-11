@@ -9,9 +9,10 @@ export class TransportFactory {
         return new USBTransport(logger)
     }
 
-    async createIPTransport(_options: IPTransportOptions): Promise<TransportInterface> {
-        // TODO: Not implemented in old architecture
-        throw new Error('IP transport not implemented in old architecture')
+    async createIPTransport(options: IPTransportOptions): Promise<TransportInterface> {
+        const { IPTransport } = await import('./ip/ip-transport')
+        const logger = new Logger()
+        return new IPTransport(options, logger)
     }
 
     async create(type: TransportType, options?: USBTransportOptions | IPTransportOptions): Promise<TransportInterface> {
@@ -21,23 +22,25 @@ export class TransportFactory {
             case TransportType.IP:
                 if (!options || !('address' in options)) throw new Error('IP transport requires address')
                 return await this.createIPTransport(options)
-            default:
+            default: {
                 const exhaustive: never = type
-                throw new Error(`Unknown transport type: ${exhaustive}`)
+                throw new Error(`Unknown transport type: ${String(exhaustive)}`)
+            }
         }
     }
 }
 
-interface USBTransportOptions extends TransportOptions {
+export interface USBTransportOptions extends TransportOptions {
     interfaceNumber?: number
     alternateInterface?: number
     claimInterface?: boolean
 }
 
-interface IPTransportOptions extends TransportOptions {
+export interface IPTransportOptions extends TransportOptions {
     address: string
-    port: number
-    protocol?: 'tcp' | 'udp'
-    keepAlive?: boolean
-    keepAliveInterval?: number
+    port?: number
+    localAddress?: string
+    clientName?: string
+    clientGuid?: Uint8Array
+    dataPacketSize?: number
 }
