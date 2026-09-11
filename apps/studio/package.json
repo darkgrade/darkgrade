@@ -1,0 +1,46 @@
+{
+    "name": "@darkgrade/studio",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Darkgrade Studio — desktop camera control with local AI voice",
+    "main": "out/main/index.js",
+    "scripts": {
+        "build:link": "bun run --cwd ../../packages/link build",
+        "ensure:electron": "node scripts/ensure-electron.mjs",
+        "dev": "bun run ensure:electron && bun run build:link && electron-vite dev",
+        "start": "bun run dev",
+        "build": "bun run build:link && electron-vite build",
+        "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+        "test": "vitest run",
+        "lint": "eslint . --ext .ts,.tsx",
+        "format": "prettier --write .",
+        "package": "bun run build && electron-builder --mac"
+    },
+    "dependencies": {
+        "@darkgrade/link": "workspace:*",
+        "@huggingface/transformers": "^4.2.0",
+        "kokoro-js": "^1.2.1",
+        "react": "^19",
+        "react-dom": "^19",
+        "usb": "^2.11.0"
+    },
+    "devDependencies": {
+        "@darkgrade/typescript-config": "workspace:*",
+        "@types/node": "^22",
+        "@types/react": "^19",
+        "@types/w3c-web-usb": "^1.0.13",
+        "@types/react-dom": "^19",
+        "@vitejs/plugin-react": "^5.0.0",
+        "electron": "^43.1.0",
+        "electron-builder": "^26.0.0",
+        "electron-vite": "^5.0.0",
+        "typescript": "^5.9.2",
+        "vite": "^7.1.7",
+        "vitest": "^3.2.0"
+    },
+    "engines": {
+        "node": ">=18"
+    },
+    "trustedDependencies": ["electron", "electron-builder", "esbuild"]
+}

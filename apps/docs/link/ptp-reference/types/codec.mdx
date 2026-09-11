@@ -1,0 +1,89 @@
+---
+title: "Codec"
+description: "PTP Codec type definitions"
+---
+
+# Codec
+
+## PTPRegistry
+
+**Type:** `object`
+
+---
+
+## BaseCodecType
+
+**Type:** `"int8" | "uint8" | "int16" | "uint16" | "int32" | "uint32" | "int64" | "uint64" | "string"`
+
+---
+
+## CustomCodecType
+
+**Type:** `"enum" | "range" | "array" | "custom"`
+
+---
+
+## CodecInstance
+
+---
+
+## BaseCodecRegistry
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **int8** | `CodecInstance&lt;number&gt;` | ✓ |
+| **uint8** | `CodecInstance&lt;number&gt;` | ✓ |
+| **int16** | `CodecInstance&lt;number&gt;` | ✓ |
+| **uint16** | `CodecInstance&lt;number&gt;` | ✓ |
+| **int32** | `CodecInstance&lt;number&gt;` | ✓ |
+| **uint32** | `CodecInstance&lt;number&gt;` | ✓ |
+| **int64** | `CodecInstance&lt;bigint&gt;` | ✓ |
+| **uint64** | `CodecInstance&lt;bigint&gt;` | ✓ |
+| **string** | `CodecInstance&lt;string&gt;` | ✓ |
+
+---
+
+## CodecBuilder
+
+**Type:** `unknown`
+
+---
+
+## CodecDefinition
+
+**Type:** `CodecBuilder&lt;T&gt; | CodecInstance&lt;T&gt;`
+
+---
+
+## EnumValue
+
+**Type:** `object`
+
+---
+
+## RangeSpec
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **minimum** | `T` | ✓ |
+| **maximum** | `T` | ✓ |
+| **step** | `T` | ✓ |
+
+---
+
+## BitfieldFlag
+
+**Type:** `object`
+
+---
+
+## CodecType
+
+**Type:** `unknown`
+
+---
+

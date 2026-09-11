@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+build/
+out/
+.turbo/
+.next/
+*.tsbuildinfo
+
+# env and SSL certificates
+*.env
+*.pem
+*.key
+
+# captured images
+captured_images/
+
+# macOS
+.DS_Store
+
+/docs/
+
+.svelte-kit/

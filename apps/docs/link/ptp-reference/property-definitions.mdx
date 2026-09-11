@@ -1,0 +1,544 @@
+---
+title: "Generic Properties"
+---
+
+## Undefined (`0x5000`)
+
+Undefined property
+
+**Datatype:** UNDEF
+
+**Access:** Get
+
+**Codec Type:** Base Codec
+
+---
+
+## BatteryLevel (`0x5001`)
+
+Battery level percentage
+
+**Datatype:** UINT8
+
+**Access:** Get
+
+**Codec Type:** Base Codec
+
+---
+
+## FunctionalMode (`0x5002`)
+
+Functional mode of device
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## ImageSize (`0x5003`)
+
+Image dimensions
+
+**Datatype:** STRING
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## CompressionSetting (`0x5004`)
+
+Compression level
+
+**Datatype:** UINT8
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## WhiteBalance (`0x5005`)
+
+White balance setting
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## RGBGain (`0x5006`)
+
+RGB gain values
+
+**Datatype:** STRING
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## FNumber (`0x5007`)
+
+F-stop number (aperture)
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Custom Codec
+
+---
+
+## FocalLength (`0x5008`)
+
+Focal length in mm
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## FocusDistance (`0x5009`)
+
+Focus distance in mm
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## FocusMode (`0x500a`)
+
+Focus mode
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## ExposureMeteringMode (`0x500b`)
+
+Exposure metering mode
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## FlashMode (`0x500c`)
+
+Flash mode
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## ExposureTime (`0x500d`)
+
+Exposure time (shutter speed)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Custom Codec
+
+---
+
+## ExposureProgramMode (`0x500e`)
+
+Exposure program mode
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## ExposureIndex (`0x500f`)
+
+ISO speed
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Custom Codec
+
+---
+
+## ExposureBiasCompensation (`0x5010`)
+
+Exposure bias compensation
+
+**Datatype:** INT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## DateTime (`0x5011`)
+
+Device date and time
+
+**Datatype:** STRING
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## CaptureDelay (`0x5012`)
+
+Capture delay in milliseconds
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## StillCaptureMode (`0x5013`)
+
+Still capture mode
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## Contrast (`0x5014`)
+
+Contrast setting
+
+**Datatype:** UINT8
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## Sharpness (`0x5015`)
+
+Sharpness setting
+
+**Datatype:** UINT8
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## DigitalZoom (`0x5016`)
+
+Digital zoom factor
+
+**Datatype:** UINT8
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## EffectMode (`0x5017`)
+
+Effect mode
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## BurstNumber (`0x5018`)
+
+Number of burst shots
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## BurstInterval (`0x5019`)
+
+Burst interval in milliseconds
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## TimelapseNumber (`0x501a`)
+
+Number of timelapse shots
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## TimelapseInterval (`0x501b`)
+
+Timelapse interval in milliseconds
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## FocusMeteringMode (`0x501c`)
+
+Focus metering mode
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## UploadURL (`0x501d`)
+
+Upload URL
+
+**Datatype:** STRING
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## Artist (`0x501e`)
+
+Artist name
+
+**Datatype:** STRING
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## CopyrightInfo (`0x501f`)
+
+Copyright information
+
+**Datatype:** STRING
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## SupportedStreams (`0x5020`)
+
+Supported streams bitmask (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** Get
+
+**Codec Type:** Base Codec
+
+---
+
+## EnabledStreams (`0x5021`)
+
+Enabled streams bitmask (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## VideoFormat (`0x5022`)
+
+Video format (FOURCC code) (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## VideoResolution (`0x5023`)
+
+Video resolution (e.g., "320x240") (PTP v1.1)
+
+**Datatype:** STRING
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## VideoQuality (`0x5024`)
+
+Video quality level (PTP v1.1)
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## VideoFrameRate (`0x5025`)
+
+Video frame interval in microseconds (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## VideoContrast (`0x5026`)
+
+Video contrast level (PTP v1.1)
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## VideoBrightness (`0x5027`)
+
+Video brightness level (PTP v1.1)
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## AudioFormat (`0x5028`)
+
+Audio format code from RIFF specification (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## AudioBitrate (`0x5029`)
+
+Audio bitrate in bits per second (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## AudioSamplingRate (`0x502a`)
+
+Audio sampling rate in hertz (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## AudioBitPerSample (`0x502b`)
+
+Audio bits per sample (PTP v1.1)
+
+**Datatype:** UINT16
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+
+## AudioVolume (`0x502c`)
+
+Audio volume level (PTP v1.1)
+
+**Datatype:** UINT32
+
+**Access:** GetSet
+
+**Codec Type:** Base Codec
+
+---
+

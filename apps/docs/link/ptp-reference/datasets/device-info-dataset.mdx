@@ -1,0 +1,36 @@
+---
+title: "Device Info Dataset"
+description: "PTP Device Info Dataset dataset structures"
+---
+
+# Device Info Dataset
+
+Dataset structures define the format of complex data returned by PTP operations.
+
+## DeviceInfo
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **standardVersion** | `number` | ✓ |
+| **vendorExtensionID** | `number` | ✓ |
+| **vendorExtensionVersion** | `number` | ✓ |
+| **vendorExtensionDesc** | `string` | ✓ |
+| **functionalMode** | `number` | ✓ |
+| **operationsSupportedRaw** | `number[]` | ✓ |
+| **operationsSupportedDecoded** | `string[]` | ✓ |
+| **eventsSupportedRaw** | `number[]` | ✓ |
+| **eventsSupportedDecoded** | `string[]` | ✓ |
+| **devicePropertiesSupported** | `number[]` | ✓ |
+| **devicePropertiesSupportedDecoded** | `string[]` | ✓ |
+| **captureFormats** | `number[]` | ✓ |
+| **imageFormatsRaw** | `number[]` | ✓ |
+| **imageFormatsDecoded** | `string[]` | ✓ |
+| **manufacturer** | `string` | ✓ |
+| **model** | `string` | ✓ |
+| **deviceVersion** | `string` | ✓ |
+| **serialNumber** | `string` | ✓ |
+
+---
+

@@ -1,0 +1,252 @@
+---
+title: "Nikon Operations"
+---
+
+## ISOAutoControl (`0xd054`)
+
+ISO sensitivity settings – Auto ISO sensitivity control
+
+**Datatype:** UINT8
+
+**Access:** GetSet
+
+**Codec Type:** Enum Codec
+
+### Valid Values
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | OFF | Auto ISO control disabled |
+| `0x1` | ON | Auto ISO control enabled |
+
+---
+
+## GetPartialObjectEx (`0x9431`)
+
+Get partial object with 64-bit offset support (extension of GetPartialObject)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+| **OffsetLower** | ✓ | Offset in bytes (lower 32 bits) |
+| **OffsetUpper** | ✓ | Offset in bytes (upper 32 bits) |
+| **MaxSizeLower** | ✓ | Maximum bytes to return (lower 32 bits) |
+| **MaxSizeUpper** | ✓ | Maximum bytes to return (upper 32 bits) |
+
+### Response Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ActualBytesSentLower** | ✓ | Actual bytes sent (lower 32 bits) |
+| **ActualBytesSentUpper** | ✓ | Actual bytes sent (upper 32 bits) |
+
+---
+
+## GetDevicePropDescEx (`0x943a`)
+
+Get device property descriptor (4-byte extension)
+
+**Data Direction:** out
+
+**Codec Type:** Custom Codec
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to get descriptor for (4-byte extension) |
+
+### Response Parameters
+
+None
+
+---
+
+## GetDevicePropValueEx (`0x943b`)
+
+Get device property value (4-byte extension)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to get (4-byte extension) |
+
+### Response Parameters
+
+None
+
+---
+
+## SetDevicePropValueEx (`0x943c`)
+
+Set device property value (4-byte extension)
+
+**Data Direction:** in
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code to set (4-byte extension) |
+
+### Response Parameters
+
+None
+
+---
+
+## DeviceReady (`0x90c8`)
+
+Check status of activation-type command (e.g. StartLiveView, AfDrive)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## StartLiveView (`0x9201`)
+
+Start remote live view mode (activation-type command)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## EndLiveView (`0x9202`)
+
+End remote live view mode
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetLiveViewImageEx (`0x9428`)
+
+Get live view image with metadata (LiveViewObject with version)
+
+**Data Direction:** out
+
+**Codec Type:** Custom Codec
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## StartMovieRecord (`0x920a`)
+
+Start video recording (only accepted during live view)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## EndMovieRecord (`0x920b`)
+
+End video recording
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## ChangeCameraMode (`0x90c2`)
+
+Switch between PC camera mode and remote mode
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **Mode** | ✓ | Camera mode |
+
+**Mode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | PC_CAMERA | PC Camera Mode: host commands ignored and uses settings from dial/buttons |
+| `0x1` | REMOTE | Remote Mode: all dials/buttons ignored and uses commands from host |
+
+### Response Parameters
+
+None
+
+---
+
+## ChangeApplicationMode (`0x9435`)
+
+Switch application mode on/off
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **Mode** | ✓ | Application Mode |
+
+**Mode values:**
+
+| Value | Name | Description |
+| ----- | ---- | ----------- |
+| `0x0` | OFF | disallows image playback, deletion, video recording on the camera |
+| `0x1` | ON | allows image playback, deletion, video recording on the camera |
+
+### Response Parameters
+
+None
+
+---
+

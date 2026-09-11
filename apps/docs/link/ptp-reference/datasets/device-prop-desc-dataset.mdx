@@ -1,0 +1,35 @@
+---
+title: "Device Prop Desc Dataset"
+description: "PTP Device Prop Desc Dataset dataset structures"
+---
+
+# Device Prop Desc Dataset
+
+Dataset structures define the format of complex data returned by PTP operations.
+
+## DevicePropDesc
+
+### Properties
+
+| Property | Type | Required |
+| -------- | ---- | -------- |
+| **devicePropertyCode** | `number` | ✓ |
+| **devicePropertyName** | `string` | ✓ |
+| **devicePropertyDescription** | `string` | ✓ |
+| **dataType** | `DatatypeCode` | ✓ |
+| **getSet** | `"GET" | "GET_SET"` | ✓ |
+| **factoryDefaultValue** | `number | bigint | string` | ✓ |
+| **currentValueRaw** | `number | bigint | string` | ✓ |
+| **currentValueBytes** | `Uint8Array` | ✓ |
+| **currentValueDecoded** | `number | bigint | string` | ✓ |
+| **formFlag** | `number` | ✓ |
+| **minimumValue** | `number | bigint | string` |  |
+| **maximumValue** | `number | bigint | string` |  |
+| **stepSize** | `number | bigint | string` |  |
+| **numberOfValues** | `number` |  |
+| **supportedValuesRaw** | `(number | bigint | string)[]` |  |
+| **supportedValuesDecoded** | `(number | bigint | string)[]` |  |
+| **vendorExtensions** | `Record&lt;string, number | bigint | string | boolean | object&gt;` |  |
+
+---
+

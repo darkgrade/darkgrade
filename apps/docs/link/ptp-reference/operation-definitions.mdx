@@ -1,0 +1,725 @@
+---
+title: "Generic Operations"
+---
+
+## Undefined (`0x1000`)
+
+Undefined operation
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetDeviceInfo (`0x1001`)
+
+Returns information and capabilities about the responder device
+
+**Data Direction:** out
+
+**Codec Type:** Custom Codec
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## OpenSession (`0x1002`)
+
+Opens a session with the device
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **SessionID** | ✓ | Session identifier |
+
+### Response Parameters
+
+None
+
+---
+
+## CloseSession (`0x1003`)
+
+Closes the current session
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetStorageIDs (`0x1004`)
+
+Returns list of currently valid StorageIDs
+
+**Data Direction:** out
+
+**Codec Type:** Array Codec
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetStorageInfo (`0x1005`)
+
+Returns StorageInfo data set for a storage area
+
+**Data Direction:** out
+
+**Codec Type:** Custom Codec
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage identifier |
+
+### Response Parameters
+
+None
+
+---
+
+## GetNumObjects (`0x1006`)
+
+Returns number of objects in storage
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage identifier (0xFFFFFFFF for all) |
+| **ObjectFormatCode** |  | Filter by format code (default: `0`) |
+| **ParentObject** |  | Parent association handle (default: `0`) |
+
+### Response Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **NumObjects** | ✓ | Number of objects |
+
+---
+
+## GetObjectHandles (`0x1007`)
+
+Returns array of ObjectHandles in storage
+
+**Data Direction:** out
+
+**Codec Type:** Array Codec
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage identifier (0xFFFFFFFF for all) |
+| **ObjectFormatCode** |  | Filter by format code (default: `0`) |
+| **ParentObject** |  | Parent association handle (default: `0`) |
+
+### Response Parameters
+
+None
+
+---
+
+## GetObjectInfo (`0x1008`)
+
+Returns ObjectInfo data set for an object
+
+**Data Direction:** out
+
+**Codec Type:** Custom Codec
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+
+### Response Parameters
+
+None
+
+---
+
+## GetObject (`0x1009`)
+
+Retrieves one object from the device
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+
+### Response Parameters
+
+None
+
+---
+
+## GetThumb (`0x100a`)
+
+Retrieves thumbnail for an object
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+
+### Response Parameters
+
+None
+
+---
+
+## DeleteObject (`0x100b`)
+
+Deletes an object from the device
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle (0xFFFFFFFF for all) |
+| **ObjectFormatCode** |  | Filter by format code (default: `0`) |
+
+### Response Parameters
+
+None
+
+---
+
+## SendObjectInfo (`0x100c`)
+
+Sends ObjectInfo before sending object
+
+**Data Direction:** in
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** |  | Destination storage (default: `0`) |
+| **ParentObjectHandle** |  | Parent object handle (default: `0`) |
+
+### Response Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Actual storage ID |
+| **ParentObjectHandle** | ✓ | Actual parent handle |
+| **ObjectHandle** | ✓ | Reserved handle for object |
+
+---
+
+## SendObject (`0x100d`)
+
+Sends object data to the device
+
+**Data Direction:** in
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## InitiateCapture (`0x100e`)
+
+Initiates capture of new data objects
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** |  | Storage for capture (default: `0`) |
+| **ObjectFormatCode** |  | Format for capture (default: `0`) |
+
+### Response Parameters
+
+None
+
+---
+
+## FormatStore (`0x100f`)
+
+Formats a storage device
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage to format |
+| **FilesystemType** |  | Filesystem type (default: `0`) |
+
+### Response Parameters
+
+None
+
+---
+
+## ResetDevice (`0x1010`)
+
+Resets device to default state
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## SelfTest (`0x1011`)
+
+Performs device self-test
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **SelfTestType** |  | Type of self-test (default: `0`) |
+
+### Response Parameters
+
+None
+
+---
+
+## SetObjectProtection (`0x1012`)
+
+Sets object protection status
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+| **ProtectionStatus** | ✓ | Protection status |
+
+### Response Parameters
+
+None
+
+---
+
+## PowerDown (`0x1013`)
+
+Powers down the device
+
+**Data Direction:** none
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetDevicePropDesc (`0x1014`)
+
+Gets device property descriptor
+
+**Data Direction:** out
+
+**Codec Type:** Custom Codec
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
+
+### Response Parameters
+
+None
+
+---
+
+## GetDevicePropValue (`0x1015`)
+
+Gets device property value
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
+
+### Response Parameters
+
+None
+
+---
+
+## SetDevicePropValue (`0x1016`)
+
+Sets device property value
+
+**Data Direction:** in
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
+
+### Response Parameters
+
+None
+
+---
+
+## ResetDevicePropValue (`0x1017`)
+
+Resets device property to default
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **DevicePropCode** | ✓ | Property code |
+
+### Response Parameters
+
+None
+
+---
+
+## TerminateOpenCapture (`0x1018`)
+
+Terminates an open capture
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **TransactionID** | ✓ | Transaction ID of capture |
+
+### Response Parameters
+
+None
+
+---
+
+## MoveObject (`0x1019`)
+
+Moves object to new location
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object to move |
+| **StorageID** | ✓ | Destination storage |
+| **ParentObjectHandle** | ✓ | New parent object |
+
+### Response Parameters
+
+None
+
+---
+
+## CopyObject (`0x101a`)
+
+Copies object to new location
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object to copy |
+| **StorageID** | ✓ | Destination storage |
+| **ParentObjectHandle** | ✓ | New parent object |
+
+### Response Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Handle of new copy |
+
+---
+
+## GetPartialObject (`0x101b`)
+
+Gets partial object data
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Object handle |
+| **Offset** | ✓ | Offset in bytes |
+| **MaxBytes** | ✓ | Maximum bytes to return |
+
+### Response Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ActualBytes** | ✓ | Actual bytes returned |
+
+---
+
+## InitiateOpenCapture (`0x101c`)
+
+Initiates open-ended capture
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage for capture |
+| **ObjectFormatCode** | ✓ | Format for capture |
+
+### Response Parameters
+
+None
+
+---
+
+## StartEnumHandles (`0x101d`)
+
+Initiates an enumeration process for retrieving object handles in chunks (PTP v1.1)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** |  | Storage ID or 0xFFFFFFFF for all stores |
+| **ObjectFormatCode** |  | Filter by format or 0xFFFFFFFF for images only |
+| **ParentObjectHandle** |  | Parent association or 0xFFFFFFFF for root |
+
+### Response Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **EnumID** | ✓ | Unique enumeration identifier |
+
+---
+
+## EnumHandles (`0x101e`)
+
+Returns a chunk of object handles from an active enumeration (PTP v1.1)
+
+**Data Direction:** out
+
+**Codec Type:** Array Codec
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **EnumID** | ✓ | Enumeration identifier from StartEnumHandles |
+| **MaxNumberHandles** | ✓ | Maximum number of handles to return |
+
+### Response Parameters
+
+None
+
+---
+
+## StopEnumHandles (`0x101f`)
+
+Closes an active enumeration process (PTP v1.1)
+
+**Data Direction:** none
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **EnumID** | ✓ | Enumeration identifier to close |
+
+### Response Parameters
+
+None
+
+---
+
+## GetVendorExtensionMaps (`0x1020`)
+
+Retrieves mapping of vendor extensions (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+None
+
+### Response Parameters
+
+None
+
+---
+
+## GetVendorDeviceInfo (`0x1021`)
+
+Retrieves DeviceInfo for a specific vendor extension (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **VendorExtensionID** | ✓ | Vendor extension ID |
+
+### Response Parameters
+
+None
+
+---
+
+## GetResizedImageObject (`0x1022`)
+
+Retrieves an image object at arbitrary resolution (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ObjectHandle** | ✓ | Image object handle |
+| **ImageWidth** | ✓ | Desired width in pixels |
+| **ImageHeight** |  | Desired height in pixels (0 to maintain aspect ratio) |
+
+### Response Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **ActualBytes** | ✓ | Number of bytes sent |
+| **ActualWidth** | ✓ | Actual width in pixels |
+| **ActualHeight** | ✓ | Actual height in pixels |
+
+---
+
+## GetFilesystemManifest (`0x1023`)
+
+Retrieves filesystem information in a single transaction (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StorageID** | ✓ | Storage ID or 0xFFFFFFFF for all stores |
+| **ObjectFormatCode** |  | Filter by format |
+| **ParentObjectHandle** |  | Parent association handle |
+
+### Response Parameters
+
+None
+
+---
+
+## GetStreamInfo (`0x1024`)
+
+Retrieves information about a stream (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StreamType** | ✓ | Type of stream |
+
+### Response Parameters
+
+None
+
+---
+
+## GetStream (`0x1025`)
+
+Retrieves streaming content (PTP v1.1)
+
+**Data Direction:** out
+
+### Operation Parameters
+
+| Parameter | Required | Description |
+| --------- | -------- | ----------- |
+| **StreamType** | ✓ | Type of stream |
+
+### Response Parameters
+
+None
+
+---
+

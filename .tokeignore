@@ -1,0 +1,11 @@
+dist/
+node_modules/
+
+# SSL certificates
+*.pem
+*.key
+
+sony-ptp-example-v3-linux
+prompt_history
+*.md
+dist

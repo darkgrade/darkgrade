@@ -1,0 +1,37 @@
+---
+title: "Feature Compatibility"
+description: "Camera feature compatibility matrix for Darkgrade Link"
+---
+
+## Feature Compatibility
+
+| Feature                   | Generic PTP     | Sony  | Nikon           | Canon         |
+| ------------------------- | --------------- | ----- | --------------- | ------------- |
+| **Connection**            | ✅              | ✅    | ✅              | ✅            |
+| **Get/Set Properties**    | ✅              | ✅    | ✅              | ✅            |
+| **Event Handling**        | ✅              | ✅    | ✅              | ✅            |
+| **Aperture Control**      | ✅              | ✅    | ✅              | ✅            |
+| **Shutter Speed Control** | ✅              | ✅    | ✅              | ✅            |
+| **ISO Control**           | ✅              | ✅    | ✅              | ✅            |
+| **Capture Image**         | ✅              | ✅    | ✅              | ✅            |
+| **List Objects**          | ✅              | ✅    | ✅              | 🟡            |
+| **Download Objects**      | ✅              | ✅    | ✅              | 🟡            |
+| **Live View**             | ❌ <sup>1</sup> | ✅    | ✅              | 🟡            |
+| **Video Recording**       | ❌ <sup>2</sup> | ✅    | ✅ <sup>3</sup> | 🟡            |
+| Tested with:              |                 | ⍺6700<br/>⍺7 IV<br/>⍺7 V | Z6 III          | EOS R6 Mk.III |
+
+## Notes
+
+1. The earliest versions of PTP date back to 2002 and this was not included in the specification (perhaps not thought of as necessary/useful/possible on the first wave of digital still cameras).
+
+2. Same as (1) above
+
+3. Nikon cameras differentiate between "photo mode" and "video mode" with an on-camera hardware switch and do not typically allow capture of (a) videos while in photo mode or (b) photos while in video mode. There are two workarounds we support:
+   - You accept this limitation and get full feature support for photo OR video, but not both at the same time, via the hardware switch. This is optimal if you don't plan to do hybrid shooting within the same session.
+   - We allow you to do both at the same time in either switch mode, however when you are capturing in the "wrong" mode" (e.g. you start recording a video while in photo mode), the on-screen display on your camera will be blank and say "Connected to Computer."
+
+## Legend
+
+- ✅ Fully supported
+- 🟡 Partially supported or limited functionality
+- ❌ Not supported
