@@ -218,13 +218,42 @@ export const ExposureTime = {
         })(),
 } as const satisfies PropertyDefinition
 
+// PTP ExposureProgramMode (ISO 15740) values, verified against the Sony Camera
+// Remote SDK on the ILCE-6700 (raw 1 = Manual). Unknown/vendor modes decode to a
+// readable "Mode 0x…" rather than throwing, so cameras in extended modes still report.
+const EXPOSURE_PROGRAM_NAMES: Record<number, string> = {
+    0x0001: 'Manual',
+    0x0002: 'Program Auto',
+    0x0003: 'Aperture Priority',
+    0x0004: 'Shutter Priority',
+    0x0005: 'Program Creative',
+    0x0006: 'Program Action',
+    0x0007: 'Portrait',
+    0x8000: 'Auto',
+    0x8001: 'Auto Plus',
+}
 export const ExposureProgramMode = {
     code: 0x500e,
     name: 'ExposureProgramMode',
     description: 'Exposure program mode',
     datatype: UINT16,
     access: 'GetSet',
-    codec: baseCodecs.uint16,
+    codec: registry =>
+        new (class extends CustomCodec<string> {
+            constructor() {
+                super(registry)
+            }
+            encode(value: string): Uint8Array {
+                const entry = Object.entries(EXPOSURE_PROGRAM_NAMES).find(([, name]) => name.toLowerCase() === value.toLowerCase())
+                const raw = entry ? Number(entry[0]) : Number.parseInt(value.replace(/^.*0x/i, ''), value.toLowerCase().includes('0x') ? 16 : 10)
+                if (!Number.isFinite(raw)) throw new Error(`Unknown exposure program mode: ${value}`)
+                return this.baseCodecs.uint16.encode(raw)
+            }
+            decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+                const result = this.baseCodecs.uint16.decode(buffer, offset)
+                return { value: EXPOSURE_PROGRAM_NAMES[result.value] ?? `Mode 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+            }
+        })(),
 } as const satisfies PropertyDefinition
 
 export const ExposureIndex = {
