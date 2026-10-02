@@ -237,6 +237,48 @@ export const FocusMode = {
         ),
 } as const satisfies PropertyDefinition
 
+// Sony autofocus area (PTP 0xd22c). Wide=0x0001 and Flexible Spot S=0x0101 were
+// verified on the darkgrade-testbench against the Sony Camera Remote SDK; the rest
+// follow the documented Sony PTP ordering. Unknown areas decode to "Area 0x…" so
+// bodies in extended modes still report, and the value is set via the normal
+// SDIO_SetExtDevicePropValue path.
+const SONY_FOCUS_AREA_NAMES: Record<number, string> = {
+    0x0001: 'Wide',
+    0x0002: 'Zone',
+    0x0003: 'Center',
+    0x0101: 'Flexible Spot S',
+    0x0102: 'Flexible Spot M',
+    0x0103: 'Flexible Spot L',
+    0x0104: 'Expand Flexible Spot',
+    0x0201: 'Tracking Wide',
+    0x0202: 'Tracking Zone',
+    0x0203: 'Tracking Center',
+    0x0301: 'Tracking Flexible Spot S',
+    0x0302: 'Tracking Flexible Spot M',
+    0x0303: 'Tracking Flexible Spot L',
+    0x0304: 'Tracking Expand Flexible Spot',
+}
+class SonyFocusAreaCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const entry = Object.entries(SONY_FOCUS_AREA_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
+        if (!Number.isFinite(raw)) throw new Error(`Unknown focus area: ${value}`)
+        return this.baseCodecs.uint16.encode(raw)
+    }
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const result = this.baseCodecs.uint16.decode(buffer, offset)
+        return { value: SONY_FOCUS_AREA_NAMES[result.value] ?? `Area 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+    }
+}
+export const FocusArea = {
+    code: 0xd22c,
+    name: 'FocusArea',
+    description: 'Sony autofocus area mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new SonyFocusAreaCodec(registry),
+} as const satisfies PropertyDefinition
+
 export const CompressionSetting = {
     code: 0x5004,
     name: 'CompressionSetting',
@@ -558,6 +600,92 @@ export const ExposureCompensation = {
     datatype: INT16,
     access: 'GetSet',
     codec: registry => new ExposureValueCodec(registry),
+} as const satisfies PropertyDefinition
+
+// Override the generic 0x5010 definition (plain int16) so Sony bodies decode the
+// exposure-compensation value as EV. The camera advertises this property in
+// thousandths of a stop (e.g. 300 = +0.3 EV, 3000 = +3.0 EV, verified against the
+// ILCE-6700's own advertised value set), so the generic raw-integer decode is wrong.
+// Keeps the `ExposureBiasCompensation` key/position that generic defines, which is
+// what property lookup (find-by-code) and the UI label already use.
+export const ExposureBiasCompensation = {
+    code: 0x5010,
+    name: 'ExposureBiasCompensation',
+    description: 'Exposure bias compensation, decoded as EV.',
+    datatype: INT16,
+    access: 'GetSet',
+    codec: registry => new ExposureValueCodec(registry),
+} as const satisfies PropertyDefinition
+
+// Sony exposure-metering modes (PTP 0x500b). The ILCE-6700 advertises 0x8001-0x8006;
+// names were verified on the darkgrade-testbench by driving each CrMeteringMode through
+// the Sony Camera Remote SDK and reading back the PTP value (0x8001=Multi, 0x8002=Center/
+// CenterWeighted, 0x8003=Entire Screen Avg, 0x8004=Spot Standard, 0x8005=Spot Large,
+// 0x8006=Highlight). Unknown/vendor modes decode to a readable "Mode 0x…" instead of the
+// generic raw integer, so other Sony bodies still report.
+const SONY_METERING_MODE_NAMES: Record<number, string> = {
+    0x8001: 'Multi',
+    0x8002: 'Center',
+    0x8003: 'Entire Screen Avg.',
+    0x8004: 'Spot: Standard',
+    0x8005: 'Spot: Large',
+    0x8006: 'Highlight',
+}
+class SonyMeteringModeCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const entry = Object.entries(SONY_METERING_MODE_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
+        if (!Number.isFinite(raw)) throw new Error(`Unknown metering mode: ${value}`)
+        return this.baseCodecs.uint16.encode(raw)
+    }
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const result = this.baseCodecs.uint16.decode(buffer, offset)
+        return { value: SONY_METERING_MODE_NAMES[result.value] ?? `Mode 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+    }
+}
+// Overrides the generic 0x500b definition (raw uint16) for Sony bodies.
+export const ExposureMeteringMode = {
+    code: 0x500b,
+    name: 'ExposureMeteringMode',
+    description: 'Sony exposure metering mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new SonyMeteringModeCodec(registry),
+} as const satisfies PropertyDefinition
+
+// Sony flash modes (PTP 0x500c). Verified on the darkgrade-testbench by setting each
+// value through the Sony SDIO path and reading back the SDK's CrFlashMode: PTP 0x0003=Fill
+// (SDK 3), 0x8001=Slow Sync (SDK 5), 0x8003=Rear Sync (SDK 6). The body under test has no
+// flash so it rejected 0x0001/0x0002; those map to Autoflash/Flash Off by the standard-PTP
+// and SDK low-range alignment that the verified 0x0003=Fill anchors. Unknown modes decode
+// to a readable "Mode 0x…".
+const SONY_FLASH_MODE_NAMES: Record<number, string> = {
+    0x0001: 'Autoflash',
+    0x0002: 'Flash Off',
+    0x0003: 'Fill-flash',
+    0x8001: 'Slow Sync',
+    0x8003: 'Rear Sync',
+}
+class SonyFlashModeCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const entry = Object.entries(SONY_FLASH_MODE_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
+        if (!Number.isFinite(raw)) throw new Error(`Unknown flash mode: ${value}`)
+        return this.baseCodecs.uint16.encode(raw)
+    }
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const result = this.baseCodecs.uint16.decode(buffer, offset)
+        return { value: SONY_FLASH_MODE_NAMES[result.value] ?? `Mode 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+    }
+}
+// Overrides the generic 0x500c definition (raw uint16) for Sony bodies.
+export const FlashMode = {
+    code: 0x500c,
+    name: 'FlashMode',
+    description: 'Sony flash mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new SonyFlashModeCodec(registry),
 } as const satisfies PropertyDefinition
 
 export const StillCaptureMode = {
@@ -1490,6 +1618,7 @@ export const sonyPropertyRegistry = {
     Iso,
     WhiteBalance,
     FocusMode,
+    FocusArea,
     CompressionSetting,
     SonyImageSize,
     AspectRatio,
@@ -1509,6 +1638,9 @@ export const sonyPropertyRegistry = {
     Exposure,
     MeteredExposure,
     ExposureCompensation,
+    ExposureBiasCompensation,
+    ExposureMeteringMode,
+    FlashMode,
     StillCaptureMode,
     OsdImageMode,
     LiveViewStatus,

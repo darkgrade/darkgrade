@@ -18,7 +18,16 @@ import { GenericCamera } from './generic-camera'
 
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
 const SONY_ZOOM_CONTROL_CODE = 0xd214
-const SONY_ZOOM_SPEED_CONTROL_CODE = 0xd25e
+// Verified Sony zoom-operation control code: SDIO_ControlDevice (0x9207) with this
+// code and an int8 direction (+1 tele / -1 wide / 0 stop) drives the zoom. Captured
+// from the Sony Camera Remote SDK on the ILCE-6700 via the darkgrade-testbench.
+const SONY_ZOOM_OPERATION_CODE = 0xd2dd
+// Sony AF-area (touch-to-focus) control code: SDIO_ControlDevice (0x9207) with a
+// UInt32 payload (x << 16 | y), x in [0,639] and y in [0,479]. Reverse-engineered
+// from the Sony Camera Remote SDK on the ILCE-6700 via the darkgrade-testbench.
+const SONY_AF_AREA_POSITION_CODE = 0xd2dc
+const SONY_AF_AREA_X_MAX = 639
+const SONY_AF_AREA_Y_MAX = 479
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
 
@@ -42,8 +51,17 @@ export interface SonyZoomResult {
     pulses: number
     beforeMillimetres: number
     afterMillimetres: number
+    /** Clear Image / digital zoom scale (thousandths) before and after, for non-power-zoom lenses. */
+    beforeScale?: number
+    afterScale?: number
     movementConfirmed: boolean
-    method: 'speed-control' | 'incremental-position'
+    method: 'speed-control' | 'incremental-position' | 'operation'
+}
+
+interface ZoomTelemetry {
+    millimetres: number
+    scale: number
+    bar: number
 }
 
 export class SonyCamera extends GenericCamera {
@@ -444,6 +462,43 @@ export class SonyCamera extends GenericCamera {
         }
     }
 
+    /**
+     * Moves the autofocus area to a point on the frame. Coordinates use the Sony
+     * 640x480 AF grid: x in [0, 639] (left→right) and y in [0, 479] (top→bottom).
+     * The body must be in a Flexible Spot focus area for the point to be honoured;
+     * `touchFocus` sets that up for you.
+     */
+    async setAfAreaPosition(x: number, y: number): Promise<void> {
+        if (!Number.isInteger(x) || x < 0 || x > SONY_AF_AREA_X_MAX) {
+            throw new Error(`Sony AF-area X must be an integer between 0 and ${SONY_AF_AREA_X_MAX}`)
+        }
+        if (!Number.isInteger(y) || y < 0 || y > SONY_AF_AREA_Y_MAX) {
+            throw new Error(`Sony AF-area Y must be an integer between 0 and ${SONY_AF_AREA_Y_MAX}`)
+        }
+        const packed = (((x << 16) | y) >>> 0)
+        const response = await this.send(
+            this.registry.operations.SDIO_ControlDevice,
+            { sdiControlCode: SONY_AF_AREA_POSITION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
+            this.registry.codecs.uint32.encode(packed)
+        )
+        this.assertOk(response.code, 'Sony AF-area position')
+    }
+
+    /**
+     * Tap-to-focus: switch the body into Flexible Spot, move the AF area to (x, y)
+     * on the 640x480 grid, then optionally run autofocus at that spot. Returns the
+     * coordinates that were sent.
+     */
+    async touchFocus(x: number, y: number, options: { focus?: boolean } = {}): Promise<{ x: number; y: number }> {
+        const focus = options.focus ?? true
+        // Flexible Spot is required for a point AF position to take effect. If the
+        // body is already in a flexible-spot area this is a cheap no-op.
+        await this.set(this.registry.properties.FocusArea, 'Flexible Spot S')
+        await this.setAfAreaPosition(x, y)
+        if (focus) await this.autofocus()
+        return { x, y }
+    }
+
     async powerZoom(direction: 'wide' | 'tele', pulses = 1): Promise<SonyZoomResult> {
         if (!Number.isInteger(pulses) || pulses < 1 || pulses > 30) {
             throw new Error('Sony power-zoom pulses must be an integer between 1 and 30')
@@ -451,64 +506,48 @@ export class SonyCamera extends GenericCamera {
 
         const descriptor = this.propertyCache.get(SONY_ZOOM_CONTROL_CODE) ?? (await this.readDescriptor(SONY_ZOOM_CONTROL_CODE))
         this.assertPropertyEnabled(this.registry.properties.ZoomPosition, descriptor)
-        const beforeMillimetres = await this.getZoomPosition()
         const directionValue = direction === 'tele' ? 0x01 : -0x01
-        const speedDescriptor = this.propertyCache.get(SONY_ZOOM_SPEED_CONTROL_CODE)
-        const method: SonyZoomResult['method'] = speedDescriptor?.vendorExtensions.enabled
-            ? 'speed-control'
-            : 'incremental-position'
+        const before = await this.readZoomTelemetry()
 
-        if (method === 'speed-control') {
-            const signedSpeed = directionValue * Math.min(8, pulses)
-            try {
-                const response = await this.send(
-                    this.registry.operations.SDIO_ControlDevice,
-                    {
-                        sdiControlCode: SONY_ZOOM_SPEED_CONTROL_CODE,
-                        flagOfDevicePropertyOption: 'ENABLE',
-                    },
-                    this.registry.codecs.int8.encode(signedSpeed)
-                )
-                this.assertOk(response.code, `Sony power zoom ${direction}`)
-                await this.waitMs(Math.max(250, pulses * 125))
-            } finally {
-                const stop = await this.send(
-                    this.registry.operations.SDIO_ControlDevice,
-                    {
-                        sdiControlCode: SONY_ZOOM_SPEED_CONTROL_CODE,
-                        flagOfDevicePropertyOption: 'ENABLE',
-                    },
-                    this.registry.codecs.int8.encode(0)
-                )
-                this.assertOk(stop.code, 'Sony power zoom stop')
-            }
-        } else {
-            for (let index = 0; index < pulses; index++) {
-                const response = await this.send(
-                    this.registry.operations.SDIO_ControlDevice,
-                    {
-                        sdiControlCode: SONY_ZOOM_CONTROL_CODE,
-                        flagOfDevicePropertyOption: 'ENABLE',
-                    },
-                    this.registry.codecs.int8.encode(directionValue)
-                )
-                this.assertOk(response.code, `Sony power zoom ${direction}`)
-                await this.waitMs(125)
-            }
+        // Drive the zoom through the verified Sony zoom-operation control code (0xd2dd):
+        // an int8 direction (+1 tele / -1 wide) held for a span proportional to `pulses`,
+        // then 0 to stop. On a power-zoom lens this moves the optical focal length; on a
+        // manual-zoom lens it drives Clear Image / digital zoom. The previous code targeted
+        // 0xd214 (ZoomPosition telemetry), which did nothing on the attached hardware.
+        const method: SonyZoomResult['method'] = 'operation'
+        try {
+            const response = await this.send(
+                this.registry.operations.SDIO_ControlDevice,
+                { sdiControlCode: SONY_ZOOM_OPERATION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
+                this.registry.codecs.int8.encode(directionValue)
+            )
+            this.assertOk(response.code, `Sony power zoom ${direction}`)
+            await this.waitMs(Math.max(400, pulses * 200))
+        } finally {
+            const stop = await this.send(
+                this.registry.operations.SDIO_ControlDevice,
+                { sdiControlCode: SONY_ZOOM_OPERATION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
+                this.registry.codecs.int8.encode(0)
+            )
+            this.assertOk(stop.code, 'Sony power zoom stop')
         }
 
-        const afterMillimetres = await this.waitForZoomMovement(beforeMillimetres)
-        const result = {
+        const after = await this.waitForZoomMovement(before)
+        const movementConfirmed =
+            after.millimetres !== before.millimetres || after.scale !== before.scale || after.bar !== before.bar
+        const result: SonyZoomResult = {
             direction,
             pulses,
-            beforeMillimetres,
-            afterMillimetres,
-            movementConfirmed: afterMillimetres !== beforeMillimetres,
+            beforeMillimetres: before.millimetres,
+            afterMillimetres: after.millimetres,
+            beforeScale: before.scale,
+            afterScale: after.scale,
+            movementConfirmed,
             method,
         }
-        if (!result.movementConfirmed) {
+        if (!movementConfirmed) {
             throw new Error(
-                `Sony accepted the ${direction} zoom command but the lens remained at ${beforeMillimetres.toFixed(3)} mm; verify that a power-zoom lens is mounted and Remote Zoom Speed is enabled on the body`
+                `Sony accepted the ${direction} zoom command but neither the focal length (${before.millimetres.toFixed(3)} mm) nor the Clear Image/digital zoom scale changed; verify the lens supports remote zoom and that Remote Zoom Speed is enabled on the body`
             )
         }
         return result
@@ -846,28 +885,39 @@ export class SonyCamera extends GenericCamera {
         )
     }
 
-    private async waitForZoomMovement(beforeMillimetres: number): Promise<number> {
+    /** Reads focal length (mm), Clear Image/digital zoom scale, and zoom-bar position. */
+    private async readZoomTelemetry(): Promise<ZoomTelemetry> {
+        await this.refreshPropertyStates()
+        const asNumber = (code: number): number => {
+            const value = this.propertyCache.get(code)?.currentValueDecoded
+            return typeof value === 'number' ? value : 0
+        }
+        return {
+            millimetres: asNumber(SONY_ZOOM_CONTROL_CODE),
+            scale: asNumber(this.registry.properties.ZoomScale.code),
+            bar: asNumber(this.registry.properties.ZoomBarInfo.code),
+        }
+    }
+
+    private async waitForZoomMovement(before: ZoomTelemetry): Promise<ZoomTelemetry> {
         const deadline = Date.now() + 3_000
-        let afterMillimetres = beforeMillimetres
+        let after = before
         await this.waitMs(500)
         while (Date.now() < deadline) {
-            // Immediately after an incremental zoom pulse some Sony bodies briefly
-            // return a value-only D214 payload to the targeted descriptor request.
-            // The full inventory remains well formed, so use it for confirmation.
+            // Some Sony bodies briefly return a value-only D214 payload right after a zoom
+            // pulse; the full inventory stays well formed, so refresh it for confirmation.
             try {
-                await this.refreshPropertyStates()
+                after = await this.readZoomTelemetry()
             } catch {
                 await this.waitMs(150)
                 continue
             }
-            const descriptor = this.propertyCache.get(SONY_ZOOM_CONTROL_CODE)
-            if (typeof descriptor?.currentValueDecoded === 'number') {
-                afterMillimetres = descriptor.currentValueDecoded
+            if (after.millimetres !== before.millimetres || after.scale !== before.scale || after.bar !== before.bar) {
+                return after
             }
-            if (afterMillimetres !== beforeMillimetres) return afterMillimetres
             await this.waitMs(100)
         }
-        return afterMillimetres
+        return after
     }
 
     private assertOk(responseCode: number, action: string): void {

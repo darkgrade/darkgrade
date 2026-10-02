@@ -27,4 +27,8 @@ Sony documents that disabling access authentication removes SSH authentication a
 
 The authenticated workflow uses the camera username, password, and fingerprint. Darkgrade's standard PTP/IP transport does not implement that SSH boundary. The production path should use Sony's Camera Remote SDK or a separately validated compatible implementation.
 
+On 2026-09-11, the α6700 authenticated successfully over SSH on port 22 at its assigned Wi-Fi address. Its proprietary Camera Remote SDK channel is reachable on TCP port 64321; normal shell and SSH port forwarding are rejected, and sending standard PTP/IP framing to that port is not accepted. Darkgrade now exports a dependency-injected `SonyRemoteSdkTransport` adapter so an official SDK binding can provide the authenticated channel without putting Sony credentials or an unverified wire implementation in the core library.
+
+The adapter is intentionally not a protocol implementation: its channel factory must perform Sony SDK authentication, fingerprint validation, and proprietary session setup. Until that binding is supplied, USB remains the supported Sony control transport.
+
 See Sony's [α6700 PC Remote guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/0903_pc_remote_function.html), [access authentication guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/221h_access_authentication_information.html), and [firmware page](https://www.sony.com/electronics/support/software/00298441).
