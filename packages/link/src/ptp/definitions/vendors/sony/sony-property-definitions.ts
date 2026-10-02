@@ -237,6 +237,48 @@ export const FocusMode = {
         ),
 } as const satisfies PropertyDefinition
 
+// Sony autofocus area (PTP 0xd22c). Wide=0x0001 and Flexible Spot S=0x0101 were
+// verified on the darkgrade-testbench against the Sony Camera Remote SDK; the rest
+// follow the documented Sony PTP ordering. Unknown areas decode to "Area 0x…" so
+// bodies in extended modes still report, and the value is set via the normal
+// SDIO_SetExtDevicePropValue path.
+const SONY_FOCUS_AREA_NAMES: Record<number, string> = {
+    0x0001: 'Wide',
+    0x0002: 'Zone',
+    0x0003: 'Center',
+    0x0101: 'Flexible Spot S',
+    0x0102: 'Flexible Spot M',
+    0x0103: 'Flexible Spot L',
+    0x0104: 'Expand Flexible Spot',
+    0x0201: 'Tracking Wide',
+    0x0202: 'Tracking Zone',
+    0x0203: 'Tracking Center',
+    0x0301: 'Tracking Flexible Spot S',
+    0x0302: 'Tracking Flexible Spot M',
+    0x0303: 'Tracking Flexible Spot L',
+    0x0304: 'Tracking Expand Flexible Spot',
+}
+class SonyFocusAreaCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const entry = Object.entries(SONY_FOCUS_AREA_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
+        if (!Number.isFinite(raw)) throw new Error(`Unknown focus area: ${value}`)
+        return this.baseCodecs.uint16.encode(raw)
+    }
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const result = this.baseCodecs.uint16.decode(buffer, offset)
+        return { value: SONY_FOCUS_AREA_NAMES[result.value] ?? `Area 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+    }
+}
+export const FocusArea = {
+    code: 0xd22c,
+    name: 'FocusArea',
+    description: 'Sony autofocus area mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new SonyFocusAreaCodec(registry),
+} as const satisfies PropertyDefinition
+
 export const CompressionSetting = {
     code: 0x5004,
     name: 'CompressionSetting',
@@ -1490,6 +1532,7 @@ export const sonyPropertyRegistry = {
     Iso,
     WhiteBalance,
     FocusMode,
+    FocusArea,
     CompressionSetting,
     SonyImageSize,
     AspectRatio,

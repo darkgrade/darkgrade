@@ -269,6 +269,16 @@ export class Camera {
         return this.instance.powerZoom(direction, pulses)
     }
 
+    async sonyTouchFocus(x: number, y: number, options?: { focus?: boolean }): Promise<{ x: number; y: number }> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony touch focus is only available for Sony cameras')
+        return this.instance.touchFocus(x, y, options)
+    }
+
+    async setSonyAfAreaPosition(x: number, y: number): Promise<void> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony AF-area position is only available for Sony cameras')
+        return this.instance.setAfAreaPosition(x, y)
+    }
+
     async getSonyZoomSetting(): Promise<string> {
         if (!(this.instance instanceof SonyCamera)) throw new Error('Sony zoom setting is only available for Sony cameras')
         return this.instance.getZoomSetting()

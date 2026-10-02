@@ -18,6 +18,12 @@ import { GenericCamera } from './generic-camera'
 
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
 const SONY_ZOOM_CONTROL_CODE = 0xd214
+// Sony AF-area (touch-to-focus) control code: SDIO_ControlDevice (0x9207) with a
+// UInt32 payload (x << 16 | y), x in [0,639] and y in [0,479]. Reverse-engineered
+// from the Sony Camera Remote SDK on the ILCE-6700 via the darkgrade-testbench.
+const SONY_AF_AREA_POSITION_CODE = 0xd2dc
+const SONY_AF_AREA_X_MAX = 639
+const SONY_AF_AREA_Y_MAX = 479
 const SONY_ZOOM_SPEED_CONTROL_CODE = 0xd25e
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
@@ -442,6 +448,43 @@ export class SonyCamera extends GenericCamera {
                 `Sony released autofocus but remote controls did not become writable within ${SONY_CONTROL_SETTLE_TIMEOUT_MS} ms`
             )
         }
+    }
+
+    /**
+     * Moves the autofocus area to a point on the frame. Coordinates use the Sony
+     * 640x480 AF grid: x in [0, 639] (left→right) and y in [0, 479] (top→bottom).
+     * The body must be in a Flexible Spot focus area for the point to be honoured;
+     * `touchFocus` sets that up for you.
+     */
+    async setAfAreaPosition(x: number, y: number): Promise<void> {
+        if (!Number.isInteger(x) || x < 0 || x > SONY_AF_AREA_X_MAX) {
+            throw new Error(`Sony AF-area X must be an integer between 0 and ${SONY_AF_AREA_X_MAX}`)
+        }
+        if (!Number.isInteger(y) || y < 0 || y > SONY_AF_AREA_Y_MAX) {
+            throw new Error(`Sony AF-area Y must be an integer between 0 and ${SONY_AF_AREA_Y_MAX}`)
+        }
+        const packed = (((x << 16) | y) >>> 0)
+        const response = await this.send(
+            this.registry.operations.SDIO_ControlDevice,
+            { sdiControlCode: SONY_AF_AREA_POSITION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
+            this.registry.codecs.uint32.encode(packed)
+        )
+        this.assertOk(response.code, 'Sony AF-area position')
+    }
+
+    /**
+     * Tap-to-focus: switch the body into Flexible Spot, move the AF area to (x, y)
+     * on the 640x480 grid, then optionally run autofocus at that spot. Returns the
+     * coordinates that were sent.
+     */
+    async touchFocus(x: number, y: number, options: { focus?: boolean } = {}): Promise<{ x: number; y: number }> {
+        const focus = options.focus ?? true
+        // Flexible Spot is required for a point AF position to take effect. If the
+        // body is already in a flexible-spot area this is a cheap no-op.
+        await this.set(this.registry.properties.FocusArea, 'Flexible Spot S')
+        await this.setAfAreaPosition(x, y)
+        if (focus) await this.autofocus()
+        return { x, y }
     }
 
     async powerZoom(direction: 'wide' | 'tele', pulses = 1): Promise<SonyZoomResult> {
