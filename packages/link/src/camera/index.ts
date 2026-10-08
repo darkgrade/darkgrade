@@ -16,7 +16,7 @@ import { USBTransport } from '@transport/usb/usb-transport'
 import { CanonCamera } from './canon-camera'
 import { GenericCamera, type StandardPropertyState } from './generic-camera'
 import { NikonCamera } from './nikon-camera'
-import { SonyCamera, type SonyPropertyState, type SonyZoomResult } from './sony-camera'
+import { SonyCamera, type SonyCameraButton, type SonyOsdImage, type SonyPropertyState, type SonyZoomResult } from './sony-camera'
 
 export interface CameraOptions {
     logger?: Partial<LoggerConfig>
@@ -274,6 +274,19 @@ export class Camera {
         return this.instance.touchFocus(x, y, options)
     }
 
+    async sonyPressButton(
+        button: SonyCameraButton,
+        options?: { action?: 'click' | 'press' | 'release'; holdMilliseconds?: number }
+    ): Promise<void> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony camera buttons are only available for Sony cameras')
+        return this.instance.pressButton(button, options)
+    }
+
+    async captureSonyOsdImage(): Promise<SonyOsdImage> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony OSD image is only available for Sony cameras')
+        return this.instance.captureOsdImage()
+    }
+
     async setSonyAfAreaPosition(x: number, y: number): Promise<void> {
         if (!(this.instance instanceof SonyCamera)) throw new Error('Sony AF-area position is only available for Sony cameras')
         return this.instance.setAfAreaPosition(x, y)
@@ -427,5 +440,5 @@ export class Camera {
 export { CanonCamera } from './canon-camera'
 export { GenericCamera } from './generic-camera'
 export { NikonCamera } from './nikon-camera'
-export { SonyCamera } from './sony-camera'
-export type { SonyPropertyState, SonyZoomResult } from './sony-camera'
+export { SONY_CAMERA_BUTTONS, SonyCamera } from './sony-camera'
+export type { SonyCameraButton, SonyOsdImage, SonyPropertyState, SonyZoomResult } from './sony-camera'
