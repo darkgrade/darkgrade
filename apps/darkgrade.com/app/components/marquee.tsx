@@ -26,8 +26,9 @@ function Star() {
 export function Marquee() {
     return (
         <div
+            id="marquee"
             aria-hidden="true"
-            className="relative flex h-[var(--mq-h)] items-center overflow-hidden border-y border-hair bg-[rgba(10,10,11,.35)]"
+            className="relative flex h-[var(--mq-h)] items-center overflow-hidden border-y border-hair bg-[rgba(10,10,11,.35)] backdrop-blur-[6px]"
         >
             <div id="mqtrack" className="flex w-max will-change-transform">
                 <div className="set flex shrink-0 items-center">
@@ -35,7 +36,7 @@ export function Marquee() {
                         <span key={persona} className="flex items-center gap-[44px] pr-[44px] whitespace-nowrap">
                             <span className="font-serif text-[1.125rem] leading-[1.2] text-ink italic">{persona}</span>
                             <Star />
-                            <span className="font-serif text-[1.125rem] leading-[1.2] text-ink-35">{medium}</span>
+                            <span className="font-serif text-[1.125rem] leading-[1.2] text-ink-52">{medium}</span>
                             <Star />
                         </span>
                     ))}

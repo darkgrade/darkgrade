@@ -255,7 +255,7 @@ export function DevFontChooser() {
             style={{ fontFamily: PANEL_FONT_FAMILY }}
             className="fixed bottom-4 left-4 z-[300] w-[330px] rounded-[10px] border border-hair bg-[rgba(10,10,11,.94)] p-3 text-[11px] leading-[1.4] text-ink-55 shadow-[0_10px_40px_rgba(0,0,0,.6)] backdrop-blur-[14px] select-none"
         >
-            <div className="mb-2 flex items-center justify-between text-[10px] tracking-[.18em] text-ink-35 uppercase">
+            <div className="mb-2 flex items-center justify-between text-[10px] tracking-[.18em] text-ink-52 uppercase">
                 <span>Font chooser · dev</span>
                 <button
                     type="button"
@@ -289,7 +289,7 @@ export function DevFontChooser() {
             <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
                     <div className="truncate text-[13px] text-ink">{selectedLabel ?? 'Site default'}</div>
-                    <div className="text-[10px] text-ink-35">
+                    <div className="text-[10px] text-ink-52">
                         {positionLabel} / {pool.length}
                         {shortlistActive ? ' · shortlist' : ''}
                     </div>
@@ -319,7 +319,7 @@ export function DevFontChooser() {
             <div data-lenis-prevent className="mb-2 max-h-[168px] overflow-y-auto rounded-[6px] border border-hair">
                 {loadError && <div className="p-2 text-rec">Could not list fonts ({loadError}).</div>}
                 {!loadError && fonts.length === 0 && (
-                    <div className="p-2 text-ink-35">No TAY* fonts found in ~/Library/Fonts.</div>
+                    <div className="p-2 text-ink-52">No TAY* fonts found in ~/Library/Fonts.</div>
                 )}
                 {fonts.map(font => {
                     const isSelected = font.file === selectedFile
@@ -354,7 +354,7 @@ export function DevFontChooser() {
                 })}
             </div>
 
-            <div className="flex flex-wrap gap-x-3 gap-y-[2px] text-[10px] text-ink-35">
+            <div className="flex flex-wrap gap-x-3 gap-y-[2px] text-[10px] text-ink-52">
                 {KEY_HINTS.map(([keys, action]) => (
                     <span key={action}>
                         <b className="font-normal text-ink-55">{keys}</b> {action}

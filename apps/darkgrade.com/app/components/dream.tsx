@@ -13,13 +13,13 @@ export function Dream() {
                     data-reveal-lines
                 >
                     Somewhere, two people have a podcast in their heads{' '}
-                    <span className="text-ink-35">the world will never hear.</span>
+                    <span className="text-ink-52">humanity will never hear.</span>
                 </h2>
 
-                <div className="will-change-[transform,opacity]" data-fade>
+                <div data-fade>
                     <span
                         id="d-punch"
-                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(2rem,4.4vw,4.25rem)] leading-[1.12] italic will-change-transform"
+                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(2rem,4.4vw,4.25rem)] leading-[1.12] italic"
                     >
                         The world is still waiting on what you haven’t made yet.
                     </span>
@@ -31,7 +31,7 @@ export function Dream() {
                     </a>
                     <a className={BTN_GHOST} href={LINKS.github} target="_blank" rel="noopener">
                         <span>Star on GitHub</span>
-                        <span className="text-gold">✦</span>
+                        <span aria-hidden="true" className="text-gold">✦</span>
                     </a>
                 </div>
             </div>

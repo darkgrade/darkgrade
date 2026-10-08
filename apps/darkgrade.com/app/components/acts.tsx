@@ -8,6 +8,7 @@ function Arrow() {
     return (
         <div className="grid size-[58px] place-items-center rounded-full border border-hair transition-[background,border-color,transform,box-shadow] duration-[450ms] ease-lamp group-hover/act:rotate-45 group-hover/act:border-gold group-hover/act:bg-gold group-hover/act:shadow-[0_0_34px_rgba(244,198,110,.3)] max-[900px]:hidden">
             <svg
+                aria-hidden="true"
                 width="20"
                 height="20"
                 viewBox="0 0 24 24"
@@ -51,7 +52,7 @@ export function Acts() {
                     <span className={`${LABEL} text-ink-55`} data-fade>
                         <span className="mr-[14px] text-gold">01</span>Our product, in three acts
                     </span>
-                    <span className={`${LABEL} text-ink-35`} data-fade>
+                    <span className={`${LABEL} text-ink-52`} data-fade>
                         2026 —
                     </span>
                 </div>
@@ -61,9 +62,10 @@ export function Acts() {
                         key={act.num}
                         data-fade
                         // `act` is a cursor-hover hook for <SiteEffects>
-                        className={`act group/act relative grid cursor-pointer grid-cols-[110px_1fr_auto] items-center gap-8 border-t border-hair px-[clamp(8px,1.5vw,28px)] py-[clamp(34px,5vh,54px)] transition-[background] duration-500 last-of-type:border-b before:bg-[image:linear-gradient(90deg,var(--color-gold-dim),transparent_60%)] ${ROW_WASH} max-[900px]:grid-cols-1 max-[900px]:gap-4`}
+                        id={act.title.toLowerCase()}
+                        className={`act group/act relative grid grid-cols-[110px_1fr_auto] items-center gap-8 border-t border-hair px-[clamp(8px,1.5vw,28px)] py-[clamp(34px,5vh,54px)] transition-[background] duration-500 last-of-type:border-b before:bg-[image:linear-gradient(90deg,var(--color-gold-dim),transparent_60%)] ${ROW_WASH} max-[900px]:grid-cols-1 max-[900px]:gap-4`}
                     >
-                        <div className="font-serif text-[1.375rem] text-ink-35 italic transition-[color,text-shadow] duration-[400ms] group-hover/act:text-gold group-hover/act:[text-shadow:0_0_16px_rgba(244,198,110,.5)] max-[900px]:text-[1rem]">
+                        <div className="font-serif text-[1.375rem] text-ink-52 italic transition-[color,text-shadow] duration-[400ms] group-hover/act:text-gold group-hover/act:[text-shadow:0_0_16px_rgba(244,198,110,.5)] max-[900px]:text-[1rem]">
                             {act.num}
                         </div>
 
@@ -79,7 +81,7 @@ export function Acts() {
                                     </span>
                                 ) : (
                                     <span className={`${CHIP} border border-hair text-ink-55`}>
-                                        <span className="size-[7px] shrink-0 rounded-full border border-ink-35" />
+                                        <span className="size-[7px] shrink-0 rounded-full border border-ink-52" />
                                         {act.chip}
                                     </span>
                                 )}
@@ -89,16 +91,21 @@ export function Acts() {
 
                             {act.install && (
                                 // `npmline` is a cursor-hover hook; [data-copy] is the clipboard hook
-                                <span
+                                <button
+                                    type="button"
                                     data-copy={NPM_INSTALL}
                                     className="npmline group/npm mt-5 inline-flex cursor-pointer items-center gap-[14px] rounded-[10px] border border-hair px-[18px] py-3 font-mono text-[0.8125rem] text-ink-55 transition-[border-color,box-shadow] duration-[350ms] hover:border-[rgba(244,198,110,.4)] hover:shadow-[0_0_26px_rgba(244,198,110,.1)]"
                                 >
-                                    <span className="text-gold">$</span>
-                                    <span>{NPM_INSTALL}</span>
-                                    <span className="copy text-[0.75rem] tracking-[.1em] text-ink-35 transition-colors duration-300 group-hover/npm:text-gold">
-                                        COPY
+                                    <span aria-hidden="true" className="text-gold">
+                                        $
                                     </span>
-                                </span>
+                                    <span>{NPM_INSTALL}</span>
+                                    <span className="copy text-[0.75rem] tracking-[.1em] text-ink-52 uppercase transition-colors duration-300 group-hover/npm:text-gold">
+                                        Copy
+                                    </span>
+                                    {/* rendered empty so screen readers pick up the result when it is written */}
+                                    <span role="status" className="copy-status sr-only" />
+                                </button>
                             )}
                         </div>
 

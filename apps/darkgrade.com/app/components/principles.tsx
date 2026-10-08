@@ -45,7 +45,7 @@ export function Principles() {
                         data-fade
                         className="group/p relative grid grid-cols-[minmax(60px,140px)_1fr_1.1fr] items-center gap-[clamp(20px,4vw,64px)] border-t border-hair px-[clamp(8px,1.5vw,26px)] py-[clamp(30px,4.5vh,46px)] transition-[background] duration-500 last:border-b before:pointer-events-none before:absolute before:inset-0 before:bg-[image:linear-gradient(90deg,rgba(244,198,110,.07),transparent_55%)] before:opacity-0 before:transition-opacity before:duration-[550ms] before:content-[''] hover:before:opacity-100 max-[820px]:grid-cols-[48px_1fr]"
                     >
-                        <span className="font-serif text-[clamp(1.25rem,2vw,1.75rem)] leading-none tracking-normal text-ink-35 italic transition-[color,text-shadow] duration-[450ms] group-hover/p:text-gold group-hover/p:[text-shadow:0_0_15px_rgba(244,198,110,.45)]">
+                        <span className="font-serif text-[clamp(1.25rem,2vw,1.75rem)] leading-none tracking-normal text-ink-52 italic transition-[color,text-shadow] duration-[450ms] group-hover/p:text-gold group-hover/p:[text-shadow:0_0_15px_rgba(244,198,110,.45)]">
                             {p.idx}
                         </span>
                         <h3 className="font-serif text-[clamp(1.625rem,2.6vw,2.5rem)] leading-[1.15] font-normal">

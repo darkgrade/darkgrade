@@ -248,7 +248,7 @@ export function SocialStudio() {
         <main className="min-h-dvh px-6 pt-8 pb-[440px] text-ink md:px-10">
             <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
                 <div>
-                    <div className="mb-3 font-mono text-[10px] tracking-[.22em] text-ink-35 uppercase">
+                    <div className="mb-3 font-mono text-[10px] tracking-[.22em] text-ink-52 uppercase">
                         Dev only · localhost
                     </div>
                     <h1 className="font-serif text-[clamp(36px,4vw,56px)] leading-none">
@@ -276,7 +276,7 @@ export function SocialStudio() {
                         className="shrink-0 cursor-pointer rounded-[10px] border border-hair px-4 py-[10px] text-left transition-[border-color,background,color] duration-[250ms] hover:border-gold aria-pressed:border-[rgba(244,198,110,.5)] aria-pressed:bg-gold-dim aria-pressed:text-gold"
                     >
                         <div className="text-[13px] font-[480]">{format.tabLabel}</div>
-                        <div className="mt-[2px] font-mono text-[10.5px] tracking-[.06em] text-ink-35">
+                        <div className="mt-[2px] font-mono text-[10.5px] tracking-[.06em] text-ink-52">
                             {formatDimensions(format)}
                         </div>
                     </button>
@@ -333,7 +333,7 @@ export function SocialStudio() {
                             {note}
                         </p>
                     ))}
-                    <p className="font-mono text-[11px] tracking-[.06em] text-ink-35">
+                    <p className="font-mono text-[11px] tracking-[.06em] text-ink-52">
                         Size source:{' '}
                         <a
                             href={activeFormat.source.url}
@@ -344,7 +344,7 @@ export function SocialStudio() {
                             {activeFormat.source.label}
                         </a>
                     </p>
-                    <p className="mt-3 font-mono text-[11px] tracking-[.06em] text-ink-35">
+                    <p className="mt-3 font-mono text-[11px] tracking-[.06em] text-ink-52">
                         Keys: [ ] switch tab · N new silk frame · G guides · D download · Shift+D download all. Fonts
                         follow the font chooser (bottom left).
                     </p>
@@ -359,7 +359,7 @@ export function SocialStudio() {
                         Download PNG · {formatDimensions(activeFormat)}
                     </button>
                     <div
-                        className="min-h-[1.2em] font-mono text-[11px] tracking-[.06em] text-ink-35"
+                        className="min-h-[1.2em] font-mono text-[11px] tracking-[.06em] text-ink-52"
                         aria-live="polite"
                     >
                         {busyMessage}
