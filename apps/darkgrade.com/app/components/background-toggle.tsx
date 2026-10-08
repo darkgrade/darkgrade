@@ -14,8 +14,8 @@ export function BackgroundToggle() {
 
     return (
         <div className="flex items-center gap-[10px] max-[900px]:hidden">
-            {/* JetBrains Mono, so both labels are exactly as wide as each other */}
-            <span className="font-mono text-[9.5px] tracking-[.22em] text-ink-35 uppercase select-none">
+            {/* Monospace, so both labels are exactly as wide as each other */}
+            <span className="font-mono text-[0.75rem] tracking-[.22em] text-ink-35 uppercase select-none">
                 {on ? 'Topo' : 'Silk'}
             </span>
             <button

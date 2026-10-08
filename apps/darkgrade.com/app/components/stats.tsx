@@ -17,13 +17,18 @@ export function Stats() {
                         data-fade
                         className="relative border-l border-hair px-[clamp(24px,3vw,56px)] py-[clamp(44px,6vh,72px)] first:border-l-0 max-[900px]:border-t max-[900px]:[&:nth-child(-n+2)]:border-t-0 max-[900px]:[&:nth-child(3)]:border-l-0"
                     >
-                        <div className="font-serif text-[clamp(44px,4.6vw,76px)] leading-none tracking-[-.01em]">
-                            <span className="count" data-to={to}>
+                        <div className="font-serif text-[clamp(2.75rem,4.6vw,4.75rem)] leading-none tracking-[-.01em]">
+                            <span className="count whitespace-nowrap" data-to={to}>
                                 0
                             </span>
-                            <i className="glow-sm text-[.55em] italic">&nbsp;{unit}</i>
+                            {/* the number never breaks (a "10–20" range split at its dash reads as a bug); on the narrowest
+                                screens the unit drops to its own line instead */}
+                            <i className="glow-sm text-[.55em] italic max-[480px]:mt-1 max-[480px]:block">
+                                <span className="max-[480px]:hidden">&nbsp;</span>
+                                {unit}
+                            </i>
                         </div>
-                        <div className="mt-4 max-w-[24ch] text-[12.5px] leading-[1.55] tracking-[.05em] text-ink-55">
+                        <div className="mt-4 max-w-[24ch] text-[0.7812rem] leading-[1.55] tracking-[.05em] text-ink-55">
                             {caption}
                         </div>
                     </div>

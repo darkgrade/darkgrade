@@ -1,9 +1,9 @@
 import { LINKS } from './site-links'
 import { Wordmark } from './wordmark'
 
-const COL_HEAD = 'mb-5 text-[10.5px] tracking-[.3em] text-ink-35 uppercase'
+const COL_HEAD = 'mb-5 text-[0.75rem] tracking-[.3em] text-ink-35 uppercase'
 const COL_LINK =
-    'mb-3 block text-[14.5px] text-ink-55 transition-[color,transform] duration-300 ease-lamp hover:translate-x-[6px] hover:text-gold'
+    'mb-3 block text-[0.9062rem] text-ink-55 transition-[color,transform] duration-300 ease-lamp hover:translate-x-[6px] hover:text-gold'
 
 const COLUMNS = [
     {
@@ -39,7 +39,7 @@ export function SiteFooter() {
             <div className="shell">
                 <div className="flex flex-wrap justify-between gap-10 pb-10 max-[700px]:flex-col max-[700px]:gap-[38px]">
                     <div
-                        className="max-w-[30ch] text-[14.5px] leading-[1.7] text-ink-55 max-[700px]:max-w-none"
+                        className="max-w-[30ch] text-[0.9062rem] leading-[1.7] text-ink-55 max-[700px]:max-w-none"
                         data-fade
                     >
                         <span className="mb-[18px] block">
@@ -66,7 +66,7 @@ export function SiteFooter() {
                 </div>
             </div>
 
-            <div className="shell flex flex-wrap justify-between gap-5 border-t border-hair py-[26px] font-mono text-[12px] tracking-[.06em] text-ink-35 max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-[10px]">
+            <div className="shell flex flex-wrap justify-between gap-5 border-t border-hair py-[26px] font-mono text-[0.75rem] tracking-[.06em] text-ink-35 max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-[10px]">
                 <span>© 2026 DARKGRADE</span>
                 <span className="inline-flex items-center gap-2">
                     <i className="size-[7px] animate-blink rounded-full bg-rec shadow-[0_0_10px_rgba(224,72,62,.6)]" />

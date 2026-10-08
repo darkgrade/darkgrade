@@ -14,13 +14,12 @@ export function Loader() {
             <div className="opacity-[.72]">
                 <Wordmark className="block h-[15px] w-auto text-ink-55" />
             </div>
-            {/* Instrument Serif ships no tabular figures (its only GSUB features
-                are ccmp/liga/locl), so font-feature-settings:'tnum' was a no-op
-                and the digits run 0.249em ('1') to 0.460em ('0') - an 85%
-                spread that slid the whole centred block every frame. One fixed
+            {/* Display faces rarely ship tabular figures, so font-feature-settings:'tnum'
+                can't be relied on, and proportional digits vary widely in width -
+                enough to slide the whole centred block every frame. One fixed
                 cell per digit instead: 1ch is the advance of '0', i.e. the
                 widest digit, so nothing overflows and the width never changes. */}
-            <div className="font-serif text-[clamp(64px,10vw,120px)] leading-none text-ink">
+            <div className="font-serif text-[clamp(4rem,10vw,7.5rem)] leading-none text-ink">
                 <span id="lnum">
                     {[0, 1, 2].map(i => (
                         <span key={i} className="inline-block w-[1ch] text-center">

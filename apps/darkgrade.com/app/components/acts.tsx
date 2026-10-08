@@ -63,12 +63,12 @@ export function Acts() {
                         // `act` is a cursor-hover hook for <SiteEffects>
                         className={`act group/act relative grid cursor-pointer grid-cols-[110px_1fr_auto] items-center gap-8 border-t border-hair px-[clamp(8px,1.5vw,28px)] py-[clamp(34px,5vh,54px)] transition-[background] duration-500 last-of-type:border-b before:bg-[image:linear-gradient(90deg,var(--color-gold-dim),transparent_60%)] ${ROW_WASH} max-[900px]:grid-cols-1 max-[900px]:gap-4`}
                     >
-                        <div className="font-serif text-[22px] text-ink-35 italic transition-[color,text-shadow] duration-[400ms] group-hover/act:text-gold group-hover/act:[text-shadow:0_0_16px_rgba(244,198,110,.5)] max-[900px]:text-[16px]">
+                        <div className="font-serif text-[1.375rem] text-ink-35 italic transition-[color,text-shadow] duration-[400ms] group-hover/act:text-gold group-hover/act:[text-shadow:0_0_16px_rgba(244,198,110,.5)] max-[900px]:text-[1rem]">
                             {act.num}
                         </div>
 
                         <div>
-                            <h2 className="flex flex-wrap items-center gap-[22px] font-serif text-[clamp(40px,5vw,72px)] leading-none font-normal tracking-[-.01em]">
+                            <h2 className="flex flex-wrap items-center gap-[22px] font-serif text-[clamp(2.5rem,5vw,4.5rem)] leading-none font-normal tracking-[-.01em]">
                                 {act.title}{' '}
                                 {act.chip === 'shipping' ? (
                                     <span
@@ -85,17 +85,17 @@ export function Acts() {
                                 )}
                             </h2>
 
-                            <p className="mt-[14px] max-w-[52ch] text-[15.5px] text-ink-55">{act.body}</p>
+                            <p className="mt-[14px] max-w-[52ch] text-[0.9688rem] text-ink-55">{act.body}</p>
 
                             {act.install && (
                                 // `npmline` is a cursor-hover hook; [data-copy] is the clipboard hook
                                 <span
                                     data-copy={NPM_INSTALL}
-                                    className="npmline group/npm mt-5 inline-flex cursor-pointer items-center gap-[14px] rounded-[10px] border border-hair px-[18px] py-3 font-mono text-[13px] text-ink-55 transition-[border-color,box-shadow] duration-[350ms] hover:border-[rgba(244,198,110,.4)] hover:shadow-[0_0_26px_rgba(244,198,110,.1)]"
+                                    className="npmline group/npm mt-5 inline-flex cursor-pointer items-center gap-[14px] rounded-[10px] border border-hair px-[18px] py-3 font-mono text-[0.8125rem] text-ink-55 transition-[border-color,box-shadow] duration-[350ms] hover:border-[rgba(244,198,110,.4)] hover:shadow-[0_0_26px_rgba(244,198,110,.1)]"
                                 >
                                     <span className="text-gold">$</span>
                                     <span>{NPM_INSTALL}</span>
-                                    <span className="copy text-[11px] tracking-[.1em] text-ink-35 transition-colors duration-300 group-hover/npm:text-gold">
+                                    <span className="copy text-[0.75rem] tracking-[.1em] text-ink-35 transition-colors duration-300 group-hover/npm:text-gold">
                                         COPY
                                     </span>
                                 </span>

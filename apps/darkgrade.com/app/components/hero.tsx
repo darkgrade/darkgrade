@@ -4,16 +4,26 @@ export function Hero() {
     return (
         // `hero` is a JS hook: the shader watches it to ramp uScroll, and the
         // intro timeline animates the masks and [data-fade] children inside it.
-        <section className="hero relative flex min-h-[calc(100dvh_-_var(--mq-h))] flex-col justify-end pb-[clamp(56px,8vh,100px)]">
+        // pt clears the fixed 76px header: content is bottom-anchored, so when it is
+        // taller than the screen the section must grow downward rather than let the
+        // eyebrow and headline slide up underneath the header.
+        <section className="hero relative flex min-h-[calc(100dvh_-_var(--mq-h))] flex-col justify-end pt-[96px] pb-[clamp(56px,8vh,100px)]">
             <div className="shell">
                 <div className="mb-[clamp(20px,3vh,36px)] flex items-center gap-4" data-fade>
-                    <span className="glow-line h-px w-[56px] bg-gold" />
-                    <span className={`${LABEL} text-ink-55`}>Local-first AI for creative professionals</span>
+                    <span className="glow-line h-px w-[56px] shrink-0 bg-gold" />
+                    <span className={`${LABEL} text-ink-55 max-[480px]:tracking-[.2em]`}>
+                        Local-first AI for creative professionals
+                    </span>
                 </div>
 
                 <h1
                     aria-label="Shoot more. Edit less."
-                    className="hero-title ml-[-.04em] font-serif text-[clamp(74px,12.6vw,196px)] leading-[.94] font-normal tracking-[-.015em]"
+                    // Sized by width AND height. Width alone let the headline grow taller than a
+                    // laptop window leaves room for. 17vw is what keeps "SHOOT MORE." on one
+                    // line down to ~320px wide in Flapjack (about 5em across); the 16svh cap
+                    // shrinks it on short windows and landscape phones. svh, not dvh, so the
+                    // size doesn't jump as mobile browser toolbars collapse.
+                    className="hero-title ml-[-.04em] font-serif text-[clamp(2.5rem,min(17vw,16svh),12.25rem)] leading-[.94] font-normal tracking-[-.015em]"
                 >
                     <span className="mask" data-reveal>
                         <span>Shoot more.</span>
@@ -29,7 +39,7 @@ export function Hero() {
                 </h1>
 
                 <p
-                    className="mt-[clamp(22px,3.4vh,40px)] max-w-[47ch] text-[clamp(15.5px,1.25vw,18.5px)] leading-[1.65] font-[340] text-ink-55"
+                    className="mt-[clamp(22px,3.4vh,40px)] max-w-[54ch] text-[clamp(0.9688rem,1.25vw,1.1562rem)] leading-[1.65] font-[340] text-ink-55 [@media(max-height:700px)]:max-w-[64ch]"
                     data-fade
                 >
                     Darkgrade dials in your camera, captures the shot, and returns a finished first cut —{' '}
@@ -49,12 +59,16 @@ export function Hero() {
                     </a>
                 </div>
 
-                <div className="mt-[clamp(40px,7vh,84px)] flex items-end justify-between" data-fade>
-                    <div className="flex items-center gap-[14px] text-[10.5px] tracking-[.3em] text-ink-35 uppercase">
+                {/* decorative; on short windows the room is worth more than the cue */}
+                <div
+                    className="mt-[clamp(40px,7vh,84px)] flex items-end justify-between [@media(max-height:800px)]:hidden"
+                    data-fade
+                >
+                    <div className="flex items-center gap-[14px] text-[0.75rem] tracking-[.3em] text-ink-35 uppercase">
                         <span>Scroll</span>
                         <span className="glow-line relative h-[44px] w-px overflow-hidden bg-hair after:absolute after:top-0 after:left-0 after:h-full after:w-full after:animate-drip after:bg-gold after:shadow-[0_0_10px_rgba(244,198,110,.6)] after:content-['']" />
                     </div>
-                    <div className="text-right font-mono text-[11px] tracking-[.12em] text-ink-35 max-[700px]:hidden">
+                    <div className="text-right font-mono text-[0.75rem] tracking-[.12em] text-ink-35 max-[700px]:hidden">
                         TESTED ON
                         <br />
                         <b className="font-medium text-ink-55">SONY α7 IV · NIKON Z6 III · CANON R6 MK III</b>
