@@ -3,6 +3,7 @@ import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import { parseLiveViewDataset } from '@ptp/datasets/vendors/sony/sony-live-view-dataset'
+import { parseOsdImageDataset, type OsdImageMetaInfo } from '@ptp/datasets/vendors/sony/sony-osd-image-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
@@ -27,6 +28,48 @@ const SONY_ZOOM_OPERATION_CODE = 0xd2dd
 // from the Sony Camera Remote SDK on the ILCE-6700 via the darkgrade-testbench.
 const SONY_AF_AREA_POSITION_CODE = 0xd2dc
 const SONY_AF_AREA_X_MAX = 639
+// Sony CameraButtonFunction control code: SDIO_ControlDevice (0x9207) with a uint32
+// payload of (button << 16) | action, where action 2 = press and 1 = release. Verified
+// on the ILCE-6700 by capturing the Camera Remote SDK driving the camera's own MENU
+// button; this body rejects the SDK's dedicated RemoteKey menu/set codes.
+const SONY_CAMERA_BUTTON_FUNCTION_CODE = 0xd309
+const SONY_CAMERA_BUTTON_PRESS = 0x0002
+const SONY_CAMERA_BUTTON_RELEASE = 0x0001
+// Upper 16 bits of the CameraButtonFunction payload (Camera Remote SDK CrCameraButtonFunction).
+export const SONY_CAMERA_BUTTONS = {
+    up: 0x01,
+    down: 0x02,
+    left: 0x03,
+    right: 0x04,
+    enter: 0x05,
+    menu: 0x06,
+    multiSelectorUp: 0x07,
+    multiSelectorDown: 0x08,
+    multiSelectorLeft: 0x09,
+    multiSelectorRight: 0x0a,
+    multiSelectorEnter: 0x0b,
+    fn: 0x10,
+    playback: 0x11,
+    delete: 0x12,
+    mode: 0x13,
+    c1: 0x14,
+    c2: 0x15,
+    c3: 0x16,
+    c4: 0x17,
+    c5: 0x18,
+    c6: 0x19,
+    movie: 0x1a,
+    ael: 0x1b,
+    afOn: 0x1c,
+    home: 0x1d,
+    display: 0x20,
+    c7: 0x21,
+    back: 0x22,
+    thumbnail: 0x23,
+} as const
+export type SonyCameraButton = keyof typeof SONY_CAMERA_BUTTONS
+// The first OSD frame after enabling OsdImageMode (0xd207) arrives within ~0.4 s.
+const SONY_OSD_ENABLE_SETTLE_MS = 500
 const SONY_AF_AREA_Y_MAX = 479
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
@@ -44,6 +87,12 @@ export interface SonyPropertyState {
     enabled: boolean
     sonyEnabledFlag: number
     sonyGetSetFlag: number
+}
+
+export interface SonyOsdImage {
+    /** RGBA PNG of the camera's on-screen display (640x480 on the ILCE-6700). */
+    image: Uint8Array
+    metaInfo: OsdImageMetaInfo | null
 }
 
 export interface SonyZoomResult {
@@ -67,6 +116,7 @@ interface ZoomTelemetry {
 export class SonyCamera extends GenericCamera {
     private liveViewPostViewEnabled = false
     private contentTransferModeEnabled = false
+    private osdImageModeEnabled = false
     private propertyCache = new Map<number, SonyDevicePropDesc>()
     vendorId = VendorIDs.SONY
     declare public registry: SonyRegistry
@@ -119,6 +169,11 @@ export class SonyCamera extends GenericCamera {
         }
         try {
             await this.stopLiveView()
+        } catch (error) {
+            cleanupError ??= error
+        }
+        try {
+            if (this.osdImageModeEnabled) await this.setOsdImageMode(false)
         } catch (error) {
             cleanupError ??= error
         }
@@ -497,6 +552,55 @@ export class SonyCamera extends GenericCamera {
         await this.setAfAreaPosition(x, y)
         if (focus) await this.autofocus()
         return { x, y }
+    }
+
+    /**
+     * Presses one of the camera body's own buttons, exactly as a finger would: the
+     * camera reacts to MENU, the control wheel (up/down/left/right/enter), Fn,
+     * playback and so on. `click` sends press, waits `holdMilliseconds`, then release.
+     */
+    async pressButton(
+        button: SonyCameraButton,
+        options: { action?: 'click' | 'press' | 'release'; holdMilliseconds?: number } = {}
+    ): Promise<void> {
+        const buttonCode = SONY_CAMERA_BUTTONS[button]
+        if (buttonCode === undefined) throw new Error(`Unknown Sony camera button: ${String(button)}`)
+        const action = options.action ?? 'click'
+        if (action === 'click' || action === 'press') await this.sendCameraButton(buttonCode, SONY_CAMERA_BUTTON_PRESS)
+        if (action === 'click') await new Promise(resolve => setTimeout(resolve, options.holdMilliseconds ?? 150))
+        if (action === 'click' || action === 'release') await this.sendCameraButton(buttonCode, SONY_CAMERA_BUTTON_RELEASE)
+    }
+
+    async setOsdImageMode(enabled: boolean): Promise<void> {
+        await this.set(this.registry.properties.OsdImageMode, enabled ? 'ON' : 'OFF')
+        this.osdImageModeEnabled = enabled
+    }
+
+    /**
+     * Reads the camera's current on-screen display (menus, dialogs, shooting info) as an
+     * RGBA PNG, so a host can show what the body's monitor shows without HDMI. Enables
+     * OsdImageMode on first use; it is switched off again on disconnect.
+     */
+    async captureOsdImage(): Promise<SonyOsdImage> {
+        if (!this.osdImageModeEnabled) {
+            await this.setOsdImageMode(true)
+            await new Promise(resolve => setTimeout(resolve, SONY_OSD_ENABLE_SETTLE_MS))
+        }
+        const response = await this.send(this.registry.operations.SDIO_GetOsdImage, {})
+        this.assertOk(response.code, 'Sony OSD image')
+        if (!response.data?.length) throw new Error('Sony OSD image returned no data')
+        const dataset = parseOsdImageDataset(response.data, this.registry)
+        if (!dataset.image.length) throw new Error('Sony OSD image dataset did not contain an image')
+        return { image: dataset.image, metaInfo: dataset.metaInfo }
+    }
+
+    private async sendCameraButton(buttonCode: number, action: number): Promise<void> {
+        const response = await this.send(
+            this.registry.operations.SDIO_ControlDevice,
+            { sdiControlCode: SONY_CAMERA_BUTTON_FUNCTION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
+            this.registry.codecs.uint32.encode((((buttonCode << 16) | action) >>> 0))
+        )
+        this.assertOk(response.code, 'Sony camera button')
     }
 
     async powerZoom(direction: 'wide' | 'tele', pulses = 1): Promise<SonyZoomResult> {
