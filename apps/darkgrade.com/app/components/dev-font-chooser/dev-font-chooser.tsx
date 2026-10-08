@@ -144,7 +144,7 @@ export function DevFontChooser() {
             const file = state.selected[category]
             return file ? [document.fonts.load(`1em ${JSON.stringify('dev:' + file)}`)] : []
         })
-        Promise.all(loads)
+        void Promise.all(loads)
             .catch(() => undefined)
             .then(() => window.dispatchEvent(new Event('resize')))
     }, [hasLoadedStorage, state.selected])
@@ -160,10 +160,13 @@ export function DevFontChooser() {
                 { selected: state.selected[category], favorites: state.favorites[category] },
             ])
         )
-        navigator.clipboard.writeText(JSON.stringify(lockIn, null, 2)).then(() => {
-            setCopied(true)
-            window.setTimeout(() => setCopied(false), COPIED_MESSAGE_MILLISECONDS)
-        })
+        void navigator.clipboard
+            .writeText(JSON.stringify(lockIn, null, 2))
+            .then(() => {
+                setCopied(true)
+                window.setTimeout(() => setCopied(false), COPIED_MESSAGE_MILLISECONDS)
+            })
+            .catch(() => undefined) // clipboard can be denied; there is nothing useful to do
     }, [state.favorites, state.selected])
 
     useEffect(() => {
