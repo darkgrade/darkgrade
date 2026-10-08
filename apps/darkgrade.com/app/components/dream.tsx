@@ -9,7 +9,7 @@ export function Dream() {
                 </div>
 
                 <h2
-                    className="mx-auto max-w-[24ch] font-serif text-[clamp(34px,4.6vw,68px)] leading-[1.25] font-normal tracking-[-.005em]"
+                    className="mx-auto max-w-[24ch] font-serif text-[clamp(2.125rem,4.6vw,4.25rem)] leading-[1.25] font-normal tracking-[-.005em]"
                     data-reveal-lines
                 >
                     Somewhere, two people have a podcast in their heads{' '}
@@ -19,7 +19,7 @@ export function Dream() {
                 <div className="will-change-[transform,opacity]" data-fade>
                     <span
                         id="d-punch"
-                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(32px,4.4vw,68px)] leading-[1.12] italic will-change-transform"
+                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(2rem,4.4vw,4.25rem)] leading-[1.12] italic will-change-transform"
                     >
                         The world is still waiting on what you haven’t made yet.
                     </span>

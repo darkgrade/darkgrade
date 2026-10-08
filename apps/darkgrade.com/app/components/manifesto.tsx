@@ -1,6 +1,6 @@
 import { LABEL } from './site-links'
 
-const LINE = 'max-w-[19ch] font-serif text-[clamp(38px,5.6vw,88px)] leading-[1.14] font-normal tracking-[-.01em]'
+const LINE = 'max-w-[19ch] font-serif text-[clamp(2.375rem,5.6vw,5.5rem)] leading-[1.14] font-normal tracking-[-.01em]'
 const DIM = 'text-[rgba(234,230,220,.46)]'
 
 export function Manifesto() {

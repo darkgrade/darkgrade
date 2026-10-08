@@ -33,9 +33,9 @@ export function Marquee() {
                 <div className="set flex shrink-0 items-center">
                     {PAIRS.map(([persona, medium]) => (
                         <span key={persona} className="flex items-center gap-[44px] pr-[44px] whitespace-nowrap">
-                            <span className="font-serif text-[18px] leading-[1.2] text-ink italic">{persona}</span>
+                            <span className="font-serif text-[1.125rem] leading-[1.2] text-ink italic">{persona}</span>
                             <Star />
-                            <span className="font-serif text-[18px] leading-[1.2] text-ink-35">{medium}</span>
+                            <span className="font-serif text-[1.125rem] leading-[1.2] text-ink-35">{medium}</span>
                             <Star />
                         </span>
                     ))}

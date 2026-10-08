@@ -22,9 +22,9 @@
     --color-obsidian: #0b0b0c; /* type sitting on a lit surface */
     --color-rec: #e0483e;
 
-    --font-serif: var(--font-instrument-serif), Georgia, serif;
-    --font-sans: var(--font-inter-tight), system-ui, sans-serif;
-    --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+    --font-serif: var(--font-tay-flapjack), Georgia, serif;
+    --font-sans: var(--font-tay-road-runner), system-ui, sans-serif;
+    --font-mono: var(--font-tay-quick-draw), ui-monospace, monospace;
 
     --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
 
@@ -72,7 +72,19 @@
         font-weight: 340;
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
         overflow-x: clip;
+    }
+    /* Headings are short: even out their lines. Paragraphs: just keep a lone
+       word off the last line (balance on a paragraph would reshape its whole
+       measure). */
+    h1,
+    h2,
+    h3 {
+        text-wrap: balance;
+    }
+    p {
+        text-wrap: pretty;
     }
     a {
         color: inherit;

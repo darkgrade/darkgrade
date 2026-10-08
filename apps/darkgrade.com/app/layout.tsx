@@ -1,37 +1,44 @@
 import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
+import { DevTools } from '@/app/components/dev-font-chooser/dev-tools'
+import { DEV_FONT_BOOTSTRAP_SCRIPT } from '@/app/components/dev-font-chooser/dev-fonts'
 import './globals.css'
 
-const instrumentSerif = localFont({
-    src: [
-        { path: './fonts/instrument-serif-latin-400-normal.woff2', weight: '400', style: 'normal' },
-        { path: './fonts/instrument-serif-latin-400-italic.woff2', weight: '400', style: 'italic' },
-    ],
-    variable: '--font-instrument-serif',
+/* The font chooser exists only under `next dev`; the component additionally
+   checks for a localhost hostname, so it never shows on a LAN address. */
+const IS_DEVELOPMENT = process.env.NODE_ENV === 'development'
+
+// All four TAY faces are static Regular (400) only. Weight utilities in the page
+// (font-[340], font-[460], font-medium) all resolve to that one face; nothing on
+// the page asks for 600+, so no bold is ever synthesised. Italic IS synthesised
+// (a slant of the upright) because none of these ship an italic.
+//
+// Glyph coverage is basic Latin: © · α — ✓ are missing from some or all of them
+// and fall through the `fallback` stacks below.
+const tayFlapjack = localFont({
+    src: [{ path: './fonts/tay-flapjack.woff2', weight: '400', style: 'normal' }],
+    variable: '--font-tay-flapjack',
     display: 'swap',
     preload: true,
     fallback: ['Georgia', 'serif'],
 })
 
-// No italic face: every italic on this page is set in the serif, so shipping
-// inter-tight-latin-wght-italic.woff2 cost 48 KB and a preload for nothing.
-// Add the entry back if body copy ever needs a true italic.
-const interTight = localFont({
-    src: [{ path: './fonts/inter-tight-latin-wght-normal.woff2', weight: '100 900', style: 'normal' }],
-    variable: '--font-inter-tight',
+const tayRoadRunner = localFont({
+    src: [{ path: './fonts/tay-road-runner-regular.woff2', weight: '400', style: 'normal' }],
+    variable: '--font-tay-road-runner',
     display: 'swap',
     preload: true,
     fallback: ['system-ui', 'sans-serif'],
 })
 
-const jetbrainsMono = localFont({
-    src: [
-        { path: './fonts/jetbrains-mono-latin-400-normal.woff2', weight: '400', style: 'normal' },
-        { path: './fonts/jetbrains-mono-latin-500-normal.woff2', weight: '500', style: 'normal' },
-    ],
-    variable: '--font-jetbrains-mono',
+// Mono: QuickDraw is live. To switch to Tommy Tokyo, point `path` at
+// './fonts/tay-tommy-tokyo-regular.woff2' (already in ./fonts, currently unused).
+const tayQuickDraw = localFont({
+    src: [{ path: './fonts/tay-quick-draw.woff2', weight: '400', style: 'normal' }],
+    variable: '--font-tay-quick-draw',
     display: 'swap',
-    preload: false,
+    // Preloaded: it sets the eyebrow labels, chips and "tested on" line, all above the fold.
+    preload: true,
     fallback: ['ui-monospace', 'monospace'],
 })
 
@@ -96,13 +103,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return (
         <html
             lang="en"
-            className={`${interTight.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
+            className={`${tayRoadRunner.variable} ${tayFlapjack.variable} ${tayQuickDraw.variable}`}
             suppressHydrationWarning
         >
             <head>
                 <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
+                {IS_DEVELOPMENT && <script dangerouslySetInnerHTML={{ __html: DEV_FONT_BOOTSTRAP_SCRIPT }} />}
             </head>
-            <body className="[html.preload_&]:h-dvh [html.preload_&]:overflow-hidden">{children}</body>
+            <body className="[html.preload_&]:h-dvh [html.preload_&]:overflow-hidden">
+                {children}
+                {IS_DEVELOPMENT && <DevTools />}
+            </body>
         </html>
     )
 }
