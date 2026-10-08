@@ -109,7 +109,7 @@ const HORIZONS: Horizon[] = [
 ]
 
 const STATUS = 'inline-flex items-center gap-[10px] font-mono text-[0.75rem] tracking-[.22em] uppercase whitespace-nowrap'
-const SUBHEAD = 'font-mono text-[0.75rem] tracking-[.26em] text-ink-35 uppercase'
+const SUBHEAD = 'font-mono text-[0.75rem] tracking-[.26em] text-ink-52 uppercase'
 /* a subhead in the top row of the grid has no rule above it to separate from */
 const SUBHEAD_RULE = 'mt-[26px] border-t border-[rgba(234,230,220,.07)] pt-[14px]'
 
@@ -135,7 +135,7 @@ export function Roadmap() {
                 </div>
 
                 <div
-                    className="flex flex-wrap items-center justify-end gap-7 pt-[28px] pb-[20px] font-mono text-[0.75rem] tracking-[.2em] text-ink-35 uppercase"
+                    className="flex flex-wrap items-center justify-end gap-7 pt-[28px] pb-[20px] font-mono text-[0.75rem] tracking-[.2em] text-ink-52 uppercase"
                     data-fade
                 >
                     <span className="inline-flex items-center gap-[11px]">
@@ -157,7 +157,7 @@ export function Roadmap() {
                     >
                         <div className="flex flex-wrap items-baseline justify-between gap-5">
                             <h3 className="flex items-baseline gap-[18px] font-serif text-[clamp(1.625rem,2.9vw,2.625rem)] leading-[1.1] font-normal tracking-[-.005em] max-[820px]:text-[clamp(1.4375rem,6vw,1.875rem)]">
-                                <span className="font-serif text-[.62em] text-ink-35 italic transition-[color,text-shadow] duration-[450ms] group-hover/h:text-gold group-hover/h:[text-shadow:0_0_15px_rgba(244,198,110,.45)]">
+                                <span className="font-serif text-[.62em] text-ink-52 italic transition-[color,text-shadow] duration-[450ms] group-hover/h:text-gold group-hover/h:[text-shadow:0_0_15px_rgba(244,198,110,.45)]">
                                     {h.num}
                                 </span>
                                 {h.title}
@@ -168,7 +168,7 @@ export function Roadmap() {
                                     Shipping today
                                 </span>
                             ) : (
-                                <span className={`${STATUS} text-ink-35`}>
+                                <span className={`${STATUS} text-ink-52`}>
                                     <span className={MARK_NEXT} />
                                     On the way
                                 </span>
@@ -196,7 +196,10 @@ export function Roadmap() {
                                         }`}
                                     >
                                         <i className={`${row.on ? MARK_ON : MARK_NEXT} self-center`} />
-                                        <span>{row.text}</span>
+                                        <span>
+                                            <span className="sr-only">{row.on ? 'Here today: ' : 'On the way: '}</span>
+                                            {row.text}
+                                        </span>
                                     </div>
                                 )
                             )}

@@ -4,7 +4,9 @@ import { useEffect } from 'react'
 
 import { getBgMode, setBgMode, subscribeBgMode } from './background-mode'
 import { createBackgrounds } from './backgrounds'
-import { CONTOUR_BACKGROUND_ENABLED } from './backgrounds/field'
+import { BACKGROUND_VIDEO_ID, CONTOUR_BACKGROUND_ENABLED, VIDEO_BACKGROUND_ENABLED } from './backgrounds/field'
+import { createYouTubeBackdrop } from './backgrounds/youtube'
+import { formatStatValue } from './stats'
 
 /**
  * How fast the opening plays. 1 is the original pacing; 2 halves the whole
@@ -34,7 +36,7 @@ const HERO_STAGGER = 0.05
 const HERO_LIT_AT = HERO_RISE_AT + HERO_STAGGER + HERO_RISE_DURATION * 0.65
 
 /**
- * Every moving part of the page: the WebGL silk backdrop, the GSAP preloader
+ * Every moving part of the page: the backdrop (video or WebGL silk), the GSAP preloader
  * and intro, the custom cursor, Locomotive's scrubbed scroll reveals, the
  * scroll-reactive marquee, line splitting, the stat counters and the npm copy
  * button. All of it is torn down again on unmount, so a StrictMode double
@@ -67,7 +69,8 @@ export function SiteEffects() {
         let bg: ReturnType<typeof createBackgrounds> | null = null
 
         if (silkCanvas) {
-            bg = createBackgrounds(silkCanvas, contourCanvas)
+            // reduced motion: the backdrop renders one still frame and ignores the pointer
+            bg = createBackgrounds(silkCanvas, contourCanvas, { animate: !reduced })
             const layers = bg
             teardown.push(() => layers.destroy())
 
@@ -89,7 +92,7 @@ export function SiteEffects() {
                 addEventListener('orientationchange', () => layers.resize(), { signal })
             }
 
-            addEventListener('pointermove', e => layers.setPointer(e.clientX, e.clientY), { signal })
+            if (!reduced) addEventListener('pointermove', e => layers.setPointer(e.clientX, e.clientY), { signal })
 
             // uScroll ramps 0 -> 1 as the hero leaves. an observer reports the
             // hero's visible fraction directly, so nothing here ever reads
@@ -109,6 +112,49 @@ export function SiteEffects() {
                 signal,
             })
             layers.start()
+        }
+
+        /* ============ video backdrop ============
+           reduced motion never loads the player at all: those visitors keep
+           the poster frame, and nothing streams. */
+        const videoMount = document.getElementById('bgyt-mount')
+        const videoFrame = document.getElementById('bgyt')
+        if (videoMount && videoFrame && !reduced) {
+            teardown.push(createYouTubeBackdrop(videoMount, videoFrame, BACKGROUND_VIDEO_ID))
+        }
+
+        /* ============ dim layer ============
+           --dim-p runs 0 -> 1 between the top of the page and the moment the
+           marquee reaches the top of the window. Read from the native scroll
+           position, which lenis drives too, so it tracks with or without
+           smooth scrolling. */
+        const dim = document.getElementById('dim')
+        const marqueeEl = document.getElementById('marquee')
+        if (dim && marqueeEl) {
+            let dimDistance = 1
+            let dimRaf = 0
+            const measure = () => {
+                dimDistance = Math.max(1, marqueeEl.getBoundingClientRect().top + window.scrollY)
+            }
+            const update = () => {
+                dimRaf = 0
+                dim.style.setProperty('--dim-p', Math.min(1, Math.max(0, window.scrollY / dimDistance)).toFixed(4))
+            }
+            const schedule = () => {
+                if (!dimRaf) dimRaf = requestAnimationFrame(update)
+            }
+            measure()
+            update()
+            addEventListener('scroll', schedule, { passive: true, signal })
+            addEventListener(
+                'resize',
+                () => {
+                    measure()
+                    schedule()
+                },
+                { signal }
+            )
+            teardown.push(() => cancelAnimationFrame(dimRaf))
         }
 
         let scrollVel = 0
@@ -252,9 +298,7 @@ export function SiteEffects() {
            glow can bleed once a block has fully landed, and the stat counters
            read straight off progress instead of firing a tween. */
         const fmt = (el: HTMLElement, v: number) => {
-            const to = Number(el.dataset.to)
-            const n = Math.round(v * to)
-            el.textContent = to === 20 ? Math.round(n / 2) + '–' + n : String(n)
+            el.textContent = formatStatValue(Number(el.dataset.to), v)
         }
         addEventListener(
             'lsprog',
@@ -290,19 +334,23 @@ export function SiteEffects() {
                 'click',
                 () => {
                     const txt = el.dataset.copy ?? ''
-                    const done = () => {
-                        const c = el.querySelector<HTMLElement>('.copy')
-                        if (!c) return
-                        const old = c.textContent
-                        c.textContent = 'COPIED ✓'
-                        c.style.color = 'var(--color-gold)'
+                    const label = el.querySelector<HTMLElement>('.copy')
+                    const status = el.querySelector<HTMLElement>('.copy-status')
+                    const report = (shortLabel: string, announcement: string) => {
+                        if (status) status.textContent = announcement
+                        if (!label) return
+                        label.textContent = shortLabel
+                        label.style.color = 'var(--color-gold)'
                         setTimeout(() => {
-                            c.textContent = old
-                            c.style.color = ''
+                            label.textContent = 'Copy'
+                            label.style.color = ''
+                            if (status) status.textContent = ''
                         }, 1600)
                     }
-                    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(done).catch(done)
-                    else done()
+                    const copied = () => report('Copied ✓', 'Install command copied')
+                    const failed = () => report('Copy failed', `Couldn't copy. Type ${txt} in your terminal instead.`)
+                    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(copied, failed)
+                    else failed()
                 },
                 { signal }
             )
@@ -346,7 +394,9 @@ export function SiteEffects() {
                         el.classList.add('tail')
                     }
                 })
-                document.querySelectorAll('.count').forEach(el => {
+                // the markup carries the final value; only the scrubbed path rewinds it
+                document.querySelectorAll<HTMLElement>('.count').forEach(el => {
+                    fmt(el, 0)
                     el.setAttribute('data-scroll', '')
                     el.setAttribute('data-scroll-event-progress', 'lsprog')
                 })
@@ -393,7 +443,7 @@ export function SiteEffects() {
                     }
                     gsap.ticker.add(tick)
                     teardown.push(() => gsap.ticker.remove(tick))
-                    document.querySelectorAll('a,button,.act,.npmline,.horizon').forEach(el => {
+                    document.querySelectorAll('a,button').forEach(el => {
                         el.addEventListener(
                             'pointerenter',
                             () => {
@@ -442,9 +492,23 @@ export function SiteEffects() {
                     const target: Element | 0 | null = href === '#' ? 0 : document.querySelector(href)
                     if (target === null) return // dead anchor, leave it alone
                     e.preventDefault()
-                    if (loco) loco.scrollTo(target as HTMLElement | number, { duration: 1.4 })
+                    // clear the fixed header, which is 64px once scrolled
+                    const headerOffset = -(hdr?.offsetHeight ?? 64) - 24
+                    if (loco)
+                        loco.scrollTo(target as HTMLElement | number, {
+                            duration: 1.4,
+                            offset: target === 0 ? 0 : headerOffset,
+                        })
                     else if (target === 0) window.scrollTo({ top: 0, behavior: 'smooth' })
-                    else target.scrollIntoView({ behavior: 'smooth' })
+                    else target.scrollIntoView({ behavior: 'smooth' }) // scroll-padding-top clears the header
+                    // preventDefault also cancels the browser's focus move: do it by hand,
+                    // so the next Tab continues from the section rather than the nav
+                    const focusTarget = target === 0 ? document.querySelector<HTMLElement>('main') : (target as HTMLElement)
+                    if (focusTarget) {
+                        if (!focusTarget.hasAttribute('tabindex')) focusTarget.setAttribute('tabindex', '-1')
+                        focusTarget.focus({ preventScroll: true })
+                    }
+                    history.replaceState(null, '', href === '#' ? location.pathname : href)
                 },
                 { signal }
             )
@@ -555,23 +619,44 @@ export function SiteEffects() {
         }
     }, [])
 
-    // `#bg`, `#gl`, `#contours`, `.cursor-dot` and `.cursor-ring` are the
-    // effect's own hooks. A canvas is a replaced element, so width:auto would
+    // `#bg`, `#bgvideo`, `#gl`, `#contours`, `.cursor-dot` and `.cursor-ring` are
+    // the effect's own hooks. A canvas is a replaced element, so width:auto would
     // leave it at its intrinsic 300x150 - both need an explicit box, and 100lvh
     // covers the strip a retracting mobile toolbar vacates. #bg carries the
-    // intro fade; the two canvases inside it carry the cross-fade.
+    // intro fade; the two canvases inside it carry the cross-fade. The video
+    // fills the same box with object-cover, cropping rather than letterboxing.
     return (
         <>
             <div id="bg" className="fixed top-0 left-0 z-0 h-[100lvh] w-full opacity-0">
-                <canvas id="gl" className="absolute inset-0 h-full w-full" />
-                {CONTOUR_BACKGROUND_ENABLED && (
+                {VIDEO_BACKGROUND_ENABLED ? (
+                    // The poster is the video's first frame: it shows until the player is
+                    // playing, under reduced motion, and if YouTube never loads.
+                    // #bgyt is sized to cover the box at 16:9, then made 200px taller so
+                    // the title bar YouTube pins to the player's top edge sits off-screen.
+                    // It never takes a pointer, so no hover chrome ever appears.
+                    <div
+                        aria-hidden="true"
+                        className="absolute inset-0 overflow-hidden bg-[url(/bg-poster.jpg)] bg-cover bg-center"
+                    >
+                        <div
+                            id="bgyt"
+                            className="pointer-events-none absolute top-1/2 left-1/2 h-[calc(max(100lvh,56.25vw)+200px)] w-[max(100vw,177.78lvh)] -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity duration-700 [&_iframe]:pointer-events-none [&_iframe]:h-full [&_iframe]:w-full"
+                        >
+                            <div id="bgyt-mount" />
+                        </div>
+                    </div>
+                ) : (
+                    <canvas id="gl" className="absolute inset-0 h-full w-full" />
+                )}
+                {!VIDEO_BACKGROUND_ENABLED && CONTOUR_BACKGROUND_ENABLED && (
                     <canvas
                         id="contours"
                         className="absolute inset-0 h-full w-full opacity-0 [filter:contrast(1.2)_saturate(1.3)]"
                     />
                 )}
             </div>
-            <div className="pointer-events-none fixed top-0 left-0 z-[1] h-[100lvh] w-full bg-[radial-gradient(120%_90%_at_50%_40%,transparent_55%,rgba(0,0,0,.5)_100%)]" />
+            {/* the one dim layer for the whole site; see .dim in globals.css */}
+            <div id="dim" className="dim pointer-events-none fixed top-0 left-0 z-[1] h-[100lvh] w-full" />
             <div className="cursor-dot pointer-events-none fixed top-0 left-0 z-[200] size-[5px] rounded-full bg-gold opacity-0 shadow-[0_0_10px_rgba(244,198,110,.7),0_0_24px_rgba(244,198,110,.3)] will-change-transform [@media(hover:none)]:hidden" />
             <div className="cursor-ring pointer-events-none fixed top-0 left-0 z-[200] size-[34px] rounded-full border border-[rgba(234,230,220,.35)] opacity-0 transition-[border-color] duration-[350ms] will-change-transform [&.is-link]:border-gold [@media(hover:none)]:hidden" />
         </>

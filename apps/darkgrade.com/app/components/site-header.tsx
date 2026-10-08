@@ -24,7 +24,7 @@ export function SiteHeader() {
         >
             <div className="shell flex h-[76px] items-center justify-between transition-[height] duration-500 ease-lamp [.scrolled_&]:h-[64px]">
                 <a href="#" aria-label="Darkgrade" className="block text-ink">
-                    <Wordmark className="mark-glow block h-[17px] w-auto" />
+                    <Wordmark className="mark-glow block h-[17px] w-auto max-[400px]:h-[14px]" />
                 </a>
 
                 <nav className="flex gap-[38px] max-[900px]:hidden">
@@ -48,7 +48,7 @@ export function SiteHeader() {
                         rel="noopener"
                         className="flex items-center gap-[10px] rounded-full border border-hair px-5 py-[11px] whitespace-nowrap max-[480px]:px-4 max-[480px]:text-[0.75rem] text-[0.7812rem] font-[460] tracking-[.08em] transition-[border-color,background,color,box-shadow] duration-[350ms] hover:border-gold hover:text-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)]"
                     >
-                        <span className="text-gold [text-shadow:0_0_8px_rgba(244,198,110,calc(.7*var(--gI)))]">✦</span>{' '}
+                        <span aria-hidden="true" className="text-gold [text-shadow:0_0_8px_rgba(244,198,110,calc(.7*var(--gI)))]">✦</span>{' '}
                         <span className="max-[480px]:hidden">Star on </span>GitHub
                     </a>
                 </div>

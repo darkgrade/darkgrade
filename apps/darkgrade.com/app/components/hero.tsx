@@ -11,13 +11,12 @@ export function Hero() {
             <div className="shell">
                 <div className="mb-[clamp(20px,3vh,36px)] flex items-center gap-4" data-fade>
                     <span className="glow-line h-px w-[56px] shrink-0 bg-gold" />
-                    <span className={`${LABEL} text-ink-55 max-[480px]:tracking-[.2em]`}>
+                    <span className={`${LABEL} text-ink max-[480px]:tracking-[.2em]`}>
                         Local-first AI for creative professionals
                     </span>
                 </div>
 
                 <h1
-                    aria-label="Shoot more. Edit less."
                     // Sized by width AND height. Width alone let the headline grow taller than a
                     // laptop window leaves room for. 17vw is what keeps "SHOOT MORE." on one
                     // line down to ~320px wide in Flapjack (about 5em across); the 16svh cap
@@ -43,7 +42,7 @@ export function Hero() {
                     data-fade
                 >
                     Darkgrade dials in your camera, captures the shot, and returns a finished first cut —{' '}
-                    <b className="font-[460] text-ink">on your own machine.</b> You stay the director, and nothing
+                    <b className="font-[460] text-ink">on your own machine.</b> You stay the director. Nothing
                     leaves your computer unless you say so.
                 </p>
 
@@ -64,11 +63,11 @@ export function Hero() {
                     className="mt-[clamp(40px,7vh,84px)] flex items-end justify-between [@media(max-height:800px)]:hidden"
                     data-fade
                 >
-                    <div className="flex items-center gap-[14px] text-[0.75rem] tracking-[.3em] text-ink-35 uppercase">
+                    <div className="flex items-center gap-[14px] text-[0.75rem] tracking-[.3em] text-ink-52 uppercase">
                         <span>Scroll</span>
                         <span className="glow-line relative h-[44px] w-px overflow-hidden bg-hair after:absolute after:top-0 after:left-0 after:h-full after:w-full after:animate-drip after:bg-gold after:shadow-[0_0_10px_rgba(244,198,110,.6)] after:content-['']" />
                     </div>
-                    <div className="text-right font-mono text-[0.75rem] tracking-[.12em] text-ink-35 max-[700px]:hidden">
+                    <div className="text-right font-mono text-[0.75rem] tracking-[.12em] text-ink-52 max-[700px]:hidden">
                         TESTED ON
                         <br />
                         <b className="font-medium text-ink-55">SONY α7 IV · NIKON Z6 III · CANON R6 MK III</b>

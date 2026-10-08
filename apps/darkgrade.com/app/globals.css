@@ -15,7 +15,7 @@
     --color-bg-2: #101012;
     --color-ink: #eae6dc;
     --color-ink-55: rgba(234, 230, 220, 0.55);
-    --color-ink-35: rgba(234, 230, 220, 0.44);
+    --color-ink-52: rgba(234, 230, 220, 0.52); /* 4.78:1 on --color-bg: the floor for 12px text */
     --color-hair: rgba(234, 230, 220, 0.13);
     --color-gold: #f6dda8;
     --color-gold-dim: rgba(246, 221, 168, 0.13);
@@ -29,7 +29,7 @@
     --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
 
     --animate-drip: drip 2.2s var(--ease-lamp) infinite;
-    --animate-blink: blink 1.6s ease-in-out infinite;
+    --animate-blink: blink 1.6s ease-in-out 3; /* 4.8s total: WCAG 2.2.2 allows blinking under 5s without a pause control */
 }
 
 /* transform, not `top`: animating top is a layout property, so the scroll cue
@@ -92,6 +92,9 @@
     }
 
     html {
+        /* the fixed header is 76px (64px scrolled): keep anchored sections and
+           focused controls from landing underneath it */
+        scroll-padding-top: 88px;
         scrollbar-width: thin;
         scrollbar-color: rgba(234, 230, 220, 0.25) transparent;
     }
@@ -105,6 +108,11 @@
     }
     ::-webkit-scrollbar-track {
         background: transparent;
+    }
+    /* sections and <main> take programmatic focus after an in-page link; they
+       are not controls, so they draw no ring */
+    [tabindex='-1']:focus {
+        outline: none;
     }
     ::selection {
         background: var(--color-gold);
@@ -307,6 +315,19 @@
     .js [data-reveal-lines].rv .ln-mask.open .line-inner {
         -webkit-mask-image: none;
         mask-image: none;
+    }
+
+    /* ---------- the dim layer ----------
+       the one layer between the backdrop and the page, and its only gradient.
+       JS writes --dim-p: 0 at the top of the page, 1 once the marquee reaches
+       the top of the window. Over that distance opacity runs 50% -> 80%, and
+       the soft edge (half the screen wide, dark on the left) sweeps right from
+       60% until its clear side has left the screen at 125%, leaving solid cover. */
+    .dim {
+        --dim-p: 0;
+        --edge: calc(60% + 65% * var(--dim-p));
+        opacity: calc(0.5 + 0.3 * var(--dim-p));
+        background: linear-gradient(to right, #000 calc(var(--edge) - 25%), transparent calc(var(--edge) + 25%));
     }
 }
 

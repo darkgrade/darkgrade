@@ -25,7 +25,7 @@ export const BTN_GHOST = `${BTN} border border-hair text-ink hover:border-gold h
 /** Roadmap / legend state dots: filled = here today, outlined = on the way. */
 export const MARK = 'relative top-[.5px] inline-block size-[9px] shrink-0 rounded-full'
 export const MARK_ON = `${MARK} bg-gold shadow-[0_0_calc(6px*var(--gI))_rgba(244,198,110,.42)]`
-export const MARK_NEXT = `${MARK} border border-[rgba(234,230,220,.32)] bg-transparent`
+export const MARK_NEXT = `${MARK} border border-ink-52 bg-transparent`
 
 /** A lit filament dot, at 6px. */
 export const FILAMENT =
