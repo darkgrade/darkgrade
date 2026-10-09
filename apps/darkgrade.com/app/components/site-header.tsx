@@ -23,7 +23,7 @@ export function SiteHeader() {
     return (
         <header
             id="hdr"
-            className="fixed inset-x-0 top-0 z-[80] transition-[background,backdrop-filter] duration-500 [&.scrolled]:bg-[rgba(10,10,11,.72)] [&.scrolled]:backdrop-blur-[14px]"
+            className="fixed inset-x-0 top-0 z-[80] transition-[background,backdrop-filter] duration-500 [&.scrolled]:bg-[rgba(10,10,11,.8)] [&.scrolled]:backdrop-blur-[14px]"
         >
             <div className="shell flex h-[76px] items-center justify-between transition-[height] duration-500 ease-lamp [.scrolled_&]:h-[64px]">
                 <Link href="/" aria-label="Darkgrade" className="block text-ink">

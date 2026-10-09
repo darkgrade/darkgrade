@@ -322,18 +322,18 @@
        JS writes --dim-p: 0 at the top of the page, 1 once the marquee reaches
        the top of the window. Over that distance opacity runs 50% -> 80%, and
        the soft edge (half the screen wide, dark on the left) sweeps right from
-       60% until its clear side has left the screen at 125%, leaving solid cover. */
+       65% until its clear side has left the screen at 125%, leaving solid cover. */
     .dim {
         --dim-p: 0;
-        --edge: calc(60% + 65% * var(--dim-p));
+        --edge: calc(65% + 60% * var(--dim-p));
         opacity: calc(0.5 + 0.3 * var(--dim-p));
         background: linear-gradient(to right, #000 calc(var(--edge) - 25%), transparent calc(var(--edge) + 25%));
     }
     /* phones and tablets: the hero copy runs most of the screen's width, so the
-       edge starts further right (80%) and still lands at 125% */
+       edge starts further right (85%) and still lands at 125% */
     @media (hover: none) and (pointer: coarse) {
         .dim {
-            --edge: calc(80% + 45% * var(--dim-p));
+            --edge: calc(85% + 40% * var(--dim-p));
         }
     }
 }
