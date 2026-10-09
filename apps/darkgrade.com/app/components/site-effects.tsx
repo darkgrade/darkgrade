@@ -315,12 +315,16 @@ export function SiteEffects() {
                     )
                     document.documentElement.addEventListener(
                         'pointerleave',
-                        () => gsap.to([dot, ring], { opacity: 0, duration: 0.3 }),
+                        () => {
+                            gsap.to([dot, ring], { opacity: 0, duration: 0.3 })
+                        },
                         { signal }
                     )
                     document.documentElement.addEventListener(
                         'pointerenter',
-                        () => gsap.to([dot, ring], { opacity: 1, duration: 0.3 }),
+                        () => {
+                            gsap.to([dot, ring], { opacity: 1, duration: 0.3 })
+                        },
                         { signal }
                     )
                 }

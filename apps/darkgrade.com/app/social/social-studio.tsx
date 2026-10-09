@@ -173,8 +173,7 @@ export function SocialStudio() {
         const target = Math.min(Math.max(0, state.frameSeconds), durationSeconds - FRAME_STEP_SECONDS)
         if (Math.abs(video.currentTime - target) > FRAME_STEP_SECONDS / 2) video.currentTime = target
         else captureFrame()
-        // captureFrame is stable: it only touches refs and a state setter
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // captureFrame is left out of the deps on purpose: it only touches refs and a state setter
     }, [state.frameSeconds, durationSeconds])
 
     function captureFrame() {
