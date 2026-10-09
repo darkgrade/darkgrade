@@ -31,22 +31,20 @@
 
     --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
 
-    --animate-drip: drip 2.2s var(--ease-lamp) infinite;
-    --animate-blink: blink 1.6s ease-in-out 3; /* 4.8s total: WCAG 2.2.2 allows blinking under 5s without a pause control */
-}
+    /* the type scale for running text and labels. Display type (headlines, the
+       big numbers) stays fluid, set per element with clamp(). The faces ship one
+       weight each (400), so there are no weight tokens: hierarchy is size, colour
+       and tracking. */
+    --text-label: 0.875rem; /* 14px: the smallest text on the site */
+    --text-body-sm: 0.9375rem; /* 15px: list rows, footer */
+    --text-body: 1rem; /* 16px: paragraphs */
+    --text-lede: clamp(1rem, 1.25vw, 1.1562rem); /* the hero paragraph */
 
-/* transform, not `top`: animating top is a layout property, so the scroll cue
-   was the one non-composited animation on the page. */
-@keyframes drip {
-    0% {
-        transform: translateY(-100%);
-    }
-    55% {
-        transform: translateY(0);
-    }
-    100% {
-        transform: translateY(100%);
-    }
+    /* uppercase micro-labels take one of two trackings */
+    --tracking-label: 0.3em; /* section eyebrows, column heads, subheads */
+    --tracking-meta: 0.2em; /* chips, status, legend, small controls */
+
+    --animate-blink: blink 1.6s ease-in-out 3; /* 4.8s total: WCAG 2.2.2 allows blinking under 5s without a pause control */
 }
 
 @keyframes blink {
@@ -72,7 +70,6 @@
     }
     body {
         font-family: var(--font-sans);
-        font-weight: 340;
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -153,6 +150,16 @@
     margin-inline: auto;
 }
 
+/* ---------- the panel ----------
+   the frosted dark surface shared by the scrolled header, the footer and the
+   buttons and the marquee: 25% black over a 14px blur of what is behind it. One
+   shade and one radius everywhere. Built from Tailwind's own backdrop-blur. The
+   tint is deliberately light: the dim layer already sits under it at 75-85%, and
+   a heavier panel on top leaves almost no footage to blur. */
+@utility panel {
+    @apply bg-[rgba(10,10,11,.25)] backdrop-blur-[14px];
+}
+
 /* ---------- the lamp ----------
    one gold light source; everything accent-coloured catches a little of it.
    these are utilities rather than inline shadow-[...] so --gI stays a single
@@ -216,12 +223,6 @@
         0 1px 76px rgba(190, 105, 30, calc(0.2 * var(--gI) * var(--glow))),
         0 0 0.12em rgba(208, 139, 52, calc(0.55 * var(--gI) * var(--glow))),
         0 0 0.3em rgba(180, 87, 28, calc(0.4 * var(--gI) * var(--glow)));
-}
-
-/* a hairline that carries a little light */
-@utility lit-rule {
-    background: linear-gradient(90deg, rgba(244, 198, 110, 0.55), rgba(244, 198, 110, 0.06));
-    box-shadow: 0 0 calc(8px * var(--gI)) rgba(244, 198, 110, 0.22);
 }
 
 /* the wordmark, catching the lamp */

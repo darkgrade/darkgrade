@@ -15,8 +15,9 @@ const IS_DEVELOPMENT = process.env.NODE_ENV === 'development'
 // the page asks for 600+, so no bold is ever synthesised. Italic IS synthesised
 // (a slant of the upright) because none of these ship an italic.
 //
-// Glyph coverage is basic Latin: © · α — ✓ are missing from some or all of them
-// and fall through the `fallback` stacks below.
+// Glyph coverage is basic Latin: © (and a few others) are missing from some or all
+// of them and fall through the `fallback` stacks below. Anything decorative or
+// displayed large is drawn instead (the star, the stat dash, the separator dots).
 const tayFlapjack = localFont({
     src: [{ path: './fonts/tay-flapjack.woff2', weight: '400', style: 'normal' }],
     variable: '--font-tay-flapjack',

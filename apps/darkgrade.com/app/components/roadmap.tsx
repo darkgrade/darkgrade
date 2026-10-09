@@ -25,7 +25,7 @@ const HORIZONS: Horizon[] = [
             feat('Start / stop recording', true),
             feat('React to camera events in real time', true),
             { kind: 'subhead', text: 'Cameras', full: true },
-            feat('Sony α — full support', true),
+            feat('Sony a — full support', true),
             feat('Wireless (Wi-Fi) control'),
             feat('Nikon Z — capture, settings, live view', true),
             feat('Nikon / Canon video & live view'),
@@ -108,9 +108,8 @@ const HORIZONS: Horizon[] = [
     },
 ]
 
-const STATUS =
-    'inline-flex items-center gap-[10px] font-mono text-[0.875rem] tracking-[.22em] uppercase whitespace-nowrap'
-const SUBHEAD = 'font-mono text-[0.875rem] tracking-[.26em] text-ink-52 uppercase'
+const STATUS = 'inline-flex items-center gap-[10px] font-mono text-label tracking-meta uppercase whitespace-nowrap'
+const SUBHEAD = 'font-mono text-label tracking-label text-ink-52 uppercase'
 /* a subhead in the top row of the grid has no rule above it to separate from */
 const SUBHEAD_RULE = 'mt-[26px] border-t border-[rgba(234,230,220,.07)] pt-[14px]'
 
@@ -126,8 +125,8 @@ export function Roadmap() {
                         >
                             From “let’s shoot” to <em className="glow-hot italic">“it’s live.”</em>
                         </h1>
-                        <p className="mt-[18px] max-w-[46ch] text-[0.9688rem] text-ink-55" data-fade>
-                            Link is here today. We&apos;re building a lot more.
+                        <p className="mt-[18px] max-w-[46ch] text-body text-ink-55" data-fade>
+                            Link is here today. We’re building a lot more.
                         </p>
                     </div>
                     <span className={`${LABEL} text-ink-55`} data-fade>
@@ -136,7 +135,7 @@ export function Roadmap() {
                 </div>
 
                 <div
-                    className="flex flex-wrap items-center justify-end gap-7 pt-[28px] pb-[20px] font-mono text-[0.875rem] tracking-[.2em] text-ink-52 uppercase"
+                    className="flex flex-wrap items-center justify-end gap-7 pt-[28px] pb-[20px] font-mono text-label tracking-meta text-ink-52 uppercase"
                     data-fade
                 >
                     <span className="inline-flex items-center gap-[11px]">
@@ -157,7 +156,7 @@ export function Roadmap() {
                         className="horizon group/h relative border-t border-hair px-[clamp(8px,1.5vw,26px)] py-[clamp(30px,4.4vh,46px)] transition-[background] duration-500 last-of-type:border-b before:pointer-events-none before:absolute before:inset-0 before:bg-[image:linear-gradient(90deg,rgba(244,198,110,.07),transparent_55%)] before:opacity-0 before:transition-opacity before:duration-[550ms] before:content-[''] hover:before:opacity-100"
                     >
                         <div className="flex flex-wrap items-baseline justify-between gap-5">
-                            <h2 className="flex items-baseline gap-[18px] font-serif text-[clamp(1.625rem,2.9vw,2.625rem)] leading-[1.1] font-normal tracking-[-.005em] max-[820px]:text-[clamp(1.4375rem,6vw,1.875rem)]">
+                            <h2 className="flex items-baseline gap-[18px] font-serif text-[clamp(1.625rem,2.9vw,2.625rem)] leading-[1.1] font-normal tracking-[-.01em] max-[820px]:text-[clamp(1.4375rem,6vw,1.875rem)]">
                                 <span className="font-serif text-[.62em] text-ink-52 italic transition-[color,text-shadow] duration-[450ms] group-hover/h:text-gold group-hover/h:[text-shadow:0_0_15px_rgba(244,198,110,.45)]">
                                     {h.num}
                                 </span>
@@ -176,7 +175,7 @@ export function Roadmap() {
                             )}
                         </div>
 
-                        <p className="mt-3 max-w-[58ch] text-[0.9375rem] text-ink-55">{h.lede}</p>
+                        <p className="mt-3 max-w-[58ch] text-body text-ink-55">{h.lede}</p>
 
                         <div className="mt-[clamp(22px,3vh,32px)] grid grid-cols-2 gap-x-[clamp(28px,4vw,72px)] gap-y-[2px] max-[820px]:grid-cols-1">
                             {h.rows.map((row, i) =>
@@ -192,7 +191,7 @@ export function Roadmap() {
                                 ) : (
                                     <div
                                         key={`${h.num}-${i}`}
-                                        className={`flex items-baseline gap-[14px] py-2 text-[0.9062rem] ${
+                                        className={`flex items-baseline gap-[14px] py-2 text-body-sm ${
                                             row.on ? 'text-ink' : 'text-ink-55'
                                         }`}
                                     >

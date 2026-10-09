@@ -16,8 +16,7 @@ export function Manifesto() {
                 <p className={`${LINE} mt-[.8em]`} data-reveal-lines>
                     We’re deleting <em className="glow-hot italic">the rest.</em>
                 </p>
-                <div className="mt-[46px] flex items-center gap-[18px]" data-fade>
-                    <span className="lit-rule h-px w-[72px]" />
+                <div className="mt-[46px]" data-fade>
                     <span className={`${LABEL} text-ink-55`}>Our thesis</span>
                 </div>
             </div>

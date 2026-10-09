@@ -32,7 +32,7 @@ export function Loader() {
                 <i className="glow-hot italic">%</i>
             </div>
             <div className="glow-line relative h-px w-[min(260px,50vw)] bg-hair">
-                <b id="lbar" className="glow-line absolute inset-0 origin-left scale-x-0 bg-gold" />
+                <b id="lbar" className="glow-line font-normal absolute inset-0 origin-left scale-x-0 bg-gold" />
             </div>
         </div>
     )

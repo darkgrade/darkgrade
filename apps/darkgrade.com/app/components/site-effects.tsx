@@ -220,7 +220,7 @@ export function SiteEffects() {
                         if (status) status.textContent = ''
                     }, 1600)
                 }
-                const copied = () => report('Copied ✓', 'Install command copied')
+                const copied = () => report('Copied', 'Install command copied')
                 const failed = () => report('Copy failed', `Couldn't copy. Type ${txt} in your terminal instead.`)
                 if (navigator.clipboard) navigator.clipboard.writeText(txt).then(copied, failed)
                 else failed()
@@ -355,7 +355,11 @@ export function SiteEffects() {
                             .set(loader, { display: 'none' })
                             .call(() => document.documentElement.classList.remove('intro'))
                     }
-                    tl.to('#bg', { opacity: 1, duration: hasLoader ? 1.3 : 0.8, ease: 'power2.inOut' }, hasLoader ? 0.2 : 0)
+                    tl.to(
+                        '#bg',
+                        { opacity: 1, duration: hasLoader ? 1.3 : 0.8, ease: 'power2.inOut' },
+                        hasLoader ? 0.2 : 0
+                    )
                     if (state.silk) tl.to(state.silk.intro, { value: 1, duration: 1.6, ease: 'power2.inOut' }, 0.2)
                     // the first page's hero lands here, in step with the loader
                     if (document.querySelector('.hero')) {
@@ -431,9 +435,7 @@ export function SiteEffects() {
            without one (/roadmap) sits at full dim throughout. */
         const marqueeEl = document.getElementById('marquee')
         const measureDim = () => {
-            state.dimDistance = marqueeEl
-                ? Math.max(1, marqueeEl.getBoundingClientRect().top + window.scrollY)
-                : null
+            state.dimDistance = marqueeEl ? Math.max(1, marqueeEl.getBoundingClientRect().top + window.scrollY) : null
             state.updateDim()
         }
         measureDim()

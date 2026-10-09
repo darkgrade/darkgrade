@@ -1,4 +1,6 @@
+import { BackedBy } from './backed-by'
 import { BTN_GHOST, BTN_SOLID, LABEL, LINKS } from './site-links'
+import { TestedOn } from './tested-on'
 
 export function Hero() {
     return (
@@ -9,9 +11,8 @@ export function Hero() {
         // eyebrow and headline slide up underneath the header.
         <section className="hero relative flex min-h-[calc(100dvh_-_var(--mq-h))] flex-col justify-end pt-[96px] pb-[clamp(56px,8vh,100px)]">
             <div className="shell">
-                <div className="mb-[clamp(20px,3vh,36px)] flex items-center gap-4" data-fade>
-                    <span className="glow-line h-px w-[56px] shrink-0 bg-gold" />
-                    <span className={`${LABEL} text-ink max-[480px]:tracking-[.2em]`}>
+                <div className="mb-[clamp(20px,3vh,36px)]" data-fade>
+                    <span className={`${LABEL} text-ink max-[480px]:tracking-meta`}>
                         Local-first AI for creative professionals
                     </span>
                 </div>
@@ -38,12 +39,12 @@ export function Hero() {
                 </h1>
 
                 <p
-                    className="mt-[clamp(22px,3.4vh,40px)] max-w-[54ch] text-[clamp(0.9688rem,1.25vw,1.1562rem)] leading-[1.65] font-[340] text-ink-66 [@media(max-height:700px)]:max-w-[64ch]"
+                    className="mt-[clamp(22px,3.4vh,40px)] max-w-[54ch] text-lede leading-[1.65] text-ink-66 [@media(max-height:700px)]:max-w-[64ch]"
                     data-fade
                 >
                     Darkgrade dials in your camera, captures the shot, and returns a finished first cut —{' '}
-                    <b className="font-[460] text-ink">on your own machine.</b> You stay the director. Nothing
-                    leaves your computer unless you say so.
+                    <b className="font-normal text-ink">on your own machine.</b> You stay the director. Nothing leaves
+                    your computer unless you say so.
                 </p>
 
                 <div className="mt-[clamp(26px,4vh,46px)] flex flex-wrap items-center gap-[18px]" data-fade>
@@ -58,20 +59,13 @@ export function Hero() {
                     </a>
                 </div>
 
-                {/* decorative; on short windows the room is worth more than the cue */}
+                {/* on short windows the room is worth more than these */}
                 <div
                     className="mt-[clamp(40px,7vh,84px)] flex items-end justify-between [@media(max-height:800px)]:hidden"
                     data-fade
                 >
-                    <div className="flex items-center gap-[14px] text-[0.875rem] tracking-[.3em] text-ink-62 uppercase">
-                        <span>Scroll</span>
-                        <span className="glow-line relative h-[44px] w-px overflow-hidden bg-hair after:absolute after:top-0 after:left-0 after:h-full after:w-full after:animate-drip after:bg-gold after:shadow-[0_0_10px_rgba(244,198,110,.6)] after:content-['']" />
-                    </div>
-                    <div className="text-right font-mono text-[0.875rem] tracking-[.12em] text-ink-62 max-[700px]:hidden">
-                        TESTED ON
-                        <br />
-                        <b className="font-medium text-ink-66">SONY α7 IV · NIKON Z6 III · CANON R6 MK III</b>
-                    </div>
+                    <TestedOn />
+                    <BackedBy className="max-[700px]:hidden" />
                 </div>
             </div>
         </section>

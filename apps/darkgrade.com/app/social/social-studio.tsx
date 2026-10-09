@@ -413,7 +413,7 @@ export function SocialStudio() {
 
                 <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <div className="mb-3 font-mono text-[10px] tracking-[.22em] text-ink-52 uppercase">
+                        <div className="mb-3 font-mono text-[10px] tracking-meta text-ink-52 uppercase">
                             Dev only · localhost
                         </div>
                         <h1 className="font-serif text-[clamp(36px,4vw,56px)] leading-none">
@@ -425,7 +425,7 @@ export function SocialStudio() {
                         disabled={busyMessage !== null}
                         onClick={() => void downloadAll()}
                         title={`Render all ${ASSET_FORMATS.length} images and download them as one zip (Shift+D)`}
-                        className="cursor-pointer rounded-full bg-ink px-6 py-3 text-[13px] font-[480] tracking-[.04em] text-obsidian transition-[background,box-shadow] duration-[350ms] hover:bg-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
+                        className="cursor-pointer rounded-full bg-ink px-6 py-3 text-[13px] tracking-[.04em] text-obsidian transition-[background,box-shadow] duration-[350ms] hover:bg-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
                     >
                         Download all · {ASSET_FORMATS.length} PNGs (.zip)
                     </button>
@@ -440,7 +440,7 @@ export function SocialStudio() {
                             onClick={() => setState(previous => ({ ...previous, activeId: format.id }))}
                             className="shrink-0 cursor-pointer rounded-[10px] border border-hair px-4 py-[10px] text-left transition-[border-color,background,color] duration-[250ms] hover:border-gold aria-pressed:border-[rgba(244,198,110,.5)] aria-pressed:bg-gold-dim aria-pressed:text-gold"
                         >
-                            <div className="text-[13px] font-[480]">{format.tabLabel}</div>
+                            <div className="text-[13px]">{format.tabLabel}</div>
                             <div className="mt-[2px] font-mono text-[10.5px] tracking-[.06em] text-ink-52">
                                 {formatDimensions(format)}
                             </div>
@@ -516,7 +516,7 @@ export function SocialStudio() {
                             type="button"
                             disabled={busyMessage !== null}
                             onClick={() => void downloadOne(activeFormat)}
-                            className="cursor-pointer rounded-full border border-hair px-6 py-3 text-[13px] font-[480] tracking-[.04em] text-ink transition-[border-color,color,box-shadow] duration-[350ms] hover:border-gold hover:text-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
+                            className="cursor-pointer rounded-full border border-hair px-6 py-3 text-[13px] tracking-[.04em] text-ink transition-[border-color,color,box-shadow] duration-[350ms] hover:border-gold hover:text-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
                         >
                             Download PNG · {formatDimensions(activeFormat)}
                         </button>

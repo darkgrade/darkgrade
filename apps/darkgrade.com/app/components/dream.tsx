@@ -1,4 +1,5 @@
 import { BTN_GHOST, BTN_SOLID, LABEL, LINKS } from './site-links'
+import { StarIcon } from './star-icon'
 
 export function Dream() {
     return (
@@ -9,7 +10,7 @@ export function Dream() {
                 </div>
 
                 <h2
-                    className="mx-auto max-w-[24ch] font-serif text-[clamp(2.125rem,4.6vw,4.25rem)] leading-[1.25] font-normal tracking-[-.005em]"
+                    className="mx-auto max-w-[24ch] font-serif text-[clamp(2.125rem,4.6vw,4.25rem)] leading-[1.25] font-normal tracking-[-.01em]"
                     data-reveal-lines
                 >
                     Somewhere, two people have a podcast in their heads{' '}
@@ -22,7 +23,7 @@ export function Dream() {
                 <div className="will-change-[transform,opacity]" data-fade>
                     <span
                         id="d-punch"
-                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(2rem,4.4vw,4.25rem)] leading-[1.12] italic will-change-transform"
+                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(2rem,4.4vw,4.25rem)] leading-[1.12] tracking-[-.01em] italic will-change-transform"
                     >
                         The world is still waiting on what you haven’t made yet.
                     </span>
@@ -34,9 +35,7 @@ export function Dream() {
                     </a>
                     <a className={BTN_GHOST} href={LINKS.github} target="_blank" rel="noopener">
                         <span>Star on GitHub</span>
-                        <span aria-hidden="true" className="text-gold">
-                            ✦
-                        </span>
+                        <StarIcon className="size-[.85em] text-gold" />
                     </a>
                 </div>
             </div>
