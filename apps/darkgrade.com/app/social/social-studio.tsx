@@ -7,14 +7,21 @@ import { createZipBytes, type ZipEntry } from '@/app/social/zip'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const STORAGE_KEY = 'darkgrade:social-studio:v1'
-const DEFAULT_FRAME_SECONDS = 42
-const FRAME_RANGE_SECONDS = { minimum: 8, maximum: 240 } as const
+const DEFAULT_FRAME_SECONDS = 0
+/** One scrubber step: a frame at 30 fps. */
+const FRAME_STEP_SECONDS = 1 / 30
 const FONT_CHANGE_DEBOUNCE_MILLISECONDS = 60
 const ZIP_FILENAME = 'darkgrade-social-heroes.zip'
 
 /* Space the page chrome takes above the preview, so a tall asset (YouTube,
    the squares) shrinks to fit the viewport instead of scrolling. */
-const CHROME_HEIGHT_PIXELS = 380
+const CHROME_HEIGHT_PIXELS = 460
+
+function formatTimecode(seconds: number): string {
+    const minutes = Math.floor(seconds / 60)
+    const remainder = seconds - minutes * 60
+    return `${minutes}:${remainder.toFixed(2).padStart(5, '0')}`
+}
 
 interface StudioState {
     activeId: string
@@ -44,9 +51,14 @@ function readStoredState(): StudioState {
     }
 }
 
+/* Inputs that take no typed text, so the single-letter shortcuts stay live while
+   they have focus (the frame scrubber above all). */
+const NON_TYPING_INPUT_TYPES = new Set(['range', 'file', 'checkbox', 'radio', 'button'])
+
 function isTypingTarget(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false
-    return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+    if (target instanceof HTMLInputElement) return !NON_TYPING_INPUT_TYPES.has(target.type)
+    return target.isContentEditable || ['TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
 function saveBlob(blob: Blob, filename: string): void {
@@ -112,6 +124,17 @@ export function SocialStudio() {
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
     const previewCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const renderTokenRef = useRef(0)
+    /* The background video: chosen per session with the file picker (a page
+       can't read pixels out of the site's YouTube embed). The <video> is also
+       the page backdrop, parked on the chosen frame. */
+    const videoRef = useRef<HTMLVideoElement | null>(null)
+    const [videoUrl, setVideoUrl] = useState<string | null>(null)
+    const [videoName, setVideoName] = useState<string | null>(null)
+    const [durationSeconds, setDurationSeconds] = useState(0)
+    /* The chosen frame, copied out of the video at its native size each time a
+       seek lands, so renders never race a seek that is still in flight. */
+    const frameCanvasRef = useRef<HTMLCanvasElement | null>(null)
+    const [frameVersion, setFrameVersion] = useState(0)
 
     const activeFormat = ASSET_FORMATS.find(format => format.id === state.activeId) ?? ASSET_FORMATS[0]
 
@@ -127,6 +150,43 @@ export function SocialStudio() {
     useEffect(() => {
         if (hasLoadedStorage) localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     }, [hasLoadedStorage, state])
+
+    useEffect(
+        () => () => {
+            if (videoUrl) URL.revokeObjectURL(videoUrl)
+        },
+        [videoUrl]
+    )
+
+    const chooseVideo = useCallback((file: File | undefined) => {
+        if (!file) return
+        frameCanvasRef.current = null
+        setDurationSeconds(0)
+        setVideoName(file.name)
+        setVideoUrl(URL.createObjectURL(file))
+    }, [])
+
+    /* Seek whenever the chosen time changes (or a new video finishes loading). */
+    useEffect(() => {
+        const video = videoRef.current
+        if (!video || !durationSeconds) return
+        const target = Math.min(Math.max(0, state.frameSeconds), durationSeconds - FRAME_STEP_SECONDS)
+        if (Math.abs(video.currentTime - target) > FRAME_STEP_SECONDS / 2) video.currentTime = target
+        else captureFrame()
+        // captureFrame is stable: it only touches refs and a state setter
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state.frameSeconds, durationSeconds])
+
+    function captureFrame() {
+        const video = videoRef.current
+        if (!video || !video.videoWidth) return
+        const frame = frameCanvasRef.current ?? document.createElement('canvas')
+        frame.width = video.videoWidth
+        frame.height = video.videoHeight
+        frame.getContext('2d')?.drawImage(video, 0, 0)
+        frameCanvasRef.current = frame
+        setFrameVersion(version => version + 1)
+    }
 
     /* The font chooser changes fonts by rewriting the design tokens on <html>
        and declaring new @font-face rules. Watch for that and redraw. */
@@ -153,7 +213,7 @@ export function SocialStudio() {
     useEffect(() => {
         if (!hasLoadedStorage) return
         const token = ++renderTokenRef.current
-        renderAssetCanvas(activeFormat, { typefaces: readTypefaces(), frameSeconds: state.frameSeconds })
+        renderAssetCanvas(activeFormat, { typefaces: readTypefaces(), backdrop: frameCanvasRef.current })
             .then(rendered => {
                 const target = previewCanvasRef.current
                 if (token !== renderTokenRef.current || !target) return // a newer render superseded this one
@@ -163,7 +223,7 @@ export function SocialStudio() {
                 setErrorMessage(null)
             })
             .catch(error => setErrorMessage(String(error?.message ?? error)))
-    }, [hasLoadedStorage, activeFormat, state.frameSeconds, typefaceVersion])
+    }, [hasLoadedStorage, activeFormat, frameVersion, typefaceVersion])
 
     const downloadOne = useCallback(
         async (format: AssetFormat) => {
@@ -171,7 +231,7 @@ export function SocialStudio() {
             try {
                 const rendered = await renderAssetCanvas(format, {
                     typefaces: readTypefaces(),
-                    frameSeconds: state.frameSeconds,
+                    backdrop: frameCanvasRef.current,
                 })
                 saveBlob(await canvasToPngBlob(rendered), getAssetFilename(format))
                 setErrorMessage(null)
@@ -181,7 +241,7 @@ export function SocialStudio() {
                 setBusyMessage(null)
             }
         },
-        [state.frameSeconds]
+        [frameVersion]
     )
 
     const downloadAll = useCallback(async () => {
@@ -191,7 +251,7 @@ export function SocialStudio() {
                 setBusyMessage(`Rendering ${index + 1} of ${ASSET_FORMATS.length} · ${format.tabLabel}…`)
                 const rendered = await renderAssetCanvas(format, {
                     typefaces: readTypefaces(),
-                    frameSeconds: state.frameSeconds,
+                    backdrop: frameCanvasRef.current,
                 })
                 const png = await canvasToPngBlob(rendered)
                 entries.push({ name: getAssetFilename(format), bytes: new Uint8Array(await png.arrayBuffer()) })
@@ -203,13 +263,17 @@ export function SocialStudio() {
         } finally {
             setBusyMessage(null)
         }
-    }, [state.frameSeconds])
+    }, [frameVersion])
 
-    const pickNewFrame = useCallback(() => {
-        const { minimum, maximum } = FRAME_RANGE_SECONDS
-        const frameSeconds = Math.round((minimum + Math.random() * (maximum - minimum)) * 10) / 10
-        setState(previous => ({ ...previous, frameSeconds }))
-    }, [])
+    const setFrameSeconds = useCallback(
+        (frameSeconds: number) => setState(previous => ({ ...previous, frameSeconds })),
+        []
+    )
+
+    const pickRandomFrame = useCallback(() => {
+        if (!durationSeconds) return
+        setFrameSeconds(Math.round(Math.random() * (durationSeconds - FRAME_STEP_SECONDS) * 30) / 30)
+    }, [durationSeconds, setFrameSeconds])
 
     useEffect(() => {
         if (!isLoopback) return
@@ -226,7 +290,7 @@ export function SocialStudio() {
                 '[': () => stepTab(-1),
                 ']': () => stepTab(1),
                 g: () => setState(previous => ({ ...previous, showGuides: !previous.showGuides })),
-                n: pickNewFrame,
+                n: pickRandomFrame,
                 d: () => void downloadOne(activeFormat),
                 D: () => void downloadAll(),
             }
@@ -237,136 +301,203 @@ export function SocialStudio() {
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [isLoopback, activeFormat, busyMessage, downloadAll, downloadOne, pickNewFrame])
+    }, [isLoopback, activeFormat, busyMessage, downloadAll, downloadOne, pickRandomFrame])
 
     if (!isLoopback) return null
 
     const aspectRatio = activeFormat.width / activeFormat.height
 
     return (
-        // Bottom padding leaves room to scroll the notes clear of the font chooser panel.
-        <main className="min-h-dvh px-6 pt-8 pb-[440px] text-ink md:px-10">
-            <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                    <div className="mb-3 font-mono text-[10px] tracking-[.22em] text-ink-52 uppercase">
-                        Dev only · localhost
-                    </div>
-                    <h1 className="font-serif text-[clamp(36px,4vw,56px)] leading-none">
-                        Social <span className="glow-hot italic">heroes</span>
-                    </h1>
-                </div>
-                <button
-                    type="button"
-                    disabled={busyMessage !== null}
-                    onClick={() => void downloadAll()}
-                    title="Render all seven images and download them as one zip (Shift+D)"
-                    className="cursor-pointer rounded-full bg-ink px-6 py-3 text-[13px] font-[480] tracking-[.04em] text-obsidian transition-[background,box-shadow] duration-[350ms] hover:bg-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
-                >
-                    Download all · {ASSET_FORMATS.length} PNGs (.zip)
-                </button>
-            </header>
-
-            <nav aria-label="Image format" className="mb-5 flex gap-2 overflow-x-auto pb-1">
-                {ASSET_FORMATS.map(format => (
-                    <button
-                        key={format.id}
-                        type="button"
-                        aria-pressed={format.id === activeFormat.id}
-                        onClick={() => setState(previous => ({ ...previous, activeId: format.id }))}
-                        className="shrink-0 cursor-pointer rounded-[10px] border border-hair px-4 py-[10px] text-left transition-[border-color,background,color] duration-[250ms] hover:border-gold aria-pressed:border-[rgba(244,198,110,.5)] aria-pressed:bg-gold-dim aria-pressed:text-gold"
-                    >
-                        <div className="text-[13px] font-[480]">{format.tabLabel}</div>
-                        <div className="mt-[2px] font-mono text-[10.5px] tracking-[.06em] text-ink-52">
-                            {formatDimensions(format)}
-                        </div>
-                    </button>
-                ))}
-            </nav>
-
-            <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[11px] tracking-[.08em] text-ink-55 uppercase">
-                <span className="text-ink">{activeFormat.platform}</span>
-                <span>{formatDimensions(activeFormat)} px</span>
-                <span>{activeFormat.fileNote}</span>
-                <span className="flex-1" />
-                <button type="button" onClick={pickNewFrame} className="cursor-pointer uppercase hover:text-gold">
-                    New silk frame (N)
-                </button>
-                {activeFormat.guides.length > 0 && (
-                    <button
-                        type="button"
-                        aria-pressed={state.showGuides}
-                        onClick={() => setState(previous => ({ ...previous, showGuides: !previous.showGuides }))}
-                        className="cursor-pointer uppercase hover:text-gold aria-pressed:text-gold"
-                    >
-                        Guides {state.showGuides ? 'on' : 'off'} (G)
-                    </button>
-                )}
-            </div>
-
-            <div className="flex justify-center">
-                <div
-                    className="relative overflow-hidden rounded-[6px] border border-hair shadow-[0_20px_80px_rgba(0,0,0,.55)]"
-                    style={{
-                        aspectRatio: `${activeFormat.width} / ${activeFormat.height}`,
-                        width: `min(100%, calc((100dvh - ${CHROME_HEIGHT_PIXELS}px) * ${aspectRatio}))`,
-                        minWidth: 280,
-                        ...getPreviewBackdrop(activeFormat),
-                    }}
-                >
-                    <canvas
-                        ref={previewCanvasRef}
-                        width={activeFormat.width}
-                        height={activeFormat.height}
-                        className="block h-full w-full"
+        <>
+            {/* the page backdrop: the chosen frame, under the studio's uniform 60% dim */}
+            <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0">
+                {videoUrl && (
+                    <video
+                        ref={videoRef}
+                        src={videoUrl}
+                        muted
+                        playsInline
+                        preload="auto"
+                        onLoadedMetadata={event => setDurationSeconds(event.currentTarget.duration)}
+                        onSeeked={captureFrame}
+                        className="absolute inset-0 h-full w-full object-cover"
                     />
-                    {state.showGuides &&
-                        activeFormat.guides.map(guide => (
-                            <GuideOverlay key={guide.label} format={activeFormat} guide={guide} />
-                        ))}
-                </div>
+                )}
+                <div className="absolute inset-0 bg-black opacity-60" />
             </div>
 
-            <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
-                <div className="max-w-[68ch] text-[14px] leading-[1.65] text-ink-55">
-                    {activeFormat.notes.map(note => (
-                        <p key={note} className="mb-2">
-                            {note}
-                        </p>
-                    ))}
-                    <p className="font-mono text-[11px] tracking-[.06em] text-ink-52">
-                        Size source:{' '}
-                        <a
-                            href={activeFormat.source.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="underline underline-offset-2 hover:text-gold"
-                        >
-                            {activeFormat.source.label}
-                        </a>
-                    </p>
-                    <p className="mt-3 font-mono text-[11px] tracking-[.06em] text-ink-52">
-                        Keys: [ ] switch tab · N new silk frame · G guides · D download · Shift+D download all. Fonts
-                        follow the font chooser (bottom left).
-                    </p>
+            {/* Bottom padding leaves room to scroll the notes clear of the font chooser panel. */}
+            <main className="relative z-[1] min-h-dvh px-6 pt-8 pb-[440px] text-ink md:px-10">
+                <div className="mb-8 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-[10px] border border-hair bg-[rgba(10,10,11,.55)] px-4 py-3 font-mono text-[11px] tracking-[.08em] text-ink-55 uppercase backdrop-blur-[10px]">
+                    <label className="shrink-0 cursor-pointer rounded-full border border-hair px-4 py-[7px] text-ink transition-[border-color,color] duration-[250ms] hover:border-gold hover:text-gold focus-within:border-gold">
+                        {videoUrl ? 'Change video' : 'Choose video'}
+                        <input
+                            type="file"
+                            accept="video/*"
+                            className="sr-only"
+                            onChange={event => chooseVideo(event.currentTarget.files?.[0])}
+                        />
+                    </label>
+                    {videoUrl ? (
+                        <>
+                            <span className="max-w-[24ch] shrink-0 truncate normal-case" title={videoName ?? undefined}>
+                                {videoName}
+                            </span>
+                            <label className="flex min-w-[240px] flex-1 items-center gap-4">
+                                <span className="sr-only">Frame</span>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={Math.max(0, durationSeconds - FRAME_STEP_SECONDS)}
+                                    step={FRAME_STEP_SECONDS}
+                                    value={Math.min(
+                                        state.frameSeconds,
+                                        Math.max(0, durationSeconds - FRAME_STEP_SECONDS)
+                                    )}
+                                    disabled={!durationSeconds}
+                                    onChange={event => setFrameSeconds(Number(event.currentTarget.value))}
+                                    aria-valuetext={formatTimecode(state.frameSeconds)}
+                                    className="h-6 flex-1 cursor-pointer accent-[#f6dda8]"
+                                />
+                            </label>
+                            <span className="shrink-0 text-ink tabular-nums">
+                                {formatTimecode(state.frameSeconds)} / {formatTimecode(durationSeconds)}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={pickRandomFrame}
+                                className="shrink-0 cursor-pointer uppercase hover:text-gold"
+                            >
+                                Random frame (N)
+                            </button>
+                        </>
+                    ) : (
+                        <span className="normal-case">
+                            Pick the background video (the original mp4) to use its frames. It stays in this tab only;
+                            until then the images render on flat obsidian.
+                        </span>
+                    )}
                 </div>
-                <div className="flex flex-col items-end gap-2">
+
+                <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+                    <div>
+                        <div className="mb-3 font-mono text-[10px] tracking-[.22em] text-ink-52 uppercase">
+                            Dev only · localhost
+                        </div>
+                        <h1 className="font-serif text-[clamp(36px,4vw,56px)] leading-none">
+                            Social <span className="glow-hot italic">heroes</span>
+                        </h1>
+                    </div>
                     <button
                         type="button"
                         disabled={busyMessage !== null}
-                        onClick={() => void downloadOne(activeFormat)}
-                        className="cursor-pointer rounded-full border border-hair px-6 py-3 text-[13px] font-[480] tracking-[.04em] text-ink transition-[border-color,color,box-shadow] duration-[350ms] hover:border-gold hover:text-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
+                        onClick={() => void downloadAll()}
+                        title="Render all seven images and download them as one zip (Shift+D)"
+                        className="cursor-pointer rounded-full bg-ink px-6 py-3 text-[13px] font-[480] tracking-[.04em] text-obsidian transition-[background,box-shadow] duration-[350ms] hover:bg-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
                     >
-                        Download PNG · {formatDimensions(activeFormat)}
+                        Download all · {ASSET_FORMATS.length} PNGs (.zip)
                     </button>
+                </header>
+
+                <nav aria-label="Image format" className="mb-5 flex gap-2 overflow-x-auto pb-1">
+                    {ASSET_FORMATS.map(format => (
+                        <button
+                            key={format.id}
+                            type="button"
+                            aria-pressed={format.id === activeFormat.id}
+                            onClick={() => setState(previous => ({ ...previous, activeId: format.id }))}
+                            className="shrink-0 cursor-pointer rounded-[10px] border border-hair px-4 py-[10px] text-left transition-[border-color,background,color] duration-[250ms] hover:border-gold aria-pressed:border-[rgba(244,198,110,.5)] aria-pressed:bg-gold-dim aria-pressed:text-gold"
+                        >
+                            <div className="text-[13px] font-[480]">{format.tabLabel}</div>
+                            <div className="mt-[2px] font-mono text-[10.5px] tracking-[.06em] text-ink-52">
+                                {formatDimensions(format)}
+                            </div>
+                        </button>
+                    ))}
+                </nav>
+
+                <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[11px] tracking-[.08em] text-ink-55 uppercase">
+                    <span className="text-ink">{activeFormat.platform}</span>
+                    <span>{formatDimensions(activeFormat)} px</span>
+                    <span>{activeFormat.fileNote}</span>
+                    <span className="flex-1" />
+                    {activeFormat.guides.length > 0 && (
+                        <button
+                            type="button"
+                            aria-pressed={state.showGuides}
+                            onClick={() => setState(previous => ({ ...previous, showGuides: !previous.showGuides }))}
+                            className="cursor-pointer uppercase hover:text-gold aria-pressed:text-gold"
+                        >
+                            Guides {state.showGuides ? 'on' : 'off'} (G)
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex justify-center">
                     <div
-                        className="min-h-[1.2em] font-mono text-[11px] tracking-[.06em] text-ink-52"
-                        aria-live="polite"
+                        className="relative overflow-hidden rounded-[6px] border border-hair shadow-[0_20px_80px_rgba(0,0,0,.55)]"
+                        style={{
+                            aspectRatio: `${activeFormat.width} / ${activeFormat.height}`,
+                            width: `min(100%, calc((100dvh - ${CHROME_HEIGHT_PIXELS}px) * ${aspectRatio}))`,
+                            minWidth: 280,
+                            ...getPreviewBackdrop(activeFormat),
+                        }}
                     >
-                        {busyMessage}
-                        {errorMessage && <span className="text-rec">{errorMessage}</span>}
+                        <canvas
+                            ref={previewCanvasRef}
+                            width={activeFormat.width}
+                            height={activeFormat.height}
+                            className="block h-full w-full"
+                        />
+                        {state.showGuides &&
+                            activeFormat.guides.map(guide => (
+                                <GuideOverlay key={guide.label} format={activeFormat} guide={guide} />
+                            ))}
                     </div>
                 </div>
-            </div>
-        </main>
+
+                <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
+                    <div className="max-w-[68ch] text-[14px] leading-[1.65] text-ink-55">
+                        {activeFormat.notes.map(note => (
+                            <p key={note} className="mb-2">
+                                {note}
+                            </p>
+                        ))}
+                        <p className="font-mono text-[11px] tracking-[.06em] text-ink-52">
+                            Size source:{' '}
+                            <a
+                                href={activeFormat.source.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline underline-offset-2 hover:text-gold"
+                            >
+                                {activeFormat.source.label}
+                            </a>
+                        </p>
+                        <p className="mt-3 font-mono text-[11px] tracking-[.06em] text-ink-52">
+                            Keys: [ ] switch tab · N random frame · G guides · D download · Shift+D download all. Fonts
+                            follow the font chooser (bottom left).
+                        </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                        <button
+                            type="button"
+                            disabled={busyMessage !== null}
+                            onClick={() => void downloadOne(activeFormat)}
+                            className="cursor-pointer rounded-full border border-hair px-6 py-3 text-[13px] font-[480] tracking-[.04em] text-ink transition-[border-color,color,box-shadow] duration-[350ms] hover:border-gold hover:text-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
+                        >
+                            Download PNG · {formatDimensions(activeFormat)}
+                        </button>
+                        <div
+                            className="min-h-[1.2em] font-mono text-[11px] tracking-[.06em] text-ink-52"
+                            aria-live="polite"
+                        >
+                            {busyMessage}
+                            {errorMessage && <span className="text-rec">{errorMessage}</span>}
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </>
     )
 }

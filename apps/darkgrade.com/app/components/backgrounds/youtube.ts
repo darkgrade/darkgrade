@@ -39,6 +39,8 @@ type YouTubeNamespace = {
         }
     ) => YouTubePlayer
     PlayerState: { ENDED: number; PLAYING: number; PAUSED: number; BUFFERING: number; CUED: number }
+    /** Defined by the API's loader stub before the player code arrives; queues until it does. */
+    ready?: (callback: () => void) => void
 }
 
 declare global {
@@ -48,11 +50,21 @@ declare global {
     }
 }
 
+/** Also requested from <head> by the root layout, so loading starts at first paint. */
+export const YOUTUBE_IFRAME_API_URL = 'https://www.youtube.com/iframe_api'
+
 let apiPromise: Promise<YouTubeNamespace> | null = null
 
 function loadIframeApi(): Promise<YouTubeNamespace> {
     if (window.YT?.Player) return Promise.resolve(window.YT)
     if (apiPromise) return apiPromise
+    // the <head> script got here first and is still loading: wait on its queue
+    // rather than requesting the API a second time
+    const pending = window.YT
+    if (pending?.ready) {
+        apiPromise = new Promise(resolve => pending.ready?.(() => resolve(window.YT ?? pending)))
+        return apiPromise
+    }
     apiPromise = new Promise((resolve, reject) => {
         const previousReady = window.onYouTubeIframeAPIReady
         window.onYouTubeIframeAPIReady = () => {
@@ -60,7 +72,7 @@ function loadIframeApi(): Promise<YouTubeNamespace> {
             if (window.YT) resolve(window.YT)
         }
         const script = document.createElement('script')
-        script.src = 'https://www.youtube.com/iframe_api'
+        script.src = YOUTUBE_IFRAME_API_URL
         script.async = true
         script.onerror = () => {
             apiPromise = null

@@ -35,7 +35,7 @@ export function Principles() {
                         The hills we’ll <em className="glow-hot italic">die on.</em>
                     </h2>
                     <span className={`${LABEL} mt-[14px] text-ink-55`} data-fade>
-                        <span className="mr-[14px] text-gold">03</span>Principles
+                        <span className="mr-[14px] text-gold">02</span>Principles
                     </span>
                 </div>
 

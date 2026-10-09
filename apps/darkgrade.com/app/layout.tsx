@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
 import { DevTools } from '@/app/components/dev-font-chooser/dev-tools'
 import { DEV_FONT_BOOTSTRAP_SCRIPT } from '@/app/components/dev-font-chooser/dev-fonts'
+import { VIDEO_BACKGROUND_ENABLED } from '@/app/components/backgrounds/field'
+import { YOUTUBE_IFRAME_API_URL } from '@/app/components/backgrounds/youtube'
 import './globals.css'
 
 /* The font chooser exists only under `next dev`; the component additionally
@@ -96,8 +98,20 @@ export const viewport: Viewport = {
    first paint, which means before hydration, which means <html>'s class
    attribute is deliberately not what the server sent: hence
    suppressHydrationWarning on it below. That opts out one element's own
-   attributes, nothing nested. */
-const JS_FLAG = "document.documentElement.classList.add('js','preload')"
+   attributes, nothing nested.
+
+   The preloader plays only when a visit lands on the home page: html.intro
+   shows it and html.preload locks scrolling behind it. Landing anywhere else,
+   or moving between pages afterwards (client-side, in the (site) layout), never
+   shows it. */
+const JS_FLAG =
+    "var c=document.documentElement.classList;c.add('js');if(location.pathname==='/')c.add('intro','preload')"
+
+/* The backdrop video starts loading at first paint, behind the preloader,
+   instead of after hydration: the YouTube API script is requested from here,
+   and the connections it needs are opened ahead of it. Reduced motion never
+   plays the video, so it never fetches the player either. */
+const VIDEO_PRELOAD = `if(!matchMedia('(prefers-reduced-motion: reduce)').matches){var s=document.createElement('script');s.src='${YOUTUBE_IFRAME_API_URL}';s.async=true;document.head.appendChild(s)}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
@@ -108,6 +122,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
             <head>
                 <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
+                {VIDEO_BACKGROUND_ENABLED && (
+                    <>
+                        <link rel="preconnect" href="https://www.youtube.com" />
+                        <link rel="preconnect" href="https://www.youtube-nocookie.com" />
+                        <script dangerouslySetInnerHTML={{ __html: VIDEO_PRELOAD }} />
+                    </>
+                )}
                 {IS_DEVELOPMENT && <script dangerouslySetInnerHTML={{ __html: DEV_FONT_BOOTSTRAP_SCRIPT }} />}
             </head>
             <body className="[html.preload_&]:h-dvh [html.preload_&]:overflow-hidden">

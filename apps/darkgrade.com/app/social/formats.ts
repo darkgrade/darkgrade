@@ -20,7 +20,7 @@ export interface Guide {
     readonly rectangle: PixelRectangle
 }
 
-export type AssetLook = 'banner' | 'mark-on-silk' | 'mark-light-mode' | 'mark-dark-mode'
+export type AssetLook = 'banner' | 'mark-on-video' | 'mark-light-mode' | 'mark-dark-mode'
 
 export interface AssetFormat {
     readonly id: string
@@ -135,15 +135,17 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
     {
         id: 'square-background',
         tabLabel: 'Square · background',
-        platform: 'Square mark on the silk background',
+        platform: 'Square mark on the video background',
         width: SQUARE_SIZE,
         height: SQUARE_SIZE,
-        look: 'mark-on-silk',
+        look: 'mark-on-video',
         contentArea: { x: 0, y: 0, width: SQUARE_SIZE, height: SQUARE_SIZE },
         guides: [],
         fileNote: 'PNG, opaque',
         source: { label: 'Darkgrade brand', url: 'https://darkgrade.com' },
-        notes: ['The icon on the same silk as the site, for avatars and app tiles that want a full-bleed square.'],
+        notes: [
+            'The icon on a frame of the site background video, for avatars and app tiles that want a full-bleed square.',
+        ],
     },
     {
         id: 'square-transparent-light',

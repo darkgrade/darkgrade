@@ -119,18 +119,18 @@ export function Roadmap() {
             <div className="shell">
                 <div className="mb-[clamp(30px,4vh,44px)] flex flex-wrap items-start justify-between gap-[18px]">
                     <div>
-                        <h2
+                        <h1
                             className="max-w-[15ch] font-serif text-[clamp(2.5rem,5vw,4.5rem)] leading-[1.06] font-normal tracking-[-.01em]"
                             data-reveal-lines
                         >
                             From “let’s shoot” to <em className="glow-hot italic">“it’s live.”</em>
-                        </h2>
+                        </h1>
                         <p className="mt-[18px] max-w-[46ch] text-[0.9688rem] text-ink-55" data-fade>
                             Link is here today. We&apos;re building a lot more.
                         </p>
                     </div>
                     <span className={`${LABEL} text-ink-55`} data-fade>
-                        <span className="mr-[14px] text-gold">02</span>The road ahead
+                        The road ahead
                     </span>
                 </div>
 
@@ -156,12 +156,12 @@ export function Roadmap() {
                         className="horizon group/h relative border-t border-hair px-[clamp(8px,1.5vw,26px)] py-[clamp(30px,4.4vh,46px)] transition-[background] duration-500 last-of-type:border-b before:pointer-events-none before:absolute before:inset-0 before:bg-[image:linear-gradient(90deg,rgba(244,198,110,.07),transparent_55%)] before:opacity-0 before:transition-opacity before:duration-[550ms] before:content-[''] hover:before:opacity-100"
                     >
                         <div className="flex flex-wrap items-baseline justify-between gap-5">
-                            <h3 className="flex items-baseline gap-[18px] font-serif text-[clamp(1.625rem,2.9vw,2.625rem)] leading-[1.1] font-normal tracking-[-.005em] max-[820px]:text-[clamp(1.4375rem,6vw,1.875rem)]">
+                            <h2 className="flex items-baseline gap-[18px] font-serif text-[clamp(1.625rem,2.9vw,2.625rem)] leading-[1.1] font-normal tracking-[-.005em] max-[820px]:text-[clamp(1.4375rem,6vw,1.875rem)]">
                                 <span className="font-serif text-[.62em] text-ink-52 italic transition-[color,text-shadow] duration-[450ms] group-hover/h:text-gold group-hover/h:[text-shadow:0_0_15px_rgba(244,198,110,.45)]">
                                     {h.num}
                                 </span>
                                 {h.title}
-                            </h3>
+                            </h2>
                             {h.now ? (
                                 <span className={`${STATUS} text-gold`}>
                                     <span className={FILAMENT} />
