@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const STORAGE_KEY = 'darkgrade:social-studio:v1'
 const DEFAULT_FRAME_SECONDS = 0
+const DEFAULT_VIDEO_POSITION_Y = 50
 /** One scrubber step: a frame at 30 fps. */
 const FRAME_STEP_SECONDS = 1 / 30
 const FONT_CHANGE_DEBOUNCE_MILLISECONDS = 60
@@ -26,12 +27,15 @@ function formatTimecode(seconds: number): string {
 interface StudioState {
     activeId: string
     frameSeconds: number
+    /** Vertical crop of the video behind every image and the page, 0-100 (object-position-y %). */
+    videoPositionY: number
     showGuides: boolean
 }
 
 const DEFAULT_STATE: StudioState = {
     activeId: ASSET_FORMATS[0].id,
     frameSeconds: DEFAULT_FRAME_SECONDS,
+    videoPositionY: DEFAULT_VIDEO_POSITION_Y,
     showGuides: true,
 }
 
@@ -44,6 +48,8 @@ function readStoredState(): StudioState {
                 ? stored.activeId
                 : DEFAULT_STATE.activeId,
             frameSeconds: typeof stored.frameSeconds === 'number' ? stored.frameSeconds : DEFAULT_FRAME_SECONDS,
+            videoPositionY:
+                typeof stored.videoPositionY === 'number' ? stored.videoPositionY : DEFAULT_VIDEO_POSITION_Y,
             showGuides: stored.showGuides !== false,
         }
     } catch {
@@ -172,7 +178,7 @@ export function SocialStudio() {
         if (!video || !durationSeconds) return
         const target = Math.min(Math.max(0, state.frameSeconds), durationSeconds - FRAME_STEP_SECONDS)
         if (Math.abs(video.currentTime - target) > FRAME_STEP_SECONDS / 2) video.currentTime = target
-        else captureFrame()
+        else if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) captureFrame()
         // captureFrame is left out of the deps on purpose: it only touches refs and a state setter
     }, [state.frameSeconds, durationSeconds])
 
@@ -212,7 +218,11 @@ export function SocialStudio() {
     useEffect(() => {
         if (!hasLoadedStorage) return
         const token = ++renderTokenRef.current
-        renderAssetCanvas(activeFormat, { typefaces: readTypefaces(), backdrop: frameCanvasRef.current })
+        renderAssetCanvas(activeFormat, {
+            typefaces: readTypefaces(),
+            backdrop: frameCanvasRef.current,
+            backdropPositionY: state.videoPositionY / 100,
+        })
             .then(rendered => {
                 const target = previewCanvasRef.current
                 if (token !== renderTokenRef.current || !target) return // a newer render superseded this one
@@ -222,7 +232,7 @@ export function SocialStudio() {
                 setErrorMessage(null)
             })
             .catch(error => setErrorMessage(String(error?.message ?? error)))
-    }, [hasLoadedStorage, activeFormat, frameVersion, typefaceVersion])
+    }, [hasLoadedStorage, activeFormat, frameVersion, state.videoPositionY, typefaceVersion])
 
     const downloadOne = useCallback(
         async (format: AssetFormat) => {
@@ -231,6 +241,7 @@ export function SocialStudio() {
                 const rendered = await renderAssetCanvas(format, {
                     typefaces: readTypefaces(),
                     backdrop: frameCanvasRef.current,
+                    backdropPositionY: state.videoPositionY / 100,
                 })
                 saveBlob(await canvasToPngBlob(rendered), getAssetFilename(format))
                 setErrorMessage(null)
@@ -240,7 +251,7 @@ export function SocialStudio() {
                 setBusyMessage(null)
             }
         },
-        [frameVersion]
+        [frameVersion, state.videoPositionY]
     )
 
     const downloadAll = useCallback(async () => {
@@ -251,6 +262,7 @@ export function SocialStudio() {
                 const rendered = await renderAssetCanvas(format, {
                     typefaces: readTypefaces(),
                     backdrop: frameCanvasRef.current,
+                    backdropPositionY: state.videoPositionY / 100,
                 })
                 const png = await canvasToPngBlob(rendered)
                 entries.push({ name: getAssetFilename(format), bytes: new Uint8Array(await png.arrayBuffer()) })
@@ -262,7 +274,7 @@ export function SocialStudio() {
         } finally {
             setBusyMessage(null)
         }
-    }, [frameVersion])
+    }, [frameVersion, state.videoPositionY])
 
     const setFrameSeconds = useCallback(
         (frameSeconds: number) => setState(previous => ({ ...previous, frameSeconds })),
@@ -318,7 +330,9 @@ export function SocialStudio() {
                         playsInline
                         preload="auto"
                         onLoadedMetadata={event => setDurationSeconds(event.currentTarget.duration)}
+                        onLoadedData={captureFrame}
                         onSeeked={captureFrame}
+                        style={{ objectPosition: `50% ${state.videoPositionY}%` }}
                         className="absolute inset-0 h-full w-full object-cover"
                     />
                 )}
@@ -362,6 +376,25 @@ export function SocialStudio() {
                             <span className="shrink-0 text-ink tabular-nums">
                                 {formatTimecode(state.frameSeconds)} / {formatTimecode(durationSeconds)}
                             </span>
+                            <label className="flex min-w-[200px] items-center gap-3">
+                                <span className="shrink-0">Vertical</span>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    value={state.videoPositionY}
+                                    onChange={event => {
+                                        const videoPositionY = Number(event.currentTarget.value)
+                                        setState(previous => ({ ...previous, videoPositionY }))
+                                    }}
+                                    aria-valuetext={`${state.videoPositionY}% from the top`}
+                                    className="h-6 flex-1 cursor-pointer accent-[#f6dda8]"
+                                />
+                                <span className="w-[4ch] shrink-0 text-right text-ink tabular-nums">
+                                    {state.videoPositionY}%
+                                </span>
+                            </label>
                             <button
                                 type="button"
                                 onClick={pickRandomFrame}
@@ -391,7 +424,7 @@ export function SocialStudio() {
                         type="button"
                         disabled={busyMessage !== null}
                         onClick={() => void downloadAll()}
-                        title="Render all seven images and download them as one zip (Shift+D)"
+                        title={`Render all ${ASSET_FORMATS.length} images and download them as one zip (Shift+D)`}
                         className="cursor-pointer rounded-full bg-ink px-6 py-3 text-[13px] font-[480] tracking-[.04em] text-obsidian transition-[background,box-shadow] duration-[350ms] hover:bg-gold hover:shadow-[0_0_26px_rgba(244,198,110,.16)] disabled:cursor-wait disabled:opacity-60"
                     >
                         Download all · {ASSET_FORMATS.length} PNGs (.zip)

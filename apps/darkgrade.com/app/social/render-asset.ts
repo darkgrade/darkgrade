@@ -24,6 +24,8 @@ export interface RenderOptions {
     /** The chosen video frame at its native size, or null to render on flat
      *  obsidian (no video chosen yet). Cover-cropped to each format. */
     readonly backdrop: HTMLCanvasElement | null
+    /** Vertical crop of the backdrop, 0 = top edge to 1 = bottom edge (CSS object-position-y). */
+    readonly backdropPositionY: number
 }
 
 const BONE = '#eae6dc'
@@ -96,8 +98,9 @@ function createCanvas(width: number, height: number): HTMLCanvasElement {
     return canvas
 }
 
-/** The video frame, scaled to cover the asset and centred (CSS object-fit: cover),
- *  then the uniform dim. Without a frame, flat obsidian. */
+/** The video frame, scaled to cover the asset (CSS object-fit: cover), centred
+ *  across and placed by `backdropPositionY` down, then the uniform dim. Without
+ *  a frame, flat obsidian. */
 function drawBackdrop(context: CanvasRenderingContext2D, width: number, height: number, options: RenderOptions): void {
     context.fillStyle = OBSIDIAN
     context.fillRect(0, 0, width, height)
@@ -108,7 +111,8 @@ function drawBackdrop(context: CanvasRenderingContext2D, width: number, height: 
     const drawnWidth = source.width * scale
     const drawnHeight = source.height * scale
     context.imageSmoothingQuality = 'high'
-    context.drawImage(source, (width - drawnWidth) / 2, (height - drawnHeight) / 2, drawnWidth, drawnHeight)
+    const positionY = Math.min(1, Math.max(0, options.backdropPositionY))
+    context.drawImage(source, (width - drawnWidth) / 2, (height - drawnHeight) * positionY, drawnWidth, drawnHeight)
     context.fillStyle = `rgba(0, 0, 0, ${BACKDROP_DIM})`
     context.fillRect(0, 0, width, height)
 }
@@ -441,8 +445,14 @@ export async function renderAssetCanvas(format: AssetFormat, options: RenderOpti
 
     const hasBackdrop = format.look === 'banner' || format.look === 'mark-on-video'
     if (hasBackdrop) drawBackdrop(context, format.width, format.height, options)
+    if (format.look === 'mark-on-white' || format.look === 'mark-on-black') {
+        context.fillStyle = format.look === 'mark-on-white' ? '#ffffff' : '#000000'
+        context.fillRect(0, 0, format.width, format.height)
+    }
 
     if (format.look === 'banner') drawBanner(context, format, options.typefaces)
+    if (format.look === 'mark-on-white') drawCenteredIcon(context, format, false, '#000000')
+    if (format.look === 'mark-on-black') drawCenteredIcon(context, format, false, '#ffffff')
     if (format.look === 'mark-on-video') drawCenteredIcon(context, format, true, BONE)
     if (format.look === 'mark-light-mode') drawCenteredIcon(context, format, false, '#000000')
     if (format.look === 'mark-dark-mode') drawCenteredIcon(context, format, false, '#ffffff')

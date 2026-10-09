@@ -16,10 +16,13 @@ export function Dream() {
                     <span className="text-ink-52">humanity will never hear.</span>
                 </h2>
 
-                <div data-fade>
+                {/* will-change on this wrapper and on the line below is load-bearing: glow-hot is a
+                    76px-blur text-shadow, and without its own compositor layer the scroll reveal
+                    re-rasterises that blur every frame (~4x the paint work, visibly choppy). */}
+                <div className="will-change-[transform,opacity]" data-fade>
                     <span
                         id="d-punch"
-                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(2rem,4.4vw,4.25rem)] leading-[1.12] italic"
+                        className="glow-hot mx-auto mt-[clamp(28px,5vh,54px)] block max-w-[19ch] font-serif text-[clamp(2rem,4.4vw,4.25rem)] leading-[1.12] italic will-change-transform"
                     >
                         The world is still waiting on what you haven’t made yet.
                     </span>
@@ -31,7 +34,9 @@ export function Dream() {
                     </a>
                     <a className={BTN_GHOST} href={LINKS.github} target="_blank" rel="noopener">
                         <span>Star on GitHub</span>
-                        <span aria-hidden="true" className="text-gold">✦</span>
+                        <span aria-hidden="true" className="text-gold">
+                            ✦
+                        </span>
                     </a>
                 </div>
             </div>

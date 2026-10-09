@@ -20,7 +20,8 @@ export interface Guide {
     readonly rectangle: PixelRectangle
 }
 
-export type AssetLook = 'banner' | 'mark-on-video' | 'mark-light-mode' | 'mark-dark-mode'
+export type AssetLook =
+    'banner' | 'mark-on-video' | 'mark-on-white' | 'mark-on-black' | 'mark-light-mode' | 'mark-dark-mode'
 
 export interface AssetFormat {
     readonly id: string
@@ -29,6 +30,8 @@ export interface AssetFormat {
     readonly width: number
     readonly height: number
     readonly look: AssetLook
+    /** Overrides the generated filename, to match an existing file in /public. */
+    readonly filename?: string
     /** Where banner content is centred. Unused for the square marks. */
     readonly contentArea: PixelRectangle
     readonly guides: readonly Guide[]
@@ -39,6 +42,12 @@ export interface AssetFormat {
 }
 
 const SQUARE_SIZE = 1000
+
+/** The size of the cards in /public (darkgrade_opengraph_dark.png, ..._light.png). */
+const OPENGRAPH_WIDTH = 2400
+const OPENGRAPH_HEIGHT = 1260
+/** The same stacked composition as the banners, inside a 150px margin. */
+const OPENGRAPH_CONTENT_AREA: PixelRectangle = { x: 150, y: 150, width: 2100, height: 960 }
 
 export const ASSET_FORMATS: readonly AssetFormat[] = [
     {
@@ -133,6 +142,36 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
         notes: ['X crops the header a little at the top and bottom on some screens.'],
     },
     {
+        id: 'opengraph-dark',
+        tabLabel: 'OpenGraph · dark',
+        platform: 'Link preview card · dark',
+        width: OPENGRAPH_WIDTH,
+        height: OPENGRAPH_HEIGHT,
+        look: 'banner',
+        filename: 'darkgrade_opengraph_dark.png',
+        contentArea: OPENGRAPH_CONTENT_AREA,
+        guides: [],
+        fileNote: 'PNG · replaces public/darkgrade_opengraph_dark.png',
+        source: { label: 'Open Graph protocol', url: 'https://ogp.me/#structured' },
+        notes: [
+            'The size of the cards already in /public, in the same layout as the banners. Dark and light are the same image: the site has no light mode.',
+        ],
+    },
+    {
+        id: 'opengraph-light',
+        tabLabel: 'OpenGraph · light',
+        platform: 'Link preview card · light',
+        width: OPENGRAPH_WIDTH,
+        height: OPENGRAPH_HEIGHT,
+        look: 'banner',
+        filename: 'darkgrade_opengraph_light.png',
+        contentArea: OPENGRAPH_CONTENT_AREA,
+        guides: [],
+        fileNote: 'PNG · replaces public/darkgrade_opengraph_light.png',
+        source: { label: 'Open Graph protocol', url: 'https://ogp.me/#structured' },
+        notes: ['Identical to the dark card, saved under the light filename.'],
+    },
+    {
         id: 'square-background',
         tabLabel: 'Square · background',
         platform: 'Square mark on the video background',
@@ -146,6 +185,32 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
         notes: [
             'The icon on a frame of the site background video, for avatars and app tiles that want a full-bleed square.',
         ],
+    },
+    {
+        id: 'square-light',
+        tabLabel: 'Square · light',
+        platform: 'Square mark on white · for light surfaces',
+        width: SQUARE_SIZE,
+        height: SQUARE_SIZE,
+        look: 'mark-on-white',
+        contentArea: { x: 0, y: 0, width: SQUARE_SIZE, height: SQUARE_SIZE },
+        guides: [],
+        fileNote: 'PNG, opaque',
+        source: { label: 'Darkgrade brand', url: 'https://darkgrade.com' },
+        notes: ['The black mark on solid white, for avatars and tiles that cannot take transparency.'],
+    },
+    {
+        id: 'square-dark',
+        tabLabel: 'Square · dark',
+        platform: 'Square mark on black · for dark surfaces',
+        width: SQUARE_SIZE,
+        height: SQUARE_SIZE,
+        look: 'mark-on-black',
+        contentArea: { x: 0, y: 0, width: SQUARE_SIZE, height: SQUARE_SIZE },
+        guides: [],
+        fileNote: 'PNG, opaque',
+        source: { label: 'Darkgrade brand', url: 'https://darkgrade.com' },
+        notes: ['The white mark on solid black, for avatars and tiles that cannot take transparency.'],
     },
     {
         id: 'square-transparent-light',
@@ -176,5 +241,6 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
 ]
 
 export function getAssetFilename(format: AssetFormat): string {
+    if (format.filename) return format.filename
     return `darkgrade-${format.id}-${format.width}x${format.height}.png`
 }
