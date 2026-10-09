@@ -53,7 +53,7 @@ export function Stats() {
                                 </i>
                             </span>
                         </div>
-                        <div className="mt-4 max-w-[24ch] text-[0.7812rem] leading-[1.55] tracking-[.05em] text-ink-55">
+                        <div className="mt-4 max-w-[24ch] text-[0.875rem] leading-[1.55] tracking-[.05em] text-ink-55">
                             {caption}
                             {link && (
                                 <>

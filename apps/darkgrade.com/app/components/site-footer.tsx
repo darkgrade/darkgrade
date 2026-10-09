@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { LINKS } from './site-links'
 import { Wordmark } from './wordmark'
 
-const COL_HEAD = 'mb-5 text-[0.75rem] tracking-[.3em] text-ink-52 uppercase'
+const COL_HEAD = 'mb-5 text-[0.875rem] tracking-[.3em] text-ink-52 uppercase'
 const COL_LINK =
     'mb-3 block text-[0.9062rem] text-ink-55 transition-[color,transform] duration-300 ease-lamp hover:translate-x-[6px] hover:text-gold'
 
@@ -46,7 +46,7 @@ export function SiteFooter() {
                             <Wordmark className="mark-glow-soft block h-[19px] w-auto text-ink" />
                         </span>
                         Local-first AI for creative professionals.
-                        <p className="mt-[18px] text-ink-52 opacity-60 text-[0.7rem]">
+                        <p className="mt-[18px] text-ink-52 opacity-60 text-[0.875rem]">
                             Background footage courtesy{' '}
                             <a
                                 href="https://www.pexels.com/@kuiyibo/"
@@ -88,7 +88,7 @@ export function SiteFooter() {
                 </div>
             </div>
 
-            <div className="shell flex flex-wrap justify-between gap-5 border-t border-hair py-[26px] font-mono text-[0.75rem] tracking-[.06em] text-ink-52 max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-[10px]">
+            <div className="shell flex flex-wrap justify-between gap-5 border-t border-hair py-[26px] font-mono text-[0.875rem] tracking-[.06em] text-ink-52 max-[700px]:flex-col max-[700px]:items-start max-[700px]:gap-[10px]">
                 <span>© 2026 DARKGRADE</span>
                 <span className="inline-flex items-center gap-2">
                     <i className="size-[7px] animate-blink rounded-full bg-rec shadow-[0_0_10px_rgba(224,72,62,.6)]" />

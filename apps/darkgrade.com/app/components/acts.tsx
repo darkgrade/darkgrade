@@ -94,13 +94,13 @@ export function Acts() {
                                 <button
                                     type="button"
                                     data-copy={NPM_INSTALL}
-                                    className="npmline group/npm mt-5 inline-flex cursor-pointer items-center gap-[14px] rounded-[10px] border border-hair px-[18px] py-3 font-mono text-[0.8125rem] text-ink-55 transition-[border-color,box-shadow] duration-[350ms] hover:border-[rgba(244,198,110,.4)] hover:shadow-[0_0_26px_rgba(244,198,110,.1)]"
+                                    className="npmline group/npm mt-5 inline-flex cursor-pointer items-center gap-[14px] rounded-[10px] border border-hair px-[18px] py-3 font-mono text-[0.875rem] text-ink-55 transition-[border-color,box-shadow] duration-[350ms] hover:border-[rgba(244,198,110,.4)] hover:shadow-[0_0_26px_rgba(244,198,110,.1)]"
                                 >
                                     <span aria-hidden="true" className="text-gold">
                                         $
                                     </span>
                                     <span>{NPM_INSTALL}</span>
-                                    <span className="copy text-[0.75rem] tracking-[.1em] text-ink-52 uppercase transition-colors duration-300 group-hover/npm:text-gold">
+                                    <span className="copy text-[0.875rem] tracking-[.1em] text-ink-52 uppercase transition-colors duration-300 group-hover/npm:text-gold">
                                         Copy
                                     </span>
                                     {/* rendered empty so screen readers pick up the result when it is written */}

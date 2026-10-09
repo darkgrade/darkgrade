@@ -38,7 +38,7 @@ export function Hero() {
                 </h1>
 
                 <p
-                    className="mt-[clamp(22px,3.4vh,40px)] max-w-[54ch] text-[clamp(0.9688rem,1.25vw,1.1562rem)] leading-[1.65] font-[340] text-ink-55 [@media(max-height:700px)]:max-w-[64ch]"
+                    className="mt-[clamp(22px,3.4vh,40px)] max-w-[54ch] text-[clamp(0.9688rem,1.25vw,1.1562rem)] leading-[1.65] font-[340] text-ink-66 [@media(max-height:700px)]:max-w-[64ch]"
                     data-fade
                 >
                     Darkgrade dials in your camera, captures the shot, and returns a finished first cut —{' '}
@@ -63,14 +63,14 @@ export function Hero() {
                     className="mt-[clamp(40px,7vh,84px)] flex items-end justify-between [@media(max-height:800px)]:hidden"
                     data-fade
                 >
-                    <div className="flex items-center gap-[14px] text-[0.75rem] tracking-[.3em] text-ink-52 uppercase">
+                    <div className="flex items-center gap-[14px] text-[0.875rem] tracking-[.3em] text-ink-62 uppercase">
                         <span>Scroll</span>
                         <span className="glow-line relative h-[44px] w-px overflow-hidden bg-hair after:absolute after:top-0 after:left-0 after:h-full after:w-full after:animate-drip after:bg-gold after:shadow-[0_0_10px_rgba(244,198,110,.6)] after:content-['']" />
                     </div>
-                    <div className="text-right font-mono text-[0.75rem] tracking-[.12em] text-ink-52 max-[700px]:hidden">
+                    <div className="text-right font-mono text-[0.875rem] tracking-[.12em] text-ink-62 max-[700px]:hidden">
                         TESTED ON
                         <br />
-                        <b className="font-medium text-ink-55">SONY α7 IV · NIKON Z6 III · CANON R6 MK III</b>
+                        <b className="font-medium text-ink-66">SONY α7 IV · NIKON Z6 III · CANON R6 MK III</b>
                     </div>
                 </div>
             </div>

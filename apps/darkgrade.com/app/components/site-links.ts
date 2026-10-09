@@ -8,13 +8,13 @@ export const LINKS = {
 
 export const NPM_INSTALL = 'npm i @darkgrade/link'
 
-/** Section eyebrow: 11px, wide-tracked, uppercase. Colour is the caller's,
+/** Section eyebrow: 14px, wide-tracked, uppercase. Colour is the caller's,
  *  so two text-* utilities never race for the same declaration. */
-export const LABEL = 'text-[0.75rem] font-medium tracking-[.32em] uppercase'
+export const LABEL = 'text-[0.875rem] font-medium tracking-[.32em] uppercase'
 
 /** Status pill next to an act title. Border and text colour are the caller's. */
 export const CHIP =
-    'inline-flex -translate-y-[6px] items-center gap-[9px] rounded-full px-[14px] py-[7px] font-mono text-[0.75rem] tracking-[.22em] uppercase'
+    'inline-flex -translate-y-[6px] items-center gap-[9px] rounded-full px-[14px] py-[7px] font-mono text-[0.875rem] tracking-[.22em] uppercase'
 
 /** The two pill buttons, shared by the hero and the closing CTA. */
 export const BTN =

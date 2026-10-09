@@ -15,6 +15,9 @@
     --color-bg-2: #101012;
     --color-ink: #eae6dc;
     --color-ink-55: rgba(234, 230, 220, 0.55);
+    /* the hero's translucent text, 20% more opaque than ink-55 / ink-52 */
+    --color-ink-66: rgba(234, 230, 220, 0.66);
+    --color-ink-62: rgba(234, 230, 220, 0.62);
     --color-ink-52: rgba(234, 230, 220, 0.52); /* 4.78:1 on --color-bg: the floor for 12px text */
     --color-hair: rgba(234, 230, 220, 0.13);
     --color-gold: #f6dda8;
@@ -318,23 +321,13 @@
     }
 
     /* ---------- the dim layer ----------
-       the one layer between the backdrop and the page, and its only gradient.
+       the one layer between the backdrop and the page: flat black, no gradient.
        JS writes --dim-p: 0 at the top of the page, 1 once the marquee reaches
-       the top of the window. Over that distance opacity runs 50% -> 80%, and
-       the soft edge (half the screen wide, dark on the left) sweeps right from
-       65% until its clear side has left the screen at 125%, leaving solid cover. */
+       the top of the window. Over that distance opacity runs 75% -> 85%. */
     .dim {
         --dim-p: 0;
-        --edge: calc(65% + 60% * var(--dim-p));
-        opacity: calc(0.5 + 0.3 * var(--dim-p));
-        background: linear-gradient(to right, #000 calc(var(--edge) - 25%), transparent calc(var(--edge) + 25%));
-    }
-    /* phones and tablets: the hero copy runs most of the screen's width, so the
-       edge starts further right (85%) and still lands at 125% */
-    @media (hover: none) and (pointer: coarse) {
-        .dim {
-            --edge: calc(85% + 40% * var(--dim-p));
-        }
+        opacity: calc(0.75 + 0.1 * var(--dim-p));
+        background: #000;
     }
 }
 

@@ -108,8 +108,9 @@ const HORIZONS: Horizon[] = [
     },
 ]
 
-const STATUS = 'inline-flex items-center gap-[10px] font-mono text-[0.75rem] tracking-[.22em] uppercase whitespace-nowrap'
-const SUBHEAD = 'font-mono text-[0.75rem] tracking-[.26em] text-ink-52 uppercase'
+const STATUS =
+    'inline-flex items-center gap-[10px] font-mono text-[0.875rem] tracking-[.22em] uppercase whitespace-nowrap'
+const SUBHEAD = 'font-mono text-[0.875rem] tracking-[.26em] text-ink-52 uppercase'
 /* a subhead in the top row of the grid has no rule above it to separate from */
 const SUBHEAD_RULE = 'mt-[26px] border-t border-[rgba(234,230,220,.07)] pt-[14px]'
 
@@ -135,7 +136,7 @@ export function Roadmap() {
                 </div>
 
                 <div
-                    className="flex flex-wrap items-center justify-end gap-7 pt-[28px] pb-[20px] font-mono text-[0.75rem] tracking-[.2em] text-ink-52 uppercase"
+                    className="flex flex-wrap items-center justify-end gap-7 pt-[28px] pb-[20px] font-mono text-[0.875rem] tracking-[.2em] text-ink-52 uppercase"
                     data-fade
                 >
                     <span className="inline-flex items-center gap-[11px]">
