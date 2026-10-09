@@ -34,11 +34,11 @@ const tayRoadRunner = localFont({
     fallback: ['system-ui', 'sans-serif'],
 })
 
-// Mono: QuickDraw is live. To switch to Tommy Tokyo, point `path` at
-// './fonts/tay-tommy-tokyo-regular.woff2' (already in ./fonts, currently unused).
-const tayQuickDraw = localFont({
-    src: [{ path: './fonts/tay-quick-draw.woff2', weight: '400', style: 'normal' }],
-    variable: '--font-tay-quick-draw',
+// Mono: Tommy Tokyo is live. To switch back to Quick Draw, point `path` at
+// './fonts/tay-quick-draw.woff2' (still in ./fonts, currently unused).
+const tayTommyTokyo = localFont({
+    src: [{ path: './fonts/tay-tommy-tokyo-regular.woff2', weight: '400', style: 'normal' }],
+    variable: '--font-tay-tommy-tokyo',
     display: 'swap',
     // Preloaded: it sets the eyebrow labels, chips and "tested on" line, all above the fold.
     preload: true,
@@ -118,7 +118,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return (
         <html
             lang="en"
-            className={`${tayRoadRunner.variable} ${tayFlapjack.variable} ${tayQuickDraw.variable}`}
+            className={`${tayRoadRunner.variable} ${tayFlapjack.variable} ${tayTommyTokyo.variable}`}
             suppressHydrationWarning
         >
             <head>

@@ -30,7 +30,7 @@ export const CATEGORY_DEFINITIONS: Record<FontCategory, CategoryDefinition> = {
     mono: {
         label: 'Mono',
         cssVariable: '--font-mono',
-        fallbackStack: 'var(--font-tay-quick-draw), ui-monospace, monospace',
+        fallbackStack: 'var(--font-tay-tommy-tokyo), ui-monospace, monospace',
     },
 }
 

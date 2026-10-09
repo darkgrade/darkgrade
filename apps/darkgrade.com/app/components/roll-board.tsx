@@ -95,7 +95,7 @@ export function RollBoard({
                     {items.map((item, index) => (
                         <Fragment key={item.key}>
                             {index > 0 && (
-                                // drawn, not typed: Quick Draw has no middle-dot glyph
+                                // drawn, not typed: the mono face has no middle-dot glyph
                                 <span className="mx-[.7em] inline-block size-[3px] rounded-full bg-current" />
                             )}
                             {item.node}
