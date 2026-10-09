@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { LINKS } from './site-links'
 import { Wordmark } from './wordmark'
 
@@ -9,9 +11,9 @@ const COLUMNS = [
     {
         head: 'Product',
         links: [
-            { label: 'Link', href: '#link' },
-            { label: 'Studio', href: '#studio' },
-            { label: 'Roadmap', href: '#roadmap' },
+            { label: 'Link', href: '/#link' },
+            { label: 'Studio', href: '/#studio' },
+            { label: 'Roadmap', href: '/roadmap' },
             { label: 'Docs', href: LINKS.docs, external: true },
         ],
     },
@@ -69,16 +71,18 @@ export function SiteFooter() {
                     {COLUMNS.map(col => (
                         <div key={col.head} data-fade>
                             <div className={COL_HEAD}>{col.head}</div>
-                            {col.links.map(l => (
-                                <a
-                                    key={l.label}
-                                    href={l.href}
-                                    className={COL_LINK}
-                                    {...(l.external ? { target: '_blank', rel: 'noopener' } : {})}
-                                >
-                                    {l.label}
-                                </a>
-                            ))}
+                            {/* site pages move client-side, inside the (site) layout */}
+                            {col.links.map(l =>
+                                'external' in l && l.external ? (
+                                    <a key={l.label} href={l.href} className={COL_LINK} target="_blank" rel="noopener">
+                                        {l.label}
+                                    </a>
+                                ) : (
+                                    <Link key={l.label} href={l.href} className={COL_LINK}>
+                                        {l.label}
+                                    </Link>
+                                )
+                            )}
                         </div>
                     ))}
                 </div>

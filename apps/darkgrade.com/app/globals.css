@@ -329,6 +329,13 @@
         opacity: calc(0.5 + 0.3 * var(--dim-p));
         background: linear-gradient(to right, #000 calc(var(--edge) - 25%), transparent calc(var(--edge) + 25%));
     }
+    /* phones and tablets: the hero copy runs most of the screen's width, so the
+       edge starts further right (80%) and still lands at 125% */
+    @media (hover: none) and (pointer: coarse) {
+        .dim {
+            --edge: calc(80% + 45% * var(--dim-p));
+        }
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

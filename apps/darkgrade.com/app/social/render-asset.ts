@@ -1,4 +1,3 @@
-import { createSilk } from '@/app/components/backgrounds/silk'
 import { ICON_PATHS, ICON_VIEWBOX, WORDMARK_PATHS, WORDMARK_VIEWBOX } from '@/app/components/wordmark-paths'
 import type { AssetFormat, PixelRectangle } from '@/app/social/formats'
 
@@ -6,8 +5,9 @@ import type { AssetFormat, PixelRectangle } from '@/app/social/formats'
  * Draws a social image at its exact pixel size.
  *
  * The preview on the page IS this canvas, scaled down by CSS, so what you see
- * is byte-for-byte what you download. The silk is the site's own shader
- * (createSilk), the type is whatever the font chooser currently has applied,
+ * is byte-for-byte what you download. The backdrop is a frame of the site's
+ * background video under the studio's uniform dim, the type is whatever the
+ * font chooser currently has applied,
  * and the glow on "less." is the site's text-shadow stack re-expressed as
  * canvas shadows.
  */
@@ -21,8 +21,9 @@ export interface Typefaces {
 
 export interface RenderOptions {
     readonly typefaces: Typefaces
-    /** Which moment of the silk animation to freeze. */
-    readonly frameSeconds: number
+    /** The chosen video frame at its native size, or null to render on flat
+     *  obsidian (no video chosen yet). Cover-cropped to each format. */
+    readonly backdrop: HTMLCanvasElement | null
 }
 
 const BONE = '#eae6dc'
@@ -51,7 +52,8 @@ const WIDE_LAYOUT_ASPECT_RATIO = 5
 /** Share of the square the icon spans. */
 const SQUARE_MARK_WIDTH_RATIO = 0.62
 
-const SILK_CACHE_LIMIT = 6
+/** The studio's dim over the video: uniform black at this opacity. */
+const BACKDROP_DIM = 0.6
 
 /* The site's `glow-hot` text-shadow stack: [blur px, y offset px, colour]. The
    radii are absolute on the site (tuned for ~32-90px type), so they are scaled
@@ -87,8 +89,6 @@ async function loadTypefaces(typefaces: Typefaces): Promise<void> {
 
 /* ---------- backdrop ---------- */
 
-const silkCache = new Map<string, HTMLCanvasElement>()
-
 function createCanvas(width: number, height: number): HTMLCanvasElement {
     const canvas = document.createElement('canvas')
     canvas.width = width
@@ -96,50 +96,21 @@ function createCanvas(width: number, height: number): HTMLCanvasElement {
     return canvas
 }
 
-/** The site's silk shader at an exact size, frozen at one moment. Cached, so
- *  cycling fonts redraws only the type. */
-function getSilkFrame(width: number, height: number, frameSeconds: number): HTMLCanvasElement {
-    const key = `${width}x${height}@${frameSeconds}`
-    const cached = silkCache.get(key)
-    if (cached) return cached
-
-    const frame = createCanvas(width, height)
-    const context = frame.getContext('2d')
-    if (!context) return frame
+/** The video frame, scaled to cover the asset and centred (CSS object-fit: cover),
+ *  then the uniform dim. Without a frame, flat obsidian. */
+function drawBackdrop(context: CanvasRenderingContext2D, width: number, height: number, options: RenderOptions): void {
     context.fillStyle = OBSIDIAN
     context.fillRect(0, 0, width, height)
+    const source = options.backdrop
+    if (!source || !source.width || !source.height) return
 
-    const glCanvas = createCanvas(width, height)
-    const silk = createSilk(glCanvas, { width, height })
-    if (!silk) return frame // no WebGL: a flat dark frame beats a broken export
-
-    silk.fade.value = 1
-    silk.draw(frameSeconds, 0.5, 0.5, 0)
-    context.drawImage(glCanvas, 0, 0) // same task as the draw, so the buffer is still valid
-    silk.destroy()
-    glCanvas.getContext('webgl')?.getExtension('WEBGL_lose_context')?.loseContext()
-
-    if (silkCache.size >= SILK_CACHE_LIMIT) silkCache.delete(silkCache.keys().next().value as string)
-    silkCache.set(key, frame)
-    return frame
-}
-
-/** The page's own edge vignette: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.5)). */
-function drawVignette(context: CanvasRenderingContext2D, width: number, height: number): void {
-    const radiusX = width * 1.2
-    const radiusY = height * 0.9
-    const centerX = width * 0.5
-    const centerY = height * 0.4
-
-    context.save()
-    context.translate(centerX, centerY)
-    context.scale(radiusX, radiusY)
-    const gradient = context.createRadialGradient(0, 0, 0, 0, 0, 1)
-    gradient.addColorStop(0.55, 'rgba(0, 0, 0, 0)')
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.5)')
-    context.fillStyle = gradient
-    context.fillRect(-centerX / radiusX, -centerY / radiusY, width / radiusX, height / radiusY)
-    context.restore()
+    const scale = Math.max(width / source.width, height / source.height)
+    const drawnWidth = source.width * scale
+    const drawnHeight = source.height * scale
+    context.imageSmoothingQuality = 'high'
+    context.drawImage(source, (width - drawnWidth) / 2, (height - drawnHeight) / 2, drawnWidth, drawnHeight)
+    context.fillStyle = `rgba(0, 0, 0, ${BACKDROP_DIM})`
+    context.fillRect(0, 0, width, height)
 }
 
 /* ---------- marks ---------- */
@@ -468,14 +439,11 @@ export async function renderAssetCanvas(format: AssetFormat, options: RenderOpti
     const context = output.getContext('2d')
     if (!context) throw new Error('2D canvas is unavailable')
 
-    const hasBackdrop = format.look === 'banner' || format.look === 'mark-on-silk'
-    if (hasBackdrop) {
-        context.drawImage(getSilkFrame(format.width, format.height, options.frameSeconds), 0, 0)
-        drawVignette(context, format.width, format.height)
-    }
+    const hasBackdrop = format.look === 'banner' || format.look === 'mark-on-video'
+    if (hasBackdrop) drawBackdrop(context, format.width, format.height, options)
 
     if (format.look === 'banner') drawBanner(context, format, options.typefaces)
-    if (format.look === 'mark-on-silk') drawCenteredIcon(context, format, true, BONE)
+    if (format.look === 'mark-on-video') drawCenteredIcon(context, format, true, BONE)
     if (format.look === 'mark-light-mode') drawCenteredIcon(context, format, false, '#000000')
     if (format.look === 'mark-dark-mode') drawCenteredIcon(context, format, false, '#ffffff')
     return output

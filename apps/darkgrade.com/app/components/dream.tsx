@@ -5,7 +5,7 @@ export function Dream() {
         <section className="relative py-[clamp(140px,22vh,280px)] text-center">
             <div className="shell">
                 <div className={`${LABEL} mb-[34px] text-ink-55`} data-fade>
-                    <span className="mr-[14px] text-gold">04</span>The point of all this
+                    <span className="mr-[14px] text-gold">03</span>The point of all this
                 </div>
 
                 <h2

@@ -1,15 +1,17 @@
 import { Wordmark } from './wordmark'
 
 /**
- * Preloader. Hidden outright without JavaScript - nothing would ever lift it -
- * and the intro timeline in <SiteEffects> counts it up, then slides it away.
+ * Preloader. Shown only under html.intro, which the root layout sets when a
+ * visit lands on the home page - so it is hidden outright without JavaScript
+ * (nothing would ever lift it) and on every other entry point. The intro
+ * timeline in <SiteEffects> counts it up, then slides it away.
  */
 export function Loader() {
     return (
         <div
             id="loader"
             aria-hidden="true"
-            className="fixed inset-0 z-[100] hidden flex-col items-center justify-center gap-[26px] bg-[#060607] [html.js_&]:flex"
+            className="fixed inset-0 z-[100] hidden flex-col items-center justify-center gap-[26px] bg-[#060607] [html.intro_&]:flex"
         >
             <div className="opacity-[.72]">
                 <Wordmark className="block h-[15px] w-auto text-ink-55" />

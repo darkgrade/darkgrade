@@ -1,13 +1,16 @@
+import Link from 'next/link'
+
 import { BackgroundToggle } from './background-toggle'
 import { CONTOUR_BACKGROUND_ENABLED } from './backgrounds/field'
 import { LINKS } from './site-links'
 import { Wordmark } from './wordmark'
 
 /** JS toggles `.scrolled` on the header once the top marker leaves the viewport. */
+/* Home-page sections are written "/#id" so the same header works on /roadmap. */
 const NAV = [
-    { label: 'Product', href: '#product' },
-    { label: 'Roadmap', href: '#roadmap' },
-    { label: 'Principles', href: '#principles' },
+    { label: 'Product', href: '/#product' },
+    { label: 'Roadmap', href: '/roadmap' },
+    { label: 'Principles', href: '/#principles' },
     { label: 'Docs', href: LINKS.docs, external: true },
 ]
 
@@ -23,21 +26,23 @@ export function SiteHeader() {
             className="fixed inset-x-0 top-0 z-[80] transition-[background,backdrop-filter] duration-500 [&.scrolled]:bg-[rgba(10,10,11,.72)] [&.scrolled]:backdrop-blur-[14px]"
         >
             <div className="shell flex h-[76px] items-center justify-between transition-[height] duration-500 ease-lamp [.scrolled_&]:h-[64px]">
-                <a href="#" aria-label="Darkgrade" className="block text-ink">
+                <Link href="/" aria-label="Darkgrade" className="block text-ink">
                     <Wordmark className="mark-glow block h-[17px] w-auto max-[400px]:h-[14px]" />
-                </a>
+                </Link>
 
                 <nav className="flex gap-[38px] max-[900px]:hidden">
-                    {NAV.map(({ label, href, external }) => (
-                        <a
-                            key={label}
-                            href={href}
-                            className={NAV_LINK}
-                            {...(external ? { target: '_blank', rel: 'noopener' } : {})}
-                        >
-                            {label}
-                        </a>
-                    ))}
+                    {/* site pages move client-side, inside the (site) layout */}
+                    {NAV.map(({ label, href, external }) =>
+                        external ? (
+                            <a key={label} href={href} className={NAV_LINK} target="_blank" rel="noopener">
+                                {label}
+                            </a>
+                        ) : (
+                            <Link key={label} href={href} className={NAV_LINK}>
+                                {label}
+                            </Link>
+                        )
+                    )}
                 </nav>
 
                 <div className="flex items-center gap-5">
