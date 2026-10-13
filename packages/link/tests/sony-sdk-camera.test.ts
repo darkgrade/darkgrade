@@ -119,3 +119,19 @@ describe('Sony SDK Wi-Fi camera', () => {
         ])
     })
 })
+
+it('matches a camera hex SHA-256 fingerprint to the public SDK base64 form', async () => {
+    const requests: Record<string, string>[] = []
+    const fingerprint = Buffer.alloc(32, 0x11).toString('base64')
+    const bridge: SonySdkBridge = {
+        request: async command => {
+            requests.push(command)
+            return command.cmd === 'fingerprint' ? { ok: true, fingerprint } : { ok: true }
+        },
+        close: async () => undefined,
+    }
+    const camera = new SonyWifiCamera(bridge)
+    await camera.connect({ ...authentication, fingerprint: 'SHA256:' + '11'.repeat(32) })
+    expect(requests[1]!.fingerprint).toBe(fingerprint)
+    await camera.disconnect()
+})

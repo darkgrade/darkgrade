@@ -50,3 +50,8 @@ The companion testbench PR supplies our native stdio adapter source and its buil
 The new backend compiles and passes software checks, but α6700 Wi-Fi control has not yet passed hardware validation. As of 2026-10-13, association is verified while PC Remote ports refuse connections in the current USB configuration. Camera PC Remote setup, USB handoff, and runtime authentication remain required. The Console continues to use USB controls.
 
 String/128-bit properties and media browsing/download are not implemented by this backend. A still trigger confirms an SDK command response, not an image download.
+
+
+### Latest hardware attempt
+
+On 2026-10-13, Darkgrade confirmed PC Remote and Access Authentication were On. Before private credential retrieval, the camera stopped drawing power, HDMI became black, and only the standby USB interface remained. Guarded USB/power recovery did not restore PTP. Wi-Fi controls remain unverified until the camera powers up. The fingerprint comparison now accepts equivalent SHA-256 hex and SDK Base64 forms, with a regression test; this uses the documented public SDK representation.

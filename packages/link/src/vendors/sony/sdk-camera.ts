@@ -65,8 +65,15 @@ const propertyCodes = {
 export const SONY_SDK_PROPERTY_CODES = propertyCodes
 
 function fingerprintKey(value: string): string {
-    const compact = value.replace(/[:\s]/g, '')
-    return /^[0-9a-f]+$/i.test(compact) ? compact.toLowerCase() : value.trim()
+    const normalized = value.trim().replace(/^SHA256:/i, '')
+    const hexadecimal = normalized.replace(/[:\s]/g, '')
+    if (/^[0-9a-f]+$/i.test(hexadecimal)) return hexadecimal.toLowerCase()
+    if (/^[A-Za-z0-9+/]{43}=?$/.test(normalized)) {
+        const decoded = atob(normalized)
+        if (decoded.length === 32)
+            return [...decoded].map(character => character.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+    }
+    return normalized
 }
 
 export function validateSonyWifiAuthentication(authentication: SonyWifiAuthentication): void {
