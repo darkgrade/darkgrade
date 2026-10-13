@@ -442,3 +442,6 @@ export { GenericCamera } from './generic-camera'
 export { NikonCamera } from './nikon-camera'
 export { SONY_CAMERA_BUTTONS, SonyCamera } from './sony-camera'
 export type { SonyCameraButton, SonyOsdImage, SonyPropertyState, SonyZoomResult } from './sony-camera'
+
+export { typeSonyWifiKeyboard, sonyWifiKeyboardCharacter } from '@vendors/sony/wifi-keyboard'
+export type { SonyKeyboardImage, SonyKeyboardControls } from '@vendors/sony/wifi-keyboard'

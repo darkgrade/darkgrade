@@ -16,7 +16,8 @@
             "@constants/*": ["src/constants/*"],
             "@api/*": ["src/api/*"],
             "@factories/*": ["src/factories/*"],
-            "@ptp/*": ["src/ptp/*"]
+            "@ptp/*": ["src/ptp/*"],
+            "@vendors/*": ["src/vendors/*"]
         }
     },
     "include": ["src", "tests", "*.config.ts"]

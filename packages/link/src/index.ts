@@ -52,3 +52,6 @@ export { sonyFormatRegistry } from '@ptp/definitions/vendors/sony/sony-format-de
 export { sonyOperationRegistry } from '@ptp/definitions/vendors/sony/sony-operation-definitions'
 export { sonyPropertyRegistry } from '@ptp/definitions/vendors/sony/sony-property-definitions'
 export { sonyResponseRegistry } from '@ptp/definitions/vendors/sony/sony-response-definitions'
+
+export { typeSonyWifiKeyboard, sonyWifiKeyboardCharacter } from '@vendors/sony/wifi-keyboard'
+export type { SonyKeyboardImage, SonyKeyboardControls } from '@vendors/sony/wifi-keyboard'

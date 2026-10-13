@@ -32,3 +32,10 @@ On 2026-09-11, the α6700 authenticated successfully over SSH on port 22 at its 
 The adapter is intentionally not a protocol implementation: its channel factory must perform Sony SDK authentication, fingerprint validation, and proprietary session setup. Until that binding is supplied, USB remains the supported Sony control transport.
 
 See Sony's [α6700 PC Remote guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/0903_pc_remote_function.html), [access authentication guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/221h_access_authentication_information.html), and [firmware page](https://www.sony.com/electronics/support/software/00298441).
+
+
+## Wi-Fi provisioning through camera buttons
+
+The testbench now uses Darkgrade body buttons and OSD to register a new WPA2 access point. The exported `typeSonyWifiKeyboard(value, controls)` enters printable ASCII SSIDs and passwords on the English ILCE-6700 keyboard. Its injected controls provide decoded RGBA frames, button presses, and OCR. The caller must own the camera, bound the operation, and hide credential frames; the module does not store or publish input.
+
+Hardware verified 2026-10-13: a previously unregistered SSID joined successfully after password entry, received a DHCP address, and passed ping plus camera MAC verification. This proves network association. Authenticated Wi-Fi camera control remains a separate SDK integration.
