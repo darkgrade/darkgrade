@@ -39,3 +39,14 @@ See Sony's [α6700 PC Remote guide](https://helpguide.sony.net/ilc/2320/v1/en/co
 The testbench now uses Darkgrade body buttons and OSD to register a new WPA2 access point. The exported `typeSonyWifiKeyboard(value, controls)` enters printable ASCII SSIDs and passwords on the English ILCE-6700 keyboard. Its injected controls provide decoded RGBA frames, button presses, and OCR. The caller must own the camera, bound the operation, and hide credential frames; the module does not store or publish input.
 
 Hardware verified 2026-10-13: a previously unregistered SSID joined successfully after password entry, received a DHCP address, and passed ping plus camera MAC verification. This proves network association. Authenticated Wi-Fi camera control remains a separate SDK integration.
+
+
+## Official-SDK camera backend
+
+`SonyWifiCamera`, `createSonySdkBridge`, and `SONY_SDK_PROPERTY_CODES` are exported from `@darkgrade/link`. The backend uses the SDK's public high-level API instead of trying to send USB PTP bytes through an SDK session. It supports numeric advertised settings (805 named SDK IDs), body buttons, autofocus, AF position, zoom, live-view/OSD images, still triggering, and movie recording controls. These methods use SDK property identifiers, which differ from the PTP registry codes.
+
+The companion testbench PR supplies our native stdio adapter source and its build script; the operator installs Sony's SDK outside the repositories. No SDK library or header is redistributed. Connection takes runtime camera username/password plus an operator-trusted fingerprint. Both TypeScript and the native SDK connection verify the fingerprint. Secrets stay in memory/private stdin.
+
+The new backend compiles and passes software checks, but α6700 Wi-Fi control has not yet passed hardware validation. As of 2026-10-13, association is verified while PC Remote ports refuse connections in the current USB configuration. Camera PC Remote setup, USB handoff, and runtime authentication remain required. The Console continues to use USB controls.
+
+String/128-bit properties and media browsing/download are not implemented by this backend. A still trigger confirms an SDK command response, not an image download.

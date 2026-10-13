@@ -55,3 +55,8 @@ export { sonyResponseRegistry } from '@ptp/definitions/vendors/sony/sony-respons
 
 export { typeSonyWifiKeyboard, sonyWifiKeyboardCharacter } from '@vendors/sony/wifi-keyboard'
 export type { SonyKeyboardImage, SonyKeyboardControls } from '@vendors/sony/wifi-keyboard'
+
+export { SonyWifiCamera, SONY_SDK_PROPERTY_CODES, validateSonyWifiAuthentication } from '@vendors/sony/sdk-camera'
+export type { SonySdkBridge, SonySdkProperty, SonyWifiAuthentication } from '@vendors/sony/sdk-camera'
+export { createSonySdkBridge } from '@vendors/sony/sdk-node-bridge'
+export type { SonySdkBridgeOptions } from '@vendors/sony/sdk-node-bridge'
