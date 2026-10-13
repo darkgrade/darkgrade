@@ -96,3 +96,23 @@ describe('Sony OSD image (SDIO_GetOsdImage 0x9238)', () => {
         expect(operations.map(operation => operation.name)).toEqual(['SDIO_GetOsdImage', 'SDIO_GetOsdImage'])
     })
 })
+
+
+describe('Sony body menu session', () => {
+    for (const mode of ['remote','menus'] as const) {
+        it(`opens ${mode} mode with the expected documented function mode`, async () => {
+            const {camera,operations,sets} = sonyCamera()
+            camera.transport.isConnected = () => true
+            camera.refreshPropertyStates = async () => []
+            await camera.connect(undefined,{mode})
+            expect(operations.find(operation => operation.name==='SDIO_OpenSession')?.params).toMatchObject({
+                FunctionMode:mode==='menus'?'CONTENT_TRANSFER':'REMOTE_AND_CONTENT_TRANSFER',
+            })
+            expect(operations.filter(operation => operation.name==='SDIO_Connect')).toHaveLength(3)
+            expect(sets).toEqual(mode==='menus'?[]:[
+                {name:'PositionKeySetting',value:'HOST_PRIORITY'},
+                {name:'StillImageSaveDestination',value:'CAMERA_DEVICE'},
+            ])
+        })
+    }
+})

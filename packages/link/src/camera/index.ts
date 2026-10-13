@@ -60,6 +60,12 @@ export class Camera {
         return this.instance.connect(device || this.deviceDescriptor)
     }
 
+    /** Opens a Sony contents-transfer session for body-menu controls. */
+    async connectSonyMenuSession(device?: DeviceDescriptor): Promise<void> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony menu sessions require a Sony camera')
+        await this.instance.connect(device || this.deviceDescriptor, { mode: 'menus' })
+    }
+
     async disconnect(): Promise<void> {
         return this.instance.disconnect()
     }
