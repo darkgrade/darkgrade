@@ -230,3 +230,29 @@ it('does not report a verified setting when camera readback stays unchanged', as
     await camera.connect(authentication)
     await expect(camera.setSonySetting('WhiteBalance', 17)).rejects.toThrow('did not confirm')
 }, 10000)
+
+it('searches and writes familiar aliases when the SDK uses another advertised name', async () => {
+    let value = '100'
+    const { bridge } = bridgeForProperties()
+    const original = bridge.request
+    bridge.request = async command => {
+        if (command.cmd === 'properties')
+            return {
+                properties: [
+                    { code: 260, type: 3, value, writable: true, allowedValues: ['100', '3200'] },
+                    { code: 256, type: 2, value: '1400', writable: true },
+                ],
+            }
+        if (command.cmd === 'set') value = command.value!
+        return original(command)
+    }
+    const camera = new SonyWifiCamera(bridge)
+    await camera.connect(authentication)
+    expect((await camera.getSonyCapabilities('gain'))[0]!.code).toBe(260)
+    expect((await camera.getSonyCapabilities('f-stop'))[0]!.code).toBe(256)
+    expect(await camera.setSonySetting('ISO', 3200)).toMatchObject({
+        before: { name: 'IsoSensitivity' },
+        after: { value: '3200' },
+        verified: true,
+    })
+})

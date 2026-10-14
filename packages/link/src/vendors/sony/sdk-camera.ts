@@ -241,7 +241,17 @@ export class SonyWifiCamera {
             .split(/[^a-z0-9]+/)
             .filter(Boolean)
         return (await this.getSonyPropertyStates()).filter(property => {
-            const searchable = (property.name.replace(/([a-z])([A-Z])/g, '$1 $2') + ' ' + property.name).toLowerCase()
+            const names = Object.entries(propertyCodes)
+                .filter(([, code]) => code === property.code)
+                .map(([name]) => name)
+                .join(' ')
+            const searchable = (
+                property.name.replace(/([a-z])([A-Z])/g, '$1 $2') +
+                ' ' +
+                property.name +
+                ' ' +
+                names
+            ).toLowerCase()
             return words.every(word => searchable.includes(word) || String(property.code) === word)
         })
     }
@@ -257,10 +267,14 @@ export class SonyWifiCamera {
     }> {
         const normalize = (name: string) => name.replace(/[^a-z0-9]/gi, '').toLowerCase()
         const properties = await this.getSonyPropertyStates()
-        const before = properties.find(property =>
+        const requestedCode =
             typeof nameOrCode === 'number'
-                ? property.code === nameOrCode
-                : normalize(property.name) === normalize(nameOrCode)
+                ? nameOrCode
+                : Object.entries(propertyCodes).find(([name]) => normalize(name) === normalize(nameOrCode))?.[1]
+        const before = properties.find(
+            property =>
+                property.code === requestedCode ||
+                (typeof nameOrCode === 'string' && normalize(property.name) === normalize(nameOrCode))
         )
         if (!before)
             throw new Error('The camera does not advertise that setting; search capabilities for its exact name')
