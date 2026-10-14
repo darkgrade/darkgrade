@@ -22,6 +22,16 @@ function bridgeForProperties(properties: unknown[] = []) {
     return { bridge, requests }
 }
 describe('Sony SDK Wi-Fi camera', () => {
+    it('opens official SDK USB preparation by serial without runtime Wi-Fi credentials', async () => {
+        const { bridge, requests } = bridgeForProperties()
+        const camera = new SonyWifiCamera(bridge)
+        await expect(camera.connectUsb('../invalid')).rejects.toThrow('serial')
+        await camera.connectUsb('D0CAA016393C')
+        expect(requests).toEqual([{ cmd: 'connect', serial: 'D0CAA016393C' }])
+        expect(camera.isConnected()).toBe(true)
+        await camera.disconnect()
+        expect(camera.isConnected()).toBe(false)
+    })
     it('validates camera identity and runtime credentials without exposing them', () => {
         expect(() => validateSonyWifiAuthentication(authentication)).not.toThrow()
         expect(() => validateSonyWifiAuthentication({ ...authentication, host: '192.0.2.999' })).toThrow('IPv4')
@@ -75,8 +85,8 @@ describe('Sony SDK Wi-Fi camera', () => {
         await camera.connect(authentication)
         await camera.sonyPressButton('menu', { holdMilliseconds: 30 })
         expect(requests.slice(-2)).toEqual([
-            { cmd: 'set', code: '563', type: '3', value: '393218' },
-            { cmd: 'set', code: '563', type: '3', value: '393217' },
+            { cmd: 'set', code: '563', type: '16387', value: '393218' },
+            { cmd: 'set', code: '563', type: '16387', value: '393217' },
         ])
         await expect(camera.sonyPressButton('menu', { holdMilliseconds: 0 })).rejects.toThrow('duration')
     })
@@ -134,4 +144,43 @@ it('matches a camera hex SHA-256 fingerprint to the public SDK base64 form', asy
     await camera.connect({ ...authentication, fingerprint: 'SHA256:' + '11'.repeat(32) })
     expect(requests[1]!.fingerprint).toBe(fingerprint)
     await camera.disconnect()
+})
+
+describe('Sony SDK connection startup retries', () => {
+    it('retries a transient IP connection error with unchanged trusted credentials', async () => {
+        const calls: Record<string, string>[] = []
+        let attempts = 0
+        const bridge: SonySdkBridge = {
+            request: async command => {
+                calls.push(command)
+                if (command.cmd === 'fingerprint') return { ok: true, fingerprint: 'aabbcc' }
+                if (command.cmd === 'connect_wifi' && attempts++ === 0)
+                    throw new Error('Sony SDK command failed (SDK code 33282)')
+                return { ok: true }
+            },
+            close: async () => undefined,
+        }
+        const camera = new SonyWifiCamera(bridge)
+        await camera.connect(authentication)
+        expect(camera.isConnected()).toBe(true)
+        expect(calls.filter(call => call.cmd === 'connect_wifi')).toHaveLength(2)
+        expect(calls.filter(call => call.cmd === 'connect_wifi').map(call => call.password)).toEqual([
+            authentication.password,
+            authentication.password,
+        ])
+        expect(calls.some(call => call.cmd === 'disconnect')).toBe(true)
+    })
+    it('does not retry camera credential rejection', async () => {
+        let attempts = 0
+        const bridge: SonySdkBridge = {
+            request: async command => {
+                if (command.cmd === 'fingerprint') return { ok: true, fingerprint: 'aabbcc' }
+                attempts++
+                throw new Error('Sony SDK command failed (SDK code 33302)')
+            },
+            close: async () => undefined,
+        }
+        await expect(new SonyWifiCamera(bridge).connect(authentication)).rejects.toThrow('33302')
+        expect(attempts).toBe(1)
+    })
 })

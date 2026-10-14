@@ -1,57 +1,39 @@
 ---
-title: 'Sony Wi-Fi WIP'
-description: 'Current Sony PC Remote Wi-Fi validation status'
+title: 'Sony Wi-Fi and Bluetooth controls'
+description: 'Authenticated Sony SDK controls and verified α6700 wireless workflows'
 ---
 
-## Current status
+## Verified on the α6700
 
-Sony USB controls are hardware-verified on the α6700. Wi-Fi controls are not.
+On 2026-10-13, the ILCE-6700 accepted authenticated Camera Remote SDK connections over Wi-Fi with USB disabled automatically at its mapped hub. Access Authentication and PC Remote remained On. The testbench retrieved 355 numeric properties, changed aperture from f/14 to f/16 and back with readback, opened the real camera menu, and streamed the camera OSD alongside HDMI.
 
-On 2026-08-26, the mapped Shelly output was enabled, but the body drew 0 W and exposed only the `054c:0d68` standby HID interface. USB reconnect and a full power cycle did not restore the `054c:0e78` PTP interface. The isolated adapter found no Sony access point, `_ptp._tcp` service, or SSDP announcement. No Wi-Fi command was sent.
+Wi-Fi shutter capture saved a card image: remaining-photo count changed from 701 to 700. Wi-Fi power zoom changed the lens distance from 16 mm to 17 mm and back. Autofocus commands completed; the dark reference view did not acquire focus, so successful focus lock is not claimed.
 
-The body must boot and the dummy battery must draw power before this test can continue.
+A Bluetooth shutter command also saved a card image (700 to 699), verified through SDK readback. Bluetooth autofocus produced camera notifications. The bond persists between actions; an idle Bluetooth connection is separate from pairing.
 
-## Next test
+## Library interfaces
 
-1. Verify α6700 firmware 2.00.
-2. Enable **Wi-Fi Connect** and **PC Remote** on the body.
-3. Use **Wi-Fi Direct Info** to join the camera through the isolated adapter.
-4. Temporarily disable **Access Authen.** only on the isolated lab network.
-5. Try Darkgrade's PTP/IP transport with `VendorIDs.SONY`.
-6. Require `GetDeviceInfo` and the Sony SDIO handshake to complete before testing a control.
-7. Restore access authentication after the experiment.
+`SonyWifiCamera`, `createSonySdkBridge`, and `SONY_SDK_PROPERTY_CODES` are exported from `@darkgrade/link`. The SDK backend supports numeric advertised properties and allowed choices, body buttons, autofocus, AF-area requests, zoom, OSD/live-view requests, still release, and bounded movie controls. SDK identifiers differ from USB PTP identifiers. Readback is required before treating a setting as applied. `connectUsb(serial)` supports official-SDK preparation and observation under the same camera lease.
 
-Sony documents that disabling access authentication removes SSH authentication and encryption. Do not use that mode on a shared network.
+`SonyBluetoothRemote` provides autofocus, shutter release, C1, focus near/far, zoom wide/tele, and guarded bounded recording through an injected Bluetooth channel. The platform owns bonding and GATT cleanup. It uses the published [RMT-P1BT command protocol](https://github.com/coral/freemote); it does not implement Sony's credential-sharing protocol. The command and notification characteristics use the standard Bluetooth UUID base under Sony's vendor service.
 
-## Authenticated path
+## Testbench workflow
 
-The authenticated workflow uses the camera username, password, and fingerprint. Darkgrade's standard PTP/IP transport does not implement that SSH boundary. The production path should use Sony's Camera Remote SDK or a separately validated compatible implementation.
+Open **Camera Console → Connections**. Pair Bluetooth or share a saved bench Wi-Fi network. **Use Wi-Fi controls** privately reads the camera's Access Authen. Info, reconnects its registered network, disables both mapped USB hub halves, and verifies SDK authentication. Credentials and the trusted fingerprint remain only in process memory and private stdin. A service restart rereads them automatically.
 
-On 2026-09-11, the α6700 authenticated successfully over SSH on port 22 at its assigned Wi-Fi address. Its proprietary Camera Remote SDK channel is reachable on TCP port 64321; normal shell and SSH port forwarding are rejected, and sending standard PTP/IP framing to that port is not accepted. Darkgrade now exports a dependency-injected `SonyRemoteSdkTransport` adapter so an official SDK binding can provide the authenticated channel without putting Sony credentials or an unverified wire implementation in the core library.
+The Console keeps a Wi-Fi SDK session open for menu and setting operations. HDMI stays visible beside collapsed, searchable settings. Bluetooth quick actions run inside that session without closing the preview. The photo action temporarily selects the camera card when the original destination is PC-only, verifies a new card photo, and restores the original destination.
 
-The adapter is intentionally not a protocol implementation: its channel factory must perform Sony SDK authentication, fingerprint validation, and proprietary session setup. Until that binding is supplied, USB remains the supported Sony control transport.
+**Use USB controls** restores the mapped hub ports and verifies PTP. **Disconnect Wi-Fi** uses USB recovery and camera menus to turn Wi-Fi off while retaining saved network credentials and Bluetooth pairing.
 
-See Sony's [α6700 PC Remote guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/0903_pc_remote_function.html), [access authentication guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/221h_access_authentication_information.html), and [firmware page](https://www.sony.com/electronics/support/software/00298441).
+## SDK installation and safety
 
+Install Sony's accepted licensed SDK outside the repositories. The testbench supplies native adapter source and a build script; SDK binaries and headers are not redistributed. Both the TypeScript backend and native connection verify the trusted fingerprint before authentication. No SDK handshake capture, reverse engineering, or authentication bypass is used.
 
-## Wi-Fi provisioning through camera buttons
+The reference replacement hub is Genesys Logic 05e3:0625 / 05e3:0610. Guarded handoff keeps it awake, disables the kernel ports, and sends direct power requests to both halves. Automated USB disappearance and subsequent SDK control were verified. This is functional transport verification; VBUS voltage was not measured. The older ROSONWAY/VIA connector did not reliably release the camera's USB mode.
 
-The testbench now uses Darkgrade body buttons and OSD to register a new WPA2 access point. The exported `typeSonyWifiKeyboard(value, controls)` enters printable ASCII SSIDs and passwords on the English ILCE-6700 keyboard. Its injected controls provide decoded RGBA frames, button presses, and OCR. The caller must own the camera, bound the operation, and hide credential frames; the module does not store or publish input.
+## Current limits
 
-Hardware verified 2026-10-13: a previously unregistered SSID joined successfully after password entry, received a DHCP address, and passed ping plus camera MAC verification. This proves network association. Authenticated Wi-Fi camera control remains a separate SDK integration.
-
-
-## Official-SDK camera backend
-
-`SonyWifiCamera`, `createSonySdkBridge`, and `SONY_SDK_PROPERTY_CODES` are exported from `@darkgrade/link`. The backend uses the SDK's public high-level API instead of trying to send USB PTP bytes through an SDK session. It supports numeric advertised settings (805 named SDK IDs), body buttons, autofocus, AF position, zoom, live-view/OSD images, still triggering, and movie recording controls. These methods use SDK property identifiers, which differ from the PTP registry codes.
-
-The companion testbench PR supplies our native stdio adapter source and its build script; the operator installs Sony's SDK outside the repositories. No SDK library or header is redistributed. Connection takes runtime camera username/password plus an operator-trusted fingerprint. Both TypeScript and the native SDK connection verify the fingerprint. Secrets stay in memory/private stdin.
-
-The new backend compiles and passes software checks, but α6700 Wi-Fi control has not yet passed hardware validation. As of 2026-10-13, association is verified while PC Remote ports refuse connections in the current USB configuration. Camera PC Remote setup, USB handoff, and runtime authentication remain required. The Console continues to use USB controls.
-
-String/128-bit properties and media browsing/download are not implemented by this backend. A still trigger confirms an SDK command response, not an image download.
-
-
-### Latest hardware attempt
-
-On 2026-10-13, Darkgrade confirmed PC Remote and Access Authentication were On. Before private credential retrieval, the camera stopped drawing power, HDMI became black, and only the standby USB interface remained. Guarded USB/power recovery did not restore PTP. Wi-Fi controls remain unverified until the camera powers up. The fingerprint comparison now accepts equivalent SHA-256 hex and SDK Base64 forms, with a regression test; this uses the documented public SDK representation.
+- Movie recording was refused by the reference camera with a request for an SDXC Class10/U1/V10 or better card. Recording remained stopped. Successful video recording is not claimed for that card.
+- With autofocus unable to lock, Bluetooth shutter release can be refused. Select Manual focus for a shutter demo against a dark/covered view; the UI reports whether a new card photo was confirmed.
+- AF-area requests and JPEG live-view requests are exposed but are not yet hardware-verified here. OSD and HDMI previews are verified.
+- String/128-bit properties and SDK media browsing/download are not implemented.

@@ -21,6 +21,8 @@ export interface SonySdkProperty {
     type: number
     value: string
     writable: boolean
+    allowedValues?: string[]
+    valueForm?: 'enum' | 'range'
 }
 
 const propertyCodes = {
@@ -126,21 +128,48 @@ export class SonyWifiCamera {
     async connect(authentication: SonyWifiAuthentication): Promise<void> {
         if (this.connected) throw new Error('Sony Wi-Fi camera is already connected')
         validateSonyWifiAuthentication(authentication)
-        const identity = { ip: authentication.host, mac: authentication.mac, ssh: '1' }
-        const result = await this.bridge.request({ cmd: 'fingerprint', ...identity })
-        if (
-            typeof result.fingerprint !== 'string' ||
-            fingerprintKey(result.fingerprint) !== fingerprintKey(authentication.fingerprint)
-        ) {
-            throw new Error('Sony camera fingerprint does not match the trusted runtime fingerprint')
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const identity = { ip: authentication.host, mac: authentication.mac, ssh: '1' }
+            let result: Record<string, unknown>
+            try {
+                result = await this.bridge.request({ cmd: 'fingerprint', ...identity })
+            } catch (error) {
+                if (attempt === 2 || !(error instanceof Error) || !/SDK code (33300|33304)/.test(error.message))
+                    throw error
+                await this.bridge.request({ cmd: 'disconnect' })
+                await new Promise(resolve => setTimeout(resolve, 1500))
+                continue
+            }
+            if (
+                typeof result.fingerprint !== 'string' ||
+                fingerprintKey(result.fingerprint) !== fingerprintKey(authentication.fingerprint)
+            ) {
+                throw new Error('Sony camera fingerprint does not match the trusted runtime fingerprint')
+            }
+            try {
+                await this.bridge.request({
+                    cmd: 'connect_wifi',
+                    ...identity,
+                    user: authentication.username,
+                    password: authentication.password,
+                    fingerprint: result.fingerprint,
+                })
+                break
+            } catch (error) {
+                if (attempt === 2 || !(error instanceof Error) || !/SDK code (33282|33291|33296)/.test(error.message))
+                    throw error
+                await this.bridge.request({ cmd: 'disconnect' })
+                await new Promise(resolve => setTimeout(resolve, 1500))
+            }
         }
-        await this.bridge.request({
-            cmd: 'connect_wifi',
-            ...identity,
-            user: authentication.username,
-            password: authentication.password,
-            fingerprint: result.fingerprint,
-        })
+        this.connected = true
+    }
+
+    /** Open the same official SDK over USB for guarded preparation and readback. */
+    async connectUsb(serial: string): Promise<void> {
+        if (this.connected) throw new Error('Sony SDK camera is already connected')
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(serial)) throw new Error('Invalid Sony USB serial')
+        await this.bridge.request({ cmd: 'connect', serial })
         this.connected = true
     }
 
@@ -181,6 +210,12 @@ export class SonyWifiCamera {
                               ).toString()
                             : numericValue(property.value),
                     writable: property.writable === true,
+                    ...(Array.isArray(property.allowedValues)
+                        ? {
+                              allowedValues: property.allowedValues.map(numericValue),
+                              valueForm: property.valueForm === 'range' ? ('range' as const) : ('enum' as const),
+                          }
+                        : {}),
                 }
             })
     }
@@ -195,6 +230,18 @@ export class SonyWifiCamera {
     async setSonyProperty(nameOrCode: keyof typeof propertyCodes | number, value: number | bigint): Promise<void> {
         const property = await this.getSonyProperty(nameOrCode)
         if (!property.writable) throw new Error('The SDK property is currently read-only')
+        const requested = BigInt(value)
+        if (
+            property.allowedValues?.length &&
+            property.valueForm === 'enum' &&
+            !property.allowedValues.some(candidate => BigInt(candidate) === requested)
+        )
+            throw new Error('The camera does not offer the requested property value')
+        if (property.allowedValues?.length === 3 && property.valueForm === 'range') {
+            const [minimum, maximum, step] = property.allowedValues.map(candidate => BigInt(candidate))
+            if (requested < minimum! || requested > maximum! || (step! > 0n && (requested - minimum!) % step !== 0n))
+                throw new Error('The requested property value is outside the camera range')
+        }
         await this.writeProperty(property.code, property.type, value)
     }
 
@@ -222,10 +269,10 @@ export class SonyWifiCamera {
             throw new Error('Button duration must be 30–2000 milliseconds')
         const prefix = identifier << 16
         try {
-            await this.writeProperty(propertyCodes.CameraButtonFunction, 3, prefix | 2)
+            await this.writeProperty(propertyCodes.CameraButtonFunction, 0x4003, prefix | 2)
             await new Promise(resolve => setTimeout(resolve, holdMilliseconds))
         } finally {
-            await this.writeProperty(propertyCodes.CameraButtonFunction, 3, prefix | 1)
+            await this.writeProperty(propertyCodes.CameraButtonFunction, 0x4003, prefix | 1)
         }
     }
 
@@ -289,6 +336,11 @@ export class SonyWifiCamera {
 
     async captureSonyOsdImage(filename: string): Promise<Record<string, unknown>> {
         await this.setSonyProperty('OsdImageMode', 1)
+        const deadline = Date.now() + 5000
+        while ((await this.getSonyProperty('OsdImageMode')).value !== '1') {
+            if (Date.now() >= deadline) throw new Error('The camera did not enable its OSD image')
+            await new Promise(resolve => setTimeout(resolve, 200))
+        }
         await new Promise(resolve => setTimeout(resolve, 500))
         return await this.bridge.request({ cmd: 'osd', path: filename })
     }

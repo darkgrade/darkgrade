@@ -60,3 +60,6 @@ export { SonyWifiCamera, SONY_SDK_PROPERTY_CODES, validateSonyWifiAuthentication
 export type { SonySdkBridge, SonySdkProperty, SonyWifiAuthentication } from '@vendors/sony/sdk-camera'
 export { createSonySdkBridge } from '@vendors/sony/sdk-node-bridge'
 export type { SonySdkBridgeOptions } from '@vendors/sony/sdk-node-bridge'
+
+export { SonyBluetoothRemote, SONY_BLUETOOTH_REMOTE_SERVICE, SONY_BLUETOOTH_REMOTE_COMMAND, SONY_BLUETOOTH_REMOTE_NOTIFICATION } from '@vendors/sony/bluetooth-remote'
+export type { SonyBluetoothChannel, SonyBluetoothDirection } from '@vendors/sony/bluetooth-remote'
