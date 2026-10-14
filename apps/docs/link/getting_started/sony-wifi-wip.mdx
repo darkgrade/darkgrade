@@ -37,3 +37,19 @@ The reference replacement hub is Genesys Logic 05e3:0625 / 05e3:0610. Guarded ha
 - With autofocus unable to lock, Bluetooth shutter release can be refused. Select Manual focus for a shutter demo against a dark/covered view; the UI reports whether a new card photo was confirmed.
 - AF-area requests and JPEG live-view requests are exposed but are not yet hardware-verified here. OSD and HDMI previews are verified.
 - String/128-bit properties and SDK media browsing/download are not implemented.
+
+
+## Searchable SDK controls and Bluetooth movement
+
+`SonyWifiCamera.getSonyCapabilities(query?)` searches the connected body’s advertised numeric properties, including current values, writable flags, and allowed choices/ranges. `setSonySetting(nameOrCode, value)` resolves an exact setting name (spaces/case are ignored), validates it through `setSonyProperty`, and returns `{before, after, verified: true}` only after matching camera readback. Unsupported settings, read-only descriptors, and choices outside the camera’s advertised range are refused.
+
+```ts
+const matches = await camera.getSonyCapabilities('white balance')
+const result = await camera.setSonySetting('WhiteBalance', 17n)
+// Save and restore your original value after a demo.
+await camera.setSonySetting('WhiteBalance', BigInt(result.before.value))
+```
+
+The testbench exposes these as `camera_sony_wifi_capabilities` and `camera_sony_wifi_set_setting`, and indexes additional advertised SDK settings in Camera Console search. MCP and UI share a held Wi-Fi Console session, including Bluetooth commands, so controls do not compete with the preview for the camera lock.
+
+On the reference α6700, Bluetooth tele/wide round-tripped 16 → 18 → 16 mm. In Manual focus, Bluetooth far changed the SDK-observed focus position 32768 → 0 and near changed it 0 → 11293. Direct Wi-Fi FocusPositionSetting 32768 reached current position 32768. Original observed focus position 63487 and AF-A were restored. Movement command acceptance is separate from confirmed movement; a lens limit may produce no change. C1 dispatch is implemented but its configured visual effect is not independently verified. Image transfer, SDK JPEG preview and AF-point placement remain separate gaps; the installed card still prevents movie recording.

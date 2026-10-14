@@ -227,6 +227,54 @@ export class SonyWifiCamera {
         return property
     }
 
+    /** Search only settings actually advertised by the connected camera. */
+    async getSonyCapabilities(query = ''): Promise<SonySdkProperty[]> {
+        const aliases: Record<string, string> = {
+            gain: 'ISO',
+            wb: 'white balance',
+            'f-stop': 'aperture',
+            fstop: 'aperture',
+            colour: 'color',
+        }
+        const words = (aliases[query.trim().toLowerCase()] || query)
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter(Boolean)
+        return (await this.getSonyPropertyStates()).filter(property => {
+            const searchable = (property.name.replace(/([a-z])([A-Z])/g, '$1 $2') + ' ' + property.name).toLowerCase()
+            return words.every(word => searchable.includes(word) || String(property.code) === word)
+        })
+    }
+
+    /** Set an advertised setting by its SDK name and confirm the camera readback. */
+    async setSonySetting(
+        nameOrCode: string | number,
+        value: number | bigint
+    ): Promise<{
+        before: SonySdkProperty
+        after: SonySdkProperty
+        verified: true
+    }> {
+        const normalize = (name: string) => name.replace(/[^a-z0-9]/gi, '').toLowerCase()
+        const properties = await this.getSonyPropertyStates()
+        const before = properties.find(property =>
+            typeof nameOrCode === 'number'
+                ? property.code === nameOrCode
+                : normalize(property.name) === normalize(nameOrCode)
+        )
+        if (!before)
+            throw new Error('The camera does not advertise that setting; search capabilities for its exact name')
+        await this.setSonyProperty(before.code, value)
+        const deadline = Date.now() + 5000
+        let after: SonySdkProperty
+        do {
+            await new Promise(resolve => setTimeout(resolve, 200))
+            after = await this.getSonyProperty(before.code)
+        } while (after.value !== String(value) && Date.now() < deadline)
+        if (after.value !== String(value)) throw new Error('The camera did not confirm the requested setting')
+        return { before, after, verified: true }
+    }
+
     async setSonyProperty(nameOrCode: keyof typeof propertyCodes | number, value: number | bigint): Promise<void> {
         const property = await this.getSonyProperty(nameOrCode)
         if (!property.writable) throw new Error('The SDK property is currently read-only')

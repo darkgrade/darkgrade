@@ -184,3 +184,49 @@ describe('Sony SDK connection startup retries', () => {
         expect(attempts).toBe(1)
     })
 })
+
+describe('Sony named SDK settings', () => {
+    it('searches advertised settings by words and property code', async () => {
+        const { bridge } = bridgeForProperties([
+            { code: 264, type: 2, value: '0', writable: true },
+            { code: 265, type: 2, value: '4', writable: false },
+        ])
+        const camera = new SonyWifiCamera(bridge)
+        await camera.connect(authentication)
+        expect((await camera.getSonyCapabilities('white balance')).map(property => property.code)).toEqual([264])
+        expect((await camera.getSonyCapabilities('265'))[0]!.writable).toBe(false)
+        expect(await camera.getSonyCapabilities('unavailable')).toEqual([])
+        expect((await camera.getSonyCapabilities('wb'))[0]!.code).toBe(264)
+        expect((await camera.getSonyCapabilities('WhiteBalance'))[0]!.code).toBe(264)
+    })
+    it('resolves exact friendly names, validates choices, and confirms readback', async () => {
+        let value = '0'
+        const { bridge, requests } = bridgeForProperties()
+        const original = bridge.request
+        bridge.request = async command => {
+            if (command.cmd === 'properties')
+                return { properties: [{ code: 264, type: 2, value, writable: true, allowedValues: ['0', '17'] }] }
+            if (command.cmd === 'set') value = command.value!
+            return original(command)
+        }
+        const camera = new SonyWifiCamera(bridge)
+        await camera.connect(authentication)
+        expect(await camera.setSonySetting('white balance', 17)).toMatchObject({
+            before: { value: '0' },
+            after: { value: '17' },
+            verified: true,
+        })
+        await expect(camera.setSonySetting('white', 0)).rejects.toThrow('does not advertise')
+        await expect(camera.setSonySetting('white balance', 999)).rejects.toThrow('does not offer')
+        expect(requests.filter(command => command.cmd === 'set')).toHaveLength(1)
+    })
+})
+
+it('does not report a verified setting when camera readback stays unchanged', async () => {
+    const { bridge } = bridgeForProperties([
+        { code: 264, type: 2, value: '0', writable: true, allowedValues: ['0', '17'] },
+    ])
+    const camera = new SonyWifiCamera(bridge)
+    await camera.connect(authentication)
+    await expect(camera.setSonySetting('WhiteBalance', 17)).rejects.toThrow('did not confirm')
+}, 10000)
