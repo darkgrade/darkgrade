@@ -256,3 +256,10 @@ it('searches and writes familiar aliases when the SDK uses another advertised na
         verified: true,
     })
 })
+
+it('supports a RemoteTransfer USB observer for exact card capture verification', async () => {
+    const { bridge, requests } = bridgeForProperties()
+    const camera = new SonyWifiCamera(bridge)
+    await camera.connectUsb('unit-test', { mode: 'remote-transfer' })
+    expect(requests.at(-1)).toMatchObject({ cmd: 'connect', serial: 'unit-test', mode: 'remote-transfer' })
+})

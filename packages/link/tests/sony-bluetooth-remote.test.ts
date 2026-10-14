@@ -40,6 +40,36 @@ describe('Sony Bluetooth remote', () => {
         await expect(remote.capture()).rejects.toThrow()
         expect(writes.at(-1)).toEqual([1, 8])
     })
+    it('stops a bounded BULB exposure with a second shutter press', async () => {
+        const { remote, writes, delays } = fixture()
+        await remote.captureBulb(300)
+        expect(writes).toEqual([
+            [1, 7],
+            [1, 9],
+            [1, 6],
+            [1, 8],
+            [1, 7],
+            [1, 9],
+            [1, 6],
+            [1, 8],
+        ])
+        expect(delays).toContain(300)
+        expect(() => remote.captureBulb(10001)).toThrow('BULB')
+    })
+    it('stops BULB even if the exposure delay fails', async () => {
+        const writes: number[][] = []
+        const remote = new SonyBluetoothRemote({
+            write: async command => {
+                writes.push([...command])
+            },
+            delay: async milliseconds => {
+                if (milliseconds === 300) throw new Error('delay failed')
+            },
+        })
+        await expect(remote.captureBulb(300)).rejects.toThrow('delay failed')
+        expect(writes.filter(command => command[1] === 9)).toHaveLength(2)
+        expect(writes.at(-1)).toEqual([1, 8])
+    })
     it('bounds autofocus and releases the button', async () => {
         const { remote, writes } = fixture()
         await remote.autofocus(200)

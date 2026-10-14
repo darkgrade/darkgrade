@@ -173,10 +173,10 @@ export class SonyWifiCamera {
     }
 
     /** Open the same official SDK over USB for guarded preparation and readback. */
-    async connectUsb(serial: string): Promise<void> {
+    async connectUsb(serial: string, options: { mode?: 'remote' | 'remote-transfer' } = {}): Promise<void> {
         if (this.connected) throw new Error('Sony SDK camera is already connected')
         if (!/^[A-Za-z0-9_-]{1,64}$/.test(serial)) throw new Error('Invalid Sony USB serial')
-        await this.bridge.request({ cmd: 'connect', serial })
+        await this.bridge.request({ cmd: 'connect', serial, ...(options.mode ? { mode: options.mode } : {}) })
         this.connected = true
     }
 
@@ -467,8 +467,8 @@ export class SonyWifiCamera {
             throw new Error('Choose AF-S, AF-A or AF-C before placing an autofocus point')
         const area = await this.getSonyProperty('FocusArea')
         const priority = await this.getSonyProperty('PriorityKeySettings')
-        const before = await this.getSonyFocusFrames()
         if (priority.value !== '2') await this.setSonySetting('PriorityKeySettings', 2)
+        const before = await this.getSonyFocusFrames()
         if (!['4', '5', '6', '7'].includes(area.value)) await this.setSonySetting('FocusArea', 4)
         await this.setSonyAfAreaPosition(x, y)
         const deadline = Date.now() + 6000

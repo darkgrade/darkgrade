@@ -41,20 +41,38 @@ export class SonyBluetoothRemote {
         this.duration(milliseconds)
         return this.serialized(() => this.button(0x21, 0x20, milliseconds))
     }
+    private async shutterPress(milliseconds: number, pressed?: () => void): Promise<void> {
+        try {
+            await this.channel.write(Uint8Array.of(1, 0x07))
+            await this.channel.delay(150)
+            await this.channel.write(Uint8Array.of(1, 0x09))
+            pressed?.()
+            await this.channel.delay(milliseconds)
+        } finally {
+            try {
+                await this.channel.write(Uint8Array.of(1, 0x06))
+            } finally {
+                await this.channel.write(Uint8Array.of(1, 0x08))
+            }
+        }
+    }
     capture(milliseconds = 150): Promise<void> {
         this.duration(milliseconds)
+        return this.serialized(() => this.shutterPress(milliseconds))
+    }
+    /** RMT-P1BT BULB uses a second press to stop; releasing the button alone leaves it exposing. */
+    captureBulb(milliseconds = 300): Promise<void> {
+        if (!Number.isInteger(milliseconds) || milliseconds < 100 || milliseconds > 10000)
+            throw new Error('Sony Bluetooth BULB exposure must be between 100 and 10000 milliseconds')
         return this.serialized(async () => {
+            let started = false
             try {
-                await this.channel.write(Uint8Array.of(1, 0x07))
-                await this.channel.delay(150)
-                await this.channel.write(Uint8Array.of(1, 0x09))
+                await this.shutterPress(100, () => {
+                    started = true
+                })
                 await this.channel.delay(milliseconds)
             } finally {
-                try {
-                    await this.channel.write(Uint8Array.of(1, 0x06))
-                } finally {
-                    await this.channel.write(Uint8Array.of(1, 0x08))
-                }
+                if (started) await this.shutterPress(100)
             }
         })
     }
