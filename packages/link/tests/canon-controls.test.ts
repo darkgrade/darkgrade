@@ -31,6 +31,18 @@ function testCamera() {
 }
 
 describe('Canon camera controls', () => {
+    it('preserves the R6 III model identifier high bit from a four-byte property event', () => {
+        const registry = createCanonRegistry(true)
+        const payload = Uint8Array.of(16, 0, 0, 0, 0x89, 0xc1, 0, 0, 0x16, 0xd1, 0, 0, 0x18, 5, 0, 0x80)
+        const event = new CanonEventDataCodec(registry).decode(payload).value[0]
+        const property = registry.properties.CanonModelId
+        const decoded = property.codec(registry).decode(event.valueData!)
+
+        expect(event.parameters[0]).toBe(property.code)
+        expect(property.datatype).toBe(0x0006)
+        expect(decoded).toEqual({ value: 0x80000518, bytesRead: 4 })
+    })
+
     it('registers typed focus and white-balance values', () => {
         const registry = createCanonRegistry(true)
 

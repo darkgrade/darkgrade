@@ -1,6 +1,18 @@
 import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
+import { CanonExtendedDeviceInfoDatasetCodec } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
+import { CanonLiveViewDatasetCodec } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import { baseCodecs, createEnumCodec, PTPRegistry } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
+
+export const CanonGetExtendedDeviceInfo = {
+    code: 0x9108,
+    name: 'CanonGetExtendedDeviceInfo',
+    description: 'Read Canon EOS extended event, property and remote-mode capabilities.',
+    dataDirection: 'out',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+    dataCodec: (registry: PTPRegistry) => new CanonExtendedDeviceInfoDatasetCodec(registry),
+} as const satisfies OperationDefinition
 
 export const CanonSetRemoteMode = {
     code: 0x9114,
@@ -212,7 +224,70 @@ export const CanonMovieSelectSwitchOff = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+/** EDSDK EVF trace: 0x9153 with parameters 0x00200000, 0, 0. */
+export const CanonGetViewfinderData = {
+    code: 0x9153,
+    name: 'CanonGetViewfinderData',
+    description: 'Read EOS USB live-view image and metadata segments.',
+    dataDirection: 'out',
+    dataCodec: registry => new CanonLiveViewDatasetCodec(registry),
+    operationParameters: [
+        {
+            name: 'Size',
+            description: 'Requested maximum viewfinder payload size',
+            codec: baseCodecs.uint32,
+            required: true,
+        },
+        { name: 'Reserved1', description: 'Reserved, zero', codec: baseCodecs.uint32, required: true },
+        { name: 'Reserved2', description: 'Reserved, zero', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const CanonViewfinderZoom = {
+    code: 0x9158,
+    name: 'CanonViewfinderZoom',
+    description: 'Set live-view magnification (not optical or recorded-image zoom).',
+    dataDirection: 'none',
+    operationParameters: [
+        { name: 'Magnification', description: 'Preview magnification', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const CanonViewfinderPosition = {
+    code: 0x9159,
+    name: 'CanonViewfinderPosition',
+    description: 'Move the magnified live-view viewport in camera sensor coordinates.',
+    dataDirection: 'none',
+    operationParameters: [
+        { name: 'X', description: 'Viewport origin X', codec: baseCodecs.uint32, required: true },
+        { name: 'Y', description: 'Viewport origin Y', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const CanonTouchFramePoint = {
+    code: 0x915b,
+    name: 'CanonTouchFramePoint',
+    description: 'Set the live-view frame center, as sent by EDSDK EdsSetFramePoint.',
+    dataDirection: 'none',
+    operationParameters: [
+        { name: 'Type', description: 'Frame point operation (3)', codec: baseCodecs.uint32, required: true },
+        { name: 'X', description: 'Frame center X', codec: baseCodecs.uint32, required: true },
+        { name: 'Y', description: 'Frame center Y', codec: baseCodecs.uint32, required: true },
+        {
+            name: 'Lock',
+            description: 'Lock frame movement until an AF operation',
+            codec: baseCodecs.uint32,
+            required: true,
+        },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const canonOperationRegistry = {
+    CanonGetExtendedDeviceInfo,
     CanonSetRemoteMode,
     CanonSetEventMode,
     CanonKeepDeviceOn,
@@ -225,6 +300,10 @@ export const canonOperationRegistry = {
     CanonGetEventData,
     CanonMovieSelectSwitchOn,
     CanonMovieSelectSwitchOff,
+    CanonGetViewfinderData,
+    CanonViewfinderZoom,
+    CanonViewfinderPosition,
+    CanonTouchFramePoint,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type CanonOperationDef = (typeof canonOperationRegistry)[keyof typeof canonOperationRegistry]
