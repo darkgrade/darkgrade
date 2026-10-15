@@ -1,12 +1,19 @@
 import { Logger } from '@core/logger'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 import {
     canonImageFormatFromPacked,
     type CanonImageFormat,
 } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
+import {
+    canonLiveViewPosition,
+    type CanonLiveViewFrame,
+    type CanonLiveViewPosition,
+} from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import type { CanonMovieFormat } from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
-import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { OK } from '@ptp/definitions/response-definitions'
+import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import { CANON_PROPERTY_NAMES } from '@ptp/definitions/vendors/canon/canon-property-names'
 import { CanonRegistry, createCanonRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
@@ -26,6 +33,8 @@ export interface CanonPropertyState {
 export interface CanonUnknownPropertyState {
     code: number
     codeHex: string
+    /** Diagnostic name only; the raw value and access remain unverified. */
+    name?: string
     rawValue?: number
     valueDataHex?: string
     allowedValues?: number[]
@@ -73,6 +82,9 @@ export class CanonCamera extends GenericCamera {
     private polling = false
     private pollingLoop?: Promise<void>
     private liveViewEnabled = false
+    private liveViewOriginalOutput?: CodecType<CanonRegistry['properties']['CanonLiveViewMode']['codec']>
+    private supportedOperations?: Set<number>
+    private advertisedPropertyData = new Map<PropertyDefinition, Uint8Array[]>()
     private propertyCache = new Map<
         PropertyDefinition,
         { current?: CodecType<PropertyDefinition['codec']>; allowed?: CodecType<PropertyDefinition['codec']>[] }
@@ -102,6 +114,9 @@ export class CanonCamera extends GenericCamera {
 
         this.sessionId = 1
         await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+        const deviceInfo = await this.send(this.registry.operations.GetDeviceInfo, {})
+        if (deviceInfo.code !== OK.code || !deviceInfo.data) throw new Error('Canon GetDeviceInfo failed')
+        this.supportedOperations = new Set(deviceInfo.data.operationsSupportedRaw)
         await this.enableRemoteMode()
         await this.enableEventMode()
 
@@ -113,10 +128,20 @@ export class CanonCamera extends GenericCamera {
 
     async disconnect(): Promise<void> {
         await this.stopPolling()
-        await this.disableLiveView()
-        await this.disableRemoteMode()
-        await this.disableEventMode()
-        await super.disconnect()
+        let failure: unknown
+        for (const cleanup of [
+            () => this.disableLiveView(),
+            () => this.disableRemoteMode(),
+            () => this.disableEventMode(),
+            () => super.disconnect(),
+        ]) {
+            try {
+                await cleanup()
+            } catch (error) {
+                failure ??= error
+            }
+        }
+        if (failure) throw failure
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -141,7 +166,23 @@ export class CanonCamera extends GenericCamera {
             }
 
             const codec = this.resolveCodec(property.codec)
-            const encodedValue = codec.encode(value)
+            const requestedValue = codec.encode(value)
+            const advertisedValue = this.advertisedPropertyData.get(property)?.find(encoded => {
+                try {
+                    const canonical = codec.encode(codec.decode(encoded).value)
+                    return (
+                        canonical.length === requestedValue.length &&
+                        canonical.every((byte, index) => byte === requestedValue[index])
+                    )
+                } catch {
+                    return false
+                }
+            })
+            const encodedValue = advertisedValue ?? requestedValue
+            // Record is a command/state property: stop (0) may report standby (3).
+            const verifyReadback =
+                this.propertyCache.get(property)?.current !== undefined &&
+                property.code !== this.registry.properties.CanonRecordingDestination.code
 
             const u32Codec = this.registry.codecs.uint32
 
@@ -161,7 +202,12 @@ export class CanonCamera extends GenericCamera {
 
             while (retries < maxRetries) {
                 try {
-                    await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
+                    const response = await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
+                    if (response.code !== OK.code) {
+                        const error = new Error(`Canon ${property.name} write returned 0x${response.code.toString(16)}`)
+                        Object.assign(error, { code: response.code })
+                        throw error
+                    }
                     break
                 } catch (error: any) {
                     if (error.code === 0x2019) {
@@ -177,17 +223,22 @@ export class CanonCamera extends GenericCamera {
 
             await new Promise(resolve => setTimeout(resolve, 100))
 
-            while (true) {
-                try {
-                    const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-                    if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
-                        break
-                    }
-                    this.processEvents(response.data, true)
-                } catch (error) {
-                    break
-                }
-            }
+            const deadline = Date.now() + 2000
+            do {
+                const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+                this.assertResponseOk(response.code, 'property event readback')
+                if (Array.isArray(response.data)) this.processEvents(response.data, true)
+                const current = this.propertyCache.get(property)?.current
+                const observed = current === undefined ? undefined : codec.encode(current)
+                if (
+                    observed?.length === requestedValue.length &&
+                    observed.every((byte, index) => byte === requestedValue[index])
+                )
+                    return
+                if (!verifyReadback && !response.data?.length) return
+                await new Promise(resolve => setTimeout(resolve, 50))
+            } while (Date.now() < deadline)
+            throw new Error(`Canon ${property.name} did not publish the requested value within 2 seconds`)
         })
     }
 
@@ -239,6 +290,38 @@ export class CanonCamera extends GenericCamera {
         return this.get(this.registry.properties.CanonWhiteBalance)
     }
 
+    async getColorTemperature(): Promise<number> {
+        return this.get(this.registry.properties.CanonColorTemperature)
+    }
+
+    async setColorTemperature(kelvin: number): Promise<void> {
+        if (!Number.isInteger(kelvin) || kelvin < 2500 || kelvin > 10000) {
+            throw new Error('Canon color temperature must be an integer from 2500 to 10000 kelvin')
+        }
+        await this.setAdvertisedProperty(this.registry.properties.CanonColorTemperature, kelvin)
+    }
+
+    async getLiveViewAutofocusMode(): Promise<string> {
+        return this.get(this.registry.properties.CanonLiveViewAutofocusMode)
+    }
+
+    async setLiveViewAutofocusMode(mode: string): Promise<void> {
+        const property = this.registry.properties.CanonLiveViewAutofocusMode
+        await this.setAdvertisedProperty(property, mode as CodecType<typeof property.codec>)
+    }
+
+    private async setAdvertisedProperty<P extends PropertyDefinition>(
+        property: P,
+        value: CodecType<P['codec']>
+    ): Promise<void> {
+        const choices = this.getPropertyAllowedValues(property)
+        if (!choices?.includes(value))
+            throw new Error(`Canon ${property.name} value ${value} was not advertised by the attached camera`)
+        await this.set(property, value)
+        if ((await this.get(property)) !== value)
+            throw new Error(`Canon ${property.name} did not apply the requested value ${value}`)
+    }
+
     async setWhiteBalance(value: string): Promise<void> {
         return this.set(
             this.registry.properties.CanonWhiteBalance,
@@ -254,7 +337,8 @@ export class CanonCamera extends GenericCamera {
 
     async setImageFormat(packed: number): Promise<void> {
         const property = this.imageFormatProperty()
-        if (!property) throw new Error('The attached Canon camera did not report a writable still-image format property')
+        if (!property)
+            throw new Error('The attached Canon camera did not report a writable still-image format property')
         await this.set(property, canonImageFormatFromPacked(packed))
     }
 
@@ -373,6 +457,17 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
+    /** Explicit capability audit; some bodies require model-specific initialization before 0x9108. */
+    async getExtendedDeviceInfo(): Promise<CanonExtendedDeviceInfo> {
+        this.assertOperationSupported(this.registry.operations.CanonGetExtendedDeviceInfo.code)
+        return this.withoutPolling(async () => {
+            const response = await this.send(this.registry.operations.CanonGetExtendedDeviceInfo, {})
+            this.assertResponseOk(response.code, 'extended device information')
+            if (!response.data) throw new Error('Canon extended device information contains no dataset')
+            return response.data
+        })
+    }
+
     async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
@@ -402,9 +497,9 @@ export class CanonCamera extends GenericCamera {
                     shutterPressed = true
                 } finally {
                     if (shutterPressed) {
-                        await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'SHUTTER' }).catch(
-                            () => undefined
-                        )
+                        await this.send(this.registry.operations.CanonRemoteReleaseOff, {
+                            ReleaseMode: 'SHUTTER',
+                        }).catch(() => undefined)
                     }
                     if (focusPressed) {
                         await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' }).catch(
@@ -417,7 +512,8 @@ export class CanonCamera extends GenericCamera {
             try {
                 await release('AF')
             } catch (error) {
-                if (!(error instanceof Error) || !error.message.includes('AF shutter press returned 0x2019')) throw error
+                if (!(error instanceof Error) || !error.message.includes('AF shutter press returned 0x2019'))
+                    throw error
                 // DeviceBusy at full press generally means the body could not lock focus.
                 // Canon's second release parameter explicitly permits a no-AF fallback.
                 await release('MF')
@@ -431,6 +527,155 @@ export class CanonCamera extends GenericCamera {
         await this.enableLiveView()
 
         await this.set(this.registry.properties.CanonRecordingDestination, 'CARD')
+    }
+
+    /** Enables host EVF output, preserving the body's existing output for stop/disconnect. */
+    async startLiveView(): Promise<void> {
+        this.assertOperationSupported(this.registry.operations.CanonGetViewfinderData.code)
+        await this.withoutPolling(() => this.enableLiveView())
+    }
+
+    async stopLiveView(): Promise<void> {
+        await this.withoutPolling(() => this.disableLiveView())
+    }
+
+    async captureViewfinderFrame(): Promise<CanonLiveViewFrame> {
+        this.assertOperationSupported(this.registry.operations.CanonGetViewfinderData.code)
+        return this.withoutPolling(async () => {
+            await this.enableLiveView()
+            for (let attempt = 0; attempt < 30; attempt++) {
+                const response = await this.send(
+                    this.registry.operations.CanonGetViewfinderData,
+                    { Size: 0x00200000, Reserved1: 0, Reserved2: 0 },
+                    undefined,
+                    0x00200000
+                )
+                if (response.code === OK.code && response.data?.image) return response.data
+                if (![0x2019, 0xa102].includes(response.code)) {
+                    throw new Error(`Canon viewfinder read returned 0x${response.code.toString(16)}`)
+                }
+                await new Promise(resolve => setTimeout(resolve, 100))
+            }
+            throw new Error('Canon live-view frame was not ready after 30 attempts')
+        })
+    }
+
+    async captureLiveView({ includeData = true } = {}): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+        if (!includeData) return {}
+        return { data: (await this.captureViewfinderFrame()).image }
+    }
+
+    /** Preview magnification only; accepted magnifications depend on the attached body. */
+    async setLiveViewZoom(magnification: 1 | 5 | 6 | 10 | 15): Promise<void> {
+        if (![1, 5, 6, 10, 15].includes(magnification)) throw new Error('Invalid Canon live-view magnification')
+        this.assertOperationSupported(this.registry.operations.CanonViewfinderZoom.code)
+        await this.withoutPolling(async () => {
+            await this.enableLiveView()
+            const response = await this.send(this.registry.operations.CanonViewfinderZoom, {
+                Magnification: magnification,
+            })
+            this.assertResponseOk(response.code, 'live-view zoom')
+            for (let attempt = 0; attempt < 10; attempt++) {
+                const frame = await this.captureViewfinderFrame()
+                const zoomState = frame.segments.find(segment => segment.type === 4)?.data
+                if (
+                    zoomState?.length === 4 &&
+                    new DataView(zoomState.buffer, zoomState.byteOffset, 4).getUint32(0, true) === magnification
+                )
+                    return
+                await new Promise(resolve => setTimeout(resolve, 100))
+            }
+            throw new Error(`Canon did not apply live-view zoom ${magnification}`)
+        })
+    }
+
+    async getLiveViewPosition(): Promise<CanonLiveViewPosition> {
+        const position = canonLiveViewPosition(await this.captureViewfinderFrame())
+        if (!position) throw new Error('Canon live-view position metadata is unavailable')
+        return position
+    }
+
+    /** Position the live-view crop and return its observed origin, including camera rounding. */
+    async setLiveViewPosition(x: number, y: number): Promise<CanonLiveViewPosition> {
+        if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0)
+            throw new Error('Canon live-view coordinates must be nonnegative integers')
+        this.assertOperationSupported(this.registry.operations.CanonViewfinderPosition.code)
+        return this.withoutPolling(async () => {
+            const before = await this.getLiveViewPosition()
+            if (x < before.minimumX || y < before.minimumY || x > before.maximumX || y > before.maximumY)
+                throw new Error('Canon live-view position is outside the measured crop bounds')
+            const result = await this.send(this.registry.operations.CanonViewfinderPosition, { X: x, Y: y })
+            this.assertResponseOk(result.code, 'live-view position')
+            for (let attempt = 0; attempt < 15; attempt++) {
+                const position = await this.getLiveViewPosition()
+                if (this.positionMatches(position, x, y)) return position
+                await new Promise(resolve => setTimeout(resolve, 100))
+            }
+            throw new Error(`Canon did not apply live-view position (${x}, ${y})`)
+        })
+    }
+
+    /** Center a magnified live-view frame. Coordinates differ from the viewport origin. */
+    async setLiveViewFramePoint(x: number, y: number, lockAfFrame = false): Promise<CanonLiveViewPosition> {
+        if (!Number.isInteger(x) || !Number.isInteger(y) || typeof lockAfFrame !== 'boolean')
+            throw new Error('Invalid Canon live-view frame point')
+        this.assertOperationSupported(this.registry.operations.CanonTouchFramePoint.code)
+        return this.withoutPolling(async () => {
+            const before = await this.getLiveViewPosition()
+            if (before.magnification === 1) throw new Error('Magnify Canon live view before setting a frame point')
+            const originX = x - Math.floor(before.width / 2)
+            const originY = y - Math.floor(before.height / 2)
+            if (
+                originX < before.minimumX ||
+                originY < before.minimumY ||
+                originX > before.maximumX ||
+                originY > before.maximumY
+            )
+                throw new Error('Canon frame point is outside the measured crop bounds')
+            const result = await this.send(this.registry.operations.CanonTouchFramePoint, {
+                Type: 3,
+                X: x,
+                Y: y,
+                Lock: lockAfFrame ? 1 : 0,
+            })
+            this.assertResponseOk(result.code, 'live-view frame point')
+            for (let attempt = 0; attempt < 15; attempt++) {
+                const position = await this.getLiveViewPosition()
+                if (this.positionMatches(position, originX, originY)) return position
+                await new Promise(resolve => setTimeout(resolve, 100))
+            }
+            throw new Error(`Canon did not apply live-view frame point (${x}, ${y})`)
+        })
+    }
+
+    async panLiveView(direction: 'up' | 'down' | 'left' | 'right', step = 200): Promise<CanonLiveViewPosition> {
+        if (!['up', 'down', 'left', 'right'].includes(direction) || !Number.isInteger(step) || step < 1 || step > 1000)
+            throw new Error('Invalid Canon live-view pan direction or step')
+        return this.withoutPolling(async () => {
+            const position = await this.getLiveViewPosition()
+            if (position.magnification === 1) throw new Error('Magnify Canon live view before panning')
+            const x = position.x + (direction === 'left' ? -step : direction === 'right' ? step : 0)
+            const y = position.y + (direction === 'up' ? -step : direction === 'down' ? step : 0)
+            return this.setLiveViewPosition(
+                Math.max(position.minimumX, Math.min(position.maximumX, x)),
+                Math.max(position.minimumY, Math.min(position.maximumY, y))
+            )
+        })
+    }
+
+    private positionMatches(position: CanonLiveViewPosition, x: number, y: number): boolean {
+        // The R6 III rounds small requests (2786 -> 2788, 485 -> 486).
+        // Return the actual origin; a stale/ignored 200-pixel pan cannot satisfy this bound.
+        return Math.abs(position.x - x) <= 4 && Math.abs(position.y - y) <= 4
+    }
+
+    private assertOperationSupported(code: number): void {
+        if (!this.supportedOperations?.has(code))
+            throw new Error(`Canon operation 0x${code.toString(16)} was not advertised by the attached camera`)
+    }
+
+    private assertResponseOk(code: number, action: string): void {
+        if (code !== OK.code) throw new Error(`Canon ${action} returned 0x${code.toString(16)}`)
     }
 
     async stopRecording(): Promise<void> {
@@ -473,7 +718,12 @@ export class CanonCamera extends GenericCamera {
 
     listUnknownPropertyStates(): CanonUnknownPropertyState[] {
         return [...this.unknownPropertyCache.entries()]
-            .map(([code, state]) => ({ code, codeHex: `0x${code.toString(16).padStart(4, '0')}`, ...state }))
+            .map(([code, state]) => ({
+                code,
+                codeHex: `0x${code.toString(16).padStart(4, '0')}`,
+                name: CANON_PROPERTY_NAMES[code],
+                ...state,
+            }))
             .sort((left, right) => left.code - right.code)
     }
 
@@ -563,6 +813,10 @@ export class CanonCamera extends GenericCamera {
                             const encodedAllowed = event.allowedValueData?.length
                                 ? event.allowedValueData
                                 : event.allowedValues!.map(rawValue => this.registry.codecs.uint32.encode(rawValue))
+                            this.advertisedPropertyData.set(
+                                property,
+                                encodedAllowed.map(encoded => encoded.slice())
+                            )
                             const decodedAllowed = encodedAllowed.flatMap(encoded => {
                                 try {
                                     return [codec.decode(encoded).value]
@@ -645,15 +899,24 @@ export class CanonCamera extends GenericCamera {
         )
     }
     private async enableLiveView(): Promise<void> {
-        if (!this.liveViewEnabled) {
-            await this.set(this.registry.properties.CanonLiveViewMode, 'CAMERA_AND_HOST')
-            this.liveViewEnabled = true
+        if (this.liveViewEnabled) return
+        const original = await this.get(this.registry.properties.CanonLiveViewMode)
+        if (original !== 'HOST' && original !== 'CAMERA_AND_HOST') {
+            this.liveViewOriginalOutput = original
+            await this.set(
+                this.registry.properties.CanonLiveViewMode,
+                original === 'CAMERA' ? 'CAMERA_AND_HOST' : 'HOST'
+            )
         }
+        this.liveViewEnabled = true
     }
 
     private async disableLiveView(): Promise<void> {
-        if (this.liveViewEnabled) {
-            await this.set(this.registry.properties.CanonLiveViewMode, 'CAMERA')
+        if (this.liveViewEnabled || this.liveViewOriginalOutput !== undefined) {
+            if (this.liveViewOriginalOutput !== undefined) {
+                await this.set(this.registry.properties.CanonLiveViewMode, this.liveViewOriginalOutput)
+            }
+            this.liveViewOriginalOutput = undefined
             this.liveViewEnabled = false
         }
     }

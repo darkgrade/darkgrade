@@ -1385,6 +1385,47 @@ export const OsdImageMode = {
         ),
 } as const satisfies PropertyDefinition
 
+// 0xd251 and 0xd150 were mapped from the Camera Remote SDK's PTP-code table
+// (CrDeviceProperty_DeviceOverheatingState 0x760 and CrDeviceProperty_USBPowerSupply
+// 0x1f3) and confirmed on an ILCE-6700: both read the same values as the SDK.
+export const DeviceOverheatingState = {
+    code: 0xd251,
+    name: 'DeviceOverheatingState',
+    description: 'Whether the body is approaching or at its thermal shutdown.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'Not Overheating', description: 'Normal temperature' },
+                { value: 0x01, name: 'Pre-Overheating', description: 'Approaching the thermal shutdown' },
+                { value: 0x02, name: 'Overheating', description: 'The body will power off to cool down' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const UsbPowerSupply = {
+    code: 0xd150,
+    name: 'UsbPowerSupply',
+    description: 'Whether the body draws power over USB. On keeps a body alive on USB VBUS even when its battery supply is cut.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Off', description: 'Run from the battery or dummy battery only' },
+                { value: 0x02, name: 'On', description: 'Draw power from USB' },
+                { value: 0x03, name: 'Auto', description: 'Automatic' },
+                { value: 0x04, name: 'Port 1', description: 'Draw power from USB port 1' },
+                { value: 0x05, name: 'Port 2', description: 'Draw power from USB port 2' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
 export const LiveViewStatus = {
     code: 0xd221,
     name: 'LiveViewStatus',
@@ -1643,6 +1684,8 @@ export const sonyPropertyRegistry = {
     FlashMode,
     StillCaptureMode,
     OsdImageMode,
+    DeviceOverheatingState,
+    UsbPowerSupply,
     LiveViewStatus,
     StillImageSaveDestination,
     PositionKeySetting,

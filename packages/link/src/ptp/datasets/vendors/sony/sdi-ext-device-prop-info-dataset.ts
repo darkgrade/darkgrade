@@ -1,7 +1,8 @@
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
 import { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
-import { CustomCodec } from '@ptp/types/codec'
+import { SONY_SDK_PROPERTY_NAMES } from '@ptp/definitions/vendors/sony/sony-sdk-property-names'
+import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
 
 /**
@@ -29,6 +30,19 @@ export interface SonyDevicePropDesc extends DevicePropDesc {
 export interface SDIDevicePropInfoArray {
     numOfElements: number
     properties: SonyDevicePropDesc[]
+}
+
+/**
+ * Name for a Sony property Darkgrade has no definition for: the Camera Remote SDK's name
+ * for the code, unless a defined property already uses that name (lookups by name must
+ * stay unambiguous), else Unknown_0x....
+ */
+export function sonyFallbackPropertyName(code: number, registry: PTPRegistry): { name: string; description: string } {
+    const sdkName = SONY_SDK_PROPERTY_NAMES[code]
+    if (sdkName !== undefined && !Object.values(registry.properties).some((property: any) => property.name === sdkName)) {
+        return { name: sdkName, description: 'Named from the Camera Remote SDK property table; value not decoded by Darkgrade yet.' }
+    }
+    return { name: `Unknown_0x${code.toString(16).padStart(4, '0')}`, description: '' }
 }
 
 export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
@@ -122,8 +136,9 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
 
         const propertyDef = Object.values(this.registry.properties).find((p: any) => p.code === devicePropertyCode)
 
-        const devicePropertyName = propertyDef?.name || `Unknown_0x${devicePropertyCode.toString(16).padStart(4, '0')}`
-        const devicePropertyDescription = propertyDef?.description || ''
+        const fallback = propertyDef ? undefined : sonyFallbackPropertyName(devicePropertyCode, this.registry)
+        const devicePropertyName = propertyDef?.name || fallback!.name
+        const devicePropertyDescription = propertyDef?.description || fallback!.description
 
         let currentValueDecoded: number | bigint | string = currentValueRaw
         let enumValuesSetDecoded: (number | bigint | string)[] = enumValuesSet

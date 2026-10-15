@@ -1,34 +1,73 @@
 ---
-title: 'Sony Wi-Fi WIP'
-description: 'Current Sony PC Remote Wi-Fi validation status'
+title: 'Sony Wi-Fi and Bluetooth controls'
+description: 'Authenticated Sony SDK controls and verified α6700 wireless workflows'
 ---
 
-## Current status
+## Verified on the α6700
 
-Sony USB controls are hardware-verified on the α6700. Wi-Fi controls are not.
+On 2026-10-13, the ILCE-6700 accepted authenticated Camera Remote SDK connections over Wi-Fi with USB disabled automatically at its mapped hub. Access Authentication and PC Remote remained On. The testbench retrieved 355 numeric properties, changed aperture from f/14 to f/16 and back with readback, opened the real camera menu, and streamed the camera OSD alongside HDMI.
 
-On 2026-08-26, the mapped Shelly output was enabled, but the body drew 0 W and exposed only the `054c:0d68` standby HID interface. USB reconnect and a full power cycle did not restore the `054c:0e78` PTP interface. The isolated adapter found no Sony access point, `_ptp._tcp` service, or SSDP announcement. No Wi-Fi command was sent.
+Wi-Fi shutter capture saved a card image: remaining-photo count changed from 701 to 700. Wi-Fi power zoom changed the lens distance from 16 mm to 17 mm and back. Autofocus commands completed; the dark reference view did not acquire focus, so successful focus lock is not claimed.
 
-The body must boot and the dummy battery must draw power before this test can continue.
+A Bluetooth shutter command also saved a card image (700 to 699), verified through SDK readback. Bluetooth autofocus produced camera notifications. The bond persists between actions; an idle Bluetooth connection is separate from pairing.
 
-## Next test
+## Library interfaces
 
-1. Verify α6700 firmware 2.00.
-2. Enable **Wi-Fi Connect** and **PC Remote** on the body.
-3. Use **Wi-Fi Direct Info** to join the camera through the isolated adapter.
-4. Temporarily disable **Access Authen.** only on the isolated lab network.
-5. Try Darkgrade's PTP/IP transport with `VendorIDs.SONY`.
-6. Require `GetDeviceInfo` and the Sony SDIO handshake to complete before testing a control.
-7. Restore access authentication after the experiment.
+`SonyWifiCamera`, `createSonySdkBridge`, and `SONY_SDK_PROPERTY_CODES` are exported from `@darkgrade/link`. The SDK backend supports numeric advertised properties and allowed choices, body buttons, autofocus, AF-area requests, zoom, OSD/live-view requests, still release, and bounded movie controls. SDK identifiers differ from USB PTP identifiers. Readback is required before treating a setting as applied. `connectUsb(serial)` supports official-SDK preparation and observation under the same camera lease.
 
-Sony documents that disabling access authentication removes SSH authentication and encryption. Do not use that mode on a shared network.
+`SonyBluetoothRemote` provides autofocus, shutter release, C1, focus near/far, zoom wide/tele, and guarded bounded recording through an injected Bluetooth channel. The platform owns bonding and GATT cleanup. It uses the published [RMT-P1BT command protocol](https://github.com/coral/freemote); it does not implement Sony's credential-sharing protocol. The command and notification characteristics use the standard Bluetooth UUID base under Sony's vendor service.
 
-## Authenticated path
+## Testbench workflow
 
-The authenticated workflow uses the camera username, password, and fingerprint. Darkgrade's standard PTP/IP transport does not implement that SSH boundary. The production path should use Sony's Camera Remote SDK or a separately validated compatible implementation.
+Open **Camera Console → Connections**. Pair Bluetooth or share a saved bench Wi-Fi network. **Use Wi-Fi controls** privately reads the camera's Access Authen. Info, reconnects its registered network, disables both mapped USB hub halves, and verifies SDK authentication. Credentials and the trusted fingerprint remain only in process memory and private stdin. A service restart rereads them automatically.
 
-On 2026-09-11, the α6700 authenticated successfully over SSH on port 22 at its assigned Wi-Fi address. Its proprietary Camera Remote SDK channel is reachable on TCP port 64321; normal shell and SSH port forwarding are rejected, and sending standard PTP/IP framing to that port is not accepted. Darkgrade now exports a dependency-injected `SonyRemoteSdkTransport` adapter so an official SDK binding can provide the authenticated channel without putting Sony credentials or an unverified wire implementation in the core library.
+The Console keeps a Wi-Fi SDK session open for menu and setting operations. HDMI stays visible beside collapsed, searchable settings. Bluetooth quick actions run inside that session without closing the preview. The photo action temporarily selects the camera card when the original destination is PC-only, verifies a new card photo, and restores the original destination.
 
-The adapter is intentionally not a protocol implementation: its channel factory must perform Sony SDK authentication, fingerprint validation, and proprietary session setup. Until that binding is supplied, USB remains the supported Sony control transport.
+**Use USB controls** restores the mapped hub ports and verifies PTP. **Disconnect Wi-Fi** uses USB recovery and camera menus to turn Wi-Fi off while retaining saved network credentials and Bluetooth pairing.
 
-See Sony's [α6700 PC Remote guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/0903_pc_remote_function.html), [access authentication guide](https://helpguide.sony.net/ilc/2320/v1/en/contents/221h_access_authentication_information.html), and [firmware page](https://www.sony.com/electronics/support/software/00298441).
+## SDK installation and safety
+
+Install Sony's accepted licensed SDK outside the repositories. The testbench supplies native adapter source and a build script; SDK binaries and headers are not redistributed. Both the TypeScript backend and native connection verify the trusted fingerprint before authentication. No SDK handshake capture, reverse engineering, or authentication bypass is used.
+
+The reference replacement hub is Genesys Logic 05e3:0625 / 05e3:0610. Guarded handoff keeps it awake, disables the kernel ports, and sends direct power requests to both halves. Automated USB disappearance and subsequent SDK control were verified. This is functional transport verification; VBUS voltage was not measured. The older ROSONWAY/VIA connector did not reliably release the camera's USB mode.
+
+## Current limits
+
+- Movie recording was refused by the reference camera with a request for an SDXC Class10/U1/V10 or better card. Recording remained stopped. Successful video recording is not claimed for that card.
+- With autofocus unable to lock, Bluetooth shutter release can be refused. Select Manual focus for a shutter demo against a dark/covered view; the UI reports whether a new card photo was confirmed.
+- AF-area requests and JPEG live-view requests are exposed but are not yet hardware-verified here. OSD and HDMI previews are verified.
+- String/128-bit properties and SDK media browsing/download are not implemented.
+
+
+## Searchable SDK controls and Bluetooth movement
+
+`SonyWifiCamera.getSonyCapabilities(query?)` searches the connected body’s advertised numeric properties, including current values, writable flags, and allowed choices/ranges. `setSonySetting(nameOrCode, value)` resolves an exact setting name (spaces/case are ignored), validates it through `setSonyProperty`, and returns `{before, after, verified: true}` only after matching camera readback. Unsupported settings, read-only descriptors, and choices outside the camera’s advertised range are refused.
+
+```ts
+const matches = await camera.getSonyCapabilities('white balance')
+const result = await camera.setSonySetting('WhiteBalance', 17n)
+// Save and restore your original value after a demo.
+await camera.setSonySetting('WhiteBalance', BigInt(result.before.value))
+```
+
+The testbench exposes these as `camera_sony_wifi_capabilities` and `camera_sony_wifi_set_setting`, and indexes additional advertised SDK settings in Camera Console search. MCP and UI share a held Wi-Fi Console session, including Bluetooth commands, so controls do not compete with the preview for the camera lock.
+
+On the reference α6700, Bluetooth tele/wide round-tripped 16 → 18 → 16 mm. In Manual focus, Bluetooth far changed the SDK-observed focus position 32768 → 0 and near changed it 0 → 11293. Direct Wi-Fi FocusPositionSetting 32768 reached current position 32768. Original observed focus position 63487 and AF-A were restored. Movement command acceptance is separate from confirmed movement; a lens limit may produce no change. C1 dispatch is implemented but its configured visual effect is not independently verified. Photo transfer, SDK JPEG preview and verified AF-point placement are covered below; the installed card still prevents movie recording.
+
+
+## USB-style controls, transfer and verified focus placement
+
+`SonyWifiCamera.applySonyControl(action,value)` implements the same Sony status, exposure/focus/color, still/movie format, zoom and body-button actions as the USB control suite. It resolves camera-advertised SDK choices and returns friendly `controls`, verified setting readback, and current availability. SDK values are translated rather than reusing USB PTP codes. `captureAndDownload(directory)` configures `SetSaveInfo`, respects/restores the save destination, and waits for `OnCompleteDownload`. `getRecentSonyContents` / `downloadSonyContent` expose documented RemoteTransfer card APIs.
+
+Connect with `camera.connect(authentication, {mode:'remote-transfer'})` when card browsing is needed. The platform bridge enables SDK live-view retrieval before reading AF frames in this mode, and enables `Setting_Key_EnablePostView` before capture because RemoteTransfer resets it to Disabled on reconnect. `placeSonyFocusPoint(x,y)` selects Flexible Spot and PC Remote key priority as needed, sets the position, then compares actual `CrFocusFrameInfo` coordinates against the requested 640×480 position. It reports `positionVerified` separately from focus acquisition and rejects unconfirmed placement.
+
+On the α6700: point coordinates round-tripped center → (160,160) → (480,320) → center; capture transferred a 6,892,658-byte 6192×4128 JPEG; RemoteTransfer listed the card and downloaded DSC00013.JPG with camera/host byte counts both 6,181,348. Standard MCP setters round-tripped aperture f/14–f/16, ISO 3200–6400, Auto/Daylight WB, Fine/Extra Fine quality, L/M size, and 3:2/16:9 aspect without switching to USB. RAW+JPEG capture also transferred both original files (27,275,264-byte ARW and 3,065,356-byte JPEG); SDK live view returned 1024×680 JPEGs. The deployed Console verified tap focus, full-resolution capture and card download alongside the preview. Movie recording still depends on compatible media.
+
+
+## Bluetooth BULB and original-photo selection
+
+`SonyBluetoothRemote.captureBulb(milliseconds)` implements Sony's [two-press BULB behavior](https://support.sony.jp/electronics/support/compact-cameras-dsc-t-series/dsc-t9/articles/S1406120064092): release alone does not close the exposure. The stop press is attempted even if the exposure delay fails. The platform checks idle Manual focus, respects camera timer mode, bounds timed capture, and waits for processing before reporting success.
+
+The testbench confirms a new nonempty card-file entry in RemoteTransfer mode. Remaining-shot estimates can stay unchanged after a successful JPEG capture. `connectUsb(serial, {mode:'remote-transfer'})` enables the same card observation through the USB SDK oracle; existing callers default to Remote mode. USB observation and actual Bluetooth BULB capture passed on the α6700.
+
+Camera Console now browses recent card originals, downloads a selected JPEG/RAW/HEIF, and offers Bluetooth shutter plus SDK Wi-Fi photo transfer. MCP0.10.0 adds `camera_sony_list_photos` and `camera_sony_download_photo`; Bluetooth `capture-download` identifies its shutter and transfer transports separately. Console/MCP capture and download passed with ordinary shutter timing, bounded BULB and a two-second camera timer. Bluetooth focus/zoom readbacks round-tripped with the baseline restored. The installed card remains the limitation for movie recording.

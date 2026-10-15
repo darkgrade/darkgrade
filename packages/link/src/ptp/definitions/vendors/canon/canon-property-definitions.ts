@@ -1,6 +1,6 @@
-import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { CanonImageFormatCodec } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
 import { CanonMovieFormatCodec } from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
+import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { createEnumCodec } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
 
@@ -386,8 +386,8 @@ export const CanonModelId = {
     code: 0xd116,
     name: 'CanonModelId',
     description: 'Canon Model ID',
-    datatype: 0x0004,
-    codec: registry => registry.codecs.uint16,
+    datatype: 0x0006,
+    codec: registry => registry.codecs.uint32,
     access: 'Get' as const,
 } as const satisfies PropertyDefinition
 
@@ -619,6 +619,53 @@ export const CanonWftStatus = {
     access: 'Get' as const,
 } as const satisfies PropertyDefinition
 
+export const CanonColorTemperature = {
+    code: 0xd10a,
+    name: 'CanonColorTemperature',
+    description: 'White-balance color temperature in kelvin.',
+    datatype: UINT32,
+    codec: registry => registry.codecs.uint32,
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
+export const CanonLiveViewAutofocusMode = {
+    code: 0xd1ba,
+    name: 'CanonLiveViewAutofocusMode',
+    description: 'Live-view AF area/system (EDSDK Evf_AFMode).',
+    datatype: UINT32,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'quick', description: 'Quick AF' },
+                { value: 1, name: 'live', description: 'Live AF' },
+                { value: 2, name: 'face', description: 'Face detection' },
+                { value: 3, name: 'multi', description: 'Multi-point' },
+                { value: 4, name: 'zone', description: 'Zone' },
+                { value: 5, name: 'expand-cross', description: 'Cross expansion' },
+                { value: 6, name: 'expand-around', description: 'Surround expansion' },
+                { value: 7, name: 'large-zone-horizontal', description: 'Large horizontal zone' },
+                { value: 8, name: 'large-zone-vertical', description: 'Large vertical zone' },
+                { value: 9, name: 'tracking', description: 'Tracking' },
+                { value: 10, name: 'spot', description: 'Spot' },
+                { value: 11, name: 'flexible-zone-1', description: 'Flexible zone 1' },
+                { value: 12, name: 'flexible-zone-2', description: 'Flexible zone 2' },
+                { value: 13, name: 'flexible-zone-3', description: 'Flexible zone 3' },
+                { value: 14, name: 'whole-area', description: 'Whole area' },
+                { value: 15, name: 'spot-without-tracking', description: 'Spot without tracking' },
+                { value: 16, name: 'one-point-without-tracking', description: 'One point without tracking' },
+                { value: 17, name: 'expand-cross-without-tracking', description: 'Cross expansion without tracking' },
+                {
+                    value: 18,
+                    name: 'expand-around-without-tracking',
+                    description: 'Surround expansion without tracking',
+                },
+            ] as const,
+            registry.codecs.uint32
+        ),
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
 export const canonPropertyRegistry = {
     CanonAperture,
     CanonShutterSpeed,
@@ -629,6 +676,8 @@ export const canonPropertyRegistry = {
     CanonMeteringMode,
     CanonFocusMode,
     CanonWhiteBalance,
+    CanonColorTemperature,
+    CanonLiveViewAutofocusMode,
     CanonWhiteBalanceAdjustA,
     CanonWhiteBalanceAdjustB,
     CanonWhiteBalanceXA,
