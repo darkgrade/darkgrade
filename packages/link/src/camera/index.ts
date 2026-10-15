@@ -1,9 +1,10 @@
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
-import type { CanonNetworkState, CanonPropertyState, CanonUnknownPropertyState } from './canon-camera'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
+import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
+import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
+import type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
@@ -13,10 +14,17 @@ import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
+import type { CanonNetworkState, CanonPropertyState, CanonUnknownPropertyState } from './canon-camera'
 import { CanonCamera } from './canon-camera'
 import { GenericCamera, type StandardPropertyState } from './generic-camera'
 import { NikonCamera } from './nikon-camera'
-import { SonyCamera, type SonyCameraButton, type SonyOsdImage, type SonyPropertyState, type SonyZoomResult } from './sony-camera'
+import {
+    SonyCamera,
+    type SonyCameraButton,
+    type SonyOsdImage,
+    type SonyPropertyState,
+    type SonyZoomResult,
+} from './sony-camera'
 
 export interface CameraOptions {
     logger?: Partial<LoggerConfig>
@@ -192,62 +200,74 @@ export class Camera {
     }
 
     async getSonyImageFormat(): Promise<string> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony image format is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony image format is only available for Sony cameras')
         return this.instance.getImageFormat()
     }
 
     async setSonyImageFormat(value: string): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony image format is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony image format is only available for Sony cameras')
         return this.instance.setImageFormat(value)
     }
 
     async getSonyJpegQuality(): Promise<string> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony JPEG quality is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony JPEG quality is only available for Sony cameras')
         return this.instance.getJpegQuality()
     }
 
     async setSonyJpegQuality(value: string): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony JPEG quality is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony JPEG quality is only available for Sony cameras')
         return this.instance.setJpegQuality(value)
     }
 
     async getSonyMovieFileFormat(): Promise<string> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony movie format is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony movie format is only available for Sony cameras')
         return this.instance.getMovieFileFormat()
     }
 
     async setSonyMovieFileFormat(value: string): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony movie format is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony movie format is only available for Sony cameras')
         return this.instance.setMovieFileFormat(value)
     }
 
     async getSonyMovieRecordingSetting(): Promise<string> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony movie setting is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony movie setting is only available for Sony cameras')
         return this.instance.getMovieRecordingSetting()
     }
 
     async setSonyMovieRecordingSetting(value: string): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony movie setting is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony movie setting is only available for Sony cameras')
         return this.instance.setMovieRecordingSetting(value)
     }
 
     async getSonyImageSize(): Promise<string> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony image size is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony image size is only available for Sony cameras')
         return this.instance.getImageSize()
     }
 
     async setSonyImageSize(value: string): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony image size is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony image size is only available for Sony cameras')
         return this.instance.setImageSize(value)
     }
 
     async getSonyAspectRatio(): Promise<string> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony aspect ratio is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony aspect ratio is only available for Sony cameras')
         return this.instance.getAspectRatio()
     }
 
     async setSonyAspectRatio(value: string): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony aspect ratio is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony aspect ratio is only available for Sony cameras')
         return this.instance.setAspectRatio(value)
     }
 
@@ -266,17 +286,20 @@ export class Camera {
     }
 
     async getSonyZoomPosition(): Promise<number> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony zoom position is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony zoom position is only available for Sony cameras')
         return this.instance.getZoomPosition()
     }
 
     async sonyPowerZoom(direction: 'wide' | 'tele', pulses?: number): Promise<SonyZoomResult> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony power zoom is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony power zoom is only available for Sony cameras')
         return this.instance.powerZoom(direction, pulses)
     }
 
     async sonyTouchFocus(x: number, y: number, options?: { focus?: boolean }): Promise<{ x: number; y: number }> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony touch focus is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony touch focus is only available for Sony cameras')
         return this.instance.touchFocus(x, y, options)
     }
 
@@ -284,7 +307,8 @@ export class Camera {
         button: SonyCameraButton,
         options?: { action?: 'click' | 'press' | 'release'; holdMilliseconds?: number }
     ): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony camera buttons are only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony camera buttons are only available for Sony cameras')
         return this.instance.pressButton(button, options)
     }
 
@@ -294,17 +318,20 @@ export class Camera {
     }
 
     async setSonyAfAreaPosition(x: number, y: number): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony AF-area position is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony AF-area position is only available for Sony cameras')
         return this.instance.setAfAreaPosition(x, y)
     }
 
     async getSonyZoomSetting(): Promise<string> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony zoom setting is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony zoom setting is only available for Sony cameras')
         return this.instance.getZoomSetting()
     }
 
     async setSonyZoomSetting(value: string): Promise<void> {
-        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony zoom setting is only available for Sony cameras')
+        if (!(this.instance instanceof SonyCamera))
+            throw new Error('Sony zoom setting is only available for Sony cameras')
         return this.instance.setZoomSetting(value)
     }
 
@@ -421,6 +448,61 @@ export class Camera {
         return this.instance.captureLiveView({ includeInfo: true, includeData: true, ...params })
     }
 
+    async captureCanonViewfinderFrame(): Promise<CanonLiveViewFrame> {
+        return this.canonCamera().captureViewfinderFrame()
+    }
+
+    /** Explicitly read advertised Canon extended capabilities; discovery does not establish writability. */
+    async getCanonExtendedDeviceInfo(): Promise<CanonExtendedDeviceInfo> {
+        return this.canonCamera().getExtendedDeviceInfo()
+    }
+
+    async stopCanonLiveView(): Promise<void> {
+        await this.canonCamera().stopLiveView()
+    }
+
+    async setCanonLiveViewZoom(magnification: 1 | 5 | 6 | 10 | 15): Promise<void> {
+        await this.canonCamera().setLiveViewZoom(magnification)
+    }
+
+    async getCanonLiveViewPosition() {
+        return this.canonCamera().getLiveViewPosition()
+    }
+
+    async setCanonLiveViewPosition(x: number, y: number) {
+        return this.canonCamera().setLiveViewPosition(x, y)
+    }
+
+    async panCanonLiveView(direction: 'up' | 'down' | 'left' | 'right', step = 200) {
+        return this.canonCamera().panLiveView(direction, step)
+    }
+
+    async setCanonLiveViewFramePoint(x: number, y: number, lockAfFrame = false) {
+        return this.canonCamera().setLiveViewFramePoint(x, y, lockAfFrame)
+    }
+
+    async getCanonColorTemperature(): Promise<number> {
+        return this.canonCamera().getColorTemperature()
+    }
+
+    async setCanonColorTemperature(kelvin: number): Promise<void> {
+        await this.canonCamera().setColorTemperature(kelvin)
+    }
+
+    async getCanonLiveViewAutofocusMode(): Promise<string> {
+        return this.canonCamera().getLiveViewAutofocusMode()
+    }
+
+    async setCanonLiveViewAutofocusMode(mode: string): Promise<void> {
+        await this.canonCamera().setLiveViewAutofocusMode(mode)
+    }
+
+    private canonCamera(): CanonCamera {
+        if (!(this.instance instanceof CanonCamera))
+            throw new Error('This control is only available for Canon EOS cameras')
+        return this.instance
+    }
+
     async startRecording(): Promise<void> {
         return this.instance.startRecording()
     }
@@ -449,5 +531,5 @@ export { NikonCamera } from './nikon-camera'
 export { SONY_CAMERA_BUTTONS, SonyCamera } from './sony-camera'
 export type { SonyCameraButton, SonyOsdImage, SonyPropertyState, SonyZoomResult } from './sony-camera'
 
-export { typeSonyWifiKeyboard, sonyWifiKeyboardCharacter } from '@vendors/sony/wifi-keyboard'
-export type { SonyKeyboardImage, SonyKeyboardControls } from '@vendors/sony/wifi-keyboard'
+export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/wifi-keyboard'
+export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'
