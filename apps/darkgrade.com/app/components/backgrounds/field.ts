@@ -19,6 +19,17 @@ export const NOISE_SEED: number = 0
  */
 export const CONTOUR_BACKGROUND_ENABLED: boolean = false
 
+/**
+ * TRYING. The backdrop is a YouTube video instead of the silk shader, so it
+ * streams at whatever quality the visitor's connection and screen can carry.
+ * The silk is still built and typed, just not mounted: flip this to false to
+ * bring it back.
+ */
+export const VIDEO_BACKGROUND_ENABLED: boolean = true
+
+/** The YouTube video behind the page ("bg hq v2" on @darkgradehq). public/bg-poster.jpg is its still. */
+export const BACKGROUND_VIDEO_ID = 'NoIrXIQswGo'
+
 const frac = (x: number) => x - Math.floor(x)
 
 /**

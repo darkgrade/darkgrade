@@ -118,8 +118,17 @@ export type SilkRenderer = {
     destroy(): void
 }
 
-/** Returns null when WebGL is unavailable - the caller falls back to contours. */
-export function createSilk(canvas: HTMLCanvasElement): SilkRenderer | null {
+/**
+ * Returns null when WebGL is unavailable - the caller falls back to contours.
+ *
+ * `fixedSize` renders at exactly that many pixels instead of following the
+ * canvas's CSS box and device pixel ratio. The social-image exporter uses it to
+ * draw the same silk at an exact output resolution.
+ */
+export function createSilk(
+    canvas: HTMLCanvasElement,
+    fixedSize?: { readonly width: number; readonly height: number }
+): SilkRenderer | null {
     let gl: WebGLRenderingContext | null = null
     try {
         gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'high-performance' })
@@ -179,8 +188,8 @@ export function createSilk(canvas: HTMLCanvasElement): SilkRenderer | null {
 
     const resize = () => {
         const r = Math.min(devicePixelRatio, 1)
-        canvas.width = Math.floor((canvas.clientWidth || innerWidth) * r)
-        canvas.height = Math.floor((canvas.clientHeight || innerHeight) * r)
+        canvas.width = fixedSize ? fixedSize.width : Math.floor((canvas.clientWidth || innerWidth) * r)
+        canvas.height = fixedSize ? fixedSize.height : Math.floor((canvas.clientHeight || innerHeight) * r)
         ctx.viewport(0, 0, canvas.width, canvas.height)
         resX = canvas.width
         resY = canvas.height

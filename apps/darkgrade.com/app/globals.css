@@ -15,35 +15,36 @@
     --color-bg-2: #101012;
     --color-ink: #eae6dc;
     --color-ink-55: rgba(234, 230, 220, 0.55);
-    --color-ink-35: rgba(234, 230, 220, 0.44);
+    /* the hero's translucent text, 20% more opaque than ink-55 / ink-52 */
+    --color-ink-66: rgba(234, 230, 220, 0.66);
+    --color-ink-62: rgba(234, 230, 220, 0.62);
+    --color-ink-52: rgba(234, 230, 220, 0.52); /* 4.78:1 on --color-bg: the floor for 12px text */
     --color-hair: rgba(234, 230, 220, 0.13);
     --color-gold: #f6dda8;
     --color-gold-dim: rgba(246, 221, 168, 0.13);
     --color-obsidian: #0b0b0c; /* type sitting on a lit surface */
     --color-rec: #e0483e;
 
-    --font-serif: var(--font-instrument-serif), Georgia, serif;
-    --font-sans: var(--font-inter-tight), system-ui, sans-serif;
-    --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+    --font-serif: var(--font-tay-flapjack), Georgia, serif;
+    --font-sans: var(--font-tay-road-runner), system-ui, sans-serif;
+    --font-mono: var(--font-tay-tommy-tokyo), ui-monospace, monospace;
 
     --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
 
-    --animate-drip: drip 2.2s var(--ease-lamp) infinite;
-    --animate-blink: blink 1.6s ease-in-out infinite;
-}
+    /* the type scale for running text and labels. Display type (headlines, the
+       big numbers) stays fluid, set per element with clamp(). The faces ship one
+       weight each (400), so there are no weight tokens: hierarchy is size, colour
+       and tracking. */
+    --text-label: 0.875rem; /* 14px: the smallest text on the site */
+    --text-body-sm: 0.9375rem; /* 15px: list rows, footer */
+    --text-body: 1rem; /* 16px: paragraphs */
+    --text-lede: clamp(1rem, 1.25vw, 1.1562rem); /* the hero paragraph */
 
-/* transform, not `top`: animating top is a layout property, so the scroll cue
-   was the one non-composited animation on the page. */
-@keyframes drip {
-    0% {
-        transform: translateY(-100%);
-    }
-    55% {
-        transform: translateY(0);
-    }
-    100% {
-        transform: translateY(100%);
-    }
+    /* uppercase micro-labels take one of two trackings */
+    --tracking-label: 0.3em; /* section eyebrows, column heads, subheads */
+    --tracking-meta: 0.2em; /* chips, status, legend, small controls */
+
+    --animate-blink: blink 1.6s ease-in-out 3; /* 4.8s total: WCAG 2.2.2 allows blinking under 5s without a pause control */
 }
 
 @keyframes blink {
@@ -69,10 +70,21 @@
     }
     body {
         font-family: var(--font-sans);
-        font-weight: 340;
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
         overflow-x: clip;
+    }
+    /* Headings are short: even out their lines. Paragraphs: just keep a lone
+       word off the last line (balance on a paragraph would reshape its whole
+       measure). */
+    h1,
+    h2,
+    h3 {
+        text-wrap: balance;
+    }
+    p {
+        text-wrap: pretty;
     }
     a {
         color: inherit;
@@ -80,6 +92,9 @@
     }
 
     html {
+        /* the fixed header is 76px (64px scrolled): keep anchored sections and
+           focused controls from landing underneath it */
+        scroll-padding-top: 88px;
         scrollbar-width: thin;
         scrollbar-color: rgba(234, 230, 220, 0.25) transparent;
     }
@@ -93,6 +108,11 @@
     }
     ::-webkit-scrollbar-track {
         background: transparent;
+    }
+    /* sections and <main> take programmatic focus after an in-page link; they
+       are not controls, so they draw no ring */
+    [tabindex='-1']:focus {
+        outline: none;
     }
     ::selection {
         background: var(--color-gold);
@@ -128,6 +148,16 @@
 @utility shell {
     width: min(1560px, calc(100% - clamp(40px, 6vw, 128px)));
     margin-inline: auto;
+}
+
+/* ---------- the panel ----------
+   the frosted dark surface shared by the scrolled header, the footer and the
+   buttons and the marquee: 25% black over a 14px blur of what is behind it. One
+   shade and one radius everywhere. Built from Tailwind's own backdrop-blur. The
+   tint is deliberately light: the dim layer already sits under it at 75-85%, and
+   a heavier panel on top leaves almost no footage to blur. */
+@utility panel {
+    @apply bg-[rgba(10,10,11,.25)] backdrop-blur-[14px];
 }
 
 /* ---------- the lamp ----------
@@ -193,12 +223,6 @@
         0 1px 76px rgba(190, 105, 30, calc(0.2 * var(--gI) * var(--glow))),
         0 0 0.12em rgba(208, 139, 52, calc(0.55 * var(--gI) * var(--glow))),
         0 0 0.3em rgba(180, 87, 28, calc(0.4 * var(--gI) * var(--glow)));
-}
-
-/* a hairline that carries a little light */
-@utility lit-rule {
-    background: linear-gradient(90deg, rgba(244, 198, 110, 0.55), rgba(244, 198, 110, 0.06));
-    box-shadow: 0 0 calc(8px * var(--gI)) rgba(244, 198, 110, 0.22);
 }
 
 /* the wordmark, catching the lamp */
@@ -295,6 +319,16 @@
     .js [data-reveal-lines].rv .ln-mask.open .line-inner {
         -webkit-mask-image: none;
         mask-image: none;
+    }
+
+    /* ---------- the dim layer ----------
+       the one layer between the backdrop and the page: flat black, no gradient.
+       JS writes --dim-p: 0 at the top of the page, 1 once the marquee reaches
+       the top of the window. Over that distance opacity runs 75% -> 85%. */
+    .dim {
+        --dim-p: 0;
+        opacity: calc(0.75 + 0.1 * var(--dim-p));
+        background: #000;
     }
 }
 

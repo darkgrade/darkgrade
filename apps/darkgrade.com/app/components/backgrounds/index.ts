@@ -28,7 +28,9 @@ export type BackgroundLayers = {
  */
 export function createBackgrounds(
     silkCanvas: HTMLCanvasElement,
-    contourCanvas: HTMLCanvasElement | null
+    contourCanvas: HTMLCanvasElement | null,
+    /** False under prefers-reduced-motion: the clock never advances, so the field holds still. */
+    { animate }: { animate: boolean } = { animate: true }
 ): BackgroundLayers {
     const silk: SilkRenderer | null = createSilk(silkCanvas)
     const contours: ContourRenderer | null =
@@ -56,7 +58,7 @@ export function createBackgrounds(
         const now = performance.now()
         const dt = Math.min(now - last, 100) / 1000
         last = now
-        t += dt
+        if (animate) t += dt
 
         const target = mode === 'silk' ? 1 : 0
         if (mix !== target) {
