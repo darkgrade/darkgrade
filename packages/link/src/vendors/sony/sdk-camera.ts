@@ -500,9 +500,19 @@ export class SonyWifiCamera {
 
     async getRecentSonyContents(): Promise<Record<string, unknown>[]> {
         this.requireConnection()
-        const result = await this.bridge.request({ cmd: 'recent_contents' })
-        if (!Array.isArray(result.contents)) throw new Error('The camera returned no recent contents')
-        return result.contents
+        const deadline = Date.now() + 15_000
+        while (true) {
+            try {
+                const result = await this.bridge.request({ cmd: 'recent_contents' })
+                if (!Array.isArray(result.contents)) throw new Error('The camera returned no recent contents')
+                return result.contents
+            } catch (error) {
+                // The documented contents-list operation is asynchronous after connecting or writing a file.
+                if (!(error instanceof Error) || !/SDK code 36101/.test(error.message) || Date.now() >= deadline)
+                    throw error
+                await new Promise(resolve => setTimeout(resolve, 250))
+            }
+        }
     }
 
     async downloadSonyContent(

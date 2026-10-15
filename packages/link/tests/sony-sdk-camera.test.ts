@@ -263,3 +263,21 @@ it('supports a RemoteTransfer USB observer for exact card capture verification',
     await camera.connectUsb('unit-test', { mode: 'remote-transfer' })
     expect(requests.at(-1)).toMatchObject({ cmd: 'connect', serial: 'unit-test', mode: 'remote-transfer' })
 })
+
+
+it('waits for the documented Sony contents-list processing status and preserves other errors',async()=>{
+    let attempts=0
+    const bridge:SonySdkBridge={request:async command=>{
+        if(command.cmd==='recent_contents'){
+            if(++attempts===1)throw new Error('Sony SDK command failed (SDK code 36101)')
+            return {contents:[{id:123,files:[]}]}
+        }
+        return {ok:true}
+    },close:async()=>undefined}
+    const camera=new SonyWifiCamera(bridge)
+    await camera.connectUsb('TEST_SERIAL')
+    await expect(camera.getRecentSonyContents()).resolves.toEqual([{id:123,files:[]}])
+    expect(attempts).toBe(2)
+    bridge.request=async()=>{throw new Error('Sony SDK command failed (SDK code 36102)')}
+    await expect(camera.getRecentSonyContents()).rejects.toThrow('36102')
+})
