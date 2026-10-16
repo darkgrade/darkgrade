@@ -1,5 +1,6 @@
 import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@camera/sony-camera'
 import { performSonySdkControl } from '@vendors/sony/sdk-controls'
+import { sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 import { SONY_SDK_NAMED_PROPERTIES } from '@vendors/sony/sdk-property-codes'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 
@@ -121,6 +122,9 @@ function numericValue(value: unknown): string {
  */
 export class SonyWifiCamera {
     private connected = false
+    private connectionTransport: 'usb' | 'wifi' | undefined
+    private osdEnabled = false
+    private monitoringAttempted = false
 
     constructor(private readonly bridge: SonySdkBridge) {}
 
@@ -170,6 +174,7 @@ export class SonyWifiCamera {
             }
         }
         this.connected = true
+        this.connectionTransport = 'wifi'
     }
 
     /** Open the same official SDK over USB for guarded preparation and readback. */
@@ -178,10 +183,14 @@ export class SonyWifiCamera {
         if (!/^[A-Za-z0-9_-]{1,64}$/.test(serial)) throw new Error('Invalid Sony USB serial')
         await this.bridge.request({ cmd: 'connect', serial, ...(options.mode ? { mode: options.mode } : {}) })
         this.connected = true
+        this.connectionTransport = 'usb'
     }
 
     async disconnect(): Promise<void> {
         this.connected = false
+        this.connectionTransport = undefined
+        this.osdEnabled = false
+        this.monitoringAttempted = false
         try {
             await this.bridge.request({ cmd: 'disconnect' })
         } finally {
@@ -541,19 +550,58 @@ export class SonyWifiCamera {
         })
     }
 
-    async captureLiveView(filename: string): Promise<Record<string, unknown>> {
+    async getSonyPreviewCapabilities() {
+        return sonyPreviewCapabilities(await this.getSonyPropertyStates())
+    }
+
+    /** Keep classic live view unless it fails and the body advertises JPEG monitoring. */
+    async captureLiveView(
+        filename: string,
+        options: { attempts?: number; monitoringFallback?: boolean } = {}
+    ): Promise<Record<string, unknown>> {
         this.requireConnection()
-        return await this.bridge.request({ cmd: 'liveview', path: filename })
+        const attempts = options.attempts ?? 25
+        if (!Number.isInteger(attempts) || attempts < 1 || attempts > 25)
+            throw new Error('Live-view attempts must be 1–25')
+        const command = { cmd: 'liveview', path: filename, attempts: String(attempts) }
+        try {
+            return await this.bridge.request(command)
+        } catch (error) {
+            if (!options.monitoringFallback || this.monitoringAttempted || this.connectionTransport !== 'wifi')
+                throw error
+            this.monitoringAttempted = true
+            const capabilities = await this.getSonyPreviewCapabilities()
+            const format = capabilities.preferredJpegFormat
+            if (capabilities.monitoring !== 'advertised' || !format || capabilities.delivering !== false) throw error
+            await this.bridge.request({ cmd: 'monitoring_start', quality: String(format.qualityLevel) })
+            try {
+                return await this.bridge.request({ ...command, attempts: '25' })
+            } catch (deliveryError) {
+                await this.bridge.request({ cmd: 'monitoring_stop' })
+                throw deliveryError
+            }
+        }
     }
 
     async captureSonyOsdImage(filename: string): Promise<Record<string, unknown>> {
-        await this.setSonyProperty('OsdImageMode', 1)
-        const deadline = Date.now() + 5000
-        while ((await this.getSonyProperty('OsdImageMode')).value !== '1') {
-            if (Date.now() >= deadline) throw new Error('The camera did not enable its OSD image')
-            await new Promise(resolve => setTimeout(resolve, 200))
+        if (!this.osdEnabled) {
+            const current = await this.getSonyProperty('OsdImageMode')
+            if (current.value !== '1') {
+                await this.setSonyProperty('OsdImageMode', 1)
+                const deadline = Date.now() + 5000
+                while ((await this.getSonyProperty('OsdImageMode')).value !== '1') {
+                    if (Date.now() >= deadline) throw new Error('The camera did not enable its OSD image')
+                    await new Promise(resolve => setTimeout(resolve, 200))
+                }
+                await new Promise(resolve => setTimeout(resolve, 500))
+            }
+            this.osdEnabled = true
         }
-        await new Promise(resolve => setTimeout(resolve, 500))
-        return await this.bridge.request({ cmd: 'osd', path: filename })
+        try {
+            return await this.bridge.request({ cmd: 'osd', path: filename })
+        } catch (error) {
+            this.osdEnabled = false
+            throw error
+        }
     }
 }
