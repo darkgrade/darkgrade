@@ -11,7 +11,7 @@ import {
 import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
 import { createCanonRegistry } from '@ptp/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 function testCamera() {
     const transport = {
@@ -90,13 +90,57 @@ describe('Canon camera controls', () => {
         expect(operations).toEqual(['CanonDoAutofocus', 'CanonRemoteReleaseOn', 'CanonRemoteReleaseOff'])
     })
 
-    it('enters and leaves movie-select mode without conflating it with recording', async () => {
+    it('enters and leaves movie mode using fresh readback, without conflating it with recording', async () => {
         const { camera, operations } = testCamera()
-
+        let pending: number | undefined
+        camera.send = (async operation => {
+            operations.push(operation.name)
+            if (operation.name === 'CanonMovieSelectSwitchOn') pending = 1
+            if (operation.name === 'CanonMovieSelectSwitchOff') pending = 0
+            if (operation.name === 'CanonGetEventData') {
+                const data = pending === undefined ? [] : [{ code: 0xc189, parameters: [0xd1c2, pending] }]
+                pending = undefined
+                return { code: 0x2001, data }
+            }
+            return { code: 0x2001 }
+        }) as typeof camera.send
         await camera.enterMovieMode()
+        expect(await camera.getMovieMode()).toBe('movie')
         await camera.leaveMovieMode()
+        expect(await camera.getMovieMode()).toBe('still')
+        expect(operations.filter(name => name !== 'CanonGetEventData'))
+            .toEqual(['CanonMovieSelectSwitchOn', 'CanonMovieSelectSwitchOff'])
+    })
 
-        expect(operations).toEqual(['CanonMovieSelectSwitchOn', 'CanonMovieSelectSwitchOff'])
+    it.each([true, false])('rejects an acknowledged still-mode request without confirming readback (%s)', async fresh => {
+        vi.useFakeTimers()
+        const { camera, operations } = testCamera()
+        let switched = false
+        camera.send = (async operation => {
+            operations.push(operation.name)
+            if (operation.name === 'CanonMovieSelectSwitchOff') switched = true
+            return operation.name === 'CanonGetEventData'
+                ? { code: 0x2001, data: !switched || fresh ? [{ code: 0xc189, parameters: [0xd1c2, 1] }] : [] }
+                : { code: 0x2001 }
+        }) as typeof camera.send
+        try {
+            const rejected = expect(camera.leaveMovieMode()).rejects.toThrow(fresh
+                ? 'the camera reported FixedMovie=1' : 'no fresh FixedMovie event confirmed it')
+            await vi.runAllTimersAsync()
+            await rejected
+            expect(operations.filter(name => name === 'CanonMovieSelectSwitchOff')).toHaveLength(1)
+            expect(await camera.getMovieMode()).toBe('movie')
+        } finally { vi.useRealTimers() }
+    })
+
+    it('does not send a mode command when pending events already confirm the requested mode', async () => {
+        const { camera, operations } = testCamera()
+        camera.send = (async operation => {
+            operations.push(operation.name)
+            return { code: 0x2001, data: [{ code: 0xc189, parameters: [0xd1c2, 1] }] }
+        }) as typeof camera.send
+        await camera.enterMovieMode()
+        expect(operations).toEqual(['CanonGetEventData'])
     })
 
     it('round-trips Canon single and dual still-image format structures', () => {

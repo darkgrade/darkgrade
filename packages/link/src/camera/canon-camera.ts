@@ -401,21 +401,53 @@ export class CanonCamera extends GenericCamera {
         await this.set(property, value)
     }
 
+    async getMovieMode(): Promise<'still' | 'movie'> {
+        const value = await this.get(this.registry.properties.CanonFixedMovie)
+        if (value === 0) return 'still'
+        if (value === 1) return 'movie'
+        throw new Error(`Canon reported an unknown FixedMovie value ${value}`)
+    }
+
     async enterMovieMode(): Promise<void> {
-        await this.withoutPolling(async () => {
-            const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
-            if (response.code !== OK.code) {
-                throw new Error(`Canon movie-mode switch returned 0x${response.code.toString(16)}`)
-            }
-        })
+        await this.selectMovieMode(1)
     }
 
     async leaveMovieMode(): Promise<void> {
+        await this.selectMovieMode(0)
+    }
+
+    private async selectMovieMode(requested: 0 | 1): Promise<void> {
         await this.withoutPolling(async () => {
-            const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
-            if (response.code !== OK.code) {
-                throw new Error(`Canon movie-mode release returned 0x${response.code.toString(16)}`)
-            }
+            const property = this.registry.properties.CanonFixedMovie
+            const pending = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50_000)
+            this.assertResponseOk(pending.code, 'shooting mode event readback')
+            if (Array.isArray(pending.data)) this.processEvents(pending.data)
+            if (this.propertyCache.get(property)?.current === requested) return
+
+            const operation = requested === 1
+                ? this.registry.operations.CanonMovieSelectSwitchOn
+                : this.registry.operations.CanonMovieSelectSwitchOff
+            const response = await this.send(operation, {})
+            this.assertResponseOk(response.code, 'movie-mode switch')
+            const deadline = Date.now() + 2000
+            let observed: number | undefined
+            do {
+                const events = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50_000)
+                this.assertResponseOk(events.code, 'shooting mode event readback')
+                if (Array.isArray(events.data)) {
+                    this.processEvents(events.data)
+                    for (const event of events.data) {
+                        if (event.code === 0xc189 && Number(event.parameters[0]) === property.code)
+                            observed = Number(event.parameters[1])
+                    }
+                }
+                if (observed === requested) return
+                await new Promise(resolve => setTimeout(resolve, 100))
+            } while (Date.now() < deadline)
+            const mode = requested === 1 ? 'movie' : 'still'
+            const detail = observed === undefined ? 'no fresh FixedMovie event confirmed it'
+                : `the camera reported FixedMovie=${observed}`
+            throw new Error(`Canon acknowledged ${mode} mode but ${detail}. Check the body still/movie switch; software switching requires the hardware in still mode.`)
         })
     }
 

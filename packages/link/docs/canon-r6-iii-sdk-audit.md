@@ -252,3 +252,60 @@ External evidence: `sdk-still-capture-error-static-2026-10-17.md` and
 `parity-recovery-hardware/{raw-release-result.log,capture-mode-registered.log,
 capture-mode-off-verified.log,release-result-mcp-verified.json,capture-gap-hdmi.jpg}`
 under `~/canon-r6-iii-audit/`. Licensed SDK code and private payloads remain outside Git.
+
+## Fresh mode-event and cold-start follow-up (2026-10-18 UTC)
+
+The SDK FixedMovie getter uses its event cache. To rule out a stale SDK value, a labelled
+USB trace observed the actual camera events around the mode-off command:
+`7b71f4c0-b8ba-4ea9-b594-e0bffff9616f` completed with zero incomplete containers.
+Initial event `C189 D1C2=1` was followed by a **new `C189 D1C2=1` after `9134`**.
+Thus this negative result is confirmed by a fresh camera event, not just an unchanged SDK
+cache. The registered SDK property callback also fired for FixedMovie.
+
+Two additional documented paths were tested:
+
+- SDK TakePicture command 0 sends the distinct zero-argument `910f`; it returned
+  `0x8d0e` (`TAKE_PICTURE_MOVIE_MODE_NG`). The SD inventory remained 13 handles with
+  unchanged free space. This path did not create a new image either.
+- SetModeDialDisable command `0x113` maps to `9088`. Parameter 1 returned PTP GeneralError
+  `2002`; parameter 0 returned OK but AESelect still advertised only `[3]` (Manual).
+  No unadvertised AE mode was written. Mode-off afterward still emitted `D1C2=1`.
+  Trace `63219b12-a4e2-4cc0-9462-ebaf23cb31f1` records the first variant; the trace above
+  records parameter 0. The SDK manual's table and example disagree about the parameter's
+  meaning; these observed results do not establish a working mode-dial override.
+
+Mapped Test Bench 2 power recovery and a fresh native SDK session again reported
+FixedMovie=1, HFR=0, SlowFast=0 and **firmware 1.0.1**. After the cold start, both mapped
+Canon USB hub halves were disabled, USB disappearance was verified, and an immediately
+archived serial-paired Cam Link snapshot was taken before restoring USB/PTP. Both HDMI
+snapshots showed battery/PC connection icons, so neither revealed the physical selector.
+The physical selector position remains unconfirmed.
+
+Canon's [still shooting instructions](https://cam.start.canon/en/C022/manual/html/UG-02_ShootingStill_0020.html)
+require the separate still/movie switch to be in still mode. Its
+[firmware 1.1.0 release notes](https://sg.canon/en/support/0401169302) add EDSDK/CCAPI
+support. The current body's older firmware is a compatibility limit, not proof that an
+upgrade clears a physical movie-switch restriction. No firmware update was attempted.
+The next body-side check is its actual still/movie switch position; successful still
+capture and software movie/still round trips remain unverified.
+
+Added read-only `CanonFixedMovie` (`D1C2`) and `Camera.getCanonMovieMode()`. Movie-select
+methods now process pending events, avoid a mode command when the reported target is
+already selected, and require a fresh matching FixedMovie event after changing modes.
+An ACK with a contradictory event or no confirming event fails within a two-second
+readback window, without retrying the command. On the real body, `leaveMovieMode()`
+reported the explicit FixedMovie=1 rejection and left mode unchanged.
+
+The companion USB movie-format probe/setter now preserves the initial still/movie mode,
+verifies restoration, and reports disconnect failure. It no longer unconditionally
+requests still mode or reports restoration on ACK alone. A live isolated MCP
+`camera_probe_movie_mode` returned `originalMode: movie, restored: true`; its typed
+controls exposed FixedMovie=1 and original aperture/shutter/ISO/WB/Kelvin/AF/image settings.
+This validates preserving an already selected movie mode, not a successful switch to still.
+
+Validation: library typecheck/build and **144 tests across 23 files**; bench typecheck/build
+and **210 tests across 34 files** passed. Evidence remains in the external audit directory:
+`native-take-picture-distinct.log`, `native-mode-dial-override*.log`,
+`native-mode-dial-zero-selected-events.json`, `physical-mode-verification.json`,
+`cold-firmware-and-mode.log`, `verified-mode-rejection.log`, and
+`movie-probe-mode-preserved.json`. Production services remain on their existing checkouts.

@@ -426,6 +426,10 @@ export class Camera {
         return this.instance.setNetworkCommunicationMode(value, allowUnadvertised)
     }
 
+    async getCanonMovieMode(): Promise<'still' | 'movie'> {
+        return this.canonCamera().getMovieMode()
+    }
+
     async enterMovieMode(): Promise<void> {
         if (!(this.instance instanceof CanonCamera)) {
             throw new Error('Canon movie mode is only available for Canon EOS cameras')

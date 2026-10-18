@@ -485,6 +485,15 @@ export const CanonLiveViewMode = {
 // gphoto2 says this is correct, but it actually starts the recording rather than just setting the destination
 // libmtp calls this PTP_DPC_CANON_EOS_EVFRecordStatus
 // https://chromium.googlesource.com/chromium/deps/libmtp/+/4f4fad584e9c2735af5131f15b697376a3327de5/src/ptp.h#1655
+export const CanonFixedMovie = {
+    code: 0xd1c2,
+    name: 'CanonFixedMovie',
+    description: 'Reported Canon shooting mode: 0=still, 1=movie; not movie recording activity.',
+    datatype: 0x0006,
+    codec: registry => registry.codecs.uint32,
+    access: 'Get' as const,
+} as const satisfies PropertyDefinition
+
 /** PTP destination values are body-specific; they are not EDSDK SaveTo enum values. */
 export const CanonCaptureDestination = {
     code: 0xd11c,
@@ -705,6 +714,7 @@ export const canonPropertyRegistry = {
     CanonMovieServoAutofocus,
     CanonLiveViewMode,
     CanonCaptureDestination,
+    CanonFixedMovie,
     CanonRecordingDestination,
     CanonLvViewTypeSelect,
     CanonMovieSize,
