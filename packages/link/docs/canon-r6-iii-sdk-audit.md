@@ -145,3 +145,58 @@ The current library branch is `feat/canon-camera-rea`, built on Sony commit `5b8
 Before publication, the library passed typechecking, its package build and 100 software tests across 21 files. The bench passed typechecking, its browser build, 101 unit/integration tests and 38 browser tests (one optional documentation-screenshot test skipped). Review then reproduced a separate cleanup failure: pan a magnified crop, switch to 1×, and close. Cleanup now restores magnification before writing the saved crop origin; a subprocess regression exercises the actual session script against the camera's crop constraint. This correction is software-verified; it is not a new hardware result.
 
 The companion camera-re skill retains the later PTP/REA/native-SDK/Bluetooth investigation and negative results. No production settings-file importer or physical MENU control is included. Licensed SDKs, firmware, private configuration transfers and raw bench captures remain outside these source commits.
+
+
+## Capture parity and failure recovery (2026-10-18 UTC)
+
+The earlier Canon implementation is now on Darkgrade `main` through PR #10. The follow-up
+library branch is `feat/canon-capture-recovery`; testbench integration continues on
+`feat/canon-preview-mcp`.
+
+Added `CanonCaptureDestination` (`0xd11c`) as a numeric, advertised-choice control, plus
+`Camera.getCanonCaptureDestination()` / `setCanonCaptureDestination()`. PTP destination
+values differ from EDSDK SaveTo: this R6 III advertised `[2, 6, 4]`, initially 2. The new
+MCP setter round-tripped **2 → 6 → 2** with readback, rejected unadvertised value 1, and
+finished PTP-ready. This changes the still-image target, not movie recording state. Host
+selection alone does not implement EDSDK host-object delivery or announce host capacity.
+
+`captureImage({ includeInfo, includeData })` now snapshots card handles before release,
+pumps EOS events while awaiting a new completed still, reads metadata only for new handles,
+and returns requested metadata/data. Capture without either field retains the shutter-only
+path. Folders, empty files, old objects and movie files cannot satisfy the new-image check.
+If multiple new images are ready together, JPEG is preferred; otherwise the first usable
+still is returned. Waiting for a new card image is bounded at 15 seconds. Discovery or
+transfer failure does not automatically repeat an accepted shutter command.
+
+Partial-object downloads now reject unsuccessful replies, zero-byte progress, oversized
+chunks and invalid byte counts. KeepDeviceOn also checks its actual PTP response code.
+The new guarded MCP capture/download action verifies byte count and reports cleanup failure
+instead of publishing a successful result after an unsuccessful disconnect.
+
+**Still capture did not pass the hardware test in the current body state.** AF, non-AF,
+event-pumping and combined full-release probes acknowledged but produced no new card
+image. A direct EDSDK 13.20.21 non-AF shutter call returned `0x8d0c`, named
+`EDS_ERR_TAKE_PICTURE_SPECIAL_MOVIE_MODE_NG` by the supplied SDK header. Its release
+succeeded. EDSDK reported SaveTo=1 and AEMode=3; the newer SlowFastMode/MovieParamEx
+properties were unsupported. A temporary movie-select-off probe also did not produce an
+image and was followed by unresponsive PTP. No normal-mode or firmware-upgrade success is
+claimed. Thus metadata/data delivery has software coverage; complete R6 III still capture
+remains a hardware gap rather than an SDK-parity pass.
+
+Actual failure tests killed an owned, idle Canon preview worker and separately disconnected
+only its verified USB port and unoccupied companion. The stale session was rejected, the
+worker lease cleared, failures were recorded, USB was restored and a new preview opened
+successfully. A subsequent mapped Test Bench 2 power cycle recovered the separate
+unresponsive mode-probe state, confirmed USB disappearance/re-enumeration and completed
+GetDeviceInfo. Keep-awake was re-enabled and acknowledged. The recovery-only test verified
+exposure, white balance, Kelvin, AF area and image-format values against its initial snapshot;
+this is not a claim that every opaque camera setting was restored.
+
+Evidence stays outside Git in `~/canon-r6-iii-audit/parity-recovery-hardware/`, including
+`capture-destination.json`, `recovery-results.json`, `attempt-1-results.json`, the SDK probe
+logs and `post-mode-probe-power-recovery.json`. No licensed SDK or private payload is included.
+
+Validation: library typechecking/build and 138 offline tests across 23 files passed;
+testbench typechecking/build and 194 unit/integration tests across 33 files passed.
+The guarded MCP destination round trip and real worker/USB/power recovery checks are
+recorded above. No new browser UI behavior was added.

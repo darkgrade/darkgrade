@@ -451,9 +451,21 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
+    async getCaptureDestination(): Promise<number> {
+        return this.get(this.registry.properties.CanonCaptureDestination)
+    }
+
+    async setCaptureDestination(value: number): Promise<void> {
+        const property = this.registry.properties.CanonCaptureDestination
+        if (!Number.isInteger(value) || !this.getPropertyAllowedValues(property)?.includes(value))
+            throw new Error('Canon capture destination must be advertised by this camera')
+        await this.set(property, value)
+    }
+
     async keepDeviceOn(): Promise<void> {
         await this.withoutPolling(async () => {
-            await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+            const response = await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+            this.assertResponseOk(response.code, 'keep device on')
         })
     }
 
@@ -473,6 +485,8 @@ export class CanonCamera extends GenericCamera {
         data?: Uint8Array
     }> {
         return this.withoutPolling(async () => {
+            const baseline = includeInfo || includeData ? await this.captureObjectHandles() : undefined
+
             const release = async (afMode: 'AF' | 'MF') => {
                 let focusPressed = false
                 let shutterPressed = false
@@ -519,8 +533,54 @@ export class CanonCamera extends GenericCamera {
                 await release('MF')
             }
 
-            return {}
+            if (!baseline) return {}
+            const captured = await this.waitForCapturedImage(baseline)
+            const data = includeData ? await this.getObject(captured.handle, captured.info.objectCompressedSize) : undefined
+            return {
+                ...(includeInfo ? { info: captured.info } : {}),
+                ...(includeData ? { data } : {}),
+            }
         })
+    }
+
+    /** Snapshot handles only; never enumerate metadata for pre-existing card objects. */
+    private async captureObjectHandles(): Promise<Set<number>> {
+        const response = await this.send(this.registry.operations.GetStorageIDs, {})
+        this.assertResponseOk(response.code, 'capture storage discovery')
+        const handles = new Set<number>()
+        for (const storageId of response.data) {
+            if ((storageId & 0xffff) === 0) continue
+            const objects = await this.send(this.registry.operations.GetObjectHandles, { StorageID: storageId })
+            this.assertResponseOk(objects.code, 'capture object discovery')
+            for (const handle of objects.data) handles.add(handle)
+        }
+        return handles
+    }
+
+    private async waitForCapturedImage(baseline: Set<number>): Promise<{ handle: number; info: ObjectInfo }> {
+        const deadline = Date.now() + 15_000
+        while (Date.now() < deadline) {
+            const events = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50_000)
+            this.assertResponseOk(events.code, 'capture event polling')
+            this.processEvents(events.data)
+            const handles = await this.captureObjectHandles()
+            const candidates: Array<{ handle: number; info: ObjectInfo }> = []
+            for (const handle of handles) {
+                if (baseline.has(handle)) continue
+                const response = await this.send(this.registry.operations.GetObjectInfo, { ObjectHandle: handle })
+                this.assertResponseOk(response.code, 'captured image information')
+                if (this.isCapturedImage(response.data)) candidates.push({ handle, info: response.data })
+            }
+            candidates.sort((left, right) => Number(/\.jpe?g$/i.test(right.info.filename)) - Number(/\.jpe?g$/i.test(left.info.filename)))
+            if (candidates[0]) return candidates[0]
+            await this.waitMs(500)
+        }
+        throw new Error('Canon shutter was released, but no new image appeared on card storage within 15 seconds; check still-photo mode, focus and capture destination before retrying')
+    }
+
+    private isCapturedImage(info: ObjectInfo): boolean {
+        return info.associationType === 0 && info.objectCompressedSize > 0 && info.objectCompressedSize < 0xffffffff &&
+            /\.(jpe?g|heif|heic|cr2|cr3|dng|tiff?)$/i.test(info.filename)
     }
 
     async startRecording(): Promise<void> {

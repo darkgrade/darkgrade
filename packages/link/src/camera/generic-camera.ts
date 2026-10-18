@@ -632,6 +632,8 @@ export class GenericCamera {
     }
 
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+        if (!Number.isInteger(objectSize) || objectSize < 0 || objectSize > 0xffffffff)
+            throw new Error('Object size must be a nonnegative uint32 byte count')
         // Start transfer tracking
         this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObject', objectSize)
 
@@ -652,9 +654,12 @@ export class GenericCamera {
                 bytesToRead + 12
             )
 
-            if (!chunkResponse.data) {
-                throw new Error('No data received from GetPartialObject')
-            }
+            if (chunkResponse.code !== OK.code)
+                throw new Error(`GetPartialObject returned 0x${chunkResponse.code.toString(16)} at byte ${offset}`)
+            if (!chunkResponse.data?.length)
+                throw new Error(`GetPartialObject made no progress at byte ${offset} of ${objectSize}`)
+            if (chunkResponse.data.length > bytesToRead)
+                throw new Error(`GetPartialObject exceeded the requested byte count at byte ${offset}`)
 
             // Update transfer progress
             this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())

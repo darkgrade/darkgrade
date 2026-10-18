@@ -1,7 +1,7 @@
 import { CanonCamera } from '@camera/canon-camera'
 import { Logger } from '@core/logger'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 function cameraWithResponses(responses: number[]) {
     const transport = {
@@ -56,5 +56,142 @@ describe('Canon capture response handling', () => {
             'CanonRemoteReleaseOff',
             'CanonRemoteReleaseOff',
         ])
+    })
+})
+
+function cameraWithCard() {
+    const { camera, operations } = cameraWithResponses([])
+    let captured = false
+    let discoveries = 0
+    const image = { filename: 'IMG_0002.JPG', objectCompressedSize: 5, associationType: 0 }
+    const bytes = new Uint8Array([0xff, 0xd8, 1, 0xff, 0xd9])
+    camera.send = (async (operation, parameters) => {
+        const params = parameters as Record<string, number | string>
+        operations.push({ name: operation.name, params })
+        if (operation.name === 'CanonRemoteReleaseOn' && params.ReleaseMode === 'SHUTTER') captured = true
+        if (operation.name === 'CanonGetEventData') return { code: 0x2001, data: [] }
+        if (operation.name === 'GetStorageIDs') return { code: 0x2001, data: [0x10000, 0x10001] }
+        if (operation.name === 'GetObjectHandles') {
+            if (captured) discoveries++
+            return { code: 0x2001, data: captured ? [1, 2, 3] : [1] }
+        }
+        if (operation.name === 'GetObjectInfo') {
+            if (params.ObjectHandle === 1) throw new Error('Old card metadata must not be enumerated')
+            if (params.ObjectHandle === 3) return { code: 0x2001, data: { ...image, filename: 'MISC', associationType: 1 } }
+            return { code: 0x2001, data: { ...image, objectCompressedSize: discoveries === 1 ? 0 : image.objectCompressedSize } }
+        }
+        if (operation.name === 'GetPartialObject') {
+            const offset = Number(params.Offset)
+            return { code: 0x2001, data: bytes.slice(offset, offset + 2) }
+        }
+        return { code: 0x2001 }
+    }) as typeof camera.send
+    return { camera, operations, image, bytes }
+}
+
+describe('Canon capture data and information', () => {
+    it('waits for a new completed image, skips folders and reads only new-object metadata', async () => {
+        const { camera, operations, image, bytes } = cameraWithCard()
+        await expect(camera.captureImage()).resolves.toEqual({ info: image, data: bytes })
+        expect(operations.filter(operation => operation.name === 'GetObjectHandles').every(operation =>
+            (operation.params as { StorageID: number }).StorageID === 0x10001)).toBe(true)
+        expect(operations.filter(operation => operation.name === 'GetPartialObject').map(operation => operation.params))
+            .toEqual([
+                { ObjectHandle: 2, Offset: 0, MaxBytes: 5 },
+                { ObjectHandle: 2, Offset: 2, MaxBytes: 3 },
+                { ObjectHandle: 2, Offset: 4, MaxBytes: 1 },
+            ])
+    })
+
+    it('supports information-only capture without transferring bytes', async () => {
+        const { camera, operations, image } = cameraWithCard()
+        await expect(camera.captureImage({ includeInfo: true, includeData: false })).resolves.toEqual({ info: image })
+        expect(operations.some(operation => operation.name === 'GetPartialObject')).toBe(false)
+    })
+
+    it('gets the correct transfer size even when callers do not request information', async () => {
+        const { camera, bytes } = cameraWithCard()
+        await expect(camera.captureImage({ includeInfo: false, includeData: true })).resolves.toEqual({ data: bytes })
+    })
+
+    it('does not fire the shutter when card discovery fails', async () => {
+        const { camera, operations } = cameraWithResponses([0x201d])
+        await expect(camera.captureImage()).rejects.toThrow('capture storage discovery')
+        expect(operations.map(operation => operation.name)).toEqual(['GetStorageIDs'])
+    })
+
+    it('times out when no new image appears without returning an old file or firing again', async () => {
+        vi.useFakeTimers()
+        const { camera, operations } = cameraWithCard()
+        const send = camera.send.bind(camera)
+        camera.send = (async (operation, parameters) => operation.name === 'GetObjectHandles'
+            ? { code: 0x2001, data: [1] } : send(operation, parameters)) as typeof camera.send
+        try {
+            const rejected = expect(camera.captureImage()).rejects.toThrow('no new image')
+            await vi.runAllTimersAsync()
+            await rejected
+            expect(operations.filter(operation => operation.name === 'CanonRemoteReleaseOn' &&
+                (operation.params as { ReleaseMode: string }).ReleaseMode === 'SHUTTER')).toHaveLength(1)
+            expect(operations.filter(operation => operation.name === 'GetPartialObject')).toEqual([])
+        } finally { vi.useRealTimers() }
+    })
+
+    it('reports a failed download after releasing controls without taking a second photo', async () => {
+        const { camera, operations } = cameraWithCard()
+        const send = camera.send.bind(camera)
+        camera.send = (async (operation, parameters) => operation.name === 'GetPartialObject'
+            ? { code: 0x201d, data: new Uint8Array() } : send(operation, parameters)) as typeof camera.send
+        await expect(camera.captureImage()).rejects.toThrow('GetPartialObject')
+        expect(operations.filter(operation => operation.name === 'CanonRemoteReleaseOff')).toHaveLength(2)
+        expect(operations.filter(operation => operation.name === 'CanonRemoteReleaseOn' &&
+            (operation.params as { ReleaseMode: string }).ReleaseMode === 'SHUTTER')).toHaveLength(1)
+    })
+
+    it('rejects an unsuccessful KeepDeviceOn response', async () => {
+        const { camera } = cameraWithResponses([0x2019])
+        await expect(camera.keepDeviceOn()).rejects.toThrow('keep device on')
+    })
+})
+
+describe('bounded partial-object transfer', () => {
+    it.each([
+        [{ code: 0x2001, data: new Uint8Array() }, 'made no progress'],
+        [{ code: 0x2001, data: new Uint8Array(6) }, 'exceeded'],
+        [{ code: 0x201d, data: new Uint8Array(5) }, '0x201d'],
+    ])('rejects invalid chunks rather than hanging or claiming success (%#)', async (response, message) => {
+        const { camera } = cameraWithResponses([])
+        camera.send = (async () => response) as typeof camera.send
+        await expect(camera.getObject(2, 5)).rejects.toThrow(message)
+    })
+
+    it('rejects invalid sizes before USB work', async () => {
+        const { camera, operations } = cameraWithResponses([])
+        await expect(camera.getObject(2, -1)).rejects.toThrow('byte count')
+        await expect(camera.getObject(2, Number.NaN)).rejects.toThrow('byte count')
+        expect(operations).toEqual([])
+    })
+})
+
+describe('Canon capture destination', () => {
+    it('preserves body-specific values and verifies an advertised destination write', async () => {
+        const { camera } = cameraWithResponses([])
+        const processEvents = (camera as unknown as { processEvents(events: unknown[]): void }).processEvents.bind(camera)
+        processEvents([
+            { code: 0xc189, parameters: [0xd11c, 2] },
+            { code: 0xc18a, parameters: [0xd11c], allowedValues: [2, 6, 4] },
+        ])
+        expect(await camera.getCaptureDestination()).toBe(2)
+        const writes: Uint8Array[] = []
+        camera.send = (async (operation, _parameters, data) => {
+            if (operation.code === 0x9110) writes.push(data!)
+            return operation.name === 'CanonGetEventData'
+                ? { code: 0x2001, data: [{ code: 0xc189, parameters: [0xd11c, 6] }] }
+                : { code: 0x2001 }
+        }) as typeof camera.send
+        await expect(camera.setCaptureDestination(1)).rejects.toThrow('advertised')
+        expect(writes).toEqual([])
+        await camera.setCaptureDestination(6)
+        expect(await camera.getCaptureDestination()).toBe(6)
+        expect(new DataView(writes[0]!.buffer).getUint32(8, true)).toBe(6)
     })
 })

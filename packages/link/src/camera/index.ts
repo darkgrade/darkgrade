@@ -452,6 +452,15 @@ export class Camera {
         return this.canonCamera().captureViewfinderFrame()
     }
 
+    /** Read the body's PTP destination value; it differs from the EDSDK SaveTo enum. */
+    async getCanonCaptureDestination(): Promise<number> {
+        return this.canonCamera().getCaptureDestination()
+    }
+
+    async setCanonCaptureDestination(value: number): Promise<void> {
+        return this.canonCamera().setCaptureDestination(value)
+    }
+
     /** Explicitly read advertised Canon extended capabilities; discovery does not establish writability. */
     async getCanonExtendedDeviceInfo(): Promise<CanonExtendedDeviceInfo> {
         return this.canonCamera().getExtendedDeviceInfo()
