@@ -195,3 +195,51 @@ describe('Canon capture destination', () => {
         expect(new DataView(writes[0]!.buffer).getUint32(8, true)).toBe(6)
     })
 })
+
+
+describe('Canon camera release result carried by a PTP OK response', () => {
+    it.each(['FOCUS', 'SHUTTER'])('rejects nonzero %s status and releases pressed controls without retrying', async mode => {
+        vi.useFakeTimers()
+        const { camera, operations } = cameraWithResponses([])
+        const send = camera.send.bind(camera)
+        camera.send = (async (operation, parameters) => {
+            const response = await send(operation, parameters)
+            const reject = operation.name === 'CanonRemoteReleaseOn' &&
+                (parameters as { ReleaseMode: string }).ReleaseMode === mode
+            return { ...response, parameters: [reject ? 12 : 0] }
+        }) as typeof camera.send
+        try {
+            const rejected = expect(camera.captureImage({ includeInfo: false, includeData: false }))
+                .rejects.toThrow('SDK 0x8d0c (TAKE_PICTURE_SPECIAL_MOVIE_MODE_NG)')
+            await vi.runAllTimersAsync()
+            await rejected
+            expect(operations.filter(item => item.name === 'CanonRemoteReleaseOff').map(item => item.params))
+                .toEqual(mode === 'FOCUS' ? [{ ReleaseMode: 'FOCUS' }] :
+                    [{ ReleaseMode: 'SHUTTER' }, { ReleaseMode: 'FOCUS' }])
+            expect(operations.filter(item => item.name === 'CanonRemoteReleaseOn'))
+                .toHaveLength(mode === 'FOCUS' ? 1 : 2)
+            expect(operations.some(item => item.name === 'GetObjectHandles')).toBe(false)
+        } finally { vi.useRealTimers() }
+    })
+
+    it('preserves USB response parameter words through GenericCamera.send', async () => {
+        const packet = new Uint8Array(16)
+        const view = new DataView(packet.buffer)
+        view.setUint32(0, 16, true)
+        view.setUint16(4, 3, true)
+        view.setUint16(6, 0x2001, true)
+        view.setUint32(8, 1, true)
+        view.setUint32(12, 12, true)
+        const transport = {
+            isLittleEndian: () => true,
+            on: () => undefined,
+            send: async () => undefined,
+            receive: async () => packet,
+        } as unknown as TransportInterface
+        const camera = new CanonCamera(transport,
+            new Logger({ expanded: false, captureConsole: false, renderInTerminal: false }))
+        const response = await camera.send(
+            camera.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'SHUTTER', AFMode: 'MF' })
+        expect(response).toMatchObject({ code: 0x2001, parameters: [12] })
+    })
+})

@@ -22,10 +22,10 @@ export type OperationParams<Op extends { operationParameters: readonly any[] }> 
     Op['operationParameters'] extends readonly [] ? Record<string, never> : BuildParamObject<Op['operationParameters']>
 
 export type OperationResponse<Op> = Op extends { dataCodec: infer C }
-    ? { code: number; data: CodecType<C> }
+    ? { code: number; parameters?: number[]; data: CodecType<C> }
     : Op extends { dataDirection: 'out' }
-      ? { code: number; data: Uint8Array }
-      : { code: number }
+      ? { code: number; parameters?: number[]; data: Uint8Array }
+      : { code: number; parameters?: number[] }
 
 export type EventParams<E extends { parameters: readonly any[] }> = E['parameters'] extends readonly []
     ? Record<string, never>

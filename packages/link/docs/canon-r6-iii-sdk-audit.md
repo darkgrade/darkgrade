@@ -200,3 +200,55 @@ Validation: library typechecking/build and 138 offline tests across 23 files pas
 testbench typechecking/build and 194 unit/integration tests across 33 files passed.
 The guarded MCP destination round trip and real worker/USB/power recovery checks are
 recorded above. No new browser UI behavior was added.
+
+## Still-capture rejection diagnosis (2026-10-18 UTC)
+
+The remaining capture blocker is now observed directly in the USB reply. EOS operation
+`RemoteReleaseOn` (`0x9128`) returned PTP `0x2001` with response parameter `[0]` for
+half-press, then `0x2001` with `[12]` for full-press. REA of the same SDK's
+`CPtpInterface::DS_RemoteReleaseOn` (Ghidra `0x22ea80`) shows it consumes that first
+response parameter as the shutter result; `CPtpCamera::ReleaseSwitch` (`0x2189e0`)
+translates a nonzero result with `result | 0x8d00`. This proves the observed `0x8d0c`
+is a camera rejection, not a host SDK mode check or a successful shutter followed by
+missing media transfer.
+
+Darkgrade previously discarded response parameters. `OperationResponse` now preserves
+optional raw uint32 `parameters`, and Canon capture/autofocus half-press handling checks
+the release result in addition to the PTP response code. A nonzero result rejects the
+operation, releases the pressed controls, and bypasses image polling and shutter retries.
+Cameras returning no result parameter retain their earlier behavior. Result `0x0c` is
+reported with the SDK name `TAKE_PICTURE_SPECIAL_MOVIE_MODE_NG`.
+
+The earlier unsupported SDK mode-property reads were incomplete diagnostics: these
+properties require distinct documented registration calls before `EdsOpenSession`.
+With each property's registration in place, native EDSDK read back:
+
+| Property | Observed value |
+| --- | --- |
+| FixedMovie (`0x01000422`) | 1 (movie mode enabled) |
+| MovieHFRSetting (`0x0100045d`) | 0 (disabled) |
+| SlowFastMode (`0x010004c7`) | 0 (disabled) |
+| MovieParamEx (`0x011004c6`) | exact bytes `3018710000030000` |
+| SaveTo / AEMode / AEModeSelect | 1 / 3 / 3 |
+
+`EdsSendCommand(MovieSelectSwOFF=0x108)` returned success, but registered FixedMovie
+readbacks immediately afterward and before session close remained **1**. No still
+shutter was attempted in this mode-off diagnostic because the mode had not changed.
+Canon's supported software switching workflow requires the physical hardware to be in
+still shooting mode; the current observations do not distinguish a physical selector
+restriction from another body-specific condition. HFR and Slow & Fast were already off.
+There is still no verified software transition to still mode or complete new-image
+capture on this body. No firmware change was made.
+
+A real `camera_canon_capture_and_download` call through the isolated feature MCP server
+now failed in **4.131 seconds total**, including readiness/session setup, with the precise
+release result `0xc` / SDK `0x8d0c`, rather than timing out waiting for an image. The
+paired Cam Link snapshot showed battery/PC connection icons and did not independently
+reveal the physical selector. Library typechecking, build and **141 offline tests across
+23 files** passed, including raw USB result preservation, rejection after either press,
+control release and absence of retries. No production service was redeployed.
+
+External evidence: `sdk-still-capture-error-static-2026-10-17.md` and
+`parity-recovery-hardware/{raw-release-result.log,capture-mode-registered.log,
+capture-mode-off-verified.log,release-result-mcp-verified.json,capture-gap-hdmi.jpg}`
+under `~/canon-r6-iii-audit/`. Licensed SDK code and private payloads remain outside Git.

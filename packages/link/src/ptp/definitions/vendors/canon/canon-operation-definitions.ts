@@ -107,7 +107,12 @@ export const CanonRemoteReleaseOn = {
             required: true,
         },
     ] as const,
-    responseParameters: [] as const,
+    responseParameters: [{
+        name: 'ReleaseResult',
+        description: 'Camera shutter result; nonzero is a capture rejection even when PTP returns OK.',
+        codec: baseCodecs.uint32,
+        required: false,
+    }] as const,
 } as const satisfies OperationDefinition
 
 export const CanonRemoteReleaseOff = {

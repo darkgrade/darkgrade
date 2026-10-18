@@ -444,6 +444,7 @@ export class CanonCamera extends GenericCamera {
                 )
             }
             try {
+                this.assertReleaseResult(halfPress.parameters, 'autofocus half-press')
                 await new Promise(resolve => setTimeout(resolve, durationMilliseconds))
             } finally {
                 await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
@@ -480,6 +481,16 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
+    private assertReleaseResult(parameters: number[] | undefined, action: string): void {
+        const result = parameters?.[0] ?? 0
+        if (result === 0) return
+        const sdkError = (result | 0x8d00) >>> 0
+        const detail = result === 0x0c ? ' (TAKE_PICTURE_SPECIAL_MOVIE_MODE_NG)' : ''
+        throw new Error(
+            `Canon ${action} rejected: release result 0x${result.toString(16)}, SDK 0x${sdkError.toString(16)}${detail}`
+        )
+    }
+
     async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
@@ -499,6 +510,7 @@ export class CanonCamera extends GenericCamera {
                         throw new Error(`Canon ${afMode} focus press returned 0x${focus.code.toString(16)}`)
                     }
                     focusPressed = true
+                    this.assertReleaseResult(focus.parameters, `${afMode} focus press`)
                     await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
 
                     const shutter = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
@@ -509,6 +521,7 @@ export class CanonCamera extends GenericCamera {
                         throw new Error(`Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`)
                     }
                     shutterPressed = true
+                    this.assertReleaseResult(shutter.parameters, `${afMode} shutter press`)
                 } finally {
                     if (shutterPressed) {
                         await this.send(this.registry.operations.CanonRemoteReleaseOff, {
