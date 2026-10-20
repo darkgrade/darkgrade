@@ -45,6 +45,25 @@ describe('Sony SDK Wi-Fi camera', () => {
         expect(requests.map(request => request.cmd)).toEqual(['fingerprint'])
         expect(camera.isConnected()).toBe(false)
     })
+    it.each(['ILCE-6700', 'ILME-FX2'] as const)('uses %s for fingerprint and connection identity', async model => {
+        const { bridge, requests } = bridgeForProperties()
+        const camera = new SonyWifiCamera(bridge)
+        await camera.connect({ ...authentication, model })
+        expect(requests[0]).toMatchObject({ cmd: 'fingerprint', model })
+        expect(requests[1]).toMatchObject({ cmd: 'connect_wifi', model })
+    })
+    it('keeps the existing bridge contract when the model is omitted', async () => {
+        const { bridge, requests } = bridgeForProperties()
+        await new SonyWifiCamera(bridge).connect(authentication)
+        expect(requests[0]).not.toHaveProperty('model')
+        expect(requests[1]).not.toHaveProperty('model')
+    })
+    it('rejects an unknown explicit model before contacting the camera', async () => {
+        const { bridge, requests } = bridgeForProperties()
+        const camera = new SonyWifiCamera(bridge)
+        await expect(camera.connect({ ...authentication, model: 'unknown' as 'ILME-FX2' })).rejects.toThrow('model')
+        expect(requests).toEqual([])
+    })
     it('pins the SDK-presented fingerprint after matching the operator fingerprint', async () => {
         const { bridge, requests } = bridgeForProperties()
         const camera = new SonyWifiCamera(bridge)

@@ -10,12 +10,15 @@ export interface SonySdkBridge {
     close(): Promise<void>
 }
 
+export type SonyWifiCameraModel = 'ILCE-6700' | 'ILME-FX2'
+
 export interface SonyWifiAuthentication {
     host: string
     mac: string
     username: string
     password: string
     fingerprint: string
+    model?: SonyWifiCameraModel
 }
 
 export interface SonySdkProperty {
@@ -95,6 +98,8 @@ export function validateSonyWifiAuthentication(authentication: SonyWifiAuthentic
         throw new Error('Sony Wi-Fi requires a valid IPv4 camera address')
     if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.mac))
         throw new Error('Sony Wi-Fi requires the camera MAC address')
+    if (authentication.model !== undefined && !['ILCE-6700', 'ILME-FX2'].includes(authentication.model))
+        throw new Error('Unsupported Sony Wi-Fi camera model')
     if (!authentication.username || !authentication.password || !authentication.fingerprint)
         throw new Error('Sony Wi-Fi requires runtime username, password, and a trusted camera fingerprint')
     if (
@@ -139,7 +144,12 @@ export class SonyWifiCamera {
         if (this.connected) throw new Error('Sony Wi-Fi camera is already connected')
         validateSonyWifiAuthentication(authentication)
         for (let attempt = 0; attempt < 3; attempt++) {
-            const identity = { ip: authentication.host, mac: authentication.mac, ssh: '1' }
+            const identity = {
+                ip: authentication.host,
+                mac: authentication.mac,
+                ssh: '1',
+                ...(authentication.model ? { model: authentication.model } : {}),
+            }
             let result: Record<string, unknown>
             try {
                 result = await this.bridge.request({ cmd: 'fingerprint', ...identity })
