@@ -70,6 +70,19 @@ describe('Canon camera controls', () => {
         expect(operations.filter(name => name === 'CanonSetPropValue')).toHaveLength(3)
     })
 
+    it('enables Manual exposure with verified readback and avoids a redundant write', async () => {
+        const {camera} = testCamera()
+        let mode = 15, writes = 0
+        camera.get = (async () => mode) as typeof camera.get
+        camera.set = (async (property, value) => {expect(property.name).toBe('CanonAutoExposureMode');mode = Number(value);writes++}) as typeof camera.set
+        await camera.setManualExposureMode()
+        expect(mode).toBe(3)
+        await camera.setManualExposureMode()
+        expect(writes).toBe(1)
+        camera.get = (async () => 15) as typeof camera.get
+        await expect(camera.setManualExposureMode()).rejects.toThrow('did not confirm')
+    })
+
     it('drives and always releases standalone autofocus', async () => {
         const { camera, operations } = testCamera()
 

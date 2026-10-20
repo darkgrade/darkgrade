@@ -401,6 +401,14 @@ export class CanonCamera extends GenericCamera {
         await this.set(property, value)
     }
 
+    /** Enable manual exposure using the EOS remote AE property and verify its event readback. */
+    async setManualExposureMode(): Promise<void> {
+        const property = this.registry.properties.CanonAutoExposureMode
+        if (await this.get(property) === 3) return
+        await this.set(property, 3)
+        if (await this.get(property) !== 3) throw new Error('Canon did not confirm Manual exposure mode')
+    }
+
     async enterMovieMode(): Promise<void> {
         await this.withoutPolling(async () => {
             const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})

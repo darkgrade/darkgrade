@@ -481,6 +481,10 @@ export class Camera {
         return this.canonCamera().setLiveViewFramePoint(x, y, lockAfFrame)
     }
 
+    async setCanonManualExposureMode(): Promise<void> {
+        await this.canonCamera().setManualExposureMode()
+    }
+
     async getCanonColorTemperature(): Promise<number> {
         return this.canonCamera().getColorTemperature()
     }
