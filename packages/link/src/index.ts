@@ -2,6 +2,8 @@
 export { CanonCamera } from '@camera/canon-camera'
 export { GenericCamera } from '@camera/generic-camera'
 export { Camera } from '@camera/index'
+export { inspectMovieTrackHandlers, readCameraMovieAudio } from '@camera/movie-audio'
+export type { CameraMovieAudio } from '@camera/movie-audio'
 export { NikonCamera } from '@camera/nikon-camera'
 export type { NikonFocusResult, NikonFocusPointResult, NikonLiveViewMetadata } from '@camera/nikon-camera'
 export { SonyCamera } from '@camera/sony-camera'
