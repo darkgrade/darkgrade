@@ -7,7 +7,7 @@ export interface TakeCamera {
     close():Promise<void>
 }
 export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number}
-export interface VideoTakeState {id:string;name:string;stage:'preparing'|'recording'|'stopping'|'review'|'collecting'|'complete'|'attention';createdAt:string;maximumMinutes:number;error?:string;stopRequested?:boolean;startedAt?:string;stoppedAt?:string;startSkewMilliseconds?:number;cameras:TakeCameraState[]}
+export interface VideoTakeState {id:string;name:string;stage:'preparing'|'armed'|'recording'|'stopping'|'review'|'collecting'|'complete'|'attention';createdAt:string;maximumMinutes:number;error?:string;stopRequested?:boolean;startedAt?:string;stoppedAt?:string;startSkewMilliseconds?:number;cameras:TakeCameraState[]}
 const message=(error:unknown)=>error instanceof Error?error.message:String(error)
 /** Device-independent take lifecycle shared by applications and MCP. No framesync is implied. */
 export class VideoTake {
@@ -28,13 +28,23 @@ export class VideoTake {
         return take
     }
     private changed(){this.publish(structuredClone(this.state))}
-    async start(){
-        if(this.busy||this.state.stage!=='preparing')throw new Error('This take has already been started')
+    async prepare(){
+        if(this.busy||this.state.stage!=='preparing')throw new Error('This take is already prepared or started')
         this.busy=true;this.changed()
         try{
             await Promise.all(this.state.cameras.map(async state=>{try{await this.devices.get(state.camera)!.prepare();state.state='ready'}catch(error){state.state='error';state.error=message(error)}this.changed()}))
-            if(this.stopRequested){this.state.stage='review';await this.closeIdle();this.changed();return this.state}
-            if(this.state.cameras.some(camera=>camera.state!=='ready')){this.state.stage='attention';await this.closeIdle();this.changed();return this.state}
+            if(this.stopRequested){await this.closeIdle();this.state.stage='review'}
+            else if(this.state.cameras.some(camera=>camera.state!=='ready')){await this.closeIdle();this.state.stage='attention'}
+            else this.state.stage='armed'
+            this.changed();return this.state
+        }finally{this.busy=false}
+    }
+    async start(){
+        if(this.busy||!['preparing','armed'].includes(this.state.stage))throw new Error('This take has already been started')
+        if(this.state.stage==='preparing')await this.prepare()
+        if(this.state.stage!=='armed')return this.state
+        this.busy=true;this.changed()
+        try{
             await Promise.all(this.state.cameras.map(async state=>{
                 this.attempted.add(state.camera)
                 try{const result=await this.devices.get(state.camera)!.start();state.state='recording';state.recordingConfirmed=result.recordingConfirmed;state.evidence=result.evidence;state.startedAt=new Date().toISOString()}
@@ -54,7 +64,7 @@ export class VideoTake {
     }
     async stop(){
         if(this.busy)throw new Error('A take operation is still running')
-        if(!this.attempted.size)return this.state
+        if(!this.attempted.size){if(['preparing','armed'].includes(this.state.stage)){await this.closeIdle();this.state.stage='review';this.changed()}return this.state}
         this.busy=true;this.state.stage='stopping';this.changed()
         try{await this.stopAttempted();await this.closeIdle();this.state.stage=this.attempted.size?'attention':'review';this.changed();return this.state}finally{this.busy=false}
     }

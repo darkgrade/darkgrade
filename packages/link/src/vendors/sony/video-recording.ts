@@ -30,7 +30,7 @@ export class SonyVideoRecording {
         do{
             try{
                 const contents=await this.camera.getRecentSonyContents()
-                media=contents.filter((content:any)=>!this.baseline.has(String(content.id))).flatMap((content:any)=>(content.files||[]).filter((file:any)=>/\.(mp4|mov|mxf)$/i.test(file.name)&&Number(file.bytes)>0).map((file:any)=>({id:`${content.id}:${file.id}`,filename:String(file.name),bytes:Number(file.bytes),verified:true})))
+                media=contents.filter((content:any)=>!this.baseline.has(String(content.id))).flatMap((content:any)=>(content.files||[]).filter((file:any)=>/\.(mp4|mov|mxf)$/i.test(file.name)&&Number(file.bytes)>0).map((file:any)=>({id:`${content.id}:${file.id}`,filename:String(file.name).split(/[\\/]/).pop()||'camera-video.mp4',bytes:Number(file.bytes),verified:true})))
             }catch{ /* Sony's content index may lag file finalization. */ }
             if(media.length)break
             await sleep(300)
@@ -41,7 +41,7 @@ export class SonyVideoRecording {
         const [contentId,fileId]=file.id.split(':').map(Number)
         const contents=await this.camera.getRecentSonyContents()
         const source=contents.find((content:any)=>Number(content.id)===contentId)?.files?.find((item:any)=>Number(item.id)===fileId)
-        if(!source||source.name!==file.filename||Number(source.bytes)!==file.bytes)throw new Error('Camera file identity changed; transfer refused')
+        if(!source||String(source.name).split(/[\\/]/).pop()!==String(file.filename).split(/[\\/]/).pop()||Number(source.bytes)!==file.bytes)throw new Error('Camera file identity changed; transfer refused')
         return this.camera.downloadSonyContent(contentId,fileId,directory,filename)
     }
     async cleanup(){if(this.attempted)await this.stop()}
