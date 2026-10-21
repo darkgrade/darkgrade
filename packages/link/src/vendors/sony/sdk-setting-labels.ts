@@ -1,5 +1,8 @@
 /** Names of documented Sony SDK enum values. Only advertised choices are offered. */
 export const SONY_SDK_SETTING_LABELS: Readonly<Record<number, Readonly<Record<string, string>>>> = {
+    '310': { '1': 'Auto', '2': 'Manual' },
+    '311': { '1': 'Auto', '2': 'Manual' },
+    '312': { '1': 'Auto', '2': 'Manual' },
     '261': {
         '1': 'M Manual',
         '2': 'P Auto',

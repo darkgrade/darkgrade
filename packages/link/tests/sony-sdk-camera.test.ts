@@ -413,3 +413,18 @@ it('waits for the documented Sony contents-list processing status and preserves 
     bridge.request=async()=>{throw new Error('Sony SDK command failed (SDK code 36102)')}
     await expect(camera.getRecentSonyContents()).rejects.toThrow('36102')
 })
+
+it('finds advertised exposure mode aliases and labels their Auto and Manual choices', async () => {
+    const { bridge } = bridgeForProperties([310, 311, 312].map(code => ({
+        code, type: 1, value: '1', writable: true, allowedValues: ['1', '2'],
+    })))
+    const camera = new SonyWifiCamera(bridge)
+    await camera.connectUsb('unit-test')
+    expect((await camera.getSonyCapabilities('ISO')).map(property => property.code)).toEqual([312])
+    expect((await camera.getSonyCapabilities('gain')).map(property => property.code)).toEqual([312])
+    for (const alias of ['ApertureMode', 'ShutterMode', 'IsoMode'] as const) {
+        expect((await camera.getSonyProperty(alias)).choices).toEqual([
+            { value: '1', label: 'Auto' }, { value: '2', label: 'Manual' },
+        ])
+    }
+})
