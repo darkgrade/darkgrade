@@ -56,7 +56,7 @@ export class VideoTake {
         if(this.busy)throw new Error('A take operation is still running')
         if(!this.attempted.size)return this.state
         this.busy=true;this.state.stage='stopping';this.changed()
-        try{await this.stopAttempted();this.state.stage=this.attempted.size?'attention':'review';await this.closeIdle();this.changed();return this.state}finally{this.busy=false}
+        try{await this.stopAttempted();await this.closeIdle();this.state.stage=this.attempted.size?'attention':'review';this.changed();return this.state}finally{this.busy=false}
     }
     async collect(){
         if(this.busy||this.attempted.size||!['review','attention','complete'].includes(this.state.stage))throw new Error('Confirm all cameras stopped before collecting footage')

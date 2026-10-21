@@ -14,7 +14,7 @@ export class UsbVideoRecording {
         const handles=new Set<number>()
         for(const id of storage.data||[]){
             const result=await this.camera.send(this.operations.GetObjectHandles,{StorageID:id})
-            if(result.code!==0x2001)throw new Error('Camera files could not be listed')
+            if(result.code!==0x2001)throw new Error('Camera files could not be listed: 0x'+result.code.toString(16))
             for(const handle of result.data||[])handles.add(Number(handle))
         }
         return handles
@@ -45,21 +45,24 @@ export class UsbVideoRecording {
     async stop(){
         if(!this.attempted)return {stopped:true,media:[] as TakeMedia[]}
         await this.camera.stopRecording();this.attempted=false
-        await this.movieMode?.restore();this.movieMode=undefined
         const deadline=Date.now()+15000
         let media:TakeMedia[]=[]
-        try{do{
-            media=[]
-            for(const handle of await this.handles()){
-                if(this.baseline.has(handle))continue
-                const result=await this.camera.send(this.operations.GetObjectInfo,{ObjectHandle:handle}),info=result.data
-                const bytes=Number(info?.objectCompressedSize)
-                if(result.code===0x2001&&Number.isSafeInteger(bytes)&&bytes>0&&/\.(mp4|mov|mts|m2ts|avi|crm)$/i.test(info?.filename||''))media.push({id:String(handle),filename:String(info.filename),bytes,verified:true})
-            }
-            if(media.length)break
+        let lastIndexError:string|undefined
+        do{
+            try{
+                media=[]
+                for(const handle of await this.handles()){
+                    if(this.baseline.has(handle))continue
+                    const result=await this.camera.send(this.operations.GetObjectInfo,{ObjectHandle:handle}),info=result.data
+                    const bytes=Number(info?.objectCompressedSize)
+                    if(result.code===0x2001&&Number.isSafeInteger(bytes)&&bytes>0&&/\.(mp4|mov|mts|m2ts|avi|crm)$/i.test(info?.filename||''))media.push({id:String(handle),filename:String(info.filename),bytes,verified:true})
+                }
+                if(media.length)break
+            }catch(error){lastIndexError=error instanceof Error?error.message:String(error)}
             await sleep(300)
-        }while(Date.now()<deadline)}catch(error){return {stopped:true,media:[],warning:'Recording stopped; its card index could not be read: '+(error instanceof Error?error.message:String(error))}}
-        return {stopped:true,media,...(!media.length?{warning:'Recording stopped, but a new card movie is not yet available. Originals remain on the card.'}:{})}
+        }while(Date.now()<deadline)
+        await this.movieMode?.restore();this.movieMode=undefined
+        return {stopped:true,media,...(!media.length?{warning:'Recording stopped, but a new card movie is not yet available. Originals remain on the card.'+(lastIndexError?' '+lastIndexError:'')}:{})}
     }
     async transfer(file:TakeMedia,write:(bytes:Uint8Array)=>Promise<void>,progress:(bytes:number,total:number)=>void){
         const handle=Number(file.id),fresh=await this.camera.send(this.operations.GetObjectInfo,{ObjectHandle:handle})
