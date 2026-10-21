@@ -476,15 +476,19 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    async captureImage({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
+        if (typeof autofocus !== 'boolean') throw new Error('Canon capture autofocus must be true or false')
         return this.withoutPolling(async () => {
             const release = async (afMode: 'AF' | 'MF') => {
                 let focusPressed = false
                 let shutterPressed = false
+                let focusAttempted = false
+                let shutterAttempted = false
                 try {
+                    focusAttempted = true
                     const focus = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
                         ReleaseMode: 'FOCUS',
                         AFMode: afMode,
@@ -495,6 +499,7 @@ export class CanonCamera extends GenericCamera {
                     focusPressed = true
                     await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
 
+                    shutterAttempted = true
                     const shutter = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
                         ReleaseMode: 'SHUTTER',
                         AFMode: afMode,
@@ -504,17 +509,22 @@ export class CanonCamera extends GenericCamera {
                     }
                     shutterPressed = true
                 } finally {
-                    if (shutterPressed) {
+                    if (shutterPressed || (afMode === 'MF' && shutterAttempted)) {
                         await this.send(this.registry.operations.CanonRemoteReleaseOff, {
                             ReleaseMode: 'SHUTTER',
                         }).catch(() => undefined)
                     }
-                    if (focusPressed) {
+                    if (focusPressed || (afMode === 'MF' && focusAttempted)) {
                         await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' }).catch(
                             () => undefined
                         )
                     }
                 }
+            }
+
+            if (!autofocus) {
+                await release('MF')
+                return {}
             }
 
             try {

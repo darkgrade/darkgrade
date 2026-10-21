@@ -464,7 +464,9 @@ export class Camera {
         return this.instance.leaveMovieMode()
     }
 
-    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean }) {
+    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean }) {
+        if (params?.autofocus === false && !(this.instance instanceof CanonCamera))
+            throw new Error('Capture without autofocus is only implemented for Canon EOS cameras')
         return this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
     }
 
