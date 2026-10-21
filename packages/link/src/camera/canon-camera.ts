@@ -301,6 +301,31 @@ export class CanonCamera extends GenericCamera {
         await this.setAdvertisedProperty(this.registry.properties.CanonColorTemperature, kelvin)
     }
 
+    async getMovieSoundRecording(): Promise<string> {
+        return this.get(this.registry.properties.CanonMovieSoundRecording)
+    }
+
+    async setMovieSoundRecording(value: 'disabled' | 'auto' | 'manual'): Promise<void> {
+        await this.setAdvertisedProperty(this.registry.properties.CanonMovieSoundRecording, value)
+    }
+
+    /** Enable missing movie sound without changing an existing manual sound-level choice. */
+    async ensureMovieSoundRecording(): Promise<boolean> {
+        const property = this.registry.properties.CanonMovieSoundRecording
+        const state = this.propertyCache.get(property)
+        if (!state || state.current !== 'disabled') return false
+        if (!state.allowed?.includes('auto')) throw new Error('Canon did not advertise automatic movie sound recording')
+        const mode = await this.get(this.registry.properties.CanonAutoExposureMode)
+        try {
+            // EOS 80D rejects sound changes in movie auto AE (22) with DeviceBusy.
+            if (mode !== 3) await this.setManualExposureMode()
+            await this.setMovieSoundRecording('auto')
+        } finally {
+            if (mode !== 3) await this.set(this.registry.properties.CanonAutoExposureMode, mode)
+        }
+        return true
+    }
+
     async getLiveViewAutofocusMode(): Promise<string> {
         return this.get(this.registry.properties.CanonLiveViewAutofocusMode)
     }

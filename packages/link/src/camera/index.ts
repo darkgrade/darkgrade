@@ -409,6 +409,18 @@ export class Camera {
         return this.instance.listUnknownPropertyStates()
     }
 
+    async getCanonMovieSoundRecording(): Promise<string> {
+        return this.canonCamera().getMovieSoundRecording()
+    }
+
+    async setCanonMovieSoundRecording(value: 'disabled' | 'auto' | 'manual'): Promise<void> {
+        return this.canonCamera().setMovieSoundRecording(value)
+    }
+
+    async ensureCanonMovieSoundRecording(): Promise<boolean> {
+        return this.canonCamera().ensureMovieSoundRecording()
+    }
+
     async getMovieServoAutofocus(): Promise<string> {
         if (!(this.instance instanceof CanonCamera)) {
             throw new Error('Canon movie servo autofocus is only available for Canon EOS cameras')
@@ -568,3 +580,4 @@ export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/w
 export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'
 
 export type { NikonFocusResult, NikonFocusPointResult, NikonLiveViewMetadata } from './nikon-camera'
+export {readCameraMovieAudio,inspectMovieTrackHandlers,type CameraMovieAudio} from '@camera/movie-audio'

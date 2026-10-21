@@ -26,6 +26,7 @@ export async function withCanonRecordingMode<T>(camera:any,record:(settings:Cano
  try{
   if(!movie){await camera.enterMovieMode();entered=true;await new Promise(resolve=>setTimeout(resolve,700))}
   await copySettings(camera,before)
+  await camera.ensureCanonMovieSoundRecording?.()
   const actual=await snapshot(camera)
   actual.settingsMatched=before.mode===3&&actual.mode===3&&Object.keys(properties).every(key=>before[key as keyof typeof properties]===actual[key as keyof typeof properties])
   return await record(actual)
@@ -71,6 +72,7 @@ export async function openCanonRecordingMode(camera:any){
  try{
   if(!alreadyMovie){await camera.enterMovieMode();entered=true;await new Promise(resolve=>setTimeout(resolve,700))}
   await copySettings(camera,before)
+  await camera.ensureCanonMovieSoundRecording?.()
  }catch(error){if(entered){await camera.leaveMovieMode();await copySettings(camera,before)}throw error}
  return {restore:async()=>{if(entered){await camera.leaveMovieMode();await copySettings(camera,before);entered=false}}}
 }
