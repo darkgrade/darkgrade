@@ -1,3 +1,4 @@
+import {readCameraStorages} from '@camera/storage'
 import {openCanonRecordingMode} from '@vendors/canon/recording-mode'
 import type {TakeMedia} from '@workflows/video-take'
 const sleep=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
@@ -13,6 +14,7 @@ export class UsbVideoRecording {
         if(storage.code!==0x2001)throw new Error('Camera storage could not be read')
         const handles=new Set<number>()
         for(const id of storage.data||[]){
+            if((Number(id)&0xffff)===0)continue
             const result=await this.camera.send(this.operations.GetObjectHandles,{StorageID:id})
             if(result.code!==0x2001)throw new Error('Camera files could not be listed: 0x'+result.code.toString(16))
             for(const handle of result.data||[])handles.add(Number(handle))
@@ -20,14 +22,8 @@ export class UsbVideoRecording {
         return handles
     }
     async prepare(){
-        const storage=await this.camera.send(this.operations.GetStorageIDs,{})
-        let writable=false
-        for(const id of storage.data||[]){
-            if((Number(id)&0xffff)===0)continue
-            const result=await this.camera.send(this.operations.GetStorageInfo,{StorageID:id}),info=result.data
-            if(result.code===0x2001&&Number(info?.accessCapability??info?.AccessCapability)===0&&Number(info?.freeSpaceInBytes??info?.FreeSpaceInBytes)>0)writable=true
-        }
-        if(!writable)throw new Error('Insert a writable memory card with free space before recording')
+        const storages=await readCameraStorages(this.camera)
+        if(!storages.some(card=>card.writable&&card.freeBytes>0))throw new Error('Insert a writable memory card with free space before recording')
         if(this.vendor==='canon'){
             const states=await this.camera.getCanonPropertyStates()
             if(states.some((state:any)=>state.name==='CanonRecordingDestination'&&state.value==='CARD'))throw new Error('This camera is already recording')

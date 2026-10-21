@@ -294,3 +294,39 @@ describe('Nikon capability-gated focus', () => {
         expect(instance).toBeInstanceOf(NikonCamera)
     })
 })
+
+describe('Nikon recording transition reliability',()=>{
+ it('accepts denied application mode only when fresh telemetry confirms the requested state',async()=>{
+  const {camera,responses}=fixture();responses.set('ChangeApplicationMode',0x200f)
+  vi.spyOn(camera,'get').mockResolvedValue('none' as never)
+  await expect((camera as any).changeApplicationMode('ON')).resolves.toBeUndefined()
+  vi.mocked(camera.get).mockResolvedValue('notInApplicationMode' as never)
+  await expect((camera as any).changeApplicationMode('OFF')).resolves.toBeUndefined()
+ })
+ it('retries a denied transition within a bound and refuses unconfirmed application mode',async()=>{
+  const {camera,responses,calls}=fixture();responses.set('ChangeApplicationMode',0x200f)
+  vi.spyOn(camera,'get').mockResolvedValue('notInApplicationMode' as never)
+  await expect((camera as any).changeApplicationMode('ON')).rejects.toThrow('AccessDenied')
+  expect(calls.filter(call=>call.name==='ChangeApplicationMode')).toHaveLength(3)
+ })
+ it('does not swallow rejected Nikon property writes',async()=>{
+  const {camera,responses}=fixture();responses.set('SetDevicePropValueEx',0x200f)
+  await expect(camera.set(camera.registry.properties.LiveViewSelector,'VIDEO')).rejects.toThrow('LiveViewSelector write failed: AccessDenied')
+ })
+ it('closes the transport even when stopping live view fails',async()=>{
+  const {camera,responses,transport}=fixture();await camera.captureLiveView();responses.set('EndLiveView',0xa004)
+  await expect(camera.disconnect()).rejects.toThrow('EndLiveView')
+  expect(transport.disconnect).toHaveBeenCalled()
+ })
+})
+
+it('waits for Nikon recording-state telemetry to clear before leaving its recording modes',async()=>{
+ const {camera,calls}=fixture();let samples=0
+ ;(camera as any).liveViewStatus='ON';(camera as any).applicationMode='ON'
+ vi.spyOn(camera,'get').mockImplementation(async()=>{
+  samples++
+  if(samples<=2){expect(calls.some(call=>call.name==='EndLiveView')).toBe(false);expect(calls.some(call=>call.name==='ChangeApplicationMode')).toBe(false);return 'alreadyRecording' as never}
+  return 'none' as never
+ })
+ await camera.stopRecording();expect(samples).toBeGreaterThan(2);expect(calls.some(call=>call.name==='EndLiveView')).toBe(true)
+})

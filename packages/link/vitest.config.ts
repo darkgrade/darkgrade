@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
     resolve: {
         alias: {
+            '@workflows': resolve(__dirname, './src/workflows'),
             '@vendors': resolve(__dirname, './src/vendors'),
             '@camera': resolve(__dirname, './src/camera'),
             '@core': resolve(__dirname, './src/core'),

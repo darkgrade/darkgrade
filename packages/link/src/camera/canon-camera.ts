@@ -923,7 +923,7 @@ export class CanonCamera extends GenericCamera {
             this.liveViewOriginalOutput = original
             await this.set(
                 this.registry.properties.CanonLiveViewMode,
-                original === 'CAMERA' ? 'CAMERA_AND_HOST' : 'HOST'
+                'CAMERA_AND_HOST'
             )
         }
         this.liveViewEnabled = true

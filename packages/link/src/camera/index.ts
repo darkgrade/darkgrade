@@ -1,3 +1,4 @@
+export {readCameraStorages} from '@camera/storage'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'

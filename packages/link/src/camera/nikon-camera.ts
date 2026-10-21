@@ -52,8 +52,9 @@ export class NikonCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
-        if (this.liveViewStatus === 'ON' || this.liveViewStartPending) await this.disableLiveView()
-        await super.disconnect()
+        try {
+            if (this.liveViewStatus === 'ON' || this.liveViewStartPending) await this.disableLiveView()
+        } finally { await super.disconnect() }
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -87,13 +88,14 @@ export class NikonCamera extends GenericCamera {
         const codec = this.resolveCodec(property.codec)
         const encodedValue = codec.encode(value)
 
-        await this.send(
+        const response = await this.send(
             this.registry.operations.SetDevicePropValueEx,
             {
                 DevicePropCode: property.code,
             },
             encodedValue
         )
+        if (response.code !== OK.code) throw new Error(`Nikon ${property.name} write failed: ${this.responseDescription(response.code)}`)
     }
 
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
@@ -149,6 +151,7 @@ export class NikonCamera extends GenericCamera {
             await this.enableLiveView()
             await this.send(this.registry.operations.InitiateCapture, {})
             await this.waitForDeviceReady()
+            await this.waitForImageBufferReady()
         }
 
         // camera's hardware dial is not in photo mode
@@ -396,6 +399,11 @@ export class NikonCamera extends GenericCamera {
         const response = await this.send(this.registry.operations.EndMovieRecord, {})
         if (response.code !== OK.code) throw new Error(`Nikon EndMovieRecord failed with response 0x${response.code.toString(16)}`)
         await this.waitForDeviceReady()
+        const deadline=Date.now()+10000
+        while((await this.get(this.registry.properties.MovieRecProhibitionCondition)).includes('alreadyRecording')){
+            if(Date.now()>=deadline)throw new Error('Nikon movie stop was not confirmed within ten seconds; recording mode was preserved')
+            await this.waitMs(50)
+        }
         await this.waitForImageBufferReady()
         await this.disableLiveView()
         await this.disableApplicationMode()
@@ -479,13 +487,28 @@ export class NikonCamera extends GenericCamera {
         await this.waitForDeviceReady()
     }
 
+    private async changeApplicationMode(mode: 'ON' | 'OFF'): Promise<void> {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const response = await this.send(this.registry.operations.ChangeApplicationMode, { Mode: mode })
+            if (response.code === OK.code) return
+            if (response.code !== 0x200f) throw new Error(`Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}`)
+            // A mode command can be denied when the body already has that state.
+            // Accept only fresh camera telemetry, otherwise give its pending transition a bounded retry.
+            const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+            const observed = condition.includes('notInApplicationMode') ? 'OFF' : 'ON'
+            if (observed === mode) return
+            if (attempt === 2) throw new Error(`Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}; camera reports ${condition}`)
+            await this.waitForDeviceReady()
+            await this.waitMs(250)
+        }
+    }
+
     private async enableApplicationMode(): Promise<void> {
         if (this.applicationMode === 'ON') {
             return
         }
 
-        const response = await this.send(this.registry.operations.ChangeApplicationMode, { Mode: 'ON' })
-        if (response.code !== OK.code) throw new Error(`Nikon ChangeApplicationMode ON failed: ${this.responseDescription(response.code)}`)
+        await this.changeApplicationMode('ON')
         this.applicationMode = 'ON'
         await this.waitForDeviceReady()
     }
@@ -495,8 +518,7 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
-        const response = await this.send(this.registry.operations.ChangeApplicationMode, { Mode: 'OFF' })
-        if (response.code !== OK.code) throw new Error(`Nikon ChangeApplicationMode OFF failed: ${this.responseDescription(response.code)}`)
+        await this.changeApplicationMode('OFF')
         this.applicationMode = 'OFF'
         await this.waitForDeviceReady()
     }

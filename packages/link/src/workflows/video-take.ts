@@ -57,7 +57,7 @@ export class VideoTake {
     }
     private async stopAttempted(){
         await Promise.all(this.state.cameras.filter(state=>this.attempted.has(state.camera)).map(async state=>{
-            try{const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=result.media;state.warning=result.warning;state.stoppedAt=new Date().toISOString();this.attempted.delete(state.camera)}
+            try{const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=result.media;state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(state.camera)}
             catch(error){state.state='uncertain';state.error=message(error)}this.changed()
         }))
         this.state.stoppedAt=new Date().toISOString()

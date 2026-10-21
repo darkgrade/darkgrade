@@ -23,11 +23,20 @@ export async function optimiseShot(options:{image:Uint8Array;controls:Record<str
  if((options.focusRequested||before.focus==='soft')&&(options.focusRequested||before.metrics.median>.03||changes.length>0)&&options.focus&&!manualFocus&&Date.now()<deadline){options.publish('Focusing the subject');focused=true;imageVerified=false;cameraAcquired=false;try{const focus=await options.focus();cameraAcquired=focus?.focusAcquired===true}catch(error){lastError='Autofocus could not be verified: '+(error instanceof Error?error.message:String(error))}}
  if((changes.length||focused)&&Date.now()<deadline){options.publish('Verifying the adjusted shot');try{analysis=await analyse(await options.recapture());imageVerified=true}catch(error){lastError=error instanceof Error?error.message:String(error)}}
  if(!changes.length&&!focused&&Date.now()<deadline)analysis=await analyse(options.image,true)
+ const isoNumber=(value:string|undefined)=>Number(value?.replace(/^ISO\s*/i,''))
+ const isoMeasurements=new Map<number,ShotAnalysis['exposure']>()
+ if(imageVerified&&isoNumber(controls.iso?.value)>0)isoMeasurements.set(isoNumber(controls.iso?.value),analysis.exposure)
  const visitedIso=new Set([options.controls.iso?.value,...changes.filter(change=>change.setting==='iso'&&change.verified).map(change=>change.after)])
  // Auto ISO can hide the body's actual gain. Use the first fixed-ISO image for one bounded correction.
  for(let correction=0;correction<3&&imageVerified&&!lastError&&analysis.exposure!=='balanced'&&Date.now()+4000<deadline;correction++){
   const count=changes.length
   let nextIso=chooseIso(controls.iso?.allowedValues||[],controls.iso?.value,analysis)
+  const currentIso=isoNumber(controls.iso?.value)
+  const opposite=[...isoMeasurements].filter(([iso,exposure])=>analysis.exposure==='dark'?exposure==='bright'&&iso>currentIso:exposure==='dark'&&iso<currentIso).sort(([left],[right])=>Math.abs(Math.log(left/currentIso))-Math.abs(Math.log(right/currentIso)))[0]?.[0]
+  if(nextIso&&opposite&&(analysis.exposure==='dark'?isoNumber(nextIso)>=opposite:isoNumber(nextIso)<=opposite)){
+   const target=Math.sqrt(currentIso*opposite)
+   nextIso=(controls.iso?.allowedValues||[]).filter(value=>!visitedIso.has(value)&&isoNumber(value)>Math.min(currentIso,opposite)&&isoNumber(value)<Math.max(currentIso,opposite)).sort((left,right)=>Math.abs(Math.log(isoNumber(left)/target))-Math.abs(Math.log(isoNumber(right)/target)))[0]
+  }
   if(nextIso&&visitedIso.has(nextIso)){
    const number=(value:string|undefined)=>Number(value?.replace(/^ISO\s*/i,''))
    const current=number(controls.iso?.value),proposed=number(nextIso),target=Math.sqrt(current*proposed)
@@ -35,7 +44,7 @@ export async function optimiseShot(options:{image:Uint8Array;controls:Record<str
   }
   await set('iso','set-iso',nextIso)
   if(controls.iso?.value)visitedIso.add(controls.iso.value)
-  if(changes.length>count&&Date.now()<deadline){options.publish('Verifying exposure correction');try{analysis=await analyse(await options.recapture());imageVerified=true}catch(error){lastError=error instanceof Error?error.message:String(error)}}
+  if(changes.length>count&&Date.now()<deadline){options.publish('Verifying exposure correction');try{analysis=await analyse(await options.recapture());imageVerified=true;if(isoNumber(controls.iso?.value)>0)isoMeasurements.set(isoNumber(controls.iso?.value),analysis.exposure)}catch(error){lastError=error instanceof Error?error.message:String(error)}}
  }
  // A preset that introduced a visible colour regression is not retained.
  const balance=changes.find(change=>change.setting==='whiteBalance')
@@ -44,7 +53,7 @@ export async function optimiseShot(options:{image:Uint8Array;controls:Record<str
   try{controls=await options.apply('set-white-balance',balance.before);balance.after=balance.before;balance.verified=String(controls.whiteBalance?.value)===balance.before;if(Date.now()<deadline){analysis=await analyse(await options.recapture());imageVerified=true}}catch(error){balance.verified=false;lastError=error instanceof Error?error.message:String(error)}
  }
  focusVerified=imageVerified&&subjectFocusVerified(analysis,cameraAcquired)&&!(options.focusRequested&&manualFocus)
- const result=report();if(analysis.exposure==='dark'&&Number(controls.iso?.value?.replace(/^ISO\s*/i,''))>=12800)result.summary='Scene remains too dark at the automatic gain limit; add light or reframe';if(lastError){result.status='attention';result.summary='Automatic setup stopped after a camera or image-verification error'};if(result.status==='attention'&&analysis.exposure==='balanced')result.summary=imageVerified?'Exposure measured; some settings or focus still need attention':'Settings changed, but a fresh verification image was not obtained';if(changes.length&&!result.analysis)result.status='attention'
+ const result=report();if(Date.now()>=deadline){result.status='attention';result.budgetExceeded=true;result.summary='Automatic setup exceeded its verification time budget'};if(analysis.exposure==='dark'&&Number(controls.iso?.value?.replace(/^ISO\s*/i,''))>=12800)result.summary='Scene remains too dark at the automatic gain limit; add light or reframe';if(lastError){result.status='attention';result.summary='Automatic setup stopped after a camera or image-verification error'};if(result.status==='attention'&&analysis.exposure==='balanced')result.summary=imageVerified?'Exposure measured; some settings or focus still need attention':'Settings changed, but a fresh verification image was not obtained';if(changes.length&&!result.analysis)result.status='attention'
  if(changes.some(change=>!change.verified)){result.status='attention';result.summary='A requested setting was not confirmed by the camera'}
  if(Date.now()>=deadline&&result.status!=='verified'&&!result.exposureVerified){result.summary='Automatic setup needs another exposure correction; camera or image verification was too slow'}
  return result
