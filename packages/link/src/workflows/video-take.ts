@@ -6,7 +6,7 @@ export interface TakeCamera {
     collect(media:TakeMedia[],progress:(bytes:number,total:number)=>void):Promise<TakeMedia[]>
     close():Promise<void>
 }
-export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number}
+export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopping'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number}
 export interface VideoTakeState {id:string;name:string;stage:'preparing'|'armed'|'recording'|'stopping'|'review'|'collecting'|'complete'|'attention';createdAt:string;maximumMinutes:number;error?:string;stopRequested?:boolean;startedAt?:string;stoppedAt?:string;startSkewMilliseconds?:number;cameras:TakeCameraState[]}
 const message=(error:unknown)=>error instanceof Error?error.message:String(error)
 /** Device-independent take lifecycle shared by applications and MCP. No framesync is implied. */
@@ -61,6 +61,29 @@ export class VideoTake {
             catch(error){state.state='uncertain';state.error=message(error)}this.changed()
         }))
         this.state.stoppedAt=new Date().toISOString()
+    }
+    /** Stop one camera while the remaining cameras continue their take. */
+    async stopCamera(camera:string){
+        if(this.busy)throw new Error('A take operation is still running')
+        const state=this.state.cameras.find(state=>state.camera===camera)
+        if(!state)throw new Error('This camera is not part of the take')
+        if(!this.attempted.has(camera))return this.state
+        if(!['recording','attention'].includes(this.state.stage))throw new Error('Wait for the take to start before stopping an individual camera')
+        this.busy=true;state.state='stopping'
+        if(this.attempted.size===1)this.state.stage='stopping'
+        this.changed()
+        try{
+            try{
+                const result=await this.devices.get(camera)!.stop()
+                if(!result.stopped)throw new Error('Camera did not confirm recording stopped')
+                state.state='stopped';state.media=result.media;state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(camera)
+            }catch(error){state.state='uncertain';state.error=message(error)}
+            if(this.stopRequested)await this.stopAttempted()
+            await this.closeIdle()
+            this.state.stage=this.state.cameras.some(camera=>camera.state==='recording')?'recording':this.attempted.size?'attention':'review'
+            if(!this.attempted.size)this.state.stoppedAt=new Date().toISOString()
+            this.changed();return this.state
+        }finally{this.busy=false}
     }
     async stop(){
         if(this.busy)throw new Error('A take operation is still running')
