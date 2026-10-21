@@ -73,3 +73,16 @@ export type { SonySdkBridgeOptions } from '@vendors/sony/sdk-node-bridge'
 
 export { SonyBluetoothRemote, SONY_BLUETOOTH_REMOTE_SERVICE, SONY_BLUETOOTH_REMOTE_COMMAND, SONY_BLUETOOTH_REMOTE_NOTIFICATION } from '@vendors/sony/bluetooth-remote'
 export type { SonyBluetoothChannel, SonyBluetoothDirection } from '@vendors/sony/bluetooth-remote'
+
+export {VideoTake} from '@workflows/video-take'
+export type {VideoTakeState,TakeCamera,TakeCameraState,TakeMedia} from '@workflows/video-take'
+export {UsbVideoRecording} from '@camera/video-recording'
+export {SonyVideoRecording} from '@vendors/sony/video-recording'
+export {openCanonRecordingMode,withCanonRecordingMode,probeCanonRecordingControls,restrictToRecordingChoices} from '@vendors/canon/recording-mode'
+export {sonyMovieCard,sonyMovieSlots} from '@vendors/sony/recording-slots'
+
+export {analyseShot,measureShot,describeShot,subjectFocusVerified,chooseIso,chooseShutterSpeed,exifIso} from '@workflows/shot-analysis'
+export type {ShotAnalysis,ShotMetrics} from '@workflows/shot-analysis'
+export {optimiseShot} from '@workflows/shot-setup'
+export type {ShotSetupReport,ShotProperty} from '@workflows/shot-setup'
+export {normaliseShotControls} from '@workflows/shot-controls'
