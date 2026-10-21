@@ -13,3 +13,10 @@ describe('recording take reliability',()=>{
  it('rejects an unknown member without touching any recorder',async()=>{const f=fixture();await f.take.start();await expect(f.take.stopCamera('missing')).rejects.toThrow('not part');expect(f.calls.filter(call=>call.startsWith('stop:'))).toEqual([])})
  it('makes repeated member stop idempotent',async()=>{const f=fixture();await f.take.start();await f.take.stopCamera('one');await f.take.stopCamera('one');expect(f.calls.filter(call=>call==='stop:one')).toHaveLength(1)})
 })
+
+it('finishes verified transfer progress at 100 percent even when the SDK last reports a partial buffer',async()=>{
+ const f=fixture();await f.take.start();await f.take.stop()
+ f.devices.get('one')!.collect=async(files,progress)=>{progress(80,100);return files.map(file=>({...file,downloadUrl:'/files/'+file.id}))}
+ await f.take.collect()
+ expect(f.take.state.cameras[0]).toMatchObject({state:'collected',transferredBytes:100,totalBytes:100})
+})

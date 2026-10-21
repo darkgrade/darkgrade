@@ -103,7 +103,7 @@ export class VideoTake {
                     const original=state.media
                     const files=await this.devices.get(state.camera)!.collect(original,(bytes,total)=>{state.transferredBytes=bytes;state.totalBytes=total;this.changed()})
                     if(files.length!==original.length||files.some(file=>!file.verified||!file.downloadUrl||!original.some(source=>source.id===file.id&&source.bytes===file.bytes)))throw new Error('Transferred footage did not match the camera files')
-                    state.media=files;state.state='collected';delete state.error
+                    state.media=files;state.totalBytes=files.reduce((total,file)=>total+file.bytes,0);state.transferredBytes=state.totalBytes;state.state='collected';delete state.error
                 }catch(error){state.error=message(error)}this.changed()
             }
             this.state.stage=this.state.cameras.every(camera=>camera.state==='collected')?'complete':'attention';this.changed();return this.state
