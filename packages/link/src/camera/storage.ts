@@ -27,3 +27,18 @@ export async function readCameraStorages(camera: any) {
     }
     return summaries
 }
+
+/** Enumerate populated card slots only; an empty-slot placeholder is not a readable storage. */
+export async function readCameraObjectHandles(camera: any): Promise<Set<number>> {
+    const operations = camera.getInstance().registry.operations
+    const storage = await camera.send(operations.GetStorageIDs, {})
+    if (storage.code !== 0x2001) throw new Error('Camera storage could not be read')
+    const handles = new Set<number>()
+    for (const storageId of storage.data || []) {
+        if ((Number(storageId) & 0xffff) === 0) continue
+        const result = await camera.send(operations.GetObjectHandles, {StorageID: storageId})
+        if (result.code !== 0x2001) throw new Error('Camera files could not be listed: 0x' + result.code.toString(16))
+        for (const handle of result.data || []) handles.add(Number(handle))
+    }
+    return handles
+}

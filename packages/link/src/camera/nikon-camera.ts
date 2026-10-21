@@ -332,6 +332,25 @@ export class NikonCamera extends GenericCamera {
     }
 
     async startRecording(): Promise<void> {
+        const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+        if (condition.includes('alreadyRecording')) throw new Error('Nikon is already recording; its session was preserved')
+        // Card inspection can leave this body refusing application mode within
+        // the same PTP session. Renew the idle session before preparing a movie;
+        // this keeps USB connected and adds no power cycle or fixed sleep.
+        if (this.applicationMode !== 'ON' && this.sessionId !== null) {
+            await this.waitForImageBufferReady()
+            const nextSession = (this.sessionId + 1) >>> 0 || 1
+            const closed = await this.send(this.registry.operations.CloseSession, {})
+            if (closed.code !== OK.code) throw new Error(`Nikon movie session close failed: ${this.responseDescription(closed.code)}`)
+            this.sessionId = null
+            const opened = await this.send(this.registry.operations.OpenSession, {SessionID: nextSession})
+            if (opened.code !== OK.code) throw new Error(`Nikon movie session open failed: ${this.responseDescription(opened.code)}`)
+            this.sessionId = nextSession
+            this.cameraMode = 'UNKNOWN'
+            this.liveViewMode = 'UNKNOWN'
+            this.applicationMode = 'UNKNOWN'
+            this.liveViewStatus = 'UNKNOWN'
+        }
         // Setup capture
 
         // update live view status and mode

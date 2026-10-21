@@ -1,4 +1,4 @@
-import {readCameraStorages} from '@camera/storage'
+import {readCameraStorages, readCameraObjectHandles} from '@camera/storage'
 import {openCanonRecordingMode} from '@vendors/canon/recording-mode'
 import type {TakeMedia} from '@workflows/video-take'
 const sleep=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
@@ -9,18 +9,7 @@ export class UsbVideoRecording {
     private movieMode?:Awaited<ReturnType<typeof openCanonRecordingMode>>
     constructor(private readonly camera:any,private readonly vendor:'canon'|'nikon'){}
     private get operations(){return this.camera.getInstance().registry.operations}
-    private async handles(){
-        const storage=await this.camera.send(this.operations.GetStorageIDs,{})
-        if(storage.code!==0x2001)throw new Error('Camera storage could not be read')
-        const handles=new Set<number>()
-        for(const id of storage.data||[]){
-            if((Number(id)&0xffff)===0)continue
-            const result=await this.camera.send(this.operations.GetObjectHandles,{StorageID:id})
-            if(result.code!==0x2001)throw new Error('Camera files could not be listed: 0x'+result.code.toString(16))
-            for(const handle of result.data||[])handles.add(Number(handle))
-        }
-        return handles
-    }
+    private handles(){ return readCameraObjectHandles(this.camera) }
     async prepare(){
         const storages=await readCameraStorages(this.camera)
         if(!storages.some(card=>card.writable&&card.freeBytes>0))throw new Error('Insert a writable memory card with free space before recording')

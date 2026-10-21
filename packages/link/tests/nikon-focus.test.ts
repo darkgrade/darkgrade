@@ -330,3 +330,26 @@ it('waits for Nikon recording-state telemetry to clear before leaving its record
  })
  await camera.stopRecording();expect(samples).toBeGreaterThan(2);expect(calls.some(call=>call.name==='EndLiveView')).toBe(true)
 })
+
+it('renews an idle Nikon PTP session before movie mode without reconnecting USB',async()=>{
+ const {camera,calls,transport}=fixture();camera.sessionId=12
+ vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'notInApplicationMode') as any)
+ await expect(camera.startRecording()).rejects.toThrow('Movie recording is prohibited')
+ expect(calls.filter(call=>['CloseSession','OpenSession'].includes(call.name))).toEqual([{name:'CloseSession',params:{}},{name:'OpenSession',params:{SessionID:13}}])
+ expect(calls.findIndex(call=>call.name==='OpenSession')).toBeLessThan(calls.findIndex(call=>call.name==='ChangeApplicationMode'))
+ expect(transport.disconnect).not.toHaveBeenCalled()
+ expect(camera.sessionId).toBe(13)
+})
+it('never renews a Nikon session while its card movie is recording',async()=>{
+ const {camera,calls}=fixture();camera.sessionId=12
+ vi.spyOn(camera,'get').mockResolvedValue('alreadyRecording' as never)
+ await expect(camera.startRecording()).rejects.toThrow('already recording')
+ expect(calls).toHaveLength(0);expect(camera.sessionId).toBe(12)
+})
+it('does not continue movie setup when the fresh Nikon PTP session is rejected',async()=>{
+ const {camera,calls,responses}=fixture();camera.sessionId=12;responses.set('OpenSession',0x200f)
+ vi.spyOn(camera,'get').mockResolvedValue('notInApplicationMode' as never)
+ await expect(camera.startRecording()).rejects.toThrow('movie session open failed: AccessDenied')
+ expect(calls.some(call=>call.name==='StartMovieRecord'||call.name==='ChangeApplicationMode')).toBe(false)
+ expect(camera.sessionId).toBeNull()
+})
