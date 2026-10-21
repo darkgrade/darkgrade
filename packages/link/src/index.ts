@@ -86,3 +86,7 @@ export type {ShotAnalysis,ShotMetrics} from '@workflows/shot-analysis'
 export {optimiseShot} from '@workflows/shot-setup'
 export type {ShotSetupReport,ShotProperty} from '@workflows/shot-setup'
 export {normaliseShotControls} from '@workflows/shot-controls'
+
+export {pairNikonWifiProfile,decodeNikonPairingCode} from '@vendors/nikon/wifi-pairing'
+export type {NikonWifiPairingOptions} from '@vendors/nikon/wifi-pairing'
+export {readNikonWirelessStatus} from '@vendors/nikon/wireless-status'
