@@ -9,12 +9,14 @@ function atom(bytes:Uint8Array,offset:number,end:number){
 /** Inspect track handlers structurally; a substring inside compressed video is not audio proof. */
 export function inspectMovieTrackHandlers(bytes:Uint8Array):CameraMovieAudio{
     const handlers:string[]=[]
-    const visit=(start:number,end:number,depth:number)=>{
+    const visit=(start:number,end:number,parents:string[])=>{
+        const depth=parents.length
         if(depth>4)throw new Error('Movie metadata nesting exceeds the inspection limit')
         for(let offset=start;offset<end;){
             const entry=atom(bytes,offset,end)
-            if(['moov','trak','mdia'].includes(entry.type))visit(entry.payload,entry.end,depth+1)
-            if(entry.type==='hdlr'){
+            const expectedContainer=['moov','trak','mdia'][depth]
+            if(entry.type===expectedContainer)visit(entry.payload,entry.end,[...parents,entry.type])
+            if(entry.type==='hdlr'&&parents.join('/')==='moov/trak/mdia'){
                 if(entry.end-entry.payload<12)throw new Error('Incomplete movie track handler')
                 handlers.push(String.fromCharCode(...bytes.subarray(entry.payload+8,entry.payload+12)))
             }
@@ -22,8 +24,8 @@ export function inspectMovieTrackHandlers(bytes:Uint8Array):CameraMovieAudio{
         }
     }
     try{
-        visit(0,bytes.length,0)
-        if(handlers.includes('soun'))return {status:'present',detail:'The new card movie contains an audio track; its microphone level has not been measured.'}
+        visit(0,bytes.length,[])
+        if(handlers.includes('soun')&&handlers.includes('vide'))return {status:'present',detail:'The new card movie contains an audio track; its microphone level has not been measured.'}
         if(handlers.includes('vide'))return {status:'absent',detail:'The new card movie contains video but no audio track.'}
         throw new Error('Movie metadata did not contain a recognized media track')
     }catch(error){return {status:'unverified',detail:error instanceof Error?error.message:String(error)}}

@@ -8,6 +8,11 @@ describe('Original card movie audio inspection',()=>{
   expect(inspectMovieTrackHandlers(box('moov',track('vide'))).status).toBe('absent')
   expect(inspectMovieTrackHandlers(box('moov',box('free',new TextEncoder().encode('soun')))).status).toBe('unverified')
  })
+ it('ignores audio handlers outside a movie media track',()=>{
+  const misplaced=box('hdlr',new Uint8Array(8),new TextEncoder().encode('soun'))
+  expect(inspectMovieTrackHandlers(box('moov',track('vide'),misplaced)).status).toBe('absent')
+  expect(inspectMovieTrackHandlers(box('moov',track('soun'))).status).toBe('unverified')
+ })
  it('does not turn malformed metadata into a claim of missing sound',()=>{
   expect(inspectMovieTrackHandlers(Uint8Array.of(0,0,0,100,109,111,111,118)).status).toBe('unverified')
  })
