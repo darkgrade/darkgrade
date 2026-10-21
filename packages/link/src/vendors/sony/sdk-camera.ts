@@ -435,6 +435,18 @@ export class SonyWifiCamera {
         }
     }
 
+    /** Read focus telemetry while half-press is held; release can clear the acquired frame. */
+    async autofocusWithEvidence(durationMilliseconds = 2500): Promise<{focusAcquired:boolean;frames:Record<string,unknown>[]}> {
+        if(!Number.isInteger(durationMilliseconds)||durationMilliseconds<100||durationMilliseconds>5000)throw new Error('Autofocus duration must be 100–5000 milliseconds')
+        let frames:Record<string,unknown>[]=[]
+        try{
+            await this.writeProperty(propertyCodes.S1,2,2)
+            const deadline=Date.now()+durationMilliseconds
+            do{await new Promise(resolve=>setTimeout(resolve,100));frames=await this.getSonyFocusFrames();if(frames.some(frame=>frame.state===2))return {focusAcquired:true,frames}}while(Date.now()<deadline)
+            return {focusAcquired:false,frames}
+        }finally{await this.writeProperty(propertyCodes.S1,2,1)}
+    }
+
     async setSonyAfAreaPosition(x: number, y: number): Promise<void> {
         if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x > 639 || y < 0 || y > 479)
             throw new Error('AF-area position must be within 640×480')
