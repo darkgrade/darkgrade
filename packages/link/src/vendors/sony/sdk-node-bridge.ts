@@ -81,19 +81,28 @@ class SonySdkNodeBridge implements SonySdkBridge {
         this.pending = undefined
         clearTimeout(pending.timer)
         if (!result.ok) {
+            // Only bounded numeric transfer diagnostics may leave the native
+            // process. Its error text can include private paths or credentials.
+            const transfer: string[] = []
+            if (typeof result.transferPercent === 'number' && Number.isInteger(result.transferPercent) &&
+                result.transferPercent >= 0 && result.transferPercent <= 100)
+                transfer.push(`transfer ${result.transferPercent}%`)
+            if (typeof result.transferStatus === 'number' && Number.isInteger(result.transferStatus) &&
+                result.transferStatus >= 0 && result.transferStatus <= 0xffff_ffff)
+                transfer.push(`status ${result.transferStatus}`)
             pending.reject(
-                new Error(`Sony SDK command failed${Number.isInteger(result.code) ? ` (SDK code ${result.code})` : ''}`)
+                new Error(`Sony SDK command failed${Number.isInteger(result.code) ? ` (SDK code ${result.code})` : ''}${transfer.length ? ` (${transfer.join(', ')})` : ''}`)
             )
             return
         }
         pending.resolve(result)
     }
 
-    private waitForReply(): Promise<Record<string, unknown>> {
+    private waitForReply(timeoutMilliseconds = this.timeoutMilliseconds): Promise<Record<string, unknown>> {
         return new Promise((resolve, reject) => {
             const timer = setTimeout(
                 () => this.fail(new Error('Sony SDK bridge response timed out')),
-                this.timeoutMilliseconds
+                timeoutMilliseconds
             )
             this.pending = { resolve, reject, timer }
         })
@@ -119,7 +128,9 @@ class SonySdkNodeBridge implements SonySdkBridge {
             if (this.closed) throw new Error('Sony SDK bridge is closed')
             if (Object.values(command).some(value => typeof value !== 'string' || /[\r\n]/.test(value)))
                 throw new Error('Invalid SDK bridge command')
-            const reply = this.waitForReply()
+            // Native media downloads have their own bounded 180-second transfer
+            // window. Leave room for their final reply without slowing other commands.
+            const reply = this.waitForReply(command.cmd === 'download_content' ? 190_000 : this.timeoutMilliseconds)
             this.child.stdin.write(JSON.stringify(command) + '\n')
             return await reply
         })

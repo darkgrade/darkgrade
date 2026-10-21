@@ -26,14 +26,14 @@ done
     await bridge.close()
     await expect(bridge.request({ cmd: 'properties' })).rejects.toThrow('closed')
 })
-it('never echoes SDK error text that could contain credentials', async () => {
+it.each(['connect_wifi', 'download_content'])('never echoes SDK error text for %s that could contain credentials', async cmd => {
     const filename = await executable(`printf '%s\\n' '{"ok":true}'
 while IFS= read -r request; do
 printf '%s\\n' '{"ok":false,"error":"runtime-secret","code":123}'
 done
 `)
     const bridge = await createSonySdkBridge({ executable: filename })
-    await expect(bridge.request({ cmd: 'connect_wifi', password: 'runtime-secret' })).rejects.toThrow(
+    await expect(bridge.request({ cmd, password: 'runtime-secret' })).rejects.toThrow(
         'Sony SDK command failed (SDK code 123)'
     )
     await bridge.close()
@@ -43,4 +43,43 @@ it('bounds a stuck native helper and rejects queued work', async () => {
     const bridge = await createSonySdkBridge({ executable: filename, timeoutMilliseconds: 100 })
     await expect(bridge.request({ cmd: 'properties' })).rejects.toThrow('timed out')
     await expect(bridge.request({ cmd: 'properties' })).rejects.toThrow('closed')
+})
+
+it('allows longer content downloads without extending ordinary command deadlines', async () => {
+    const filename = await executable(`printf '%s\\n' '{"ok":true}'
+while IFS= read -r request; do
+sleep 0.15
+printf '%s\\n' '{"ok":true,"downloaded":true}'
+done
+`)
+    const bridge = await createSonySdkBridge({ executable: filename, timeoutMilliseconds: 100 })
+    try {
+        await expect(bridge.request({ cmd: 'download_content', handle: '1', path: '/tmp/content' }))
+            .resolves.toMatchObject({ ok: true, downloaded: true })
+        await expect(bridge.request({ cmd: 'properties' })).rejects.toThrow('timed out')
+        await expect(bridge.request({ cmd: 'properties' })).rejects.toThrow('closed')
+    } finally {
+        await bridge.close()
+    }
+})
+
+it.each([
+    { transferPercent: 37, transferStatus: 3, suffix: ' (transfer 37%, status 3)' },
+    { transferPercent: 101, transferStatus: 'runtime-secret', suffix: '' },
+    { transferPercent: -1, transferStatus: 0x1_0000_0000, suffix: '' },
+])('exposes only bounded numeric transfer diagnostics: $suffix', async ({ transferPercent, transferStatus, suffix }) => {
+    const reply = JSON.stringify({ ok: false, error: 'runtime-secret', code: 123, transferPercent, transferStatus })
+    const filename = await executable(`printf '%s\\n' '{"ok":true}'
+while IFS= read -r request; do
+printf '%s\\n' '${reply}'
+done
+`)
+    const bridge = await createSonySdkBridge({ executable: filename })
+    try {
+        await expect(bridge.request({ cmd: 'download_content' })).rejects.toMatchObject({
+            message: `Sony SDK command failed (SDK code 123)${suffix}`,
+        })
+    } finally {
+        await bridge.close()
+    }
 })
