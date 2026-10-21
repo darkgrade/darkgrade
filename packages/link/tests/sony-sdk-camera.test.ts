@@ -1,4 +1,9 @@
-import { SonyWifiCamera, validateSonyWifiAuthentication, type SonySdkBridge } from '@vendors/sony/sdk-camera'
+import {
+    SonyWifiCamera,
+    validateSonyWifiAuthentication,
+    type SonyBluetoothDirectAuthentication,
+    type SonySdkBridge,
+} from '@vendors/sony/sdk-camera'
 import { describe, expect, it } from 'vitest'
 
 const authentication = {
@@ -21,6 +26,114 @@ function bridgeForProperties(properties: unknown[] = []) {
     }
     return { bridge, requests }
 }
+
+describe('Sony SDK Bluetooth Direct connection', () => {
+    const directAuthentication: SonyBluetoothDirectAuthentication = {
+        host: '192.0.2.98',
+        mac: '0C:80:2F:A7:36:AD',
+        model: 'ILME-FX2',
+        bluetoothAddress: '0C:80:2F:A7:36:AE',
+    }
+
+    it.each([undefined, 'remote', 'remote-transfer'] as const)(
+        'uses only the explicit Bluetooth Direct command with mode %s',
+        async mode => {
+            const { bridge, requests } = bridgeForProperties()
+            const camera = new SonyWifiCamera(bridge)
+            await camera.connectBluetoothDirect(directAuthentication, { mode })
+            expect(requests).toEqual([
+                {
+                    cmd: 'connect_bluetooth_direct',
+                    ip: directAuthentication.host,
+                    mac: directAuthentication.mac,
+                    ssh: '0',
+                    model: directAuthentication.model,
+                    bluetoothAddress: directAuthentication.bluetoothAddress,
+                    ...(mode ? { mode } : {}),
+                },
+            ])
+            expect(camera.isConnected()).toBe(true)
+        }
+    )
+
+    it.each([
+        undefined,
+        {},
+        { ...directAuthentication, host: '192.0.2.999' },
+        { ...directAuthentication, host: 'camera.local' },
+        { ...directAuthentication, mac: 'invalid' },
+        { ...directAuthentication, bluetoothAddress: undefined },
+        { ...directAuthentication, bluetoothAddress: 'invalid' },
+        { ...directAuthentication, model: undefined },
+        { ...directAuthentication, model: 'unknown' },
+    ])('rejects invalid or missing identity before requesting the bridge: %j', async identity => {
+        const { bridge, requests } = bridgeForProperties()
+        const camera = new SonyWifiCamera(bridge)
+        await expect(
+            camera.connectBluetoothDirect(identity as SonyBluetoothDirectAuthentication)
+        ).rejects.toThrow()
+        expect(requests).toEqual([])
+        expect(camera.isConnected()).toBe(false)
+    })
+
+    it('rejects an unsupported runtime mode without contacting the bridge', async () => {
+        const { bridge, requests } = bridgeForProperties()
+        await expect(
+            new SonyWifiCamera(bridge).connectBluetoothDirect(directAuthentication, { mode: 'invalid' as 'remote' })
+        ).rejects.toThrow('mode')
+        expect(requests).toEqual([])
+    })
+
+    it('keeps a failed direct connection disconnected without authentication fallback', async () => {
+        const { bridge, requests } = bridgeForProperties()
+        const request = bridge.request
+        bridge.request = async command => {
+            await request(command)
+            throw new Error('Direct connection refused')
+        }
+        const camera = new SonyWifiCamera(bridge)
+        await expect(camera.connectBluetoothDirect(directAuthentication)).rejects.toThrow('refused')
+        expect(requests.map(command => command.cmd)).toEqual(['connect_bluetooth_direct'])
+        expect(camera.isConnected()).toBe(false)
+    })
+
+    it('supports normal property writes and disconnect cleanup after direct connection', async () => {
+        const { bridge, requests } = bridgeForProperties([
+            { code: '0x100', type: 2, value: '160', writable: true },
+        ])
+        let closed = false
+        bridge.close = async () => {
+            closed = true
+        }
+        const camera = new SonyWifiCamera(bridge)
+        await camera.connectBluetoothDirect(directAuthentication)
+        await camera.setSonyProperty('Aperture', 200)
+        expect(requests.at(-1)).toEqual({ cmd: 'set', code: '256', type: '2', value: '200' })
+        await expect(camera.connectBluetoothDirect(directAuthentication)).rejects.toThrow('already connected')
+        await camera.disconnect()
+        expect(requests.at(-1)).toEqual({ cmd: 'disconnect' })
+        expect(closed).toBe(true)
+        expect(camera.isConnected()).toBe(false)
+        await expect(camera.setSonyProperty('Aperture', 160)).rejects.toThrow('not connected')
+    })
+
+    it('closes the bridge even if disconnect fails', async () => {
+        const { bridge } = bridgeForProperties()
+        let closed = false
+        const camera = new SonyWifiCamera(bridge)
+        await camera.connectBluetoothDirect(directAuthentication)
+        bridge.request = async () => {
+            throw new Error('Disconnect failed')
+        }
+        bridge.close = async () => {
+            closed = true
+        }
+        await expect(camera.disconnect()).rejects.toThrow('Disconnect failed')
+        expect(closed).toBe(true)
+        expect(camera.isConnected()).toBe(false)
+    })
+})
+
 describe('Sony SDK Wi-Fi camera', () => {
     it('opens official SDK USB preparation by serial without runtime Wi-Fi credentials', async () => {
         const { bridge, requests } = bridgeForProperties()

@@ -12,6 +12,13 @@ export interface SonySdkBridge {
 
 export type SonyWifiCameraModel = 'ILCE-6700' | 'ILME-FX2'
 
+export interface SonyBluetoothDirectAuthentication {
+    host: string
+    mac: string
+    model: SonyWifiCameraModel
+    bluetoothAddress: string
+}
+
 export interface SonyWifiAuthentication {
     host: string
     mac: string
@@ -120,6 +127,25 @@ function numericValue(value: unknown): string {
     return result
 }
 
+function validateSonyBluetoothDirectAuthentication(authentication: SonyBluetoothDirectAuthentication): void {
+    if (
+        !authentication ||
+        ['host', 'mac', 'model', 'bluetoothAddress'].some(
+            field => typeof (authentication as unknown as Record<string, unknown>)[field] !== 'string'
+        )
+    )
+        throw new Error('Sony Bluetooth Direct requires the camera IP, MAC, model, and Bluetooth address')
+    const segments = authentication.host.split('.')
+    if (segments.length !== 4 || segments.some(segment => !/^\d{1,3}$/.test(segment) || Number(segment) > 255))
+        throw new Error('Sony Bluetooth Direct requires a valid IPv4 camera address')
+    if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.mac))
+        throw new Error('Sony Bluetooth Direct requires the camera MAC address')
+    if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.bluetoothAddress))
+        throw new Error('Sony Bluetooth Direct requires the camera Bluetooth MAC address')
+    if (!['ILCE-6700', 'ILME-FX2'].includes(authentication.model))
+        throw new Error('Unsupported Sony Bluetooth Direct camera model')
+}
+
 /**
  * Camera control over an authenticated Wi-Fi SDK session.
  * SDK property IDs differ from USB PTP IDs. This backend uses the SDK's public
@@ -183,6 +209,28 @@ export class SonyWifiCamera {
                 await new Promise(resolve => setTimeout(resolve, 1500))
             }
         }
+        this.connected = true
+        this.connectionTransport = 'wifi'
+    }
+
+    /** Connect to the Wi-Fi Direct session already established through trusted Bluetooth control. */
+    async connectBluetoothDirect(
+        authentication: SonyBluetoothDirectAuthentication,
+        options: { mode?: 'remote' | 'remote-transfer' } = {}
+    ): Promise<void> {
+        if (this.connected) throw new Error('Sony SDK camera is already connected')
+        validateSonyBluetoothDirectAuthentication(authentication)
+        if (options.mode !== undefined && !['remote', 'remote-transfer'].includes(options.mode))
+            throw new Error('Unsupported Sony Bluetooth Direct connection mode')
+        await this.bridge.request({
+            cmd: 'connect_bluetooth_direct',
+            ip: authentication.host,
+            mac: authentication.mac,
+            ssh: '0',
+            model: authentication.model,
+            bluetoothAddress: authentication.bluetoothAddress,
+            ...(options.mode ? { mode: options.mode } : {}),
+        })
         this.connected = true
         this.connectionTransport = 'wifi'
     }
