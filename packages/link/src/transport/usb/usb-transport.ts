@@ -398,11 +398,24 @@ export class USBTransport implements TransportInterface {
         }
 
         this.pollingEndpoint = pollableEndpoint
-        pollableEndpoint.on('data', (data: Buffer) => this.handleInterruptData(new Uint8Array(data), 'ok'))
+        let recoveries = 0
+        pollableEndpoint.on('data', (data: Buffer) => {
+            recoveries = 0
+            this.handleInterruptData(new Uint8Array(data), 'ok')
+        })
         pollableEndpoint.on('error', error => {
             if (!this.connected) return
-
             console.error('Error listening for interrupt: ', error)
+            // node-usb stops polling after an error. Wait until its pending
+            // transfer has ended before clearing the halt and rearming events.
+            if (++recoveries > 3) return
+            pollableEndpoint.once('end', () => {
+                if (!this.connected || this.pollingEndpoint !== pollableEndpoint) return
+                void this.clearHalt(EndpointType.INTERRUPT).then(() => {
+                    if (this.connected && this.pollingEndpoint === pollableEndpoint)
+                        pollableEndpoint.startPoll(1, 64)
+                }).catch(recoveryError => console.error('USB event listener recovery failed:', recoveryError))
+            })
         })
         pollableEndpoint.startPoll(1, 64)
     }

@@ -130,7 +130,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
                 throw new Error('Invalid SDK bridge command')
             // Native media downloads have their own bounded 180-second transfer
             // window. Leave room for their final reply without slowing other commands.
-            const reply = this.waitForReply(command.cmd === 'download_content' ? 190_000 : this.timeoutMilliseconds)
+            const reply = this.waitForReply(command.cmd === 'download_content' ? 550_000 : this.timeoutMilliseconds)
             this.child.stdin.write(JSON.stringify(command) + '\n')
             return await reply
         })
