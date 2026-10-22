@@ -722,7 +722,26 @@ export class CanonCamera extends GenericCamera {
     }
 
     async stopRecording(): Promise<void> {
-        await this.set(this.registry.properties.CanonRecordingDestination, 'NONE')
+        const property = this.registry.properties.CanonRecordingDestination
+        const deadline = Date.now() + 5000
+        for (;;) {
+            // Reconnecting can find an already finalized movie. Read camera events before
+            // treating an idle Stop as successful; a missing property is never idle proof.
+            const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+            this.assertResponseOk(response.code, 'recording state readback')
+            if (Array.isArray(response.data)) this.processEvents(response.data, true)
+            const current = this.propertyCache.get(property)?.current
+            // EOS reports 3 (legacy codec label SDRAM) in movie standby after
+            // reconnect. Only the explicit NONE/standby states prove card Record ended.
+            if (current === 'NONE' || current === 'SDRAM') return
+            try {
+                await this.set(property, 'NONE')
+                return
+            } catch (error) {
+                if ((error as {code?:number}).code !== 0x2019 || Date.now() >= deadline) throw error
+                await new Promise(resolve => setTimeout(resolve, 250))
+            }
+        }
     }
 
     async getHdmiLiveViewMode(): Promise<string> {

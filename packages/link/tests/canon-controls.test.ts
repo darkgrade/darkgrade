@@ -238,3 +238,34 @@ describe('Canon camera controls', () => {
         await expect(camera.setNetworkCommunicationMode(1)).rejects.toThrow('was not advertised')
     })
 })
+
+
+describe('Canon interrupted recording Stop',()=>{
+    it('accepts freshly read idle state without sending another stop write',async()=>{
+        const {camera}=testCamera();let reads=0,writes=0
+        const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
+        cache.set(property,{current:'CARD'})
+        camera.send=(async()=>{reads++;cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
+        camera.set=(async()=>{writes++}) as typeof camera.set
+        await camera.stopRecording();expect(reads).toBe(1);expect(writes).toBe(0)
+    })
+    it('does not treat missing recording telemetry as idle',async()=>{
+        const {camera}=testCamera();camera.set=(async()=>{throw new Error('Unconfirmed stop')}) as typeof camera.set
+        await expect(camera.stopRecording()).rejects.toThrow('Unconfirmed stop')
+    })
+    it('retries busy Stop and accepts idle only after camera readback',async()=>{
+        const {camera}=testCamera();const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
+        cache.set(property,{current:'CARD'});let writes=0,reads=0
+        camera.send=(async()=>{if(++reads===2)cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
+        camera.set=(async()=>{writes++;throw Object.assign(new Error('busy'),{code:0x2019})}) as typeof camera.set
+        await camera.stopRecording();expect(writes).toBe(1);expect(reads).toBe(2)
+    })
+})
+
+it('accepts EOS movie standby after reconnect without issuing Record or switching modes',async()=>{
+    const {camera}=testCamera();const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
+    cache.set(property,{current:'SDRAM'});let writes=0
+    camera.set=(async()=>{writes++}) as typeof camera.set
+    camera.enterMovieMode=async()=>{throw new Error('Must not change mode')}
+    await camera.stopRecording();expect(writes).toBe(0)
+})
