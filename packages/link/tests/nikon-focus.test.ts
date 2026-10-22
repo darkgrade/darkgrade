@@ -38,7 +38,7 @@ function fixture() {
         setSupported: (next: number[]) => { supported = next } }
 }
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => { vi.useRealTimers() })
 
 describe('Nikon capability-gated focus', () => {
     it('defines the advertised activation commands and exact parameters', () => {

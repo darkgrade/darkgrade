@@ -98,10 +98,10 @@ describe('Canon camera controls', () => {
         cache.set(property, {current: 'disabled', allowed: ['auto', 'manual', 'disabled']})
         let mode = 22
         const writes: unknown[] = []
-        camera.get = (async target => target === property ? cache.get(property).current : mode) as typeof camera.get
+        camera.get = (async target => target.code === property.code ? cache.get(property).current : mode) as typeof camera.get
         camera.set = (async (target, value) => {
             writes.push([target.name, value])
-            if (target === property) {expect(mode).toBe(3);cache.set(property, {...cache.get(property), current: value})}
+            if (target.code === property.code) {expect(mode).toBe(3);cache.set(property, {...cache.get(property), current: value})}
             else mode = Number(value)
         }) as typeof camera.set
         await expect(camera.ensureMovieSoundRecording()).resolves.toBe(true)
@@ -129,7 +129,7 @@ describe('Canon camera controls', () => {
         let mode = 22
         camera.get = (async () => mode) as typeof camera.get
         camera.set = (async (target, value) => {
-            if (target === property) throw new Error('Audio rejected')
+            if (target.code === property.code) throw new Error('Audio rejected')
             mode = Number(value)
         }) as typeof camera.set
         await expect(camera.ensureMovieSoundRecording()).rejects.toThrow('Audio rejected')

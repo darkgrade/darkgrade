@@ -13,7 +13,7 @@ function fixture(){
  transport.startInterruptListener()
  return {transport,endpoint,clear}
 }
-afterEach(()=>vi.restoreAllMocks())
+afterEach(()=>{vi.restoreAllMocks()})
 describe('USB event polling recovery',()=>{
  it('rearms a failed event listener only after the old transfer ends',async()=>{
   const {endpoint,clear}=fixture();endpoint.emit('error',new Error('LIBUSB_TRANSFER_ERROR'))
