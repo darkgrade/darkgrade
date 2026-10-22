@@ -436,9 +436,14 @@ export class CanonCamera extends GenericCamera {
 
     async enterMovieMode(): Promise<void> {
         await this.withoutPolling(async () => {
-            const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
-            if (response.code !== OK.code) {
-                throw new Error(`Canon movie-mode switch returned 0x${response.code.toString(16)}`)
+            for (let attempt = 0; attempt < 4; attempt++) {
+                const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
+                if (response.code === OK.code) return
+                if (response.code !== 0x2019 || attempt === 3)
+                    throw new Error(`Canon movie-mode switch returned 0x${response.code.toString(16)}`)
+                // Live-view/AF shutdown can briefly occupy the body. Retry only
+                // the idempotent mode request; never repeat Record or cut power.
+                await new Promise(resolve => setTimeout(resolve, 500))
             }
         })
     }

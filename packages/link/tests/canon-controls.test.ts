@@ -269,3 +269,16 @@ it('accepts EOS movie standby after reconnect without issuing Record or switchin
     camera.enterMovieMode=async()=>{throw new Error('Must not change mode')}
     await camera.stopRecording();expect(writes).toBe(0)
 })
+
+it('waits through transient Canon movie-switch busy without repeating recording',async()=>{
+ const {camera}=testCamera();let attempts=0
+ camera.send=(async operation=>{expect(operation.name).toBe('CanonMovieSelectSwitchOn');return {code:++attempts<3?0x2019:0x2001}}) as typeof camera.send
+ await camera.enterMovieMode();expect(attempts).toBe(3)
+})
+it('bounds Canon movie-switch busy and rejects other errors immediately',async()=>{
+ const {camera}=testCamera();let attempts=0
+ camera.send=(async()=>{attempts++;return {code:0x2019}}) as typeof camera.send
+ await expect(camera.enterMovieMode()).rejects.toThrow('0x2019');expect(attempts).toBe(4)
+ attempts=0;camera.send=(async()=>{attempts++;return {code:0x2005}}) as typeof camera.send
+ await expect(camera.enterMovieMode()).rejects.toThrow('0x2005');expect(attempts).toBe(1)
+})
