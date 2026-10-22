@@ -582,7 +582,7 @@ export class SonyWifiCamera {
 
     async getRecentSonyContents(options: {all?:boolean} = {}): Promise<Record<string, unknown>[]> {
         this.requireConnection()
-        const deadline = Date.now() + (this.connectionTransport === 'wifi' ? 30_000 : 15_000)
+        const deadline = Date.now() + 15_000
         while (true) {
             try {
                 const result = await this.bridge.request({ cmd: 'recent_contents', ...(options.all?{scope:'all'}:{}) })
