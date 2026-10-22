@@ -94,7 +94,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
                 result.transferStatus >= 0 && result.transferStatus <= 0xffff_ffff)
                 transfer.push(`status ${result.transferStatus}`)
             pending.reject(
-                new Error(`Sony SDK command failed${Number.isInteger(result.code) ? ` (SDK code ${result.code})` : ''}${transfer.length ? ` (${transfer.join(', ')})` : ''}`)
+                Object.assign(new Error(`Sony SDK command failed${Number.isInteger(result.code) ? ` (SDK code ${result.code})` : ''}${transfer.length ? ` (${transfer.join(', ')})` : ''}`),{retryableTransfer:transfer.length===2})
             )
             return
         }
@@ -131,7 +131,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
             if (this.closed) throw new Error('Sony SDK bridge is closed')
             if (Object.values(command).some(value => typeof value !== 'string' || /[\r\n]/.test(value)))
                 throw new Error('Invalid SDK bridge command')
-            // Native media downloads have their own bounded 180-second transfer
+            // Native media downloads have their own bounded nine-minute transfer
             // window. Leave room for their final reply without slowing other commands.
             const reply = this.waitForReply(command.cmd === 'download_content' ? 550_000 : this.timeoutMilliseconds)
             this.child.stdin.write(JSON.stringify(command) + '\n')

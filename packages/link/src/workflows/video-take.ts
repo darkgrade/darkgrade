@@ -6,7 +6,7 @@ export interface TakeCamera {
     collect(media:TakeMedia[],progress:(bytes:number,total:number)=>void):Promise<TakeMedia[]>
     close():Promise<void>
 }
-export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopping'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number}
+export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopping'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number;transferRecovery?:string}
 export interface VideoTakeState {id:string;name:string;stage:'preparing'|'armed'|'recording'|'stopping'|'review'|'collecting'|'complete'|'attention';createdAt:string;maximumMinutes:number;error?:string;stopRequested?:boolean;startedAt?:string;stoppedAt?:string;startSkewMilliseconds?:number;cameras:TakeCameraState[]}
 const message=(error:unknown)=>error instanceof Error?error.message:String(error)
 /** Device-independent take lifecycle shared by applications and MCP. No framesync is implied. */
@@ -100,11 +100,21 @@ export class VideoTake {
             for(const state of this.state.cameras){
                 if(state.state==='collected'||!state.media.length)continue
                 try{
+                    delete state.error
                     const original=state.media
-                    const files=await this.devices.get(state.camera)!.collect(original,(bytes,total)=>{state.transferredBytes=bytes;state.totalBytes=total;this.changed()})
+                    let files:TakeMedia[]=[]
+                    for(let attempt=0;attempt<2;attempt++){
+                        try{files=await this.devices.get(state.camera)!.collect(original,(bytes,total)=>{state.transferredBytes=bytes;state.totalBytes=total;this.changed()});break}
+                        catch(error){
+                            if(attempt||(error as {retryable?:boolean})?.retryable!==true)throw error
+                            state.transferRecovery='Transfer interrupted · reconnecting and retrying automatically'
+                            state.transferredBytes=0;this.changed()
+                        }
+                    }
+                    delete state.transferRecovery
                     if(files.length!==original.length||files.some(file=>!file.verified||!file.downloadUrl||!original.some(source=>source.id===file.id&&source.bytes===file.bytes)))throw new Error('Transferred footage did not match the camera files')
                     state.media=files;state.totalBytes=files.reduce((total,file)=>total+file.bytes,0);state.transferredBytes=state.totalBytes;state.state='collected';delete state.error
-                }catch(error){state.error=message(error)}this.changed()
+                }catch(error){delete state.transferRecovery;state.error=message(error)}this.changed()
             }
             this.state.stage=this.state.cameras.every(camera=>camera.state==='collected')?'complete':'attention';this.changed();return this.state
         }finally{await this.closeIdle();this.busy=false}

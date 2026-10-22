@@ -78,6 +78,7 @@ done
     try {
         await expect(bridge.request({ cmd: 'download_content' })).rejects.toMatchObject({
             message: `Sony SDK command failed (SDK code 123)${suffix}`,
+            retryableTransfer: Boolean(suffix),
         })
     } finally {
         await bridge.close()

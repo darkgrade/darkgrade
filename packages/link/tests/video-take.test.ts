@@ -26,3 +26,20 @@ it.each(['recording','stopping','ready','preparing','uncertain'] as const)('neve
  snapshot.stage='attention';snapshot.cameras[0].state=state;snapshot.cameras[1].state='stopped'
  expect(()=>VideoTake.resume(snapshot,f.devices)).toThrow('Confirm all recording stopped')
 })
+
+it('retries one explicitly recoverable collection failure and publishes recovery feedback',async()=>{
+ const f=fixture();await f.take.start();await f.take.stop();let attempts=0;const statuses:string[]=[]
+ ;(f.take as any).publish=(state:any)=>{if(state.cameras[0].transferRecovery)statuses.push(state.cameras[0].transferRecovery)}
+ f.devices.get('one')!.collect=async files=>{if(++attempts===1)throw Object.assign(new Error('Transfer stalled'),{retryable:true});return files.map(file=>({...file,downloadUrl:'/files/'+file.id}))}
+ await f.take.collect();expect(attempts).toBe(2);expect(f.take.state.stage).toBe('complete');expect(statuses[0]).toContain('retrying automatically');expect(f.take.state.cameras[0].transferRecovery).toBeUndefined()
+})
+it('never automatically retries file identity or storage errors without explicit retryability',async()=>{
+ const f=fixture();await f.take.start();await f.take.stop();let attempts=0
+ f.devices.get('one')!.collect=async()=>{attempts++;throw new Error('File identity changed')}
+ await f.take.collect();expect(attempts).toBe(1);expect(f.take.state.stage).toBe('attention');expect(f.take.state.cameras[1].state).toBe('collected')
+})
+it('bounds repeated transfer failures and clears the active recovery indicator',async()=>{
+ const f=fixture();await f.take.start();await f.take.stop();let attempts=0
+ f.devices.get('one')!.collect=async()=>{attempts++;throw Object.assign(new Error('Transfer stalled'),{retryable:true})}
+ await f.take.collect();expect(attempts).toBe(2);expect(f.take.state.stage).toBe('attention');expect(f.take.state.cameras[0].transferRecovery).toBeUndefined();expect(f.take.state.cameras[0].error).toBe('Transfer stalled')
+})
