@@ -58,7 +58,7 @@ export function measureShot(rgb:Uint8Array,width:number,height:number):ShotMetri
  }
  values.sort((a,b)=>a-b);return {median:values[Math.floor(values.length*.5)],p95:values[Math.floor(values.length*.95)],clipped:clipped/values.length,dark:dark/values.length,detail:detail/edges,neutralPixels:neutral/values.length,redBlueRatio:blue?red/blue:1}
 }
-export function describeShot(metrics:ShotMetrics):Pick<ShotAnalysis,'exposure'|'focus'|'colour'>{return {exposure:metrics.clipped>.025||metrics.median>.72?'bright':metrics.median<.16&&metrics.dark>.25&&metrics.p95<.8?'dark':'balanced',focus:metrics.detail>.00035?'detail-visible':'soft',colour:metrics.neutralPixels<.03?'unknown':metrics.redBlueRatio>.85&&metrics.redBlueRatio<1.18?'neutral':'cast'}}
+export function describeShot(metrics:ShotMetrics):Pick<ShotAnalysis,'exposure'|'focus'|'colour'>{return {exposure:metrics.clipped>.025||metrics.median>.72?'bright':((metrics.median<.08&&metrics.p95<.4)||(metrics.median<.16&&metrics.dark>.25&&metrics.p95<.8))?'dark':'balanced',focus:metrics.detail>.00035?'detail-visible':'soft',colour:metrics.neutralPixels<.03?'unknown':metrics.redBlueRatio>.85&&metrics.redBlueRatio<1.18?'neutral':'cast'}}
 export async function analyseShot(image:Uint8Array,vision=true,reviewer:(image:Uint8Array)=>Promise<ShotAnalysis['scene']>=reviewScene):Promise<ShotAnalysis>{
  const started=Date.now(),width=160,height=90
  // Keep each decoder on standard pipes. Extra output descriptors can close
