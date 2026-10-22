@@ -45,3 +45,27 @@ describe('USB event polling recovery',()=>{
   expect(endpoint.startPoll).toHaveBeenCalledTimes(5)
  })
 })
+
+describe('USB camera serial selection', () => {
+ it('opens the requested body when two cameras have the same USB model', async () => {
+  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  const first = {open:vi.fn()}, selected = {open:vi.fn().mockRejectedValue(new Error('selected body'))}
+  vi.spyOn(transport,'getUSB').mockResolvedValue({})
+  vi.spyOn(transport,'discover').mockResolvedValue([
+   {vendorId:0x054c,productId:0x0f4a,serialNumber:'other',device:first},
+   {vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted',device:selected},
+  ])
+  vi.spyOn(console,'log').mockImplementation(()=>{})
+  await expect(transport.connect({usb:{filters:[{vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted'}]}})).rejects.toThrow('selected body')
+  expect(first.open).not.toHaveBeenCalled();expect(selected.open).toHaveBeenCalledOnce()
+ })
+ it('refuses another body when the requested serial is absent', async () => {
+  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  const device = {open:vi.fn()}
+  vi.spyOn(transport,'getUSB').mockResolvedValue({})
+  vi.spyOn(transport,'discover').mockResolvedValue([{vendorId:0x054c,productId:0x0f4a,serialNumber:'other',device}])
+  vi.spyOn(console,'log').mockImplementation(()=>{})
+  await expect(transport.connect({usb:{filters:[{vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted'}]}})).rejects.toThrow('No matching device')
+  expect(device.open).not.toHaveBeenCalled()
+ })
+})

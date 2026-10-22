@@ -140,6 +140,7 @@ export class USBTransport implements TransportInterface {
             const filter = filters[0]
             if (filter.vendorId !== undefined && d.vendorId !== filter.vendorId) return false
             if (filter.productId !== undefined && d.productId !== filter.productId) return false
+            if (filter.serialNumber !== undefined && d.serialNumber !== filter.serialNumber) return false
             if (filter.classCode !== undefined && d.classCode !== filter.classCode) return false
             if (filter.subclassCode !== undefined && d.subclassCode !== filter.subclassCode) return false
             return true
