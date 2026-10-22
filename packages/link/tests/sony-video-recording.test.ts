@@ -49,3 +49,31 @@ it('does not turn a failed post-stop index refresh into unconfirmed recording',a
   await expect(pending).resolves.toMatchObject({stopped:true,media:[],warning:expect.stringContaining('refreshing its SDK content index failed')})
  }finally{vi.useRealTimers()}
 })
+
+it('recovers an invalid held SDK session with an idempotent Stop and no new recording',async()=>{
+ vi.useFakeTimers()
+ try{
+  const camera={stopRecording:async()=>{throw new Error('Sony SDK command failed (SDK code 33794)')}}
+  const stop=vi.fn(async()=>{}),restart=vi.fn(async()=>({stopRecording:stop,getSonyProperty:async()=>({value:'0'})}))
+  const pending=new SonyVideoRecording(camera,restart).stopInterrupted();await vi.advanceTimersByTimeAsync(500)
+  await expect(pending).resolves.toMatchObject({stopped:true});expect(restart).toHaveBeenCalledTimes(1);expect(stop).toHaveBeenCalledTimes(1)
+ }finally{vi.useRealTimers()}
+})
+
+it('retains exact movie identity after restoring a persisted recording baseline',async()=>{
+ vi.useFakeTimers()
+ try{
+  const recovery={version:1,kind:'sony',baseline:[JSON.stringify(['old.MP4','100'])]}
+  const camera={stopRecording:async()=>{},getSonyProperty:async()=>({value:'0'}),getRecentSonyContents:async()=>[{id:1,files:[{id:5,name:'old.MP4',bytes:100}]},{id:2,files:[{id:5,name:'new.MP4',bytes:200}]}]}
+  const pending=new SonyVideoRecording(camera).stopInterrupted(recovery);await vi.advanceTimersByTimeAsync(500)
+  expect((await pending).media).toEqual([{id:'2:5',filename:'new.MP4',bytes:200,verified:true}])
+ }finally{vi.useRealTimers()}
+})
+it('invalid recovery metadata confirms Stop without claiming any preexisting movie',async()=>{
+ vi.useFakeTimers()
+ try{
+  const camera={stopRecording:async()=>{},getSonyProperty:async()=>({value:'0'}),getRecentSonyContents:vi.fn()}
+  const pending=new SonyVideoRecording(camera).stopInterrupted({version:1,kind:'sony',baseline:[{}]});await vi.advanceTimersByTimeAsync(500)
+  expect((await pending).media).toEqual([]);expect(camera.getRecentSonyContents).not.toHaveBeenCalled()
+ }finally{vi.useRealTimers()}
+})

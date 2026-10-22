@@ -27,6 +27,16 @@ export class UsbVideoRecording {
         const confirmed=states.some((state:any)=>state.name==='CanonRecordingDestination'&&state.value==='CARD')
         return {recordingConfirmed:confirmed,evidence:confirmed?'Camera reports card recording':'Movie-start command acknowledged; recording-state telemetry unavailable'}
     }
+    getRecoveryState(){return {version:1,kind:this.vendor,handles:[...this.baseline]}}
+    async stopInterrupted(recovery?:unknown){
+        const saved=recovery as {version?:number;kind?:string;handles?:unknown[]}|undefined
+        if(saved?.version===1&&saved.kind===this.vendor&&Array.isArray(saved.handles)&&saved.handles.length<=100000&&saved.handles.every(value=>Number.isInteger(value)&&Number(value)>0&&Number(value)<=0xffffffff)){
+            this.baseline=new Set(saved.handles as number[]);this.attempted=true
+            return this.stop()
+        }
+        await this.camera.stopRecording()
+        return {stopped:true,media:[] as TakeMedia[],warning:'Interrupted recording stopped. Original identity was not retained; copy unindexed footage directly from the card.'}
+    }
     async stop(){
         if(!this.attempted)return {stopped:true,media:[] as TakeMedia[]}
         await this.camera.stopRecording();this.attempted=false

@@ -21,18 +21,32 @@ export class SonyVideoRecording {
         throw new Error('Camera did not confirm recording started')
     }
     private async confirmStopped(){
-        await this.camera.stopRecording()
-        const started=Date.now(),deadline=started+15000
-        let retried=false
-        do{
-            await sleep(200)
-            const state=await this.camera.getSonyProperty('RecordingState')
-            if(state.value==='0')return
-            if(!retried&&Date.now()-started>=1500){await this.camera.stopRecording();retried=true}
-        }while(Date.now()<deadline)
-        throw new Error('Camera did not confirm recording stopped; do not disconnect power')
+        for(let connection=0;connection<2;connection++){
+            try{
+                await this.camera.stopRecording()
+                const started=Date.now(),deadline=started+15000
+                let retried=false
+                do{
+                    await sleep(200)
+                    const state=await this.camera.getSonyProperty('RecordingState')
+                    if(state.value==='0')return
+                    if(!retried&&Date.now()-started>=1500){await this.camera.stopRecording();retried=true}
+                }while(Date.now()<deadline)
+                throw new Error('Camera did not confirm recording stopped; do not disconnect power')
+            }catch(error){
+                if(connection||!this.refreshCamera)throw error
+                // Renew only the SDK session; the owning adapter must preserve camera power and USB.
+                this.camera=await this.refreshCamera()
+            }
+        }
     }
-    async stopInterrupted(){
+    getRecoveryState(){return {version:1,kind:'sony',baseline:[...this.baseline]}}
+    async stopInterrupted(recovery?:unknown){
+        const saved=recovery as {version?:number;kind?:string;baseline?:unknown[]}|undefined
+        if(saved?.version===1&&saved.kind==='sony'&&Array.isArray(saved.baseline)&&saved.baseline.length<=10000&&saved.baseline.every(value=>typeof value==='string'&&value.length<=4096)){
+            this.baseline=new Set(saved.baseline as string[]);this.attempted=true
+            return this.stop()
+        }
         await this.confirmStopped();this.attempted=false
         return {stopped:true,media:[] as TakeMedia[],warning:'Interrupted recording stopped. Copy any unindexed original directly from the camera card.'}
     }

@@ -20,3 +20,13 @@ describe('USB card movie reliability',()=>{
  it('rejects actual card protection before opening a recorder',async()=>{const f=fixture();f.camera.get=async()=> 'cardProtected';await expect(f.recording.prepare()).rejects.toThrow('writable memory card')})
  it('does not issue a stop command when recording was never attempted',async()=>{const f=fixture();let stopped=false;f.camera.stopRecording=async()=>{stopped=true};expect(await f.recording.stop()).toEqual({stopped:true,media:[]});expect(stopped).toBe(false)})
 })
+
+it('restores the prepared USB baseline after controller loss and excludes old objects',async()=>{
+ const f=fixture();await f.recording.prepare();const recovery=f.recording.getRecoveryState();await f.recording.start()
+ const recovered=new UsbVideoRecording(f.camera,'nikon'),result=await recovered.stopInterrupted(recovery)
+ expect(result.stopped).toBe(true);expect(result.media).toEqual([{id:'2',filename:'CLIP.MOV',bytes:12,verified:true}])
+})
+it('a missing USB baseline cannot authorize a previous card movie as a new original',async()=>{
+ const f=fixture();await f.recording.start();const result=await new UsbVideoRecording(f.camera,'nikon').stopInterrupted()
+ expect(result.stopped).toBe(true);expect(result.media).toEqual([]);expect(f.calls.some(call=>call.operation==='GetObjectInfo')).toBe(false)
+})
