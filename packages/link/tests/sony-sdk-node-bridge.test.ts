@@ -68,7 +68,7 @@ it.each([
     { transferPercent: 101, transferStatus: 'runtime-secret', suffix: '' },
     { transferPercent: -1, transferStatus: 0x1_0000_0000, suffix: '' },
 ])('exposes only bounded numeric transfer diagnostics: $suffix', async ({ transferPercent, transferStatus, suffix }) => {
-    const reply = JSON.stringify({ ok: false, error: 'runtime-secret', code: 123, transferPercent, transferStatus })
+    const reply = JSON.stringify({ ok: false, error: 'runtime-secret', code: 123, transferPercent, transferStatus, retryableTransfer: Boolean(suffix) })
     const filename = await executable(`printf '%s\\n' '{"ok":true}'
 while IFS= read -r request; do
 printf '%s\\n' '${reply}'

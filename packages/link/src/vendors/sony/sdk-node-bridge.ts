@@ -94,7 +94,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
                 result.transferStatus >= 0 && result.transferStatus <= 0xffff_ffff)
                 transfer.push(`status ${result.transferStatus}`)
             pending.reject(
-                Object.assign(new Error(`Sony SDK command failed${Number.isInteger(result.code) ? ` (SDK code ${result.code})` : ''}${transfer.length ? ` (${transfer.join(', ')})` : ''}`),{retryableTransfer:transfer.length===2})
+                Object.assign(new Error(`Sony SDK command failed${Number.isInteger(result.code) ? ` (SDK code ${result.code})` : ''}${transfer.length ? ` (${transfer.join(', ')})` : ''}`),{retryableTransfer:result.retryableTransfer===true})
             )
             return
         }
