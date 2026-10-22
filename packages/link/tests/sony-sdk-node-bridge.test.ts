@@ -2,7 +2,7 @@ import { createSonySdkBridge } from '@vendors/sony/sdk-node-bridge'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 const directories: string[] = []
 afterEach(async () => {
     for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true })
@@ -83,4 +83,12 @@ done
     } finally {
         await bridge.close()
     }
+})
+
+it('bounds a stuck disconnect without inheriting a long recording command timeout',async()=>{
+ const filename=await executable("printf '%s\\n' '{\"ok\":true}'\nwhile IFS= read -r request; do :; done\n")
+ const bridge=await createSonySdkBridge({executable:filename,timeoutMilliseconds:90000})
+ vi.useFakeTimers()
+ try{const pending=expect(bridge.request({cmd:'disconnect'})).rejects.toThrow('timed out');await vi.advanceTimersByTimeAsync(12001);await pending}
+ finally{vi.useRealTimers();await bridge.close()}
 })
