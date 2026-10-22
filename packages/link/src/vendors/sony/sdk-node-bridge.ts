@@ -112,6 +112,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
     }
 
     private fail(error: Error): void {
+        Object.assign(error,{retryableTransfer:true})
         const pending = this.pending
         this.pending = undefined
         if (pending) {
