@@ -553,7 +553,8 @@ export class SonyWifiCamera {
         const before = await this.getSonyFocusFrames()
         if (!['4', '5', '6', '7'].includes(area.value)) await this.setSonySetting('FocusArea', 4)
         await this.setSonyAfAreaPosition(x, y)
-        const deadline = Date.now() + 6000
+        const started = Date.now(), deadline = started + 6000
+        let positionRepeated = false
         let frames: Record<string, unknown>[] = [],
             matched: Record<string, unknown> | undefined
         do {
@@ -566,6 +567,12 @@ export class SonyWifiCamera {
                     Math.abs((Number(frame.xNumerator) * 640) / Number(frame.xDenominator) - x) <= 4 &&
                     Math.abs((Number(frame.yNumerator) * 480) / Number(frame.yDenominator) - y) <= 4
             )
+            if (!matched && !positionRepeated && Date.now() - started >= 1000) {
+                // The first position can arrive while a new remote session is still settling.
+                // Repeating that same point is idempotent; verify telemetry rather than infer success.
+                await this.setSonyAfAreaPosition(x, y)
+                positionRepeated = true
+            }
         } while (!matched && Date.now() < deadline)
         if (!matched)
             throw new Error('The camera did not confirm the requested AF point in its live-view frame information')

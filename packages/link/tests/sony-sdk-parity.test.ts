@@ -1,7 +1,7 @@
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { describe, expect, it } from 'vitest'
 
-function sdkCamera() {
+function sdkCamera(ignoreFirstPoint = false) {
     const properties = [
         { code: 256, type: 2, value: '1400', writable: true, allowedValues: ['1400', '1600'] },
         { code: 259, type: 3, value: '0', writable: true },
@@ -22,6 +22,7 @@ function sdkCamera() {
     let point = { x: 320, y: 240 },
         downloadFails = false
     const requests: Record<string, string>[] = []
+    let positionWrites = 0
     const bridge: SonySdkBridge = {
         request: async request => {
             requests.push(request)
@@ -30,6 +31,7 @@ function sdkCamera() {
                 const property = properties.find(property => property.code === Number(request.code))
                 if (property) property.value = request.value!
                 if (request.code === '289') {
+                    if (ignoreFirstPoint && positionWrites++ === 0) return { ok: true }
                     const value = Number(request.value)
                     point = { x: value >>> 16, y: value & 65535 }
                 }
@@ -98,6 +100,16 @@ describe('Sony Wi-Fi USB control parity', () => {
             '289',
         ])
         await expect(camera.placeSonyFocusPoint(640, 100)).rejects.toThrow('640×480')
+    })
+    it('repeats only the same AF point once when a new session has not applied its first position', async () => {
+        const { camera, requests } = sdkCamera(true)
+        await camera.connectUsb('unit-test')
+        const result = await camera.placeSonyFocusPoint(160, 160)
+        expect(result.positionVerified).toBe(true)
+        const positions = requests.filter(request => request.cmd === 'set' && request.code === '289')
+        expect(positions).toHaveLength(2)
+        expect(positions[0]).toEqual(positions[1])
+        expect(requests.some(request => request.cmd === 'set' && request.code === '261')).toBe(false)
     })
     it('waits for the SDK download callback and restores the original card destination', async () => {
         const { camera, properties, requests } = sdkCamera()
