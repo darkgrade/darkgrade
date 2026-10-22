@@ -580,13 +580,14 @@ export class SonyWifiCamera {
         }
     }
 
-    async getRecentSonyContents(): Promise<Record<string, unknown>[]> {
+    async getRecentSonyContents(options: {all?:boolean} = {}): Promise<Record<string, unknown>[]> {
         this.requireConnection()
         const deadline = Date.now() + 15_000
         while (true) {
             try {
-                const result = await this.bridge.request({ cmd: 'recent_contents' })
+                const result = await this.bridge.request({ cmd: 'recent_contents', ...(options.all?{scope:'all'}:{}) })
                 if (!Array.isArray(result.contents)) throw new Error('The camera returned no recent contents')
+                if(options.all && (result.truncated!==false||!Number.isInteger(result.totalCount)||result.totalCount!==result.contents.length))throw new Error('Camera returned an incomplete content index; rebuild the SDK bridge before verifying recording identity')
                 return result.contents
             } catch (error) {
                 // The documented contents-list operation is asynchronous after connecting or writing a file.

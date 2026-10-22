@@ -7,6 +7,7 @@ export interface SonySdkBridgeOptions {
     workingDirectory?: string
     environment?: Record<string, string>
     timeoutMilliseconds?: number
+    startupTimeoutMilliseconds?: number
 }
 
 /** Spawn an operator-installed official-SDK bridge; no SDK binaries are bundled. */
@@ -42,12 +43,14 @@ class SonySdkNodeBridge implements SonySdkBridge {
             this.timeoutMilliseconds > 120_000
         )
             throw new Error('Invalid SDK bridge executable or deadline')
+        const startupTimeout=options.startupTimeoutMilliseconds??this.timeoutMilliseconds
+        if(!Number.isInteger(startupTimeout)||startupTimeout<100||startupTimeout>120000)throw new Error('Invalid SDK bridge startup deadline')
         this.child = spawn(options.executable, [], {
             cwd: options.workingDirectory,
             env: { ...process.env, ...options.environment },
             stdio: ['pipe', 'pipe', 'pipe'],
         })
-        this.startup = this.waitForReply()
+        this.startup = this.waitForReply(startupTimeout)
         this.child.stderr.resume()
         this.child.stdin.on('error', () => this.fail(new Error('Sony SDK bridge input closed')))
         this.child.on('error', () => this.fail(new Error('Sony SDK bridge could not start')))

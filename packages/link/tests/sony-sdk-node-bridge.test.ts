@@ -40,7 +40,7 @@ done
 })
 it('bounds a stuck native helper and rejects queued work', async () => {
     const filename = await executable("printf '%s\\n' '{\"ok\":true}'\nwhile IFS= read -r request; do :; done\n")
-    const bridge = await createSonySdkBridge({ executable: filename, timeoutMilliseconds: 100 })
+    const bridge = await createSonySdkBridge({ executable: filename, timeoutMilliseconds: 100, startupTimeoutMilliseconds: 3000 })
     await expect(bridge.request({ cmd: 'properties' })).rejects.toThrow('timed out')
     await expect(bridge.request({ cmd: 'properties' })).rejects.toThrow('closed')
 })
@@ -52,7 +52,7 @@ sleep 0.15
 printf '%s\\n' '{"ok":true,"downloaded":true}'
 done
 `)
-    const bridge = await createSonySdkBridge({ executable: filename, timeoutMilliseconds: 100 })
+    const bridge = await createSonySdkBridge({ executable: filename, timeoutMilliseconds: 100, startupTimeoutMilliseconds: 3000 })
     try {
         await expect(bridge.request({ cmd: 'download_content', handle: '1', path: '/tmp/content' }))
             .resolves.toMatchObject({ ok: true, downloaded: true })

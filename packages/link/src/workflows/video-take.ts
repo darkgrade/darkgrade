@@ -21,7 +21,7 @@ export class VideoTake {
     }
     /** Resume collection from persisted stopped-take evidence; never infer an interrupted stop. */
     static resume(state:VideoTakeState,devices:Map<string,TakeCamera>,publish:(state:VideoTakeState)=>void=()=>{}){
-        if(state.cameras.some(camera=>['recording','uncertain','preparing'].includes(camera.state)))throw new Error('Confirm all recording stopped before resuming collection')
+        if(state.cameras.some(camera=>['recording','stopping','ready','uncertain','preparing'].includes(camera.state)))throw new Error('Confirm all recording stopped before resuming collection')
         if(state.cameras.some(camera=>!devices.has(camera.camera)))throw new Error('A camera from this take is unavailable')
         const take=new VideoTake(state.id,state.name,devices,state.maximumMinutes,publish)
         Object.assign(take.state,structuredClone(state))

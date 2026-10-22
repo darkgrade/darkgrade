@@ -20,3 +20,9 @@ it('finishes verified transfer progress at 100 percent even when the SDK last re
  await f.take.collect()
  expect(f.take.state.cameras[0]).toMatchObject({state:'collected',transferredBytes:100,totalBytes:100})
 })
+
+it.each(['recording','stopping','ready','preparing','uncertain'] as const)('never resumes collection while a member remains %s',state=>{
+ const f=fixture(),snapshot=structuredClone(f.take.state)
+ snapshot.stage='attention';snapshot.cameras[0].state=state;snapshot.cameras[1].state='stopped'
+ expect(()=>VideoTake.resume(snapshot,f.devices)).toThrow('Confirm all recording stopped')
+})

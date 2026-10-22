@@ -428,3 +428,21 @@ it('finds advertised exposure mode aliases and labels their Auto and Manual choi
         ])
     }
 })
+
+it('requests the complete contents index for recording and refuses a truncated reply',async()=>{
+ const {bridge,requests}=bridgeForProperties(),camera=new SonyWifiCamera(bridge)
+ await camera.connectUsb('TEST_SERIAL')
+ bridge.request=async command=>{requests.push(command);return {contents:[],truncated:true}}
+ await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('incomplete content index')
+ expect(requests.at(-1)).toEqual({cmd:'recent_contents',scope:'all'})
+ await expect(camera.getRecentSonyContents()).resolves.toEqual([])
+})
+
+it('requires explicit complete-index evidence from the native bridge',async()=>{
+ const {bridge}=bridgeForProperties(),camera=new SonyWifiCamera(bridge)
+ await camera.connectUsb('TEST_SERIAL')
+ bridge.request=async()=>({contents:[]})
+ await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('rebuild the SDK bridge')
+ bridge.request=async()=>({contents:[],truncated:false,totalCount:0})
+ await expect(camera.getRecentSonyContents({all:true})).resolves.toEqual([])
+})
