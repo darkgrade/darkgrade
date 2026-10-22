@@ -4,7 +4,7 @@ import {
     type SonyBluetoothDirectAuthentication,
     type SonySdkBridge,
 } from '@vendors/sony/sdk-camera'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const authentication = {
     host: '192.0.2.98',
@@ -445,4 +445,17 @@ it('requires explicit complete-index evidence from the native bridge',async()=>{
  await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('rebuild the SDK bridge')
  bridge.request=async()=>({contents:[],truncated:false,totalCount:0})
  await expect(camera.getRecentSonyContents({all:true})).resolves.toEqual([])
+})
+
+it('marks only exhausted contents-processing errors for one stopped-transfer reconnect',async()=>{
+ vi.useFakeTimers()
+ try{
+  const bridge:SonySdkBridge={request:async command=>{if(command.cmd==='recent_contents')throw new Error('Sony SDK command failed (SDK code 36101)');return {ok:true}},close:async()=>{}}
+  const camera=new SonyWifiCamera(bridge);await camera.connectUsb('TEST_SERIAL')
+  const pending=expect(camera.getRecentSonyContents({all:true})).rejects.toMatchObject({retryableTransfer:true})
+  await vi.advanceTimersByTimeAsync(15250);await pending
+  bridge.request=async()=>{throw new Error('Sony SDK command failed (SDK code 36102)')}
+  const error=await camera.getRecentSonyContents().catch(error=>error)
+  expect(error.message).toContain('36102');expect(error.retryableTransfer).not.toBe(true)
+ }finally{vi.useRealTimers()}
 })

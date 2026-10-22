@@ -591,8 +591,13 @@ export class SonyWifiCamera {
                 return result.contents
             } catch (error) {
                 // The documented contents-list operation is asynchronous after connecting or writing a file.
-                if (!(error instanceof Error) || !/SDK code 36101/.test(error.message) || Date.now() >= deadline)
+                if (!(error instanceof Error) || !/SDK code 36101/.test(error.message)) throw error
+                if (Date.now() >= deadline) {
+                    // Collection can renew its stopped session once, then must
+                    // revalidate the exact original against a fresh index.
+                    Object.assign(error, { retryableTransfer: true })
                     throw error
+                }
                 await new Promise(resolve => setTimeout(resolve, 250))
             }
         }
