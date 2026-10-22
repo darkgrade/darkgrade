@@ -452,7 +452,7 @@ it('marks only exhausted contents-processing errors for one stopped-transfer rec
  try{
   const bridge:SonySdkBridge={request:async command=>{if(command.cmd==='recent_contents')throw new Error('Sony SDK command failed (SDK code 36101)');return {ok:true}},close:async()=>{}}
   const camera=new SonyWifiCamera(bridge);await camera.connectUsb('TEST_SERIAL')
-  const pending=expect(camera.getRecentSonyContents({all:true})).rejects.toMatchObject({retryableTransfer:true})
+  const pending=expect(camera.getRecentSonyContents({all:true})).rejects.toMatchObject({retryableTransfer:true,message:expect.stringContaining('original footage remains on the card')})
   await vi.advanceTimersByTimeAsync(15250);await pending
   bridge.request=async()=>{throw new Error('Sony SDK command failed (SDK code 36102)')}
   const error=await camera.getRecentSonyContents().catch(error=>error)

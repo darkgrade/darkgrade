@@ -595,6 +595,7 @@ export class SonyWifiCamera {
                 if (Date.now() >= deadline) {
                     // Collection can renew its stopped session once, then must
                     // revalidate the exact original against a fresh index.
+                    error.message = 'The camera media index is still busy; original footage remains on the card and collection is not verified (SDK code 36101)'
                     Object.assign(error, { retryableTransfer: true })
                     throw error
                 }

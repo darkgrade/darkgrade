@@ -77,3 +77,14 @@ it('invalid recovery metadata confirms Stop without claiming any preexisting mov
   expect((await pending).media).toEqual([]);expect(camera.getRecentSonyContents).not.toHaveBeenCalled()
  }finally{vi.useRealTimers()}
 })
+
+it('requires a fresh idle state before indexing and transferring a stopped original',async()=>{
+ const calls:string[]=[],camera={getSonyProperty:async(name:string)=>{calls.push(name);return {value:'0'}},getRecentSonyContents:async()=>{calls.push('index');return [{id:2,files:[{id:5,name:'new.MP4',bytes:200}]}]},downloadSonyContent:async()=>{calls.push('transfer');return {path:'new.MP4'}}}
+ await new SonyVideoRecording(camera).transfer({id:'2:5',filename:'new.MP4',bytes:200,verified:true},'/tmp','new.MP4')
+ expect(calls).toEqual(['RecordingState','index','transfer'])
+})
+it('does not index or transfer when the camera no longer confirms idle',async()=>{
+ const camera={getSonyProperty:async()=>({value:'1'}),getRecentSonyContents:vi.fn(),downloadSonyContent:vi.fn()}
+ await expect(new SonyVideoRecording(camera).transfer({id:'2:5',filename:'new.MP4',bytes:200,verified:true},'/tmp','new.MP4')).rejects.toThrow('Stop recording')
+ expect(camera.getRecentSonyContents).not.toHaveBeenCalled();expect(camera.downloadSonyContent).not.toHaveBeenCalled()
+})

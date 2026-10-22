@@ -74,6 +74,7 @@ export class SonyVideoRecording {
         return {stopped:true,media,...(!media.length?{warning:refreshFailed?'Camera stopped; refreshing its SDK content index failed. The original remains on the card.':'Camera stopped; its movie index is not ready for collection. The original remains on the card.'}:{})}
     }
     async transfer(file:TakeMedia,directory:string,filename:string){
+        if((await this.camera.getSonyProperty('RecordingState')).value!=='0')throw new Error('Stop recording before transferring footage')
         const [contentId,fileId]=file.id.split(':').map(Number)
         const contents=await this.camera.getRecentSonyContents({all:true})
         const source=contents.find((content:any)=>Number(content.id)===contentId)?.files?.find((item:any)=>Number(item.id)===fileId)
