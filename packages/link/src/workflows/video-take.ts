@@ -9,10 +9,21 @@ export interface TakeCamera {
 export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopping'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number;transferRecovery?:string}
 export interface VideoTakeState {id:string;name:string;stage:'preparing'|'armed'|'recording'|'stopping'|'review'|'collecting'|'complete'|'attention';createdAt:string;maximumMinutes:number;error?:string;stopRequested?:boolean;startedAt?:string;stoppedAt?:string;startSkewMilliseconds?:number;cameras:TakeCameraState[]}
 const message=(error:unknown)=>error instanceof Error?error.message:String(error)
+function matchesOriginalMedia(original:TakeMedia[],files:TakeMedia[]):boolean {
+    if(!Array.isArray(files)||files.length!==original.length)return false
+    const expected=new Map(original.map(file=>[file.id,file]))
+    if(expected.size!==original.length||new Set(files.map(file=>file.id)).size!==files.length)return false
+    return files.every(file=>{
+        const source=expected.get(file.id)
+        return Boolean(source&&file.verified===true&&typeof file.downloadUrl==='string'&&file.downloadUrl.length>0&&file.filename===source.filename&&Number.isSafeInteger(file.bytes)&&file.bytes>0&&file.bytes===source.bytes)
+    })
+}
+
 /** Device-independent take lifecycle shared by applications and MCP. No framesync is implied. */
 export class VideoTake {
     readonly state:VideoTakeState
     private busy=false
+    private starting=false
     private stopRequested=false
     private attempted=new Set<string>()
     constructor(id:string,name:string,private readonly devices:Map<string,TakeCamera>,maximumMinutes=30,private readonly publish:(state:VideoTakeState)=>void=()=>{}){
@@ -21,6 +32,7 @@ export class VideoTake {
     }
     /** Resume collection from persisted stopped-take evidence; never infer an interrupted stop. */
     static resume(state:VideoTakeState,devices:Map<string,TakeCamera>,publish:(state:VideoTakeState)=>void=()=>{}){
+        if(!Array.isArray(state.cameras)||!state.cameras.length||new Set(state.cameras.map(camera=>camera.camera)).size!==state.cameras.length)throw new Error('A persisted take needs distinct camera identities')
         if(state.cameras.some(camera=>['recording','stopping','ready','uncertain','preparing'].includes(camera.state)))throw new Error('Confirm all recording stopped before resuming collection')
         if(state.cameras.some(camera=>!devices.has(camera.camera)))throw new Error('A camera from this take is unavailable')
         const take=new VideoTake(state.id,state.name,devices,state.maximumMinutes,publish)
@@ -33,14 +45,20 @@ export class VideoTake {
         this.busy=true;this.changed()
         try{
             await Promise.all(this.state.cameras.map(async state=>{try{await this.devices.get(state.camera)!.prepare();state.state='ready'}catch(error){state.state='error';state.error=message(error)}this.changed()}))
-            if(this.stopRequested){await this.closeIdle();this.state.stage='review'}
-            else if(this.state.cameras.some(camera=>camera.state!=='ready')){await this.closeIdle();this.state.stage='attention'}
+            if(this.stopRequested){await this.releasePreparedCameras();this.state.stage='review'}
+            else if(this.state.cameras.some(camera=>camera.state!=='ready')){await this.releasePreparedCameras();this.state.stage='attention'}
             else this.state.stage='armed'
             this.changed();return this.state
         }finally{this.busy=false}
     }
     async start(){
+        if(this.starting)throw new Error('A take start is already in progress')
+        this.starting=true
+        try{return await this.startPrepared()}finally{this.starting=false}
+    }
+    private async startPrepared(){
         if(this.busy||!['preparing','armed'].includes(this.state.stage))throw new Error('This take has already been started')
+        if(this.stopRequested){await this.releasePreparedCameras();this.state.stage='review';this.changed();return this.state}
         if(this.state.stage==='preparing')await this.prepare()
         if(this.state.stage!=='armed')return this.state
         this.busy=true;this.changed()
@@ -57,7 +75,7 @@ export class VideoTake {
     }
     private async stopAttempted(){
         await Promise.all(this.state.cameras.filter(state=>this.attempted.has(state.camera)).map(async state=>{
-            try{const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=result.media;state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(state.camera)}
+            try{const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(state.camera)}
             catch(error){state.state='uncertain';state.error=message(error)}this.changed()
         }))
         this.state.stoppedAt=new Date().toISOString()
@@ -76,7 +94,7 @@ export class VideoTake {
             try{
                 const result=await this.devices.get(camera)!.stop()
                 if(!result.stopped)throw new Error('Camera did not confirm recording stopped')
-                state.state='stopped';state.media=result.media;state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(camera)
+                state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(camera)
             }catch(error){state.state='uncertain';state.error=message(error)}
             if(this.stopRequested)await this.stopAttempted()
             await this.closeIdle()
@@ -87,7 +105,7 @@ export class VideoTake {
     }
     async stop(){
         if(this.busy)throw new Error('A take operation is still running')
-        if(!this.attempted.size){if(['preparing','armed'].includes(this.state.stage)){await this.closeIdle();this.state.stage='review';this.changed()}return this.state}
+        if(!this.attempted.size){if(['preparing','armed'].includes(this.state.stage)){await this.releasePreparedCameras();this.state.stage='review';this.changed()}return this.state}
         this.busy=true;this.state.stage='stopping';this.changed()
         try{await this.stopAttempted();await this.closeIdle();this.state.stage=this.attempted.size?'attention':'review';this.changed();return this.state}finally{this.busy=false}
     }
@@ -101,10 +119,10 @@ export class VideoTake {
                 if(state.state==='collected'||!state.media.length)continue
                 try{
                     delete state.error
-                    const original=state.media
+                    const original=structuredClone(state.media)
                     let files:TakeMedia[]=[]
                     for(let attempt=0;attempt<2;attempt++){
-                        try{files=await this.devices.get(state.camera)!.collect(original,(bytes,total)=>{state.transferredBytes=bytes;state.totalBytes=total;this.changed()});break}
+                        try{files=await this.devices.get(state.camera)!.collect(structuredClone(original),(bytes,total)=>{state.transferredBytes=bytes;state.totalBytes=total;this.changed()});break}
                         catch(error){
                             if(attempt||(error as {retryable?:boolean})?.retryable!==true)throw error
                             state.transferRecovery='Transfer interrupted · reconnecting and retrying automatically'
@@ -112,12 +130,19 @@ export class VideoTake {
                         }
                     }
                     delete state.transferRecovery
-                    if(files.length!==original.length||files.some(file=>!file.verified||!file.downloadUrl||!original.some(source=>source.id===file.id&&source.bytes===file.bytes)))throw new Error('Transferred footage did not match the camera files')
+                    if(!matchesOriginalMedia(original,files))throw new Error('Transferred footage did not match the camera files')
                     state.media=files;state.totalBytes=files.reduce((total,file)=>total+file.bytes,0);state.transferredBytes=state.totalBytes;state.state='collected';delete state.error
                 }catch(error){delete state.transferRecovery;state.error=message(error)}this.changed()
             }
             this.state.stage=this.state.cameras.every(camera=>camera.state==='collected')?'complete':'attention';this.changed();return this.state
         }finally{await this.closeIdle();this.busy=false}
+    }
+    private async releasePreparedCameras(){
+        for(const camera of this.state.cameras)if(['ready','preparing'].includes(camera.state)){
+            camera.state='stopped'
+            camera.warning='Recording was cancelled before this camera started'
+        }
+        await this.closeIdle()
     }
     async closeIdle(){await Promise.allSettled([...this.devices].filter(([camera])=>!this.attempted.has(camera)).map(([,device])=>device.close()))}
     requestStop(){this.stopRequested=true;this.state.stopRequested=true;this.changed()}

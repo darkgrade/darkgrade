@@ -43,3 +43,52 @@ it('bounds repeated transfer failures and clears the active recovery indicator',
  f.devices.get('one')!.collect=async()=>{attempts++;throw Object.assign(new Error('Transfer stalled'),{retryable:true})}
  await f.take.collect();expect(attempts).toBe(2);expect(f.take.state.stage).toBe('attention');expect(f.take.state.cameras[0].transferRecovery).toBeUndefined();expect(f.take.state.cameras[0].error).toBe('Transfer stalled')
 })
+
+
+describe('cancelled preparation and file identity',()=>{
+ it('stops an armed take without leaving ready cameras or issuing record',async()=>{
+  const fixtureState=fixture();let starts=0
+  for(const camera of fixtureState.devices.values())camera.start=async()=>{starts++;return {recordingConfirmed:true,evidence:'started'}}
+  await fixtureState.take.prepare();await fixtureState.take.stop()
+  expect(starts).toBe(0);expect(fixtureState.take.state.stage).toBe('review');expect(fixtureState.take.state.cameras.every(camera=>camera.state==='stopped')).toBe(true)
+  expect(fixtureState.calls.filter(call=>call.startsWith('stop:'))).toHaveLength(0)
+ })
+ it('does not commit record after cancellation of an armed take',async()=>{
+  const fixtureState=fixture();let starts=0
+  for(const camera of fixtureState.devices.values())camera.start=async()=>{starts++;return {recordingConfirmed:true,evidence:'started'}}
+  await fixtureState.take.prepare();fixtureState.take.requestStop();await fixtureState.take.start()
+  expect(starts).toBe(0);expect(fixtureState.take.state.stage).toBe('review');expect(fixtureState.take.state.cameras.every(camera=>camera.state==='stopped')).toBe(true)
+ })
+ it('clears prepared peers when another camera cannot prepare',async()=>{
+  const fixtureState=fixture();fixtureState.devices.get('two')!.prepare=async()=>{throw new Error('No card')}
+  await fixtureState.take.prepare();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].state).toBe('stopped');expect(fixtureState.take.state.cameras[1].state).toBe('error')
+ })
+ it('rejects duplicate transfer results that omit an original file',async()=>{
+  const fixtureState=fixture();fixtureState.devices.get('one')!.stop=async()=>({stopped:true,media:[{id:'a',filename:'a.mp4',bytes:100,verified:true},{id:'b',filename:'b.mp4',bytes:100,verified:true}]})
+  await fixtureState.take.start();await fixtureState.take.stop()
+  fixtureState.devices.get('one')!.collect=async files=>[files[0],files[0]].map(file=>({...file,downloadUrl:'/files/a'}))
+  await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].state).not.toBe('collected');expect(fixtureState.take.state.cameras[0].error).toContain('did not match')
+ })
+ it('rejects changed filenames even when ID and byte count match',async()=>{
+  const fixtureState=fixture();await fixtureState.take.start();await fixtureState.take.stop()
+  fixtureState.devices.get('one')!.collect=async files=>files.map(file=>({...file,filename:'different.mp4',downloadUrl:'/files/'+file.id}))
+  await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention')
+ })
+ it('rejects duplicated saved camera identities before resuming any driver',()=>{
+  const fixtureState=fixture(),state=structuredClone(fixtureState.take.state);state.stage='review';state.cameras=state.cameras.map(camera=>({...camera,state:'stopped',camera:'one'}))
+  expect(()=>VideoTake.resume(state,fixtureState.devices)).toThrow('distinct camera identities')
+ })
+})
+
+
+it('reserves start across the asynchronous prepare-to-record boundary',async()=>{
+ const fixtureState=fixture();let starts=0,competing:Promise<unknown>|undefined
+ for(const camera of fixtureState.devices.values())camera.start=async()=>{starts++;return {recordingConfirmed:true,evidence:'confirmed'}}
+ const take=new VideoTake('race','Race',fixtureState.devices,1,state=>{if(state.stage==='armed'&&!competing)competing=Promise.resolve().then(()=>take.start()).catch(error=>error)})
+ await take.start();expect(await competing).toBeInstanceOf(Error);expect(starts).toBe(2);await take.stop()
+})
+it('a driver cannot change expected file identity by mutating its collection input',async()=>{
+ const fixtureState=fixture();await fixtureState.take.start();await fixtureState.take.stop()
+ fixtureState.devices.get('one')!.collect=async files=>{files[0].bytes=200;return files.map(file=>({...file,downloadUrl:'/files/'+file.id}))}
+ await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].media[0].bytes).toBe(100)
+})
