@@ -34,9 +34,11 @@ describe('camera battery evidence',()=>{
     it('critical charge takes priority over an optimistic time estimate or USB power',()=>{
         const power=normalizeCameraPower('standard',[{name:'BatteryLevel',value:5}])
         expect(assessCameraPower({...power,powerSource:'usb',remainingMinutes:100},30).status).toBe('fail')
+        expect(assessCameraPower({...power,powerSource:'dc',percent:0},30)).toMatchObject({status:'warn',runtimeVerified:false})
     })
     it('does not present old, invalid or future telemetry as current',()=>{
         const power=normalizeCameraPower('standard',[{name:'BatteryLevel',value:100}])
+        expect(assessCameraPower({...power,remainingMinutes:100,lastRefreshError:'Camera busy'},30)).toMatchObject({status:'warn',runtimeVerified:false})
         for(const observedAt of ['invalid',new Date(Date.now()-130000).toISOString(),new Date(Date.now()+60000).toISOString()])expect(assessCameraPower({...power,observedAt,remainingMinutes:100},30).runtimeVerified).toBe(false)
     })
 })

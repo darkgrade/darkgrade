@@ -25,6 +25,7 @@ export function assessCameraPower(power: CameraPower | undefined, plannedMinutes
     if (!Number.isFinite(plannedMinutes) || plannedMinutes <= 0 || !Number.isFinite(reserveMinutes) || reserveMinutes < 0) throw new Error('Expected positive planned minutes and a non-negative reserve')
     const result = (status: CameraPowerAssessment['status'], summary: string, runtimeVerified = false) => ({ status, summary, runtimeVerified, reserveMinutes })
     if (!power || power.lastRefreshError || !Number.isFinite(Date.parse(power.observedAt)) || Date.now() - Date.parse(power.observedAt) > 120_000 || Date.parse(power.observedAt) > Date.now() + 5000) return result('warn', 'Battery needs a fresh reading')
+    if ((power.powerSource==='dc'||power.powerSource==='poe')&&(power.percent!==undefined&&power.percent<=25||power.level==='low'||power.level==='empty'||power.batteryPresent===false)) return result('warn', `Camera reports ${power.powerSource.toUpperCase()} power · backup battery low or absent; runtime unverified`)
     if (power.percent === 0 || power.level === 'empty') return result('fail', 'Battery is empty · connect power before recording')
     if (power.percent !== undefined && power.percent <= 10 || power.level === 'low') return result('fail', 'Battery is critically low · replace it or connect power')
     const minutes = power.remainingMinutes
