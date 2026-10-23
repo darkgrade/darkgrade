@@ -58,3 +58,16 @@ export async function readStandardCameraPower(camera:Pick<Camera,'send'>):Promis
         return normalizeCameraPower('standard',[{name:'BatteryLevel',value:descriptor.currentValueRaw}])
     }catch{return undefined}
 }
+
+/** Reuse an owned camera session for battery telemetry over USB or Sony SDK Wi-Fi. */
+export async function readCameraPower(camera:Pick<Camera,'send'> & {
+    getSonyPropertyStates?:()=>Promise<PowerProperty[]>
+    getCanonPropertyStates?:()=>Promise<PowerProperty[]>
+    getCanonUnknownPropertyStates?:()=>Promise<PowerProperty[]>
+},vendor:'sony'|'canon'|'standard'):Promise<CameraPower|undefined>{
+    if(vendor==='sony'&&camera.getSonyPropertyStates)return normalizeCameraPower('sony',await camera.getSonyPropertyStates())
+    const standard=await readStandardCameraPower(camera)
+    if(standard?.percent!==undefined||vendor==='standard')return standard
+    if(vendor==='canon')return normalizeCameraPower('canon',[...await camera.getCanonPropertyStates?.()||[],...await camera.getCanonUnknownPropertyStates?.()||[]])
+    return undefined
+}

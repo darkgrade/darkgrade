@@ -40,3 +40,17 @@ describe('camera battery evidence',()=>{
         for(const observedAt of ['invalid',new Date(Date.now()-130000).toISOString(),new Date(Date.now()+60000).toISOString()])expect(assessCameraPower({...power,observedAt,remainingMinutes:100},30).runtimeVerified).toBe(false)
     })
 })
+
+it('reads only the standard battery descriptor without a settings write',async()=>{
+    const {readStandardCameraPower}=await import('@vendors/camera-power')
+    const calls:unknown[]=[]
+    const camera={send:async(operation:any,parameters:any)=>{calls.push([operation.code,parameters]);return {code:0x2001,data:{devicePropertyCode:0x5001,currentValueRaw:96}}}}
+    expect(await readStandardCameraPower(camera as any)).toMatchObject({percent:96,powerSource:'unknown'})
+    expect(calls).toEqual([[0x1014,{DevicePropCode:0x5001}]])
+    expect(await readStandardCameraPower({send:async()=>{throw new Error('Not supported')}} as any)).toBeUndefined()
+})
+it('Sony owned-session battery polling uses existing properties without standard PTP or reconnect',async()=>{
+    const {readCameraPower}=await import('@vendors/camera-power')
+    const camera={getSonyPropertyStates:async()=>[{name:'BatteryRemain',value:'79'}],send:async()=>{throw new Error('No second protocol path')}}
+    expect(await readCameraPower(camera as any,'sony')).toMatchObject({percent:79,source:'sony-sdk'})
+})
