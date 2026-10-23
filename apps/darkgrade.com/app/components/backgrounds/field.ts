@@ -28,7 +28,7 @@ export const CONTOUR_BACKGROUND_ENABLED: boolean = false
 export const VIDEO_BACKGROUND_ENABLED: boolean = true
 
 /** The Mux playback ID of the video behind the page. public/bg-poster.jpg is its still. */
-export const BACKGROUND_VIDEO_ID = 'rR8P8mSaKDzz02TsftugTUdI00cQPJX00oy'
+export const BACKGROUND_VIDEO_ID = '5jSc3eg7Fh9OgGyz00kRt6gthd1KEWgwxqjmvLlJkp9M'
 
 const frac = (x: number) => x - Math.floor(x)
 
