@@ -1,6 +1,7 @@
 /** Camera telemetry only. A configured outlet or USB cable is not power-source evidence. */
 export interface CameraPower {
     observedAt: string
+    lastRefreshError?: string
     source: string
     percent?: number
     level?: 'empty' | 'low' | 'medium' | 'high' | 'full'
@@ -23,7 +24,7 @@ export interface CameraPowerAssessment {
 export function assessCameraPower(power: CameraPower | undefined, plannedMinutes: number, reserveMinutes = 5): CameraPowerAssessment {
     if (!Number.isFinite(plannedMinutes) || plannedMinutes <= 0 || !Number.isFinite(reserveMinutes) || reserveMinutes < 0) throw new Error('Expected positive planned minutes and a non-negative reserve')
     const result = (status: CameraPowerAssessment['status'], summary: string, runtimeVerified = false) => ({ status, summary, runtimeVerified, reserveMinutes })
-    if (!power || !Number.isFinite(Date.parse(power.observedAt)) || Date.now() - Date.parse(power.observedAt) > 120_000 || Date.parse(power.observedAt) > Date.now() + 5000) return result('warn', 'Battery needs a fresh reading')
+    if (!power || power.lastRefreshError || !Number.isFinite(Date.parse(power.observedAt)) || Date.now() - Date.parse(power.observedAt) > 120_000 || Date.parse(power.observedAt) > Date.now() + 5000) return result('warn', 'Battery needs a fresh reading')
     if (power.percent === 0 || power.level === 'empty') return result('fail', 'Battery is empty · connect power before recording')
     if (power.percent !== undefined && power.percent <= 10 || power.level === 'low') return result('fail', 'Battery is critically low · replace it or connect power')
     const minutes = power.remainingMinutes
