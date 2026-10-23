@@ -27,8 +27,8 @@ export const CONTOUR_BACKGROUND_ENABLED: boolean = false
  */
 export const VIDEO_BACKGROUND_ENABLED: boolean = true
 
-/** The YouTube video behind the page ("bg hq v2" on @darkgradehq). public/bg-poster.jpg is its still. */
-export const BACKGROUND_VIDEO_ID = 'NoIrXIQswGo'
+/** The Mux playback ID of the video behind the page. public/bg-poster.jpg is its still. */
+export const BACKGROUND_VIDEO_ID = 'rR8P8mSaKDzz02TsftugTUdI00cQPJX00oy'
 
 const frac = (x: number) => x - Math.floor(x)
 

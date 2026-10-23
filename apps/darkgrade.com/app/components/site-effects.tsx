@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react'
 import { getBgMode, setBgMode, subscribeBgMode } from './background-mode'
 import { createBackgrounds } from './backgrounds'
 import { BACKGROUND_VIDEO_ID, CONTOUR_BACKGROUND_ENABLED, VIDEO_BACKGROUND_ENABLED } from './backgrounds/field'
-import { createYouTubeBackdrop } from './backgrounds/youtube'
+import { createMuxBackdrop } from '@/app/components/backgrounds/mux'
 import { formatStatValue } from './stats'
 
 /**
@@ -139,10 +139,9 @@ export function SiteEffects() {
         /* ============ video backdrop ============
            reduced motion never loads the player at all: those visitors keep
            the poster frame, and nothing streams. */
-        const videoMount = document.getElementById('bgyt-mount')
-        const videoFrame = document.getElementById('bgyt')
-        if (videoMount && videoFrame && !reduced) {
-            teardown.push(createYouTubeBackdrop(videoMount, videoFrame, BACKGROUND_VIDEO_ID))
+        const video = document.getElementById('bgvideo')
+        if (video instanceof HTMLVideoElement && !reduced) {
+            teardown.push(createMuxBackdrop(video, video, BACKGROUND_VIDEO_ID))
         }
 
         /* ============ dim layer ============
@@ -505,7 +504,7 @@ export function SiteEffects() {
         }
     }, [pathname])
 
-    // `#bg`, `#gl`, `#contours`, `#bgyt`, `#dim`, `.cursor-dot` and `.cursor-ring`
+    // `#bg`, `#gl`, `#contours`, `#bgvideo`, `#dim`, `.cursor-dot` and `.cursor-ring`
     // are the effect's own hooks. A canvas is a replaced element, so width:auto would
     // leave it at its intrinsic 300x150 - both need an explicit box, and 100lvh
     // covers the strip a retracting mobile toolbar vacates. #bg carries the
@@ -514,21 +513,21 @@ export function SiteEffects() {
         <>
             <div id="bg" className="fixed top-0 left-0 z-0 h-[100lvh] w-full opacity-0">
                 {VIDEO_BACKGROUND_ENABLED ? (
-                    // The poster is a still of the video: it shows until the player is
-                    // playing, under reduced motion, and if YouTube never loads.
-                    // #bgyt is sized to cover the box at 16:9, then made 200px taller so
-                    // the title bar YouTube pins to the player's top edge sits off-screen.
-                    // It never takes a pointer, so no hover chrome ever appears.
+                    // The poster is a still of the video: it shows until the video is
+                    // playing, under reduced motion, and if the stream never loads.
                     <div
                         aria-hidden="true"
                         className="absolute inset-0 overflow-hidden bg-[url(/bg-poster.jpg)] bg-cover bg-center"
                     >
-                        <div
-                            id="bgyt"
-                            className="pointer-events-none absolute top-1/2 left-1/2 h-[calc(max(100lvh,56.25vw)+200px)] w-[max(100vw,177.78lvh)] -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity duration-700 [&_iframe]:pointer-events-none [&_iframe]:h-full [&_iframe]:w-full"
-                        >
-                            <div id="bgyt-mount" />
-                        </div>
+                        <video
+                            id="bgvideo"
+                            className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-700"
+                            muted
+                            loop
+                            playsInline
+                            preload="auto"
+                            disablePictureInPicture
+                        />
                     </div>
                 ) : (
                     <canvas id="gl" className="absolute inset-0 h-full w-full" />
