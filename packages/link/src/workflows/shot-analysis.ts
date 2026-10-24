@@ -48,14 +48,22 @@ async function reviewScene(image:Uint8Array):Promise<ShotAnalysis['scene']>{
 export function measureShot(rgb:Uint8Array,width:number,height:number):ShotMetrics {
  if(width<8||height<8||rgb.length!==width*height*3)throw new Error('Invalid visual reference')
  const values:number[]=[],luma=new Float32Array(width*height);let clipped=0,dark=0,detail=0,edges=0,neutral=0,red=0,blue=0
+ const highlightBins=new Uint32Array(256);let aboveVideoWhite=0
  // Exclude HDMI overlays and borders from metering.
  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const i=y*width+x,o=i*3;luma[i]=(.2126*rgb[o]+.7152*rgb[o+1]+.0722*rgb[o+2])/255}
  for(let y=Math.floor(height*.15);y<height*.85;y++)for(let x=Math.floor(width*.15);x<width*.85;x++){
   const i=y*width+x,o=i*3,v=luma[i];values.push(v);if(v>.97)clipped++;if(v<.04)dark++
+  // Some HDMI capture paths preserve legal-range white (235) inside JPEG.
+  // Detect a broad neutral plateau, not merely a bright percentile or white wall.
+  const minimum=Math.min(rgb[o],rgb[o+1],rgb[o+2]),maximum=Math.max(rgb[o],rgb[o+1],rgb[o+2])
+  if(maximum-minimum<=3)highlightBins[Math.round(v*255)]++
+  if(v>240/255)aboveVideoWhite++
   const lap=4*v-luma[i-1]-luma[i+1]-luma[i-width]-luma[i+width];detail+=lap*lap;edges++
   const channels=[rgb[o],rgb[o+1],rgb[o+2]],max=Math.max(...channels),min=Math.min(...channels)
   if(max>40&&max<235&&(max-min)/max<.18){neutral++;red+=rgb[o];blue+=rgb[o+2]}
  }
+ const videoWhitePeak=Math.max(...highlightBins.subarray(233,238))
+ if(videoWhitePeak/values.length>.025&&aboveVideoWhite/values.length<.005)clipped=Math.max(clipped,videoWhitePeak)
  values.sort((a,b)=>a-b);return {median:values[Math.floor(values.length*.5)],p95:values[Math.floor(values.length*.95)],clipped:clipped/values.length,dark:dark/values.length,detail:detail/edges,neutralPixels:neutral/values.length,redBlueRatio:blue?red/blue:1}
 }
 export function describeShot(metrics:ShotMetrics):Pick<ShotAnalysis,'exposure'|'focus'|'colour'>{return {exposure:metrics.clipped>.025||metrics.median>.72?'bright':((metrics.median<.08&&metrics.p95<.4)||(metrics.median<.16&&metrics.dark>.25&&metrics.p95<.8))?'dark':'balanced',focus:metrics.detail>.00035?'detail-visible':'soft',colour:metrics.neutralPixels<.03?'unknown':metrics.redBlueRatio>.85&&metrics.redBlueRatio<1.18?'neutral':'cast'}}

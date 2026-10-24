@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest'
-import {describeShot} from '@workflows/shot-analysis'
+import {describeShot,measureShot} from '@workflows/shot-analysis'
 import {optimiseShot} from '@workflows/shot-setup'
 import type {ShotAnalysis} from '@workflows/shot-analysis'
 const balanced:ShotAnalysis={metrics:{median:.4,p95:.7,clipped:0,dark:0,detail:.003,neutralPixels:.2,redBlueRatio:1},exposure:'balanced',focus:'detail-visible',colour:'neutral',method:'fixture',durationMilliseconds:1}
@@ -40,4 +40,15 @@ it('uses advertised video cadence and fixed ISO together without changing the co
  const writes:string[]=[]
  const result=await optimiseShot({image:new Uint8Array(),controls,frameRate:25,publish:()=>{},analyse:async()=>balanced,apply:async(action,value)=>{writes.push(action);if(action==='set-iso')controls.iso.value=value;if(action==='set-shutter-speed')controls.shutterSpeed.value=value;return controls},recapture:async()=>new Uint8Array()})
  expect(writes).toEqual(['set-shutter-speed','set-iso']);expect(controls.shutterSpeed.value).toBe('1/50');expect(controls.iso.value).toBe('400');expect(controls.whiteBalance.value).toBe('Daylight');expect(result.exposureVerified).toBe(true)
+})
+
+it('detects the legal-range HDMI white plateau that hid Sony overexposure',()=>{
+ const width=160,height=90,rgb=new Uint8Array(width*height*3)
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){const value=x>100?235:90;rgb.fill(value,(y*width+x)*3,(y*width+x)*3+3)}
+ const metrics=measureShot(rgb,width,height)
+ expect(metrics.median).toBeLessThan(.72);expect(metrics.clipped).toBeGreaterThan(.1)
+ expect(describeShot(metrics).exposure).toBe('bright')
+ // A bright but non-clipped textured gradient does not have the plateau.
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++)rgb.fill(100+(x+y)%136,(y*width+x)*3,(y*width+x)*3+3)
+ expect(describeShot(measureShot(rgb,width,height)).exposure).toBe('balanced')
 })
