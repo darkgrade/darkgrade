@@ -275,33 +275,8 @@ export class SonyCamera extends GenericCamera {
         for (const descriptor of response.data.properties) {
             this.propertyCache.set(descriptor.devicePropertyCode, descriptor)
         }
-        const dashboardProperties = [
-            this.registry.properties.Aperture,
-            this.registry.properties.ShutterSpeed,
-            this.registry.properties.Iso,
-            this.registry.properties.WhiteBalance,
-            this.registry.properties.FocusMode,
-            this.registry.properties.CompressionSetting,
-            this.registry.properties.SonyImageSize,
-            this.registry.properties.AspectRatio,
-            this.registry.properties.ColorTemperature,
-            this.registry.properties.ZoomPosition,
-            this.registry.properties.StillFileFormat,
-            this.registry.properties.JpegQuality,
-            this.registry.properties.MovieFileFormat,
-            this.registry.properties.MovieRecordingSetting,
-            this.registry.properties.MovieRecordingState,
-            this.registry.properties.ZoomEnableStatus,
-            this.registry.properties.ZoomScale,
-            this.registry.properties.ZoomBarInfo,
-            this.registry.properties.ZoomSpeed,
-            this.registry.properties.ZoomSetting,
-            this.registry.properties.ZoomTypeStatus,
-        ]
-        for (const property of dashboardProperties) {
-            if (this.propertyCache.has(property.code)) continue
-            await this.readDescriptor(property.code).catch(() => undefined)
-        }
+        // The inventory is authoritative. Probing absent legacy properties can
+        // stall newer bodies (FX2 hangs on unadvertised CompressionSetting).
         return this.listPropertyStates()
     }
 

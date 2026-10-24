@@ -33,6 +33,7 @@ function sonyCamera() {
     const sets: Array<{ name: string; value: unknown }> = []
     camera.send = (async (operation, params, data) => {
         operations.push({ name: operation.name, params, data: data ? [...data] : undefined })
+        if (operation.name === 'SDIO_GetAllExtDevicePropInfo') return {code:0x2001,data:{properties:[]}}
         if (operation.name === 'SDIO_GetOsdImage') return { code: 0x2001, data: osdPayload(PNG_SIGNATURE) }
         return { code: 0x2001 }
     }) as typeof camera.send
@@ -115,4 +116,13 @@ describe('Sony body menu session', () => {
             ])
         })
     }
+})
+
+
+describe('Sony camera property inventory',()=>{
+    it('does not probe unadvertised legacy properties after a complete inventory',async()=>{
+        const {camera,operations}=sonyCamera()
+        expect(await camera.refreshPropertyStates()).toEqual([])
+        expect(operations.map(operation=>operation.name)).toEqual(['SDIO_GetAllExtDevicePropInfo'])
+    })
 })

@@ -70,6 +70,72 @@ describe('Canon camera controls', () => {
         expect(operations.filter(name => name === 'CanonSetPropValue')).toHaveLength(3)
     })
 
+    it('enables Manual exposure with verified readback and avoids a redundant write', async () => {
+        const {camera} = testCamera()
+        let mode = 15, writes = 0
+        camera.get = (async () => mode) as typeof camera.get
+        camera.set = (async (property, value) => {expect(property.name).toBe('CanonAutoExposureMode');mode = Number(value);writes++}) as typeof camera.set
+        await camera.setManualExposureMode()
+        expect(mode).toBe(3)
+        await camera.setManualExposureMode()
+        expect(writes).toBe(1)
+        camera.get = (async () => 15) as typeof camera.get
+        await expect(camera.setManualExposureMode()).rejects.toThrow('did not confirm')
+    })
+
+    it('maps Canon documented movie audio values without confusing Disable and Auto', () => {
+        const registry = createCanonRegistry(true)
+        const codec = registry.properties.CanonMovieSoundRecording.codec(registry)
+        expect(codec.decode(registry.codecs.uint32.encode(1)).value).toBe('disabled')
+        expect(codec.decode(registry.codecs.uint32.encode(2)).value).toBe('auto')
+        expect(codec.decode(registry.codecs.uint32.encode(3)).value).toBe('manual')
+    })
+
+    it('enables disabled movie audio through Manual AE and restores the previous movie exposure mode', async () => {
+        const {camera} = testCamera()
+        const property = camera.registry.properties.CanonMovieSoundRecording
+        const cache = (camera as any).propertyCache
+        cache.set(property, {current: 'disabled', allowed: ['auto', 'manual', 'disabled']})
+        let mode = 22
+        const writes: unknown[] = []
+        camera.get = (async target => target.code === property.code ? cache.get(property).current : mode) as typeof camera.get
+        camera.set = (async (target, value) => {
+            writes.push([target.name, value])
+            if (target.code === property.code) {expect(mode).toBe(3);cache.set(property, {...cache.get(property), current: value})}
+            else mode = Number(value)
+        }) as typeof camera.set
+        await expect(camera.ensureMovieSoundRecording()).resolves.toBe(true)
+        expect(writes).toEqual([['CanonAutoExposureMode', 3], ['CanonMovieSoundRecording', 'auto'], ['CanonAutoExposureMode', 22]])
+        expect(mode).toBe(22)
+        await expect(camera.ensureMovieSoundRecording()).resolves.toBe(false)
+        expect(writes).toHaveLength(3)
+    })
+
+    it('preserves manual audio and rejects unadvertised automatic sound values', async () => {
+        const {camera} = testCamera()
+        const property = camera.registry.properties.CanonMovieSoundRecording
+        const cache = (camera as any).propertyCache
+        cache.set(property, {current: 'manual', allowed: ['auto', 'manual', 'disabled']})
+        await expect(camera.ensureMovieSoundRecording()).resolves.toBe(false)
+        cache.set(property, {current: 'disabled', allowed: ['disabled']})
+        await expect(camera.ensureMovieSoundRecording()).rejects.toThrow('did not advertise')
+        await expect(camera.setMovieSoundRecording('auto')).rejects.toThrow('not advertised')
+    })
+
+    it('restores exposure mode when a sound write fails and does not treat it as enabled', async () => {
+        const {camera} = testCamera()
+        const property = camera.registry.properties.CanonMovieSoundRecording
+        ;(camera as any).propertyCache.set(property, {current: 'disabled', allowed: ['auto', 'disabled']})
+        let mode = 22
+        camera.get = (async () => mode) as typeof camera.get
+        camera.set = (async (target, value) => {
+            if (target.code === property.code) throw new Error('Audio rejected')
+            mode = Number(value)
+        }) as typeof camera.set
+        await expect(camera.ensureMovieSoundRecording()).rejects.toThrow('Audio rejected')
+        expect(mode).toBe(22)
+    })
+
     it('drives and always releases standalone autofocus', async () => {
         const { camera, operations } = testCamera()
 
@@ -171,4 +237,48 @@ describe('Canon camera controls', () => {
         })
         await expect(camera.setNetworkCommunicationMode(1)).rejects.toThrow('was not advertised')
     })
+})
+
+
+describe('Canon interrupted recording Stop',()=>{
+    it('accepts freshly read idle state without sending another stop write',async()=>{
+        const {camera}=testCamera();let reads=0,writes=0
+        const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
+        cache.set(property,{current:'CARD'})
+        camera.send=(async()=>{reads++;cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
+        camera.set=(async()=>{writes++}) as typeof camera.set
+        await camera.stopRecording();expect(reads).toBe(1);expect(writes).toBe(0)
+    })
+    it('does not treat missing recording telemetry as idle',async()=>{
+        const {camera}=testCamera();camera.set=(async()=>{throw new Error('Unconfirmed stop')}) as typeof camera.set
+        await expect(camera.stopRecording()).rejects.toThrow('Unconfirmed stop')
+    })
+    it('retries busy Stop and accepts idle only after camera readback',async()=>{
+        const {camera}=testCamera();const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
+        cache.set(property,{current:'CARD'});let writes=0,reads=0
+        camera.send=(async()=>{if(++reads===2)cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
+        camera.set=(async()=>{writes++;throw Object.assign(new Error('busy'),{code:0x2019})}) as typeof camera.set
+        await camera.stopRecording();expect(writes).toBe(1);expect(reads).toBe(2)
+    })
+})
+
+it('accepts EOS movie standby after reconnect without issuing Record or switching modes',async()=>{
+    const {camera}=testCamera();const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
+    cache.set(property,{current:'SDRAM'});let writes=0
+    camera.set=(async()=>{writes++}) as typeof camera.set
+    camera.enterMovieMode=async()=>{throw new Error('Must not change mode')}
+    await camera.stopRecording();expect(writes).toBe(0)
+})
+
+it('waits through transient Canon movie-switch busy without repeating recording',async()=>{
+ const {camera}=testCamera();let attempts=0
+ camera.send=(async operation=>{expect(operation.name).toBe('CanonMovieSelectSwitchOn');return {code:++attempts<3?0x2019:0x2001}}) as typeof camera.send
+ await camera.enterMovieMode();expect(attempts).toBe(3)
+})
+it('bounds Canon movie-switch busy and rejects other errors immediately',async()=>{
+ const {camera}=testCamera();let attempts=0
+ camera.send=(async()=>{attempts++;return {code:0x2019}}) as typeof camera.send
+ await expect(camera.enterMovieMode()).rejects.toThrow('0x2019');expect(attempts).toBe(4)
+ attempts=0;camera.send=(async()=>{attempts++;return {code:0x2005}}) as typeof camera.send
+ await expect(camera.enterMovieMode()).rejects.toThrow('0x2005');expect(attempts).toBe(1)
 })

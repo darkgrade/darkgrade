@@ -1,0 +1,4 @@
+# Audited public PostHog browser project token in docs config.
+# https://posthog.com/docs/feature-flags/installation
+# Only this historical finding; new keys/locations remain scanned.
+297f9651e12acdcea7db08a382cc496269007d7b:apps/docs/docs.json:generic-api-key:20
