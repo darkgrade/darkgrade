@@ -17,3 +17,5 @@ The Olympus E-PL5 hardware test exposes battery and writable date/time in MTP mo
 ## Video shoots
 
 Use the shared [video shooting APIs](docs/video-shooting.md) for multi-camera takes, verified original transfer, video exposure setup and persistent per-camera evidence. `VideoTake` accepts camera adapters; `UsbVideoRecording` and `SonyVideoRecording` implement the recording/media operations. Applications own process leases, storage and their UI.
+
+Validate the built ESM and CommonJS package entries with `bun run test:package` from this directory. This imports the public package under Node and does not connect to hardware.
