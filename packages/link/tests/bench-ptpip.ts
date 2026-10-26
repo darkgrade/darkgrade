@@ -401,6 +401,7 @@ try {
         device: {
             manufacturer: deviceInfo.data.manufacturer,
             model: deviceInfo.data.model,
+            deviceVersion: deviceInfo.data.deviceVersion,
             serialNumber: deviceInfo.data.serialNumber,
             operationsSupportedRaw: deviceInfo.data.operationsSupportedRaw,
         },

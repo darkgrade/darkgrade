@@ -10,6 +10,7 @@ type ProbeOutput = {
     device?: {
         manufacturer?: string
         model?: string
+        deviceVersion?: string
         serialNumber?: string
         vendorId: number
         productId: number
@@ -63,6 +64,7 @@ try {
         device: {
             manufacturer: response.data.manufacturer,
             model: response.data.model,
+            deviceVersion: response.data.deviceVersion,
             serialNumber: response.data.serialNumber,
             operationsSupportedRaw: response.data.operationsSupportedRaw,
             ...identifier,
