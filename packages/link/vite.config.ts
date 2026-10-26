@@ -13,6 +13,7 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
+            '@workflows': resolve(__dirname, './src/workflows'),
             '@vendors': resolve(__dirname, './src/vendors'),
             '@camera': resolve(__dirname, './src/camera'),
             '@core': resolve(__dirname, './src/core'),
@@ -28,7 +29,7 @@ export default defineConfig({
             entry: resolve(__dirname, 'src/index.ts'),
             name: 'Fuse',
             formats: ['es', 'cjs'],
-            fileName: format => `index.${format === 'es' ? 'mjs' : 'js'}`,
+            fileName: format => `index.${format === 'es' ? 'mjs' : 'cjs'}`,
         },
         rollupOptions: {
             external: [

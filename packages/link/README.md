@@ -13,3 +13,9 @@ Canon USB live-view JPEG capture, preview magnification, color temperature and l
 Use `camera.getStandardPropertyStates()` for generic PTP and Olympus bodies. It returns only recognized properties advertised by the attached camera, including live value, writability, enum choices, and ranges. `camera.setStandardProperty(name, value)` rejects absent/read-only properties and unadvertised enum values before writing.
 
 The Olympus E-PL5 hardware test exposes battery and writable date/time in MTP mode, but no ISO, aperture, shutter, white balance, focus, or remote-capture operation. Newer Olympus bodies automatically gain whatever standard controls they actually publish; support is not inferred from the brand name.
+
+## Video shoots
+
+Use the shared [video shooting APIs](docs/video-shooting.md) for multi-camera takes, verified original transfer, video exposure setup and persistent per-camera evidence. `VideoTake` accepts camera adapters; `UsbVideoRecording` and `SonyVideoRecording` implement the recording/media operations. Applications own process leases, storage and their UI.
+
+Validate the built ESM and CommonJS package entries with `bun run test:package` from this directory. This imports the public package under Node and does not connect to hardware.

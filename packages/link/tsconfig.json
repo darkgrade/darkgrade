@@ -10,6 +10,7 @@
         "rootDir": ".",
         "baseUrl": ".",
         "paths": {
+            "@workflows/*": ["src/workflows/*"],
             "@camera/*": ["src/camera/*"],
             "@core/*": ["src/core/*"],
             "@transport/*": ["src/transport/*"],

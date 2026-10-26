@@ -208,6 +208,13 @@ describe('Canon live-view lifecycle and controls', () => {
         expect(writes).toEqual([3, 1])
     })
 
+    it('starts both camera and host output from standby and restores standby', async () => {
+        const {camera,writes}=connectedCamera('NONE')
+        await camera.captureLiveView()
+        await camera.stopLiveView()
+        expect(writes).toEqual([3,0])
+    })
+
     it('preserves host output owned by another workflow', async () => {
         const { camera, writes } = connectedCamera('HOST')
         await camera.captureLiveView()

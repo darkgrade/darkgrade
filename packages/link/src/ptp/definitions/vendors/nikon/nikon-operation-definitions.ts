@@ -78,6 +78,17 @@ export const GetPartialObjectEx = {
     ] as const,
 } as const satisfies OperationDefinition
 
+export const GetVendorCodes = {
+    code: 0x9439,
+    name: 'GetVendorCodes',
+    description: 'Enumerate Nikon extended vendor codes (kind 13 selects device properties)',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'Kind', description: 'Vendor code category; 13 for device properties', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const GetDevicePropDescEx = {
     code: 0x943a,
     name: 'GetDevicePropDescEx',
@@ -246,7 +257,55 @@ export const ChangeApplicationMode = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+/** Nikon activation commands; completion is reported by DeviceReady. */
+export const AfDrive = {
+    code: 0x90c1,
+    name: 'AfDrive',
+    description: 'Drive autofocus without releasing the shutter',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const AfDriveCancel = {
+    code: 0x9206,
+    name: 'AfDriveCancel',
+    description: 'Cancel autofocus drive',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const ChangeAfArea = {
+    code: 0x9205,
+    name: 'ChangeAfArea',
+    description: 'Place the autofocus area in Nikon live-view whole-size coordinates',
+    dataDirection: 'none',
+    operationParameters: [
+        { name: 'X', description: 'Horizontal coordinate', codec: baseCodecs.uint32, required: true },
+        { name: 'Y', description: 'Vertical coordinate', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const MfDrive = {
+    code: 0x9204,
+    name: 'MfDrive',
+    description: 'Drive manual focus by bounded lens steps in live view',
+    dataDirection: 'none',
+    operationParameters: [
+        { name: 'Direction', description: '1 nearer, 2 farther', codec: baseCodecs.uint32, required: true },
+        { name: 'Steps', description: 'Number of lens steps', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const nikonOperationRegistry = {
+    GetVendorCodes,
+    AfDrive,
+    AfDriveCancel,
+    ChangeAfArea,
+    MfDrive,
     GetPartialObjectEx,
     GetDevicePropDescEx,
     GetDevicePropValueEx,

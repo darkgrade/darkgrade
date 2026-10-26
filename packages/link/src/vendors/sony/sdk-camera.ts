@@ -1,5 +1,6 @@
 import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@camera/sony-camera'
 import { performSonySdkControl } from '@vendors/sony/sdk-controls'
+import { sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 import { SONY_SDK_NAMED_PROPERTIES } from '@vendors/sony/sdk-property-codes'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 
@@ -9,12 +10,22 @@ export interface SonySdkBridge {
     close(): Promise<void>
 }
 
+export type SonyWifiCameraModel = 'ILCE-6700' | 'ILME-FX2'
+
+export interface SonyBluetoothDirectAuthentication {
+    host: string
+    mac: string
+    model: SonyWifiCameraModel
+    bluetoothAddress: string
+}
+
 export interface SonyWifiAuthentication {
     host: string
     mac: string
     username: string
     password: string
     fingerprint: string
+    model?: SonyWifiCameraModel
 }
 
 export interface SonySdkProperty {
@@ -32,6 +43,9 @@ const propertyCodes = {
     ...SONY_SDK_NAMED_PROPERTIES,
     S1: 1,
     Aperture: 256,
+    ApertureMode: 310,
+    ShutterMode: 311,
+    IsoMode: 312,
     ExposureCompensation: 257,
     ShutterSpeed: 259,
     ISO: 260,
@@ -94,6 +108,8 @@ export function validateSonyWifiAuthentication(authentication: SonyWifiAuthentic
         throw new Error('Sony Wi-Fi requires a valid IPv4 camera address')
     if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.mac))
         throw new Error('Sony Wi-Fi requires the camera MAC address')
+    if (authentication.model !== undefined && !['ILCE-6700', 'ILME-FX2'].includes(authentication.model))
+        throw new Error('Unsupported Sony Wi-Fi camera model')
     if (!authentication.username || !authentication.password || !authentication.fingerprint)
         throw new Error('Sony Wi-Fi requires runtime username, password, and a trusted camera fingerprint')
     if (
@@ -114,6 +130,25 @@ function numericValue(value: unknown): string {
     return result
 }
 
+function validateSonyBluetoothDirectAuthentication(authentication: SonyBluetoothDirectAuthentication): void {
+    if (
+        !authentication ||
+        ['host', 'mac', 'model', 'bluetoothAddress'].some(
+            field => typeof (authentication as unknown as Record<string, unknown>)[field] !== 'string'
+        )
+    )
+        throw new Error('Sony Bluetooth Direct requires the camera IP, MAC, model, and Bluetooth address')
+    const segments = authentication.host.split('.')
+    if (segments.length !== 4 || segments.some(segment => !/^\d{1,3}$/.test(segment) || Number(segment) > 255))
+        throw new Error('Sony Bluetooth Direct requires a valid IPv4 camera address')
+    if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.mac))
+        throw new Error('Sony Bluetooth Direct requires the camera MAC address')
+    if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.bluetoothAddress))
+        throw new Error('Sony Bluetooth Direct requires the camera Bluetooth MAC address')
+    if (!['ILCE-6700', 'ILME-FX2'].includes(authentication.model))
+        throw new Error('Unsupported Sony Bluetooth Direct camera model')
+}
+
 /**
  * Camera control over an authenticated Wi-Fi SDK session.
  * SDK property IDs differ from USB PTP IDs. This backend uses the SDK's public
@@ -121,6 +156,9 @@ function numericValue(value: unknown): string {
  */
 export class SonyWifiCamera {
     private connected = false
+    private connectionTransport: 'usb' | 'wifi' | undefined
+    private osdEnabled = false
+    private monitoringAttempted = false
 
     constructor(private readonly bridge: SonySdkBridge) {}
 
@@ -135,7 +173,12 @@ export class SonyWifiCamera {
         if (this.connected) throw new Error('Sony Wi-Fi camera is already connected')
         validateSonyWifiAuthentication(authentication)
         for (let attempt = 0; attempt < 3; attempt++) {
-            const identity = { ip: authentication.host, mac: authentication.mac, ssh: '1' }
+            const identity = {
+                ip: authentication.host,
+                mac: authentication.mac,
+                ssh: '1',
+                ...(authentication.model ? { model: authentication.model } : {}),
+            }
             let result: Record<string, unknown>
             try {
                 result = await this.bridge.request({ cmd: 'fingerprint', ...identity })
@@ -170,6 +213,29 @@ export class SonyWifiCamera {
             }
         }
         this.connected = true
+        this.connectionTransport = 'wifi'
+    }
+
+    /** Connect to the Wi-Fi Direct session already established through trusted Bluetooth control. */
+    async connectBluetoothDirect(
+        authentication: SonyBluetoothDirectAuthentication,
+        options: { mode?: 'remote' | 'remote-transfer' } = {}
+    ): Promise<void> {
+        if (this.connected) throw new Error('Sony SDK camera is already connected')
+        validateSonyBluetoothDirectAuthentication(authentication)
+        if (options.mode !== undefined && !['remote', 'remote-transfer'].includes(options.mode))
+            throw new Error('Unsupported Sony Bluetooth Direct connection mode')
+        await this.bridge.request({
+            cmd: 'connect_bluetooth_direct',
+            ip: authentication.host,
+            mac: authentication.mac,
+            ssh: '0',
+            model: authentication.model,
+            bluetoothAddress: authentication.bluetoothAddress,
+            ...(options.mode ? { mode: options.mode } : {}),
+        })
+        this.connected = true
+        this.connectionTransport = 'wifi'
     }
 
     /** Open the same official SDK over USB for guarded preparation and readback. */
@@ -178,10 +244,14 @@ export class SonyWifiCamera {
         if (!/^[A-Za-z0-9_-]{1,64}$/.test(serial)) throw new Error('Invalid Sony USB serial')
         await this.bridge.request({ cmd: 'connect', serial, ...(options.mode ? { mode: options.mode } : {}) })
         this.connected = true
+        this.connectionTransport = 'usb'
     }
 
     async disconnect(): Promise<void> {
         this.connected = false
+        this.connectionTransport = undefined
+        this.osdEnabled = false
+        this.monitoringAttempted = false
         try {
             await this.bridge.request({ cmd: 'disconnect' })
         } finally {
@@ -365,6 +435,18 @@ export class SonyWifiCamera {
         }
     }
 
+    /** Read focus telemetry while half-press is held; release can clear the acquired frame. */
+    async autofocusWithEvidence(durationMilliseconds = 2500): Promise<{focusAcquired:boolean;frames:Record<string,unknown>[]}> {
+        if(!Number.isInteger(durationMilliseconds)||durationMilliseconds<100||durationMilliseconds>5000)throw new Error('Autofocus duration must be 100–5000 milliseconds')
+        let frames:Record<string,unknown>[]=[]
+        try{
+            await this.writeProperty(propertyCodes.S1,2,2)
+            const deadline=Date.now()+durationMilliseconds
+            do{await new Promise(resolve=>setTimeout(resolve,100));frames=await this.getSonyFocusFrames();if(frames.some(frame=>frame.state===2))return {focusAcquired:true,frames}}while(Date.now()<deadline)
+            return {focusAcquired:false,frames}
+        }finally{await this.writeProperty(propertyCodes.S1,2,1)}
+    }
+
     async setSonyAfAreaPosition(x: number, y: number): Promise<void> {
         if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x > 639 || y < 0 || y > 479)
             throw new Error('AF-area position must be within 640×480')
@@ -471,7 +553,8 @@ export class SonyWifiCamera {
         const before = await this.getSonyFocusFrames()
         if (!['4', '5', '6', '7'].includes(area.value)) await this.setSonySetting('FocusArea', 4)
         await this.setSonyAfAreaPosition(x, y)
-        const deadline = Date.now() + 6000
+        const started = Date.now(), deadline = started + 6000
+        let positionRepeated = false
         let frames: Record<string, unknown>[] = [],
             matched: Record<string, unknown> | undefined
         do {
@@ -484,6 +567,12 @@ export class SonyWifiCamera {
                     Math.abs((Number(frame.xNumerator) * 640) / Number(frame.xDenominator) - x) <= 4 &&
                     Math.abs((Number(frame.yNumerator) * 480) / Number(frame.yDenominator) - y) <= 4
             )
+            if (!matched && !positionRepeated && Date.now() - started >= 1000) {
+                // The first position can arrive while a new remote session is still settling.
+                // Repeating that same point is idempotent; verify telemetry rather than infer success.
+                await this.setSonyAfAreaPosition(x, y)
+                positionRepeated = true
+            }
         } while (!matched && Date.now() < deadline)
         if (!matched)
             throw new Error('The camera did not confirm the requested AF point in its live-view frame information')
@@ -498,18 +587,25 @@ export class SonyWifiCamera {
         }
     }
 
-    async getRecentSonyContents(): Promise<Record<string, unknown>[]> {
+    async getRecentSonyContents(options: {all?:boolean} = {}): Promise<Record<string, unknown>[]> {
         this.requireConnection()
         const deadline = Date.now() + 15_000
         while (true) {
             try {
-                const result = await this.bridge.request({ cmd: 'recent_contents' })
+                const result = await this.bridge.request({ cmd: 'recent_contents', ...(options.all?{scope:'all'}:{}) })
                 if (!Array.isArray(result.contents)) throw new Error('The camera returned no recent contents')
+                if(options.all && (result.truncated!==false||!Number.isInteger(result.totalCount)||result.totalCount!==result.contents.length))throw new Error('Camera returned an incomplete content index; rebuild the SDK bridge before verifying recording identity')
                 return result.contents
             } catch (error) {
                 // The documented contents-list operation is asynchronous after connecting or writing a file.
-                if (!(error instanceof Error) || !/SDK code 36101/.test(error.message) || Date.now() >= deadline)
+                if (!(error instanceof Error) || !/SDK code 36101/.test(error.message)) throw error
+                if (Date.now() >= deadline) {
+                    // Collection can renew its stopped session once, then must
+                    // revalidate the exact original against a fresh index.
+                    error.message = 'The camera media index is still busy; original footage remains on the card and collection is not verified (SDK code 36101)'
+                    Object.assign(error, { retryableTransfer: true })
                     throw error
+                }
                 await new Promise(resolve => setTimeout(resolve, 250))
             }
         }
@@ -541,19 +637,58 @@ export class SonyWifiCamera {
         })
     }
 
-    async captureLiveView(filename: string): Promise<Record<string, unknown>> {
+    async getSonyPreviewCapabilities() {
+        return sonyPreviewCapabilities(await this.getSonyPropertyStates())
+    }
+
+    /** Keep classic live view unless it fails and the body advertises JPEG monitoring. */
+    async captureLiveView(
+        filename: string,
+        options: { attempts?: number; monitoringFallback?: boolean } = {}
+    ): Promise<Record<string, unknown>> {
         this.requireConnection()
-        return await this.bridge.request({ cmd: 'liveview', path: filename })
+        const attempts = options.attempts ?? 25
+        if (!Number.isInteger(attempts) || attempts < 1 || attempts > 25)
+            throw new Error('Live-view attempts must be 1–25')
+        const command = { cmd: 'liveview', path: filename, attempts: String(attempts) }
+        try {
+            return await this.bridge.request(command)
+        } catch (error) {
+            if (!options.monitoringFallback || this.monitoringAttempted || this.connectionTransport !== 'wifi')
+                throw error
+            this.monitoringAttempted = true
+            const capabilities = await this.getSonyPreviewCapabilities()
+            const format = capabilities.preferredJpegFormat
+            if (capabilities.monitoring !== 'advertised' || !format || capabilities.delivering !== false) throw error
+            await this.bridge.request({ cmd: 'monitoring_start', quality: String(format.qualityLevel) })
+            try {
+                return await this.bridge.request({ ...command, attempts: '25' })
+            } catch (deliveryError) {
+                await this.bridge.request({ cmd: 'monitoring_stop' })
+                throw deliveryError
+            }
+        }
     }
 
     async captureSonyOsdImage(filename: string): Promise<Record<string, unknown>> {
-        await this.setSonyProperty('OsdImageMode', 1)
-        const deadline = Date.now() + 5000
-        while ((await this.getSonyProperty('OsdImageMode')).value !== '1') {
-            if (Date.now() >= deadline) throw new Error('The camera did not enable its OSD image')
-            await new Promise(resolve => setTimeout(resolve, 200))
+        if (!this.osdEnabled) {
+            const current = await this.getSonyProperty('OsdImageMode')
+            if (current.value !== '1') {
+                await this.setSonyProperty('OsdImageMode', 1)
+                const deadline = Date.now() + 5000
+                while ((await this.getSonyProperty('OsdImageMode')).value !== '1') {
+                    if (Date.now() >= deadline) throw new Error('The camera did not enable its OSD image')
+                    await new Promise(resolve => setTimeout(resolve, 200))
+                }
+                await new Promise(resolve => setTimeout(resolve, 500))
+            }
+            this.osdEnabled = true
         }
-        await new Promise(resolve => setTimeout(resolve, 500))
-        return await this.bridge.request({ cmd: 'osd', path: filename })
+        try {
+            return await this.bridge.request({ cmd: 'osd', path: filename })
+        } catch (error) {
+            this.osdEnabled = false
+            throw error
+        }
     }
 }
