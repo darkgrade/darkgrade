@@ -7,7 +7,8 @@ import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { afterAll, describe, expect, it } from 'vitest'
-import { GenericCamera } from '../src/camera/generic-camera'
+import { GenericCamera } from '@camera/generic-camera'
+import {WebUSB} from 'usb'
 
 const operationDefinitions = Object.values(genericOperationRegistry)
 const propertyDefinitions = Object.values(genericPropertyRegistry)
@@ -15,7 +16,8 @@ const responseDefinitions = Object.values(responseRegistry)
 const formatDefinitions = Object.values(formatRegistry)
 const hardwareOperationTimeoutMilliseconds = 15_000
 
-describe('GenericCamera', () => {
+const canonConnected=(await new WebUSB({allowAllDevices:true}).getDevices()).some(device=>device.vendorId===VendorIDs.CANON)
+describe.skipIf(!canonConnected)('GenericCamera', () => {
     let transport: TransportInterface
     let camera: GenericCamera
     let logger: Logger

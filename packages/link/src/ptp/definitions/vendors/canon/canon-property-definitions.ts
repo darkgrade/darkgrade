@@ -445,6 +445,20 @@ export const CanonExposureSimMode = {
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
+/** EDSDK 13.20.21, section 5.2.105; PTP wire mapping verified in the SDK and EOS 80D. */
+export const CanonMovieSoundRecording = {
+    code: 0xd195,
+    name: 'CanonMovieSoundRecording',
+    description: 'Sound recorded in the camera movie',
+    datatype: UINT32,
+    codec: registry => createEnumCodec(registry, [
+        { value: 1, name: 'disabled', description: 'Sound recording disabled' },
+        { value: 2, name: 'auto', description: 'Automatic sound level' },
+        { value: 3, name: 'manual', description: 'Manual sound level' },
+    ] as const, registry.codecs.uint32),
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
 export const CanonMovieServoAutofocus = {
     code: 0xd179,
     name: 'CanonMovieServoAutofocus',
@@ -692,6 +706,7 @@ export const canonPropertyRegistry = {
     CanonAeModeDial,
     CanonPictureStyleExStandard,
     CanonExposureSimMode,
+    CanonMovieSoundRecording,
     CanonMovieServoAutofocus,
     CanonLiveViewMode,
     CanonRecordingDestination,

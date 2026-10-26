@@ -21,7 +21,7 @@ This library is a comprehensive TypeScript implementation of [ISO-15740:2013](ht
 - [x] **✨ Simple API** - Connect and control your camera with minimal code
 - [x] **📷 Vendor Extensions** - Extended features for Sony, Nikon & Canon
     - **Sony ⍺ Series** - Live view, video recording, SDIO operations
-    - **Nikon Z Series** - Live view, extended properties
+    - **Nikon Z Series** - Live view, focus-point placement, AF-S lens steps, extended properties
     - **Canon EOS R Series** - Remote control, event polling
 
 ## 🚀 Quick Start
@@ -288,6 +288,21 @@ const camera = new Camera({
 
 await camera.connect()
 ```
+
+### Nikon Z6 III focus and live-view status
+
+Validated over USB on Z6 III firmware V2.00:
+
+```typescript
+const focus = await camera.nikonAutofocus()
+const point = await camera.nikonTouchFocus(0.5, 0.25) // normalized 0–1
+const frame = await camera.captureLiveView()
+console.log(point.positionVerified, focus.focusAcquired, frame.nikonMetadata)
+```
+
+`nikonDriveFocus('near' | 'far', steps)` drives small lens steps in **AF-S**. AF-F can remain busy; MF rejects drive on the tested body. Lens endpoints return named errors. Focus commands require advertised operations; accepted commands and AF-point placement do not establish focus lock.
+
+`getNikonVendorPropertyCodes()` enumerates advertised extended property IDs (355 on the tested body). Unknown properties are not automatically made writable. Fresh live-view metadata includes AF geometry/judgement, recording timers, audio indicators and temperature status. Failed recording setup restores modes it acquired; no-card capture/recording is not reported as successful. Wi-Fi/Bluetooth pairing remains unverified on this Nikon.
 
 ## 📊 Feature Compatibility
 

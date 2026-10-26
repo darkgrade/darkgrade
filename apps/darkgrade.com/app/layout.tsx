@@ -3,7 +3,7 @@ import localFont from 'next/font/local'
 import { DevTools } from '@/app/components/dev-font-chooser/dev-tools'
 import { DEV_FONT_BOOTSTRAP_SCRIPT } from '@/app/components/dev-font-chooser/dev-fonts'
 import { VIDEO_BACKGROUND_ENABLED } from '@/app/components/backgrounds/field'
-import { YOUTUBE_IFRAME_API_URL } from '@/app/components/backgrounds/youtube'
+import { MUX_STREAM_ORIGIN } from '@/app/components/backgrounds/mux'
 import './globals.css'
 
 /* The font chooser exists only under `next dev`; the component additionally
@@ -108,12 +108,6 @@ export const viewport: Viewport = {
 const JS_FLAG =
     "var c=document.documentElement.classList;c.add('js');if(location.pathname==='/')c.add('intro','preload')"
 
-/* The backdrop video starts loading at first paint, behind the preloader,
-   instead of after hydration: the YouTube API script is requested from here,
-   and the connections it needs are opened ahead of it. Reduced motion never
-   plays the video, so it never fetches the player either. */
-const VIDEO_PRELOAD = `if(!matchMedia('(prefers-reduced-motion: reduce)').matches){var s=document.createElement('script');s.src='${YOUTUBE_IFRAME_API_URL}';s.async=true;document.head.appendChild(s)}`
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html
@@ -125,9 +119,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
                 {VIDEO_BACKGROUND_ENABLED && (
                     <>
-                        <link rel="preconnect" href="https://www.youtube.com" />
-                        <link rel="preconnect" href="https://www.youtube-nocookie.com" />
-                        <script dangerouslySetInnerHTML={{ __html: VIDEO_PRELOAD }} />
+                        <link rel="preconnect" href={MUX_STREAM_ORIGIN} />
+                        <link rel="preconnect" href="https://image.mux.com" />
                     </>
                 )}
                 {IS_DEVELOPMENT && <script dangerouslySetInnerHTML={{ __html: DEV_FONT_BOOTSTRAP_SCRIPT }} />}

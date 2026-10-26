@@ -24,6 +24,7 @@
         "@types/react": "^19.1.11",
         "@types/react-dom": "^19.1.8",
         "gsap": "^3.13.0",
+        "hls.js": "^1.7.3",
         "locomotive-scroll": "^5.0.1",
         "next": "^15.5.0",
         "posthog-js": "^1.334.1",

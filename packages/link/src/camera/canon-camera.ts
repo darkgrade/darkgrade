@@ -301,6 +301,31 @@ export class CanonCamera extends GenericCamera {
         await this.setAdvertisedProperty(this.registry.properties.CanonColorTemperature, kelvin)
     }
 
+    async getMovieSoundRecording(): Promise<string> {
+        return this.get(this.registry.properties.CanonMovieSoundRecording)
+    }
+
+    async setMovieSoundRecording(value: 'disabled' | 'auto' | 'manual'): Promise<void> {
+        await this.setAdvertisedProperty(this.registry.properties.CanonMovieSoundRecording, value)
+    }
+
+    /** Enable missing movie sound without changing an existing manual sound-level choice. */
+    async ensureMovieSoundRecording(): Promise<boolean> {
+        const property = this.registry.properties.CanonMovieSoundRecording
+        const state = this.propertyCache.get(property)
+        if (!state || state.current !== 'disabled') return false
+        if (!state.allowed?.includes('auto')) throw new Error('Canon did not advertise automatic movie sound recording')
+        const mode = await this.get(this.registry.properties.CanonAutoExposureMode)
+        try {
+            // EOS 80D rejects sound changes in movie auto AE (22) with DeviceBusy.
+            if (mode !== 3) await this.setManualExposureMode()
+            await this.setMovieSoundRecording('auto')
+        } finally {
+            if (mode !== 3) await this.set(this.registry.properties.CanonAutoExposureMode, mode)
+        }
+        return true
+    }
+
     async getLiveViewAutofocusMode(): Promise<string> {
         return this.get(this.registry.properties.CanonLiveViewAutofocusMode)
     }
@@ -401,11 +426,24 @@ export class CanonCamera extends GenericCamera {
         await this.set(property, value)
     }
 
+    /** Enable manual exposure using the EOS remote AE property and verify its event readback. */
+    async setManualExposureMode(): Promise<void> {
+        const property = this.registry.properties.CanonAutoExposureMode
+        if (await this.get(property) === 3) return
+        await this.set(property, 3)
+        if (await this.get(property) !== 3) throw new Error('Canon did not confirm Manual exposure mode')
+    }
+
     async enterMovieMode(): Promise<void> {
         await this.withoutPolling(async () => {
-            const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
-            if (response.code !== OK.code) {
-                throw new Error(`Canon movie-mode switch returned 0x${response.code.toString(16)}`)
+            for (let attempt = 0; attempt < 4; attempt++) {
+                const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
+                if (response.code === OK.code) return
+                if (response.code !== 0x2019 || attempt === 3)
+                    throw new Error(`Canon movie-mode switch returned 0x${response.code.toString(16)}`)
+                // Live-view/AF shutdown can briefly occupy the body. Retry only
+                // the idempotent mode request; never repeat Record or cut power.
+                await new Promise(resolve => setTimeout(resolve, 500))
             }
         })
     }
@@ -468,15 +506,19 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    async captureImage({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
+        if (typeof autofocus !== 'boolean') throw new Error('Canon capture autofocus must be true or false')
         return this.withoutPolling(async () => {
             const release = async (afMode: 'AF' | 'MF') => {
                 let focusPressed = false
                 let shutterPressed = false
+                let focusAttempted = false
+                let shutterAttempted = false
                 try {
+                    focusAttempted = true
                     const focus = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
                         ReleaseMode: 'FOCUS',
                         AFMode: afMode,
@@ -487,6 +529,7 @@ export class CanonCamera extends GenericCamera {
                     focusPressed = true
                     await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
 
+                    shutterAttempted = true
                     const shutter = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
                         ReleaseMode: 'SHUTTER',
                         AFMode: afMode,
@@ -496,17 +539,22 @@ export class CanonCamera extends GenericCamera {
                     }
                     shutterPressed = true
                 } finally {
-                    if (shutterPressed) {
+                    if (shutterPressed || (afMode === 'MF' && shutterAttempted)) {
                         await this.send(this.registry.operations.CanonRemoteReleaseOff, {
                             ReleaseMode: 'SHUTTER',
                         }).catch(() => undefined)
                     }
-                    if (focusPressed) {
+                    if (focusPressed || (afMode === 'MF' && focusAttempted)) {
                         await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' }).catch(
                             () => undefined
                         )
                     }
                 }
+            }
+
+            if (!autofocus) {
+                await release('MF')
+                return {}
             }
 
             try {
@@ -679,7 +727,26 @@ export class CanonCamera extends GenericCamera {
     }
 
     async stopRecording(): Promise<void> {
-        await this.set(this.registry.properties.CanonRecordingDestination, 'NONE')
+        const property = this.registry.properties.CanonRecordingDestination
+        const deadline = Date.now() + 5000
+        for (;;) {
+            // Reconnecting can find an already finalized movie. Read camera events before
+            // treating an idle Stop as successful; a missing property is never idle proof.
+            const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+            this.assertResponseOk(response.code, 'recording state readback')
+            if (Array.isArray(response.data)) this.processEvents(response.data, true)
+            const current = this.propertyCache.get(property)?.current
+            // EOS reports 3 (legacy codec label SDRAM) in movie standby after
+            // reconnect. Only the explicit NONE/standby states prove card Record ended.
+            if (current === 'NONE' || current === 'SDRAM') return
+            try {
+                await this.set(property, 'NONE')
+                return
+            } catch (error) {
+                if ((error as {code?:number}).code !== 0x2019 || Date.now() >= deadline) throw error
+                await new Promise(resolve => setTimeout(resolve, 250))
+            }
+        }
     }
 
     async getHdmiLiveViewMode(): Promise<string> {
@@ -905,7 +972,7 @@ export class CanonCamera extends GenericCamera {
             this.liveViewOriginalOutput = original
             await this.set(
                 this.registry.properties.CanonLiveViewMode,
-                original === 'CAMERA' ? 'CAMERA_AND_HOST' : 'HOST'
+                'CAMERA_AND_HOST'
             )
         }
         this.liveViewEnabled = true

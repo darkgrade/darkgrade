@@ -1,3 +1,4 @@
+export {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -17,7 +18,7 @@ import { USBTransport } from '@transport/usb/usb-transport'
 import type { CanonNetworkState, CanonPropertyState, CanonUnknownPropertyState } from './canon-camera'
 import { CanonCamera } from './canon-camera'
 import { GenericCamera, type StandardPropertyState } from './generic-camera'
-import { NikonCamera } from './nikon-camera'
+import { NikonCamera, type NikonFocusResult, type NikonFocusPointResult, type NikonLiveViewMetadata } from './nikon-camera'
 import {
     SonyCamera,
     type SonyCameraButton,
@@ -143,10 +144,34 @@ export class Camera {
     }
 
     async autofocus(durationMilliseconds?: number): Promise<void> {
+        if (this.instance instanceof NikonCamera) {
+            await this.instance.autofocus(durationMilliseconds)
+            return
+        }
         if (!(this.instance instanceof CanonCamera) && !(this.instance instanceof SonyCamera)) {
             throw new Error('Standalone autofocus is only implemented for Canon EOS and Sony cameras')
         }
         return this.instance.autofocus(durationMilliseconds)
+    }
+
+    async getNikonVendorPropertyCodes(): Promise<number[]> {
+        if (!(this.instance instanceof NikonCamera)) throw new Error('Nikon vendor properties require a Nikon camera')
+        return this.instance.getVendorPropertyCodes()
+    }
+
+    async nikonAutofocus(timeoutMilliseconds?: number): Promise<NikonFocusResult> {
+        if (!(this.instance instanceof NikonCamera)) throw new Error('Nikon autofocus requires a Nikon camera')
+        return this.instance.autofocus(timeoutMilliseconds)
+    }
+
+    async nikonTouchFocus(x: number, y: number, options?: { focus?: boolean }): Promise<NikonFocusPointResult> {
+        if (!(this.instance instanceof NikonCamera)) throw new Error('Nikon point focus requires a Nikon camera')
+        return this.instance.touchFocus(x, y, options)
+    }
+
+    async nikonDriveFocus(direction: 'near' | 'far', steps?: number) {
+        if (!(this.instance instanceof NikonCamera)) throw new Error('Nikon manual focus requires a Nikon camera')
+        return this.instance.driveFocus(direction, steps)
     }
 
     async getFocusMode(): Promise<string> {
@@ -384,6 +409,18 @@ export class Camera {
         return this.instance.listUnknownPropertyStates()
     }
 
+    async getCanonMovieSoundRecording(): Promise<string> {
+        return this.canonCamera().getMovieSoundRecording()
+    }
+
+    async setCanonMovieSoundRecording(value: 'disabled' | 'auto' | 'manual'): Promise<void> {
+        return this.canonCamera().setMovieSoundRecording(value)
+    }
+
+    async ensureCanonMovieSoundRecording(): Promise<boolean> {
+        return this.canonCamera().ensureMovieSoundRecording()
+    }
+
     async getMovieServoAutofocus(): Promise<string> {
         if (!(this.instance instanceof CanonCamera)) {
             throw new Error('Canon movie servo autofocus is only available for Canon EOS cameras')
@@ -440,11 +477,15 @@ export class Camera {
         return this.instance.leaveMovieMode()
     }
 
-    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean }) {
+    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean }) {
+        if (params?.autofocus === false && !(this.instance instanceof CanonCamera))
+            throw new Error('Capture without autofocus is only implemented for Canon EOS cameras')
         return this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
     }
 
-    async captureLiveView(params?: { includeInfo?: boolean; includeData?: boolean }) {
+    async captureLiveView(params?: { includeInfo?: boolean; includeData?: boolean }): Promise<{
+        info?: ObjectInfo; data?: Uint8Array; nikonMetadata?: NikonLiveViewMetadata
+    }> {
         return this.instance.captureLiveView({ includeInfo: true, includeData: true, ...params })
     }
 
@@ -479,6 +520,10 @@ export class Camera {
 
     async setCanonLiveViewFramePoint(x: number, y: number, lockAfFrame = false) {
         return this.canonCamera().setLiveViewFramePoint(x, y, lockAfFrame)
+    }
+
+    async setCanonManualExposureMode(): Promise<void> {
+        await this.canonCamera().setManualExposureMode()
     }
 
     async getCanonColorTemperature(): Promise<number> {
@@ -533,3 +578,6 @@ export type { SonyCameraButton, SonyOsdImage, SonyPropertyState, SonyZoomResult 
 
 export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/wifi-keyboard'
 export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'
+
+export type { NikonFocusResult, NikonFocusPointResult, NikonLiveViewMetadata } from './nikon-camera'
+export {readCameraMovieAudio,inspectMovieTrackHandlers,type CameraMovieAudio} from '@camera/movie-audio'

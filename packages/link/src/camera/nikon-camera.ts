@@ -1,9 +1,11 @@
 import { Logger } from '@core/logger'
+import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
+import type { OperationDefinition } from '@ptp/types/operation'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { ISOAutoControl } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
-import { NotLiveView } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
+import { NotLiveView, OutOfFocus } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { createNikonRegistry, type NikonRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
@@ -12,11 +14,33 @@ import { EventParams } from '@ptp/types/type-helpers'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { GenericCamera } from './generic-camera'
 
+export type NikonLiveViewMetadata = Omit<NikonLiveViewDataset, 'liveViewImage' | 'reserved' | 'afFrameData' | 'autoCaptureSubjectDetection' | 'reservedEnd'>
+
+export interface NikonFocusResult {
+    commandSent: true
+    focusAcquired: boolean
+    metadata: NikonLiveViewMetadata
+}
+
+export interface NikonFocusPointResult {
+    commandSent: true
+    positionVerified: boolean
+    normalized: { x: number; y: number }
+    x: number
+    y: number
+    width: number
+    height: number
+    tolerance: { x: number; y: number }
+    metadata: NikonLiveViewMetadata
+    focus?: NikonFocusResult
+}
+
 export class NikonCamera extends GenericCamera {
     private cameraMode: 'PC_CAMERA' | 'REMOTE' | 'UNKNOWN' = 'UNKNOWN'
     private liveViewMode: 'PHOTO' | 'VIDEO' | 'UNKNOWN' = 'UNKNOWN'
     private applicationMode: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
     private liveViewStatus: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
+    private liveViewStartPending = false
 
     vendorId = VendorIDs.NIKON
     declare public registry: NikonRegistry
@@ -28,8 +52,9 @@ export class NikonCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
-        if (this.liveViewStatus === 'ON') await this.disableLiveView()
-        await super.disconnect()
+        try {
+            if (this.liveViewStatus === 'ON' || this.liveViewStartPending) await this.disableLiveView()
+        } finally { await super.disconnect() }
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -63,13 +88,14 @@ export class NikonCamera extends GenericCamera {
         const codec = this.resolveCodec(property.codec)
         const encodedValue = codec.encode(value)
 
-        await this.send(
+        const response = await this.send(
             this.registry.operations.SetDevicePropValueEx,
             {
                 DevicePropCode: property.code,
             },
             encodedValue
         )
+        if (response.code !== OK.code) throw new Error(`Nikon ${property.name} write failed: ${this.responseDescription(response.code)}`)
     }
 
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
@@ -125,6 +151,7 @@ export class NikonCamera extends GenericCamera {
             await this.enableLiveView()
             await this.send(this.registry.operations.InitiateCapture, {})
             await this.waitForDeviceReady()
+            await this.waitForImageBufferReady()
         }
 
         // camera's hardware dial is not in photo mode
@@ -153,11 +180,13 @@ export class NikonCamera extends GenericCamera {
     async captureLiveView({ includeInfo = true, includeData = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
+        nikonMetadata?: NikonLiveViewMetadata
     }> {
         await this.enableLiveView()
 
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
+        let nikonMetadata: NikonLiveViewMetadata | undefined
 
         if (includeInfo) {
             // Nikon does not support this for live view images
@@ -184,13 +213,144 @@ export class NikonCamera extends GenericCamera {
                     `Nikon GetLiveViewImageEx failed with response ${response ? `0x${response.code.toString(16)}` : 'unknown'}`
                 )
             }
-            data = response.data.liveViewImage
+            const { liveViewImage, reserved, afFrameData, autoCaptureSubjectDetection, reservedEnd, ...metadata } = response.data
+            data = liveViewImage
+            nikonMetadata = metadata
         }
 
-        return { info: info, data: data }
+        return { info, data, ...(nikonMetadata ? { nikonMetadata } : {}) }
+    }
+
+    private async requireFocusOperations(operations: readonly OperationDefinition[]): Promise<void> {
+        const response = await this.send(this.registry.operations.GetDeviceInfo, {})
+        const supported = response.data?.operationsSupportedRaw
+        if (response.code !== OK.code || !Array.isArray(supported))
+            throw new Error('Nikon operation capabilities could not be read')
+        for (const operation of operations) {
+            if (!supported.includes(operation.code))
+                throw new Error(`The Nikon does not advertise ${operation.name}`)
+        }
+    }
+
+    /** Read the advertised extended-property IDs; this does not read or write their values. */
+    async getVendorPropertyCodes(): Promise<number[]> {
+        const operation = this.registry.operations.GetVendorCodes
+        await this.requireFocusOperations([operation])
+        const maximumCount = 4096
+        const response = await this.send(operation, { Kind: 13 }, undefined, 4 + maximumCount * 4 + 12)
+        const data = response.data
+        if (response.code !== OK.code || !(data instanceof Uint8Array) || data.length < 4)
+            throw new Error('Nikon vendor property enumeration failed')
+        const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+        const littleEndian = this.transport.isLittleEndian()
+        const count = view.getUint32(0, littleEndian)
+        if (count > maximumCount || data.length !== 4 + count * 4)
+            throw new Error('Nikon vendor property enumeration returned an invalid array length')
+        return Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, littleEndian))
+    }
+
+    private async freshFocusMetadata(): Promise<NikonLiveViewMetadata> {
+        const frame = await this.captureLiveView({ includeInfo: false, includeData: true })
+        if (!frame.nikonMetadata) throw new Error('Nikon live view returned no focus metadata')
+        return frame.nikonMetadata
+    }
+
+    /** Return fresh camera focus evidence; command completion alone does not establish focus lock. */
+    async autofocus(timeoutMilliseconds = 5000): Promise<NikonFocusResult> {
+        if (!Number.isInteger(timeoutMilliseconds) || timeoutMilliseconds < 100 || timeoutMilliseconds > 10000)
+            throw new Error('Nikon autofocus timeout must be 100–10000 milliseconds')
+        const operations = this.registry.operations
+        await this.requireFocusOperations([operations.AfDrive, operations.AfDriveCancel, operations.DeviceReady,
+            operations.StartLiveView, operations.GetLiveViewImageEx])
+        await this.enableLiveView()
+        const response = await this.send(operations.AfDrive, {})
+        if (response.code !== OK.code && response.code !== OutOfFocus.code)
+            throw new Error(`Nikon AfDrive failed with response 0x${response.code.toString(16)}`)
+        let completion: number = response.code
+        try {
+            if (completion === OK.code) completion = await this.pollDeviceReady(timeoutMilliseconds, [OutOfFocus.code])
+        } catch (error) {
+            const cancel = await this.send(operations.AfDriveCancel, {}).catch(() => undefined)
+            if (!cancel || cancel.code !== OK.code)
+                throw new Error('Nikon autofocus did not complete and cancellation was not confirmed', { cause: error })
+            throw error
+        }
+        const metadata = await this.freshFocusMetadata()
+        return { commandSent: true, focusAcquired: completion === OK.code && metadata.focusingJudgementResult === 2
+            && metadata.focusDrivingStatus === 0, metadata }
+    }
+
+    /** Coordinates are normalized over the fresh Nikon whole-size AF plane, independent of JPEG resolution. */
+    async touchFocus(x: number, y: number, options: { focus?: boolean } = {}): Promise<NikonFocusPointResult> {
+        if (![x, y].every(value => Number.isFinite(value) && value >= 0 && value <= 1))
+            throw new Error('Nikon focus coordinates must be normalized between 0 and 1')
+        if (options.focus !== undefined && typeof options.focus !== 'boolean')
+            throw new Error('Nikon focus must be true or false')
+        const operations = this.registry.operations
+        await this.requireFocusOperations([operations.ChangeAfArea, operations.DeviceReady,
+            operations.StartLiveView, operations.GetLiveViewImageEx,
+            ...(options.focus === false ? [] : [operations.AfDrive, operations.AfDriveCancel])])
+        const before = await this.freshFocusMetadata()
+        const width = before.wholeSize?.horizontal, height = before.wholeSize?.vertical
+        if (!Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2)
+            throw new Error('Nikon live view returned invalid AF coordinate dimensions')
+        const deviceX = Math.round(x * (width - 1)), deviceY = Math.round(y * (height - 1))
+        const response = await this.send(operations.ChangeAfArea, { X: deviceX, Y: deviceY })
+        if (response.code !== OK.code)
+            throw new Error(`Nikon ChangeAfArea failed with response 0x${response.code.toString(16)}`)
+        await this.waitForDeviceReady()
+        const focus = options.focus === false ? undefined : await this.autofocus()
+        const metadata = focus?.metadata ?? await this.freshFocusMetadata()
+        const tolerance = {
+            x: Math.max(1, Math.floor((metadata.afFrameSize?.horizontal || 0) / 2)),
+            y: Math.max(1, Math.floor((metadata.afFrameSize?.vertical || 0) / 2)),
+        }
+        const center = metadata.afFrameCenterCoords
+        const positionVerified = metadata.wholeSize?.horizontal === width && metadata.wholeSize?.vertical === height
+            && Number.isFinite(center?.horizontal) && Number.isFinite(center?.vertical)
+            && Math.abs(center.horizontal - deviceX) <= tolerance.x && Math.abs(center.vertical - deviceY) <= tolerance.y
+        return { commandSent: true, positionVerified, normalized: { x, y }, x: deviceX, y: deviceY,
+            width, height, tolerance, metadata, ...(focus ? { focus } : {}) }
+    }
+
+    async driveFocus(direction: 'near' | 'far', steps = 1): Promise<{ commandSent: true; completed: true; metadata: NikonLiveViewMetadata }> {
+        if (!['near', 'far'].includes(direction) || !Number.isInteger(steps) || steps < 1 || steps > 32767)
+            throw new Error('Nikon manual focus requires near/far and 1–32767 lens steps')
+        const operations = this.registry.operations
+        await this.requireFocusOperations([operations.MfDrive, operations.DeviceReady,
+            operations.StartLiveView, operations.GetLiveViewImageEx])
+        await this.enableLiveView()
+        const response = await this.send(operations.MfDrive, { Direction: direction === 'near' ? 1 : 2, Steps: steps })
+        if (response.code !== OK.code)
+            throw new Error(`Nikon MfDrive failed: ${this.responseDescription(response.code)}. Use AF-S focus mode for manual drive.`)
+        try {
+            await this.waitForDeviceReady()
+        } catch (error) {
+            throw new Error(`Nikon MfDrive completion failed: ${error instanceof Error ? error.message : String(error)}. Use AF-S focus mode for manual drive.`, { cause: error })
+        }
+        return { commandSent: true, completed: true, metadata: await this.freshFocusMetadata() }
     }
 
     async startRecording(): Promise<void> {
+        const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+        if (condition.includes('alreadyRecording')) throw new Error('Nikon is already recording; its session was preserved')
+        // Card inspection can leave this body refusing application mode within
+        // the same PTP session. Renew the idle session before preparing a movie;
+        // this keeps USB connected and adds no power cycle or fixed sleep.
+        if (this.applicationMode !== 'ON' && this.sessionId !== null) {
+            await this.waitForImageBufferReady()
+            const nextSession = (this.sessionId + 1) >>> 0 || 1
+            const closed = await this.send(this.registry.operations.CloseSession, {})
+            if (closed.code !== OK.code) throw new Error(`Nikon movie session close failed: ${this.responseDescription(closed.code)}`)
+            this.sessionId = null
+            const opened = await this.send(this.registry.operations.OpenSession, {SessionID: nextSession})
+            if (opened.code !== OK.code) throw new Error(`Nikon movie session open failed: ${this.responseDescription(opened.code)}`)
+            this.sessionId = nextSession
+            this.cameraMode = 'UNKNOWN'
+            this.liveViewMode = 'UNKNOWN'
+            this.applicationMode = 'UNKNOWN'
+            this.liveViewStatus = 'UNKNOWN'
+        }
         // Setup capture
 
         // update live view status and mode
@@ -198,43 +358,71 @@ export class NikonCamera extends GenericCamera {
 
         await this.waitForDeviceReady()
 
-        // camera's hardware dial is in video mode, great, screen will stay on
-        if (this.liveViewMode === 'VIDEO') {
-            await this.enableLiveView()
-            await this.enableApplicationMode()
+        let ownsLiveView = false, ownsApplicationMode = false, ownsRemoteMode = false, ownsVideoMode = false
+        try {
+            // camera's hardware dial is in video mode, great, screen will stay on
+            if (this.liveViewMode === 'VIDEO') {
+                ownsLiveView = this.liveViewStatus !== 'ON'
+                await this.enableLiveView()
+                ownsApplicationMode = this.applicationMode !== 'ON'
+                await this.enableApplicationMode()
 
-            await this.waitForImageBufferReady()
+                await this.waitForImageBufferReady()
 
-            const prohibitionCondition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
-            if (prohibitionCondition !== 'none') {
-                console.error(`Movie recording is prohibited: ${prohibitionCondition}`)
+                const prohibitionCondition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+                if (prohibitionCondition !== 'none') {
+                    throw new Error(`Movie recording is prohibited: ${prohibitionCondition}`)
+                }
+
+                const response = await this.send(this.registry.operations.StartMovieRecord, {})
+                if (response.code !== OK.code) throw new Error(`Nikon StartMovieRecord failed with response 0x${response.code.toString(16)}`)
             }
+            // camera's hardware dial is not in video mode
+            // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
+            else if (this.liveViewMode === 'PHOTO') {
+                ownsRemoteMode = this.cameraMode !== 'REMOTE'
+                await this.enableRemoteMode()
+                ownsVideoMode = true
+                await this.enableVideoMode()
+                ownsLiveView = this.liveViewStatus !== 'ON'
+                await this.enableLiveView()
+                ownsApplicationMode = this.applicationMode !== 'ON'
+                await this.enableApplicationMode()
 
-            const response = await this.send(this.registry.operations.StartMovieRecord, {})
-        }
-        // camera's hardware dial is not in video mode
-        // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
-        else if (this.liveViewMode === 'PHOTO') {
-            await this.enableRemoteMode()
-            await this.enableVideoMode()
-            await this.enableLiveView()
-            await this.enableApplicationMode()
+                await this.waitForImageBufferReady()
 
-            await this.waitForImageBufferReady()
+                const prohibitionCondition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+                if (prohibitionCondition !== 'none') {
+                    throw new Error(`Movie recording is prohibited: ${prohibitionCondition}`)
+                }
 
-            const prohibitionCondition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
-            if (prohibitionCondition !== 'none') {
-                console.error(`Movie recording is prohibited: ${prohibitionCondition}`)
+                const response = await this.send(this.registry.operations.StartMovieRecord, {})
+                if (response.code !== OK.code) throw new Error(`Nikon StartMovieRecord failed with response 0x${response.code.toString(16)}`)
             }
-
-            // this will often fail with 0xa004 (Invalid Status) but it actually works
-            const response = await this.send(this.registry.operations.StartMovieRecord, {})
+        } catch (error) {
+            const failures: string[] = []
+            const restore = async (name: string, operation: () => Promise<void>) => {
+                try { await operation() }
+                catch (failure) { failures.push(`${name}: ${failure instanceof Error ? failure.message : String(failure)}`) }
+            }
+            if (ownsLiveView) await restore('live view', () => this.disableLiveView())
+            if (ownsApplicationMode) await restore('application mode', () => this.disableApplicationMode())
+            if (ownsVideoMode) await restore('photo mode', () => this.enablePhotoMode())
+            if (ownsRemoteMode) await restore('camera mode', () => this.enablePcCameraMode())
+            if (failures.length) throw new Error(`${error instanceof Error ? error.message : String(error)}; Nikon recording setup cleanup failed: ${failures.join('; ')}`, { cause: error })
+            throw error
         }
     }
 
     async stopRecording(): Promise<void> {
-        await this.send(this.registry.operations.EndMovieRecord, {})
+        const response = await this.send(this.registry.operations.EndMovieRecord, {})
+        if (response.code !== OK.code) throw new Error(`Nikon EndMovieRecord failed with response 0x${response.code.toString(16)}`)
         await this.waitForDeviceReady()
+        const deadline=Date.now()+10000
+        while((await this.get(this.registry.properties.MovieRecProhibitionCondition)).includes('alreadyRecording')){
+            if(Date.now()>=deadline)throw new Error('Nikon movie stop was not confirmed within ten seconds; recording mode was preserved')
+            await this.waitMs(50)
+        }
         await this.waitForImageBufferReady()
         await this.disableLiveView()
         await this.disableApplicationMode()
@@ -301,9 +489,10 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
-        await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'REMOTE' })
-        await this.waitForDeviceReady()
+        const response = await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'REMOTE' })
+        if (response.code !== OK.code) throw new Error(`Nikon ChangeCameraMode REMOTE failed: ${this.responseDescription(response.code)}`)
         this.cameraMode = 'REMOTE'
+        await this.waitForDeviceReady()
     }
 
     private async enablePcCameraMode(): Promise<void> {
@@ -311,9 +500,26 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
-        await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'PC_CAMERA' })
-        await this.waitForDeviceReady()
+        const response = await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'PC_CAMERA' })
+        if (response.code !== OK.code) throw new Error(`Nikon ChangeCameraMode PC_CAMERA failed: ${this.responseDescription(response.code)}`)
         this.cameraMode = 'PC_CAMERA'
+        await this.waitForDeviceReady()
+    }
+
+    private async changeApplicationMode(mode: 'ON' | 'OFF'): Promise<void> {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const response = await this.send(this.registry.operations.ChangeApplicationMode, { Mode: mode })
+            if (response.code === OK.code) return
+            if (response.code !== 0x200f) throw new Error(`Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}`)
+            // A mode command can be denied when the body already has that state.
+            // Accept only fresh camera telemetry, otherwise give its pending transition a bounded retry.
+            const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+            const observed = condition.includes('notInApplicationMode') ? 'OFF' : 'ON'
+            if (observed === mode) return
+            if (attempt === 2) throw new Error(`Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}; camera reports ${condition}`)
+            await this.waitForDeviceReady()
+            await this.waitMs(250)
+        }
     }
 
     private async enableApplicationMode(): Promise<void> {
@@ -321,9 +527,9 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
-        await this.send(this.registry.operations.ChangeApplicationMode, { Mode: 'ON' })
-        await this.waitForDeviceReady()
+        await this.changeApplicationMode('ON')
         this.applicationMode = 'ON'
+        await this.waitForDeviceReady()
     }
 
     private async disableApplicationMode(): Promise<void> {
@@ -331,9 +537,9 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
-        await this.send(this.registry.operations.ChangeApplicationMode, { Mode: 'OFF' })
-        await this.waitForDeviceReady()
+        await this.changeApplicationMode('OFF')
         this.applicationMode = 'OFF'
+        await this.waitForDeviceReady()
     }
 
     private async enableLiveView(): Promise<void> {
@@ -345,8 +551,10 @@ export class NikonCamera extends GenericCamera {
         if (response.code !== OK.code && response.code !== DeviceBusy.code) {
             throw new Error(`Nikon StartLiveView failed with response 0x${response.code.toString(16)}`)
         }
+        this.liveViewStartPending = true
         await this.waitForDeviceReady()
         this.liveViewStatus = 'ON'
+        this.liveViewStartPending = false
     }
 
     private async getLiveViewStatus(): Promise<void> {
@@ -360,7 +568,7 @@ export class NikonCamera extends GenericCamera {
     }
 
     private async disableLiveView(): Promise<void> {
-        if (this.liveViewStatus !== 'ON') return
+        if (this.liveViewStatus !== 'ON' && !this.liveViewStartPending) return
 
         const response = await this.send(this.registry.operations.EndLiveView, {})
         if (response.code !== OK.code && response.code !== NotLiveView.code) {
@@ -368,6 +576,7 @@ export class NikonCamera extends GenericCamera {
         }
         await this.waitForDeviceReady()
         this.liveViewStatus = 'OFF'
+        this.liveViewStartPending = false
     }
 
     private async enablePhotoMode(): Promise<void> {
@@ -376,8 +585,8 @@ export class NikonCamera extends GenericCamera {
         }
 
         await this.set(this.registry.properties.LiveViewSelector, 'PHOTO')
-        await this.waitForDeviceReady()
         this.liveViewMode = 'PHOTO'
+        await this.waitForDeviceReady()
     }
 
     private async enableVideoMode(): Promise<void> {
@@ -386,30 +595,38 @@ export class NikonCamera extends GenericCamera {
         }
 
         await this.set(this.registry.properties.LiveViewSelector, 'VIDEO')
-        await this.waitForDeviceReady()
         this.liveViewMode = 'VIDEO'
+        await this.waitForDeviceReady()
+    }
+
+    private responseDescription(code: number): string {
+        const name = Object.values(this.registry.responses).find(response => response.code === code)?.name
+        return `${name || 'UnknownResponse'} (0x${code.toString(16)})`
+    }
+
+    private async pollDeviceReady(timeoutMilliseconds = 5000, acceptedResponses: readonly number[] = []): Promise<number> {
+        const deadline = Date.now() + timeoutMilliseconds
+        while (Date.now() < deadline) {
+            const response = await this.send(this.registry.operations.DeviceReady, {})
+            if (response.code === OK.code || acceptedResponses.includes(response.code)) return response.code
+            if (response.code !== DeviceBusy.code)
+                throw new Error(`Nikon DeviceReady failed: ${this.responseDescription(response.code)}`)
+            await this.waitMs(10)
+        }
+        throw new Error('Nikon DeviceReady timed out')
     }
 
     private async waitForDeviceReady(): Promise<void> {
-        let isReady = false
-        while (!isReady) {
-            const response = await this.send(this.registry.operations.DeviceReady, {})
-            if (response.code === OK.code) {
-                isReady = true
-            }
-            await this.waitMs(10)
-        }
+        await this.pollDeviceReady()
     }
 
     private async waitForImageBufferReady(): Promise<void> {
-        let isReady = false
-        while (!isReady) {
-            const prohibitionCondition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
-
-            if (!prohibitionCondition.includes('imagesInBuffer')) {
-                isReady = true
-            }
+        const deadline = Date.now() + 5000
+        while (Date.now() < deadline) {
+            const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+            if (!condition.includes('imagesInBuffer')) return
             await this.waitMs(10)
         }
+        throw new Error('Nikon image buffer did not become ready within 5000 milliseconds')
     }
 }
