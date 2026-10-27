@@ -96,3 +96,7 @@ export {assessCameraPower} from '@workflows/camera-power'
 export type {CameraPower, CameraPowerAssessment} from '@workflows/camera-power'
 export {normalizeCameraPower,readStandardCameraPower,readCameraPower} from '@vendors/camera-power'
 export {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
+
+export {connectNikonWifiCamera,type NikonWifiConnectionOptions} from '@vendors/nikon/wifi-camera'
+export {discoverNikonWifiCameras,type NikonWifiAdvertisement} from '@vendors/nikon/wifi-discovery'
+export {MovieShutterMode,MovieShutterAngle,ExternalDCIn} from '@vendors/nikon/video-properties'

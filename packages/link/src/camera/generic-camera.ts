@@ -59,12 +59,14 @@ export class GenericCamera {
         }
 
         this.sessionId = randomSessionId()
-        const openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+        let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
 
         if (openResult.code === SessionAlreadyOpen.code) {
-            await this.send(this.registry.operations.CloseSession, {})
-            await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            const closed = await this.send(this.registry.operations.CloseSession, {})
+            if(closed.code!==OK.code){this.sessionId=null;throw new Error(`CloseSession failed: 0x${closed.code.toString(16)}`)}
+            openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
         }
+        if(openResult.code!==OK.code){this.sessionId=null;throw new Error(`OpenSession failed: 0x${openResult.code.toString(16)}`)}
     }
 
     async disconnect(): Promise<void> {

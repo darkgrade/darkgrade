@@ -1,6 +1,7 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { BitfieldCodec, EnumCodec } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
+import {nikonVideoPropertyRegistry} from '@vendors/nikon/video-properties'
 
 const UINT8 = getDatatypeByName('UINT8')!.code
 const UINT32 = getDatatypeByName('UINT32')!.code
@@ -67,7 +68,21 @@ export const MovieRecProhibitionCondition = {
         ),
 } as const satisfies PropertyDefinition
 
+/** Nikon Z6III USB/MTP specification Rev.2.00, §6.5.15.2.
+ * Keep the raw byte so newer connection types remain observable.
+ */
+export const ConnectionPath = {
+    code: 0xd12e,
+    name: 'ConnectionPath',
+    description: 'Active Nikon PTP connection: 0 USB, 2 built-in Wi-Fi, 3 wired LAN',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry => registry.codecs.uint8,
+} as const satisfies PropertyDefinition
+
 export const nikonPropertyRegistry = {
+    ...nikonVideoPropertyRegistry,
+    ConnectionPath,
     LiveViewStatus,
     LiveViewSelector,
     MovieRecProhibitionCondition,
