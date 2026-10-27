@@ -627,6 +627,11 @@ export class SonyWifiCamera {
                 if(options.all && (result.truncated!==false||!Number.isInteger(result.totalCount)||result.totalCount!==result.contents.length))throw new Error('Camera returned an incomplete content index; rebuild the SDK bridge before verifying recording identity')
                 return result.contents
             } catch (error) {
+                if(error instanceof Error&&/SDK code 36102/.test(error.message)){
+                    error.message='Sony media index could not be parsed; run recording checks to repair it (SDK code 36102)'
+                    Object.assign(error,{mediaIndexRepairRequired:true})
+                    throw error
+                }
                 // The documented contents-list operation is asynchronous after connecting or writing a file.
                 if (!(error instanceof Error) || !/SDK code 36101/.test(error.message)) throw error
                 if (Date.now() >= deadline) {

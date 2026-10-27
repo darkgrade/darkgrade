@@ -1,7 +1,7 @@
 import {sonyMovieCard} from '@vendors/sony/recording-slots'
 
 interface RecordingIndexCamera {
-    getRecentSonyContents(options:{all:true}):Promise<Record<string,any>[]>
+    getRecentSonyContents(options:{all:true}):Promise<Record<string,unknown>[]>
     getSonyProperty(name:string):Promise<{value:string}>
     startRecording():Promise<void>
     stopRecording():Promise<void>
@@ -20,7 +20,7 @@ export const sonyIndexNeedsReserve=(count:number)=>count>=99&&(count%99===0||(co
 export async function repairSonyRecordingIndex(camera:RecordingIndexCamera,onRepair?:(attempt:number)=>void){
     let maintenanceRecordings=0
     while(true){
-        let contents:Record<string,any>[]|undefined
+        let contents:Record<string,unknown>[]|undefined
         try{contents=await camera.getRecentSonyContents({all:true})}
         catch(error){if(!sonyIndexParseFailure(error))throw error}
         if(contents&&!sonyIndexNeedsReserve(contents.length))return {repaired:maintenanceRecordings>0,maintenanceRecordings,contents}
