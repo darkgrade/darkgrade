@@ -99,4 +99,7 @@ export {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 
 export {connectNikonWifiCamera,type NikonWifiConnectionOptions} from '@vendors/nikon/wifi-camera'
 export {discoverNikonWifiCameras,type NikonWifiAdvertisement} from '@vendors/nikon/wifi-discovery'
+export {NikonMenuController,type NikonMenuKey,type NikonMenuRunOptions} from '@vendors/nikon/menu-controls'
+export {NikonAccessoryController,encodeNikonAccessoryKey,encodeNikonAccessoryInfo} from '@vendors/nikon/accessory-controls'
+export type {NikonAccessoryKey,NikonAccessoryState,NikonAccessoryInfo,NikonAccessorySoftwareConfirmationOptions} from '@vendors/nikon/accessory-controls'
 export {MovieShutterMode,MovieShutterAngle,ExternalDCIn} from '@vendors/nikon/video-properties'
