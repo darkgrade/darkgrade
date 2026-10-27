@@ -258,6 +258,7 @@ export class GenericCamera {
 
                 return {
                     code: responseCode,
+                    parameters: this.decodeResponseParameters(dataContainer.payload),
                     data: receivedData && receivedData.length > 0 ? receivedData : undefined,
                 } as OperationResponse<Op>
             }
@@ -378,6 +379,9 @@ export class GenericCamera {
 
         return {
             code: responseContainer.code,
+            parameters: responseContainer.type === 3
+                ? this.decodeResponseParameters(responseContainer.payload)
+                : undefined,
             data: returnData,
         } as OperationResponse<Op>
     }
@@ -828,6 +832,16 @@ export class GenericCamera {
         }
 
         return buffer
+    }
+
+    private decodeResponseParameters(payload: Uint8Array): number[] | undefined {
+        if (payload.length === 0 || payload.length % 4 !== 0) return undefined
+
+        const parameters: number[] = []
+        for (let offset = 0; offset < payload.length; offset += 4) {
+            parameters.push(this.registry.codecs.uint32.decode(payload, offset).value)
+        }
+        return parameters
     }
 
     private parseContainer(data: Uint8Array): {
