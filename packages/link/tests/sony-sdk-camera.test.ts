@@ -5,6 +5,7 @@ import {
     type SonySdkBridge,
 } from '@vendors/sony/sdk-camera'
 import { describe, expect, it, vi } from 'vitest'
+import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
 
 const authentication = {
     host: '192.0.2.98',
@@ -26,6 +27,57 @@ function bridgeForProperties(properties: unknown[] = []) {
     }
     return { bridge, requests }
 }
+
+describe('Sony media-index pagination recovery',()=>{
+ function fixture(count=100){
+  const state={count,recording:false,slot:'1',stopFails:false}
+  const camera={
+   getRecentSonyContents:vi.fn(async()=>{if(state.count>=100&&(state.count-1)%99===0)throw new Error('Sony SDK command failed (SDK code 36102)');return Array.from({length:state.count},(_,id)=>({id:id+1,files:[{name:`clip-${id+1}.MP4`,bytes:100}]}))}),
+   getSonyProperty:vi.fn(async(name:string)=>({value:name==='RecordingState'?(state.recording?'1':'0'):name==='Movie_RecordingMedia'?state.slot:name.endsWith('_Status')?'0':'3600'})),
+   startRecording:vi.fn(async()=>{state.recording=true}),
+   stopRecording:vi.fn(async()=>{if(!state.stopFails){if(state.recording)state.count++;state.recording=false}}),
+   refreshConnection:vi.fn(async()=>{expect(state.recording).toBe(false)}),
+  };return {state,camera}
+ }
+ it.each([[100,1],[99,2],[199,1],[198,2],[298,1]])('repairs %i contents with %i bounded maintenance recordings',async(count,expected)=>{
+  vi.useFakeTimers();try{
+   const f=fixture(count),progress=vi.fn(),pending=repairSonyRecordingIndex(f.camera,progress)
+   await vi.runAllTimersAsync();const result=await pending
+   expect(result.repaired).toBe(true);expect(result.maintenanceRecordings).toBe(expected)
+   expect(result.contents).toHaveLength(count+expected)
+   expect(f.camera.startRecording).toHaveBeenCalledTimes(expected);expect(f.camera.stopRecording).toHaveBeenCalledTimes(expected);expect(f.camera.refreshConnection).toHaveBeenCalledTimes(expected)
+   expect(result.contents.slice(0,count).map(c=>c.id)).toEqual(Array.from({length:count},(_,id)=>id+1));expect(progress).toHaveBeenCalledTimes(expected)
+  }finally{vi.useRealTimers()}
+ })
+ it.each([0,1,98,101,197,200])('does not create media for an ordinary readable index of %i contents',async count=>{
+  const f=fixture(count);expect((await repairSonyRecordingIndex(f.camera)).repaired).toBe(false);expect(f.camera.startRecording).not.toHaveBeenCalled();expect(f.camera.refreshConnection).not.toHaveBeenCalled()
+ })
+ it('does not convert network errors into a maintenance recording',async()=>{
+  const f=fixture();f.camera.getRecentSonyContents.mockRejectedValue(new Error('Network unavailable'))
+  await expect(repairSonyRecordingIndex(f.camera)).rejects.toThrow('Network unavailable');expect(f.camera.startRecording).not.toHaveBeenCalled()
+ })
+ it.each(['recording','slot'])('refuses repair for unsafe %s state',async(kind)=>{
+  const f=fixture();if(kind==='recording')f.state.recording=true;else f.state.slot='2'
+  await expect(repairSonyRecordingIndex(f.camera)).rejects.toThrow();expect(f.camera.startRecording).not.toHaveBeenCalled();expect(f.camera.stopRecording).not.toHaveBeenCalled();expect(f.camera.refreshConnection).not.toHaveBeenCalled()
+ })
+ it('preserves the connection when stopping a maintenance recording is unconfirmed',async()=>{
+  vi.useFakeTimers();try{
+   const f=fixture();f.state.stopFails=true;const pending=expect(repairSonyRecordingIndex(f.camera)).rejects.toThrow('stop is unconfirmed')
+   await vi.runAllTimersAsync();await pending;expect(f.camera.refreshConnection).not.toHaveBeenCalled();expect(f.camera.startRecording).toHaveBeenCalledTimes(1)
+  }finally{vi.useRealTimers()}
+ })
+ it('a read-only SDK listing never starts recording to hide a parse failure',async()=>{
+  const {bridge,requests}=bridgeForProperties();const request=bridge.request;bridge.request=async command=>{if(command.cmd==='recent_contents')throw new Error('Sony SDK command failed (SDK code 36102)');return request(command)}
+  const camera=new SonyWifiCamera(bridge);await camera.connectUsb('test');await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('36102')
+  expect(requests.some(r=>r.cmd==='command')).toBe(false)
+ })
+ it.each(['usb','wifi','direct'])('refreshes only its existing %s transport',async transport=>{
+  const {bridge,requests}=bridgeForProperties([{code:'0x705',type:2,value:'0',writable:false}]);const camera=new SonyWifiCamera(bridge)
+  const connect=()=>transport==='usb'?camera.connectUsb('test',{mode:'remote-transfer'}):transport==='wifi'?camera.connect(authentication,{mode:'remote-transfer'}):camera.connectBluetoothDirect({host:'192.0.2.98',mac:'0C:80:2F:A7:36:AD',model:'ILME-FX2',bluetoothAddress:'0C:80:2F:A7:36:AE'},{mode:'remote-transfer'})
+  await connect();const original=requests.find(r=>r.cmd.startsWith('connect'))!;await camera.refreshConnection()
+  expect(requests.filter(r=>r.cmd.startsWith('connect'))).toEqual([original,original]);expect(requests.some(r=>r.cmd==='disconnect')).toBe(true);expect(camera.isConnected()).toBe(true)
+ })
+})
 
 describe('Sony SDK Bluetooth Direct connection', () => {
     const directAuthentication: SonyBluetoothDirectAuthentication = {

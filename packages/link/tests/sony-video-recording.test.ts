@@ -1,5 +1,10 @@
 import {it,expect,vi} from 'vitest'
 import {SonyVideoRecording} from '@vendors/sony/video-recording'
+it('does not arm a take that would land on the SDK pagination boundary',async()=>{
+ const camera={getSonyProperty:async(name:string)=>({value:name==='RecordingState'||name.endsWith('_Status')?'0':name==='Movie_RecordingMedia'?'1':'3600'}),getRecentSonyContents:async()=>Array.from({length:99},(_,id)=>({id,files:[]})),startRecording:vi.fn()}
+ await expect(new SonyVideoRecording(camera).prepare()).rejects.toThrow('Run recording checks')
+ expect(camera.startRecording).not.toHaveBeenCalled()
+})
 // The new clip sorts below twenty older files if the camera clock changed.
 it('verifies a new movie outside the recent-file window using the complete baseline',async()=>{
  let recorded=false

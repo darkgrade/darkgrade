@@ -3,6 +3,7 @@ import { performSonySdkControl } from '@vendors/sony/sdk-controls'
 import { sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 import { SONY_SDK_NAMED_PROPERTIES } from '@vendors/sony/sdk-property-codes'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
+import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
 export interface SonySdkBridge {
@@ -159,6 +160,7 @@ export class SonyWifiCamera {
     private connectionTransport: 'usb' | 'wifi' | undefined
     private osdEnabled = false
     private monitoringAttempted = false
+    private reconnectOperation?:()=>Promise<void>
 
     constructor(private readonly bridge: SonySdkBridge) {}
 
@@ -214,6 +216,8 @@ export class SonyWifiCamera {
         }
         this.connected = true
         this.connectionTransport = 'wifi'
+        const saved={...authentication},mode={...options}
+        this.reconnectOperation=()=>this.connect(saved,mode)
     }
 
     /** Connect to the Wi-Fi Direct session already established through trusted Bluetooth control. */
@@ -236,6 +240,8 @@ export class SonyWifiCamera {
         })
         this.connected = true
         this.connectionTransport = 'wifi'
+        const saved={...authentication},mode={...options}
+        this.reconnectOperation=()=>this.connectBluetoothDirect(saved,mode)
     }
 
     /** Open the same official SDK over USB for guarded preparation and readback. */
@@ -245,13 +251,30 @@ export class SonyWifiCamera {
         await this.bridge.request({ cmd: 'connect', serial, ...(options.mode ? { mode: options.mode } : {}) })
         this.connected = true
         this.connectionTransport = 'usb'
+        const mode={...options}
+        this.reconnectOperation=()=>this.connectUsb(serial,mode)
     }
+
+    /** Renew SDK state without USB, network, or power changes. Recording must be idle. */
+    async refreshConnection():Promise<void>{
+        this.requireConnection()
+        if(!this.reconnectOperation)throw new Error('Sony connection cannot be refreshed')
+        if((await this.getSonyProperty('RecordingState')).value!=='0')throw new Error('Stop recording before refreshing the Sony connection')
+        const reconnect=this.reconnectOperation
+        await this.bridge.request({cmd:'disconnect'})
+        this.connected=false;this.osdEnabled=false;this.monitoringAttempted=false
+        await reconnect()
+    }
+
+    /** Creates up to two one-second maintenance clips only for an explicit recording check. */
+    repairMediaIndexForRecording(onRepair?:(attempt:number)=>void){return repairSonyRecordingIndex(this,onRepair)}
 
     async disconnect(): Promise<void> {
         this.connected = false
         this.connectionTransport = undefined
         this.osdEnabled = false
         this.monitoringAttempted = false
+        this.reconnectOperation=undefined
         try {
             await this.bridge.request({ cmd: 'disconnect' })
         } finally {
