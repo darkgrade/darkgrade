@@ -24,7 +24,7 @@ function advertisement(options:{vendor?:string;apps?:string;port?:number;ttl?:nu
     return [
         {name:host,type:1,data:[192,168,1,60],ttl:options.ttl},
         {name:instance,type:33,data:(encode:(name:string)=>number[])=>[0,0,0,0,...integer(options.port??15740,2),...encode(host)],ttl:options.ttl},
-        {name:instance,type:16,data:txt({vid:options.vendor??'04b0',pid:options.product??'0x0458',apps:options.apps??'_DSC',guid:'private-camera-identifier',seq:'10',ver:'1'}),ttl:options.ttl},
+        {name:instance,type:16,data:txt({vid:options.vendor??'A',pid:options.product??'0x0458',apps:options.apps??'$DSC',guid:'private-camera-identifier',seq:'10',ver:'1'}),ttl:options.ttl},
     ] satisfies RecordInput[]
 }
 
@@ -39,11 +39,11 @@ describe('Nikon Bonjour advertisements',()=>{
         for(const record of [answers[2]!,answers[1]!,answers[0]!])records.accept(packet([record]))
         expect(records.cameras()).toHaveLength(1)
     })
-    it.each([['04b0',true],['0x04b0',true],['1200',true],['04B0',true],['04a9',false],['Nikon',false],['',false]])('requires Nikon VID %s', (vendor,accepted)=>{
+    it.each([['A',true],['a',true],['04b0',true],['0x04b0',true],['1200',true],['04B0',true],['04a9',false],['Nikon',false],['',false]])('requires Nikon VID %s', (vendor,accepted)=>{
         const records=new NikonWifiDiscoveryRecords();records.accept(packet(advertisement({vendor})))
         expect(records.cameras()).toHaveLength(accepted?1:0)
     })
-    it.each([['_DSC','camera-control'],['PAIR','pairing-required'],['WT3T','image-transfer'],['WT4S','unsupported'],['_DPS','unsupported'],['UNKNOWN',undefined],['__proto__',undefined]])('classifies exact apps=%s without guessing',(apps,mode)=>{
+    it.each([['$DSC','camera-control'],['PAIR','pairing-required'],['WT3T','image-transfer'],['WT4S','unsupported'],['$DPS','unsupported'],['_DSC',undefined],['_DPS',undefined],['UNKNOWN',undefined],['__proto__',undefined]])('classifies exact apps=%s without guessing',(apps,mode)=>{
         const records=new NikonWifiDiscoveryRecords();records.accept(packet(advertisement({apps})))
         expect(records.cameras()[0]?.mode).toBe(mode)
     })
@@ -73,7 +73,7 @@ describe('Nikon Bonjour advertisements',()=>{
         expect(records.cameras(3500)).toEqual([])
     })
     it('rejects invalid TXT lengths, duplicate keys, zero ports and non-PTP services',()=>{
-        for(const change of [(r:RecordInput[])=>r[2]!.data=[255,1],(r:RecordInput[])=>r[2]!.data=[...txt({vid:'04b0'}),...txt({vid:'04b0',apps:'_DSC'})],(r:RecordInput[])=>r[1]!.name='printer._ipp._tcp.local']){
+        for(const change of [(r:RecordInput[])=>r[2]!.data=[255,1],(r:RecordInput[])=>r[2]!.data=[...txt({vid:'04b0'}),...txt({vid:'04b0',apps:'$DSC'})],(r:RecordInput[])=>r[1]!.name='printer._ipp._tcp.local']){
             const records=new NikonWifiDiscoveryRecords(),answers=advertisement();change(answers);records.accept(packet(answers));expect(records.cameras()).toEqual([])
         }
         const records=new NikonWifiDiscoveryRecords();records.accept(packet(advertisement({port:0})));expect(records.cameras()).toEqual([])

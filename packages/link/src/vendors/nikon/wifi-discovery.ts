@@ -99,8 +99,8 @@ export class NikonWifiDiscoveryRecords {
             const text=this.records.get(`${record.name}:16`),address=this.records.get(`${endpoint.target}:1`)
             if(!text||text.expiresAt<=now||!address||address.expiresAt<=now||typeof address.value!=='string'||typeof text.value!=='object'||endpoint.port===0)continue
             const fields=text.value as Record<string,string>
-            if(!['04b0','0x04b0','1200'].includes(fields.vid?.toLowerCase()??''))continue
-            const modes:Record<string,NikonWifiAdvertisement['mode']>={_DSC:'camera-control',PAIR:'pairing-required',WT3T:'image-transfer',WT4S:'unsupported',_DPS:'unsupported'}
+            if(!['a','04b0','0x04b0','1200'].includes(fields.vid?.toLowerCase()??''))continue
+            const modes:Record<string,NikonWifiAdvertisement['mode']>={'$DSC':'camera-control',PAIR:'pairing-required',WT3T:'image-transfer',WT4S:'unsupported','$DPS':'unsupported'}
             const mode=Object.hasOwn(modes,fields.apps??'')?modes[fields.apps!]:undefined
             if(!mode||/^(0\.|127\.|22[4-9]\.|23\d\.|24\d\.|25[0-5]\.)/.test(address.value))continue
             const product=fields.pid?.match(/^(?:0x)?[0-9a-f]{1,8}$/i)?.[0]
