@@ -62,6 +62,7 @@ export class SonyVideoRecording {
             try{
                 const contents=await this.camera.getRecentSonyContents({all:true})
                 media=this.newMovies(contents)
+                if(!media.length&&this.refreshCamera&&this.camera.shouldRefreshMediaIndex?.())break
             }catch{ /* Sony's content index may lag file finalization. */ }
             if(media.length)break
             await sleep(300)

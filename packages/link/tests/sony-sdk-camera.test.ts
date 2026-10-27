@@ -78,6 +78,13 @@ describe('Sony media-index pagination recovery',()=>{
   const camera=new SonyWifiCamera(bridge);await camera.connectUsb('test');await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('36102')
   expect(requests.some(r=>r.cmd==='command')).toBe(false)
  })
+ it('returns a successful snapshot with a refresh hint instead of replacing it with an old error',async()=>{
+  let warning=36102
+  const {bridge}=bridgeForProperties();const request=bridge.request;bridge.request=async command=>command.cmd==='recent_contents'?{ok:true,totalCount:1,truncated:false,indexWarningCode:warning,contents:[{id:1}]}:request(command)
+  const camera=new SonyWifiCamera(bridge);await camera.connectUsb('test')
+  expect(await camera.getRecentSonyContents({all:true})).toEqual([{id:1}]);expect(camera.shouldRefreshMediaIndex()).toBe(true)
+  warning=0;await camera.getRecentSonyContents({all:true});expect(camera.shouldRefreshMediaIndex()).toBe(false)
+ })
  it.each(['usb','wifi','direct'])('refreshes only its existing %s transport',async transport=>{
   const {bridge,requests}=bridgeForProperties([{code:'0x705',type:2,value:'0',writable:false}]);const camera=new SonyWifiCamera(bridge)
   const connect=()=>transport==='usb'?camera.connectUsb('test',{mode:'remote-transfer'}):transport==='wifi'?camera.connect(authentication,{mode:'remote-transfer'}):camera.connectBluetoothDirect({host:'192.0.2.98',mac:'0C:80:2F:A7:36:AD',model:'ILME-FX2',bluetoothAddress:'0C:80:2F:A7:36:AE'},{mode:'remote-transfer'})

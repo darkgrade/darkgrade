@@ -161,6 +161,7 @@ export class SonyWifiCamera {
     private osdEnabled = false
     private monitoringAttempted = false
     private reconnectOperation?:()=>Promise<void>
+    private indexRefreshRequired=false
 
     constructor(private readonly bridge: SonySdkBridge) {}
 
@@ -262,12 +263,13 @@ export class SonyWifiCamera {
         if((await this.getSonyProperty('RecordingState')).value!=='0')throw new Error('Stop recording before refreshing the Sony connection')
         const reconnect=this.reconnectOperation
         await this.bridge.request({cmd:'disconnect'})
-        this.connected=false;this.osdEnabled=false;this.monitoringAttempted=false
+        this.connected=false;this.osdEnabled=false;this.monitoringAttempted=false;this.indexRefreshRequired=false
         await reconnect()
     }
 
     /** Creates up to two one-second maintenance clips only for an explicit recording check. */
     repairMediaIndexForRecording(onRepair?:(attempt:number)=>void){return repairSonyRecordingIndex(this,onRepair)}
+    shouldRefreshMediaIndex():boolean{return this.indexRefreshRequired}
 
     async disconnect(): Promise<void> {
         this.connected = false
@@ -275,6 +277,7 @@ export class SonyWifiCamera {
         this.osdEnabled = false
         this.monitoringAttempted = false
         this.reconnectOperation=undefined
+        this.indexRefreshRequired=false
         try {
             await this.bridge.request({ cmd: 'disconnect' })
         } finally {
@@ -623,6 +626,7 @@ export class SonyWifiCamera {
         while (true) {
             try {
                 const result = await this.bridge.request({ cmd: 'recent_contents', ...(options.all?{scope:'all'}:{}) })
+                this.indexRefreshRequired=result.indexWarningCode===36102
                 if (!Array.isArray(result.contents)) throw new Error('The camera returned no recent contents')
                 if(options.all && (result.truncated!==false||!Number.isInteger(result.totalCount)||result.totalCount!==result.contents.length))throw new Error('Camera returned an incomplete content index; rebuild the SDK bridge before verifying recording identity')
                 return result.contents
