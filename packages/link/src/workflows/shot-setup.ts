@@ -15,7 +15,7 @@ export async function optimiseShot(options:{image:Uint8Array;controls:Record<str
  await set('shutterSpeed','set-shutter-speed',shutter)
  await set('iso','set-iso',chooseIso(controls.iso?.allowedValues||[],controls.iso?.value,before))
  if(!lastError&&(!(Number(controls.iso?.value?.replace(/^ISO\s*/i,''))>0)||before.exposure!=='balanced')&&!(controls.iso?.allowedValues||[]).some(value=>Number(value.replace(/^ISO\s*/i,''))>0))lastError='ISO choices are unavailable; enable remote Manual exposure before tuning'
- if(before.exposure==='dark'&&before.metrics.median<.16&&Number(controls.iso?.value?.replace(/^ISO\s*/i,''))>=12800){const aperture=Number(controls.aperture?.value?.replace(/^f\//i,'')),candidates=(controls.aperture?.allowedValues||[]).map(value=>({value,f:Number(value.replace(/^f\//i,''))})).filter(candidate=>candidate.f>0&&candidate.f<aperture&&candidate.f>=aperture/Math.SQRT2-.15).sort((a,b)=>a.f-b.f);await set('aperture','set-aperture',candidates[0]?.value)}
+ if((before.exposure==='dark'||needsMeterCorrection())&&before.metrics.median<.16&&Number(controls.iso?.value?.replace(/^ISO\s*/i,''))>=12800){const aperture=Number(controls.aperture?.value?.replace(/^f\//i,'')),candidates=(controls.aperture?.allowedValues||[]).map(value=>({value,f:Number(value.replace(/^f\//i,''))})).filter(candidate=>candidate.f>0&&candidate.f<aperture&&candidate.f>=aperture/Math.SQRT2-.15).sort((a,b)=>a.f-b.f);await set('aperture','set-aperture',candidates[0]?.value)}
  // A scene's illumination cannot be inferred from Auto WB. Preserve it unless
  // the caller explicitly authorizes a particular advertised, scene-based target.
  if(options.tuneWhiteBalance&&options.whiteBalanceTarget)await set('whiteBalance','set-white-balance',options.whiteBalanceTarget)

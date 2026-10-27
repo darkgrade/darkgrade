@@ -63,3 +63,9 @@ it('locking unknown Auto ISO restores the metered brightness instead of acceptin
  const result=await optimiseShot({image:new Uint8Array(),controls,analyse:async()=>controls.iso.value==='Auto'?{...balanced,metrics:{...balanced.metrics,median:.33}}:Number(controls.iso.value)<1600?{...balanced,metrics:{...balanced.metrics,median:.12,p95:.42}}:balanced,publish:()=>{},apply:async(_action,value)=>{controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
  expect(result.changes[0].after).toBe('400');expect(Number(controls.iso.value)).toBeGreaterThanOrEqual(1600);expect(result.exposureVerified).toBe(true)
 })
+
+it('a dim legal-range preview can open aperture at high ISO even when the broad histogram says balanced',async()=>{
+ const controls={iso:{value:'12800',allowedValues:['12800','25600'],writable:true},aperture:{value:'f/5.6',allowedValues:['f/4','f/5.6'],writable:true},shutterSpeed:{value:'1/60'}}
+ const result=await optimiseShot({image:new Uint8Array(),controls,analyse:async()=>controls.aperture.value==='f/4'?balanced:{...balanced,metrics:{...balanced.metrics,median:.1,p95:.4}},publish:()=>{},apply:async(action,value)=>{if(action==='set-aperture')controls.aperture.value=value;else controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
+ expect(result.changes.some(change=>change.setting==='aperture'&&change.after==='f/4'&&change.verified)).toBe(true)
+})
