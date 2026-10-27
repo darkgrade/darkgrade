@@ -52,3 +52,8 @@ it('detects the legal-range HDMI white plateau that hid Sony overexposure',()=>{
  for(let y=0;y<height;y++)for(let x=0;x<width;x++)rgb.fill(100+(x+y)%136,(y*width+x)*3,(y*width+x)*3+3)
  expect(describeShot(measureShot(rgb,width,height)).exposure).toBe('balanced')
 })
+
+it('locked Auto ISO produces an actionable error instead of a silent no-op',async()=>{
+ const result=await optimiseShot({image:new Uint8Array(),controls:{iso:{value:'0',writable:false},shutterSpeed:{value:'0',writable:false}},analyse:async()=>balanced,publish:()=>{},apply:async()=>{throw new Error('Must not write locked controls')},recapture:async()=>new Uint8Array()})
+ expect(result.status).toBe('attention');expect(result.error).toContain('Manual exposure');expect(result.changes).toEqual([])
+})

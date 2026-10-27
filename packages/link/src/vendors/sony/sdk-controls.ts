@@ -43,6 +43,9 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
         values: { '1': 'Optical Zoom', '2': 'Smart Zoom', '3': 'Clear Image Zoom', '4': 'Digital Zoom' },
     },
     exposureProgram: { code: 261, label: 'Exposure program' },
+    apertureMode: { code: 310, label: 'Aperture auto/manual' },
+    shutterMode: { code: 311, label: 'Shutter auto/manual' },
+    isoMode: { code: 312, label: 'ISO auto/manual' },
     exposureComp: { code: 257, label: 'Exposure compensation' },
     colorTemperature: { code: 277, label: 'Color temperature' },
     flashMode: { code: 290, label: 'Flash mode' },
@@ -136,7 +139,37 @@ function settingValue(property: SonySdkProperty, key: string, value: string | nu
 /** The same named camera controls used by USB, translated to documented SDK values. */
 export async function performSonySdkControl(camera: SonyWifiCamera, action: string, value?: string | number) {
     let result: Record<string, unknown> = {}
-    if (settingActions[action]) {
+    if (action === 'set-exposure-mode') {
+        if (value !== 'manual') throw new Error('Only advertised Manual exposure is supported')
+        const changes = []
+        let properties = await camera.getSonyPropertyStates()
+        const program = properties.find(property => property.code === 261)
+        const programLabel = program && label(program, 'exposureProgram', program.value)
+        // Flexible Exposure uses separate auto/manual switches. Keep its movie mode.
+        if (programLabel && /Movie.* F$/.test(programLabel)) {
+            for (const code of [310, 311, 312]) {
+                const property = properties.find(property => property.code === code)
+                if (!property || property.value === '2') continue
+                if (!property.writable || !property.allowedValues?.includes('2'))
+                    throw new Error(`${property.name || code} cannot be switched to Manual remotely`)
+                changes.push(await camera.setSonySetting(code, 2n))
+            }
+        } else if (program) {
+            const target = /SQMotion/.test(programLabel || '') ? '32860'
+                : /HiFrameRate/.test(programLabel || '') ? '32899'
+                : /Movie/.test(programLabel || '') ? '32851' : '1'
+            if (program.value !== target) {
+                if (!program.writable || !program.allowedValues?.includes(target))
+                    throw new Error('This camera does not advertise a remote Manual exposure mode in its current shooting mode')
+                changes.push(await camera.setSonySetting(261, BigInt(target)))
+            }
+        } else throw new Error('The camera does not publish its exposure program')
+        properties = await camera.getSonyPropertyStates()
+        const exposure = sonySdkControls(properties)
+        if (!exposure.iso?.writable || !exposure.shutterSpeed?.writable)
+            throw new Error('Manual mode was requested, but ISO or shutter remains unavailable; check the camera exposure controls')
+        result = { changes, exposureModeVerified: true }
+    } else if (settingActions[action]) {
         if (value === undefined) throw new Error('A camera setting value is required')
         const key = settingActions[action]!
         const property = findProperty(await camera.getSonyPropertyStates(), key)

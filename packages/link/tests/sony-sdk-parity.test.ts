@@ -1,3 +1,4 @@
+import {performSonySdkControl} from '@vendors/sony/sdk-controls'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { describe, expect, it } from 'vitest'
 
@@ -149,4 +150,25 @@ describe('Sony Wi-Fi USB control parity', () => {
         await expect(camera.captureAndDownload('/tmp/sdk-test')).rejects.toThrow('Transfer failed')
         expect(properties.find(property => property.code === 281)!.value).toBe('2')
     })
+})
+
+function manualExposureCamera(program:string,allowed:string[],flex=false){
+ const properties:any[]=[{code:261,value:program,writable:true,allowedValues:allowed,valueForm:'enum'},...([256,259,260].map(code=>({code,value:'0',writable:false}))),...(flex?[310,311,312].map(code=>({code,value:'1',writable:true,allowedValues:['1','2'],valueForm:'enum'})):[])]
+ const writes:number[]=[]
+ const camera:any={getSonyPropertyStates:async()=>properties,setSonySetting:async(code:number,value:bigint)=>{writes.push(code);properties.find(p=>p.code===code).value=String(value);if(code===261||[310,311,312].every(c=>properties.find(p=>p.code===c)?.value==='2'))for(const p of properties.filter(p=>[256,259,260].includes(p.code)))p.writable=true;return {verified:true}}}
+ return {camera,properties,writes}
+}
+it('Manual exposure keeps Movie mode and requires advertised mode/readback',async()=>{
+ const f=manualExposureCamera('32848',['1','32848','32851'])
+ const result:any=await performSonySdkControl(f.camera,'set-exposure-mode','manual')
+ expect(f.properties.find(p=>p.code===261).value).toBe('32851');expect(result.exposureModeVerified).toBe(true);expect(f.writes).toEqual([261])
+})
+it('Flexible Exposure switches its three advertised auto/manual controls without leaving its video program',async()=>{
+ const f=manualExposureCamera('32853',['32853'],true)
+ const result:any=await performSonySdkControl(f.camera,'set-exposure-mode','manual')
+ expect(f.writes).toEqual([310,311,312]);expect(f.properties.find(p=>p.code===261).value).toBe('32853');expect(result.controls.iso.writable).toBe(true)
+})
+it('Manual exposure cannot claim success when the camera does not offer the requested mode',async()=>{
+ const f=manualExposureCamera('32848',['32848'])
+ await expect(performSonySdkControl(f.camera,'set-exposure-mode','manual')).rejects.toThrow('does not advertise');expect(f.writes).toEqual([])
 })
