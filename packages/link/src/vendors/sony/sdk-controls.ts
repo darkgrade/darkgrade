@@ -37,6 +37,7 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
     aspectRatio: { code: 273, label: 'Aspect ratio', values: { '1': '3:2', '2': '16:9', '3': '4:3', '4': '1:1' } },
     movieFormat: { code: 295, label: 'Movie format' },
     movieSetting: { code: 296, label: 'Movie recording profile' },
+    movieFrameRate: { code: 297, label: 'Movie frame rate', values: {'1':'120p','2':'100p','3':'60p','4':'50p','5':'30p','6':'25p','7':'24p','8':'23.98p','9':'29.97p','10':'59.94p','22':'24p','23':'119.88p'} },
     zoomSetting: {
         code: 293,
         label: 'Zoom range',
