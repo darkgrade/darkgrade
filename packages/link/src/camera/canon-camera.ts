@@ -852,7 +852,20 @@ export class CanonCamera extends GenericCamera {
                 if (property) {
                     const codec = this.resolveCodec(property.codec)
                     const encoded = event.valueData || this.registry.codecs.uint32.encode(rawValue)
-                    const decoded = codec.decode(encoded)
+                    let decoded
+                    try {
+                        decoded = codec.decode(encoded)
+                    } catch {
+                        // New bodies can publish values outside an older enum table.
+                        // Retain diagnostics without dropping later properties/choices.
+                        this.propertyCache.delete(property)
+                        this.unknownPropertyCache.set(propCode, {
+                            ...this.unknownPropertyCache.get(propCode),
+                            rawValue,
+                            valueDataHex: bytesToHex(encoded),
+                        })
+                        return
+                    }
 
                     const existing = this.propertyCache.get(property)
                     this.propertyCache.set(property, {

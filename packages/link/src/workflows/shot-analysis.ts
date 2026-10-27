@@ -19,6 +19,8 @@ function shutterSeconds(value:string):number|undefined{
 
 /** Choose the closest advertised shutter to a 180-degree shutter angle. */
 export function chooseShutterSpeed(allowed:string[],frameRate:number|undefined,current?:string):string|undefined{
+ const angles=allowed.filter(value=>/^\d+(?:\.\d+)?°$/.test(value)).map(value=>({value,degrees:Number(value.slice(0,-1))})).filter(item=>item.degrees>=90&&item.degrees<=360).sort((left,right)=>Math.abs(left.degrees-180)-Math.abs(right.degrees-180))
+ if(angles.length)return angles[0]!.value===current?undefined:angles[0]!.value
  if(!frameRate||!Number.isFinite(frameRate)||frameRate<1||frameRate>1000)return
  const target=1/(2*frameRate),candidates=allowed.map(value=>({value,seconds:shutterSeconds(value)})).filter((item):item is {value:string;seconds:number}=>item.seconds!==undefined)
  let selected:{value:string;distance:number}|undefined

@@ -76,6 +76,7 @@ function label(property: SonySdkProperty, key: string, value: string): string {
     if (key === 'exposureComp') return String(Number(value) / 1000)
     if (key === 'iso') return value === '16777215' ? 'Auto' : value
     if (key === 'shutterSpeed') {
+        if (property.code === 378) return `${Number(value) / 1000}°`
         if (value === '0') return 'BULB'
         const packed = Number(value)
         return `${packed >>> 16}/${packed & 65535}`
@@ -83,6 +84,12 @@ function label(property: SonySdkProperty, key: string, value: string): string {
     return controls[key]?.values?.[value] || SONY_SDK_SETTING_LABELS[property.code]?.[value] || value
 }
 function findProperty(properties: SonySdkProperty[], key: string): SonySdkProperty | undefined {
+    if (key === 'shutterSpeed') {
+        const speed = properties.find(property => property.code === 259)
+        const angle = properties.find(property => property.code === 378)
+        if (angle?.writable && (!speed?.writable || speed.value === '4294967295')) return angle
+        return speed
+    }
     if (key === 'jpegQuality')
         return properties.find(property => property.code === 263) || properties.find(property => property.code === 301)
     return properties.find(property => property.code === controls[key]?.code)
@@ -124,6 +131,11 @@ function settingValue(property: SonySdkProperty, key: string, value: string | nu
     }
     if (key === 'iso') return normalized === 'auto' ? 16777215n : BigInt(text)
     if (key === 'shutterSpeed') {
+        if (property.code === 378) {
+            const degrees = /^\d+(?:\.\d+)?°?$/.test(text) ? Number(text.replace('°', '')) : NaN
+            if (!(degrees > 0 && degrees <= 360)) throw new Error('This camera uses shutter angle; choose an advertised angle such as 180°')
+            return BigInt(Math.round(degrees * 1000))
+        }
         if (normalized === 'bulb') return 0n
         const match = text.match(/^(\d+)(?:\/(\d+))?$/)
         if (!match || Number(match[1]) > 65535 || Number(match[2] || 1) > 65535 || Number(match[2] || 1) === 0)

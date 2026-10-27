@@ -172,3 +172,12 @@ it('Manual exposure cannot claim success when the camera does not offer the requ
  const f=manualExposureCamera('32848',['32848'])
  await expect(performSonySdkControl(f.camera,'set-exposure-mode','manual')).rejects.toThrow('does not advertise');expect(f.writes).toEqual([])
 })
+it('a video shutter angle is usable exposure control even when shutter speed is unavailable',async()=>{
+ const f=manualExposureCamera('32853',['32853'],true)
+ f.properties.find(p=>p.code===259).value='4294967295'
+ f.properties.push({code:378,value:'180000',writable:true,valueForm:'enum',allowedValues:['90000','180000','360000']})
+ const manual:any=await performSonySdkControl(f.camera,'set-exposure-mode','manual')
+ expect(manual.controls.shutterSpeed.value).toBe('180°');expect(manual.exposureModeVerified).toBe(true)
+ await performSonySdkControl(f.camera,'set-shutter-speed','90°')
+ expect(f.properties.find(p=>p.code===378).value).toBe('90000')
+})

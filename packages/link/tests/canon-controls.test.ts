@@ -282,3 +282,15 @@ it('bounds Canon movie-switch busy and rejects other errors immediately',async()
  attempts=0;camera.send=(async()=>{attempts++;return {code:0x2005}}) as typeof camera.send
  await expect(camera.enterMovieMode()).rejects.toThrow('0x2005');expect(attempts).toBe(1)
 })
+
+it('an unrecognized Canon value cannot discard later exposure properties and choices',async()=>{
+ const {camera}=testCamera(),instance=camera as any
+ instance.processEvents([
+  {code:0xc189,parameters:[camera.registry.properties.CanonFocusMode.code,999]},
+  {code:0xc189,parameters:[camera.registry.properties.CanonIso.code,0x48]},
+  {code:0xc18a,parameters:[camera.registry.properties.CanonIso.code],allowedValues:[0x48,0x50,0x58]},
+ ])
+ const iso=(await camera.listPropertyStates()).find(property=>property.name==='CanonIso')
+ expect(iso?.value).toBe('100');expect(iso?.allowedValues).toEqual(['100','200','400'])
+ expect(camera.listUnknownPropertyStates().find(property=>property.code===camera.registry.properties.CanonFocusMode.code)?.rawValue).toBe(999)
+})
