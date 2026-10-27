@@ -57,3 +57,9 @@ it('locked Auto ISO produces an actionable error instead of a silent no-op',asyn
  const result=await optimiseShot({image:new Uint8Array(),controls:{iso:{value:'0',writable:false},shutterSpeed:{value:'0',writable:false}},analyse:async()=>balanced,publish:()=>{},apply:async()=>{throw new Error('Must not write locked controls')},recapture:async()=>new Uint8Array()})
  expect(result.status).toBe('attention');expect(result.error).toContain('Manual exposure');expect(result.changes).toEqual([])
 })
+
+it('locking unknown Auto ISO restores the metered brightness instead of accepting a darker image',async()=>{
+ const controls={iso:{value:'Auto',allowedValues:['Auto','400','800','1600','3200'],writable:true},shutterSpeed:{value:'1/50'}}
+ const result=await optimiseShot({image:new Uint8Array(),controls,analyse:async()=>controls.iso.value==='Auto'?{...balanced,metrics:{...balanced.metrics,median:.33}}:Number(controls.iso.value)<1600?{...balanced,metrics:{...balanced.metrics,median:.12,p95:.42}}:balanced,publish:()=>{},apply:async(_action,value)=>{controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
+ expect(result.changes[0].after).toBe('400');expect(Number(controls.iso.value)).toBeGreaterThanOrEqual(1600);expect(result.exposureVerified).toBe(true)
+})

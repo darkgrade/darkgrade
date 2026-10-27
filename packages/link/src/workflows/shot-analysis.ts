@@ -52,7 +52,7 @@ export function measureShot(rgb:Uint8Array,width:number,height:number):ShotMetri
  // Exclude HDMI overlays and borders from metering.
  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const i=y*width+x,o=i*3;luma[i]=(.2126*rgb[o]+.7152*rgb[o+1]+.0722*rgb[o+2])/255}
  for(let y=Math.floor(height*.15);y<height*.85;y++)for(let x=Math.floor(width*.15);x<width*.85;x++){
-  const i=y*width+x,o=i*3,v=luma[i];values.push(v);if(v>.97)clipped++;if(v<.04)dark++
+  const i=y*width+x,o=i*3,v=luma[i];values.push(v);if(v>.97)clipped++;if(v<.08)dark++
   // Some HDMI capture paths preserve legal-range white (235) inside JPEG.
   // Detect a broad neutral plateau, not merely a bright percentile or white wall.
   const minimum=Math.min(rgb[o],rgb[o+1],rgb[o+2]),maximum=Math.max(rgb[o],rgb[o+1],rgb[o+2])
