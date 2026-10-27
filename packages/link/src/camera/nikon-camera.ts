@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -41,6 +42,7 @@ export class NikonCamera extends GenericCamera {
     private applicationMode: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
     private liveViewStatus: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
     private liveViewStartPending = false
+    private manualVideoExposureRequested = false
 
     vendorId = VendorIDs.NIKON
     declare public registry: NikonRegistry
@@ -54,7 +56,7 @@ export class NikonCamera extends GenericCamera {
     async disconnect(): Promise<void> {
         try {
             if (this.liveViewStatus === 'ON' || this.liveViewStartPending) await this.disableLiveView()
-        } finally { await super.disconnect() }
+        } finally { this.manualVideoExposureRequested=false; await super.disconnect() }
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -331,6 +333,17 @@ export class NikonCamera extends GenericCamera {
         return { commandSent: true, completed: true, metadata: await this.freshFocusMetadata() }
     }
 
+    /** Retain remote Manual exposure across this session's movie-start renewal.
+     * Explicit opt-in: ordinary recordings continue to follow the body dial.
+     */
+    async prepareManualVideoExposure(){
+        if(await this.get(this.registry.properties.LiveViewSelector)!=='VIDEO')throw new Error('Nikon remote Manual video exposure requires video mode')
+        const result=await prepareNikonManualExposure(this)
+        this.cameraMode='REMOTE'
+        this.manualVideoExposureRequested=true
+        return result
+    }
+
     async startRecording(): Promise<void> {
         const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
         if (condition.includes('alreadyRecording')) throw new Error('Nikon is already recording; its session was preserved')
@@ -351,6 +364,7 @@ export class NikonCamera extends GenericCamera {
             this.applicationMode = 'UNKNOWN'
             this.liveViewStatus = 'UNKNOWN'
         }
+        if(this.manualVideoExposureRequested)await this.prepareManualVideoExposure()
         // Setup capture
 
         // update live view status and mode

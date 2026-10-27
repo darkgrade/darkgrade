@@ -103,3 +103,7 @@ export {NikonMenuController,type NikonMenuKey,type NikonMenuRunOptions} from '@v
 export {NikonAccessoryController,encodeNikonAccessoryKey,encodeNikonAccessoryInfo} from '@vendors/nikon/accessory-controls'
 export type {NikonAccessoryKey,NikonAccessoryState,NikonAccessoryInfo,NikonAccessorySoftwareConfirmationOptions} from '@vendors/nikon/accessory-controls'
 export {MovieShutterMode,MovieShutterAngle,ExternalDCIn} from '@vendors/nikon/video-properties'
+
+export {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
+
+export {NikonShotControls} from '@vendors/nikon/shot-controls'

@@ -353,3 +353,30 @@ it('does not continue movie setup when the fresh Nikon PTP session is rejected',
  expect(calls.some(call=>call.name==='StartMovieRecord'||call.name==='ChangeApplicationMode')).toBe(false)
  expect(camera.sessionId).toBeNull()
 })
+
+
+it('reapplies explicitly requested remote Manual exposure after renewing a movie session',async()=>{
+ const {camera,calls,send}=fixture();camera.sessionId=12
+ let exposure=3,remote=false,manualWrites=0
+ vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'none') as any)
+ send.mockImplementation(async(operation,params:any,data?:Uint8Array)=>{
+  calls.push({name:operation.name,params})
+  if(operation.name==='CloseSession'){exposure=3;remote=false}
+  if(operation.name==='ChangeCameraMode')remote=params.Mode==='REMOTE'
+  if(operation.name==='GetDevicePropDescEx')return {code:OK.code,data:params.DevicePropCode===0xd0a4?{devicePropertyCode:0xd0a4,currentValueRaw:0}:{devicePropertyCode:0x500e,dataType:4,currentValueRaw:exposure,getSet:'GET_SET',supportedValuesRaw:[1,2,3,4]}} as any
+  if(operation.name==='SetDevicePropValueEx'){expect(remote).toBe(true);exposure=new DataView(data!.buffer,data!.byteOffset).getUint16(0,true);manualWrites++}
+  if(operation.name==='StartMovieRecord'){expect(exposure).toBe(1);expect(remote).toBe(true)}
+  return {code:OK.code} as any
+ })
+ await camera.prepareManualVideoExposure();expect(manualWrites).toBe(1)
+ await camera.startRecording();expect(manualWrites).toBe(2)
+ expect(calls.some(call=>call.name==='StartMovieRecord')).toBe(true)
+ expect(calls.findIndex(call=>call.name==='OpenSession')).toBeLessThan(calls.map(call=>call.name).lastIndexOf('ChangeCameraMode'))
+})
+
+it('ordinary movie startup never silently enables remote Manual exposure',async()=>{
+ const {camera,calls}=fixture();camera.sessionId=12
+ vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'none') as any)
+ await camera.startRecording()
+ expect(calls.some(call=>call.name==='SetDevicePropValueEx'||call.name==='ChangeCameraMode')).toBe(false)
+})
