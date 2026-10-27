@@ -62,6 +62,26 @@ function sdkCamera(ignoreFirstPoint = false) {
     }
 }
 describe('Sony Wi-Fi USB control parity', () => {
+    it('waits for a temporary camera lock before a verified exposure write', async () => {
+        const {camera,properties,requests}=sdkCamera()
+        await camera.connectUsb('unit-test')
+        const iso=properties.find(property=>property.code===260)!
+        iso.writable=false
+        const unlock=setTimeout(()=>{iso.writable=true},200)
+        try {
+            const result=await camera.setSonySetting(260,6400)
+            expect(result.verified).toBe(true)
+            expect(result.after.value).toBe('6400')
+            expect(requests.filter(request=>request.cmd==='set'&&request.code==='260')).toHaveLength(1)
+        } finally {clearTimeout(unlock)}
+    })
+    it('does not write a camera setting that remains locked', async () => {
+        const {camera,properties,requests}=sdkCamera()
+        await camera.connectUsb('unit-test')
+        properties.find(property=>property.code===260)!.writable=false
+        await expect(camera.setSonySetting(260,6400)).rejects.toThrow('read-only')
+        expect(requests.some(request=>request.cmd==='set'&&request.code==='260')).toBe(false)
+    })
     it('converts familiar exposure, focus, format and quality values to SDK choices', async () => {
         const { camera, properties } = sdkCamera()
         await camera.connectUsb('unit-test')

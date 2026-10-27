@@ -357,13 +357,20 @@ export class SonyWifiCamera {
             typeof nameOrCode === 'number'
                 ? nameOrCode
                 : Object.entries(propertyCodes).find(([name]) => normalize(name) === normalize(nameOrCode))?.[1]
-        const before = properties.find(
+        let before = properties.find(
             property =>
                 property.code === requestedCode ||
                 (typeof nameOrCode === 'string' && normalize(property.name) === normalize(nameOrCode))
         )
         if (!before)
             throw new Error('The camera does not advertise that setting; search capabilities for its exact name')
+        // Half-press and movie finalization can briefly lock exposure over Wi-Fi.
+        // Wait for the camera to advertise write access; never bypass that guard.
+        const writableDeadline = Date.now() + 1500
+        while (!before.writable && Date.now() < writableDeadline) {
+            await new Promise(resolve => setTimeout(resolve, 150))
+            before = await this.getSonyProperty(before.code)
+        }
         await this.setSonyProperty(before.code, value)
         const deadline = Date.now() + 5000
         let after: SonySdkProperty
