@@ -49,7 +49,7 @@ describe('USB event polling recovery',()=>{
 describe('USB camera serial selection', () => {
  it('opens the requested body when two cameras have the same USB model', async () => {
   const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
-  const first = {open:vi.fn()}, selected = {open:vi.fn().mockRejectedValue(new Error('selected body'))}
+  const first = {vendorId:0x054c,productId:0x0f4a,serialNumber:'other',open:vi.fn()}, selected = {vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted',open:vi.fn().mockRejectedValue(new Error('selected body'))}
   vi.spyOn(transport,'getUSB').mockResolvedValue({})
   vi.spyOn(transport,'discover').mockResolvedValue([
    {vendorId:0x054c,productId:0x0f4a,serialNumber:'other',device:first},

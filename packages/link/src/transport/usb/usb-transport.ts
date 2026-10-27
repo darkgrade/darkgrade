@@ -52,6 +52,7 @@ export class USBTransport implements TransportInterface {
     private endpoints: EndpointConfiguration | null = null
     private connected = false
     private usb: USB | null = null
+    private usbScope: string | undefined
     private eventHandler: ((event: PTPEvent) => void) | null = null
     private pollingEndpoint: InEndpoint | null = null
 
@@ -69,44 +70,27 @@ export class USBTransport implements TransportInterface {
         return true
     }
 
-    private async getUSB(): Promise<USB> {
-        if (this.usb) return this.usb
+    private discoveryFilters(device?: DeviceDescriptor): USBDeviceFilter[] {
+        if (device?.usb?.filters.length) return device.usb.filters
+        return PTP_DISCOVERY_VENDORS.map(vendor => ({ vendorId: vendor.vendorId, classCode: 0x06, subclassCode: 0x01 }))
+    }
 
-        if (typeof navigator !== 'undefined' && 'usb' in navigator) {
-            this.usb = navigator.usb
-            return this.usb
-        }
+    private async getUSB(filters: USBDeviceFilter[]): Promise<USB> {
+        if (typeof navigator !== 'undefined' && 'usb' in navigator) return navigator.usb
 
-        // node-usb's default `webusb` export is built with allowAllDevices: false, so its
-        // getDevices() only ever returns previously-granted devices — an empty list under
-        // Node. Enumerating requires an instance that opts into exposing all devices.
+        const scope = JSON.stringify(filters)
+        if (this.usb && this.usbScope === scope) return this.usb
         const { WebUSB } = await import('usb')
-        this.usb = new WebUSB({ allowAllDevices: true })
+        this.usb = new WebUSB({ allowedDevices: filters, allowAllDevices: false, deviceTimeout: 1000 })
+        this.usbScope = scope
         return this.usb
     }
 
-    async discover() {
-        const usb = await this.getUSB()
-
-        // Request devices for common camera vendors with PTP/Still Image class
-        for (const vendor of PTP_DISCOVERY_VENDORS) {
-            try {
-                await usb.requestDevice({
-                    filters: [
-                        {
-                            vendorId: vendor.vendorId,
-                            classCode: 0x06,
-                            subclassCode: 0x01,
-                        },
-                    ],
-                })
-            } catch (e) {
-                // Device not found or access denied
-            }
-        }
-
+    async discover(device?: DeviceDescriptor) {
+        const filters = this.discoveryFilters(device)
+        const usb = await this.getUSB(filters)
         const devices = await usb.getDevices()
-        return devices.map(device => ({
+        return devices.filter(device => filters.some(filter => this.matchesFilter(device, filter))).map(device => ({
             device,
             vendorId: device.vendorId,
             productId: device.productId,
@@ -118,12 +102,29 @@ export class USBTransport implements TransportInterface {
         }))
     }
 
+    private matchesFilter(device: USBDevice, filter: USBDeviceFilter): boolean {
+        if (filter.vendorId !== undefined && device.vendorId !== filter.vendorId) return false
+        if (filter.productId !== undefined && device.productId !== filter.productId) return false
+        if (filter.serialNumber !== undefined && device.serialNumber !== filter.serialNumber) return false
+        if (filter.classCode === undefined) return true
+        const alternates = device.configuration?.interfaces.flatMap(iface => iface.alternates) ?? []
+        return alternates.some(alternate => alternate.interfaceClass === filter.classCode
+            && (filter.subclassCode === undefined || alternate.interfaceSubclass === filter.subclassCode)
+            && (filter.protocolCode === undefined || alternate.interfaceProtocol === filter.protocolCode))
+    }
+
     async connect(device?: DeviceDescriptor): Promise<void> {
         if (this.connected) throw new Error('Already connected')
 
-        const usb = await this.getUSB()
-
-        const availableDevices = await this.discover()
+        const filters = this.discoveryFilters(device)
+        const exclusions = device?.usb?.exclusionFilters ?? []
+        let availableDevices = await this.discover(device)
+        const matches = (candidate: { device: USBDevice }) => filters.some(filter => this.matchesFilter(candidate.device, filter))
+            && !exclusions.some(filter => this.matchesFilter(candidate.device, filter))
+        if (typeof navigator !== 'undefined' && 'usb' in navigator && !availableDevices.some(matches)) {
+            await navigator.usb.requestDevice({ filters, ...(exclusions.length ? { exclusionFilters: exclusions } : {}) })
+            availableDevices = await this.discover(device)
+        }
 
         if (availableDevices.length === 0) {
             console.error('[USB] No USB devices found. Make sure camera is connected and in PTP/MTP mode.')
@@ -134,17 +135,7 @@ export class USBTransport implements TransportInterface {
 
         console.log(formatDeviceTable(availableDevices))
 
-        const filters = device?.usb?.filters || [{ classCode: 0x06, subclassCode: 0x01 }]
-
-        const matchingDevice = availableDevices.find(d => {
-            const filter = filters[0]
-            if (filter.vendorId !== undefined && d.vendorId !== filter.vendorId) return false
-            if (filter.productId !== undefined && d.productId !== filter.productId) return false
-            if (filter.serialNumber !== undefined && d.serialNumber !== filter.serialNumber) return false
-            if (filter.classCode !== undefined && d.classCode !== filter.classCode) return false
-            if (filter.subclassCode !== undefined && d.subclassCode !== filter.subclassCode) return false
-            return true
-        })
+        const matchingDevice = availableDevices.find(matches)
         if (!matchingDevice?.device) {
             throw new Error('No matching device found in discovered devices')
         }
