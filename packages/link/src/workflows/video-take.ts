@@ -132,7 +132,14 @@ export class VideoTake {
                     delete state.transferRecovery
                     if(!matchesOriginalMedia(original,files))throw new Error('Transferred footage did not match the camera files')
                     state.media=files;state.totalBytes=files.reduce((total,file)=>total+file.bytes,0);state.transferredBytes=state.totalBytes;state.state='collected';delete state.error
-                }catch(error){delete state.transferRecovery;state.error=message(error)}this.changed()
+                }catch(error){delete state.transferRecovery;state.error=message(error)}
+                finally{
+                    // Release finished cameras while another original transfers.
+                    // Their bench keep-alive must not remain blocked by this take.
+                    try{await this.devices.get(state.camera)!.close()}
+                    catch(error){state.warning=[state.warning,'Camera connection release needs attention: '+message(error)].filter(Boolean).join('; ')}
+                }
+                this.changed()
             }
             this.state.stage=this.state.cameras.every(camera=>camera.state==='collected')?'complete':'attention';this.changed();return this.state
         }finally{await this.closeIdle();this.busy=false}
