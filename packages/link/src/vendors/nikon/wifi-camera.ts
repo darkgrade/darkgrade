@@ -1,5 +1,6 @@
 import {Camera} from '@camera/index'
 import {IPTransport} from '@transport/ip/ip-transport'
+import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 
 export interface NikonWifiConnectionOptions {
     address:string
@@ -29,7 +30,7 @@ export async function connectNikonWifiCamera(options:NikonWifiConnectionOptions)
         if(reply.code!==0x2001||!reply.data||!/nikon/i.test(reply.data.manufacturer))throw new Error('Network endpoint did not identify as a Nikon camera')
         const serial=(value:string)=>value.replace(/^0+/,'')
         if(serial(reply.data.serialNumber)!==serial(options.expectedSerialNumber))throw new Error('Nikon Wi-Fi camera identity does not match the selected camera')
-        const path=await camera.send(instance.registry.operations.GetDevicePropDescEx,{DevicePropCode:0xd12e})
+        const path=await camera.send(GetDevicePropDescEx,{DevicePropCode:0xd12e})
         if(path.code!==0x2001||path.data?.devicePropertyCode!==0xd12e||path.data?.currentValueRaw!==2)throw new Error('Nikon did not confirm built-in Wi-Fi as the active control path')
         return {camera,model:reply.data.model,connectionPath:'wifi' as const,verified:true as const}
     }catch(error){

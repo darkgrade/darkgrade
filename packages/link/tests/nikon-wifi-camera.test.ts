@@ -1,15 +1,16 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest'
 const fixture=vi.hoisted(()=>({connect:vi.fn(),disconnect:vi.fn(),transportDisconnect:vi.fn(),send:vi.fn(),transport:vi.fn()}))
 vi.mock('@transport/ip/ip-transport',()=>({IPTransport:class{constructor(options:unknown){fixture.transport(options)}disconnect=fixture.transportDisconnect}}))
-vi.mock('@camera/index',()=>({Camera:class{connect=fixture.connect;disconnect=fixture.disconnect;send=fixture.send;getInstance(){return{registry:{operations:{GetDeviceInfo:'info',GetDevicePropDescEx:'path'}}}}}}))
+vi.mock('@camera/index',()=>({Camera:class{connect=fixture.connect;disconnect=fixture.disconnect;send=fixture.send;getInstance(){return{registry:{operations:{GetDeviceInfo:'info'}}}}}}))
 import {connectNikonWifiCamera} from '@vendors/nikon/wifi-camera'
+import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 const options={address:'192.0.2.1',clientGuid:Uint8Array.from({length:16},(_,index)=>index+1),expectedSerialNumber:'3023406'}
-beforeEach(()=>{vi.resetAllMocks();fixture.connect.mockResolvedValue(undefined);fixture.disconnect.mockResolvedValue(undefined);fixture.send.mockImplementation(async(operation:string)=>operation==='info'?{code:0x2001,data:{manufacturer:'Nikon Corporation',model:'Z6_3',serialNumber:'00003023406'}}:{code:0x2001,data:{devicePropertyCode:0xd12e,currentValueRaw:2}})})
+beforeEach(()=>{vi.resetAllMocks();fixture.connect.mockResolvedValue(undefined);fixture.disconnect.mockResolvedValue(undefined);fixture.send.mockImplementation(async(operation:unknown)=>operation==='info'?{code:0x2001,data:{manufacturer:'Nikon Corporation',model:'Z6_3',serialNumber:'00003023406'}}:{code:0x2001,data:{devicePropertyCode:0xd12e,currentValueRaw:2}})})
 describe('verified Nikon Wi-Fi connection',()=>{
  it('preserves controller identity and verifies the active control path',async()=>{
   expect(await connectNikonWifiCamera(options)).toMatchObject({model:'Z6_3',connectionPath:'wifi',verified:true})
   expect(fixture.transport).toHaveBeenCalledWith(expect.objectContaining({clientGuid:options.clientGuid,timeout:5000}))
-  expect(fixture.send.mock.calls.map(call=>call[0])).toEqual(['info','path'])
+  expect(fixture.send.mock.calls.map(call=>call[0])).toEqual(['info',GetDevicePropDescEx])
   expect(fixture.disconnect).not.toHaveBeenCalled()
  })
  it.each([0,3,255,undefined])('rejects an unverified Wi-Fi path %s',async(value)=>{

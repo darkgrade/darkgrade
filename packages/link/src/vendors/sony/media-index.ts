@@ -1,8 +1,8 @@
-import {sonyMovieCard} from '@vendors/sony/recording-slots'
+import {sonyMovieCard, type SonyMovieCardPropertyName} from '@vendors/sony/recording-slots'
 
 interface RecordingIndexCamera {
     getRecentSonyContents(options:{all:true}):Promise<Record<string,unknown>[]>
-    getSonyProperty(name:string):Promise<{value:string}>
+    getSonyProperty(name:SonyMovieCardPropertyName | 'RecordingState'):Promise<{value:string}>
     startRecording():Promise<void>
     stopRecording():Promise<void>
     refreshConnection():Promise<void>

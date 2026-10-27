@@ -1,5 +1,7 @@
+export type SonyMovieCardPropertyName = 'Movie_RecordingMedia' | `MediaSLOT${1 | 2}_${'Status' | 'RemainingTime' | 'RemainingNumber'}`
+
 /** Read the movie destination without changing the camera's recording-media selection. */
-export async function sonyMovieSlots(camera: {getSonyProperty:(name:string)=>Promise<{value:string}>}):Promise<number[]> {
+export async function sonyMovieSlots(camera: {getSonyProperty:(name:SonyMovieCardPropertyName)=>Promise<{value:string}>}):Promise<(1 | 2)[]> {
     const selection=await camera.getSonyProperty('Movie_RecordingMedia').catch(()=>undefined)
     if(!selection){
         const secondSlot=await camera.getSonyProperty('MediaSLOT2_Status').catch(()=>undefined)
@@ -12,7 +14,7 @@ export async function sonyMovieSlots(camera: {getSonyProperty:(name:string)=>Pro
     throw new Error('The selected Sony movie-recording media is not supported; check the camera recording-media setting')
 }
 
-export async function sonyMovieCard(camera:{getSonyProperty:(name:string)=>Promise<{value:string}>}) {
+export async function sonyMovieCard(camera:{getSonyProperty:(name:SonyMovieCardPropertyName)=>Promise<{value:string}>}) {
     const slots=await sonyMovieSlots(camera)
     const cards=await Promise.all(slots.map(async slot=>{
         const status=await camera.getSonyProperty(`MediaSLOT${slot}_Status`)
