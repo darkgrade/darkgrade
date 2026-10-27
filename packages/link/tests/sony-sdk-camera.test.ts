@@ -56,6 +56,13 @@ describe('Sony media-index pagination recovery',()=>{
   const f=fixture();f.camera.getRecentSonyContents.mockRejectedValue(new Error('Network unavailable'))
   await expect(repairSonyRecordingIndex(f.camera)).rejects.toThrow('Network unavailable');expect(f.camera.startRecording).not.toHaveBeenCalled()
  })
+ it('bounds maintenance recordings when an index fault persists',async()=>{
+  vi.useFakeTimers();try{
+   const f=fixture();f.camera.getRecentSonyContents.mockRejectedValue(new Error('Sony SDK command failed (SDK code 36102)'))
+   const rejected=expect(repairSonyRecordingIndex(f.camera)).rejects.toThrow('two attempts')
+   await vi.runAllTimersAsync();await rejected;expect(f.camera.startRecording).toHaveBeenCalledTimes(2);expect(f.camera.stopRecording).toHaveBeenCalledTimes(2)
+  }finally{vi.useRealTimers()}
+ })
  it.each(['recording','slot'])('refuses repair for unsafe %s state',async(kind)=>{
   const f=fixture();if(kind==='recording')f.state.recording=true;else f.state.slot='2'
   await expect(repairSonyRecordingIndex(f.camera)).rejects.toThrow();expect(f.camera.startRecording).not.toHaveBeenCalled();expect(f.camera.stopRecording).not.toHaveBeenCalled();expect(f.camera.refreshConnection).not.toHaveBeenCalled()
