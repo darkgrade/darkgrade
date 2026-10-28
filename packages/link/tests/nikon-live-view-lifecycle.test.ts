@@ -69,4 +69,20 @@ describe('Nikon live-view lifecycle', () => {
         expect(send.mock.calls.filter(([operation]) => operation.name === 'StartLiveView')).toHaveLength(2)
         expect(imageAttempts).toBe(3)
     })
+
+    it('fires the shutter with the default capture options and with retrieval explicitly turned off', async () => {
+        for (const options of [
+            undefined,
+            { includeInfo: true, includeData: true },
+            { includeInfo: false, includeData: false },
+        ]) {
+            const camera = cameraFixture()
+            const send = vi.spyOn(camera, 'send').mockResolvedValue({ code: OK.code } as any)
+            vi.spyOn(camera, 'get').mockImplementation(async property =>
+                property.name === 'LiveViewSelector' ? 'PHOTO' : ('OFF' as any)
+            )
+            await expect(camera.captureImage(options)).resolves.toEqual({ info: undefined, data: undefined })
+            expect(send.mock.calls.map(([operation]) => operation.name)).toContain('InitiateCapture')
+        }
+    })
 })

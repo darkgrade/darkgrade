@@ -81,7 +81,10 @@ export class PTPDisconnectedError extends PTPError {
     }
 }
 
-/** The pipe may still contain an abandoned transaction. Caller-owned recovery is required. */
+/**
+ * The pipe may still contain an abandoned transaction and the automatic USB reset failed, or the
+ * transport has none (PTP/IP). Commands stay blocked until a disconnect/connect or caller-owned recovery.
+ */
 export class PTPRecoveryRequiredError extends PTPError {
     constructor(message: string, context: PTPErrorContext = {}) {
         super(message, context)

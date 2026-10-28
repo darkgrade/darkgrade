@@ -12,10 +12,18 @@ export interface TransactionPolicy {
     /** First retry delay; each further retry doubles it. */
     deviceBusyBackoffMilliseconds: number
     /**
-     * Explicit caller-owned recovery. Absent by default: core never resets a physical camera.
-     * The callback must honor recording/lease guards and settle outstanding transport I/O before
-     * resolving. It must not call this camera's queued methods. Failed or pending recovery blocks
-     * further commands; use an explicit disconnect/connect to establish a new transport instead.
+     * After a timeout or framing violation on a USB transport, automatically send the still-image
+     * class Device Reset Request, wait for the abandoned I/O to settle and reopen the session before
+     * the next command (libgphoto2 resets the same way after an I/O error). On by default. If the
+     * automatic reset fails, later commands fail with PTPRecoveryRequiredError until a
+     * disconnect/connect. Transports without a class reset (PTP/IP) always latch instead.
+     */
+    automaticUSBReset: boolean
+    /**
+     * Caller-owned recovery that replaces the automatic USB reset, for example to honor
+     * recording/lease guards. It must settle outstanding transport I/O before resolving and must
+     * not call this camera's queued methods. Failed or pending recovery blocks further commands;
+     * use an explicit disconnect/connect to establish a new transport instead.
      */
     recoverTransport?: (failure: PTPErrorContext) => Promise<void>
 }
@@ -25,6 +33,7 @@ export const DEFAULT_TRANSACTION_POLICY: TransactionPolicy = {
     minimumThroughputBytesPerSecond: 2 * 1024 * 1024,
     deviceBusyRetries: 4,
     deviceBusyBackoffMilliseconds: 25,
+    automaticUSBReset: true,
 }
 
 export const CONTAINER_TYPE = { command: 1, data: 2, response: 3, event: 4 } as const
@@ -78,6 +87,19 @@ export class TransactionChannel {
         return this.pendingOperations.size > 0
     }
 
+    /** Waits up to `milliseconds` for abandoned transport I/O to finish; true when none is left. */
+    async settle(milliseconds: number): Promise<boolean> {
+        if (!this.hasPendingIO) return true
+        let timer: ReturnType<typeof setTimeout> | undefined
+        await Promise.race([
+            Promise.allSettled([...this.pendingOperations]),
+            new Promise<void>(resolve => {
+                timer = setTimeout(resolve, milliseconds)
+            }),
+        ]).finally(() => clearTimeout(timer))
+        return !this.hasPendingIO
+    }
+
     /** The caller has explicitly replaced the closed transport connection; old replies are isolated. */
     newConnection(): void {
         this.pendingOperations.clear()
@@ -101,6 +123,8 @@ export class TransactionChannel {
             throw new Error('DeviceBusy retries must be an integer from 0 to 32')
         if (!Number.isSafeInteger(policy.deviceBusyBackoffMilliseconds) || policy.deviceBusyBackoffMilliseconds < 0)
             throw new Error('DeviceBusy backoff must be a nonnegative integer')
+        if (typeof policy.automaticUSBReset !== 'boolean')
+            throw new Error('Automatic USB reset must be enabled or disabled with a boolean')
         if (policy.recoverTransport !== undefined && typeof policy.recoverTransport !== 'function')
             throw new Error('Transport recovery must be an explicitly supplied callback')
         this.policy = policy

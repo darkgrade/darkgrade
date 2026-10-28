@@ -80,12 +80,21 @@ afterEach(() => {
 })
 
 describe('Nikon command and media boundaries', () => {
-    it('refuses an unimplemented still-image download before taking a photo', async () => {
-        const { target, camera } = await connected()
+    it('fires the shutter with the default capture options and claims no media it did not retrieve', async () => {
+        const profile = scenario()
+        profile.exchanges.push(
+            exchange('0x90c2', ['0x1']),
+            exchange('0x90c2', ['0x0']),
+            { ...exchange('0x943c', ['0xd1a6']), dataFromHost: '00' },
+            { ...exchange('0x943c', ['0xd1a6']), dataFromHost: '01' },
+            exchange('0x100e', ['0x0', '0x0'])
+        )
+        const { target, camera } = await connected(profile)
         const send = vi.spyOn(camera, 'send')
         try {
-            await expect(camera.captureImage()).rejects.toThrow('still-image retrieval is not implemented')
-            expect(send).not.toHaveBeenCalled()
+            // The public Camera API asks for info and data by default; the shutter still fires.
+            await expect(target.camera.captureImage()).resolves.toEqual({ info: undefined, data: undefined })
+            expect(send.mock.calls.filter(([operation]) => operation.code === 0x100e)).toHaveLength(1)
         } finally {
             await target.camera.disconnect()
         }
