@@ -69,3 +69,21 @@ describe('USB camera serial selection', () => {
   expect(device.open).not.toHaveBeenCalled()
  })
 })
+
+
+describe('USB halt recovery errors', () => {
+ it.each([EndpointType.BULK_IN, EndpointType.BULK_OUT, EndpointType.INTERRUPT])('retains a disconnect failure for %s', async type => {
+  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  const failure = new Error('LIBUSB_TRANSFER_NO_DEVICE')
+  transport.device = {clearHalt:vi.fn().mockRejectedValue(failure)}
+  transport.endpoints = {bulkIn:{endpointNumber:1},bulkOut:{endpointNumber:2},interrupt:{endpointNumber:3}}
+  await expect(transport.clearHalt(type)).rejects.toBe(failure)
+  expect(transport.device.clearHalt).toHaveBeenCalledWith(type === EndpointType.BULK_OUT ? 'out' : 'in', type === EndpointType.INTERRUPT ? 3 : type === EndpointType.BULK_OUT ? 2 : 1)
+ })
+ it.each(['LIBUSB_TRANSFER_CANCELLED','LIBUSB_TRANSFER_ERROR'])('allows the existing %s recovery case', async message => {
+  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  transport.device = {clearHalt:vi.fn().mockRejectedValue(new Error(message))}
+  transport.endpoints = {interrupt:{endpointNumber:3}}
+  await expect(transport.clearHalt(EndpointType.INTERRUPT)).resolves.toBeUndefined()
+ })
+})

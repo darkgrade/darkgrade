@@ -2,7 +2,7 @@ import { Logger } from '@core/logger'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
-import { InEndpoint, Interface, LibUSBException, usb } from 'usb'
+import { InEndpoint, Interface, usb } from 'usb'
 import { USBContainerBuilder, USBContainerType } from './usb-container'
 import { formatDeviceTable } from './usb-device-table'
 
@@ -301,39 +301,16 @@ export class USBTransport implements TransportInterface {
     private async clearHalt(type: EndpointType): Promise<void> {
         if (!this.device || !this.endpoints) throw new Error('Cannot clear stall')
 
-        if (type === EndpointType.BULK_IN) {
-            try {
-                await this.device.clearHalt('in', this.endpoints.bulkIn.endpointNumber)
-            } catch (error) {
-                if (
-                    error instanceof LibUSBException &&
-                    (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
-                ) {
-                    // Stall cleared
-                }
-            }
-        } else if (type === EndpointType.BULK_OUT) {
-            try {
-                await this.device.clearHalt('out', this.endpoints.bulkOut.endpointNumber)
-            } catch (error) {
-                if (
-                    error instanceof LibUSBException &&
-                    (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
-                ) {
-                    // Stall cleared
-                }
-            }
-        } else if (type === EndpointType.INTERRUPT) {
-            try {
-                await this.device.clearHalt('in', this.endpoints.interrupt.endpointNumber)
-            } catch (error) {
-                if (
-                    error instanceof LibUSBException &&
-                    (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
-                ) {
-                    // Stall cleared
-                }
-            }
+        const direction = type === EndpointType.BULK_OUT ? 'out' : 'in'
+        const endpoint = (type === EndpointType.BULK_IN ? this.endpoints.bulkIn :
+            type === EndpointType.BULK_OUT ? this.endpoints.bulkOut : this.endpoints.interrupt).endpointNumber
+        try {
+            await this.device.clearHalt(direction, endpoint)
+        } catch (error) {
+            // node-usb declares LibUSBException as a type, not a runtime constructor.
+            if (error instanceof Error &&
+                (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')) return
+            throw error
         }
     }
 
