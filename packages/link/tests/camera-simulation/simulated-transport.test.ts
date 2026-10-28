@@ -73,6 +73,7 @@ function fixture(overrides: Partial<CameraProfile> = {}): CameraProfile {
 function camera(profile: CameraProfile) {
     const transport = new SimulatedTransport(profile)
     const simulated = new Camera({ transport, logger: { renderInTerminal: false, captureConsole: false } })
+    simulated.getInstance().configureTransactions({ deviceBusyRetries: 0 })
     return { transport, camera: simulated, instance: simulated.getInstance() }
 }
 

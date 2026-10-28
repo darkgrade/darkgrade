@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 import {
@@ -21,6 +22,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { GenericCamera } from './generic-camera'
 
+const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
 export interface CanonPropertyState {
     code: number
     name: string
@@ -115,7 +117,8 @@ export class CanonCamera extends GenericCamera {
         this.sessionId = 1
         await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
         const deviceInfo = await this.send(this.registry.operations.GetDeviceInfo, {})
-        if (deviceInfo.code !== OK.code || !deviceInfo.data) throw new Error('Canon GetDeviceInfo failed')
+        if (deviceInfo.code !== OK.code) throw new PTPResponseError(deviceInfo.code, 'Canon GetDeviceInfo failed')
+        if (!deviceInfo.data) throw new PTPDecodeError('Canon GetDeviceInfo failed: no DeviceInfo dataset')
         this.supportedOperations = new Set(deviceInfo.data.operationsSupportedRaw)
         await this.enableRemoteMode()
         await this.enableEventMode()
@@ -128,6 +131,11 @@ export class CanonCamera extends GenericCamera {
 
     async disconnect(): Promise<void> {
         await this.stopPolling()
+        if (!this.transport.isConnected()) {
+            this.liveViewEnabled = false
+            this.liveViewOriginalOutput = undefined
+            return super.disconnect()
+        }
         let failure: unknown
         for (const cleanup of [
             () => this.disableLiveView(),
@@ -405,7 +413,10 @@ export class CanonCamera extends GenericCamera {
         await this.withoutPolling(async () => {
             const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
             if (response.code !== OK.code) {
-                throw new Error(`Canon movie-mode switch returned 0x${response.code.toString(16)}`)
+                throw new PTPResponseError(
+                    response.code,
+                    `Canon movie-mode switch returned 0x${response.code.toString(16)}`
+                )
             }
         })
     }
@@ -414,7 +425,10 @@ export class CanonCamera extends GenericCamera {
         await this.withoutPolling(async () => {
             const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
             if (response.code !== OK.code) {
-                throw new Error(`Canon movie-mode release returned 0x${response.code.toString(16)}`)
+                throw new PTPResponseError(
+                    response.code,
+                    `Canon movie-mode release returned 0x${response.code.toString(16)}`
+                )
             }
         })
     }
@@ -468,7 +482,7 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    async captureImage(_options: { includeInfo?: boolean; includeData?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
@@ -482,7 +496,10 @@ export class CanonCamera extends GenericCamera {
                         AFMode: afMode,
                     })
                     if (focus.code !== OK.code) {
-                        throw new Error(`Canon ${afMode} focus press returned 0x${focus.code.toString(16)}`)
+                        throw new PTPResponseError(
+                            focus.code,
+                            `Canon ${afMode} focus press returned 0x${focus.code.toString(16)}`
+                        )
                     }
                     focusPressed = true
                     await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
@@ -492,7 +509,10 @@ export class CanonCamera extends GenericCamera {
                         AFMode: afMode,
                     })
                     if (shutter.code !== OK.code) {
-                        throw new Error(`Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`)
+                        throw new PTPResponseError(
+                            shutter.code,
+                            `Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`
+                        )
                     }
                     shutterPressed = true
                 } finally {
@@ -552,7 +572,10 @@ export class CanonCamera extends GenericCamera {
                 )
                 if (response.code === OK.code && response.data?.image) return response.data
                 if (![0x2019, 0xa102].includes(response.code)) {
-                    throw new Error(`Canon viewfinder read returned 0x${response.code.toString(16)}`)
+                    throw new PTPResponseError(
+                        response.code,
+                        `Canon viewfinder read returned 0x${response.code.toString(16)}`
+                    )
                 }
                 await new Promise(resolve => setTimeout(resolve, 100))
             }
@@ -675,7 +698,7 @@ export class CanonCamera extends GenericCamera {
     }
 
     private assertResponseOk(code: number, action: string): void {
-        if (code !== OK.code) throw new Error(`Canon ${action} returned 0x${code.toString(16)}`)
+        if (code !== OK.code) throw new PTPResponseError(code, `Canon ${action} returned 0x${code.toString(16)}`)
     }
 
     async stopRecording(): Promise<void> {
@@ -881,7 +904,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async flushInitialEvents(): Promise<void> {
-        while (true) {
+        // The initial dump takes a few rounds; a camera that never drains its queue must not stall connect().
+        for (let round = 0; round < MAXIMUM_INITIAL_EVENT_ROUNDS; round++) {
             try {
                 const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
                 if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {

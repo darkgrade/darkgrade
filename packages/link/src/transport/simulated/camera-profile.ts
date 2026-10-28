@@ -77,7 +77,7 @@ export interface RecordedExchange {
     name?: string
     /** Omitted when the request parameters were not captured: any parameters then match. */
     parameters?: string[]
-    /** Host-to-camera data phase. Omitted when not captured: any (or no) data then matches. */
+    /** Host-to-camera data phase. Omitted data is not a wildcard for unknown write payloads. */
     dataFromHost?: string
     response: {
         code: string

@@ -44,6 +44,8 @@ export interface ManufacturerGaps {
 
 export interface GapReport {
     matrixGeneratedAt?: string
+    /** Global workflow blockers are separate from individual opcode/capability results. */
+    workflowLimitations: string[]
     manufacturers: ManufacturerGaps[]
     /** The catalog's darkgradeGaps notes, verbatim. */
     libraryNotes: { key: string; items: string[] }[]
@@ -60,7 +62,12 @@ export interface GapReport {
     }
 }
 
-const DEFINED_VENDORS = ['canon', 'nikon', 'sony']
+const DEFINED_VENDORS = ['canon', 'nikon', 'sony', 'fujifilm', 'panasonic', 'om system', 'leica', 'sigma']
+
+export const TEST_BENCH_WORKFLOW_LIMITATIONS = [
+    'Full Test Bench prepare → start → recording-state readback → stop → original-media collection is not qualified by this matrix. The recording/workflow layer is developed separately in darkgrade/darkgrade PR #18; integrate it before running those end-to-end scenarios. See docs/test-bench-workflows.md.',
+    'darkgrade01 workflow evidence was collected with the deployed library, not this candidate branch. USB scatter-gather buffers omitted bulk-IN payloads from usbmon; hardware success cannot fill those missing replay bytes. See docs/evidence/darkgrade01-workflows-2026-10-28.md.',
+]
 
 function codesAfter(detail: string, marker: string): string[] {
     const index = detail.indexOf(marker)
@@ -156,6 +163,7 @@ export function buildGapReport(catalog: CameraCatalog, matrices: SupportMatrix[]
         .map(([key, value]) => ({ key, items: (value as unknown[]).map(String) }))
     return {
         ...(simulation && { matrixGeneratedAt: simulation.generatedAt }),
+        workflowLimitations: [...TEST_BENCH_WORKFLOW_LIMITATIONS],
         manufacturers,
         libraryNotes,
         totals: {
@@ -211,9 +219,13 @@ export function renderGapsMarkdown(report: GapReport): string {
         `- **Data:** ${totals.noDataCells} of ${totals.cells} capability cells (${percent(totals.noDataCells, totals.cells)}) have no data. ${totals.linesWithoutCapture} of ${lines.length} lines have no captured or hardware evidence, and ${totals.linesWithoutMock} have no mock. ${totals.skippedModels} catalog models are not mocked.`,
         `- **Unverified:** ${totals.unverifiedModels} catalog models and ${totals.unverifiedQuirks} line quirks are marked unverified by their sources.`,
         '',
+        '## Test Bench workflow qualification',
+        '',
+        ...report.workflowLimitations.map(item => `- ${item}`),
+        '',
         '## darkgrade library gaps',
         '',
-        'Vendor classes: ' +
+        'Vendor definition registries (presence is not workflow support): ' +
             report.manufacturers
                 .map(
                     manufacturer => `${manufacturer.name} ${manufacturer.vendorDefinitions ? 'defined' : '**missing**'}`
@@ -320,7 +332,7 @@ export function gapActions(
         actions.push({
             kind: 'add-vendor-definitions',
             area: 'library',
-            summary: `darkgrade has no vendor class for ${line.manufacturer}; add one under src/vendors/.`,
+            summary: `darkgrade has no vendor definition registry for ${line.manufacturer}; add cited definitions before implementing its workflows.`,
         })
     }
     if (line.undefinedVendorOperations.length) {

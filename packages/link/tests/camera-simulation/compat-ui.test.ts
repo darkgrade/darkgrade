@@ -321,8 +321,13 @@ describe('gap report', () => {
         expect(line.missingResponses).toEqual(['0x1002 [0x1]'])
         expect(line.capturedProfiles).toEqual(['canon-eos-r6-mark-iii'])
         expect(report.manufacturers.find(manufacturer => manufacturer.name === 'Fujifilm')?.vendorDefinitions).toBe(
-            false
+            true
         )
+        expect(
+            report.manufacturers.find(manufacturer => manufacturer.name === 'OM System / Olympus')?.vendorDefinitions
+        ).toBe(true)
+        expect(report.workflowLimitations.join(' ')).toContain('PR #18')
+        expect(renderGapsMarkdown(report)).toContain('Test Bench workflow qualification')
         expect(renderGapsMarkdown(report)).toContain('| Canon | EOS R | 0x911b 0x913f | 0x9114 [0x5] | - |')
     })
 })
@@ -706,6 +711,71 @@ describe('validated compatibility metadata roundtrip', () => {
         expect(response.rows[0].cells.session.at).toBe(original.generatedAt)
         expect(response.camera.results[0].cells.session.evidence).toMatchObject(evidence)
         expect(response.camera.results[0].cells.session.evidence?.conflicts).toHaveLength(2)
+    })
+
+    it('uses an older completed row source when replaying a newly written historical run log', () => {
+        const row = matrixRow('nikon-z6-iii', { source: original })
+        const key = planned(row).key
+        const events = parseProgress(
+            [
+                {
+                    type: 'run-start',
+                    version: 1,
+                    runId: 'historical-replay',
+                    at: '2026-10-28T12:00:00Z',
+                    pid: 0,
+                    source: 'simulation',
+                    capabilities,
+                    rows: [planned(row)],
+                },
+                {
+                    type: 'capability',
+                    runId: 'historical-replay',
+                    at: '2026-10-28T12:00:01Z',
+                    key,
+                    capability: 'session',
+                    status: 'pass',
+                    detail: 'old observation',
+                    durationMilliseconds: 1,
+                },
+                { type: 'row-end', runId: 'historical-replay', at: '2026-10-28T12:00:02Z', key, row },
+                { type: 'run-end', runId: 'historical-replay', at: '2026-10-28T12:00:03Z', outcome: 'completed' },
+            ]
+                .map(event => JSON.stringify(event))
+                .join('\n')
+        )
+        const view = emptyView()
+        applyRun(view, events, { alive: false })
+        expect(view.rows[0].lastRun).toBe(original.generatedAt)
+        expect(view.rows[0].cells.session).toMatchObject({
+            at: original.generatedAt,
+            evidence: { generatedAt: original.generatedAt, revision: original.revision },
+        })
+        const fresh = emptyView()
+        applyMatrix(
+            fresh,
+            matrix([
+                matrixRow('nikon-z6-iii', {
+                    source: { generatedAt: '2021-01-01T00:00:00Z' },
+                    results: results('fail', 'newer observation'),
+                }),
+            ]),
+            { label: 'newer', path: 'newer.json', generatedAt: '2026-10-28T13:00:00Z' }
+        )
+        applyRun(fresh, events, { alive: false })
+        expect(fresh.rows[0].cells.session).toMatchObject({
+            status: 'fail',
+            detail: 'newer observation',
+            at: '2021-01-01T00:00:00Z',
+        })
+        const directory = path.join(scratch, 'historical-source-log')
+        mkdirSync(path.join(directory, 'runs'), { recursive: true })
+        writeFileSync(
+            path.join(directory, 'runs', 'historical-replay.jsonl'),
+            events.map(event => JSON.stringify(event)).join('\n') + '\n'
+        )
+        const data = new CompatData({ resultsDirectory: directory, runsDirectory: path.join(directory, 'runs') })
+        expect(data.history(row.profile)[0].at).toBe(original.generatedAt)
     })
 
     it('keeps malformed supplied provenance unknown instead of using the fresh aggregate header', () => {

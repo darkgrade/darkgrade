@@ -105,12 +105,6 @@ export function tablePage(
     }
 }
 
-function resultCells(results: Record<string, { status: unknown; detail: unknown }>) {
-    return Object.fromEntries(
-        Object.entries(results).map(([capability, result]) => [capability, viewResult(result?.status, result?.detail)])
-    )
-}
-
 function resultLabel(fidelity: string, transport: string): string {
     return `${fidelity === 'hardware' ? 'Hardware' : `Simulated (${fidelity})`} · ${transport === 'ptp-ip' ? 'PTP/IP' : 'USB'}`
 }
@@ -191,7 +185,9 @@ export function cameraDetailModel(
                     {
                         ...viewResult(result.status, result.detail),
                         evidence:
-                            row.resultEvidence === undefined
+                            row.resultEvidence === undefined &&
+                            Number.isFinite(Date.parse(row.at)) &&
+                            ['captured', 'documented', 'hardware'].includes(row.fidelity)
                                 ? {
                                       fidelity: row.fidelity,
                                       profile: profileId,
@@ -199,7 +195,7 @@ export function cameraDetailModel(
                                       ...(row.firmware && { firmware: row.firmware }),
                                       ...(row.host && { host: row.host }),
                                   }
-                                : row.resultEvidence[capability],
+                                : row.resultEvidence?.[capability],
                     },
                 ])
             ),
@@ -231,7 +227,10 @@ export function cameraDetailModel(
                     capability,
                     {
                         ...viewResult(result.status, result.detail),
-                        evidence: { fidelity: entry.fidelity, profile: profileId, generatedAt: entry.at },
+                        ...(Number.isFinite(Date.parse(entry.at)) &&
+                            ['captured', 'documented', 'hardware'].includes(entry.fidelity) && {
+                                evidence: { fidelity: entry.fidelity, profile: profileId, generatedAt: entry.at },
+                            }),
                     },
                 ])
             ),

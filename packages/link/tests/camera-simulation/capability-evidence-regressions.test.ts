@@ -123,10 +123,18 @@ describe('capability evidence boundaries', () => {
         profile.properties = [
             {
                 code: '0x5005',
-                descriptor: { dataType: '0x0002', writable: false, factoryDefault: 2, current: 1 },
+                descriptor: { dataType: '0x0004', writable: false, factoryDefault: 2, current: 1 },
                 source: 0,
             },
         ]
+        // Exact synthetic wire fixture: the UINT16 descriptor declares two enumeration entries
+        // but supplies neither. Unknown legal values remain usable; truncated datasets do not.
+        profile.exchanges.push({
+            operation: '0x1014',
+            parameters: ['0x5005'],
+            response: { code: '0x2001', data: '055004000002000100020200' },
+            source: 0,
+        })
         const target = await connected(profile)
         try {
             await expect(capability('list-properties').run(target)).rejects.toThrow('decoded 0/1')

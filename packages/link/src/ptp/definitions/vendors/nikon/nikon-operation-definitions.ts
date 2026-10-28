@@ -1,7 +1,8 @@
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
+import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
 import { NikonLiveViewDatasetCodec } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
-import { baseCodecs, createEnumCodec, EnumCodec } from '@ptp/types/codec'
+import { ArrayCodec, baseCodecs, createEnumCodec, EnumCodec } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 import { PropertyDefinition } from '@ptp/types/property'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
@@ -247,6 +248,105 @@ export const ChangeApplicationMode = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+/*
+ * Nikon operations named in libgphoto2 ptp.h (https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h); parameter shapes from the ptp.h helper macros
+ * cited per definition. Not hardware-verified in darkgrade unless a test-bench capture is cited.
+ */
+
+const uint32Parameter = (name: string, description: string, required = true) =>
+    ({ name, description, codec: baseCodecs.uint32, required }) as const
+
+/** ptp.h#L581 ("1 param, no data"); helper ptp_nikon_capture(params, x), x "seen to be -1". */
+export const InitiateCaptureRecInSdram = {
+    code: 0x90c0,
+    name: 'InitiateCaptureRecInSdram',
+    description: 'Captures into camera SDRAM (the image is not written to the card). Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [uint32Parameter('Parameter', 'Unknown; libgphoto2 sends 0xFFFFFFFF', false)] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L582; helper ptp_nikon_afdrive sends no parameters. Completion is polled with DeviceReady. */
+export const AfDrive = {
+    code: 0x90c1,
+    name: 'AfDrive',
+    description: 'Starts autofocus (activation-type command; poll DeviceReady). Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L584 ("1 param (0x0: all, others: cancel this image)"); helper ptp_nikon_delete_sdram_image. */
+export const DelImageSDRAM = {
+    code: 0x90c3,
+    name: 'DelImageSDRAM',
+    description: 'Deletes an image held in SDRAM after capture. Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [uint32Parameter('ObjectHandle', 'SDRAM object, or 0 for all')] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L588 ("no params, data in"); ptp.c ptp_nikon_check_event, dataset per ptp_unpack_Nikon_EC. */
+export const GetEvent = {
+    code: 0x90c7,
+    name: 'GetEvent',
+    description: 'Reads and clears the queued events (polled event delivery). Not hardware-verified.',
+    dataDirection: 'out',
+    dataCodec: registry => new NikonEventListCodec(registry),
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L591 ("0 params, data in"); ptp.c ptp_nikon_get_vendorpropcodes reads a UINT16 array. */
+export const GetVendorPropCodes = {
+    code: 0x90ca,
+    name: 'GetVendorPropCodes',
+    description: 'Lists vendor property codes not advertised in DeviceInfo. Not hardware-verified.',
+    dataDirection: 'out',
+    dataCodec: registry => new ArrayCodec(registry, registry.codecs.uint16),
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L592 ("no params, no data"); helper ptp_nikon_capture_sdram. */
+export const AfCaptureSDRAM = {
+    code: 0x90cb,
+    name: 'AfCaptureSDRAM',
+    description: 'Autofocuses, then captures into SDRAM. Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/**
+ * ptp.h#L602 ("no params, data in"); ptp.c ptp_nikon_get_liveview_image returns the raw data phase.
+ * The bytes are a model-specific header followed by a JPEG, so they are returned undecoded.
+ */
+export const GetLiveViewImg = {
+    code: 0x9203,
+    name: 'GetLiveViewImg',
+    description: 'Gets one live-view frame (legacy, before GetLiveViewImageEx). Not hardware-verified.',
+    dataDirection: 'out',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/**
+ * ptp.h#L610; helpers ptp_nikon_capture2(af ? 0xFFFFFFFE : 0xFFFFFFFF, target) and
+ * ptp_nikon_capture2_1 (one parameter, 0xFFFFFFFF).
+ */
+export const InitiateCaptureRecInMedia = {
+    code: 0x9207,
+    name: 'InitiateCaptureRecInMedia',
+    description: 'Captures to the memory card. Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [
+        uint32Parameter('AfMode', '0xFFFFFFFE with autofocus, 0xFFFFFFFF without'),
+        uint32Parameter('Target', 'Capture destination (libgphoto2 passes it through)', false),
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 /** GetEventEx has its own framing and explicit queue retention; SDK command rev 2 section 6.2.2.13. */
 export const GetEventEx = {
     code: 0x941c,
@@ -273,8 +373,89 @@ export const GetEventEx = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+/** ptp.h#L638. */
+export const MirrorUpCancel = {
+    code: 0x941d,
+    name: 'MirrorUpCancel',
+    description: 'Cancels mirror-up. Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L642 ("param: objecthandle, returns 64bit objectsize as DATA"). */
+export const GetObjectSize = {
+    code: 0x9421,
+    name: 'GetObjectSize',
+    description: 'Returns the 64-bit size of an object. Not hardware-verified.',
+    dataDirection: 'out',
+    dataCodec: baseCodecs.uint64,
+    operationParameters: [uint32Parameter('ObjectHandle', 'Object to size')] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L656; returned undecoded. */
+export const GetVendorCodes = {
+    code: 0x9439,
+    name: 'GetVendorCodes',
+    description: 'Lists vendor operation/event/property codes; returned undecoded. Not hardware-verified.',
+    dataDirection: 'out',
+    operationParameters: [uint32Parameter('CodeType', 'Which code list to return', false)] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/*
+ * Wireless-profile operations captured on the Nikon Z6 III (fw V2.00) on the darkgrade test bench
+ * (darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md). libgphoto2 does not name them; names describe the observed role only.
+ */
+
+/** 0x935D answered OK with response parameter 0x21 on the Z6 III. */
+export const GetWirelessHardwareType = {
+    code: 0x935d,
+    name: 'GetWirelessHardwareType',
+    description: 'Reads the wireless hardware type (observed on Z6 III).',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [uint32Parameter('HardwareType', 'Wireless hardware type (0x21 on Z6 III)')] as const,
+} as const satisfies OperationDefinition
+
+/** 0x936D answered OK with response parameter 1 on the Z6 III. */
+export const GetSupportedWirelessProfileTypes = {
+    code: 0x936d,
+    name: 'GetSupportedWirelessProfileTypes',
+    description: 'Reads the supported wireless profile types (observed on Z6 III).',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [uint32Parameter('ProfileTypes', 'Supported profile types (1 on Z6 III)')] as const,
+} as const satisfies OperationDefinition
+
+/** 0x90E8 with an empty password sent as the PTP string 01 00 00 answered OK on the Z6 III. */
+export const WirelessAuthenticate = {
+    code: 0x90e8,
+    name: 'WirelessAuthenticate',
+    description: 'Authenticates wireless-profile changes with a PTP-string password (observed on Z6 III).',
+    dataDirection: 'in',
+    dataCodec: baseCodecs.string,
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** 0x935A [0x2001] answered OperationNotSupported over USB on the Z6 III. */
+export const CompleteWirelessPairing = {
+    code: 0x935a,
+    name: 'CompleteWirelessPairing',
+    description: 'Completes wireless pairing; the Z6 III refused it over USB (0x2005).',
+    dataDirection: 'none',
+    operationParameters: [uint32Parameter('Status', 'Pairing status (0x2001 sent)')] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/**
+ * 0x90ef DeleteWirelessProfile was observed, but its request layout was not captured.
+ * It deliberately remains outside the callable registry until a cited layout is available.
+ */
+
 export const nikonOperationRegistry = {
-    GetEventEx,
     GetPartialObjectEx,
     GetDevicePropDescEx,
     GetDevicePropValueEx,
@@ -287,6 +468,22 @@ export const nikonOperationRegistry = {
     EndMovieRecord,
     ChangeCameraMode,
     ChangeApplicationMode,
+    InitiateCaptureRecInSdram,
+    AfDrive,
+    DelImageSDRAM,
+    GetEvent,
+    GetVendorPropCodes,
+    AfCaptureSDRAM,
+    GetLiveViewImg,
+    InitiateCaptureRecInMedia,
+    GetEventEx,
+    MirrorUpCancel,
+    GetObjectSize,
+    GetVendorCodes,
+    GetWirelessHardwareType,
+    GetSupportedWirelessProfileTypes,
+    WirelessAuthenticate,
+    CompleteWirelessPairing,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type NikonOperationDef = (typeof nikonOperationRegistry)[keyof typeof nikonOperationRegistry]

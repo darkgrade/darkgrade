@@ -4,6 +4,7 @@
  * transaction-ID drift, listener leaks, and whether the same Camera recovers once the faults stop.
  */
 import { Camera } from '@camera/index'
+import type { TransactionPolicy } from '@camera/transaction-channel'
 import { parseCode, type CameraProfile } from '@transport/simulated/camera-profile'
 import { CHAOS_FAULTS, ChaosDisconnectError, type ChaosFault } from '@transport/simulated/chaos-faults'
 import { ProfileDataMissingError, SimulatedTransport } from '@transport/simulated/simulated-transport'
@@ -117,11 +118,13 @@ export async function runChaosScenario(
     })
     // Library versions with transaction timeouts get short ones, so a stall or busy storm costs milliseconds.
     const tunable = camera.getInstance() as {
-        configureTransactions?: (policy: { timeoutMilliseconds: number; deviceBusyBackoffMilliseconds: number }) => void
+        configureTransactions?: (policy: Partial<TransactionPolicy>) => void
     }
     tunable.configureTransactions?.({
         timeoutMilliseconds: options.transactionTimeoutMilliseconds ?? 300,
         deviceBusyBackoffMilliseconds: 1,
+        // Explicit authorization is safe here because this transport is an in-process fixture only.
+        recoverTransport: () => transport.classRequestReset(),
     })
     const registry = camera.getInstance().registry
     const findings: ChaosFinding[] = []

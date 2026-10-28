@@ -196,9 +196,13 @@ export class IPTransport implements TransportInterface {
     private options: Required<Omit<IPTransportOptions, 'localAddress' | 'clientGuid'>> &
         Pick<IPTransportOptions, 'localAddress' | 'clientGuid'>
 
+    /**
+     * The default logger stays out of the terminal: a transport is a library object, and a
+     * rendering logger would take over the console and install process-wide exception handlers.
+     */
     constructor(
         options: IPTransportOptions,
-        private logger = new Logger()
+        private logger = new Logger({ renderInTerminal: false, captureConsole: false })
     ) {
         this.options = {
             address: options.address,

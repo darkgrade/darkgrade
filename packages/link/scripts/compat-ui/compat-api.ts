@@ -103,6 +103,7 @@ export interface GapLine {
 }
 
 export interface GapSummary {
+    workflowLimitations: string[]
     matrixGeneratedAt?: string
     totals: Record<string, number>
     actionCounts: Partial<Record<GapActionKind, number>>
@@ -292,6 +293,7 @@ export class CompatApi {
         return {
             ...(report.matrixGeneratedAt && { matrixGeneratedAt: report.matrixGeneratedAt }),
             totals: report.totals,
+            workflowLimitations: report.workflowLimitations,
             actionCounts,
             manufacturers,
         }

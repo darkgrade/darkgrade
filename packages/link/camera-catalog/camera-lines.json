@@ -35,26 +35,23 @@
   "darkgradeGaps": {
     "vendorIdsTs": "darkgrade/darkgrade:packages/link/src/ptp/definitions/vendor-ids.ts",
     "usbVendorIdsMissing": [
-      "0x1a98 Leica",
       "0x25fb Ricoh Imaging/Pentax",
       "0x0a17 Pentax legacy",
       "0x05ca Ricoh legacy",
-      "0x1003 Sigma",
-      "0x33a2 OM Digital Solutions",
       "0x2672 GoPro"
     ],
     "noPtpVendorExtensionIdTable": "vendor-ids.ts maps USB VIDs only; no PTP VendorExtensionID constants (0x0A Nikon, 0x0B Canon, 0x0E Fuji, 0x11 Sony, 0x1C Panasonic, 0x0D Pentax) or MTP-reporting fallback logic.",
     "definitionsPresentFor": [
       "canon",
       "nikon",
-      "sony"
+      "sony",
+      "fujifilm (operation definitions only)",
+      "panasonic (operation definitions only)",
+      "olympus/om (operation definitions only)",
+      "leica (operation definitions only)",
+      "sigma (operation definitions only)"
     ],
     "definitionsMissingFor": [
-      "fujifilm",
-      "panasonic",
-      "olympus/om",
-      "leica",
-      "sigma",
       "pentax/ricoh"
     ],
     "canonOpsMissing": [
@@ -62,13 +59,7 @@
       "0x9104 GetObject",
       "0x9107 GetPartialObject",
       "0x9109 GetObjectInfoEx",
-      "0x910F RemoteRelease",
-      "0x9117 TransferComplete",
-      "0x911A PCHDDCapacity",
-      "0x911B/0x911C UI lock",
       "0x9125/0x9126 Bulb",
-      "0x913D SetRequestOLCInfoGroup",
-      "0x9151/0x9152 Initiate/TerminateViewfinder",
       "0x9170-0x9175 64-bit object ops",
       "legacy PowerShot 0x90xx"
     ],
@@ -80,18 +71,15 @@
       "0xC1A5 OLCInfoChanged",
       "0xC1A7/0xC1A9 64-bit object events"
     ],
-    "nikonOpsMissing": [
-      "0x90C0 InitiateCaptureRecInSdram",
-      "0x90C1 AfDrive",
-      "0x90C3 DelImageSDRAM",
-      "0x90C7 GetEvent",
-      "0x90CA GetVendorPropCodes",
-      "0x90CB AfCaptureSDRAM",
-      "0x9203 GetLiveViewImg",
-      "0x9207 InitiateCaptureRecInMedia",
-      "0x941C GetEventEx",
-      "0x9421 GetObjectSize",
-      "0x9439 GetVendorCodes"
+    "nikonDefinitionBoundaries": [
+      "PR #21 adds the previously missing operation definitions; definition presence does not establish a working Test Bench workflow.",
+      "GetEventEx 0x941C uses the cited Z6 III typed queue format; legacy GetEvent 0x90C7 remains a distinct dataset.",
+      "DeleteWirelessProfile 0x90EF remains unavailable: the proposed destructive request had an assumed parameter layout, not reviewed wire evidence."
+    ],
+    "testBenchWorkflowBlockers": [
+      "PR #18 remains separate. Its video-recording and video-take modules are required before this branch can simulate the complete active Test Bench prepare/start/state/stop/original-collection pipeline.",
+      "The darkgrade01 deployed baseline proves selected controls, preview and a short Canon preflight recording; it does not physically validate this candidate branch.",
+      "Linux 7.0 usbmon omits the bench's coalesced scatter-gather bulk-IN data. Capture metadata cannot reconstruct missing DeviceInfo/property/media bytes; use a reviewed application-level observer or validated capture backend."
     ],
     "nikonEventsMissing": [
       "all (no nikon-event-definitions.ts): 0xC101 ObjectAddedInSDRAM, 0xC102 CaptureCompleteRecInSdram, 0xC104 PreviewImageAdded, 0xC105-0xC10B movie/mirror events"

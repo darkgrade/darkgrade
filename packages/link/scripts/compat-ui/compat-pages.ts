@@ -724,8 +724,10 @@ export function renderGapsPage(context: PageContext, report: GapReport): string 
     const body = `<h1>Compatibility gaps</h1>
 <p>${totals.undefinedVendorOperations} undefined vendor operations · ${totals.inexpressibleRequests} inexpressible recorded requests · ${totals.noDataCells}/${totals.cells} no-data cells · ${totals.linesWithoutCapture}/${lines.length} lines without captured or hardware evidence · ${totals.linesWithoutMock} lines without a mock · ${totals.unverifiedModels} unverified models · ${totals.unverifiedQuirks} unverified quirks · ${totals.skippedModels} models not mocked.</p>
 <p class="muted small">The same report as JSON, grouped with next actions: <code>GET /api/v1/gaps</code>, or the <code>list_gaps</code> tool of <code>bun run compat:mcp</code>.</p>
+<h2>Test Bench workflow qualification</h2>
+<ul>${report.workflowLimitations.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
 <h2>darkgrade library gaps</h2>
-<p>Vendor classes: ${report.manufacturers.map(manufacturer => `${escapeHtml(manufacturer.name)} ${manufacturer.vendorDefinitions ? 'defined' : '<b>missing</b>'}`).join(' · ')}.</p>
+<p>Vendor definition registries (presence is not workflow support): ${report.manufacturers.map(manufacturer => `${escapeHtml(manufacturer.name)} ${manufacturer.vendorDefinitions ? 'defined' : '<b>missing</b>'}`).join(' · ')}.</p>
 <div class="table-wrap"><table class="list"><thead><tr><th>Manufacturer</th><th>Line</th><th>Undefined vendor operations</th><th>Inexpressible recorded requests</th><th>Undefined events</th></tr></thead><tbody>${library
         .map(
             line =>

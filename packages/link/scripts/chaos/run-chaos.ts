@@ -20,13 +20,27 @@ import path from 'node:path'
 
 function option(name: string): string | undefined {
     const index = process.argv.indexOf(`--${name}`)
-    return index >= 0 ? process.argv[index + 1] : undefined
+    if (index < 0) return undefined
+    const value = process.argv[index + 1]
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for --${name}`)
+    return value
 }
-const seeds = (option('seeds') ?? '1,2,3').split(',').map(Number)
+const seedValues = (option('seeds') ?? '1,2,3').split(',')
+const seeds = seedValues.map(Number)
 const faults = (option('faults')?.split(',') as ChaosFault[] | undefined) ?? [...CHAOS_FAULTS]
 const scope = (option('scope') ?? 'committed') as 'committed' | 'models' | 'all'
 const output = path.resolve(packageDirectory, option('output') ?? 'test-results/chaos-report')
 const stepTimeoutMilliseconds = Number(option('step-timeout') ?? 1_500)
+if (!['committed', 'models', 'all'].includes(scope)) throw new Error('Choose scope committed, models or all')
+if (
+    seedValues.some(seed => !/^\d+$/.test(seed)) ||
+    seeds.some(seed => !Number.isSafeInteger(seed) || seed > 0xffffffff)
+)
+    throw new Error('Seeds must be unsigned 32-bit integers')
+if (!faults.length || faults.some(fault => !CHAOS_FAULTS.includes(fault)))
+    throw new Error(`Choose faults from ${CHAOS_FAULTS.join(', ')}`)
+if (!Number.isSafeInteger(stepTimeoutMilliseconds) || stepTimeoutMilliseconds < 1 || stepTimeoutMilliseconds > 600_000)
+    throw new Error('Step timeout must be an integer from 1 to 600000 milliseconds')
 const results: ChaosScenarioResult[] = []
 for (const profile of chaosProfiles(scope)) {
     const expectRecovery = await recoversWithoutFaults(profile)
@@ -43,4 +57,4 @@ writeFileSync(`${output}.json`, `${JSON.stringify({ seeds, faults, results }, nu
 writeFileSync(`${output}.md`, renderChaosMarkdown(results, seeds))
 console.log(JSON.stringify(summarize(results)))
 console.log(`Wrote ${path.relative(packageDirectory, output)}.{json,md}`)
-process.exit(0)
+process.exit(results.some(result => result.findings.length > 0) ? 1 : 0)

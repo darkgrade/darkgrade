@@ -24,6 +24,33 @@ This library is a comprehensive TypeScript implementation of [ISO-15740:2013](ht
     - **Nikon Z Series** - Live view, extended properties
     - **Canon EOS R Series** - Remote control, event polling
 
+## 📷 Camera support
+
+**Camera-specific implementations: Sony, Canon and Nikon.** The table summarizes historical physical testing (darkgrade test bench, [`darkgrade/test-bench` docs/camera-compatibility.md](https://github.com/darkgrade/test-bench/blob/main/docs/camera-compatibility.md) and the notes further down this README). Other bodies from these vendors use the same code paths but are untested. A vendor implementation or a passing simulation does not qualify every workflow on every model. See the [Test Bench workflow coverage and separate recording dependency](packages/link/docs/test-bench-workflows.md) and [fresh deployed-baseline evidence](packages/link/docs/evidence/darkgrade01-workflows-2026-10-28.md).
+
+| Manufacturer | Body (USB ID) | What has been verified on hardware |
+| --- | --- | --- |
+| Sony | α6700 / ILCE-6700 (`054c:0e78`) | USB SDIO property inventory and controls, autofocus, still/movie formats, AF-point placement; authenticated Wi-Fi controls through the Sony SDK |
+| Sony | FX2 / ILME-FX2 | USB native property inventory, aperture round trip, HDMI; Wi-Fi SDK controls and live preview (no card media) |
+| Canon | EOS R6 Mark III (`04a9:3323`, fw 1.0.1) | USB/PTP exposure and white-balance controls, USB live view, preview zoom, color temperature, live-view AF area, movie recording |
+| Canon | EOS 80D (`04a9:3294`) | USB controls (aperture, shutter, ISO, white balance, image format), autofocus, movie mode; PTP/IP pairing is work in progress |
+| Canon | EOS R6 (`04a9:32f5`) | USB/PTP identification only |
+| Nikon | Z6 III (`04b0:0454`, fw V2.00) | USB session, aperture and Auto/fixed ISO round trips (no card) |
+| Nikon | Z 7 (`04b0:0442`) | USB `GetDeviceInfo` probe and bench recovery |
+
+**Work in progress: every other manufacturer.** These cameras run as standard ISO 15740 PTP devices; vendor operation definitions exist only where listed and are taken from libgphoto2's `camlibs/ptp2` tables. None of the vendor definitions below is hardware-verified.
+
+| Manufacturer | Status |
+| --- | --- |
+| OM System / Olympus | Olympus E-PL5 (`07b4:012f`) tested in MTP mode: session, DeviceInfo, battery level and writable date/time, storage. The body does not offer remote capture in that mode. OM-D and E-series vendor operations (capture, live view, manual-focus drive) are defined; OM Digital Solutions USB vendor `0x33a2` is recognized. |
+| Fujifilm | Vendor `GetDeviceInfo` (0x902B) defined. Fujifilm's Wi-Fi protocol is not standard PTP/IP and is not implemented. |
+| Panasonic (LUMIX) | Vendor property, capture, movie-recording and live-view operations defined. |
+| Leica | Leica extended session open/close defined (USB vendor `0x1a98`). |
+| Sigma | fp data-group, capture-status, snap and live-view operations defined (USB vendor `0x1003`). |
+| Pentax / Ricoh Imaging, Hasselblad, GoPro and others | Standard PTP only; no vendor definitions and no hardware testing. |
+
+Transactions are bounded by timeouts, replies are checked against PTP container framing, and failures are typed (`PTPTimeoutError`, `PTPProtocolError`, `PTPDecodeError`, `PTPResponseError`, `PTPDisconnectedError`, `PTPRecoveryRequiredError`). Tune them with `new Camera({ transactionPolicy: { timeoutMilliseconds, deviceBusyRetries } })`. A timeout does not cancel native I/O or authorize a camera reset. Further commands fail closed until explicit caller-owned recovery settles outstanding I/O, or an explicit disconnect/connect establishes a fresh transport connection. Bench recovery must preserve ownership and recording guards.
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -337,7 +364,7 @@ await camera.connect()
 | Canon | EOS 80D (fw 3-1.0.3) | 04a9:3294 | usb | captured | · | · | · | · | · | · | · | · | ✅ | ➖ |
 | Canon | EOS R6 | 04a9:32f5 | usb | captured | ✅ documented | ✅ documented | · | · | · | · | ❌ documented | · | ✅ | ➖ documented |
 | Canon | EOS R6 Mark III (fw 1.0.1) | 04a9:3323 | usb | captured | · | · | · | · | · | · | · | · | ➖ | ➖ |
-| Nikon | Z 7 | 04b0:0442 | usb | captured | ✅ documented | ✅ documented | · | · | · | · | · | · | · | ➖ documented |
+| Nikon | Z 7 | 04b0:0442 | usb | captured | ✅ documented | ✅ documented | · | · | · | · | · | · | · | ✅ documented |
 | Nikon | Z6 III (fw V2.00) | 04b0:0454 | usb | captured | · | · | · | · | · | · | · | · | ➖ | ➖ |
 | OM System / Olympus | E-PL5 | 07b4:012f | usb | captured | ✅ | ✅ documented | · | · | · | ➖ | ➖ | · | · | · |
 | Sony | ILCE-6700 (α6700) (fw 2.00) | 054c:096f, 054c:0e78 | usb | captured | · | · | · | · | · | · | · | · | ✅ | ➖ |
@@ -347,30 +374,30 @@ await camera.connect()
 
 | Line | Cameras | Connect / session ✅ | DeviceInfo ✅ | List properties ✅ | Get property ✅ | Set property ✅ | Capture ✅ | Live view ✅ | Events ✅ | Recorded exchanges ✅ | Vendor op definitions ✅ |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Canon · Cinema EOS | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Canon · Cinema EOS | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
 | Canon · EOS DSLR (early PTP) | 10 | 0 | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Canon · EOS DSLR (EOS-protocol era) | 55 | 55 | 55 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Canon · EOS M | 11 | 0 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Canon · EOS R | 14 | 14 | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Canon · PowerShot / IXUS (EOS-style firmware) | 19 | 0 | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Canon · PowerShot / IXUS (EOS-style firmware) | 19 | 0 | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 19 |
 | Canon · PowerShot / IXUS (legacy Canon PTP) | 175 | 0 | 175 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · GFX | 6 | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · GFX | 6 | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 6 |
 | Fujifilm · Legacy FinePix / X-A / X-S1 / X10-X30 / S5 Pro | 53 | 53 | 53 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-E | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-H | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-Pro | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-S / X-M | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-T | 9 | 9 | 9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X100 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · X-E | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4 |
+| Fujifilm · X-H | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 3 |
+| Fujifilm · X-Pro | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
+| Fujifilm · X-S / X-M | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4 |
+| Fujifilm · X-T | 9 | 9 | 9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 9 |
+| Fujifilm · X100 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 3 |
 | GoPro · HERO action cameras | 17 | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Leica · M | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Leica · Panasonic-based compacts | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Leica · Q | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Leica · SL | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Nikon · Coolpix / KeyMission | 113 | 113 | 113 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Nikon · D-series DSLR | 51 | 51 | 51 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Nikon · D-series DSLR | 51 | 51 | 51 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 51 |
 | Nikon · Nikon 1 | 10 | 10 | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Nikon · Z | 12 | 12 | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Nikon · Z | 12 | 12 | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 12 |
 | OM System / Olympus · Olympus E-series DSLR | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | OM System / Olympus · OM-D / OM System | 7 | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | OM System / Olympus · PEN / compacts / TG | 16 | 16 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -380,7 +407,7 @@ await camera.connect()
 | Pentax / Ricoh Imaging · Pentax K DSLR | 6 | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Pentax / Ricoh Imaging · Ricoh GR | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Pentax / Ricoh Imaging · Ricoh THETA | 5 | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Sigma · fp series | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Sigma · fp series | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
 | Sony · A-mount SLT / ILCA | 15 | 0 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 |
 | Sony · Alpha APS-C E-mount | 22 | 0 | 22 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 22 |
 | Sony · Alpha full-frame E-mount | 28 | 0 | 28 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 28 |

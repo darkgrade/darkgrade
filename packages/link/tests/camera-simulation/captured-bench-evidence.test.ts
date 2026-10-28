@@ -1,10 +1,11 @@
+import { CanonCamera } from '@camera/canon-camera'
 import { GenericCamera } from '@camera/generic-camera'
 import { Logger } from '@core/logger'
 import { GetDeviceInfo, GetDevicePropDesc } from '@ptp/definitions/operation-definitions'
 import { createCanonRegistry } from '@ptp/registry'
 import { applyBenchEvidence } from '@scripts/camera-profiles/bench-evidence'
 import { evaluateCapabilities, simulateCamera } from '@scripts/camera-profiles/camera-capabilities'
-import { loadCameraProfile } from '@transport/simulated/camera-profile'
+import { loadCameraProfile, type RecordedExchange } from '@transport/simulated/camera-profile'
 import { ProfileDataMissingError, SimulatedTransport } from '@transport/simulated/simulated-transport'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -14,6 +15,8 @@ const packageDirectory = path.resolve(__dirname, '../..')
 const evidence = JSON.parse(
     readFileSync(path.join(packageDirectory, 'docs/evidence/darkgrade01-2026-10-28.json'), 'utf8')
 )
+const workflowEvidence: { capturedScalarWriteExchanges: (Omit<RecordedExchange, 'source'> & { value: number })[] } =
+    JSON.parse(readFileSync(path.join(packageDirectory, 'docs/evidence/darkgrade01-workflows-2026-10-28.json'), 'utf8'))
 const profileFiles = [
     'canon/eos-dslr-eos-protocol-era/canon-eos-80d.json',
     'sony/alpha-aps-c-e-mount/sony-ilce-6700.json',
@@ -31,6 +34,40 @@ function simulatedSession(file: string) {
 }
 
 describe('fresh darkgrade01 evidence', () => {
+    it.each(workflowEvidence.capturedScalarWriteExchanges)(
+        'encodes observed Canon Kelvin $value bytes but refuses to invent missing cache readback',
+        async exchange => {
+            const profile = capturedProfile(profileFiles[0])
+            const source = profile.provenance.sources.length
+            profile.provenance.sources.push({
+                location: 'docs/evidence/darkgrade01-workflows-2026-10-28.json',
+            })
+            profile.exchanges.push({
+                operation: exchange.operation,
+                parameters: exchange.parameters,
+                dataFromHost: exchange.dataFromHost,
+                response: exchange.response,
+                source,
+            })
+            const transport = new SimulatedTransport(profile)
+            const camera = new CanonCamera(transport, new Logger({ captureConsole: false, renderInTerminal: false }))
+            // Isolate the production setter/encoder. Full Canon initialization is deliberately not
+            // represented: this capture lacks DeviceInfo and the initial property-cache datasets.
+            await GenericCamera.prototype.connect.call(camera)
+            try {
+                await expect(
+                    camera.set(camera.registry.properties.CanonColorTemperature, exchange.value)
+                ).rejects.toMatchObject({ operation: 0x9116 })
+                expect(transport.missingData).toHaveLength(1)
+                expect(transport.missingData[0].operation).toBe(0x9116)
+                expect(transport.responseCodes.at(-1)).toBe(0x2001)
+            } finally {
+                await GenericCamera.prototype.disconnect.call(camera)
+            }
+            expect(transport.isConnected()).toBe(false)
+        }
+    )
+
     const establishedCapabilities = [
         {
             file: 'om-system-olympus/pen-compacts-tg/olympus-e-pl5.json',

@@ -23,6 +23,8 @@ Each lookup candidate lists cited model names and its profile's firmware and cov
 
 The compatibility matrix retains `resultEvidence` per capability (fidelity, profile, firmware where known, host, timestamp and revision). A physical session test cannot promote a captured recording result to a hardware pass. Known conflicting firmware versions remain separate, and shared USB IDs alone do not merge models; exact catalog/profile aliases are required. Matrix cells label a weaker evidence source when one supplies a result absent from a stronger row.
 
+Workflow qualification is separate from individual capability results. The gaps API/UI retain the [Test Bench recording and collection dependency](test-bench-workflows.md) on separate PR #18. The fresh darkgrade01 workflow baseline used deployed code, not this candidate; an application must not promote it to candidate qualification or advertise complete take/collection coverage from a green software run.
+
 ## Future host responsibilities
 
 Keep app state, run IDs, cancellation, progress and artifact retention in a host-owned data directory, with explicit start/close lifecycle methods as in Fleet's `src/embedded.ts`. Default to simulation; show the exact profile and evidence tier before a run. Display missing data and unsupported commands distinctly from failures. SDK support lists do not prove Darkgrade supports those models.

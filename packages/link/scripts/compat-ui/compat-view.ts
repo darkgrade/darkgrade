@@ -242,6 +242,11 @@ export function applyRun(
     if (!start || start.type !== 'run-start') return { touched }
     // A log holds one run; lines from another run (a file appended to by mistake) are ignored.
     const own = checked.filter(event => event.runId === start.runId)
+    const originalSources = new Map(
+        own.flatMap(event =>
+            event.type === 'row-end' && event.row.source ? [[event.key, event.row.source] as const] : []
+        )
+    )
     if (!view.capabilities.length) view.capabilities = start.capabilities
     const end = own.find(event => event.type === 'run-end')
     const active = options.alive && !end
@@ -311,21 +316,36 @@ export function applyRun(
             const row = rows.get(event.key)
             if (!row) continue
             const result = viewResult(event.status, event.detail)
+            const originalSource = originalSources.get(event.key)
+            const observedAt = originalSource?.generatedAt ?? event.at
             finished.set(`${event.key}\u0000${event.capability}`, result.status)
             if (current?.key === event.key && current.capability === event.capability) current = undefined
             // A settled run never overrides newer results (for example a later matrix).
-            if (!active && (row.cells[event.capability]?.at ?? '') > event.at) continue
+            const previousTime = Date.parse(row.cells[event.capability]?.at ?? '')
+            const observedTime = Date.parse(observedAt)
+            if (
+                !active &&
+                Number.isFinite(previousTime) &&
+                (!Number.isFinite(observedTime) || previousTime > observedTime)
+            )
+                continue
             row.cells[event.capability] = {
                 ...result,
-                at: event.at,
+                at: observedAt,
                 durationMilliseconds: event.durationMilliseconds,
                 runId: start.runId,
                 ...(row.fidelity !== 'unknown' &&
-                    Number.isFinite(Date.parse(event.at)) && {
-                        evidence: { fidelity: row.fidelity, profile: row.profile, generatedAt: event.at },
+                    Number.isFinite(observedTime) && {
+                        evidence: {
+                            fidelity: row.fidelity,
+                            profile: row.profile,
+                            generatedAt: observedAt,
+                            ...(originalSource?.revision && { revision: originalSource.revision }),
+                        },
                     }),
             }
-            if ((row.lastRun ?? '') < event.at) row.lastRun = event.at
+            if (Number.isFinite(observedTime) && (!row.lastRun || Date.parse(row.lastRun) < observedTime))
+                row.lastRun = observedAt
             touched.add(event.key)
             continue
         }
@@ -333,6 +353,16 @@ export function applyRun(
             const row = rows.get(event.key)
             if (!row) continue
             const plannedRow = planned.get(event.key)
+            const observedTime = Date.parse(event.row.source?.generatedAt ?? event.at)
+            if (
+                !active &&
+                row.lastRun &&
+                Number.isFinite(Date.parse(row.lastRun)) &&
+                (!Number.isFinite(observedTime) || Date.parse(row.lastRun) > observedTime)
+            ) {
+                finishedRows.add(event.key)
+                continue
+            }
             row.state = active ? 'done' : 'idle'
             row.unverifiedQuirks = event.row.quirks?.unverified ?? 0
             row.unverified = row.unverifiedQuirks > 0 || !!options.annotations?.get(row.profile)?.unverifiedModel

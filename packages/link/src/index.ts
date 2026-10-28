@@ -11,6 +11,18 @@ export { GenericCamera } from '@camera/generic-camera'
 export { Camera } from '@camera/index'
 export { NikonCamera } from '@camera/nikon-camera'
 export { SonyCamera } from '@camera/sony-camera'
+export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'
+export { VendorExtensionCamera } from '@camera/vendor-extension-camera'
+export {
+    PTPDecodeError,
+    PTPDisconnectedError,
+    PTPError,
+    PTPProtocolError,
+    PTPRecoveryRequiredError,
+    PTPResponseError,
+    PTPTimeoutError,
+    type PTPProtocolViolation,
+} from '@core/ptp-errors'
 export type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 export type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 
@@ -26,7 +38,12 @@ export type {
     ProfileQuirk,
     QuirkBehaviour,
 } from '@transport/simulated/camera-profile'
-export { CHAOS_FAULTS, ChaosDisconnectError, type ChaosFault, type ChaosOptions } from '@transport/simulated/chaos-faults'
+export {
+    CHAOS_FAULTS,
+    ChaosDisconnectError,
+    type ChaosFault,
+    type ChaosOptions,
+} from '@transport/simulated/chaos-faults'
 export {
     ProfileDataMissingError,
     SimulatedDisconnectError,

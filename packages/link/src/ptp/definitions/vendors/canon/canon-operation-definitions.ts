@@ -39,6 +39,27 @@ export const CanonSetRemoteMode = {
                             description: 'Explicit remote mode 0x15; documented for some EOS M and PowerShot models',
                         },
                         { value: 0x00000000, name: 'DISABLE', description: 'Disable Remote Mode' },
+                        {
+                            value: 0x00000005,
+                            name: 'MODE_0x05',
+                            description:
+                                'Remote mode 5, accepted by the EOS R6 Mark III (fw 1.0.1) on the darkgrade test bench ' +
+                                '(test-bench@2db7a28 canon-menu-ptp-investigation.md). Meaning not documented.',
+                        },
+                        {
+                            value: 0x00000011,
+                            name: 'MODE_0x11',
+                            description:
+                                'Remote mode libgphoto2 sends to some PowerShot SX/G5 X bodies (camlibs/ptp2/config.c ' +
+                                'camera_prepare_canon_eos_capture @02d92fe). Not hardware-verified in darkgrade.',
+                        },
+                        {
+                            value: 0x00000015,
+                            name: 'MODE_0x15',
+                            description:
+                                'Remote mode libgphoto2 sends by default to EOS M and newer PowerShot SX bodies ' +
+                                '(camlibs/ptp2/config.c camera_prepare_canon_eos_capture @02d92fe). Not hardware-verified.',
+                        },
                     ] as const,
                     registry.codecs.uint32
                 ),
@@ -97,6 +118,13 @@ export const CanonRemoteReleaseOn = {
                     [
                         { value: 0x00000001, name: 'FOCUS', description: 'Half Press (Focus)' },
                         { value: 0x00000002, name: 'SHUTTER', description: 'Full Press (Shutter)' },
+                        {
+                            value: 0x00000003,
+                            name: 'FOCUS_AND_SHUTTER',
+                            description:
+                                'Half and full press in one request, as libgphoto2 sends to EOS M bodies ' +
+                                '(camlibs/ptp2/library.c @02d92fe, "Canon EOS M Full-Press"). Not hardware-verified.',
+                        },
                     ] as const,
                     registry.codecs.uint32
                 ),
@@ -296,6 +324,148 @@ export const CanonTouchFramePoint = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+/*
+ * EOS operations named in libgphoto2 ptp.h (https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h).
+ * Parameter shapes come from the ptp.h helper macros cited per definition. Not hardware-verified in
+ * darkgrade unless a test-bench capture is cited.
+ */
+
+const uint32Parameter = (name: string, description: string, required = true) =>
+    ({ name, description, codec: baseCodecs.uint32, required }) as const
+
+/** ptp.h#L414; ptp.c ptp_canon_eos_capture sends no parameters and reads an optional result parameter. */
+export const CanonRemoteRelease = {
+    code: 0x910f,
+    name: 'CanonRemoteRelease',
+    description: 'EOS one-shot remote release (libgphoto2 EOS_RemoteRelease). Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [uint32Parameter('Result', '0 when the release was accepted (libgphoto2)', false)] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L429, helper ptp_canon_eos_transfercomplete(params, handle). */
+export const CanonTransferComplete = {
+    code: 0x9117,
+    name: 'CanonTransferComplete',
+    description: 'Ends a direct object transfer from an EOS camera. Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [uint32Parameter('ObjectHandle', 'Transferred object')] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L435, helper ptp_canon_eos_pchddcapacity(params, inHDD, inLength, inReset). */
+export const CanonPCHDDCapacity = {
+    code: 0x911a,
+    name: 'CanonPCHDDCapacity',
+    description: 'Reports host storage capacity so the EOS body allows capture to the host. Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [
+        uint32Parameter('HDD', 'Free host capacity in clusters (inHDD)'),
+        uint32Parameter('Length', 'Cluster size in bytes (inLength)'),
+        uint32Parameter('Reset', 'Reset flag (inReset)'),
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/**
+ * ptp.h#L438 (libgphoto2 sends no parameter). The EOS R6 Mark III answered OK to 0x911B [0] on the
+ * darkgrade test bench (darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md), so one optional parameter is accepted.
+ */
+export const CanonSetUILock = {
+    code: 0x911b,
+    name: 'CanonSetUILock',
+    description: 'Locks the camera body controls while the host is in control.',
+    dataDirection: 'none',
+    operationParameters: [
+        uint32Parameter('Reserved', 'Optional; 0 observed on EOS R6 Mark III, omitted by libgphoto2', false),
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/**
+ * ptp.h#L440. EOS R6 Mark III: OK after a lock, DeviceBusy for a redundant unlock or while live view
+ * is active (darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md).
+ */
+export const CanonResetUILock = {
+    code: 0x911c,
+    name: 'CanonResetUILock',
+    description: 'Unlocks the camera body controls.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L475, helper ptp_canon_eos_setrequestolcinfogroup(params, igmask). */
+export const CanonSetRequestOLCInfoGroup = {
+    code: 0x913d,
+    name: 'CanonSetRequestOLCInfoGroup',
+    description: 'Selects which OLC information groups the camera reports in its events. Not hardware-verified.',
+    dataDirection: 'none',
+    operationParameters: [uint32Parameter('GroupMask', 'Bit mask of requested OLC info groups')] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/**
+ * ptp.h#L482 names the code; libgphoto2 does not send it. Request and response shapes are the EDSDK
+ * traffic captured from the EOS R6 Mark III (darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md): 0x913F [0x10000, 0x80000518, 0] answered
+ * OK [0x80000518, 1].
+ */
+export const CanonGetCameraSupport = {
+    code: 0x913f,
+    name: 'CanonGetCameraSupport',
+    description: 'EDSDK capability query (selector, property code) answered with a support value.',
+    dataDirection: 'none',
+    operationParameters: [
+        uint32Parameter('Selector', 'Query selector (0x10000, 0x20000, 0x30000 observed)'),
+        uint32Parameter('PropertyCode', 'Queried property or feature code (0x80000518 observed)'),
+        uint32Parameter('Reserved', '0 observed'),
+    ] as const,
+    responseParameters: [
+        uint32Parameter('PropertyCode', 'Echo of the queried code'),
+        uint32Parameter('Value', 'Support value (1 or 0xFFFFFFFF observed)'),
+    ] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L500 ("no arg"), helper ptp_canon_eos_start_viewfinder. */
+export const CanonInitiateViewfinder = {
+    code: 0x9151,
+    name: 'CanonInitiateViewfinder',
+    description: 'Starts the EOS viewfinder (live view) session. Not hardware-verified in darkgrade.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L501, helper ptp_canon_eos_end_viewfinder. */
+export const CanonTerminateViewfinder = {
+    code: 0x9152,
+    name: 'CanonTerminateViewfinder',
+    description: 'Ends the EOS viewfinder (live view) session. Not hardware-verified in darkgrade.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L533. EOS R6 Mark III answered 0x917C [] with OK [0] (darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md). */
+export const CanonGetRemoteErrLogMode = {
+    code: 0x917c,
+    name: 'CanonGetRemoteErrLogMode',
+    description: 'Reads the remote error-log mode.',
+    dataDirection: 'none',
+    operationParameters: [] as const,
+    responseParameters: [uint32Parameter('Mode', 'Error-log mode (0 observed)')] as const,
+} as const satisfies OperationDefinition
+
+/** ptp.h#L534. EOS R6 Mark III answered 0x917D [0] with OK [0] and no data phase (darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md). */
+export const CanonGetDebugLogEx = {
+    code: 0x917d,
+    name: 'CanonGetDebugLogEx',
+    description: 'Debug-log query; on the R6 Mark III it answers with a response parameter, not a log file.',
+    dataDirection: 'none',
+    operationParameters: [uint32Parameter('Selector', 'Log selector (0 observed)')] as const,
+    responseParameters: [uint32Parameter('Value', 'Result (0 observed)')] as const,
+} as const satisfies OperationDefinition
+
 export const canonOperationRegistry = {
     CanonGetExtendedDeviceInfo,
     CanonSetRemoteMode,
@@ -314,6 +484,17 @@ export const canonOperationRegistry = {
     CanonViewfinderZoom,
     CanonViewfinderPosition,
     CanonTouchFramePoint,
+    CanonRemoteRelease,
+    CanonTransferComplete,
+    CanonPCHDDCapacity,
+    CanonSetUILock,
+    CanonResetUILock,
+    CanonSetRequestOLCInfoGroup,
+    CanonGetCameraSupport,
+    CanonInitiateViewfinder,
+    CanonTerminateViewfinder,
+    CanonGetRemoteErrLogMode,
+    CanonGetDebugLogEx,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type CanonOperationDef = (typeof canonOperationRegistry)[keyof typeof canonOperationRegistry]

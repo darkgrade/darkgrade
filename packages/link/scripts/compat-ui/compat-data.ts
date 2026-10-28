@@ -488,6 +488,8 @@ export class CompatData {
                     statuses[event.capability] = { status: event.status, detail: event.detail }
                     at = event.at
                 }
+                const completed = events.find(event => event.type === 'row-end' && event.key === planned.key)
+                if (completed?.type === 'row-end' && completed.row.source) at = completed.row.source.generatedAt
                 entries.push({
                     runId: start.runId,
                     source: start.source,
