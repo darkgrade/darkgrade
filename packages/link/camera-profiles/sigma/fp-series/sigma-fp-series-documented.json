@@ -1,0 +1,82 @@
+{
+    "schemaVersion": 1,
+    "id": "sigma-fp-series-documented",
+    "manufacturer": "Sigma",
+    "line": "fp series",
+    "model": "Sigma fp L",
+    "usb": { "vendorId": "0x1003", "productIds": ["0xc442"], "source": 1 },
+    "catalog": { "manufacturer": "Sigma", "line": "fp series (L-mount full-frame)", "modelCount": 2 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2889"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L229"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L218"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L1273"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5750"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1098"
+            },
+            { "location": "https://www.dragonframe.com/camera-setup/sigma_fp_l/" }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Sigma",
+        "model": "Sigma fp L",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9012",
+            "0x9015",
+            "0x9016",
+            "0x901b",
+            "0x902b"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "sigma-fp-vendor-id",
+            "description": "fp reports VendorExtensionID Microsoft; libgphoto2 assigns internal 0xFFFB (GP_SIGMAFP) when VID is 0x1003.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "sigma-fp-checksummed-datagroups",
+            "description": "Sigma vendor ops exchange small \"data group\" packets with a length-prefix byte and an additive checksum byte (e.g. 0x901B Snap sends [0x02, mode, amount, 0x02+mode+amount]). Settings via 0x9012-0x9018 Get/SetDataGroup1-3, 0x9023-0x902A groups 4-6, status 0x9011/0x902C, capture status 0x9015 (status & 0xF000: 0x6000 = failure, 0x8000 = success), live view 0x902B GetCamViewFrame.",
+            "source": 4,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "sigma-usb-mode",
+            "description": "Camera must be in USB Mode \"Camera Control\" to connect for tethering.",
+            "source": 7,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

@@ -1,0 +1,151 @@
+{
+    "schemaVersion": 1,
+    "id": "fujifilm-x-e-documented",
+    "manufacturer": "Fujifilm",
+    "line": "X-E",
+    "model": "Fuji Fujifilm X-E3",
+    "usb": { "vendorId": "0x04cb", "productIds": ["0x02d6"], "source": 1 },
+    "catalog": { "manufacturer": "Fujifilm", "line": "X-E (rangefinder-style compact)", "modelCount": 4 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2733"
+            },
+            {
+                "location": "https://www.fujifilm-x.com/en-gb/stories/fujifilm-tether-plug-in-pro-users-guide-1-preparing-for-tethered-shooting"
+            },
+            { "location": "https://exchange.adobe.com/apps/cc/16991" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2732"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L380"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1063"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5374"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2995"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3018"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2994"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L5885"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5474"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5402"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L468"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2757"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/fujiptpip.c#L40"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/fujiptpip.c#L25"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L346"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2776"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Fujifilm",
+        "model": "Fuji Fujifilm X-E3",
+        "vendorExtensionId": "0x000e",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x902b"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "fuji-connection-mode-menu",
+            "description": "Tethering requires the camera connection mode set to a tether mode (label varies by model/firmware: \"PC SHOOT AUTO\", \"USB AUTO\", \"USB TETHER SHOOTING AUTO\", or FIXED). In AUTO the camera behaves normally until a host connects; unplugging with pending transfers reverts to normal and loses queued images. \"USB RAW CONV./BACKUP RESTORE\" is a separate mode (X-E3 entry in libgphoto2 is that mode, fw 1.20+).",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-hidden-props",
+            "description": "Fuji DeviceInfo under-reports properties; newer bodies return the real list via 0x902B Fuji GetDeviceInfo, older ones need a hard-coded list (0xD38C PC mode, 0xD171 focus control, 0xD207 PriorityMode, 0xD208 capture control, 0xD209 AFStatus, 0xD212 CurrentState...).",
+            "source": 5,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-d208-release-control",
+            "description": "Capture is driven through a control property, not a vendor op: set 0xD207 PriorityMode=2 (PC priority), write 0xD208 = 0x0200 (S1/AF), InitiateCapture(0,0), poll 0xD209 AFStatus until != 1 (2 = OK, 3 = AF failed -> write 0x0004 CancelS1 + InitiateCapture), then 0xD208 = 0x0304 (S2 shoot) + InitiateCapture. Bulb uses 0x0500 start / 0x000C end. Available 0xD208 enum values differ per body (X-Pro2 list shorter than X-T4/GFX100).",
+            "source": 7,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-event-prop-polling",
+            "description": "Fuji events are delivered by polling GetDevicePropValue(0xD212 CurrentState), which returns a list of (u16 code, u32 value) changes; interrupt events are unreliable (X-Pro2/X-T2 send just one ObjectAdded for the first capture, then none).",
+            "source": 11,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-long-exposure-timeouts",
+            "description": "ExposureTime values >= 10079368 encode long exposures with special codes (e.g. 64000180 for 60 min); hosts wait up to ~2x exposure for a dark frame.",
+            "source": 13,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-pid-reuse",
+            "description": "Fujifilm reuses USB PIDs across models (GFX 100S and X-S10 both 0x02EA; GFX 50S II matches GFX100 entry). Model must come from DeviceInfo.",
+            "source": 14,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-ptpip-own-framing",
+            "description": "Fuji Wi-Fi uses PTP/IP-like init on TCP 55740 but then a USB-bulk-like framing ([u32 len][u16 type][u16 code][u32 transid][params]); events on 55741 and live-view JPEG stream on 55742 open only after InitiateOpenCapture. DeviceInfo over Wi-Fi is partly synthesised by libgphoto2.",
+            "source": 16,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-vendor-ext-desc",
+            "description": "Older Fuji (S5 Pro) report Microsoft VendorExtensionID with VendorExtensionDesc containing \"fujifilm.co.jp: 1.0;\"; libgphoto2 switches to vendor 0x0E on that string.",
+            "source": 18,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-xe5-no-capture",
+            "description": "X-E5 has no capture support in libgphoto2.",
+            "source": 19,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

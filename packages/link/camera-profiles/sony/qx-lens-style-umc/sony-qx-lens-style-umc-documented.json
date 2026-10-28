@@ -1,0 +1,60 @@
+{
+    "schemaVersion": 1,
+    "id": "sony-qx-lens-style-umc-documented",
+    "manufacturer": "Sony",
+    "line": "QX lens-style / UMC",
+    "model": "Sony UMC-R10C",
+    "usb": { "vendorId": "0x054c", "productIds": ["0x0a79"], "source": 1 },
+    "catalog": { "manufacturer": "Sony", "line": "QX lens-style / UMC", "modelCount": 2 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1315"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L778"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L732"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Sony",
+        "model": "Sony UMC-R10C",
+        "vendorExtensionId": "0x0011",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x96f6",
+            "0x96f8",
+            "0x96fa",
+            "0x96fd",
+            "0x96fe"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "sony-qx-connect",
+            "description": "QX lens-style cameras use a separate opcode family: 0x96FE QX_Connect (phases 1 and 2 with params 0xDA01,0xDA01), 0x96FD QX_GetSDIOGetExtDeviceInfo, 0x96F6 GetAllDevicePropData, 0x96FA/0x96F8 SetControlDeviceA/B.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

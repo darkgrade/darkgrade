@@ -20,6 +20,8 @@ const CAPABILITY_TIMEOUT_MILLISECONDS = 5_000
 class NoProfileData extends Error {}
 /** darkgrade or the camera does not offer the capability. */
 class NotOffered extends Error {}
+/** darkgrade waited for camera output the profile never produces. */
+class TimedOut extends Error {}
 
 export interface SimulatedCamera {
     profile: CameraProfile
@@ -156,7 +158,8 @@ async function events(simulated: SimulatedCamera): Promise<string> {
     return delivered
 }
 
-type ReplayOutcome = 'matched' | 'undefined' | 'inexpressible' | 'parameters-unknown' | `mismatch: ${string}`
+type ReplayOutcome =
+    'matched' | 'undefined' | 'inexpressible' | 'parameters-unknown' | 'blocked' | `mismatch: ${string}`
 
 async function replayExchange(simulated: SimulatedCamera, exchange: RecordedExchange): Promise<ReplayOutcome> {
     const definition = findOperation(simulated, parseCode(exchange.operation))
@@ -183,13 +186,39 @@ async function replayExchange(simulated: SimulatedCamera, exchange: RecordedExch
     const data = exchange.dataFromHost !== undefined ? parseBytes(exchange.dataFromHost) : undefined
     const response = await simulated.camera.send(definition, parameters as never, data)
     const expected = parseCode(exchange.response.code)
-    return response.code === expected
-        ? 'matched'
-        : `mismatch: ${formatCode(response.code)} != ${exchange.response.code}`
+    if (response.code === expected) return 'matched'
+    if (gateResponses(simulated.profile).has(response.code)) return 'blocked'
+    return `mismatch: ${formatCode(response.code)} != ${exchange.response.code}`
+}
+
+/** Responses a `requires-operations` quirk gives while its unlocking operations have not succeeded. */
+function gateResponses(profile: CameraProfile): Set<number> {
+    return new Set(
+        profile.quirks.flatMap(({ behaviour }) =>
+            behaviour.kind === 'requires-operations' ? [parseCode(behaviour.response)] : []
+        )
+    )
 }
 
 function describeExchange(exchange: RecordedExchange): string {
     return `${exchange.operation}${exchange.parameters ? ` [${exchange.parameters.join(',')}]` : ''}`
+}
+
+/** Vendor opcodes (0x9000-0x9fff) the profile documents, checked against darkgrade's registry for that camera. */
+async function vendorOperationDefinitions(simulated: SimulatedCamera): Promise<string> {
+    const codes = new Set(
+        [
+            ...(simulated.profile.deviceInfo?.operationsSupported ?? []),
+            ...simulated.profile.exchanges.map(exchange => exchange.operation),
+        ]
+            .map(parseCode)
+            .filter(code => code >= 0x9000 && code <= 0x9fff)
+    )
+    if (codes.size === 0) throw new NoProfileData('the profile documents no vendor operations')
+    const missing = [...codes].filter(code => !findOperation(simulated, code)).map(code => formatCode(code))
+    const defined = codes.size - missing.length
+    if (missing.length === 0) return `all ${codes.size} vendor operations defined`
+    throw new NotOffered(`${defined}/${codes.size} defined; no darkgrade definition for ${missing.join(' ')}`)
 }
 
 async function recordedExchanges(simulated: SimulatedCamera): Promise<string> {
@@ -215,6 +244,7 @@ async function recordedExchanges(simulated: SimulatedCamera): Promise<string> {
         count('undefined') && `no darkgrade definition: ${outcomes.get('undefined')!.join(' ')}`,
         count('inexpressible') && `parameters not expressible: ${outcomes.get('inexpressible')!.join(' ')}`,
         count('parameters-unknown') && `${count('parameters-unknown')} without recorded parameters`,
+        count('blocked') && `blocked by an unmet quirk prerequisite: ${outcomes.get('blocked')!.join(' ')}`,
         count('mismatch') && `mismatched: ${outcomes.get('mismatch')!.join(' ')}`,
     ]
         .filter(Boolean)
@@ -222,7 +252,7 @@ async function recordedExchanges(simulated: SimulatedCamera): Promise<string> {
 
     if (count('mismatch')) throw new Error(summary)
     if (count('matched')) return summary
-    if (count('undefined') || count('inexpressible')) throw new NotOffered(summary)
+    if (count('undefined') || count('inexpressible') || count('blocked')) throw new NotOffered(summary)
     throw new NoProfileData(summary)
 }
 
@@ -237,6 +267,7 @@ export const CAPABILITIES = [
     { id: 'live-view', label: 'Live view', run: liveView, needsSession: true },
     { id: 'events', label: 'Events', run: events, needsSession: true },
     { id: 'recorded-exchanges', label: 'Recorded exchanges', run: recordedExchanges, needsSession: false },
+    { id: 'vendor-operations', label: 'Vendor op definitions', run: vendorOperationDefinitions, needsSession: false },
 ] as const
 
 /** Runs every capability in order; session-dependent ones inherit a session that did not pass. */
@@ -259,7 +290,7 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
         promise,
         new Promise<T>((_, reject) =>
             setTimeout(
-                () => reject(new Error(`timed out after ${CAPABILITY_TIMEOUT_MILLISECONDS} ms`)),
+                () => reject(new TimedOut(`timed out after ${CAPABILITY_TIMEOUT_MILLISECONDS} ms`)),
                 CAPABILITY_TIMEOUT_MILLISECONDS
             )
         ),
@@ -283,6 +314,9 @@ async function evaluateCapability(
             return { status: 'no-data', detail: transport.missingData[missingBefore].message }
         }
         if (error instanceof NotOffered) return { status: 'unsupported', detail: message }
+        if (error instanceof TimedOut && simulated.profile.provenance.fidelity === 'documented') {
+            return { status: 'no-data', detail: `${message}; the documented mock produces no events or objects` }
+        }
         const responses = transport.responseCodes.slice(responsesBefore)
         const refusal = responses.find(code => CAMERA_REPORTS_UNSUPPORTED.has(code))
         if (refusal !== undefined)
@@ -290,6 +324,11 @@ async function evaluateCapability(
         if (error instanceof SimulatedDisconnectError) return { status: 'fail', detail: message }
         if (/not supported|only available|not implemented/i.test(message)) {
             return { status: 'unsupported', detail: `darkgrade: ${message}` }
+        }
+        // Documented mocks lack most state (property dumps, objects, complete operation lists), so only
+        // a disagreement with a documented exchange counts as a failure for them.
+        if (simulated.profile.provenance.fidelity === 'documented' && run !== recordedExchanges) {
+            return { status: 'no-data', detail: `incomplete documented mock: ${message}` }
         }
         return { status: 'fail', detail: message }
     }

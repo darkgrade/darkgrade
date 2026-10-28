@@ -1,0 +1,251 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-eos-dslr-eos-protocol-era-documented",
+    "manufacturer": "Canon",
+    "line": "EOS DSLR (EOS-protocol era)",
+    "model": "Canon EOS 850D",
+    "usb": { "vendorId": "0x04a9", "productIds": ["0x32f1"], "source": 1 },
+    "catalog": { "manufacturer": "Canon", "line": "EOS DSLR (EOS-protocol era: 40D/450D and later)", "modelCount": 55 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2573"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L374"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L599"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L424"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L428"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1286"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1310"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp-pack.c#L2094"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L433"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L421"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L451"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L404"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L454"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L6166"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L6236"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L414"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2118"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L435"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L429"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L361"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2253"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L503"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L3687"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1200"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L441"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1290"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L308"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L200"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L523"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1229"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Canon",
+        "model": "Canon EOS 850D",
+        "vendorExtensionId": "0x000b",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9104",
+            "0x9108",
+            "0x910f",
+            "0x9110",
+            "0x9114",
+            "0x9115",
+            "0x9116",
+            "0x9117",
+            "0x911a",
+            "0x911d",
+            "0x9127",
+            "0x9128",
+            "0x9129",
+            "0x913d",
+            "0x9151",
+            "0x9152",
+            "0x9153"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x9114",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-remote-mode-handshake; not observed on hardware.",
+            "source": 2
+        },
+        {
+            "operation": "0x9115",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-remote-mode-handshake; not observed on hardware.",
+            "source": 2
+        },
+        {
+            "operation": "0x9110",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-setpropvalueex; not observed on hardware.",
+            "source": 10
+        },
+        {
+            "operation": "0x911d",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-keepalive; not observed on hardware.",
+            "source": 25
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "canon-eos-remote-mode-handshake",
+            "description": "EOS-protocol bodies do nothing remote until the host enables remote mode (0x9114 SetRemoteMode, param 1) and event mode (0x9115 SetEventMode, param 1). libgphoto2 then optionally sends 0x913D SetRequestOLCInfoGroup(0x1FFF), drains events, calls 0x9108 GetDeviceInfoEx, re-fetches the standard DeviceInfo, and drains events again. Teardown sends SetRemoteMode(0)/(1) and SetEventMode(0).",
+            "source": 2,
+            "behaviour": {
+                "kind": "requires-operations",
+                "unlockedBy": ["0x9114", "0x9115"],
+                "gated": { "from": "0x9100", "to": "0x91ff", "except": ["0x9108", "0x9114", "0x9115"] },
+                "response": "0x2019"
+            }
+        },
+        {
+            "id": "canon-eos-getevent-polling",
+            "description": "Canon EOS does not use the USB interrupt endpoint for property changes or new objects. The host polls 0x9116 GetEvent (no params, data-in). The data phase is a concatenation of records [u32 size][u32 type][payload], terminated by an 8-byte record whose type is 0. Record types reuse event codes: 0xC189 PropValueChanged, 0xC18A AvailListChanged (enum list for a property), 0xC181 ObjectAddedEx, 0xC186 RequestObjectTransfer, 0xC18B CameraStatusChanged, 0xC18E ShutdownTimerUpdated, 0xC194 BulbExposureTime, 0xC1A5 OLCInfoChanged, 0xC1A7 ObjectAddedEx64, 0xC1A9 RequestObjectTransfer64.",
+            "source": 5,
+            "behaviour": {
+                "kind": "event-delivery",
+                "mode": "polled",
+                "pollOperation": "0x9116",
+                "emptyResponse": "0800000000000000"
+            }
+        },
+        {
+            "id": "canon-eos-setpropvalueex",
+            "description": "Properties are written with 0x9110 SetDevicePropValueEx (data-out: [u32 size][u32 propcode][value]) rather than the standard 0x1016. Values are reported back only through the next GetEvent PropValueChanged record, not via a DevicePropChanged interrupt event. 0x9127 RequestDevicePropValue asks the body to push a property into the event queue; it returns GeneralError for props that do not exist on that body (libgphoto2 logs and ignores).",
+            "source": 10,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-eos-two-stage-release",
+            "description": "Shutter is driven by 0x9128 RemoteReleaseOn(stage, 0) / 0x9129 RemoteReleaseOff(stage): stage 1 = half-press (AF), stage 2 = full press. libgphoto2 does half-press, polls GetEvent until focus info arrives (OLCInfoChanged / FocusInfoEx), then full-press, full-release, half-release. EOS M bodies instead use RemoteReleaseOn(3,0) as a combined press. Older bodies only support 0x910F RemoteRelease.",
+            "source": 13,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-eos-capture-destination",
+            "description": "Where captures go is selected by EOS prop 0xD11C CaptureDestination (card vs host RAM); when saving to host, libgphoto2 also announces free PC disk space with 0x911A PCHDDCapacity and checks 0xD11B AvailableShots. Images destined for the host arrive as RequestObjectTransfer(64) records and the host must download then call 0x9117 TransferComplete.",
+            "source": 17,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-eos-liveview",
+            "description": "Live view is enabled by setting EOS prop 0xD1B0 EVFOutputDevice (bitmask: bit0 TFT, bit1 PC) via 0x9110, then polling 0x9153 GetViewFinderData. Until frames are ready the camera answers 0xA102 (Canon ObjectNotReady) or DeviceBusy. Data is a sequence of typed blobs (JPEG plus metadata).",
+            "source": 21,
+            "behaviour": { "kind": "device-busy", "operation": "0x9153", "times": 1, "response": "0xa102" }
+        },
+        {
+            "id": "canon-eos-keepalive",
+            "description": "Bodies auto power-off during long remote sessions; libgphoto2 periodically sends 0x911D KeepDeviceOn (no args). ShutdownTimerUpdated (0xC18E) records appear in GetEvent.",
+            "source": 25,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-mtp-vendor-ext-id",
+            "description": "Newer Canons report VendorExtensionID 0x00000006 (Microsoft/MTP) or 0xFFFFFFFF in DeviceInfo; hosts must key the Canon vendor set on USB VID 0x04A9 (libgphoto2 rewrites the ID to 0x0000000B).",
+            "source": 27,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-eos-64bit-objects",
+            "description": "Newer EOS firmware exposes 64-bit object ops (0x9170 GetObjectInfo64, 0x9171 GetObject64, 0x9172 GetPartialObject64, 0x9173 GetObjectInfoEx64, 0x9174 GetPartialObjectEX64) and 64-bit object events (0xC1A7 ObjectAddedEx64, 0xC1A9 RequestObjectTransfer64). Which bodies switch to the 64-bit records is not documented in the sources read.",
+            "source": 29,
+            "behaviour": { "kind": "none" },
+            "unverified": true
+        },
+        {
+            "id": "canon-vendor-scoped-response-codes",
+            "description": "0xA102 means Canon EOS ObjectNotReady but Sony PasswordLengthOverMax in the same header: vendor response codes overlap and must be interpreted per vendor.",
+            "source": 24,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-dslr-mirror-lv",
+            "description": "DSLRs must flip the mirror up for live view; the same EVFOutputDevice/GetViewFinderData path is used but frames take longer to start and capture during live view drops the mirror (extra latency).",
+            "source": 21,
+            "behaviour": { "kind": "none" },
+            "unverified": true
+        }
+    ]
+}

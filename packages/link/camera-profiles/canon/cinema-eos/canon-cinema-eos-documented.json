@@ -1,0 +1,131 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-cinema-eos-documented",
+    "manufacturer": "Canon",
+    "line": "Cinema EOS",
+    "model": "Canon EOS R5 C",
+    "usb": { "vendorId": "0x04a9", "productIds": ["0x3303"], "source": 1 },
+    "catalog": { "manufacturer": "Canon", "line": "Cinema EOS", "modelCount": 3 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2589"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L374"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L599"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L424"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L428"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1286"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1310"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp-pack.c#L2094"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L433"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L421"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L451"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L404"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Canon",
+        "model": "Canon EOS R5 C",
+        "vendorExtensionId": "0x000b",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9108",
+            "0x9110",
+            "0x9114",
+            "0x9115",
+            "0x9116",
+            "0x9127",
+            "0x913d"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x9114",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-remote-mode-handshake; not observed on hardware.",
+            "source": 2
+        },
+        {
+            "operation": "0x9115",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-remote-mode-handshake; not observed on hardware.",
+            "source": 2
+        },
+        {
+            "operation": "0x9110",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-setpropvalueex; not observed on hardware.",
+            "source": 10
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "canon-eos-remote-mode-handshake",
+            "description": "EOS-protocol bodies do nothing remote until the host enables remote mode (0x9114 SetRemoteMode, param 1) and event mode (0x9115 SetEventMode, param 1). libgphoto2 then optionally sends 0x913D SetRequestOLCInfoGroup(0x1FFF), drains events, calls 0x9108 GetDeviceInfoEx, re-fetches the standard DeviceInfo, and drains events again. Teardown sends SetRemoteMode(0)/(1) and SetEventMode(0).",
+            "source": 2,
+            "behaviour": {
+                "kind": "requires-operations",
+                "unlockedBy": ["0x9114", "0x9115"],
+                "gated": { "from": "0x9100", "to": "0x91ff", "except": ["0x9108", "0x9114", "0x9115"] },
+                "response": "0x2019"
+            }
+        },
+        {
+            "id": "canon-eos-getevent-polling",
+            "description": "Canon EOS does not use the USB interrupt endpoint for property changes or new objects. The host polls 0x9116 GetEvent (no params, data-in). The data phase is a concatenation of records [u32 size][u32 type][payload], terminated by an 8-byte record whose type is 0. Record types reuse event codes: 0xC189 PropValueChanged, 0xC18A AvailListChanged (enum list for a property), 0xC181 ObjectAddedEx, 0xC186 RequestObjectTransfer, 0xC18B CameraStatusChanged, 0xC18E ShutdownTimerUpdated, 0xC194 BulbExposureTime, 0xC1A5 OLCInfoChanged, 0xC1A7 ObjectAddedEx64, 0xC1A9 RequestObjectTransfer64.",
+            "source": 5,
+            "behaviour": {
+                "kind": "event-delivery",
+                "mode": "polled",
+                "pollOperation": "0x9116",
+                "emptyResponse": "0800000000000000"
+            }
+        },
+        {
+            "id": "canon-eos-setpropvalueex",
+            "description": "Properties are written with 0x9110 SetDevicePropValueEx (data-out: [u32 size][u32 propcode][value]) rather than the standard 0x1016. Values are reported back only through the next GetEvent PropValueChanged record, not via a DevicePropChanged interrupt event. 0x9127 RequestDevicePropValue asks the body to push a property into the event queue; it returns GeneralError for props that do not exist on that body (libgphoto2 logs and ignores).",
+            "source": 10,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

@@ -1,0 +1,160 @@
+{
+    "schemaVersion": 1,
+    "id": "sony-a-mount-slt-ilca-documented",
+    "manufacturer": "Sony",
+    "line": "A-mount SLT / ILCA",
+    "model": "Sony Alpha-A77 M2 (Control)",
+    "usb": { "vendorId": "0x054c", "productIds": ["0x0953"], "source": 1 },
+    "catalog": { "manufacturer": "Sony", "line": "A-mount SLT / ILCA (translucent mirror)", "modelCount": 15 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1278"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1393"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1394"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1403"
+            },
+            { "location": "https://helpguide.sony.net/ilc/1930/v1/en/contents/TP0002728092.html" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L729"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L4336"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L717"
+            },
+            {
+                "location": "darkgrade/darkgrade:packages/link/src/ptp/definitions/vendors/sony/sony-operation-definitions.ts"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L716"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1353"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5034"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L4570"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L4538"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3607"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L766"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3580"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5066"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3532"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3530"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5072"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5105"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Sony",
+        "model": "Sony Alpha-A77 M2 (Control)",
+        "vendorExtensionId": "0x0011",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9201",
+            "0x9202",
+            "0x9205",
+            "0x9207",
+            "0x9209",
+            "0x9210"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x9201",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk sony-sdio-connect-handshake; not observed on hardware.",
+            "source": 6
+        },
+        {
+            "operation": "0x9210",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk sony-sdio-connect-handshake; not observed on hardware.",
+            "source": 6
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "sony-pc-control-usb-pid",
+            "description": "Sony bodies enumerate with a different USB PID depending on the camera's USB connection mode: MTP/mass-storage vs \"PC Remote\"/\"PC Control\". Only the PC-Control PID exposes the SDIO control ops. Examples: A7 IV MTP 0x0DA6 vs PC Control 0x0DA7; A7S III 0x0D17 vs 0x0D18; A6600 0x0D0F vs 0x0D10; A7 V MTP 0x0F50 vs PC Control 0x0F56; ZV-1 0x0C1B vs 0x0C44.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "sony-sdio-connect-handshake",
+            "description": "Required handshake: 0x9201 SDIO_Connect phase 1, phase 2 (params 0,0), then 0x9202 SDIO_GetExtDeviceInfo(protocol 0x00C8 = \"3.00\" in libgphoto2; darkgrade sends initiatorVersion 3.00) repeated until it returns a non-empty code list (libgphoto2 retries up to 20x), then SDIO_Connect phase 3. The returned list mixes opcodes (0x1xxx/0x9xxx class by mask 0x7000==0x1000), events (0x4000) and props (0x5000) that must be merged into DeviceInfo. Newer Sony (SDK) also uses 0x9210 SDIO_OpenSession with a function mode (remote / content transfer).",
+            "source": 6,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "sony-all-props-dump",
+            "description": "Property state is read as one blob: 0x9209 SDIO_GetAllExtDevicePropInfo returns every property descriptor (libgphoto2 notes ~4 KB); the host re-reads it after 0xC203 DevicePropChanged instead of per-prop GetDevicePropDesc. darkgrade exposes a \"only differences\" flag on 0x9209.",
+            "source": 10,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "sony-set-vs-control",
+            "description": "Two write paths: 0x9205 SDIO_SetExtDevicePropValue for settings (\"value A\") and 0x9207 SDIO_ControlDevice for button-like controls (\"value B\") such as 0xD2C1 ShutterHalfRelease (S1) and 0xD2C2 ShutterRelease (S2) with value 2=press, 1=release. After connect libgphoto2 sets 0xD25A PriorityMode=1 (application/PC priority) so exposure props are writable from the host.",
+            "source": 13,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "sony-object-in-memory",
+            "description": "Captured images to host are exposed as transient object handle 0xFFFFC001 when DPC 0xD215 ObjectInMemory >= 0x8000 (0x8001 = one image waiting). DeleteObject is not supported; the host must download it to clear it. Focus achieved is signalled by 0xD213 FocusFound changing (1->2) and 0xC203 events.",
+            "source": 18,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "sony-a58-event-check",
+            "description": "Older bodies such as the A58 need an explicit interrupt-endpoint event check during half-press to see FocusFound.",
+            "source": 22,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

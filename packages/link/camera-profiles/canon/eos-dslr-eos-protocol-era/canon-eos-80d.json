@@ -2,9 +2,10 @@
     "schemaVersion": 1,
     "id": "canon-eos-80d",
     "manufacturer": "Canon",
-    "line": "EOS DSLR",
+    "line": "EOS DSLR (EOS-protocol era)",
     "model": "EOS 80D",
     "usb": { "vendorId": "0x04a9", "productIds": ["0x3294"], "source": 0 },
+    "catalog": { "manufacturer": "Canon", "line": "EOS DSLR (EOS-protocol era: 40D/450D and later)" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

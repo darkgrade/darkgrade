@@ -1,0 +1,56 @@
+{
+    "schemaVersion": 1,
+    "id": "panasonic-lumix-lumix-compacts-bridge-documented",
+    "manufacturer": "Panasonic (LUMIX)",
+    "line": "LUMIX compacts / bridge",
+    "model": "Panasonic DMC-LX7",
+    "usb": { "vendorId": "0x04da", "productIds": ["0x2374"], "source": 1 },
+    "catalog": {
+        "manufacturer": "Panasonic (LUMIX)",
+        "line": "LUMIX compacts / bridge (FZ, TZ/ZS, LX, LS, FS)",
+        "modelCount": 15
+    },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1912"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1898"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Panasonic (LUMIX)",
+        "model": "Panasonic DMC-LX7",
+        "vendorExtensionId": "0x001c",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "panasonic-shared-pids",
+            "description": "Legacy LUMIX share PIDs 0x2372/0x2374 across many models.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

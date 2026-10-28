@@ -1,0 +1,69 @@
+{
+    "schemaVersion": 1,
+    "id": "fujifilm-legacy-finepix-x-a-x-s1-x10-x30-s5-pro-documented",
+    "manufacturer": "Fujifilm",
+    "line": "Legacy FinePix / X-A / X-S1 / X10-X30 / S5 Pro",
+    "model": "Fuji S5 Pro",
+    "usb": { "vendorId": "0x04cb", "productIds": ["0x01c3"], "source": 1 },
+    "catalog": {
+        "manufacturer": "Fujifilm",
+        "line": "Legacy FinePix / X-A / X-S1 / X10-X30 / S5 Pro",
+        "modelCount": 53
+    },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2627"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L346"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L468"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2757"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Fujifilm",
+        "model": "Fuji S5 Pro",
+        "vendorExtensionId": "0x000e",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "fuji-vendor-ext-desc",
+            "description": "Older Fuji (S5 Pro) report Microsoft VendorExtensionID with VendorExtensionDesc containing \"fujifilm.co.jp: 1.0;\"; libgphoto2 switches to vendor 0x0E on that string.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "fuji-pid-reuse",
+            "description": "Fujifilm reuses USB PIDs across models (GFX 100S and X-S10 both 0x02EA; GFX 50S II matches GFX100 entry). Model must come from DeviceInfo.",
+            "source": 3,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

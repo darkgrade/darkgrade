@@ -1,0 +1,65 @@
+{
+    "schemaVersion": 1,
+    "id": "nikon-coolpix-keymission-documented",
+    "manufacturer": "Nikon",
+    "line": "Coolpix / KeyMission",
+    "model": "Nikon P950",
+    "usb": { "vendorId": "0x04b0", "productIds": ["0x036d"], "source": 1 },
+    "catalog": { "manufacturer": "Nikon", "line": "Coolpix / KeyMission (compacts, action)", "modelCount": 113 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1692"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L556"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1424"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp-bugs.h#L32"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Nikon",
+        "model": "Nikon P950",
+        "vendorExtensionId": "0x000a",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "coolpix-a-hidden-ops",
+            "description": "COOLPIX A hides its Nikon ops; libgphoto2 injects GetVendorPropCodes, GetEvent, AfDrive, ChangeCameraMode, DeviceReady, Start/EndLiveView, GetLiveViewImg, ChangeAfArea, InitiateCaptureRecInMedia.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "coolpix-no-capture-complete",
+            "description": "Some Coolpix (e.g. 5700) are flagged PTP_NO_CAPTURE_COMPLETE: standard InitiateCapture never yields a CaptureComplete event.",
+            "source": 3,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

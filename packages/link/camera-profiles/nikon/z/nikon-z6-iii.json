@@ -12,6 +12,7 @@
         "productString": "NIKON DSC Z6_3"
     },
     "firmware": "V2.00",
+    "catalog": { "manufacturer": "Nikon", "line": "Z (mirrorless, Z mount)" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

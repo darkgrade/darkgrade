@@ -5,6 +5,7 @@
     "line": "Z",
     "model": "Z 7",
     "usb": { "vendorId": "0x04b0", "productIds": ["0x0442"], "source": 0 },
+    "catalog": { "manufacturer": "Nikon", "line": "Z (mirrorless, Z mount)" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

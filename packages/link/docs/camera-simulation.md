@@ -12,9 +12,15 @@ Profiles live in `camera-profiles/<manufacturer>/<line>/<id>.json` and are typed
 - `properties`: descriptors as raw bytes or parsed fields, plus values observed on hardware for checking darkgrade's decoding.
 - `exchanges`: recorded request/response pairs. Omitted request parameters or data match anything; repeated matches are consumed in recorded order and the last one repeats.
 - `events`: events delivered after a given operation.
-- `quirks`: line or model behaviours with a citation and a simulator `behaviour`: `device-busy`, `disconnect-on-request`, `session-id`, `strict-transaction-ids`, `event-delivery`, `property-datatype`, or `none` for behaviours documented for reference only.
+- `quirks`: line or model behaviours with a citation and a simulator `behaviour`: `device-busy`, `disconnect-on-request`, `session-id`, `strict-transaction-ids`, `event-delivery`, `property-datatype`, `requires-operations`, `rejects-operations`, `hidden-from-device-info`, `emit-event`, or `none` for behaviours documented for reference only. Quirks carry `unverified: true` when their source flags them.
 
 The simulator resolves each request through quirks, then recorded exchanges, then standard answers derived from the profile (DeviceInfo, OpenSession/CloseSession, property descriptors with state that `SetDevicePropValue` changes). An operation missing from a complete advertised list returns `OperationNotSupported`. Anything else raises `ProfileDataMissingError`: the simulator never invents a camera response.
+
+## Documented profiles
+
+`camera-catalog/camera-lines.json` (see its README) lists 11 manufacturers, 46 lines and 837 models with USB IDs and line quirks cited from libgphoto2 and vendor SDK pages. `bun run profiles:documented` regenerates one documented mock per line, named `<manufacturer>-<line>-documented.json`, using the newest capture-capable model with a known USB product ID. Lines with no such model (Hasselblad, Panasonic S, Pentax 645, Leica S, Sigma BF) get no mock and are listed in the matrix's line coverage table.
+
+A documented mock's DeviceInfo lists the ISO 15740 mandatory operations, InitiateCapture when libgphoto2 marks the model capture-capable, and the opcodes its line's verified quirks document. The lists are marked incomplete, so other requests report missing data. `QUIRK_WIRING` in `build-documented-profiles.ts` maps each catalog quirk to a simulator behaviour where the source states one, such as the Canon remote-mode gate, Canon/Nikon polled events, Nikon DeviceReady busy, Canon live-view not-ready, hidden Panasonic operations and download-only refusals. Other quirks are kept for reference with behaviour `none`, and quirks the catalog marks unverified carry `unverified: true`. For documented rows only a disagreement with a documented exchange counts as a failure; vendor operations darkgrade has no definition for are reported as unsupported, so the matrix doubles as a list of support gaps.
 
 ## Producing captured profiles
 
@@ -28,12 +34,12 @@ The ingest script reads a `darkgrade/test-bench` checkout:
 2. Prose observations transcribed in `scripts/camera-profiles/test-bench-observations.ts`. Each one cites a file and a verbatim excerpt, and the script stops if an excerpt is no longer in the checkout.
 3. Optional usbmon captures, which give the most complete profiles. Run the script on a bench, where captures are kept under `/var/lib/darkgrade-testbench`:
 
-   ```sh
-   bun run profiles:ingest -- --test-bench ~/darkgrade-testbench \
-       --capture canon-eos-r6-mark-iii=/var/lib/darkgrade-testbench/captures/<trace>.pcapng
-   ```
+    ```sh
+    bun run profiles:ingest -- --test-bench ~/darkgrade-testbench \
+        --capture canon-eos-r6-mark-iii=/var/lib/darkgrade-testbench/captures/<trace>.pcapng
+    ```
 
-   Only transactions whose every phase was captured in full are kept; GetDeviceInfo and GetDevicePropDesc responses become the profile's DeviceInfo and descriptors.
+    Only transactions whose every phase was captured in full are kept; GetDeviceInfo and GetDevicePropDesc responses become the profile's DeviceInfo and descriptors.
 
 ## Adding a camera
 

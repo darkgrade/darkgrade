@@ -1,0 +1,59 @@
+{
+    "schemaVersion": 1,
+    "id": "pentax-ricoh-imaging-pentax-k-dslr-documented",
+    "manufacturer": "Pentax / Ricoh Imaging",
+    "line": "Pentax K DSLR",
+    "model": "Pentax K-3 Mark III Monochrome (PTP Mode)",
+    "usb": { "vendorId": "0x25fb", "productIds": ["0x018f"], "source": 1 },
+    "catalog": {
+        "manufacturer": "Pentax / Ricoh Imaging",
+        "line": "Pentax K DSLR (APS-C and full-frame)",
+        "modelCount": 7
+    },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2833"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2822"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L202"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Pentax / Ricoh Imaging",
+        "model": "Pentax K-3 Mark III Monochrome (PTP Mode)",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "pentax-ptp-mode-pids",
+            "description": "Pentax K bodies appear as \"(PTP Mode)\" entries with VID 0x25FB (Ricoh Imaging); older Optio used 0x0A17. libgphoto2 assigns no capture flag; libgphoto2 has no Pentax vendor opcodes (PTP_VENDOR_PENTAX 0x0D defined only).",
+            "source": 2,
+            "behaviour": { "kind": "none" },
+            "unverified": true
+        }
+    ]
+}

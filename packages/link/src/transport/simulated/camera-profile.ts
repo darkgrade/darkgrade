@@ -28,6 +28,12 @@ export interface ProfileDeviceInfo {
     raw?: string
     /** `${manufacturer} ${model}` exactly as darkgrade reported it, when the split is unknown. */
     reportedIdentity?: string
+    /**
+     * True only when the operation, event and property lists are the camera's complete lists
+     * (for example decoded from a captured dataset). Only then does the simulator answer
+     * OperationNotSupported / DevicePropNotSupported for codes absent from them.
+     */
+    listsComplete?: boolean
     standardVersion?: number
     vendorExtensionId?: string
     vendorExtensionVersion?: number
@@ -91,21 +97,50 @@ export interface RecordedEvent {
     source: number
 }
 
+/** An inclusive range of operation codes, e.g. a vendor's 0x9100-0x91ff block. */
+export interface OperationRange {
+    from: string
+    to: string
+    except?: string[]
+}
+
 /** Generic simulator behaviours a quirk can switch on. */
 export type QuirkBehaviour =
+    /** Documented for reference; no simulator behaviour. */
     | { kind: 'none' }
-    | { kind: 'device-busy'; operation: string; times: number }
+    /** Answers `operation` with `response` (default DeviceBusy) `times` times, counted from each `afterOperation`. */
+    | { kind: 'device-busy'; operation: string; times: number; response?: string; afterOperation?: string }
+    /** The device leaves the bus without a response. */
     | { kind: 'disconnect-on-request'; operation: string; parameters?: string[] }
     | { kind: 'session-id'; rule: 'nonzero' | 'equals'; sessionId?: number }
     | { kind: 'strict-transaction-ids' }
-    | { kind: 'event-delivery'; mode: 'interrupt' | 'polled'; pollOperation?: string }
+    /** Polled delivery suppresses interrupt events; `emptyResponse` answers the poll when nothing is queued. */
+    | { kind: 'event-delivery'; mode: 'interrupt' | 'polled'; pollOperation?: string; emptyResponse?: string }
     | { kind: 'property-datatype'; property: string; dataType: string }
+    /** Operations in `gated` answer `response` until every `unlockedBy` operation has returned OK. */
+    | { kind: 'requires-operations'; unlockedBy: string[]; gated: OperationRange; response: string }
+    /** These operations are always refused with `response`. */
+    | { kind: 'rejects-operations'; operations: string[]; response: string }
+    /** Implemented but left out of the DeviceInfo the camera reports. */
+    | { kind: 'hidden-from-device-info'; operations?: string[]; properties?: string[] }
+    /** Emits `event` after `afterOperation` returns OK, optionally copying the request parameters. */
+    | { kind: 'emit-event'; afterOperation: string; event: string; copyParameters?: boolean }
 
 export interface ProfileQuirk {
     id: string
     description: string
     source: number
     behaviour: QuirkBehaviour
+    /** The source itself flags this behaviour as unconfirmed. */
+    unverified?: boolean
+}
+
+/** Where a profile sits in camera-catalog/camera-lines.json, for rolling results up by line. */
+export interface ProfileCatalogReference {
+    manufacturer: string
+    line: string
+    /** Models in that catalog line, which this profile represents. */
+    modelCount?: number
 }
 
 export interface CameraProfile {
@@ -124,6 +159,7 @@ export interface CameraProfile {
         source?: number
     }
     firmware?: string
+    catalog?: ProfileCatalogReference
     provenance: ProfileProvenance
     deviceInfo?: ProfileDeviceInfo
     properties: ProfileProperty[]
@@ -268,30 +304,59 @@ export function validateCameraProfile(document: unknown): string[] {
 function validateQuirkBehaviour(behaviour: QuirkBehaviour | undefined, where: string): string[] {
     const problems: string[] = []
     const isCode = (value: unknown) => typeof value === 'string' && HEX_CODE.test(value)
+    const requireCodes = (values: unknown, field: string, optional = false) => {
+        if (optional && values === undefined) return
+        if (!Array.isArray(values) || !values.every(isCode)) problems.push(`${where}.${field} must be codes`)
+    }
+    const requireCode = (value: unknown, field: string, optional = false) => {
+        if (optional && value === undefined) return
+        if (!isCode(value)) problems.push(`${where}.${field} is invalid`)
+    }
     switch (behaviour?.kind) {
         case 'none':
         case 'strict-transaction-ids':
             break
         case 'device-busy':
-            if (!isCode(behaviour.operation)) problems.push(`${where}.operation is invalid`)
+            requireCode(behaviour.operation, 'operation')
+            requireCode(behaviour.response, 'response', true)
+            requireCode(behaviour.afterOperation, 'afterOperation', true)
             if (!Number.isInteger(behaviour.times) || behaviour.times < 1) problems.push(`${where}.times must be >= 1`)
             break
         case 'disconnect-on-request':
-            if (!isCode(behaviour.operation)) problems.push(`${where}.operation is invalid`)
-            if (behaviour.parameters && !behaviour.parameters.every(isCode))
-                problems.push(`${where}.parameters invalid`)
+            requireCode(behaviour.operation, 'operation')
+            requireCodes(behaviour.parameters, 'parameters', true)
             break
         case 'session-id':
             if (behaviour.rule === 'equals' && !Number.isInteger(behaviour.sessionId))
                 problems.push(`${where}.sessionId is required for rule "equals"`)
             break
         case 'event-delivery':
-            if (behaviour.mode === 'polled' && !isCode(behaviour.pollOperation))
-                problems.push(`${where}.pollOperation is required for polled delivery`)
+            if (behaviour.mode === 'polled') requireCode(behaviour.pollOperation, 'pollOperation')
+            if (behaviour.emptyResponse !== undefined && !HEX_BYTES.test(behaviour.emptyResponse))
+                problems.push(`${where}.emptyResponse must be bytes`)
             break
         case 'property-datatype':
-            if (!isCode(behaviour.property) || !isCode(behaviour.dataType))
-                problems.push(`${where} needs property and dataType codes`)
+            requireCode(behaviour.property, 'property')
+            requireCode(behaviour.dataType, 'dataType')
+            break
+        case 'requires-operations':
+            requireCodes(behaviour.unlockedBy, 'unlockedBy')
+            requireCode(behaviour.gated?.from, 'gated.from')
+            requireCode(behaviour.gated?.to, 'gated.to')
+            requireCodes(behaviour.gated?.except, 'gated.except', true)
+            requireCode(behaviour.response, 'response')
+            break
+        case 'rejects-operations':
+            requireCodes(behaviour.operations, 'operations')
+            requireCode(behaviour.response, 'response')
+            break
+        case 'hidden-from-device-info':
+            requireCodes(behaviour.operations, 'operations', true)
+            requireCodes(behaviour.properties, 'properties', true)
+            break
+        case 'emit-event':
+            requireCode(behaviour.afterOperation, 'afterOperation')
+            requireCode(behaviour.event, 'event')
             break
         default:
             problems.push(`${where}.kind is not a known quirk behaviour`)

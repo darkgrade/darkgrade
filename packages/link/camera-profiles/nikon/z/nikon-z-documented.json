@@ -1,0 +1,246 @@
+{
+    "schemaVersion": 1,
+    "id": "nikon-z-documented",
+    "manufacturer": "Nikon",
+    "line": "Z",
+    "model": "Nikon Z6 III",
+    "usb": { "vendorId": "0x04b0", "productIds": ["0x0454"], "source": 1 },
+    "catalog": { "manufacturer": "Nikon", "line": "Z (mirrorless, Z mount)", "modelCount": 15 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1857"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L477"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L591"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L656"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L588"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L637"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1331"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L589"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L834"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L4375"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L581"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L592"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L5141"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L4377"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L4327"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2533"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L583"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L3816"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1164"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L600"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L648"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2634"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1172"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L4298"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L321"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1163"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1183"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L4347"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L649"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L642"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L653"
+            },
+            {
+                "location": "darkgrade/darkgrade:packages/link/src/ptp/definitions/vendors/nikon/nikon-operation-definitions.ts"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2688"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Nikon",
+        "model": "Nikon Z6 III",
+        "vendorExtensionId": "0x000a",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x90c0",
+            "0x90c2",
+            "0x90c3",
+            "0x90c7",
+            "0x90c8",
+            "0x90ca",
+            "0x90cb",
+            "0x9201",
+            "0x9202",
+            "0x9203",
+            "0x9207",
+            "0x941c",
+            "0x9428",
+            "0x9439"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x90c8",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk nikon-deviceready-busy; not observed on hardware.",
+            "source": 8
+        },
+        {
+            "operation": "0x90c2",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk nikon-pc-camera-mode; not observed on hardware.",
+            "source": 17
+        },
+        {
+            "operation": "0x9201",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk nikon-liveview; not observed on hardware.",
+            "source": 20
+        },
+        {
+            "operation": "0x9202",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk nikon-liveview; not observed on hardware.",
+            "source": 20
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "nikon-hidden-vendor-codes",
+            "description": "Nikon DeviceInfo under-reports: the full vendor property list comes from 0x90CA GetVendorPropCodes, and newer bodies (Z) also provide 0x9439 GetVendorCodes. Hosts merge these into the DeviceInfo lists.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "nikon-getevent-polling",
+            "description": "Nikon bodies queue events internally and the host polls 0x90C7 GetEvent (data: u16 count, then {u16 code, u32 param} records); Z bodies add 0x941C GetEventEx which carries multi-parameter events. Key events: 0xC101 ObjectAddedInSDRAM, 0xC102 CaptureCompleteRecInSdram, 0x4002 ObjectAdded, 0x4006 DevicePropChanged.",
+            "source": 5,
+            "behaviour": {
+                "kind": "event-delivery",
+                "mode": "polled",
+                "pollOperation": "0x90c7",
+                "emptyResponse": "0000"
+            }
+        },
+        {
+            "id": "nikon-deviceready-busy",
+            "description": "After capture/AF/live-view start the body answers DeviceBusy (0x2019) to most ops; hosts poll 0x90C8 DeviceReady (no data) until it returns OK. libgphoto2 waits up to 1000 s after capture (bulb on D780 up to 900 s) and 2 s after StartLiveView.",
+            "source": 8,
+            "behaviour": { "kind": "device-busy", "operation": "0x90c8", "times": 1, "afterOperation": "0x100e" }
+        },
+        {
+            "id": "nikon-sdram-capture",
+            "description": "Capture to host RAM: 0x90C0 InitiateCaptureRecInSdram(0xFFFFFFFF) or 0x90CB AfCaptureSDRAM (AF then capture). The image is a transient object with handle 0xFFFF0001 announced by 0xC101 ObjectAddedInSDRAM and 0xC102 CaptureCompleteRecInSdram; host downloads it then frees it (0x90C3 DelImageSDRAM). Capture-to-card on newer bodies: 0x9207 InitiateCaptureRecInMedia(0xFFFFFFFE=AF / 0xFFFFFFFF=no-AF, target).",
+            "source": 11,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "nikon-pc-camera-mode",
+            "description": "0x90C2 ChangeCameraMode(1) switches the body to host-controlled (\"PC camera\") mode so exposure props become writable; bodies may return 0xA003 ChangeCameraModeFailed, which libgphoto2 tolerates.",
+            "source": 17,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "nikon-liveview",
+            "description": "Live view: 0x9201 StartLiveView, poll DeviceReady, then 0x9203 GetLiveViewImg (header + JPEG); 0x9202 EndLiveView. Z bodies add 0x9428 GetLiveViewImageEx. If live view is active, AF capture is not allowed (host must use non-AF capture). 0xD1A2 LiveViewStatus and 0xD1A4 LiveViewProhibitCondition report state; 0xA00B NotLiveView is returned for LV ops outside LV.",
+            "source": 20,
+            "behaviour": { "kind": "device-busy", "operation": "0x9203", "times": 1, "afterOperation": "0x9201" }
+        },
+        {
+            "id": "nikon-mtp-vendor-ext-id",
+            "description": "From the D40 onwards Nikons report MTP/Microsoft VendorExtensionID; host must key on USB VID 0x04B0 to enable the Nikon set (gphoto rewrites to 0x0A).",
+            "source": 25,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "nikon-busy-response-codes",
+            "description": "Nikon-specific response codes signal capture conditions: 0xA002 OutOfFocus, 0xA004 InvalidStatus, 0xA008 ShutterSpeedBulb, 0xA009 MirrorUpSequence, 0xA200 Bulb_Release_Busy, 0xA201 Silent_Release_Busy, 0xA207 Waiting_2ndRelease (seen on D850).",
+            "source": 26,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "nikon-z-64bit-and-ex-ops",
+            "description": "Z bodies use 64-bit object ops: 0x9431 GetPartialObjectEx (64-bit offset and size, 64-bit result in r1/r2) and 0x9421 GetObjectSize (64-bit). darkgrade additionally defines 0x943A/0x943B/0x943C GetDevicePropDescEx/GetDevicePropValueEx/SetDevicePropValueEx and 0x9435 ChangeApplicationMode; the 0x943x Ex prop ops are not in libgphoto2 ptp.h and could not be independently verified here.",
+            "source": 29,
+            "behaviour": { "kind": "none" },
+            "unverified": true
+        },
+        {
+            "id": "nikon-z-application-mode",
+            "description": "Z bodies have DPC 0xD1F0 ApplicationMode and op 0x9435 ChangeApplicationMode (darkgrade defines OFF/ON); libgphoto2 sets it for tethered control.",
+            "source": 33,
+            "behaviour": { "kind": "none" },
+            "unverified": true
+        }
+    ]
+}

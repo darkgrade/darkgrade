@@ -1,0 +1,149 @@
+{
+    "schemaVersion": 1,
+    "id": "om-system-olympus-om-d-om-system-documented",
+    "manufacturer": "OM System / Olympus",
+    "line": "OM-D / OM System",
+    "model": "Olympus OM-1MarkII",
+    "usb": { "vendorId": "0x33a2", "productIds": ["0x0136"], "source": 1 },
+    "catalog": {
+        "manufacturer": "OM System / Olympus",
+        "line": "OM-D / OM System (E-M1/E-M5/OM-1/OM-3/OM-5)",
+        "modelCount": 10
+    },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1974"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L352"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L216"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L1305"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3288"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L912"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L947"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L1325"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L821"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L825"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L819"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3134"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1966"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L867"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L367"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L968"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "OM System / Olympus",
+        "model": "Olympus OM-1MarkII",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9481",
+            "0x9483",
+            "0x9484",
+            "0x9486",
+            "0x9487",
+            "0x9489",
+            "0x948a",
+            "0x948b"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x9481",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk olympus-omd-capture-0x9481; not observed on hardware.",
+            "source": 6
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "olympus-omd-vendor-id",
+            "description": "OM-D/OM System bodies identify by Manufacturer \"OLYMPUS\" or \"OMSYSTEM\" and Model starting \"E-M\"/\"OM-\"; libgphoto2 assigns internal vendor id 0xFFFD (GP_OLYMPUS_OMD). OM-1 Mark II enumerates with new VID 0x33A2 (OM Digital Solutions) but same PID 0x0136 as OM-1.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "olympus-omd-pc-mode",
+            "description": "Host must switch DPC 0xD052 CameraControlMode to 1 (PC mode) via SetDevicePropValue, then wait ~100 ms and drain events before the body accepts control.",
+            "source": 4,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "olympus-omd-capture-0x9481",
+            "description": "Capture = 0x9481 OMD_Capture(0x3) (press) then 0x9481(0x6) (release), then 0x9486 query changed props. For bulb, press/release are separated. Errors are returned as RC OK with Param1 carrying a 0x2xxx code ((Param1 & 0x7000)==0x2000).",
+            "source": 6,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "olympus-omd-prop-announce-and-poll",
+            "description": "Host announces the 16-bit props it wants to monitor with 0x9489 SetProperties (count + list) and 0x948B SetProperties2; then polls 0x9486 ChangedProperties (heavy, ~42 propdescs) or 0x948A PollProperties (light) which return standard PropDesc datasets for changed props (32-bit count, 0 if none).",
+            "source": 8,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "olympus-omd-liveview",
+            "description": "Live view via 0x9484 GetLiveViewImage; magnify via 0x9483/0x9488; MF drive 0x9487; capture target DPC 0xD0DC.",
+            "source": 11,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "olympus-shared-pids",
+            "description": "Several OM-D bodies share PIDs (E-M5 II, E-M1 II and E-M1 all 0x0130).",
+            "source": 13,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "vendor-opcode-overlap",
+            "description": "Olympus 0x9101 = Capture (E-series) while Canon EOS 0x9101 = GetStorageIDs and Panasonic 0x9101 is a different op: opcodes in 0x9xxx are only meaningful per vendor.",
+            "source": 14,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

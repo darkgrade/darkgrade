@@ -24,6 +24,7 @@
         "format": "prettier --write .",
         "usb-ids": "bun run src/transport/usb/usb-ids/generate-usb-ids.ts",
         "profiles:ingest": "bun run scripts/camera-profiles/ingest-test-bench.ts",
+        "profiles:documented": "bun run scripts/camera-profiles/build-documented-profiles.ts",
         "test:simulation": "vitest run tests/camera-simulation",
         "simulation:matrix": "bun run scripts/camera-profiles/render-support-matrix.ts"
     },

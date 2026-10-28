@@ -1,0 +1,107 @@
+{
+    "schemaVersion": 1,
+    "id": "leica-q-documented",
+    "manufacturer": "Leica",
+    "line": "Q",
+    "model": "Leica Q3",
+    "usb": { "vendorId": "0x1a98", "productIds": ["0x2376"], "source": 1 },
+    "catalog": { "manufacturer": "Leica", "line": "Q (fixed-lens full-frame)", "modelCount": 1 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2898"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L334"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L217"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L10051"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L904"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L921"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2900"
+            },
+            { "location": "https://tethertools.com/camera/leica-q3/" },
+            { "location": "https://support.captureone.com/hc/de/community/posts/6464102919069-Leica-M11-Tethering" }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Leica",
+        "model": "Leica Q3",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9004",
+            "0x9005",
+            "0x9006",
+            "0x9016",
+            "0x9019",
+            "0x901c",
+            "0x901d"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x9005",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk leica-le-session; not observed on hardware.",
+            "source": 4
+        },
+        {
+            "operation": "0x9006",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk leica-le-session; not observed on hardware.",
+            "source": 4
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "leica-vendor-id",
+            "description": "Leica bodies report VendorExtensionID 0 or Microsoft; libgphoto2 assigns internal id 0xFFFC (GP_LEICA) when VID is 0x1A98.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "leica-le-session",
+            "description": "Leica remote control requires 0x9005 LEOpenSession (one arg, 0 accepted) after the standard OpenSession, and 0x9006 LECloseSession on exit; DeviceInfo is re-read after LEOpenSession. Release via 0x9004 LEReleaseStages (1 = AF press, 2 = release, 0x0C/0x0D continuous), 0x9016 LEControlAutoFocus, 0x9019 bulb, 0x901C photo live view, 0x901D keep-alive.",
+            "source": 4,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "leica-no-capture-complete",
+            "description": "Q3 and SL3 are flagged PTP_NO_CAPTURE_COMPLETE: no CaptureComplete event after InitiateCapture.",
+            "source": 1,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "leica-usb-mode-ptp",
+            "description": "Q3: set USB Mode to PTP and USB Charging off for tethering; M11 tethering reported cable-sensitive.",
+            "source": 8,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

@@ -1,0 +1,108 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-powershot-ixus-legacy-canon-ptp-documented",
+    "manufacturer": "Canon",
+    "line": "PowerShot / IXUS (legacy Canon PTP)",
+    "model": "Canon PowerShot SX110 IS",
+    "usb": { "vendorId": "0x04a9", "productIds": ["0x3192"], "source": 1 },
+    "catalog": { "manufacturer": "Canon", "line": "PowerShot / IXUS (legacy Canon PTP)", "modelCount": 175 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2204"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L279"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L299"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L292"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L6953"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2006"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2088"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1992"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp-bugs.h#L27"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Canon",
+        "model": "Canon PowerShot SX110 IS",
+        "vendorExtensionId": "0x000b",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9008",
+            "0x9009",
+            "0x900b",
+            "0x900c",
+            "0x9013",
+            "0x901a",
+            "0x901d",
+            "0x9020"
+        ],
+        "eventsSupported": ["0x4003"],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x100b",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-delete-sends-event; not observed on hardware.",
+            "source": 9
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "canon-powershot-legacy-ptp",
+            "description": "Pre-EOS-protocol PowerShot/IXUS bodies use the original Canon 0x90xx extension: 0x9008 InitiateReleaseControl / 0x9009 TerminateReleaseControl to enter remote capture, 0x900B/0x900C ViewfinderOn/Off, 0x901D GetViewfinderImage, 0x901A InitiateCaptureInMemory, and 0x9013 CheckEvent polling; 0x9020 GetChanges for property change lists.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-powershot-shared-pids",
+            "description": "Regional variants share one USB PID (e.g. Digital IXUS 400 / PowerShot S400 = 0x3075; EOS 400D / Rebel XTi / Kiss Digital X = 0x3110). Model must be taken from DeviceInfo.Model, not the PID.",
+            "source": 6,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-ptp-mode-vs-normal-mode",
+            "description": "Older Canons exposed PTP only when the camera's USB comms setting was \"PTP\" (table entries say \"(PTP mode)\"); otherwise they used Canon's proprietary protocol served by the separate canon camlib.",
+            "source": 8,
+            "behaviour": { "kind": "none" },
+            "unverified": true
+        },
+        {
+            "id": "canon-delete-sends-event",
+            "description": "Older Canon PowerShot/EOS entries carry PTPBUG_DELETE_SENDS_EVENT: after DeleteObject the camera emits an ObjectRemoved event that the host must consume.",
+            "source": 9,
+            "behaviour": { "kind": "emit-event", "afterOperation": "0x100b", "event": "0x4003", "copyParameters": true }
+        }
+    ]
+}

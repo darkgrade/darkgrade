@@ -1,0 +1,53 @@
+{
+    "schemaVersion": 1,
+    "id": "sony-legacy-cyber-shot-dsc-handycam-documented",
+    "manufacturer": "Sony",
+    "line": "Legacy Cyber-shot DSC / Handycam",
+    "model": "Sony DSC-A900 (PTP mode)",
+    "usb": { "vendorId": "0x054c", "productIds": ["0x02e7"], "source": 1 },
+    "catalog": { "manufacturer": "Sony", "line": "Legacy Cyber-shot DSC / Handycam (PTP mode)", "modelCount": 63 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1127"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1077"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Sony",
+        "model": "Sony DSC-A900 (PTP mode)",
+        "vendorExtensionId": "0x0011",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "sony-legacy-ptp-shared-pid",
+            "description": "Pre-2012 Sony DSC/NEX/SLT bodies in \"PTP mode\" share PID 0x004E (generic) or per-model PIDs and expose standard PTP download only (no SDIO control).",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

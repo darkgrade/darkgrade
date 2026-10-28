@@ -1,0 +1,51 @@
+{
+    "schemaVersion": 1,
+    "id": "pentax-ricoh-imaging-ricoh-theta-documented",
+    "manufacturer": "Pentax / Ricoh Imaging",
+    "line": "Ricoh THETA",
+    "model": "Ricoh Theta Z1 (PTP mode)",
+    "usb": { "vendorId": "0x05ca", "productIds": ["0x036d"], "source": 1 },
+    "catalog": { "manufacturer": "Pentax / Ricoh Imaging", "line": "Ricoh THETA (360)", "modelCount": 5 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2799"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2945"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Pentax / Ricoh Imaging",
+        "model": "Ricoh Theta Z1 (PTP mode)",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "theta-ptpip",
+            "description": "libgphoto2 lists \"Ricoh Theta (WLAN)\" as a PTP/IP model with capture.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

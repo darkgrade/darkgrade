@@ -2,9 +2,10 @@
     "schemaVersion": 1,
     "id": "sony-ilce-6700",
     "manufacturer": "Sony",
-    "line": "Alpha APS-C",
+    "line": "Alpha APS-C E-mount",
     "model": "ILCE-6700 (α6700)",
     "usb": { "vendorId": "0x054c", "productIds": ["0x0e78", "0x096f"], "source": 0 },
+    "catalog": { "manufacturer": "Sony", "line": "Alpha APS-C E-mount (α6xxx / α5xxx)" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

@@ -1,0 +1,142 @@
+{
+    "schemaVersion": 1,
+    "id": "panasonic-lumix-lumix-g-gh-documented",
+    "manufacturer": "Panasonic (LUMIX)",
+    "line": "LUMIX G / GH",
+    "model": "Panasonic DC-GH5",
+    "usb": { "vendorId": "0x04da", "productIds": ["0x2382"], "source": 1 },
+    "catalog": { "manufacturer": "Panasonic (LUMIX)", "line": "LUMIX G / GH (Micro Four Thirds)", "modelCount": 6 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1916"
+            },
+            { "location": "https://eww.pavc.panasonic.co.jp/dscoi/DC-GH6/html/DC-GH6_DVQP2441_eng/0134.html" },
+            { "location": "https://help.na.panasonic.com/answers/how-to-use-tethered-recording-lumix-s-series" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L3802"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L985"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L979"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L192"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L216"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L5459"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L5390"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L994"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1377"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5644"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L5613"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1001"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1002"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Panasonic (LUMIX)",
+        "model": "Panasonic DC-GH5",
+        "vendorExtensionId": "0x001c",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9108",
+            "0x9402",
+            "0x9403",
+            "0x9404",
+            "0x940b",
+            "0x940c",
+            "0x940d",
+            "0x9412",
+            "0x9414",
+            "0x9415",
+            "0x9706"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "panasonic-usb-mode-tether",
+            "description": "The camera must be in USB Mode [PC(Tether)] (selected at connect or fixed in Setup > IN/OUT > USB Mode). [PC(Storage)] presents mass storage. Wi-Fi/Bluetooth are unavailable while tethered.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "panasonic-32bit-props",
+            "description": "Panasonic properties use 32-bit codes (e.g. 0x02000010 PhotoStyle, 0x02000020 ISO, 0x02000030 ShutterSpeed, 0x02000040 Aperture, 0x02000050 WhiteBalance) accessed through vendor ops 0x9402 GetProperty / 0x9403 SetProperty / 0x9108 ListProperty (data: [u32 code][u32 size][value]...) rather than standard 16-bit DevicePropDesc.",
+            "source": 4,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "panasonic-hidden-ops-pid-2382",
+            "description": "On PID 0x2382 (DC-GH5 entry; comment says GH5/G9) libgphoto2 injects GetProperty, SetProperty, ListProperty, InitiateCapture 0x9404, Liveview 0x9412, LiveviewImage 0x9706, MovieRecControl 0x940C, Get/SetLiveViewParameters 0x9414/0x9415 into DeviceInfo because the body does not advertise them.",
+            "source": 7,
+            "behaviour": {
+                "kind": "hidden-from-device-info",
+                "operations": ["0x9404", "0x9412", "0x9706", "0x940c", "0x9414", "0x9415"]
+            }
+        },
+        {
+            "id": "panasonic-mtp-initiator-changes-deviceinfo",
+            "description": "If the host sets MTP SessionInitiatorInfo to a Windows MTP string, Panasonic changes its DeviceInfo (e.g. adds DeleteObject). Applies when VendorExtensionID is Microsoft and VID 0x04DA.",
+            "source": 8,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "panasonic-param-coded-ops",
+            "description": "Many Panasonic ops take a single 32-bit \"function code\" parameter instead of distinct opcodes: InitiateCapture 0x9404(0x03000011), Liveview 0x9412(0x0D000010 start / 0x0D000011 stop), MovieRecControl 0x940C(0x07000011 start / 0x07000012 stop), SetCaptureTarget 0x940B (RAM/SD/both), PowerControl 0x940D.",
+            "source": 9,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "panasonic-capture-events",
+            "description": "Capture completion events: 0xC108 ObjectAdded and 0xC109 ObjectAddedSDRAM (plus 0xC101/0xC107 seen); LUMIX Tether calls 0x9401 on 0xC101. Shutter speed encoding: 0xFFFFFFFF = bulb, high bit set = value in ms-ish units.",
+            "source": 12,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "panasonic-opcode-collision",
+            "description": "libgphoto2 defines both PollEvents and GetLiveViewParameters as 0x9414 - the semantics of 0x9414 are ambiguous and parameter-dependent.",
+            "source": 15,
+            "behaviour": { "kind": "none" },
+            "unverified": true
+        }
+    ]
+}

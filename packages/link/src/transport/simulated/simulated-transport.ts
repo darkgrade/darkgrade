@@ -7,7 +7,6 @@ import {
     parseCode,
     type CameraProfile,
     type ProfileProperty,
-    type QuirkBehaviour,
     type RecordedExchange,
 } from '@transport/simulated/camera-profile'
 import {
@@ -18,6 +17,9 @@ import {
     encodeUint32,
     readDescriptorLayout,
 } from '@transport/simulated/ptp-dataset-encoding'
+import { QuirkBehaviours, SimulatedDisconnectError, type SimulatedRequest } from '@transport/simulated/quirk-behaviours'
+
+export { SimulatedDisconnectError }
 
 const CONTAINER = { command: 1, data: 2, response: 3 } as const
 
@@ -32,13 +34,10 @@ const OPERATION = {
 
 const RESPONSE = {
     OK: 0x2001,
-    InvalidTransactionID: 0x2004,
     OperationNotSupported: 0x2005,
     DevicePropNotSupported: 0x200a,
     AccessDenied: 0x200f,
-    DeviceBusy: 0x2019,
     InvalidDevicePropValue: 0x201c,
-    InvalidParameter: 0x201d,
     SessionAlreadyOpen: 0x201e,
 } as const
 
@@ -57,21 +56,6 @@ export class ProfileDataMissingError extends Error {
         )
         this.name = 'ProfileDataMissingError'
     }
-}
-
-/** Thrown when a profile quirk records that the camera dropped off the bus for a request. */
-export class SimulatedDisconnectError extends Error {
-    constructor(operation: number) {
-        super(`Camera disconnected without responding to ${formatCode(operation)} (recorded behaviour)`)
-        this.name = 'SimulatedDisconnectError'
-    }
-}
-
-interface Transaction {
-    operation: number
-    transactionId: number
-    parameters: number[]
-    data?: Uint8Array
 }
 
 interface Reply {
@@ -93,8 +77,9 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
  *
  * Resolution order for every request: quirk behaviours, recorded exchanges (consumed in recorded
  * order; the last match repeats), then standard answers derived from the profile's DeviceInfo and
- * property descriptors. An operation absent from a complete advertised operation list is answered
- * with OperationNotSupported; anything else the profile cannot answer raises ProfileDataMissingError.
+ * property descriptors. A code absent from a DeviceInfo whose lists are marked complete is answered
+ * with OperationNotSupported or DevicePropNotSupported; anything else the profile cannot answer
+ * raises ProfileDataMissingError instead of inventing a response.
  */
 export class SimulatedTransport implements TransportInterface {
     /** Every request the profile could not answer, in order. */
@@ -103,21 +88,19 @@ export class SimulatedTransport implements TransportInterface {
     readonly responseCodes: number[] = []
 
     private connected = false
-    private pending?: Transaction
+    private pending?: SimulatedRequest
     private outgoing: Uint8Array[] = []
     private eventHandlers = new Set<(event: PTPEvent) => void>()
     private propertyValues = new Map<number, Uint8Array>()
-    private exchangeUses = new Map<RecordedExchange, number>()
-    private busyResponsesSent = new Map<number, number>()
+    private exchangeUses = new Set<RecordedExchange>()
     private sessionOpen = false
-    private lastTransactionId?: number
-    private pendingPropertyChange?: number
+    private changedProperty?: number
     private readonly properties: Map<number, ProfileProperty>
-    private readonly quirks: QuirkBehaviour[]
+    private readonly quirks: QuirkBehaviours
 
     constructor(readonly profile: CameraProfile) {
         this.properties = new Map(profile.properties.map(property => [parseCode(property.code), property]))
-        this.quirks = profile.quirks.map(quirk => quirk.behaviour)
+        this.quirks = new QuirkBehaviours(profile.quirks.map(quirk => quirk.behaviour))
     }
 
     async connect(_device?: DeviceDescriptor): Promise<void> {
@@ -129,6 +112,7 @@ export class SimulatedTransport implements TransportInterface {
         this.sessionOpen = false
         this.pending = undefined
         this.outgoing = []
+        this.quirks.reset()
     }
 
     isConnected(): boolean {
@@ -180,26 +164,30 @@ export class SimulatedTransport implements TransportInterface {
     async receive(_maxLength: number, _sessionId: number, _transactionId: number): Promise<Uint8Array> {
         if (!this.connected) throw new Error('Simulated camera is not connected')
         if (this.outgoing.length === 0 && this.pending) {
-            const transaction = this.pending
+            const request = this.pending
             this.pending = undefined
-            this.outgoing = this.containersFor(transaction, this.resolve(transaction))
+            this.outgoing = this.containersFor(request, this.resolve(request))
         }
         const next = this.outgoing.shift()
         if (!next) throw new Error('No simulated response is pending')
         return next
     }
 
-    private containersFor(transaction: Transaction, reply: Reply): Uint8Array[] {
+    private containersFor(request: SimulatedRequest, reply: Reply): Uint8Array[] {
         this.responseCodes.push(reply.code)
-        this.trackSession(transaction, reply.code)
-        this.scheduleEvents(transaction.operation, reply.code)
+        if (reply.code === RESPONSE.OK && request.operation === OPERATION.OpenSession) this.sessionOpen = true
+        if (reply.code === RESPONSE.OK && request.operation === OPERATION.CloseSession) this.sessionOpen = false
+        this.deliver([
+            ...this.recordedEventsAfter(request.operation, reply.code),
+            ...this.quirks.afterReply(request, reply.code),
+        ])
 
         const header = (length: number, type: number, code: number) =>
             concatenateBytes([
                 encodeUint32(length),
                 encodeUint16(type),
                 encodeUint16(code),
-                encodeUint32(transaction.transactionId),
+                encodeUint32(request.transactionId),
             ])
         const parameters = (reply.parameters ?? []).map(encodeUint32)
         const response = concatenateBytes([
@@ -208,16 +196,22 @@ export class SimulatedTransport implements TransportInterface {
         ])
         if (!reply.data) return [response]
         return [
-            concatenateBytes([header(12 + reply.data.length, CONTAINER.data, transaction.operation), reply.data]),
+            concatenateBytes([header(12 + reply.data.length, CONTAINER.data, request.operation), reply.data]),
             response,
         ]
     }
 
-    private resolve(transaction: Transaction): Reply {
-        const quirkReply = this.applyQuirks(transaction)
-        if (quirkReply) return quirkReply
+    private resolve(request: SimulatedRequest): Reply {
+        let quirkCode: number | undefined
+        try {
+            quirkCode = this.quirks.responseBefore(request)
+        } catch (error) {
+            if (error instanceof SimulatedDisconnectError) void this.disconnect()
+            throw error
+        }
+        if (quirkCode !== undefined) return { code: quirkCode }
 
-        const exchange = this.matchExchange(transaction)
+        const exchange = this.matchExchange(request)
         if (exchange) {
             return {
                 code: parseCode(exchange.response.code),
@@ -226,122 +220,104 @@ export class SimulatedTransport implements TransportInterface {
             }
         }
 
-        const standardReply = this.answerFromProfile(transaction)
+        const standardReply = this.answerFromProfile(request)
         if (standardReply) return standardReply
 
-        const advertised = this.profile.deviceInfo?.operationsSupported?.map(parseCode)
-        if (advertised && !advertised.includes(transaction.operation)) return { code: RESPONSE.OperationNotSupported }
+        if (this.completeList('operationsSupported') && !this.advertises(request.operation)) {
+            return { code: RESPONSE.OperationNotSupported }
+        }
 
-        const missing = new ProfileDataMissingError(this.profile.id, transaction.operation, transaction.parameters)
+        const missing = new ProfileDataMissingError(this.profile.id, request.operation, request.parameters)
         this.missingData.push(missing)
         throw missing
     }
 
-    private applyQuirks(transaction: Transaction): Reply | undefined {
-        for (const quirk of this.quirks) {
-            const reply = this.applyQuirk(quirk, transaction)
-            if (reply) return reply
+    private completeList(list: 'operationsSupported' | 'devicePropertiesSupported'): string[] | undefined {
+        const deviceInfo = this.profile.deviceInfo
+        return deviceInfo?.listsComplete ? deviceInfo[list] : undefined
+    }
+
+    private advertises(operation: number): boolean {
+        return this.profile.deviceInfo?.operationsSupported?.map(parseCode).includes(operation) ?? false
+    }
+
+    private matchExchange(request: SimulatedRequest): RecordedExchange | undefined {
+        const candidates = this.profile.exchanges.filter(exchange => {
+            if (parseCode(exchange.operation) !== request.operation) return false
+            if (exchange.parameters && !sameNumbers(exchange.parameters.map(parseCode), request.parameters))
+                return false
+            if (exchange.dataFromHost === undefined) return true
+            return request.data !== undefined && sameBytes(parseBytes(exchange.dataFromHost), request.data)
+        })
+        const next = candidates.find(candidate => !this.exchangeUses.has(candidate)) ?? candidates.at(-1)
+        if (next) this.exchangeUses.add(next)
+        return next
+    }
+
+    private answerFromProfile(request: SimulatedRequest): Reply | undefined {
+        switch (request.operation) {
+            case OPERATION.GetDeviceInfo: {
+                const data = this.deviceInfoBytes()
+                return data ? { code: RESPONSE.OK, data } : undefined
+            }
+            case OPERATION.OpenSession:
+                if (!this.advertises(OPERATION.OpenSession)) return undefined
+                return { code: this.sessionOpen ? RESPONSE.SessionAlreadyOpen : RESPONSE.OK }
+            case OPERATION.CloseSession:
+                return this.advertises(OPERATION.CloseSession) ? { code: RESPONSE.OK } : undefined
+            case OPERATION.GetDevicePropDesc:
+            case OPERATION.GetDevicePropValue:
+            case OPERATION.SetDevicePropValue:
+                return this.answerProperty(request)
+        }
+        const polled = this.quirks.polledDelivery()
+        if (
+            polled?.emptyResponse !== undefined &&
+            polled.pollOperation &&
+            parseCode(polled.pollOperation) === request.operation
+        ) {
+            return { code: RESPONSE.OK, data: parseBytes(polled.emptyResponse) }
         }
         return undefined
     }
 
-    private applyQuirk(quirk: QuirkBehaviour, transaction: Transaction): Reply | undefined {
-        switch (quirk.kind) {
-            case 'disconnect-on-request': {
-                if (parseCode(quirk.operation) !== transaction.operation) return undefined
-                if (quirk.parameters && !sameNumbers(quirk.parameters.map(parseCode), transaction.parameters))
-                    return undefined
-                this.connected = false
-                this.sessionOpen = false
-                throw new SimulatedDisconnectError(transaction.operation)
-            }
-            case 'device-busy': {
-                if (parseCode(quirk.operation) !== transaction.operation) return undefined
-                const sent = this.busyResponsesSent.get(transaction.operation) ?? 0
-                if (sent >= quirk.times) return undefined
-                this.busyResponsesSent.set(transaction.operation, sent + 1)
-                return { code: RESPONSE.DeviceBusy }
-            }
-            case 'session-id': {
-                if (transaction.operation !== OPERATION.OpenSession) return undefined
-                const sessionId = transaction.parameters[0] ?? 0
-                const accepted = quirk.rule === 'nonzero' ? sessionId !== 0 : sessionId === quirk.sessionId
-                return accepted ? undefined : { code: RESPONSE.InvalidParameter }
-            }
-            case 'strict-transaction-ids': {
-                const previous = this.lastTransactionId
-                this.lastTransactionId = transaction.transactionId
-                if (transaction.operation === OPERATION.OpenSession || previous === undefined) return undefined
-                return transaction.transactionId === previous + 1 ? undefined : { code: RESPONSE.InvalidTransactionID }
-            }
-            default:
-                return undefined
-        }
-    }
-
-    private matchExchange(transaction: Transaction): RecordedExchange | undefined {
-        const candidates = this.profile.exchanges.filter(exchange => {
-            if (parseCode(exchange.operation) !== transaction.operation) return false
-            if (exchange.parameters && !sameNumbers(exchange.parameters.map(parseCode), transaction.parameters))
-                return false
-            if (exchange.dataFromHost === undefined) return true
-            return transaction.data !== undefined && sameBytes(parseBytes(exchange.dataFromHost), transaction.data)
+    private deviceInfoBytes(): Uint8Array | undefined {
+        const deviceInfo = this.profile.deviceInfo
+        if (!deviceInfo) return undefined
+        if (deviceInfo.raw !== undefined) return parseBytes(deviceInfo.raw)
+        const hidden = this.quirks.hiddenCodes()
+        const visible = (codes: string[] | undefined, hiddenCodes: Set<number>) =>
+            codes?.filter(code => !hiddenCodes.has(parseCode(code)))
+        return encodeDeviceInfo({
+            ...deviceInfo,
+            operationsSupported: visible(deviceInfo.operationsSupported, hidden.operations),
+            devicePropertiesSupported: visible(deviceInfo.devicePropertiesSupported, hidden.properties),
         })
-        if (candidates.length === 0) return undefined
-        const next =
-            candidates.find(candidate => !this.exchangeUses.has(candidate)) ?? candidates[candidates.length - 1]
-        this.exchangeUses.set(next, (this.exchangeUses.get(next) ?? 0) + 1)
-        return next
     }
 
-    private answerFromProfile(transaction: Transaction): Reply | undefined {
-        const advertised = (code: number) =>
-            this.profile.deviceInfo?.operationsSupported?.map(parseCode).includes(code) ?? false
-
-        switch (transaction.operation) {
-            case OPERATION.GetDeviceInfo: {
-                const deviceInfo = this.profile.deviceInfo
-                if (!deviceInfo) return undefined
-                const data = deviceInfo.raw !== undefined ? parseBytes(deviceInfo.raw) : encodeDeviceInfo(deviceInfo)
-                return data ? { code: RESPONSE.OK, data } : undefined
-            }
-            case OPERATION.OpenSession:
-                if (!advertised(OPERATION.OpenSession)) return undefined
-                return { code: this.sessionOpen ? RESPONSE.SessionAlreadyOpen : RESPONSE.OK }
-            case OPERATION.CloseSession:
-                return advertised(OPERATION.CloseSession) ? { code: RESPONSE.OK } : undefined
-            case OPERATION.GetDevicePropDesc:
-            case OPERATION.GetDevicePropValue:
-            case OPERATION.SetDevicePropValue:
-                return this.answerProperty(transaction)
-            default:
-                return undefined
-        }
-    }
-
-    private answerProperty(transaction: Transaction): Reply | undefined {
-        const code = transaction.parameters[0] ?? 0
+    private answerProperty(request: SimulatedRequest): Reply | undefined {
+        const code = request.parameters[0] ?? 0
         const property = this.properties.get(code)
         const descriptor = property ? this.descriptorBytes(code, property) : undefined
         if (!descriptor) {
-            const advertised = this.profile.deviceInfo?.devicePropertiesSupported?.map(parseCode)
+            const advertised = this.completeList('devicePropertiesSupported')?.map(parseCode)
             return advertised && !advertised.includes(code) ? { code: RESPONSE.DevicePropNotSupported } : undefined
         }
 
         const layout = readDescriptorLayout(descriptor)
-        if (transaction.operation === OPERATION.GetDevicePropDesc) return { code: RESPONSE.OK, data: descriptor }
-        if (transaction.operation === OPERATION.GetDevicePropValue) {
+        if (request.operation === OPERATION.GetDevicePropDesc) return { code: RESPONSE.OK, data: descriptor }
+        if (request.operation === OPERATION.GetDevicePropValue) {
             return { code: RESPONSE.OK, data: descriptor.slice(layout.currentValueStart, layout.currentValueEnd) }
         }
 
         if (!layout.writable) return { code: RESPONSE.AccessDenied }
-        const value = transaction.data
+        const value = request.data
         if (!value) return { code: RESPONSE.InvalidDevicePropValue }
         if (layout.enumeration && !layout.enumeration.some(allowed => sameBytes(allowed, value))) {
             return { code: RESPONSE.InvalidDevicePropValue }
         }
         this.propertyValues.set(code, value)
-        this.pendingPropertyChange = code
+        this.changedProperty = code
         return { code: RESPONSE.OK }
     }
 
@@ -349,13 +325,10 @@ export class SimulatedTransport implements TransportInterface {
     private descriptorBytes(code: number, property: ProfileProperty): Uint8Array | undefined {
         const descriptor = property.descriptor
         if (!descriptor) return undefined
-        const datatypeQuirk = this.quirks.find(
-            quirk => quirk.kind === 'property-datatype' && parseCode(quirk.property) === code
-        ) as Extract<QuirkBehaviour, { kind: 'property-datatype' }> | undefined
         const captured =
             descriptor.raw !== undefined
                 ? parseBytes(descriptor.raw)
-                : encodeDescriptor(code, descriptor, datatypeQuirk ? parseCode(datatypeQuirk.dataType) : undefined)
+                : encodeDescriptor(code, descriptor, this.quirks.dataTypeOverride(code))
         const written = this.propertyValues.get(code)
         if (!captured || !written) return captured
         const layout = readDescriptorLayout(captured)
@@ -366,33 +339,26 @@ export class SimulatedTransport implements TransportInterface {
         ])
     }
 
-    private trackSession(transaction: Transaction, responseCode: number): void {
-        if (responseCode !== RESPONSE.OK) return
-        if (transaction.operation === OPERATION.OpenSession) this.sessionOpen = true
-        if (transaction.operation === OPERATION.CloseSession) this.sessionOpen = false
-    }
-
-    private scheduleEvents(operation: number, responseCode: number): void {
-        const delivery = this.quirks.find(quirk => quirk.kind === 'event-delivery')
-        if (delivery?.kind === 'event-delivery' && delivery.mode === 'polled') {
-            this.pendingPropertyChange = undefined
-            return
-        }
+    private recordedEventsAfter(operation: number, responseCode: number): PTPEvent[] {
+        const changedProperty = this.changedProperty
+        this.changedProperty = undefined
+        if (responseCode !== RESPONSE.OK || this.quirks.polledDelivery()) return []
 
         const events: PTPEvent[] = this.profile.events
-            .filter(event => parseCode(event.afterOperation) === operation && responseCode === RESPONSE.OK)
+            .filter(event => parseCode(event.afterOperation) === operation)
             .map(event => ({
                 code: parseCode(event.code),
                 transactionId: 0,
                 parameters: (event.parameters ?? []).map(parseCode),
             }))
-
-        const changedProperty = this.pendingPropertyChange
-        this.pendingPropertyChange = undefined
         const announcesChanges = this.profile.deviceInfo?.eventsSupported?.map(parseCode).includes(DEVICE_PROP_CHANGED)
         if (changedProperty !== undefined && announcesChanges) {
             events.push({ code: DEVICE_PROP_CHANGED, transactionId: 0, parameters: [changedProperty] })
         }
+        return events
+    }
+
+    private deliver(events: PTPEvent[]): void {
         if (events.length === 0) return
         setTimeout(() => events.forEach(event => this.eventHandlers.forEach(handler => handler(event))), 0)
     }

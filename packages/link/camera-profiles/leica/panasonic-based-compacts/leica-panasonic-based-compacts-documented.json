@@ -1,0 +1,41 @@
+{
+    "schemaVersion": 1,
+    "id": "leica-panasonic-based-compacts-documented",
+    "manufacturer": "Leica",
+    "line": "Panasonic-based compacts",
+    "model": "Leica D-LUX 2",
+    "usb": { "vendorId": "0x04da", "productIds": ["0x2375"], "source": 1 },
+    "catalog": { "manufacturer": "Leica", "line": "Panasonic-based compacts (D-LUX)", "modelCount": 1 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1920"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Leica",
+        "model": "Leica D-LUX 2",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": []
+}

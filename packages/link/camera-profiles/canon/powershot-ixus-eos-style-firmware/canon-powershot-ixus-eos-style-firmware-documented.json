@@ -1,0 +1,128 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-powershot-ixus-eos-style-firmware-documented",
+    "manufacturer": "Canon",
+    "line": "PowerShot / IXUS (EOS-style firmware)",
+    "model": "Canon PowerShot G7 X Mark III",
+    "usb": { "vendorId": "0x04a9", "productIds": ["0x32f0"], "source": 1 },
+    "catalog": {
+        "manufacturer": "Canon",
+        "line": "PowerShot / IXUS (EOS-style firmware: SX5xx+, G-series Mark II/III, SX7xx)",
+        "modelCount": 19
+    },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2569"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L381"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp-private.h#L119"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L9969"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L374"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L599"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L424"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L428"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1286"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1310"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp-pack.c#L2094"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L433"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Canon",
+        "model": "Canon PowerShot G7 X Mark III",
+        "vendorExtensionId": "0x000b",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e",
+            "0x9108",
+            "0x9114",
+            "0x9115",
+            "0x9116",
+            "0x913d"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x9114",
+            "parameters": ["0x15"],
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eosm-remote-mode-0x15; not observed on hardware.",
+            "source": 2
+        },
+        {
+            "operation": "0x9115",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk canon-eos-remote-mode-handshake; not observed on hardware.",
+            "source": 5
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "canon-eosm-remote-mode-0x15",
+            "description": "EOS M bodies and newer PowerShot SX/G/IXUS with EOS-style firmware need SetRemoteMode(0x15) instead of 1 (exceptions: PowerShot SX540 HS and G5 X use 0x11, SX600 HS skips it, EOS M6 Mark II uses 1). Setting remote mode changes DeviceInfo on the EOS M2, so it must be re-read.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "canon-eos-remote-mode-handshake",
+            "description": "EOS-protocol bodies do nothing remote until the host enables remote mode (0x9114 SetRemoteMode, param 1) and event mode (0x9115 SetEventMode, param 1). libgphoto2 then optionally sends 0x913D SetRequestOLCInfoGroup(0x1FFF), drains events, calls 0x9108 GetDeviceInfoEx, re-fetches the standard DeviceInfo, and drains events again. Teardown sends SetRemoteMode(0)/(1) and SetEventMode(0).",
+            "source": 5,
+            "behaviour": {
+                "kind": "requires-operations",
+                "unlockedBy": ["0x9114", "0x9115"],
+                "gated": { "from": "0x9100", "to": "0x91ff", "except": ["0x9108", "0x9114", "0x9115"] },
+                "response": "0x2019"
+            }
+        },
+        {
+            "id": "canon-eos-getevent-polling",
+            "description": "Canon EOS does not use the USB interrupt endpoint for property changes or new objects. The host polls 0x9116 GetEvent (no params, data-in). The data phase is a concatenation of records [u32 size][u32 type][payload], terminated by an 8-byte record whose type is 0. Record types reuse event codes: 0xC189 PropValueChanged, 0xC18A AvailListChanged (enum list for a property), 0xC181 ObjectAddedEx, 0xC186 RequestObjectTransfer, 0xC18B CameraStatusChanged, 0xC18E ShutdownTimerUpdated, 0xC194 BulbExposureTime, 0xC1A5 OLCInfoChanged, 0xC1A7 ObjectAddedEx64, 0xC1A9 RequestObjectTransfer64.",
+            "source": 8,
+            "behaviour": {
+                "kind": "event-delivery",
+                "mode": "polled",
+                "pollOperation": "0x9116",
+                "emptyResponse": "0800000000000000"
+            }
+        }
+    ]
+}

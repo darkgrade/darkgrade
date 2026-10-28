@@ -17,6 +17,7 @@ type WithEvidence<T> = Omit<T, 'source'> & { evidence: EvidenceReference }
 
 export interface CameraObservations {
     id: string
+    /** Manufacturer and line names exactly as in camera-catalog/camera-lines.json. */
     manufacturer: string
     line: string
     model: string
@@ -41,7 +42,7 @@ const benchProbeNote =
 const canonR6MarkIII: CameraObservations = {
     id: 'canon-eos-r6-mark-iii',
     manufacturer: 'Canon',
-    line: 'EOS R',
+    line: 'EOS R (mirrorless, RF mount)',
     model: 'EOS R6 Mark III',
     vendorId: '0x04a9',
     productIds: ['0x3323'],
@@ -211,7 +212,7 @@ const canonR6MarkIII: CameraObservations = {
 const canonR6: CameraObservations = {
     id: 'canon-eos-r6',
     manufacturer: 'Canon',
-    line: 'EOS R',
+    line: 'EOS R (mirrorless, RF mount)',
     model: 'EOS R6',
     vendorId: '0x04a9',
     productIds: ['0x32f5'],
@@ -237,7 +238,7 @@ const canonR6: CameraObservations = {
 const canon80D: CameraObservations = {
     id: 'canon-eos-80d',
     manufacturer: 'Canon',
-    line: 'EOS DSLR',
+    line: 'EOS DSLR (EOS-protocol era: 40D/450D and later)',
     model: 'EOS 80D',
     vendorId: '0x04a9',
     productIds: ['0x3294'],
@@ -269,7 +270,7 @@ const canon80D: CameraObservations = {
 const nikonZ6III: CameraObservations = {
     id: 'nikon-z6-iii',
     manufacturer: 'Nikon',
-    line: 'Z',
+    line: 'Z (mirrorless, Z mount)',
     model: 'Z6 III',
     vendorId: '0x04b0',
     productIds: ['0x0454'],
@@ -345,7 +346,7 @@ const nikonZ6III: CameraObservations = {
 const nikonZ7: CameraObservations = {
     id: 'nikon-z7',
     manufacturer: 'Nikon',
-    line: 'Z',
+    line: 'Z (mirrorless, Z mount)',
     model: 'Z 7',
     vendorId: '0x04b0',
     productIds: ['0x0442'],
@@ -358,7 +359,7 @@ const nikonZ7: CameraObservations = {
 const sonyA6700: CameraObservations = {
     id: 'sony-ilce-6700',
     manufacturer: 'Sony',
-    line: 'Alpha APS-C',
+    line: 'Alpha APS-C E-mount (α6xxx / α5xxx)',
     model: 'ILCE-6700 (α6700)',
     vendorId: '0x054c',
     productIds: ['0x0e78', '0x096f'],
@@ -386,7 +387,7 @@ const sonyA6700: CameraObservations = {
 const sonyFx2: CameraObservations = {
     id: 'sony-ilme-fx2',
     manufacturer: 'Sony',
-    line: 'Cinema Line',
+    line: 'Cinema Line FX / ILME',
     model: 'ILME-FX2',
     vendorId: '0x054c',
     productIds: ['0x0f4a'],
@@ -425,8 +426,8 @@ const olympusEPL5Evidence = {
 
 const olympusEPL5: CameraObservations = {
     id: 'olympus-e-pl5',
-    manufacturer: 'Olympus',
-    line: 'PEN',
+    manufacturer: 'OM System / Olympus',
+    line: 'PEN / compacts / TG (download-only)',
     model: 'E-PL5',
     vendorId: '0x07b4',
     productIds: ['0x012f'],

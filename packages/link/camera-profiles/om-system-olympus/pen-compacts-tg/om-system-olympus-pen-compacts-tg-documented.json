@@ -1,0 +1,61 @@
+{
+    "schemaVersion": 1,
+    "id": "om-system-olympus-pen-compacts-tg-documented",
+    "manufacturer": "OM System / Olympus",
+    "line": "PEN / compacts / TG",
+    "model": "Olympus E-PL5",
+    "usb": { "vendorId": "0x07b4", "productIds": ["0x012f"], "source": 1 },
+    "catalog": {
+        "manufacturer": "OM System / Olympus",
+        "line": "PEN / compacts / TG (download-only)",
+        "modelCount": 17
+    },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1960"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L867"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L367"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L968"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "OM System / Olympus",
+        "model": "Olympus E-PL5",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "vendor-opcode-overlap",
+            "description": "Olympus 0x9101 = Capture (E-series) while Canon EOS 0x9101 = GetStorageIDs and Panasonic 0x9101 is a different op: opcodes in 0x9xxx are only meaningful per vendor.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

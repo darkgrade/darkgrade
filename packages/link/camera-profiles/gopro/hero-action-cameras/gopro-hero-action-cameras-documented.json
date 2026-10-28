@@ -1,0 +1,51 @@
+{
+    "schemaVersion": 1,
+    "id": "gopro-hero-action-cameras-documented",
+    "manufacturer": "GoPro",
+    "line": "HERO action cameras",
+    "model": "GoPro HERO11 Black mini",
+    "usb": { "vendorId": "0x2672", "productIds": ["0x005a"], "source": 1 },
+    "catalog": { "manufacturer": "GoPro (other)", "line": "HERO action cameras", "modelCount": 17 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2936"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2905"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "GoPro (other)",
+        "model": "GoPro HERO11 Black mini",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "gopro-no-capture",
+            "description": "All GoPro entries have no capture flags in libgphoto2 (storage access only).",
+            "source": 2,
+            "behaviour": { "kind": "rejects-operations", "operations": ["0x100e"], "response": "0x2005" }
+        }
+    ]
+}

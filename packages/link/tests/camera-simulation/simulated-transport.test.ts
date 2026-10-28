@@ -31,6 +31,7 @@ function fixture(overrides: Partial<CameraProfile> = {}): CameraProfile {
             operationsSupported: ['0x1001', '0x1002', '0x1003', '0x1014', '0x1015', '0x1016', '0x100e'],
             eventsSupported: ['0x4002', '0x4006'],
             devicePropertiesSupported: ['0x5001', '0x5005', '0x500f'],
+            listsComplete: true,
             source: 0,
         },
         properties: [
@@ -225,5 +226,94 @@ describe('SimulatedTransport', () => {
         expect(await responseCode(1)).toBe(0x2001)
         expect(await responseCode(2)).toBe(0x2001)
         expect(await responseCode(5)).toBe(0x2004)
+    })
+    it('applies documented line quirks: gates, refusals, hidden codes, emitted events, polled delivery', async () => {
+        const vendorOperation = (code: number, name: string) => ({
+            ...genericOperationRegistry.GetDeviceInfo,
+            code,
+            name,
+            dataCodec: undefined,
+        })
+        const profile = fixture({
+            exchanges: [
+                { operation: '0x9114', response: { code: '0x2001' }, source: 0 },
+                { operation: '0x9128', response: { code: '0x2001' }, source: 0 },
+                { operation: '0x100b', response: { code: '0x2001' }, source: 0 },
+            ],
+            quirks: [
+                {
+                    id: 'remote-mode',
+                    description: 'gate',
+                    source: 0,
+                    behaviour: {
+                        kind: 'requires-operations',
+                        unlockedBy: ['0x9114'],
+                        gated: { from: '0x9100', to: '0x91ff', except: ['0x9114'] },
+                        response: '0x2019',
+                    },
+                },
+                {
+                    id: 'no-capture',
+                    description: 'refuse',
+                    source: 0,
+                    behaviour: { kind: 'rejects-operations', operations: ['0x100e'], response: '0x2005' },
+                },
+                {
+                    id: 'hidden',
+                    description: 'hidden',
+                    source: 0,
+                    behaviour: { kind: 'hidden-from-device-info', operations: ['0x1016'] },
+                },
+                {
+                    id: 'delete-event',
+                    description: 'event',
+                    source: 0,
+                    behaviour: { kind: 'emit-event', afterOperation: '0x100b', event: '0x4003', copyParameters: true },
+                },
+                {
+                    id: 'poll',
+                    description: 'poll',
+                    source: 0,
+                    behaviour: {
+                        kind: 'event-delivery',
+                        mode: 'polled',
+                        pollOperation: '0x9116',
+                        emptyResponse: '0800000000000000',
+                    },
+                },
+                {
+                    id: 'ready',
+                    description: 'busy',
+                    source: 0,
+                    behaviour: {
+                        kind: 'device-busy',
+                        operation: '0x90c8',
+                        times: 1,
+                        afterOperation: '0x9114',
+                        response: '0xa102',
+                    },
+                },
+            ],
+        })
+        const { camera: simulated, instance } = camera(profile)
+        await simulated.connect()
+
+        expect((await instance.send(vendorOperation(0x9128, 'Release'), {})).code).toBe(0x2019)
+        expect((await instance.send(vendorOperation(0x9114, 'RemoteMode'), {})).code).toBe(0x2001)
+        expect((await instance.send(vendorOperation(0x9128, 'Release'), {})).code).toBe(0x2001)
+        expect((await instance.send(vendorOperation(0x90c8, 'DeviceReady'), {})).code).toBe(0xa102)
+        // After the busy window the fixture's complete operation list decides: 0x90c8 is not advertised.
+        expect((await instance.send(vendorOperation(0x90c8, 'DeviceReady'), {})).code).toBe(0x2005)
+
+        const poll = await instance.send(vendorOperation(0x9116, 'GetEvent'), {})
+        expect(poll).toMatchObject({ code: 0x2001, data: Uint8Array.of(8, 0, 0, 0, 0, 0, 0, 0) })
+        expect((await instance.send(genericOperationRegistry.InitiateCapture, {})).code).toBe(0x2005)
+
+        const deviceInfo = await instance.send(genericOperationRegistry.GetDeviceInfo, {})
+        expect(deviceInfo.data?.operationsSupportedRaw).not.toContain(0x1016)
+
+        const removed = new Promise(resolve => simulated.on(genericEventRegistry.ObjectRemoved, resolve))
+        await instance.send(genericOperationRegistry.DeleteObject, { ObjectHandle: 0x77 })
+        await expect(removed).resolves.toMatchObject({ ObjectHandle: 0x77 })
     })
 })

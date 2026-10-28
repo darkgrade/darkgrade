@@ -1,0 +1,71 @@
+{
+    "schemaVersion": 1,
+    "id": "nikon-nikon-1-documented",
+    "manufacturer": "Nikon",
+    "line": "Nikon 1",
+    "model": "Nikon J5",
+    "usb": { "vendorId": "0x04b0", "productIds": ["0x060b"], "source": 1 },
+    "catalog": { "manufacturer": "Nikon", "line": "Nikon 1 (CX mirrorless, discontinued)", "modelCount": 10 },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1880"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L483"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L521"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L500"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp-bugs.h#L34"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L4334"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Nikon",
+        "model": "Nikon J5",
+        "vendorExtensionId": "0x000a",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "nikon1-flag-and-op-rewrites",
+            "description": "Nikon 1 (V/J/S) advertise Nikon ops but implement only generic capture; flagged PTP_NIKON_1. V1, S1, J1, J3, J4: 0x90C7 GetEvent and 0x90C0 InitiateCaptureRecInSdram do not work (libgphoto2 replaces them in DeviceInfo); S1/J3/J4 also lack 0x9207. GetVendorPropCodes crashes V1/J1/J2. J5 blanks the 0xF0xx property range.",
+            "source": 2,
+            "behaviour": { "kind": "none" }
+        },
+        {
+            "id": "nikon1-af-param",
+            "description": "Nikon 1 returns 0xA004 InvalidStatus to InitiateCaptureRecInMedia when af==0.",
+            "source": 6,
+            "behaviour": { "kind": "none" }
+        }
+    ]
+}

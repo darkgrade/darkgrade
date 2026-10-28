@@ -11,6 +11,7 @@
  *     bench-probe results and darkgrade operation logs.
  *  3. Prose observations transcribed in test-bench-observations.ts, each verified against its excerpt.
  */
+import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { createCanonRegistry, createNikonRegistry, createPTPRegistry, createSonyRegistry } from '@ptp/registry'
 import {
     formatBytes,
@@ -27,6 +28,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'n
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { format } from 'prettier'
+import { findCatalogLine, loadCatalog, shortLineName, slug, type CameraCatalog } from './camera-catalog'
 import {
     benchProbeNote,
     testBenchObservations,
@@ -74,14 +76,17 @@ class ProfileBuilder {
     constructor(
         private readonly observations: CameraObservations,
         private readonly testBench: string,
-        private readonly commit: string
+        private readonly commit: string,
+        catalog: CameraCatalog
     ) {
+        const { manufacturer, line } = findCatalogLine(catalog, observations.manufacturer, observations.line)
         this.profile = {
             schemaVersion: 1,
             id: observations.id,
             manufacturer: observations.manufacturer,
-            line: observations.line,
+            line: shortLineName(manufacturer, line),
             model: observations.model,
+            catalog: { manufacturer: manufacturer.name, line: line.name },
             provenance: { fidelity: 'captured', sources: [] },
             properties: [],
             exchanges: [],
@@ -268,6 +273,23 @@ function applyStructuredEvidence(builders: ProfileBuilder[], testBench: string):
     }
 }
 
+/** The captured dataset plus its decoded lists, which are complete because they came from the camera. */
+function capturedDeviceInfo(data: Uint8Array) {
+    const decoded = new DeviceInfoCodec(createPTPRegistry(true)).decode(data).value
+    const codes = (values: number[]) => values.map(value => formatCode(value))
+    return {
+        raw: formatBytes(data),
+        manufacturer: decoded.manufacturer,
+        model: decoded.model,
+        deviceVersion: decoded.deviceVersion,
+        vendorExtensionId: formatCode(decoded.vendorExtensionID, 8),
+        operationsSupported: codes(decoded.operationsSupportedRaw),
+        eventsSupported: codes(decoded.eventsSupportedRaw),
+        devicePropertiesSupported: codes(decoded.devicePropertiesSupported),
+        listsComplete: true,
+    }
+}
+
 function applyCapture(builder: ProfileBuilder, file: string, address?: { bus: number; address: number }): void {
     const bytes = new Uint8Array(readFileSync(file))
     const digest = createHash('sha256').update(bytes).digest('hex')
@@ -279,7 +301,7 @@ function applyCapture(builder: ProfileBuilder, file: string, address?: { bus: nu
     for (const transaction of extraction.transactions) {
         const ok = transaction.response.code === 0x2001
         if (transaction.operation === 0x1001 && ok && transaction.response.data) {
-            profile.deviceInfo = { ...profile.deviceInfo, raw: formatBytes(transaction.response.data), source }
+            profile.deviceInfo = { ...profile.deviceInfo, ...capturedDeviceInfo(transaction.response.data), source }
             continue
         }
         const propertyCode = transaction.parameters[0]
@@ -321,17 +343,9 @@ function applyCapture(builder: ProfileBuilder, file: string, address?: { bus: nu
     )
 }
 
-function slug(text: string): string {
-    return text
-        .toLowerCase()
-        .normalize('NFKD')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
-}
-
 /** Fixed key order so regenerated profiles diff cleanly. */
 function canonicalOrder(profile: CameraProfile): CameraProfile {
-    const { schemaVersion, id, manufacturer, line, model, usb, firmware, provenance, deviceInfo } = profile
+    const { schemaVersion, id, manufacturer, line, model, usb, firmware, catalog, provenance, deviceInfo } = profile
     return {
         schemaVersion,
         id,
@@ -340,6 +354,7 @@ function canonicalOrder(profile: CameraProfile): CameraProfile {
         model,
         ...(usb && { usb }),
         ...(firmware && { firmware }),
+        ...(catalog && { catalog }),
         provenance,
         ...(deviceInfo && { deviceInfo }),
         properties: profile.properties,
@@ -352,8 +367,9 @@ function canonicalOrder(profile: CameraProfile): CameraProfile {
 async function main(): Promise<void> {
     const options = parseArguments(process.argv.slice(2))
     const commit = testBenchCommit(options.testBench)
+    const catalog = loadCatalog()
     const builders = testBenchObservations.map(
-        observations => new ProfileBuilder(observations, options.testBench, commit)
+        observations => new ProfileBuilder(observations, options.testBench, commit, catalog)
     )
 
     applyStructuredEvidence(builders, options.testBench)

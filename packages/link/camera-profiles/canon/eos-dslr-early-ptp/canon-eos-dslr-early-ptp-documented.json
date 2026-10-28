@@ -1,0 +1,60 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-eos-dslr-early-ptp-documented",
+    "manufacturer": "Canon",
+    "line": "EOS DSLR (early PTP)",
+    "model": "Canon EOS 30D (PTP mode)",
+    "usb": { "vendorId": "0x04a9", "productIds": ["0x3113"], "source": 1 },
+    "catalog": {
+        "manufacturer": "Canon",
+        "line": "EOS DSLR (early PTP: 10D/20D/30D/300D/350D/5D/1D II)",
+        "modelCount": 10
+    },
+    "provenance": {
+        "fidelity": "documented",
+        "sources": [
+            { "location": "packages/link/camera-catalog/camera-lines.json" },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2092"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2037"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2081"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "manufacturer": "Canon",
+        "model": "Canon EOS 30D (PTP mode)",
+        "vendorExtensionId": "0x000b",
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100e"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [],
+        "listsComplete": false,
+        "source": 0
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "canon-early-dslr-no-capture",
+            "description": "EOS 10D/20D/300D/350D/5D/1D Mark II appear without PTP_CAP: they enumerate as PTP for download only; remote capture used the pre-EOS-PTP Canon protocol.",
+            "source": 2,
+            "behaviour": { "kind": "rejects-operations", "operations": ["0x100e"], "response": "0x2005" }
+        }
+    ]
+}
