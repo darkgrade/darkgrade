@@ -30,10 +30,10 @@ This library is a comprehensive TypeScript implementation of [ISO-15740:2013](ht
 
 | Manufacturer | Body (USB ID) | What has been verified on hardware |
 | --- | --- | --- |
-| Sony | α6700 / ILCE-6700 (`054c:0e78`) | USB SDIO property inventory and controls, autofocus, still/movie formats, AF-point placement; authenticated Wi-Fi controls through the Sony SDK |
+| Sony | α6700 / ILCE-6700 (`054c:0e78`, fw 2.00) | USB SDIO property inventory and controls, autofocus, still/movie formats, AF-point placement; authenticated Wi-Fi controls through the Sony SDK. Re-checked 2026-10-28 on darkgrade01: ISO 8000 → 100 → 8000 with fresh readback and restore, native PTP live-view JPEG |
 | Sony | FX2 / ILME-FX2 | USB native property inventory, aperture round trip, HDMI; Wi-Fi SDK controls and live preview (no card media) |
 | Canon | EOS R6 Mark III (`04a9:3323`, fw 1.0.1) | USB/PTP exposure and white-balance controls, USB live view, preview zoom, color temperature, live-view AF area, movie recording |
-| Canon | EOS 80D (`04a9:3294`) | USB controls (aperture, shutter, ISO, white balance, image format), autofocus, movie mode; PTP/IP pairing is work in progress |
+| Canon | EOS 80D (`04a9:3294`, fw 3-1.0.3) | USB controls (aperture, shutter, ISO, white balance, image format), autofocus, movie mode; PTP/IP pairing is work in progress. Re-checked 2026-10-28 on darkgrade01: color temperature 5200 → 5300 → 5200 K with independent readback, native PTP live-view JPEG, a 3-second card movie with an audio track |
 | Canon | EOS R6 (`04a9:32f5`) | USB/PTP identification only |
 | Nikon | Z6 III (`04b0:0454`, fw V2.00) | USB session, aperture and Auto/fixed ISO round trips (no card) |
 | Nikon | Z 7 (`04b0:0442`) | USB `GetDeviceInfo` probe and bench recovery |
