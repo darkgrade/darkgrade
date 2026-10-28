@@ -24,6 +24,33 @@ This library is a comprehensive TypeScript implementation of [ISO-15740:2013](ht
     - **Nikon Z Series** - Live view, extended properties
     - **Canon EOS R Series** - Remote control, event polling
 
+## 📷 Camera support
+
+**Supported: Sony, Canon and Nikon.** Only the bodies below have been exercised on physical hardware (darkgrade test bench, [`darkgrade/test-bench` docs/camera-compatibility.md](https://github.com/darkgrade/test-bench/blob/main/docs/camera-compatibility.md) and the notes further down this README). Other bodies from these vendors use the same code paths but are untested.
+
+| Manufacturer | Body (USB ID) | What has been verified on hardware |
+| --- | --- | --- |
+| Sony | α6700 / ILCE-6700 (`054c:0e78`) | USB SDIO property inventory and controls, autofocus, still/movie formats, AF-point placement; authenticated Wi-Fi controls through the Sony SDK |
+| Sony | FX2 / ILME-FX2 | USB native property inventory, aperture round trip, HDMI; Wi-Fi SDK controls and live preview (no card media) |
+| Canon | EOS R6 Mark III (`04a9:3323`, fw 1.0.1) | USB/PTP exposure and white-balance controls, USB live view, preview zoom, color temperature, live-view AF area, movie recording |
+| Canon | EOS 80D (`04a9:3294`) | USB controls (aperture, shutter, ISO, white balance, image format), autofocus, movie mode; PTP/IP pairing is work in progress |
+| Canon | EOS R6 (`04a9:32f5`) | USB/PTP identification only |
+| Nikon | Z6 III (`04b0:0454`, fw V2.00) | USB session, aperture and Auto/fixed ISO round trips (no card) |
+| Nikon | Z 7 (`04b0:0442`) | USB `GetDeviceInfo` probe and bench recovery |
+
+**Work in progress: every other manufacturer.** These cameras run as standard ISO 15740 PTP devices; vendor operation definitions exist only where listed and are taken from libgphoto2's `camlibs/ptp2` tables. None of the vendor definitions below is hardware-verified.
+
+| Manufacturer | Status |
+| --- | --- |
+| OM System / Olympus | Olympus E-PL5 (`07b4:012f`) tested in MTP mode: session, DeviceInfo, battery level and writable date/time, storage. The body does not offer remote capture in that mode. OM-D and E-series vendor operations (capture, live view, manual-focus drive) are defined; OM Digital Solutions USB vendor `0x33a2` is recognized. |
+| Fujifilm | Vendor `GetDeviceInfo` (0x902B) defined. Fujifilm's Wi-Fi protocol is not standard PTP/IP and is not implemented. |
+| Panasonic (LUMIX) | Vendor property, capture, movie-recording and live-view operations defined. |
+| Leica | Leica extended session open/close defined (USB vendor `0x1a98`). |
+| Sigma | fp data-group, capture-status, snap and live-view operations defined (USB vendor `0x1003`). |
+| Pentax / Ricoh Imaging, Hasselblad, GoPro and others | Standard PTP only; no vendor definitions and no hardware testing. |
+
+Transactions are bounded by timeouts, replies are checked against PTP container framing, and failures are typed (`PTPTimeoutError`, `PTPProtocolError`, `PTPDecodeError`, `PTPResponseError`, `PTPDisconnectedError`). Tune them with `new Camera({ transactionPolicy: { timeoutMilliseconds, deviceBusyRetries } })`.
+
 ## 🚀 Quick Start
 
 ### Installation
