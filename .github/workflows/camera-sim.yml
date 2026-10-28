@@ -1,0 +1,59 @@
+name: Camera simulation
+
+on:
+    push:
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    camera-simulation:
+        name: Simulated camera compatibility
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        defaults:
+            run:
+                working-directory: packages/link
+        env:
+            CAMERA_SUPPORT_MATRIX: ${{ github.workspace }}/packages/link/test-results/camera-support-matrix.json
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+
+            # Lifecycle scripts are skipped: they only fetch Electron for apps/studio.
+            - name: Install dependencies
+              working-directory: .
+              run: bun install --frozen-lockfile --ignore-scripts
+
+            - name: Typecheck
+              run: ../../node_modules/.bin/tsc --noEmit -p tsconfig.json
+
+            # Hardware tests (tests/01_usb.test.ts and friends) need cameras on a testbench; only
+            # the simulation suite runs here.
+            - name: Run simulated camera suite
+              run: bun run test:simulation
+
+            - name: Render support matrix
+              if: always()
+              run: |
+                  if [ -f test-results/camera-support-matrix.json ]; then
+                      bun run simulation:matrix
+                      cat test-results/camera-support-matrix.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                      echo "The simulation suite did not write a support matrix." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
+            # TODO: publish the matrix to GCS once the bucket and workload identity exist.
+            - name: Upload support matrix
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: camera-support-matrix
+                  path: |
+                      packages/link/test-results/camera-support-matrix.json
+                      packages/link/test-results/camera-support-matrix.md
+                  if-no-files-found: warn

@@ -1,0 +1,72 @@
+{
+    "schemaVersion": 1,
+    "id": "olympus-e-pl5",
+    "manufacturer": "Olympus",
+    "line": "PEN",
+    "model": "E-PL5",
+    "usb": { "vendorId": "0x07b4", "productIds": ["0x012f"], "source": 0 },
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "| Olympus E-PL5 | `07b4:012f` |"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "Darkgrade recognizes `BatteryLevel` (`0x5001`, read-only, 100%) and `DateTime` (`0x5011`, writable)"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "Enumerates at 480 Mbps in MTP mode and completes `OpenSession`/`GetDeviceInfo` as “OLYMPUS E-PL5” through `GenericCamera`."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "an actual attempt returned PTP `0x2005 OperationNotSupported`."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "Its operation table contains identification, storage, object transfer, and property operations but omits standard `InitiateCapture`"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "A full Shelly/cold-boot path may still require a manual restart and MTP selection on this older body."
+            }
+        ]
+    },
+    "properties": [
+        { "code": "0x5001", "name": "BatteryLevel", "access": "get", "observedValue": "100", "source": 1 },
+        { "code": "0x5011", "name": "DateTime", "access": "get-set", "source": 1 }
+    ],
+    "exchanges": [
+        {
+            "operation": "0x1002",
+            "name": "OpenSession",
+            "response": { "code": "0x2001" },
+            "note": "Opened by GenericCamera, which uses a random session ID.",
+            "source": 2
+        },
+        {
+            "operation": "0x100e",
+            "name": "InitiateCapture",
+            "response": { "code": "0x2005" },
+            "note": "InitiateCapture is absent from the advertised operation table; request parameters were not recorded.",
+            "source": 3
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "no-remote-capture-in-mtp-mode",
+            "description": "The operation table omits standard InitiateCapture, so remote capture is unavailable in this mode.",
+            "behaviour": { "kind": "none" },
+            "source": 4
+        },
+        {
+            "id": "manual-mtp-selection-after-cold-boot",
+            "description": "After a cold boot the body may need a manual restart and MTP selection before it speaks PTP again.",
+            "behaviour": { "kind": "none" },
+            "source": 5
+        }
+    ]
+}

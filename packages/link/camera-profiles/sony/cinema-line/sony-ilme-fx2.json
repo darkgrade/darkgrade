@@ -1,0 +1,42 @@
+{
+    "schemaVersion": 1,
+    "id": "sony-ilme-fx2",
+    "manufacturer": "Sony",
+    "line": "Cinema Line",
+    "model": "ILME-FX2",
+    "usb": { "vendorId": "0x054c", "productIds": ["0x0f4a"], "source": 0 },
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "Configured identity `054c:0f4a`"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "still returned only `054c:0d68` / USB Bus-powered Device"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/sony-native-usb-settings-2026-10-22.md",
+                "excerpt": "The FX2 does not advertise writable legacy native ISO/shutter controls in this shooting state"
+            }
+        ]
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "unpowered-body-enumerates-as-charger",
+            "description": "Without camera power the body enumerates only as 054c:0d68 \"USB Bus-powered Device\" and does not speak PTP.",
+            "behaviour": { "kind": "none" },
+            "source": 1
+        },
+        {
+            "id": "legacy-iso-shutter-read-only-in-mode",
+            "description": "Does not advertise writable legacy native ISO/shutter controls in the tested shooting state.",
+            "behaviour": { "kind": "none" },
+            "source": 2
+        }
+    ]
+}

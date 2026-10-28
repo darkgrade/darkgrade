@@ -1,0 +1,32 @@
+{
+    "schemaVersion": 1,
+    "id": "sony-ilce-6700",
+    "manufacturer": "Sony",
+    "line": "Alpha APS-C",
+    "model": "ILCE-6700 (α6700)",
+    "usb": { "vendorId": "0x054c", "productIds": ["0x0e78", "0x096f"], "source": 0 },
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "| Sony α6700 | `054c:0e78` in Remote Shoot; `054c:096f` before selection |"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "The body exposes no persistent USB connection-mode property and no advertised `USBConnectionModeRequest` (`0xf012`)."
+            }
+        ]
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "usb-connection-mode-selects-product-id",
+            "description": "Enumerates as 054c:096f until USB Connection Mode is set to Remote Shoot (PC Remote) on the body, then as 054c:0e78. No PTP property persists the mode.",
+            "behaviour": { "kind": "none" },
+            "source": 1
+        }
+    ]
+}

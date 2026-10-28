@@ -1,0 +1,117 @@
+{
+    "schemaVersion": 1,
+    "id": "nikon-z6-iii",
+    "manufacturer": "Nikon",
+    "line": "Z",
+    "model": "Z6 III",
+    "usb": {
+        "vendorId": "0x04b0",
+        "productIds": ["0x0454"],
+        "source": 0,
+        "manufacturerString": "NIKON",
+        "productString": "NIKON DSC Z6_3"
+    },
+    "firmware": "V2.00",
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md",
+                "excerpt": "Camera: Nikon Z6 III, firmware V2.00, USB `04b0:0454`"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md",
+                "excerpt": "| `935D` — hardware type | OK; response parameter `33` |"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md",
+                "excerpt": "| `936D` — supported profile types | OK; response parameter `1` |"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md",
+                "excerpt": "| `90E8` — authenticate | Empty password encoded as PTP string `01 00 00`; response `2001` OK |"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md",
+                "excerpt": "| `935A[2001]` — complete pairing | `2005` OperationNotSupported |"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md",
+                "excerpt": "deleted only the newly created profile `0` with `90EF` (`2001`)"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/wireless-profile-investigation.md",
+                "excerpt": "USB profile provisioning works, but the camera converts the requested Camera Control profile into an FTP profile."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/a13-usb-meter/nikon-first-recovery.jsonl",
+                "excerpt": "PTP GetDeviceInfo completed for Nikon Corporation Z6_3"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/evidence/nikon-z6-iii/usb-controls.json",
+                "excerpt": "\"operation\": \"ChangeApplicationMode\""
+            }
+        ]
+    },
+    "deviceInfo": { "reportedIdentity": "Nikon Corporation Z6_3", "source": 7 },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x935d",
+            "name": "Wireless hardware type",
+            "response": { "code": "0x2001", "parameters": ["0x21"] },
+            "source": 1
+        },
+        {
+            "operation": "0x936d",
+            "name": "Supported wireless profile types",
+            "response": { "code": "0x2001", "parameters": ["0x1"] },
+            "source": 2
+        },
+        {
+            "operation": "0x90e8",
+            "name": "Wireless authenticate",
+            "dataFromHost": "010000",
+            "response": { "code": "0x2001" },
+            "source": 3
+        },
+        {
+            "operation": "0x935a",
+            "name": "Complete wireless pairing",
+            "parameters": ["0x2001"],
+            "response": { "code": "0x2005" },
+            "source": 4
+        },
+        {
+            "operation": "0x90ef",
+            "name": "Delete wireless profile",
+            "response": { "code": "0x2001" },
+            "note": "Deleted profile 0; the exact request parameters were not recorded.",
+            "source": 5
+        },
+        {
+            "operation": "0x1002",
+            "name": "OpenSession",
+            "parameters": ["0x1"],
+            "response": { "code": "0x2001" },
+            "note": "darkgrade tests/bench-probe.ts sends OpenSession(SessionID 1) and stops unless it returns OK, so a reported \"PTP GetDeviceInfo completed\" result establishes this exchange.",
+            "source": 7
+        },
+        {
+            "operation": "0x9435",
+            "name": "ChangeApplicationMode",
+            "response": { "code": "0x2001" },
+            "note": "Logged by darkgrade with decoded parameters {\"Mode\":\"ON\"}; raw parameters were not recorded.",
+            "source": 8
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "camera-control-profile-stored-as-ftp",
+            "description": "A wireless profile requested as computer Camera Control (type 1/submode 1) is stored as FTP (type 2/submode 3).",
+            "behaviour": { "kind": "none" },
+            "source": 6
+        }
+    ]
+}

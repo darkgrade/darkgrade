@@ -1,0 +1,42 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-eos-80d",
+    "manufacturer": "Canon",
+    "line": "EOS DSLR",
+    "model": "EOS 80D",
+    "usb": { "vendorId": "0x04a9", "productIds": ["0x3294"], "source": 0 },
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "| Canon EOS 80D | `04a9:3294` |"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "The body resets `CanonLiveViewMode` at normal PTP disconnect"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "The EOS 80D requires live AF rather than face tracking for the tested 5× magnification"
+            }
+        ]
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": [
+        {
+            "id": "live-view-mode-reset-on-disconnect",
+            "description": "The body resets CanonLiveViewMode when the PTP session closes normally.",
+            "behaviour": { "kind": "none" },
+            "source": 1
+        },
+        {
+            "id": "magnification-requires-live-af",
+            "description": "5x live-view magnification requires live AF rather than face tracking.",
+            "behaviour": { "kind": "none" },
+            "source": 2
+        }
+    ]
+}

@@ -17,8 +17,9 @@
             "@api/*": ["src/api/*"],
             "@factories/*": ["src/factories/*"],
             "@ptp/*": ["src/ptp/*"],
-            "@vendors/*": ["src/vendors/*"]
+            "@vendors/*": ["src/vendors/*"],
+            "@scripts/*": ["scripts/*"]
         }
     },
-    "include": ["src", "tests", "*.config.ts"]
+    "include": ["src", "tests", "scripts", "*.config.ts"]
 }

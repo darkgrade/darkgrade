@@ -1,0 +1,48 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-eos-r6",
+    "manufacturer": "Canon",
+    "line": "EOS R",
+    "model": "EOS R6",
+    "usb": {
+        "vendorId": "0x04a9",
+        "productIds": ["0x32f5"],
+        "source": 0,
+        "manufacturerString": "Canon Inc.",
+        "productString": "Canon Digital Camera"
+    },
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "The former body reported `04a9:32f5` / EOS R6 through USB/PTP"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:artifacts/demo/agent-darkgrade-session.jsonl",
+                "excerpt": "PTP GetDeviceInfo completed for Canon.Inc Canon EOS R6"
+            }
+        ]
+    },
+    "deviceInfo": { "reportedIdentity": "Canon.Inc Canon EOS R6", "source": 1 },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x1002",
+            "name": "OpenSession",
+            "parameters": ["0x1"],
+            "response": { "code": "0x2001" },
+            "note": "darkgrade tests/bench-probe.ts sends OpenSession(SessionID 1) and stops unless it returns OK, so a reported \"PTP GetDeviceInfo completed\" result establishes this exchange.",
+            "source": 1
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "bench-label-differs-from-reported-model",
+            "description": "Configured on the bench as \"canon-r7\", but USB/PTP identifies the body as an EOS R6.",
+            "behaviour": { "kind": "none" },
+            "source": 0
+        }
+    ]
+}

@@ -23,3 +23,6 @@ captured_images/
 /docs/
 
 .svelte-kit/
+
+# simulation test output
+test-results/

@@ -12,6 +12,7 @@ export default defineConfig({
             '@api': resolve(__dirname, './src/api'),
             '@constants': resolve(__dirname, './src/constants'),
             '@ptp': resolve(__dirname, './src/ptp'),
+            '@scripts': resolve(__dirname, './scripts'),
         },
     },
     test: {

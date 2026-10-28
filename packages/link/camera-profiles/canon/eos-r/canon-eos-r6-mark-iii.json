@@ -1,0 +1,270 @@
+{
+    "schemaVersion": 1,
+    "id": "canon-eos-r6-mark-iii",
+    "manufacturer": "Canon",
+    "line": "EOS R",
+    "model": "EOS R6 Mark III",
+    "usb": { "vendorId": "0x04a9", "productIds": ["0x3323"], "source": 0 },
+    "firmware": "1.0.1",
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "| Canon EOS R6 Mark III | `04a9:3323` | Firmware 1.0.1;"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "`04a9:3323` | Firmware 1.0.1;"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "SDK selectors `0x10/0x20/0x30` send `0x913F [0x10000/0x20000/0x30000,0x80000518,0]`. All return `0x2001`. Responses are `[0x80000518,1]`, `[0x80000518,0xFFFFFFFF]`, `[0x80000518,0xFFFFFFFF]`."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "`0x911B [0]` then `0x911C []` both returned `0x2001`."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "The first runner performed an unnecessary second unlock, which returned Busy;"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "Standard `0x1014 GetDevicePropDesc` reads for all six residual properties returned `0x200A DevicePropNotSupported` to the runner, without payload."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "| `9197 []` | `2001 OK`, no data;"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "| **`9195 [1]`** | **`2001`, 20-byte folder record:** `14000000 000020a3 3130304d5344434600000000`."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "| Remote mode `9114 [5]`, event mode `[1]`, restore remote mode `[1]` | All returned `2001`."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "| Advertised `9050 []`, `905C []` in a plain PTP session | Both returned `201F TransactionCanceled`."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "The direct Darkgrade PTP path then read `917C [] => 2001 [0]`,"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "and `917D [0] => 2001 [0]` (a response parameter, not a four-byte log file)"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "Two previously unmapped but advertised operations, 9180 and 9181, were each tested with no parameters and no outgoing DATA phase. Both returned 2001, no DATA container and no response parameters."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "The advertised0x9060 mode query returned0x2001 with no response parameters"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-ptp-position.md",
+                "excerpt": "two commands `[3,2984,1856,0]` and `[3,2784,1856,0]`, both0x2001."
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "| `9195 []` plus empty data phase; `9195 [0]` | USB disappeared without a response;"
+            },
+            {
+                "location": "darkgrade/test-bench@2db7a28:.agents/skills/camera-re/references/canon-menu-ptp-investigation.md",
+                "excerpt": "| `9196 [1]`; same selector with unchanged20-byte folder record as incoming data | Both lost USB without a response."
+            }
+        ]
+    },
+    "properties": [],
+    "exchanges": [
+        {
+            "operation": "0x913f",
+            "name": "EDSDK GetCameraSupport query",
+            "parameters": ["0x10000", "0x80000518", "0x0"],
+            "response": { "code": "0x2001", "parameters": ["0x80000518", "0x1"] },
+            "source": 2
+        },
+        {
+            "operation": "0x913f",
+            "name": "EDSDK GetCameraSupport query",
+            "parameters": ["0x20000", "0x80000518", "0x0"],
+            "response": { "code": "0x2001", "parameters": ["0x80000518", "0xffffffff"] },
+            "source": 2
+        },
+        {
+            "operation": "0x913f",
+            "name": "EDSDK GetCameraSupport query",
+            "parameters": ["0x30000", "0x80000518", "0x0"],
+            "response": { "code": "0x2001", "parameters": ["0x80000518", "0xffffffff"] },
+            "source": 2
+        },
+        {
+            "operation": "0x911b",
+            "name": "UI lock",
+            "parameters": ["0x0"],
+            "response": { "code": "0x2001" },
+            "source": 3
+        },
+        {
+            "operation": "0x911c",
+            "name": "UI unlock",
+            "parameters": [],
+            "response": { "code": "0x2001" },
+            "note": "First unlock after a lock.",
+            "source": 3
+        },
+        {
+            "operation": "0x911c",
+            "name": "UI unlock",
+            "parameters": [],
+            "response": { "code": "0x2019" },
+            "note": "A redundant second unlock (or an unlock while live view is active) returns DeviceBusy.",
+            "source": 4
+        },
+        {
+            "operation": "0x1014",
+            "name": "GetDevicePropDesc",
+            "parameters": ["0xd126"],
+            "response": { "code": "0x200a" },
+            "note": "The runner observed DevicePropNotSupported; usbmon did not retain the response payloads.",
+            "source": 5
+        },
+        {
+            "operation": "0x1014",
+            "name": "GetDevicePropDesc",
+            "parameters": ["0xd19a"],
+            "response": { "code": "0x200a" },
+            "note": "The runner observed DevicePropNotSupported; usbmon did not retain the response payloads.",
+            "source": 5
+        },
+        {
+            "operation": "0x1014",
+            "name": "GetDevicePropDesc",
+            "parameters": ["0xd210"],
+            "response": { "code": "0x200a" },
+            "note": "The runner observed DevicePropNotSupported; usbmon did not retain the response payloads.",
+            "source": 5
+        },
+        {
+            "operation": "0x1014",
+            "name": "GetDevicePropDesc",
+            "parameters": ["0xd21e"],
+            "response": { "code": "0x200a" },
+            "note": "The runner observed DevicePropNotSupported; usbmon did not retain the response payloads.",
+            "source": 5
+        },
+        {
+            "operation": "0x1014",
+            "name": "GetDevicePropDesc",
+            "parameters": ["0xd282"],
+            "response": { "code": "0x200a" },
+            "note": "The runner observed DevicePropNotSupported; usbmon did not retain the response payloads.",
+            "source": 5
+        },
+        {
+            "operation": "0x1014",
+            "name": "GetDevicePropDesc",
+            "parameters": ["0xd283"],
+            "response": { "code": "0x200a" },
+            "note": "The runner observed DevicePropNotSupported; usbmon did not retain the response payloads.",
+            "source": 5
+        },
+        { "operation": "0x9197", "parameters": [], "response": { "code": "0x2001" }, "source": 6 },
+        {
+            "operation": "0x9195",
+            "parameters": ["0x1"],
+            "response": { "code": "0x2001", "data": "14000000000020a33130304d5344434600000000" },
+            "note": "Folder record for handle 0xa3200000, \"100MSDCF\"; selector semantics beyond 1 are unknown.",
+            "source": 7
+        },
+        {
+            "operation": "0x9114",
+            "name": "CanonSetRemoteMode",
+            "parameters": ["0x5"],
+            "response": { "code": "0x2001" },
+            "source": 8
+        },
+        {
+            "operation": "0x9115",
+            "name": "CanonSetEventMode",
+            "parameters": ["0x1"],
+            "response": { "code": "0x2001" },
+            "source": 8
+        },
+        {
+            "operation": "0x9114",
+            "name": "CanonSetRemoteMode",
+            "parameters": ["0x1"],
+            "response": { "code": "0x2001" },
+            "source": 8
+        },
+        { "operation": "0x9050", "parameters": [], "response": { "code": "0x201f" }, "source": 9 },
+        { "operation": "0x905c", "parameters": [], "response": { "code": "0x201f" }, "source": 9 },
+        {
+            "operation": "0x917c",
+            "parameters": [],
+            "response": { "code": "0x2001", "parameters": ["0x0"] },
+            "source": 10
+        },
+        {
+            "operation": "0x917d",
+            "parameters": ["0x0"],
+            "response": { "code": "0x2001", "parameters": ["0x0"] },
+            "source": 11
+        },
+        { "operation": "0x9180", "parameters": [], "response": { "code": "0x2001" }, "source": 12 },
+        { "operation": "0x9181", "parameters": [], "response": { "code": "0x2001" }, "source": 12 },
+        {
+            "operation": "0x9060",
+            "name": "Mode query",
+            "response": { "code": "0x2001" },
+            "note": "Request parameters were not recorded.",
+            "source": 13
+        },
+        {
+            "operation": "0x915b",
+            "name": "CanonTouchFramePoint",
+            "parameters": ["0x3", "0xba8", "0x740", "0x0"],
+            "response": { "code": "0x2001" },
+            "source": 14
+        },
+        {
+            "operation": "0x915b",
+            "name": "CanonTouchFramePoint",
+            "parameters": ["0x3", "0xae0", "0x740", "0x0"],
+            "response": { "code": "0x2001" },
+            "source": 14
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "directory-selector-empty-drops-usb",
+            "description": "Undocumented 0x9195 with these parameters makes the body leave USB without a PTP response; recovery needs a power cycle.",
+            "behaviour": { "kind": "disconnect-on-request", "operation": "0x9195", "parameters": [] },
+            "source": 15
+        },
+        {
+            "id": "directory-selector-zero-drops-usb",
+            "description": "Undocumented 0x9195 with these parameters makes the body leave USB without a PTP response; recovery needs a power cycle.",
+            "behaviour": { "kind": "disconnect-on-request", "operation": "0x9195", "parameters": ["0x0"] },
+            "source": 15
+        },
+        {
+            "id": "folder-setter-empty-drops-usb",
+            "description": "Undocumented 0x9196 with these parameters makes the body leave USB without a PTP response; recovery needs a power cycle.",
+            "behaviour": { "kind": "disconnect-on-request", "operation": "0x9196", "parameters": [] },
+            "source": 16
+        },
+        {
+            "id": "folder-setter-selector-drops-usb",
+            "description": "Undocumented 0x9196 with these parameters makes the body leave USB without a PTP response; recovery needs a power cycle.",
+            "behaviour": { "kind": "disconnect-on-request", "operation": "0x9196", "parameters": ["0x1"] },
+            "source": 16
+        }
+    ]
+}

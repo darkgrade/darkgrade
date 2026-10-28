@@ -1,0 +1,21 @@
+{
+    "schemaVersion": 1,
+    "id": "nikon-z7",
+    "manufacturer": "Nikon",
+    "line": "Z",
+    "model": "Z 7",
+    "usb": { "vendorId": "0x04b0", "productIds": ["0x0442"], "source": 0 },
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                "excerpt": "| Nikon Z 7 | `04b0:0442` | Hardware verified 2026-08-19 |"
+            }
+        ]
+    },
+    "properties": [],
+    "exchanges": [],
+    "events": [],
+    "quirks": []
+}

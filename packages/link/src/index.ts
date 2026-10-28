@@ -19,6 +19,13 @@ export {
 } from '@transport/sony-remote/sony-remote-sdk-transport'
 export { TransportFactory } from '@transport/transport-factory'
 export { USBTransport } from '@transport/usb/usb-transport'
+export {
+    ProfileDataMissingError,
+    SimulatedDisconnectError,
+    SimulatedTransport,
+} from '@transport/simulated/simulated-transport'
+export { loadCameraProfile, validateCameraProfile } from '@transport/simulated/camera-profile'
+export type { CameraProfile, ProfileFidelity, ProfileQuirk, QuirkBehaviour } from '@transport/simulated/camera-profile'
 
 // Logger configuration
 export { defaultLoggerConfig } from '@core/logger-config'
