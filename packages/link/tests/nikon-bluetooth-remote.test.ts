@@ -47,10 +47,9 @@ describe('experimental Nikon remote button protocol', () => {
         expect(channel.write).toHaveBeenCalledTimes(2)
         expect(channel.assertReady).toHaveBeenCalledOnce()
     })
-    it('validates button and hold before any queued operation', () => {
+    it('validates the button before any queued operation', () => {
         const {remote,channel} = fixture()
         expect(() => remote.press('menu' as NikonBluetoothKey)).toThrow('Unsupported')
-        for (const duration of [0,49,1001,NaN,1.5]) expect(() => remote.press('up',duration)).toThrow('between')
         expect(channel.assertReady).not.toHaveBeenCalled()
     })
 })

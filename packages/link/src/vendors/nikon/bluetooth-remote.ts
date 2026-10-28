@@ -27,22 +27,21 @@ export class NikonBluetoothRemote {
     private releaseUnconfirmed = false
     constructor(private readonly channel: NikonBluetoothChannel) {}
 
-    press(key: NikonBluetoothKey, milliseconds = 150): Promise<void> {
+    /** Send a short pulse; firmware may auto-release it before the cleanup write. */
+    press(key: NikonBluetoothKey): Promise<void> {
         if (!Object.hasOwn(buttons, key)) throw new Error('Unsupported Nikon Bluetooth button')
-        if (!Number.isInteger(milliseconds) || milliseconds < 50 || milliseconds > 1000)
-            throw new Error('Nikon Bluetooth hold must be between 50 and 1000 milliseconds')
-        const operation = this.queue.then(() => this.pressAndRelease(buttons[key], milliseconds))
+        const operation = this.queue.then(() => this.pressAndRelease(buttons[key]))
         this.queue = operation.catch(() => undefined)
         return operation
     }
 
-    private async pressAndRelease(button: number, milliseconds: number): Promise<void> {
+    private async pressAndRelease(button: number): Promise<void> {
         if (this.releaseUnconfirmed) throw new Error('Nikon Bluetooth release is unconfirmed; reconnect before further buttons')
         await this.channel.assertReady()
         let failed = false, failure: unknown
         try {
             await this.channel.write(Uint8Array.of(button, 2))
-            await this.channel.delay(milliseconds)
+            await this.channel.delay(150)
         } catch (error) {
             failed = true
             failure = error
