@@ -10,7 +10,8 @@
         "lint": "turbo lint",
         "format": "turbo format",
         "studio": "bun run --cwd apps/studio dev",
-        "compat:ui": "bun run --cwd packages/link compat:ui"
+        "compat:ui": "bun run --cwd packages/link compat:ui",
+        "compat:mcp": "bun run --cwd packages/link compat:mcp"
     },
     "trustedDependencies": ["electron", "electron-builder", "esbuild"],
     "overrides": {

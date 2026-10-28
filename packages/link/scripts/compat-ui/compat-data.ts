@@ -11,6 +11,7 @@ import {
     parseProgress,
     type ProgressEvent,
 } from '@scripts/camera-profiles/compat-progress'
+import { isRecord, matrixValue } from '@scripts/camera-profiles/compat-schema'
 import type { CompatibilityMatrix } from '@scripts/camera-profiles/compatibility-matrix'
 import { loadProfileIndex, usbIdentities, type IndexedProfile } from '@scripts/camera-profiles/profile-index'
 import type {
@@ -55,6 +56,16 @@ export interface MatrixFile {
 }
 
 /** A merged compatibility matrix (compat:merge) as support-matrix rows, so it can be viewed like one. */
+function latestEvidenceSource(evidence: Record<string, CapabilityEvidence> | undefined) {
+    const latest = Object.values(evidence ?? {})
+        .filter(source => typeof source?.generatedAt === 'string' && Number.isFinite(Date.parse(source.generatedAt)))
+        .sort((left, right) => Date.parse(right.generatedAt) - Date.parse(left.generatedAt))[0]
+    return {
+        generatedAt: latest?.generatedAt ?? '',
+        ...(typeof latest?.revision === 'string' && { revision: latest.revision }),
+    }
+}
+
 export function rowsFromCompatibility(matrix: CompatibilityMatrix): SupportMatrix {
     const rows: EvidenceSupportMatrixRow[] = matrix.cameras.flatMap(camera => {
         const base = {
@@ -77,6 +88,7 @@ export function rowsFromCompatibility(matrix: CompatibilityMatrix): SupportMatri
                 ...(camera.primaryTransport && { transport: camera.primaryTransport }),
                 results: camera.results,
                 resultEvidence: camera.resultEvidence ?? {},
+                source: latestEvidenceSource(camera.resultEvidence),
                 ...(camera.firmware && { firmware: camera.firmware }),
                 ...(camera.host && { host: camera.host }),
             },
@@ -95,6 +107,7 @@ export function rowsFromCompatibility(matrix: CompatibilityMatrix): SupportMatri
                           transport: 'ptp-ip' as const,
                           results: camera.ptpIp.results,
                           resultEvidence: camera.ptpIp.resultEvidence ?? {},
+                          source: latestEvidenceSource(camera.ptpIp.resultEvidence),
                           ...(camera.ptpIp.firmware && { firmware: camera.ptpIp.firmware }),
                           ...(camera.ptpIp.host && { host: camera.ptpIp.host }),
                       },
@@ -139,9 +152,14 @@ interface Cached<T> {
     value: T
 }
 
+/** Size and modification time, or "missing" for a file that disappeared since it was listed. */
 function signatureOf(file: string): string {
-    const stats = statSync(file)
-    return `${stats.size}:${stats.mtimeMs}`
+    try {
+        const stats = statSync(file)
+        return `${stats.size}:${stats.mtimeMs}`
+    } catch {
+        return 'missing'
+    }
 }
 
 export function processAlive(pid: number): boolean {
@@ -186,6 +204,13 @@ export class CompatData {
 
     get profiles(): Map<string, IndexedProfile> {
         return (this.profileCache ??= loadProfileIndex(this.catalog))
+    }
+
+    /** Forgets the profile index, e.g. after a capture was ingested into a new profile. */
+    invalidateProfiles(): void {
+        this.profileCache = undefined
+        this.annotationCache = undefined
+        this.baseCache = undefined
     }
 
     get annotations(): Map<string, RowAnnotations> {
@@ -237,9 +262,13 @@ export class CompatData {
             ...this.extraResults.filter(file => file.endsWith('.jsonl') && existsSync(file)),
         ]
         return files
-            .map(file => {
-                const stats = statSync(file)
-                return { runId: path.basename(file, '.jsonl'), file, modified: stats.mtimeMs, size: stats.size }
+            .flatMap(file => {
+                try {
+                    const stats = statSync(file)
+                    return [{ runId: path.basename(file, '.jsonl'), file, modified: stats.mtimeMs, size: stats.size }]
+                } catch {
+                    return []
+                }
             })
             .sort((left, right) => left.runId.localeCompare(right.runId))
     }
@@ -249,12 +278,13 @@ export class CompatData {
             const signature = signatureOf(file)
             const cached = this.jsonCache.get(file)
             if (cached?.signature === signature) return cached.value
-            const parsed = JSON.parse(readFileSync(file, 'utf8')) as SupportMatrix | CompatibilityMatrix
-            const value =
-                'cameras' in parsed && Array.isArray(parsed.cameras)
-                    ? rowsFromCompatibility(parsed)
-                    : (parsed as SupportMatrix)
-            if (!Array.isArray(value.rows)) return undefined
+            const parsed = JSON.parse(readFileSync(file, 'utf8')) as unknown
+            const value = matrixValue(
+                isRecord(parsed) && Array.isArray(parsed.cameras)
+                    ? rowsFromCompatibility(parsed as unknown as CompatibilityMatrix)
+                    : parsed
+            )
+            if (!value) return undefined
             this.jsonCache.set(file, { signature, value })
             return value
         } catch {
@@ -264,17 +294,20 @@ export class CompatData {
 
     /** A run log's events; a growing log is read incrementally from where the last read stopped. */
     readRun(file: string): ProgressEvent[] {
-        const stats = statSync(file)
-        const signature = `${stats.size}:${stats.mtimeMs}`
         const cached = this.runCache.get(file)
-        if (cached?.signature === signature) return cached.events
-        const from = cached && stats.size > cached.offset ? cached.offset : 0
-        const descriptor = openSync(file, 'r')
-        const buffer = Buffer.alloc(stats.size - from)
+        let buffer: Buffer
+        let from: number
+        let signature: string
         try {
-            readSync(descriptor, buffer, 0, buffer.length, from)
-        } finally {
-            closeSync(descriptor)
+            const stats = statSync(file)
+            signature = `${stats.size}:${stats.mtimeMs}`
+            if (cached?.signature === signature) return cached.events
+            // A log that shrank was rewritten (or truncated), so it is read again from the start.
+            from = cached && stats.size >= cached.offset ? cached.offset : 0
+            buffer = readRange(file, from, stats.size - from)
+        } catch {
+            // Removed or unreadable since it was listed: keep what was read before, if anything.
+            return cached?.events ?? []
         }
         // Only whole lines are consumed; a line still being written is read again next time.
         const complete = buffer.lastIndexOf(0x0a) + 1
@@ -290,7 +323,8 @@ export class CompatData {
         const start = events.find(event => event.type === 'run-start')
         if (!start || start.type !== 'run-start') return false
         if (Date.now() - run.modified > STALE_RUN_MILLISECONDS) return false
-        return processAlive(start.pid)
+        // A log without a usable pid cannot prove its process is alive (and pid 0 is the process group).
+        return start.pid > 0 && processAlive(start.pid)
     }
 
     /**
@@ -474,6 +508,17 @@ export class CompatData {
             .filter((matrix): matrix is SupportMatrix => !!matrix)
         return buildGapReport(this.catalog, matrices)
     }
+}
+
+function readRange(file: string, from: number, length: number): Buffer {
+    const buffer = Buffer.alloc(Math.max(0, length))
+    const descriptor = openSync(file, 'r')
+    try {
+        readSync(descriptor, buffer, 0, buffer.length, from)
+    } finally {
+        closeSync(descriptor)
+    }
+    return buffer
 }
 
 /** A run's summary without applying its results (it is older than the simulation matrix). */

@@ -9,6 +9,7 @@
 import { appendFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { progressEventValue } from './compat-schema'
 import {
     rowKey,
     type CapabilityStatus,
@@ -155,13 +156,15 @@ export class ProgressLog {
     }
 }
 
-/** Parses a run's JSONL text; a partially written last line (a run still in progress) is ignored. */
+/**
+ * Parses a run's JSONL text. A partially written last line (a run still in progress), lines that are
+ * not JSON and events that are malformed or of an unknown type are skipped.
+ */
 export function parseProgress(text: string): ProgressEvent[] {
     return text.split('\n').flatMap(line => {
         if (!line.trim()) return []
         try {
-            const event = JSON.parse(line) as ProgressEvent
-            return typeof event?.type === 'string' && typeof event.runId === 'string' ? [event] : []
+            return progressEventValue(JSON.parse(line)) ?? []
         } catch {
             return []
         }

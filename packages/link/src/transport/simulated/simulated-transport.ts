@@ -11,6 +11,7 @@ import {
     type ProfileProperty,
     type RecordedExchange,
 } from '@transport/simulated/camera-profile'
+import { ChaosDisconnectError, ChaosInjector, type ChaosOptions } from '@transport/simulated/chaos-faults'
 import {
     concatenateBytes,
     descriptorAcceptsValue,
@@ -103,6 +104,8 @@ export interface SimulatedTransportOptions {
      * DeviceInfo fields; SimulatedPtpIpCamera serves the transport over TCP in that mode.
      */
     connection?: 'usb' | 'ptp-ip'
+    /** Fault injection: deliberately break the protocol to test how the host copes. Never recorded behaviour. */
+    chaos?: ChaosOptions
 }
 
 const codeSet = (codes: string[] | undefined) => (codes ? new Set(codes.map(parseCode)) : undefined)
@@ -126,6 +129,12 @@ export class SimulatedTransport implements TransportInterface {
     readonly missingData: ProfileDataMissingError[] = []
     /** Response codes in the order they were returned. */
     readonly responseCodes: number[] = []
+    /** Transaction IDs of every command container, in order, to detect host-side drift. */
+    readonly commandTransactionIds: number[] = []
+    /** Errors thrown by event handlers; on a USB interrupt endpoint they would be uncaught. */
+    readonly eventHandlerErrors: unknown[] = []
+    /** Set when `options.chaos` is given; `chaos.enabled = false` stops injecting faults. */
+    readonly chaos?: ChaosInjector
 
     private connected = false
     private pending?: SimulatedRequest
@@ -139,6 +148,8 @@ export class SimulatedTransport implements TransportInterface {
     private changedProperty?: number
     private eventGeneration = 0
     private pendingPolledEvents = false
+    private disconnectWhenDrained = false
+    private stalledReceives = new Set<(error: Error) => void>()
     private readonly properties: Map<number, ProfileProperty>
     private readonly exchanges: ParsedExchange[]
     private readonly quirks: QuirkBehaviours
@@ -171,6 +182,12 @@ export class SimulatedTransport implements TransportInterface {
             this.completeProperties = codeSet(deviceInfo.devicePropertiesSupported)
         }
         this.announcesPropertyChanges = codeSet(deviceInfo?.eventsSupported)?.has(DEVICE_PROP_CHANGED) ?? false
+        if (options.chaos) this.chaos = new ChaosInjector(options.chaos)
+    }
+
+    /** Event handlers currently registered, to detect listener leaks. */
+    get eventHandlerCount(): number {
+        return this.eventHandlers.size
     }
 
     async connect(_device?: DeviceDescriptor): Promise<void> {
@@ -182,6 +199,8 @@ export class SimulatedTransport implements TransportInterface {
         this.pending = undefined
         this.outgoing = []
         this.resetSession()
+        this.disconnectWhenDrained = false
+        this.releaseStalls(new Error('Simulated camera disconnected'))
     }
 
     isConnected(): boolean {
@@ -192,6 +211,13 @@ export class SimulatedTransport implements TransportInterface {
         this.pending = undefined
         this.outgoing = []
         this.resetSession()
+        this.disconnectWhenDrained = false
+        this.releaseStalls(new Error('Simulated transfer cancelled by a device reset'))
+    }
+
+    private releaseStalls(error: Error): void {
+        for (const reject of this.stalledReceives) reject(error)
+        this.stalledReceives.clear()
     }
 
     private resetSession(): void {
@@ -236,7 +262,10 @@ export class SimulatedTransport implements TransportInterface {
                 throw new Error('Previous simulated transaction has not been drained')
             const parameters: number[] = []
             for (let offset = 12; offset + 4 <= data.length; offset += 4) parameters.push(view.getUint32(offset, true))
+            this.releaseStalls(new Error('Simulated transfer abandoned: the host sent a new command'))
             this.pending = { operation: code, transactionId, parameters }
+            this.commandTransactionIds.push(transactionId)
+            this.disconnectWhenDrained = false
             return
         }
         if (type === CONTAINER.data && this.pending?.transactionId === transactionId) {
@@ -252,16 +281,51 @@ export class SimulatedTransport implements TransportInterface {
         if (!this.connected) throw new Error('Simulated camera is not connected')
         if (!Number.isSafeInteger(maxLength) || maxLength < 1)
             throw new Error('Receive length must be a positive integer')
+        if (this.outgoing.length === 0 && this.disconnectWhenDrained) {
+            await this.disconnect()
+            throw new ChaosDisconnectError()
+        }
         if (this.outgoing.length === 0 && this.pending) {
             const request = this.pending
             this.pending = undefined
-            this.outgoing = this.containersFor(request, this.resolve(request))
+            const reply = this.resolve(request)
+            const containers = this.containersFor(request, reply)
+            const events = this.eventsFor(request, reply.code)
+            if (!this.chaos) {
+                this.deliver(events)
+                this.outgoing = containers
+            } else {
+                const outcome = this.chaos.disturb(request, containers, events)
+                this.deliver(outcome.eventsBeforeReply.length ? outcome.eventsBeforeReply : events)
+                if (outcome.eventsBeforeReply.length) await new Promise(resolve => setTimeout(resolve, 1))
+                if (outcome.stall) return await this.stallUntilReset()
+                this.outgoing = outcome.containers.slice(0, outcome.disconnectAfter)
+                this.disconnectWhenDrained = outcome.disconnectAfter !== undefined
+                if (this.outgoing.length === 0 && this.disconnectWhenDrained)
+                    return await this.receive(maxLength, _sessionId, _transactionId)
+            }
         }
         const next = this.outgoing.shift()
+        // A real camera with nothing to send leaves the read pending; chaos runs need that to expose hangs.
+        if (!next && this.chaos) return await this.stallUntilReset()
         if (!next) throw new Error('No simulated response is pending')
         if (next.length <= maxLength) return next
         this.outgoing.unshift(next.slice(maxLength))
         return next.slice(0, maxLength)
+    }
+
+    private stallUntilReset(): Promise<Uint8Array> {
+        return new Promise((_, reject) => this.stalledReceives.add(reject))
+    }
+
+    private eventsFor(request: SimulatedRequest, responseCode: number): PTPEvent[] {
+        const events = [
+            ...this.recordedEventsAfter(request.operation, responseCode),
+            ...this.quirks.afterReply(request, responseCode),
+        ]
+        if (!this.quirks.polledDelivery()) return events
+        this.pendingPolledEvents ||= events.length > 0
+        return []
     }
 
     private containersFor(request: SimulatedRequest, reply: Reply): Uint8Array[] {
@@ -279,12 +343,6 @@ export class SimulatedTransport implements TransportInterface {
         }
         if (reply.code === RESPONSE.SessionNotOpen) this.resetSession()
         if (reply.code === RESPONSE.OK && request.operation === OPERATION.CloseSession) this.resetSession()
-        const events = [
-            ...this.recordedEventsAfter(request.operation, reply.code),
-            ...this.quirks.afterReply(request, reply.code),
-        ]
-        if (this.quirks.polledDelivery()) this.pendingPolledEvents ||= events.length > 0
-        else this.deliver(events)
 
         const header = (length: number, type: number, code: number) =>
             concatenateBytes([
@@ -314,6 +372,9 @@ export class SimulatedTransport implements TransportInterface {
             throw error
         }
         if (quirkCode !== undefined) return { code: quirkCode }
+
+        const chaosCode = this.chaos?.responseOverride(request)
+        if (chaosCode !== undefined) return { code: chaosCode }
 
         if (!this.validStandardParameters(request)) return { code: RESPONSE.InvalidParameter }
         if (request.operation === OPERATION.OpenSession && this.sessionOpen)
@@ -511,7 +572,14 @@ export class SimulatedTransport implements TransportInterface {
         const generation = this.eventGeneration
         setTimeout(() => {
             if (!this.connected || generation !== this.eventGeneration) return
-            events.forEach(event => this.eventHandlers.forEach(handler => handler(event)))
+            events.forEach(event => this.eventHandlers.forEach(handler => this.notify(handler, event)))
         }, 0)
+    }
+    private notify(handler: (event: PTPEvent) => void, event: PTPEvent): void {
+        try {
+            handler(event)
+        } catch (error) {
+            this.eventHandlerErrors.push(error)
+        }
     }
 }

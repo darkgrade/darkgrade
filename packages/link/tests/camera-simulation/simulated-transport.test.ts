@@ -3,6 +3,7 @@ import { genericEventRegistry } from '@ptp/definitions/event-definitions'
 import { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
 import { genericPropertyRegistry } from '@ptp/definitions/property-definitions'
 import { validateCameraProfile, type CameraProfile } from '@transport/simulated/camera-profile'
+import { ChaosDisconnectError } from '@transport/simulated/chaos-faults'
 import {
     ProfileDataMissingError,
     SimulatedDisconnectError,
@@ -186,6 +187,9 @@ describe('SimulatedTransport', () => {
             },
         ]
         const { instance, transport } = camera(fixture({ quirks }))
+        // Observe the quirk's raw answers: switch off darkgrade's DeviceBusy retry where the library has one.
+        const tunable = instance as { configureTransactions?: (policy: { deviceBusyRetries: number }) => void }
+        tunable.configureTransactions?.({ deviceBusyRetries: 0 })
         await transport.connect()
         expect((await instance.send(genericOperationRegistry.OpenSession, { SessionID: 2 })).code).toBe(0x201d)
         expect((await instance.send(genericOperationRegistry.OpenSession, { SessionID: 1 })).code).toBe(0x2001)
@@ -622,5 +626,48 @@ describe('simulator protocol and state regressions', () => {
         expect((await wireRequest(transport, 0x1001, 2)).code).toBe(0x2001)
         expect((await wireRequest(transport, 0x1001, 8)).code).toBe(0x2004)
         expect((await wireRequest(transport, 0x1001, 3)).code).toBe(0x2001)
+    })
+})
+
+describe('chaos and protocol-state integration', () => {
+    it('emits a successful write once after updating state, with listener failures retained', async () => {
+        const transport = new SimulatedTransport(fixture(), {
+            chaos: { seed: 1, faults: ['events-out-of-order'], probability: 0 },
+        })
+        const events: number[] = []
+        transport.on(event => events.push(event.code))
+        transport.on(() => {
+            throw new Error('listener fixture error')
+        })
+        await transport.connect()
+        await wireRequest(transport, 0x1016, 1, [0x5005], Uint8Array.of(4, 0))
+        await new Promise(resolve => setTimeout(resolve, 1))
+        expect(events).toEqual([0x4006])
+        expect(transport.eventHandlerErrors).toHaveLength(1)
+        expect((await wireRequest(transport, 0x1015, 2, [0x5005])).data).toEqual(Uint8Array.of(4, 0))
+    })
+
+    it('releases a fault-stalled read on an explicit reset and preserves normal session rules afterward', async () => {
+        const transport = new SimulatedTransport(fixture(), { chaos: { seed: 1, faults: ['stall'], probability: 1 } })
+        await transport.connect()
+        const pending = wireRequest(transport, 0x1001, 1)
+        const rejected = expect(pending).rejects.toThrow('cancelled by a device reset')
+        await new Promise(resolve => setTimeout(resolve, 1))
+        await transport.classRequestReset()
+        await rejected
+        if (!transport.chaos) throw new Error('Missing fault injector')
+        transport.chaos.enabled = false
+        expect((await wireRequest(transport, 0x1015, 2, [0x5005])).code).toBe(0x2003)
+        expect((await wireRequest(transport, 0x1002, 3, [1])).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1015, 4, [0x5005])).data).toEqual(Uint8Array.of(2, 0))
+    })
+
+    it('reports an immediate chaos disconnect without issuing a zero-length receive', async () => {
+        const transport = new SimulatedTransport(fixture(), {
+            chaos: { seed: 1, faults: ['disconnect-mid-transaction'], probability: 1 },
+        })
+        await transport.connect()
+        await expect(wireRequest(transport, 0x1002, 1, [1])).rejects.toBeInstanceOf(ChaosDisconnectError)
+        expect(transport.isConnected()).toBe(false)
     })
 })

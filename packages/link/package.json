@@ -39,7 +39,10 @@
         "compat:ingest": "bun run scripts/compat/ingest-standalone.ts",
         "compat:gaps": "bun run scripts/compat/write-gaps.ts",
         "cameras:build": "bun run scripts/camera-profiles/build-camera-identities.ts",
-        "cameras:check": "bun run scripts/camera-profiles/build-camera-identities.ts --check"
+        "cameras:check": "bun run scripts/camera-profiles/build-camera-identities.ts --check",
+        "compat:mcp": "bun run scripts/compat/mcp.ts",
+        "compat:chaos": "bun run scripts/chaos/run-chaos.ts",
+        "test:ui": "vitest run tests/compat-ui"
     },
     "keywords": [
         "ptp",
@@ -61,6 +64,7 @@
     },
     "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.32.1",
         "@types/node": "^20.11.0",
         "@types/react": "^19.1.11",
         "@types/usb": "^2.0.0",
@@ -68,10 +72,12 @@
         "@vitest/coverage-v8": "^1.2.0",
         "@vitest/ui": "^1.2.0",
         "glob": "^11.0.3",
+        "playwright": "1.63.0",
         "string-similarity": "^4.0.4",
         "vite": "^7.1.7",
+        "vite-plugin-dts": "^5.0.3",
         "vitest": "^1.2.0",
-        "vite-plugin-dts": "^5.0.3"
+        "zod": "3.25.76"
     },
     "engines": {
         "node": ">=18"

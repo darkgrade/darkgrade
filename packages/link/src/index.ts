@@ -26,6 +26,7 @@ export type {
     ProfileQuirk,
     QuirkBehaviour,
 } from '@transport/simulated/camera-profile'
+export { CHAOS_FAULTS, ChaosDisconnectError, type ChaosFault, type ChaosOptions } from '@transport/simulated/chaos-faults'
 export {
     ProfileDataMissingError,
     SimulatedDisconnectError,

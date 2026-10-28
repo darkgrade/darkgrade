@@ -6,11 +6,13 @@ import {
 } from '@scripts/camera-profiles/camera-capabilities'
 import { loadCatalog } from '@scripts/camera-profiles/camera-catalog'
 import { parseProgress, ProgressLog, rowsFromProgress, type PlannedRow } from '@scripts/camera-profiles/compat-progress'
+import { matrixValue, type ValidatedMatrixRow } from '@scripts/camera-profiles/compat-schema'
 import { mergeCompatibility } from '@scripts/camera-profiles/compatibility-matrix'
 import { loadProfileIndex } from '@scripts/camera-profiles/profile-index'
 import { ingestCapture, ingestResults } from '@scripts/camera-profiles/standalone-ingest'
 import { runStandalone } from '@scripts/camera-profiles/standalone-run'
 import type { SupportMatrix, SupportMatrixRow } from '@scripts/camera-profiles/support-matrix'
+import { CompatApi } from '@scripts/compat-ui/compat-api'
 import { CompatData, rowsFromCompatibility } from '@scripts/compat-ui/compat-data'
 import { applyFilters, parseFilters, serializeFilters } from '@scripts/compat-ui/compat-filters'
 import { buildGapReport, renderGapsMarkdown } from '@scripts/compat-ui/compat-gaps'
@@ -376,8 +378,12 @@ describe('compatibility UI server', () => {
     it('serves every route with stable URLs, filters from the query string, and 404s unknown ones', async () => {
         const home = await get('/')
         expect(home.status).toBe(200)
-        expect(home.text).toContain('Hardware run</strong> 0/1 rows')
-        expect(home.text).toContain('data-key="hardware/usb/nikon-z6-iii" class="r-running"')
+        expect(home.text).toContain('0/1 rows')
+        expect(home.text).toContain('aria-label="Hardware run"')
+        expect(home.text).toMatch(
+            /data-key="hardware\/usb\/nikon-z6-iii" data-profile="nikon-z6-iii" class="r-running"/
+        )
+        expect(home.text).toContain('<table id="matrix" class="matrix has-run">')
 
         const line = await get('/m/sony/alpha-aps-c-e-mount?transport=ptp-ip')
         expect(line.status).toBe(200)
@@ -395,14 +401,15 @@ describe('compatibility UI server', () => {
         expect((await get('/camera/nope')).status).toBe(404)
         expect((await get('/assets/client.js')).text.length).toBeGreaterThan(1000)
 
-        const view = JSON.parse((await get('/api/view')).text)
+        const view = JSON.parse((await get('/api/v1/view')).text)
         expect(view.activeRun.runId).toBe('live-run')
         expect(view.rows).toHaveLength(4)
     })
 
     it('imports a results file and opens it as its own view', async () => {
-        const response = await fetch(new URL('/api/import?name=remote.json', server.url), {
+        const response = await fetch(new URL('/api/v1/import?name=remote.json', server.url), {
             method: 'POST',
+            headers: { 'content-type': 'application/json' },
             body: JSON.stringify(matrix([matrixRow('nikon-z7')])),
         })
         const result = (await response.json()) as { open: string }
@@ -466,9 +473,11 @@ describe('compatibility UI capability provenance', () => {
         })
         expect(hardware.cells.capture.evidence).not.toHaveProperty('host')
         const html = renderRow(hardware, capabilities, { base: '/', live: false })
-        expect(html).toMatch(/data-capability="capture"[^>]*>✓ <span class="badge f-captured">captured<\/span>/)
+        const captureCell = html.match(/<td[^>]*data-capability="capture"[^>]*>([\s\S]*?)<\/td>/)?.[1] ?? ''
+        expect(captureCell).toContain('i-pass')
+        expect(captureCell).toContain('f-captured')
         const detail = renderDetailCellContents(hardware.cells.capture)
-        expect(detail).toContain('badge f-captured')
+        expect(detail).toContain('f-captured')
         expect(detail).toContain('firmware 2.00')
         expect(detail).toContain('simulation-revision')
         expect(detail).not.toContain('darkgrade01')
@@ -656,5 +665,105 @@ describe('audit evidence presentation boundaries', () => {
         })
         expect(view.rows[0].cells.session.status).toBe('no-data')
         expect(renderRow(view.rows[0], capabilities, { base: '/', live: false })).toContain('conflict:')
+    })
+})
+
+describe('validated compatibility metadata roundtrip', () => {
+    const original = { generatedAt: '2020-01-01T00:00:00Z', revision: 'original-observation' }
+    const evidence = { fidelity: 'captured' as const, profile: 'nikon-z6-iii', ...original, firmware: '2.00' }
+
+    it('retains row and per-cell source times through file validation, API details and rewritten aggregate headers', () => {
+        const directory = path.join(scratch, 'metadata-roundtrip')
+        mkdirSync(directory, { recursive: true })
+        const viewKey = 'captured/ptp-ip/nikon-z6-iii/Z6%20III/2.00'
+        const row = {
+            ...matrixRow('nikon-z6-iii', { transport: 'ptp-ip', firmware: '2.00', source: original }),
+            viewKey,
+            resultEvidence: {
+                session: {
+                    ...evidence,
+                    conflicts: [
+                        { ...evidence, status: 'pass', detail: 'one' },
+                        { ...evidence, status: 'fail', detail: 'another' },
+                    ],
+                },
+            },
+        }
+        const file = path.join(directory, 'camera-support-matrix.json')
+        writeFileSync(file, JSON.stringify(matrix([row], '2026-10-28T12:00:00Z')))
+        const data = new CompatData({ resultsDirectory: directory, runsDirectory: path.join(directory, 'runs') })
+        const checked = data.readMatrix(file)!.rows[0] as ValidatedMatrixRow
+        expect(checked.source).toEqual(original)
+        expect(checked.viewKey).toBe(viewKey)
+        expect(checked.resultEvidence?.session.conflicts).toHaveLength(2)
+        const response = new CompatApi({ data }).camera('nikon-z6-iii')
+        expect(response.rows[0]).toMatchObject({
+            key: viewKey,
+            transport: 'ptp-ip',
+            firmware: '2.00',
+            lastRun: original.generatedAt,
+        })
+        expect(response.rows[0].cells.session.at).toBe(original.generatedAt)
+        expect(response.camera.results[0].cells.session.evidence).toMatchObject(evidence)
+        expect(response.camera.results[0].cells.session.evidence?.conflicts).toHaveLength(2)
+    })
+
+    it('keeps malformed supplied provenance unknown instead of using the fresh aggregate header', () => {
+        const raw = {
+            ...matrixRow('nikon-z6-iii'),
+            source: { generatedAt: 'not-a-date' },
+            resultEvidence: { session: { ...evidence, fidelity: 'invented' } },
+        }
+        const checked = matrixValue(matrix([raw], '2026-10-28T12:00:00Z'))!
+        const view = emptyView()
+        applyMatrix(view, checked, { label: 'malformed', path: 'bad.json', generatedAt: checked.generatedAt })
+        expect(view.rows[0].lastRun).toBe('')
+        expect(view.rows[0].cells.session.evidence).toBeUndefined()
+        expect(renderDetailCellContents(view.rows[0].cells.session)).toContain('source unavailable')
+    })
+
+    it('bounds conflict records, removes nested/unsafe metadata and escapes imported source strings', () => {
+        const entry = {
+            ...evidence,
+            profile: '<script>source</script>',
+            conflicts: Array.from({ length: 65 }, () => ({
+                ...evidence,
+                status: 'fail',
+                detail: '<img src=x onerror=run()>',
+                conflicts: [evidence],
+            })),
+        }
+        const raw = {
+            ...matrixRow('nikon-z6-iii'),
+            viewKey: 'captured/usb/another-profile/collision',
+            resultEvidence: Object.fromEntries([
+                ['session', entry],
+                ['__proto__', evidence],
+            ]),
+        }
+        const checked = matrixValue(matrix([raw]))!.rows[0] as ValidatedMatrixRow
+        expect(checked.viewKey).toBeUndefined()
+        expect(Object.hasOwn(checked.resultEvidence!, '__proto__')).toBe(false)
+        expect(checked.resultEvidence!.session.conflicts).toHaveLength(32)
+        expect(checked.resultEvidence!.session.conflicts![0]).not.toHaveProperty('conflicts')
+        const view = emptyView()
+        applyMatrix(view, matrix([checked]), { label: 'bounded', path: 'bounded.json', generatedAt: '' })
+        expect(renderDetailCellContents(view.rows[0].cells.session)).not.toContain('<script>source</script>')
+        expect(renderDetailCellContents(view.rows[0].cells.session)).toContain('&#60;script&#62;source')
+    })
+
+    it('retains primary PTP/IP transport through the merged-file backend adapter', () => {
+        const directory = path.join(scratch, 'network-metadata-roundtrip')
+        mkdirSync(directory, { recursive: true })
+        const row = matrixRow('nikon-z6-iii', { transport: 'ptp-ip', source: original })
+        const merged = mergeCompatibility(matrix([row], '2026-10-28T12:00:00Z'))
+        writeFileSync(path.join(directory, 'camera-compatibility.json'), JSON.stringify(merged))
+        const data = new CompatData({ resultsDirectory: directory, runsDirectory: path.join(directory, 'runs') })
+        const response = new CompatApi({ data }).camera('nikon-z6-iii', 'matrix:camera-compatibility.json')
+        expect(merged.cameras[0].primaryTransport).toBe('ptp-ip')
+        expect(response.rows[0].transport).toBe('ptp-ip')
+        expect(response.rows[0].lastRun).toBe(original.generatedAt)
+        expect(response.camera.results[0].transport).toBe('ptp-ip')
+        expect(response.camera.results[0].cells.session.evidence?.generatedAt).toBe(original.generatedAt)
     })
 })
