@@ -21,6 +21,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { PropertyDefinition } from '@ptp/types/property'
 import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
+import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 /** ISO 15740 standard operation codes; their DeviceBusy answers mean "not performed, retry later". */
@@ -45,6 +46,10 @@ interface RecoveryAttempt {
     task: Promise<void>
     status: 'pending' | 'succeeded' | 'failed'
     failure?: unknown
+    /** The core USB reset rather than a caller-owned recoverTransport callback. */
+    automatic: boolean
+    /** The session open before the failure, reopened after an automatic reset. */
+    previousSessionId: number | null
 }
 
 export class GenericCamera {
@@ -138,7 +143,7 @@ export class GenericCamera {
         }
     }
 
-    /** Tunes timeouts, retry bounds and explicitly authorized recovery for later transactions. */
+    /** Tunes timeouts, retry bounds and timeout recovery (automatic USB reset or a callback) for later transactions. */
     configureTransactions(policy: Partial<TransactionPolicy>): void {
         this.channel.configure(policy)
         if ('recoverTransport' in policy && this.recovery?.status === 'failed') this.recovery = undefined
@@ -236,22 +241,30 @@ export class GenericCamera {
     }
 
     /**
-     * An abandoned or malformed transfer is unsafe to reuse. Core performs no automatic USB reset.
-     * Only an explicit caller-owned recovery callback may clear it, after all old I/O settles.
-     * Timing out a recovery wait does not cancel the callback or permit another command to race it.
+     * An abandoned or malformed transfer is unsafe to reuse. Before the next command, a caller-owned
+     * TransactionPolicy.recoverTransport runs if one is configured. Otherwise, over USB, core resets
+     * automatically: the still-image class Device Reset Request (libgphoto2 sends the same request
+     * after an I/O error or timeout), a bounded wait for the abandoned I/O to settle, and a fresh
+     * OpenSession if a session was open. Only when that recovery fails, or the transport has no
+     * class reset (PTP/IP), do commands fail with PTPRecoveryRequiredError until a disconnect/connect.
+     * Timing out a recovery wait does not cancel it or permit another command to race it.
      */
     private async resynchronizeIfNeeded(): Promise<void> {
         if (!this.needsResynchronization) return
-        const recover = this.channel.policy.recoverTransport
         if (!this.recovery) {
-            if (!recover)
+            const recover = this.channel.policy.recoverTransport
+            const automatic =
+                !recover && this.channel.policy.automaticUSBReset && this.transport.getType() === TransportType.USB
+            if (!recover && !automatic)
                 throw new PTPRecoveryRequiredError(
-                    'Transport recovery is required; no recovery callback is configured',
+                    'Transport recovery is required; this transport has no automatic reset and no recovery callback is configured',
                     this.lastFailure
                 )
+            const previousSessionId = this.sessionId
             this.sessionId = null
-            const task = Promise.resolve().then(() => recover(this.lastFailure ?? {}))
-            const attempt: RecoveryAttempt = { task, status: 'pending' }
+            const failure = this.lastFailure ?? {}
+            const task = Promise.resolve().then(() => (recover ? recover(failure) : this.resetUSBTransport()))
+            const attempt: RecoveryAttempt = { task, status: 'pending', automatic, previousSessionId }
             this.recovery = attempt
             void task.then(
                 () => {
@@ -264,13 +277,18 @@ export class GenericCamera {
             )
         }
         const attempt = this.recovery
+        // The automatic reset bounds each of its own steps; a caller-owned callback gets one timeout.
         let timer: ReturnType<typeof setTimeout> | undefined
         try {
             await Promise.race([
                 attempt.task.catch(() => undefined),
-                new Promise<void>(resolve => {
-                    timer = setTimeout(resolve, this.channel.policy.timeoutMilliseconds)
-                }),
+                ...(attempt.automatic
+                    ? []
+                    : [
+                          new Promise<void>(resolve => {
+                              timer = setTimeout(resolve, this.channel.policy.timeoutMilliseconds)
+                          }),
+                      ]),
             ])
         } finally {
             clearTimeout(timer)
@@ -282,7 +300,7 @@ export class GenericCamera {
             )
         if (attempt.status === 'failed')
             throw new PTPRecoveryRequiredError(
-                `Transport recovery failed: ${attempt.failure instanceof Error ? attempt.failure.message : String(attempt.failure)}`,
+                `${attempt.automatic ? 'Automatic USB reset' : 'Transport recovery'} failed: ${attempt.failure instanceof Error ? attempt.failure.message : String(attempt.failure)}`,
                 { ...this.lastFailure, cause: attempt.failure }
             )
         if (this.channel.hasPendingIO)
@@ -290,9 +308,68 @@ export class GenericCamera {
                 'Recovery returned while abandoned transport I/O is still running',
                 this.lastFailure
             )
+        const failure = this.lastFailure
         this.recovery = undefined
         this.lastFailure = undefined
         this.needsResynchronization = false
+        if (!attempt.automatic || attempt.previousSessionId === null) return
+        try {
+            await this.reopenSessionAfterReset(attempt.previousSessionId)
+        } catch (error) {
+            // The camera did not come back after the reset: latch until disconnect/connect.
+            this.sessionId = null
+            this.needsResynchronization = true
+            this.lastFailure = failure
+            this.recovery = {
+                task: Promise.resolve(),
+                status: 'failed',
+                failure: error,
+                automatic: true,
+                previousSessionId: null,
+            }
+            throw new PTPRecoveryRequiredError(
+                `Automatic USB reset failed to reopen the session: ${error instanceof Error ? error.message : String(error)}`,
+                { ...failure, cause: error }
+            )
+        }
+    }
+
+    /** Device Reset Request, then a bounded wait until the abandoned reads and writes have settled. */
+    private async resetUSBTransport(): Promise<void> {
+        const timeout = this.channel.policy.timeoutMilliseconds
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+            await Promise.race([
+                this.transport.classRequestReset(),
+                new Promise<never>((_, reject) => {
+                    timer = setTimeout(
+                        () => reject(new Error(`the Device Reset Request did not complete within ${timeout} ms`)),
+                        timeout
+                    )
+                }),
+            ])
+        } finally {
+            clearTimeout(timer)
+        }
+        if (!(await this.channel.settle(timeout)))
+            throw new Error('abandoned USB I/O did not settle after the Device Reset Request')
+    }
+
+    /** A Device Reset may or may not end the session; reopen it, keeping one the camera still holds. */
+    private async reopenSessionAfterReset(previousSessionId: number): Promise<void> {
+        const openSession = this.registry.operations.OpenSession
+        const sessionId = randomSessionId()
+        this.sessionId = sessionId
+        const params = { SessionID: sessionId }
+        const response = await this.runTransaction(openSession, params, this.encodeParameters(openSession, params))
+        if (response.code === OK.code) return
+        if (response.code === SessionAlreadyOpen.code) {
+            this.sessionId = previousSessionId
+            return
+        }
+        throw new PTPResponseError(response.code, `OpenSession returned 0x${response.code.toString(16)}`, {
+            operation: 'OpenSession',
+        })
     }
 
     private decodeWith<T>(

@@ -52,6 +52,7 @@ class ScriptedTransport implements TransportInterface {
     readonly sent: Uint8Array[] = []
     resets = 0
     connected = true
+    type = TransportType.USB
     private queue: Uint8Array[] = []
     private stalled: ((error: Error) => void)[] = []
     private handler?: (event: PTPEvent) => void
@@ -68,7 +69,7 @@ class ScriptedTransport implements TransportInterface {
         return this.connected
     }
     getType(): TransportType {
-        return TransportType.USB
+        return this.type
     }
     isLittleEndian(): boolean {
         return true
@@ -152,14 +153,153 @@ function deviceInfo(model = 'Stub'): number[] {
 }
 
 describe('transaction timeouts', () => {
-    it('blocks further commands after a timeout without resetting a physical transport by default', async () => {
+    const OPEN_SESSION = 0x1002
+    const GET_DEVICE_INFO = 0x1001
+    /** OpenSession answers `open` (OK by default); the first GetDeviceInfo stalls, later ones answer. */
+    const stallOnceThenAnswer =
+        (open: (index: number) => number = () => 0x2001): Reply =>
+        (command, index) => {
+            if (command.operation === OPEN_SESSION)
+                return [container(CONTAINER.response, open(index), command.transactionId)]
+            if (index === 1) return 'stall'
+            return [
+                container(CONTAINER.data, GET_DEVICE_INFO, command.transactionId, deviceInfo()),
+                ok(command.transactionId),
+            ]
+        }
+
+    it('resets a USB transport automatically after a timeout and reopens the session', async () => {
+        const { camera, transport, operations } = cameraOn(stallOnceThenAnswer())
+        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        await camera.connect()
+        const firstSession = camera.sessionId
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        const response = await camera.send(operations.GetDeviceInfo, {})
+        expect(response.code).toBe(0x2001)
+        expect(response.data?.model).toBe('Stub')
+        // One still-image class Device Reset Request, then a fresh session before the retried command.
+        expect(transport.resets).toBe(1)
+        expect(transport.commands.map(command => command.operation)).toEqual([
+            OPEN_SESSION,
+            GET_DEVICE_INFO,
+            OPEN_SESSION,
+            GET_DEVICE_INFO,
+        ])
+        expect(transport.commands[2].parameters[0]).toBe(camera.sessionId)
+        expect(camera.sessionId).not.toBe(firstSession)
+        expect((await camera.send(operations.GetDeviceInfo, {})).code).toBe(0x2001)
+        expect(transport.resets).toBe(1)
+    })
+
+    it('keeps the session the camera still holds after the automatic reset', async () => {
+        const { camera, transport, operations } = cameraOn(
+            stallOnceThenAnswer(index => (index === 0 ? 0x2001 : 0x201e))
+        )
+        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        await camera.connect()
+        const session = camera.sessionId
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        expect((await camera.send(operations.GetDeviceInfo, {})).code).toBe(0x2001)
+        expect(camera.sessionId).toBe(session)
+        expect(transport.resets).toBe(1)
+    })
+
+    it('resets without opening a session when none was open', async () => {
+        const { camera, transport, operations } = cameraOn((command, index) =>
+            index === 0 ? 'stall' : [ok(command.transactionId)]
+        )
+        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        expect((await camera.send(operations.CloseSession, {})).code).toBe(0x2001)
+        expect(transport.resets).toBe(1)
+        expect(transport.commands.map(command => command.operation)).toEqual([GET_DEVICE_INFO, 0x1003])
+    })
+
+    it('latches PTPRecoveryRequiredError only when the automatic USB reset fails', async () => {
+        const { camera, transport, operations } = cameraOn(stallOnceThenAnswer())
+        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        await camera.connect()
+        const cause = new Error('control transfer stalled')
+        const reset = transport.classRequestReset.bind(transport)
+        transport.classRequestReset = async () => {
+            transport.resets++
+            throw cause
+        }
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toMatchObject({
+            name: 'PTPRecoveryRequiredError',
+            cause,
+        })
+        // A failed automatic reset is not retried implicitly; commands stay blocked.
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(transport.resets).toBe(1)
+        expect(transport.commands).toHaveLength(2)
+        // Disconnect/connect establishes a fresh transport and clears the latch.
+        await reset()
+        await camera.disconnect()
+        await camera.connect()
+        expect((await camera.send(operations.GetDeviceInfo, {})).code).toBe(0x2001)
+    })
+
+    it('latches when abandoned I/O does not settle after the automatic reset', async () => {
+        const { camera, transport, operations } = cameraOn(stallOnceThenAnswer())
+        camera.configureTransactions({
+            timeoutMilliseconds: 20,
+            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
+        })
+        await camera.connect()
+        const reset = transport.classRequestReset.bind(transport)
+        transport.classRequestReset = async () => {
+            transport.resets++
+        }
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toThrow(/did not settle/)
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(transport.resets).toBe(1)
+        expect(transport.commands).toHaveLength(2)
+        await reset()
+    })
+
+    it('latches when the camera refuses a new session after the automatic reset', async () => {
+        const { camera, transport, operations } = cameraOn(
+            stallOnceThenAnswer(index => (index === 0 ? 0x2001 : 0x2002))
+        )
+        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        await camera.connect()
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toThrow(/reopen the session/)
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(transport.resets).toBe(1)
+        expect(transport.commands.map(command => command.operation)).toEqual([
+            OPEN_SESSION,
+            GET_DEVICE_INFO,
+            OPEN_SESSION,
+        ])
+        expect(camera.sessionId).toBeNull()
+    })
+
+    it('keeps the latch on transports without a class reset', async () => {
         const { camera, transport, operations } = cameraOn(() => 'stall')
+        transport.type = TransportType.IP
         camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
         await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
         await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
         expect(transport.resets).toBe(0)
         expect(transport.commands).toHaveLength(1)
-        // Only this fixture cleanup explicitly cancels the abandoned read.
+        // Only this fixture cleanup cancels the abandoned read.
+        await transport.classRequestReset()
+    })
+
+    it('keeps the latch when the automatic USB reset is turned off', async () => {
+        const { camera, transport, operations } = cameraOn(() => 'stall')
+        camera.configureTransactions({
+            automaticUSBReset: false,
+            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
+        })
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(transport.resets).toBe(0)
+        expect(transport.commands).toHaveLength(1)
         await transport.classRequestReset()
     })
 
@@ -416,6 +556,7 @@ describe('local failures and vanished transports', () => {
         for (const deviceBusyRetries of [-1, 0.5, 33])
             expect(() => camera.configureTransactions({ deviceBusyRetries })).toThrow()
         expect(() => camera.configureTransactions({ minimumThroughputBytesPerSecond: 0 })).toThrow()
+        expect(() => camera.configureTransactions({ automaticUSBReset: 'yes' as unknown as boolean })).toThrow()
         expect(transport.sent).toHaveLength(0)
     })
 
