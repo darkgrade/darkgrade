@@ -11,6 +11,13 @@ export interface TransactionPolicy {
     deviceBusyRetries: number
     /** First retry delay; each further retry doubles it. */
     deviceBusyBackoffMilliseconds: number
+    /**
+     * Explicit caller-owned recovery. Absent by default: core never resets a physical camera.
+     * The callback must honor recording/lease guards and settle outstanding transport I/O before
+     * resolving. It must not call this camera's queued methods. Failed or pending recovery blocks
+     * further commands; use an explicit disconnect/connect to establish a new transport instead.
+     */
+    recoverTransport?: (failure: PTPErrorContext) => Promise<void>
 }
 
 export const DEFAULT_TRANSACTION_POLICY: TransactionPolicy = {
@@ -60,11 +67,44 @@ function isStale(transactionId: number, expected: number): boolean {
  */
 export class TransactionChannel {
     policy: TransactionPolicy = { ...DEFAULT_TRANSACTION_POLICY }
+    private readonly pendingOperations = new Set<Promise<unknown>>()
 
     constructor(
         private readonly transport: TransportInterface,
         private readonly onDiscard: (discarded: DiscardedContainer) => void = () => undefined
     ) {}
+
+    get hasPendingIO(): boolean {
+        return this.pendingOperations.size > 0
+    }
+
+    /** The caller has explicitly replaced the closed transport connection; old replies are isolated. */
+    newConnection(): void {
+        this.pendingOperations.clear()
+    }
+
+    configure(update: Partial<TransactionPolicy>): void {
+        const policy = { ...this.policy, ...update }
+        if (
+            !Number.isSafeInteger(policy.timeoutMilliseconds) ||
+            policy.timeoutMilliseconds < 1 ||
+            policy.timeoutMilliseconds > 0x7fffffff
+        )
+            throw new Error('Transaction timeout must be a positive bounded integer')
+        if (!Number.isFinite(policy.minimumThroughputBytesPerSecond) || policy.minimumThroughputBytesPerSecond <= 0)
+            throw new Error('Transaction minimum throughput must be positive and finite')
+        if (
+            !Number.isSafeInteger(policy.deviceBusyRetries) ||
+            policy.deviceBusyRetries < 0 ||
+            policy.deviceBusyRetries > 32
+        )
+            throw new Error('DeviceBusy retries must be an integer from 0 to 32')
+        if (!Number.isSafeInteger(policy.deviceBusyBackoffMilliseconds) || policy.deviceBusyBackoffMilliseconds < 0)
+            throw new Error('DeviceBusy backoff must be a nonnegative integer')
+        if (policy.recoverTransport !== undefined && typeof policy.recoverTransport !== 'function')
+            throw new Error('Transport recovery must be an explicitly supplied callback')
+        this.policy = policy
+    }
 
     async send(container: Uint8Array, sessionId: number, context: PTPErrorContext): Promise<void> {
         const timeout = this.timeoutFor(container.length)
@@ -78,11 +118,15 @@ export class TransactionChannel {
 
     async receive(sessionId: number, expected: ExpectedContainer): Promise<Container> {
         const context = { operation: expected.operation, transactionId: expected.transactionId }
+        const timeout = this.timeoutFor(expected.maxLength)
+        const deadline = Date.now() + timeout
         for (let discarded = 0; discarded <= MAXIMUM_DISCARDED_CONTAINERS; discarded++) {
+            const remaining = deadline - Date.now()
+            if (remaining <= 0) throw new PTPTimeoutError(expected.phase, timeout, context)
             const raw = await this.guard(
                 this.transport.receive(expected.maxLength, sessionId, expected.transactionId),
                 expected.phase,
-                this.timeoutFor(expected.maxLength),
+                remaining,
                 context
             )
             const container = this.parse(raw, context)
@@ -98,8 +142,10 @@ export class TransactionChannel {
     }
 
     timeoutFor(bytes: number): number {
+        if (!Number.isSafeInteger(bytes) || bytes < 0)
+            throw new Error('Transaction buffer length must be a nonnegative integer')
         const transferMilliseconds = (bytes / this.policy.minimumThroughputBytesPerSecond) * 1000
-        return Math.ceil(this.policy.timeoutMilliseconds + transferMilliseconds)
+        return Math.min(0x7fffffff, Math.ceil(this.policy.timeoutMilliseconds + transferMilliseconds))
     }
 
     private async guard<T>(
@@ -108,6 +154,11 @@ export class TransactionChannel {
         timeoutMilliseconds: number,
         context: PTPErrorContext
     ): Promise<T> {
+        this.pendingOperations.add(operation)
+        void operation.then(
+            () => this.pendingOperations.delete(operation),
+            () => this.pendingOperations.delete(operation)
+        )
         let timer: ReturnType<typeof setTimeout> | undefined
         const timeout = new Promise<never>((_, reject) => {
             timer = setTimeout(
@@ -191,6 +242,21 @@ export class TransactionChannel {
                 context
             )
         }
+        if (container.type === CONTAINER_TYPE.data && container.code !== expected.operationCode)
+            throw new PTPProtocolError(
+                'operation-mismatch',
+                `data belongs to opcode 0x${container.code.toString(16)}, expected 0x${expected.operationCode.toString(16)}`,
+                context
+            )
+        if (
+            container.type === CONTAINER_TYPE.response &&
+            (container.payload.length % 4 || container.payload.length > 20)
+        )
+            throw new PTPProtocolError(
+                'unexpected-container-type',
+                'response has invalid UINT32 parameter framing',
+                context
+            )
         return container
     }
 }

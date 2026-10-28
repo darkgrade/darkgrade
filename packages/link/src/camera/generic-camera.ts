@@ -1,7 +1,14 @@
 import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@camera/transaction-channel'
 import { Logger } from '@core/logger'
-import { PTPDecodeError, PTPDisconnectedError, PTPResponseError, PTPTimeoutError } from '@core/ptp-errors'
-import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
+import {
+    PTPDecodeError,
+    PTPDisconnectedError,
+    PTPProtocolError,
+    PTPRecoveryRequiredError,
+    PTPResponseError,
+    PTPTimeoutError,
+    type PTPErrorContext,
+} from '@core/ptp-errors'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
@@ -34,6 +41,12 @@ export interface StandardPropertyState {
     stepSize?: number | bigint | string
 }
 
+interface RecoveryAttempt {
+    task: Promise<void>
+    status: 'pending' | 'succeeded' | 'failed'
+    failure?: unknown
+}
+
 export class GenericCamera {
     protected emitter = new EventEmitter()
     public vendorId: number | null = null
@@ -41,6 +54,8 @@ export class GenericCamera {
     private transactionId = 0
     private transactionQueue: Promise<void> = Promise.resolve()
     private needsResynchronization = false
+    private lastFailure?: PTPErrorContext
+    private recovery?: RecoveryAttempt
     private readonly channel: TransactionChannel
     public transport: TransportInterface
     protected logger: Logger
@@ -69,20 +84,30 @@ export class GenericCamera {
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
+        if (this.recovery?.status === 'pending')
+            throw new PTPRecoveryRequiredError('Transport recovery is still running', this.lastFailure)
         if (!this.transport.isConnected()) {
             await this.transport.connect(device)
-        }
+            this.channel.newConnection()
+            this.needsResynchronization = false
+            this.lastFailure = undefined
+            this.recovery = undefined
+        } else await this.resynchronizeIfNeeded()
 
         this.sessionId = randomSessionId()
-        let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
-
-        if (openResult.code === SessionAlreadyOpen.code) {
-            await this.send(this.registry.operations.CloseSession, {})
-            openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
-        }
-        if (openResult.code !== OK.code) {
+        try {
+            let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            if (openResult.code === SessionAlreadyOpen.code) {
+                const closed = await this.send(this.registry.operations.CloseSession, {})
+                if (closed.code !== OK.code)
+                    throw new PTPResponseError(closed.code, `CloseSession returned 0x${closed.code.toString(16)}`)
+                openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            }
+            if (openResult.code !== OK.code)
+                throw new PTPResponseError(openResult.code, `OpenSession returned 0x${openResult.code.toString(16)}`)
+        } catch (error) {
             this.sessionId = null
-            throw new PTPResponseError(openResult.code, undefined, { operation: 'OpenSession' })
+            throw error
         }
     }
 
@@ -91,23 +116,32 @@ export class GenericCamera {
      * vanished: a transport that is already gone only has local state left to clear.
      */
     async disconnect(): Promise<void> {
+        if (this.recovery?.status === 'pending')
+            throw new PTPRecoveryRequiredError(
+                'Transport recovery is still running; disconnect must wait',
+                this.lastFailure
+            )
         this.emitter.removeAllListeners()
-
         if (!this.transport.isConnected()) {
             this.sessionId = null
             return
         }
         try {
-            if (this.sessionId !== null) await this.send(this.registry.operations.CloseSession, {})
+            if (this.sessionId !== null && !this.needsResynchronization) {
+                const response = await this.send(this.registry.operations.CloseSession, {})
+                if (response.code !== OK.code)
+                    throw new PTPResponseError(response.code, `CloseSession returned 0x${response.code.toString(16)}`)
+            }
         } finally {
             this.sessionId = null
             await this.transport.disconnect()
         }
     }
 
-    /** Tunes timeouts and DeviceBusy retries for every later transaction. */
+    /** Tunes timeouts, retry bounds and explicitly authorized recovery for later transactions. */
     configureTransactions(policy: Partial<TransactionPolicy>): void {
-        this.channel.policy = { ...this.channel.policy, ...policy }
+        this.channel.configure(policy)
+        if ('recoverTransport' in policy && this.recovery?.status === 'failed') this.recovery = undefined
     }
 
     /**
@@ -153,6 +187,8 @@ export class GenericCamera {
             throw new PTPDisconnectedError('the camera is not connected', { operation: operation.name })
         }
         if (operation.dataDirection === 'in' && !data) throw new Error('Data required for dataDirection=in')
+        if (maxDataLength !== undefined && (!Number.isSafeInteger(maxDataLength) || maxDataLength < 12))
+            throw new Error('Data buffer length must include the 12-byte PTP header')
         const paramsRecord: Record<string, number | bigint | string> = params
         const encodedParams = this.encodeParameters(operation, paramsRecord)
         await this.resynchronizeIfNeeded()
@@ -164,7 +200,9 @@ export class GenericCamera {
             if (response.code !== DeviceBusy.code || !retriesDeviceBusy || attempt >= deviceBusyRetries) {
                 return response
             }
-            await this.waitMs(deviceBusyBackoffMilliseconds * 2 ** attempt)
+            await this.waitMs(
+                Math.min(this.channel.policy.timeoutMilliseconds, deviceBusyBackoffMilliseconds * 2 ** attempt)
+            )
         }
     }
 
@@ -189,25 +227,72 @@ export class GenericCamera {
             }
 
             const codec = this.resolveCodec(paramDef.codec)
-            encodedParams.push(codec.encode(value))
+            const encoded = codec.encode(value)
+            if (encoded.length > 4) throw new Error(`Parameter ${paramDef.name} exceeds a UINT32 slot`)
+            encodedParams.push(encoded)
         }
+        if (encodedParams.length > 5) throw new Error('PTP commands accept at most five parameters')
         return encodedParams
     }
 
     /**
-     * After a timeout the camera may still be finishing the abandoned transaction. Before the next
-     * one, ask the transport to return the device to idle (the USB still-image class Device Reset
-     * Request; libgphoto2 sends the same request when reopening a session after an I/O error or
-     * timeout). Late replies that still arrive are discarded by transaction ID.
+     * An abandoned or malformed transfer is unsafe to reuse. Core performs no automatic USB reset.
+     * Only an explicit caller-owned recovery callback may clear it, after all old I/O settles.
+     * Timing out a recovery wait does not cancel the callback or permit another command to race it.
      */
     private async resynchronizeIfNeeded(): Promise<void> {
         if (!this.needsResynchronization) return
-        this.needsResynchronization = false
+        const recover = this.channel.policy.recoverTransport
+        if (!this.recovery) {
+            if (!recover)
+                throw new PTPRecoveryRequiredError(
+                    'Transport recovery is required; no recovery callback is configured',
+                    this.lastFailure
+                )
+            this.sessionId = null
+            const task = Promise.resolve().then(() => recover(this.lastFailure ?? {}))
+            const attempt: RecoveryAttempt = { task, status: 'pending' }
+            this.recovery = attempt
+            void task.then(
+                () => {
+                    attempt.status = 'succeeded'
+                },
+                error => {
+                    attempt.status = 'failed'
+                    attempt.failure = error
+                }
+            )
+        }
+        const attempt = this.recovery
         let timer: ReturnType<typeof setTimeout> | undefined
-        await Promise.race([
-            this.transport.classRequestReset().catch(() => undefined),
-            new Promise(resolve => (timer = setTimeout(resolve, this.channel.policy.timeoutMilliseconds))),
-        ]).finally(() => clearTimeout(timer))
+        try {
+            await Promise.race([
+                attempt.task.catch(() => undefined),
+                new Promise<void>(resolve => {
+                    timer = setTimeout(resolve, this.channel.policy.timeoutMilliseconds)
+                }),
+            ])
+        } finally {
+            clearTimeout(timer)
+        }
+        if (attempt.status === 'pending')
+            throw new PTPRecoveryRequiredError(
+                'Transport recovery is still running; no further command was sent',
+                this.lastFailure
+            )
+        if (attempt.status === 'failed')
+            throw new PTPRecoveryRequiredError(
+                `Transport recovery failed: ${attempt.failure instanceof Error ? attempt.failure.message : String(attempt.failure)}`,
+                { ...this.lastFailure, cause: attempt.failure }
+            )
+        if (this.channel.hasPendingIO)
+            throw new PTPRecoveryRequiredError(
+                'Recovery returned while abandoned transport I/O is still running',
+                this.lastFailure
+            )
+        this.recovery = undefined
+        this.lastFailure = undefined
+        this.needsResynchronization = false
     }
 
     private decodeWith<T>(
@@ -271,7 +356,10 @@ export class GenericCamera {
                 maxDataLength
             )
         } catch (error) {
-            if (error instanceof PTPTimeoutError) this.needsResynchronization = true
+            if (error instanceof PTPTimeoutError || error instanceof PTPProtocolError) {
+                this.needsResynchronization = true
+                this.lastFailure = { operation: operation.name, transactionId, cause: error }
+            }
             // Transport errors keep their own type; a transport that went away also ended the session.
             if (!this.transport.isConnected()) this.sessionId = null
             throw error
@@ -549,7 +637,12 @@ export class GenericCamera {
         const codec = this.resolveCodec(property.codec)
         const encodedValue = codec.encode(value)
 
-        await this.send(this.registry.operations.SetDevicePropValue, { DevicePropCode: property.code }, encodedValue)
+        const response = await this.send(
+            this.registry.operations.SetDevicePropValue,
+            { DevicePropCode: property.code },
+            encodedValue
+        )
+        if (response.code !== OK.code) throw new Error(`SetDevicePropValue returned 0x${response.code.toString(16)}`)
     }
 
     async getStandardPropertyStates(): Promise<StandardPropertyState[]> {
@@ -559,7 +652,7 @@ export class GenericCamera {
         }
         if (!deviceInfoResponse.data) throw new PTPDecodeError('GetDeviceInfo returned no device dataset')
 
-        const deviceInfo = deviceInfoResponse.data as DeviceInfo
+        const deviceInfo = deviceInfoResponse.data
         const states: StandardPropertyState[] = []
         for (const code of deviceInfo.devicePropertiesSupported) {
             const property = Object.values(this.registry.properties).find(candidate => candidate.code === code)
@@ -568,7 +661,7 @@ export class GenericCamera {
             try {
                 const response = await this.send(this.registry.operations.GetDevicePropDesc, { DevicePropCode: code })
                 if (!response.data) continue
-                states.push(this.standardPropertyState(response.data as DevicePropDesc))
+                states.push(this.standardPropertyState(response.data))
             } catch (error) {
                 this.logger.addLog({
                     type: 'console',
@@ -721,7 +814,7 @@ export class GenericCamera {
         }
     }
 
-    async captureLiveView({ includeInfo = true, includeData = true } = {}): Promise<{
+    async captureLiveView(_options: { includeInfo?: boolean; includeData?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
@@ -785,6 +878,8 @@ export class GenericCamera {
     }
 
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+        if (!Number.isSafeInteger(objectSize) || objectSize < 0)
+            throw new Error('Object size must be a nonnegative safe integer')
         // Start transfer tracking
         this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObject', objectSize)
 
@@ -805,9 +900,10 @@ export class GenericCamera {
                 bytesToRead + 12
             )
 
-            if (!chunkResponse.data) {
-                throw new Error('No data received from GetPartialObject')
-            }
+            if (chunkResponse.code !== OK.code)
+                throw new Error(`GetPartialObject returned 0x${chunkResponse.code.toString(16)}`)
+            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead)
+                throw new Error('GetPartialObject returned an empty or oversized chunk')
 
             // Update transfer progress
             this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())
@@ -933,16 +1029,24 @@ export class GenericCamera {
     }
 
     private getNextTransactionId(): number {
-        this.transactionId = (this.transactionId + 1) & 0xffffffff
+        this.transactionId = (this.transactionId + 1) >>> 0
         if (this.transactionId === 0) this.transactionId = 1
         return this.transactionId
     }
 
+    /** PTP command parameters occupy unsigned 32-bit slots even when a definition uses a narrower value codec. */
     private buildCommand(code: number, transactionId: number, params: Uint8Array[]): Uint8Array {
         const u16 = this.registry.codecs.uint16
         const u32 = this.registry.codecs.uint32
 
-        const paramBytes = params.reduce((sum, p) => sum + p.length, 0)
+        if (params.length > 5) throw new Error('PTP commands accept at most five parameters')
+        const parameterSlots = params.map(parameter => {
+            if (parameter.length > 4) throw new Error('PTP command parameters must fit a 32-bit slot')
+            const slot = new Uint8Array(4)
+            slot.set(parameter)
+            return slot
+        })
+        const paramBytes = parameterSlots.length * 4
         const length = 12 + paramBytes
 
         const parts: Uint8Array[] = [
@@ -950,7 +1054,7 @@ export class GenericCamera {
             u16.encode(1),
             u16.encode(code),
             u32.encode(transactionId),
-            ...params,
+            ...parameterSlots,
         ]
 
         const buffer = new Uint8Array(length)

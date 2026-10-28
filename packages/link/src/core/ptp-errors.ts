@@ -1,6 +1,6 @@
 /**
  * Typed failures raised by @darkgrade/link when a camera, cable or transport misbehaves. Callers can
- * branch on the class (or `kind`) instead of parsing messages, and every one carries the operation
+ * branch on the class instead of parsing messages, and every one carries the operation
  * and transaction it happened in.
  */
 
@@ -78,5 +78,13 @@ export class PTPDisconnectedError extends PTPError {
     constructor(message: string, context: PTPErrorContext = {}) {
         super(message, context)
         this.name = 'PTPDisconnectedError'
+    }
+}
+
+/** The pipe may still contain an abandoned transaction. Caller-owned recovery is required. */
+export class PTPRecoveryRequiredError extends PTPError {
+    constructor(message: string, context: PTPErrorContext = {}) {
+        super(message, context)
+        this.name = 'PTPRecoveryRequiredError'
     }
 }
