@@ -186,6 +186,9 @@ describe('SimulatedTransport', () => {
             },
         ]
         const { instance, transport } = camera(fixture({ quirks }))
+        // Observe the quirk's raw answers: switch off darkgrade's DeviceBusy retry where the library has one.
+        const tunable = instance as { configureTransactions?: (policy: { deviceBusyRetries: number }) => void }
+        tunable.configureTransactions?.({ deviceBusyRetries: 0 })
         await transport.connect()
         expect((await instance.send(genericOperationRegistry.OpenSession, { SessionID: 2 })).code).toBe(0x201d)
         expect((await instance.send(genericOperationRegistry.OpenSession, { SessionID: 1 })).code).toBe(0x2001)

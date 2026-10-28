@@ -39,6 +39,7 @@
         "compat:ingest": "bun run scripts/compat/ingest-standalone.ts",
         "compat:gaps": "bun run scripts/compat/write-gaps.ts",
         "compat:mcp": "bun run scripts/compat/mcp.ts",
+        "compat:chaos": "bun run scripts/chaos/run-chaos.ts",
         "test:ui": "vitest run tests/compat-ui"
     },
     "keywords": [
