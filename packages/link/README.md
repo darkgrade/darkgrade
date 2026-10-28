@@ -16,4 +16,4 @@ The Olympus E-PL5 hardware test exposes battery and writable date/time in MTP mo
 
 ## Simulated cameras in CI
 
-`SimulatedTransport` replays camera profiles under `camera-profiles/` so `Camera` can be tested without hardware; CI publishes a per-model support matrix. Captured profiles come from testbench evidence, documented ones from vendor documentation only. See [camera simulation](docs/camera-simulation.md) for the profile format, the ingest script and how to add a camera.
+`SimulatedTransport` replays camera profiles under `camera-profiles/` so `Camera` can be tested without hardware; CI publishes a per-model support matrix. Captured profiles come from testbench evidence, documented ones from vendor documentation only. See [camera simulation](docs/camera-simulation.md) for the profile format, the ingest script and how to add a camera. The same capabilities run nightly on the physical testbench cameras listed in `camera-lab/cameras.lab.json`; see [camera device lab](camera-lab/README.md).

@@ -1,0 +1,6 @@
+# Labels of the self-hosted testbench runners used by camera-lab.yml.
+self-hosted-runner:
+    labels:
+        - darkgrade-testbench
+        - darkgrade01
+        - darkgrade02

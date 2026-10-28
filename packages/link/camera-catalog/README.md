@@ -1,6 +1,6 @@
 # Camera catalog
 
-`camera-lines.json` lists camera manufacturers, their product lines, every known model with its USB identity, and the protocol quirks of each line. `scripts/camera-profiles/build-documented-profiles.ts` turns it into one documented profile per line, and the simulation suite uses it to roll results up by line.
+`camera-lines.json` lists camera manufacturers, their product lines, every known model with its USB identity, and the protocol quirks of each line. `scripts/camera-profiles/build-documented-profiles.ts` turns it into one documented profile per line, the simulation suite generates one documented mock per model from it at test time, and uses it to roll results up by line.
 
 It contains facts and citations only, no source code.
 

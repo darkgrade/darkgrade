@@ -12,11 +12,17 @@ jobs:
         name: Simulated camera compatibility
         runs-on: ubuntu-latest
         timeout-minutes: 15
+        permissions:
+            contents: read
+            # Workload Identity Federation for the optional GCS/BigQuery publish steps.
+            id-token: write
         defaults:
             run:
                 working-directory: packages/link
         env:
             CAMERA_SUPPORT_MATRIX: ${{ github.workspace }}/packages/link/test-results/camera-support-matrix.json
+            # Publishing needs the bucket variable and an OIDC token, which pull requests from forks do not get.
+            PUBLISH_RESULTS: ${{ vars.GCP_RESULTS_BUCKET != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         steps:
             - uses: actions/checkout@v4
 
@@ -32,8 +38,11 @@ jobs:
             - name: Typecheck
               run: ../../node_modules/.bin/tsc --noEmit -p tsconfig.json
 
+            - name: Validate lab camera registry
+              run: bun run lab:registry
+
             # Hardware tests (tests/01_usb.test.ts and friends) need cameras on a testbench; only
-            # the simulation suite runs here.
+            # the simulation suite runs here. Physical cameras run in the Camera device lab workflow.
             - name: Run simulated camera suite
               run: bun run test:simulation
 
@@ -47,7 +56,36 @@ jobs:
                       echo "The simulation suite did not write a support matrix." >> "$GITHUB_STEP_SUMMARY"
                   fi
 
-            # TODO: publish the matrix to GCS once the bucket and workload identity exist.
+            - name: Authenticate to Google Cloud
+              if: always() && env.PUBLISH_RESULTS == 'true'
+              uses: google-github-actions/auth@v2
+              with:
+                  workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+                  service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+            - name: Set up gcloud
+              if: always() && env.PUBLISH_RESULTS == 'true'
+              uses: google-github-actions/setup-gcloud@v2
+
+            # The device-lab workflow publishes latest/hardware.json from the default branch.
+            - name: Fetch latest hardware results
+              if: always() && env.PUBLISH_RESULTS == 'true'
+              env:
+                  BUCKET: ${{ vars.GCP_RESULTS_BUCKET }}
+              run: |
+                  gcloud storage cp "gs://$BUCKET/latest/hardware.json" test-results/camera-lab-matrix.json \
+                      || echo "No hardware results published yet."
+
+            - name: Merge compatibility matrix
+              if: always()
+              run: |
+                  if [ -f test-results/camera-support-matrix.json ]; then
+                      bun run compat:merge
+                      mkdir -p gcs
+                      cp test-results/camera-support-matrix.json gcs/simulation.json
+                      cp test-results/camera-compatibility.json gcs/compatibility.json
+                  fi
+
             - name: Upload support matrix
               if: always()
               uses: actions/upload-artifact@v4
@@ -56,4 +94,24 @@ jobs:
                   path: |
                       packages/link/test-results/camera-support-matrix.json
                       packages/link/test-results/camera-support-matrix.md
+                      packages/link/test-results/camera-compatibility.json
+                      packages/link/test-results/camera-compatibility.md
                   if-no-files-found: warn
+
+            - name: Publish to gs://${{ vars.GCP_RESULTS_BUCKET }}/runs/${{ github.sha }}/
+              if: always() && env.PUBLISH_RESULTS == 'true' && hashFiles('packages/link/gcs/simulation.json') != ''
+              uses: google-github-actions/upload-cloud-storage@v2
+              with:
+                  path: packages/link/gcs
+                  destination: ${{ vars.GCP_RESULTS_BUCKET }}/runs/${{ github.sha }}
+                  parent: false
+
+            - name: Load into BigQuery
+              if: always() && env.PUBLISH_RESULTS == 'true' && vars.GCP_BQ_DATASET != '' && hashFiles('packages/link/gcs/simulation.json') != ''
+              env:
+                  BQ_DATASET: ${{ vars.GCP_BQ_DATASET }}
+              run: |
+                  bun run compat:records -- --input test-results/camera-support-matrix.json --tier simulation \
+                      --revision "$GITHUB_SHA" --output test-results/simulation.ndjson
+                  bq load --source_format=NEWLINE_DELIMITED_JSON "$BQ_DATASET.camera_capability_results" \
+                      test-results/simulation.ndjson camera-lab/bigquery-schema.json

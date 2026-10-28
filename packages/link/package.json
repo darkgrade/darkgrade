@@ -26,7 +26,13 @@
         "profiles:ingest": "bun run scripts/camera-profiles/ingest-test-bench.ts",
         "profiles:documented": "bun run scripts/camera-profiles/build-documented-profiles.ts",
         "test:simulation": "vitest run tests/camera-simulation",
-        "simulation:matrix": "bun run scripts/camera-profiles/render-support-matrix.ts"
+        "simulation:matrix": "bun run scripts/camera-profiles/render-support-matrix.ts",
+        "lab:registry": "bun run scripts/camera-lab/lab-registry.ts",
+        "lab:hardware": "bun run scripts/camera-lab/run-hardware-suite.ts",
+        "lab:results": "bun run scripts/camera-lab/combine-lab-results.ts",
+        "compat:merge": "bun run scripts/camera-profiles/merge-compatibility.ts",
+        "compat:readme": "bun run scripts/camera-profiles/update-readme-compatibility.ts",
+        "compat:records": "bun run scripts/camera-profiles/export-capability-records.ts"
     },
     "keywords": [
         "ptp",

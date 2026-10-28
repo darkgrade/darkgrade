@@ -1,0 +1,236 @@
+{
+    "schemaVersion": 1,
+    "about": "Physical cameras on the darkgrade testbench, for the device-lab CI tier. Every value is taken from the cited darkgrade/test-bench documents; anything they do not state is null. Validate with `bun run lab:registry`; the lab workflow builds its matrix from the enabled entries.",
+    "hosts": [
+        {
+            "id": "darkgrade01",
+            "runnerLabel": "darkgrade01",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-bench-integration.md",
+                    "excerpt": "| Sony α6700, darkgrade01 |"
+                }
+            ]
+        },
+        {
+            "id": "darkgrade02",
+            "runnerLabel": "darkgrade02",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-bench-integration.md",
+                    "excerpt": "| Canon R6 III, darkgrade02 |"
+                }
+            ]
+        }
+    ],
+    "cameras": [
+        {
+            "id": "sony-a6700",
+            "enabled": true,
+            "manufacturer": "Sony",
+            "line": "Alpha APS-C E-mount",
+            "model": "ILCE-6700 (α6700)",
+            "firmware": null,
+            "connection": "usb",
+            "otherConnections": ["sony-remote"],
+            "usb": { "vendorId": "0x054c", "productId": "0x0e78", "alternateProductIds": ["0x096f"], "serial": null },
+            "host": "darkgrade01",
+            "benchLabel": "sony-a6700",
+            "profile": "sony/alpha-aps-c-e-mount/sony-ilce-6700.json",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "| Sony α6700 | `054c:0e78` in Remote Shoot; `054c:096f` before selection"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "authenticated Wi-Fi controls on the current A13"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-bench-integration.md",
+                    "excerpt": "| Sony α6700, darkgrade01 |"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/evidence/video-reliability-2026-10-21.md",
+                    "excerpt": "| Sony α6700 (`sony-a6700`) |"
+                }
+            ]
+        },
+        {
+            "id": "canon-eos-80d",
+            "enabled": true,
+            "manufacturer": "Canon",
+            "line": "EOS DSLR (EOS-protocol era)",
+            "model": "EOS 80D",
+            "firmware": null,
+            "connection": "usb",
+            "otherConnections": [],
+            "usb": { "vendorId": "0x04a9", "productId": "0x3294", "alternateProductIds": [], "serial": null },
+            "host": "darkgrade01",
+            "benchLabel": "canon-r7",
+            "profile": "canon/eos-dslr-eos-protocol-era/canon-eos-80d.json",
+            "note": "The bench label canon-r7 is a legacy slot name; the installed body is an EOS 80D.",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "| Canon EOS 80D | `04a9:3294`"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-bench-integration.md",
+                    "excerpt": "| Canon EOS 80D, darkgrade01 (configured `canon-r7`) |"
+                }
+            ]
+        },
+        {
+            "id": "canon-r6-iii",
+            "enabled": true,
+            "manufacturer": "Canon",
+            "line": "EOS R",
+            "model": "EOS R6 Mark III",
+            "firmware": "1.0.1",
+            "connection": "usb",
+            "otherConnections": [],
+            "usb": { "vendorId": "0x04a9", "productId": "0x3323", "alternateProductIds": [], "serial": null },
+            "host": "darkgrade02",
+            "benchLabel": "canon-r6-iii",
+            "profile": "canon/eos-r/canon-eos-r6-mark-iii.json",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "| Canon EOS R6 Mark III | `04a9:3323` | Firmware 1.0.1"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-bench-integration.md",
+                    "excerpt": "| Canon R6 III, darkgrade02 |"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/evidence/video-reliability-2026-10-21.md",
+                    "excerpt": "| Canon EOS R6 III (`canon-r6-iii`) |"
+                }
+            ]
+        },
+        {
+            "id": "sony-fx2",
+            "enabled": true,
+            "manufacturer": "Sony",
+            "line": "Cinema Line FX / ILME",
+            "model": "ILME-FX2",
+            "firmware": null,
+            "connection": "usb",
+            "otherConnections": ["sony-remote"],
+            "usb": { "vendorId": "0x054c", "productId": "0x0f4a", "alternateProductIds": [], "serial": null },
+            "host": "darkgrade02",
+            "benchLabel": "sony-fx2",
+            "profile": "sony/cinema-line-fx-ilme/sony-ilme-fx2.json",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/rsh-a13-debugging.md",
+                    "excerpt": "fresh PTP GetDeviceInfo for `054c:0f4a / ILME-FX2`"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "Bluetooth-assisted Wi-Fi SDK controls and live preview verified"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-bench-integration.md",
+                    "excerpt": "| Sony FX2, darkgrade02 |"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/evidence/video-reliability-2026-10-21.md",
+                    "excerpt": "| Sony FX2 (`sony-fx2`) |"
+                }
+            ]
+        },
+        {
+            "id": "nikon-z6-iii",
+            "enabled": true,
+            "manufacturer": "Nikon",
+            "line": "Z",
+            "model": "Z6 III",
+            "firmware": "V2.00",
+            "connection": "usb",
+            "otherConnections": [],
+            "usb": { "vendorId": "0x04b0", "productId": "0x0454", "alternateProductIds": [], "serial": null },
+            "host": "darkgrade02",
+            "benchLabel": "nikon-z6-iii",
+            "profile": "nikon/z/nikon-z6-iii.json",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/nikon.md",
+                    "excerpt": "Validated on darkgrade02 with firmware **V2.00**, USB `04b0:0454`."
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-bench-integration.md",
+                    "excerpt": "| Nikon Z6 III, darkgrade02 |"
+                },
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/evidence/video-reliability-2026-10-21.md",
+                    "excerpt": "| Nikon Z6 III (`nikon-z6-iii`) |"
+                }
+            ]
+        },
+        {
+            "id": "nikon-z7",
+            "enabled": false,
+            "disabledReason": "Listed only under historical model evidence, not in the current benches table.",
+            "manufacturer": "Nikon",
+            "line": "Z",
+            "model": "Z 7",
+            "firmware": null,
+            "connection": "usb",
+            "otherConnections": [],
+            "usb": { "vendorId": "0x04b0", "productId": "0x0442", "alternateProductIds": [], "serial": null },
+            "host": null,
+            "benchLabel": null,
+            "profile": "nikon/z/nikon-z7.json",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "| Nikon Z 7 | `04b0:0442`"
+                }
+            ]
+        },
+        {
+            "id": "olympus-e-pl5",
+            "enabled": false,
+            "disabledReason": "Listed only under historical model evidence, not in the current benches table.",
+            "manufacturer": "OM System / Olympus",
+            "line": "PEN / compacts / TG",
+            "model": "E-PL5",
+            "firmware": null,
+            "connection": "usb",
+            "otherConnections": [],
+            "usb": { "vendorId": "0x07b4", "productId": "0x012f", "alternateProductIds": [], "serial": null },
+            "host": null,
+            "benchLabel": null,
+            "profile": "om-system-olympus/pen-compacts-tg/olympus-e-pl5.json",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "| Olympus E-PL5 | `07b4:012f`"
+                }
+            ]
+        },
+        {
+            "id": "canon-eos-r6",
+            "enabled": false,
+            "disabledReason": "Former body, listed only under historical model evidence.",
+            "manufacturer": "Canon",
+            "line": "EOS R",
+            "model": "EOS R6",
+            "firmware": null,
+            "connection": "usb",
+            "otherConnections": [],
+            "usb": { "vendorId": "0x04a9", "productId": "0x32f5", "alternateProductIds": [], "serial": null },
+            "host": null,
+            "benchLabel": null,
+            "profile": "canon/eos-r/canon-eos-r6.json",
+            "sources": [
+                {
+                    "location": "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
+                    "excerpt": "The former body reported `04a9:32f5` / EOS R6 through USB/PTP"
+                }
+            ]
+        }
+    ]
+}

@@ -3,6 +3,7 @@ import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { PropertyDefinition } from '@ptp/types/property'
 import type { CapabilityResult } from '@scripts/camera-profiles/support-matrix'
+import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import {
     formatCode,
     parseBytes,
@@ -14,7 +15,7 @@ import { SimulatedDisconnectError, SimulatedTransport } from '@transport/simulat
 
 const OK = 0x2001
 const CAMERA_REPORTS_UNSUPPORTED = new Set([0x2005, 0x200a])
-const CAPABILITY_TIMEOUT_MILLISECONDS = 5_000
+const SIMULATED_TIMEOUT_MILLISECONDS = 5_000
 
 /** The capability cannot be exercised because the profile lacks the required captured data. */
 class NoProfileData extends Error {}
@@ -23,10 +24,24 @@ class NotOffered extends Error {}
 /** darkgrade waited for camera output the profile never produces. */
 class TimedOut extends Error {}
 
+/** What the capability classifier reads from a transport: response codes and requests the profile could not answer. */
+export interface ObservedTransport {
+    readonly missingData: readonly { message: string }[]
+    readonly responseCodes: readonly number[]
+}
+
+/**
+ * A camera the capabilities run against: a SimulatedTransport answering from `profile`, or a physical
+ * camera (tier "hardware") whose captured `profile` supplies the expected values.
+ */
 export interface SimulatedCamera {
     profile: CameraProfile
     camera: Camera
-    transport: SimulatedTransport
+    transport: ObservedTransport
+    tier: 'simulated' | 'hardware'
+    /** Passed to Camera.connect(); selects the physical camera on the hardware tier. */
+    device?: DeviceDescriptor
+    timeoutMilliseconds: number
 }
 
 export function simulateCamera(profile: CameraProfile): SimulatedCamera {
@@ -36,7 +51,12 @@ export function simulateCamera(profile: CameraProfile): SimulatedCamera {
         vendorId: profile.usb ? parseCode(profile.usb.vendorId) : undefined,
         logger: { renderInTerminal: false, captureConsole: false, expanded: false },
     })
-    return { profile, camera, transport }
+    return { profile, camera, transport, tier: 'simulated', timeoutMilliseconds: SIMULATED_TIMEOUT_MILLISECONDS }
+}
+
+/** Replaying captured traffic can change settings or card contents, so the hardware tier never does it. */
+function refuseReplayOnHardware(simulated: SimulatedCamera): void {
+    if (simulated.tier === 'hardware') throw new NoProfileData('captured traffic is not replayed on hardware')
 }
 
 function registryOf(simulated: SimulatedCamera) {
@@ -54,7 +74,7 @@ function findOperation(simulated: SimulatedCamera, code: number): OperationDefin
 }
 
 async function connectSession(simulated: SimulatedCamera): Promise<string> {
-    await simulated.camera.connect()
+    await simulated.camera.connect(simulated.device)
     return 'Camera.connect() completed'
 }
 
@@ -118,11 +138,16 @@ async function setProperty(simulated: SimulatedCamera): Promise<string> {
     const target = alternativeValue(descriptor)
     if (target === undefined) throw new NoProfileData(`${definition.name} descriptor lists no alternative value`)
 
+    const original = descriptor.currentValueDecoded
     await simulated.camera.set(definition, target as never)
     const readBack = await simulated.camera.get(definition)
     if (readBack !== target)
         throw new Error(`${definition.name} read back ${String(readBack)} after setting ${String(target)}`)
-    return `${definition.name} ${String(descriptor.currentValueDecoded)} -> ${String(target)}`
+    await simulated.camera.set(definition, original as never)
+    const restored = await simulated.camera.get(definition)
+    if (restored !== original)
+        throw new Error(`${definition.name} read back ${String(restored)} after restoring ${String(original)}`)
+    return `${definition.name} ${String(original)} -> ${String(target)} -> ${String(restored)}`
 }
 
 async function capture(simulated: SimulatedCamera): Promise<string> {
@@ -137,6 +162,7 @@ async function liveView(simulated: SimulatedCamera): Promise<string> {
 }
 
 async function events(simulated: SimulatedCamera): Promise<string> {
+    refuseReplayOnHardware(simulated)
     const recorded = simulated.profile.events[0]
     if (!recorded) throw new NoProfileData('no captured events')
     const definition = Object.values(registryOf(simulated).events).find(
@@ -222,6 +248,7 @@ async function vendorOperationDefinitions(simulated: SimulatedCamera): Promise<s
 }
 
 async function recordedExchanges(simulated: SimulatedCamera): Promise<string> {
+    refuseReplayOnHardware(simulated)
     if (simulated.profile.exchanges.length === 0) throw new NoProfileData('no captured exchanges')
     const outcomes = new Map<string, string[]>()
     for (const exchange of simulated.profile.exchanges) {
@@ -285,16 +312,12 @@ export async function evaluateCapabilities(simulated: SimulatedCamera): Promise<
     return results
 }
 
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
-    return Promise.race([
-        promise,
-        new Promise<T>((_, reject) =>
-            setTimeout(
-                () => reject(new TimedOut(`timed out after ${CAPABILITY_TIMEOUT_MILLISECONDS} ms`)),
-                CAPABILITY_TIMEOUT_MILLISECONDS
-            )
-        ),
-    ])
+function withTimeout<T>(promise: Promise<T>, timeoutMilliseconds: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new TimedOut(`timed out after ${timeoutMilliseconds} ms`)), timeoutMilliseconds)
+    })
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
 /** Runs one capability and classifies the outcome. */
@@ -306,7 +329,7 @@ async function evaluateCapability(
     const missingBefore = transport.missingData.length
     const responsesBefore = transport.responseCodes.length
     try {
-        return { status: 'pass', detail: await withTimeout(run(simulated)) }
+        return { status: 'pass', detail: await withTimeout(run(simulated), simulated.timeoutMilliseconds) }
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         if (error instanceof NoProfileData) return { status: 'no-data', detail: message }

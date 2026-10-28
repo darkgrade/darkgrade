@@ -1,0 +1,255 @@
+name: Camera device lab
+
+# Runs the camera capability suite against the physical cameras listed in
+# packages/link/camera-lab/cameras.lab.json, on self-hosted runners on the testbench hosts.
+# Nothing runs until the repository variable CAMERA_LAB_ENABLED is "true", so runs never sit
+# queued waiting for a runner that is not registered. Setup: packages/link/camera-lab/README.md.
+
+on:
+    workflow_dispatch:
+        inputs:
+            cameras:
+                description: Comma-separated cameras.lab.json ids (empty runs every enabled camera)
+                required: false
+                default: ''
+    schedule:
+        # Nightly, 03:17 US Eastern (07:17 UTC), outside bench working hours.
+        - cron: '17 7 * * *'
+    push:
+        # The repository's default branch; keep in sync with DEFAULT_BRANCH below.
+        branches: [feat/sony-camera-buttons-osd]
+
+permissions:
+    contents: read
+
+env:
+    DEFAULT_BRANCH: feat/sony-camera-buttons-osd
+
+# One lab run at a time: a second run would compete for the same cameras.
+concurrency:
+    group: camera-lab
+    cancel-in-progress: false
+
+jobs:
+    plan:
+        name: Plan lab matrix
+        if: vars.CAMERA_LAB_ENABLED == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        defaults:
+            run:
+                working-directory: packages/link
+        outputs:
+            matrix: ${{ steps.registry.outputs.matrix }}
+            count: ${{ steps.registry.outputs.count }}
+            hosts: ${{ steps.registry.outputs.hosts }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+
+            - name: Install dependencies
+              working-directory: .
+              run: bun install --frozen-lockfile --ignore-scripts
+
+            - name: Build matrix from cameras.lab.json
+              id: registry
+              env:
+                  ONLY_CAMERAS: ${{ inputs.cameras }}
+              run: bun run lab:registry -- --matrix --github-output --only "$ONLY_CAMERAS"
+
+    lab:
+        name: ${{ matrix.camera }} on ${{ matrix.host }}
+        needs: plan
+        if: needs.plan.outputs.count != '0'
+        runs-on: [self-hosted, darkgrade-testbench, '${{ matrix.runner }}']
+        timeout-minutes: 30
+        strategy:
+            fail-fast: false
+            # Each host registers one runner, which runs one job at a time, so cameras sharing a
+            # host's USB hub never run concurrently. This only allows the hosts to run in parallel.
+            max-parallel: ${{ fromJSON(needs.plan.outputs.hosts) }}
+            matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+        defaults:
+            run:
+                working-directory: packages/link
+        env:
+            CAMERA_ID: ${{ matrix.camera }}
+            CAMERA_USB: ${{ matrix.usb }}
+            BENCH_LABEL: ${{ matrix.benchLabel }}
+            # The darkgrade/test-bench checkout on the host (bench CLI for recovery and usbmon capture).
+            DARKGRADE_TESTBENCH_DIR: ${{ vars.DARKGRADE_TESTBENCH_DIR }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+
+            - name: Install dependencies
+              working-directory: .
+              run: bun install --frozen-lockfile --ignore-scripts
+
+            - name: Locate bench CLI
+              run: |
+                  bench_dir="${DARKGRADE_TESTBENCH_DIR:-$HOME/darkgrade-testbench}"
+                  if [ -x "$bench_dir/scripts/bun.sh" ] && [ -f "$bench_dir/src/cli.ts" ]; then
+                      echo "BENCH_DIR=$bench_dir" >> "$GITHUB_ENV"
+                  else
+                      echo "::warning::No darkgrade/test-bench checkout at $bench_dir; recovery and usbmon capture are skipped."
+                  fi
+
+            # A camera is healthy only when bench:probe completes PTP GetDeviceInfo (AGENTS.md).
+            - name: Probe camera, recovering once if needed
+              timeout-minutes: 8
+              run: |
+                  if timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"; then exit 0; fi
+                  if [ -z "${BENCH_DIR:-}" ]; then exit 1; fi
+                  echo "::warning::$CAMERA_ID did not answer GetDeviceInfo; running bench recover $BENCH_LABEL auto"
+                  (cd "$BENCH_DIR" && timeout 300 scripts/bun.sh run src/cli.ts recover "$BENCH_LABEL" auto)
+                  timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"
+
+            - name: Start usbmon capture
+              id: capture
+              if: env.BENCH_DIR != ''
+              continue-on-error: true
+              run: |
+                  result=$(cd "$BENCH_DIR" && timeout 60 scripts/bun.sh run src/cli.ts capture-start "$BENCH_LABEL" "camera-lab ${GITHUB_SHA::12} $CAMERA_ID")
+                  capture_id=$(printf '%s' "$result" | bun -e 'console.log(JSON.parse(await Bun.stdin.text()).id)')
+                  echo "id=$capture_id" >> "$GITHUB_OUTPUT"
+
+            - name: Run capability suite on hardware
+              timeout-minutes: 15
+              run: bun run lab:hardware -- --camera "$CAMERA_ID" --output "test-results/camera-lab/$CAMERA_ID.json"
+
+            - name: Stop usbmon capture
+              if: always() && steps.capture.outputs.id != ''
+              continue-on-error: true
+              env:
+                  CAPTURE_ID: ${{ steps.capture.outputs.id }}
+                  PROFILE_PATH: ${{ matrix.profile }}
+              run: |
+                  result=$(cd "$BENCH_DIR" && timeout 120 scripts/bun.sh run src/cli.ts capture-stop "$CAPTURE_ID")
+                  file=$(printf '%s' "$result" | bun -e 'console.log(JSON.parse(await Bun.stdin.text()).filePath ?? "")')
+                  mkdir -p test-results/camera-lab-capture
+                  if [ -f "$file" ]; then
+                      cp "$file" "test-results/camera-lab-capture/$CAMERA_ID.pcapng"
+                      profile=$(basename "$PROFILE_PATH" .json)
+                      printf 'bun run --cwd packages/link profiles:ingest -- --test-bench <test-bench checkout> --capture %s=%s.pcapng\n' \
+                          "$profile" "$CAMERA_ID" > test-results/camera-lab-capture/INGEST.txt
+                  else
+                      echo "::warning::Capture $CAPTURE_ID has no file ($file)."
+                  fi
+
+            # Leave the camera answering PTP for the next job and for the bench dashboard.
+            - name: Restore camera
+              if: always()
+              timeout-minutes: 8
+              run: |
+                  if timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"; then exit 0; fi
+                  if [ -z "${BENCH_DIR:-}" ]; then exit 1; fi
+                  (cd "$BENCH_DIR" && timeout 300 scripts/bun.sh run src/cli.ts recover "$BENCH_LABEL" auto)
+                  timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"
+
+            - name: Upload camera results
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: camera-lab-results-${{ matrix.camera }}
+                  path: packages/link/test-results/camera-lab/
+                  if-no-files-found: warn
+
+            # Refresh the captured profile by ingesting this trace; nothing is committed automatically.
+            - name: Upload PTP capture
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: camera-lab-capture-${{ matrix.camera }}
+                  path: packages/link/test-results/camera-lab-capture/
+                  if-no-files-found: ignore
+                  retention-days: 14
+
+    report:
+        name: Hardware support matrix
+        needs: [plan, lab]
+        if: always() && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            id-token: write
+        defaults:
+            run:
+                working-directory: packages/link
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+
+            - name: Install dependencies
+              working-directory: .
+              run: bun install --frozen-lockfile --ignore-scripts
+
+            - uses: actions/download-artifact@v4
+              with:
+                  pattern: camera-lab-results-*
+                  merge-multiple: true
+                  path: packages/link/test-results/camera-lab
+
+            - name: Combine and render hardware matrix
+              run: |
+                  bun run lab:results
+                  bun run simulation:matrix -- --input test-results/camera-lab-matrix.json
+                  cat test-results/camera-lab-matrix.md >> "$GITHUB_STEP_SUMMARY"
+                  mkdir -p gcs
+                  cp test-results/camera-lab-matrix.json gcs/hardware.json
+
+            - name: Upload hardware matrix
+              uses: actions/upload-artifact@v4
+              with:
+                  name: camera-lab-matrix
+                  path: |
+                      packages/link/test-results/camera-lab-matrix.json
+                      packages/link/test-results/camera-lab-matrix.md
+
+            - name: Authenticate to Google Cloud
+              if: vars.GCP_RESULTS_BUCKET != ''
+              uses: google-github-actions/auth@v2
+              with:
+                  workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+                  service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+            - name: Publish to gs://${{ vars.GCP_RESULTS_BUCKET }}/runs/${{ github.sha }}/hardware.json
+              if: vars.GCP_RESULTS_BUCKET != ''
+              uses: google-github-actions/upload-cloud-storage@v2
+              with:
+                  path: packages/link/gcs
+                  destination: ${{ vars.GCP_RESULTS_BUCKET }}/runs/${{ github.sha }}
+                  parent: false
+
+            # The simulation workflow merges the latest default-branch hardware results into its matrix.
+            - name: Publish as latest hardware results
+              if: vars.GCP_RESULTS_BUCKET != '' && github.ref_name == env.DEFAULT_BRANCH
+              uses: google-github-actions/upload-cloud-storage@v2
+              with:
+                  path: packages/link/gcs
+                  destination: ${{ vars.GCP_RESULTS_BUCKET }}/latest
+                  parent: false
+
+            - name: Set up bq
+              if: vars.GCP_RESULTS_BUCKET != '' && vars.GCP_BQ_DATASET != ''
+              uses: google-github-actions/setup-gcloud@v2
+
+            - name: Load into BigQuery
+              if: vars.GCP_RESULTS_BUCKET != '' && vars.GCP_BQ_DATASET != ''
+              env:
+                  BQ_DATASET: ${{ vars.GCP_BQ_DATASET }}
+              run: |
+                  bun run compat:records -- --input test-results/camera-lab-matrix.json --tier hardware \
+                      --revision "$GITHUB_SHA" --output test-results/hardware.ndjson
+                  bq load --source_format=NEWLINE_DELIMITED_JSON "$BQ_DATASET.camera_capability_results" \
+                      test-results/hardware.ndjson camera-lab/bigquery-schema.json
