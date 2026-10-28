@@ -31,18 +31,18 @@ function fixture(options: {
 const options = { restoreCameraMode: 'PC_CAMERA' as const }
 
 describe('scoped Nikon menu navigation', () => {
-    it('initializes preview, sends all six fixed-duration keys, exits and restores the requested mode', async () => {
+    it('initializes preview, sends all seven fixed-duration keys, exits and restores the requested mode', async () => {
         const { controller, send, commands } = fixture()
         const results = await controller.run(options, async menu => {
             const results = []
-            for (const key of ['menu', 'ok', 'left', 'right', 'up', 'down'] as const) results.push(await menu.press(key))
+            for (const key of ['menu', 'ok', 'left', 'right', 'up', 'down', 'delete'] as const) results.push(await menu.press(key))
             return results
         })
-        expect(results).toEqual(Array.from({ length: 6 }, () => ({ commandAccepted: true, visualVerificationRequired: true })))
+        expect(results).toEqual(Array.from({ length: 7 }, () => ({ commandAccepted: true, visualVerificationRequired: true })))
         expect(commands()).toEqual([
             { Command: 0xf001, Argument1: 0, Argument2: 0, Argument3: 0, Argument4: 0 },
             { Command: 0xf094, Argument1: 1, Argument2: 0, Argument3: 0, Argument4: 0 },
-            ...[0x28, 0x27, 1, 0, 2, 3].map(index => ({ Command: 0xf2ba, Argument1: index, Argument2: 50, Argument3: 0, Argument4: 0 })),
+            ...[0x28, 0x27, 1, 0, 2, 3, 0x29].map(index => ({ Command: 0xf2ba, Argument1: index, Argument2: 50, Argument3: 0, Argument4: 0 })),
             { Command: 0xf002, Argument1: 0, Argument2: 0, Argument3: 0, Argument4: 0 },
         ])
         expect(send.mock.calls.filter(([operation]) => operation.code === 0x94fd).every(([operation]) => operation.dataDirection === 'none')).toBe(true)

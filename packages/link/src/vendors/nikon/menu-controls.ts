@@ -5,12 +5,12 @@ import { baseCodecs } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 
-export type NikonMenuKey = 'menu' | 'ok' | 'left' | 'right' | 'up' | 'down'
+export type NikonMenuKey = 'menu' | 'ok' | 'left' | 'right' | 'up' | 'down' | 'delete'
 export interface NikonMenuRunOptions {
     restoreCameraMode: 'PC_CAMERA' | 'REMOTE'
 }
 
-const keyIndices: Record<NikonMenuKey, number> = { menu: 0x28, ok: 0x27, left: 1, right: 0, up: 2, down: 3 }
+const keyIndices: Record<NikonMenuKey, number> = { menu: 0x28, ok: 0x27, left: 1, right: 0, up: 2, down: 3, delete: 0x29 }
 const activeInstances = new WeakSet<object>()
 const menuOperation = {
     code: 0x94fd,
@@ -109,7 +109,7 @@ export class NikonMenuController {
         return result as Result
     }
 
-    /** Sends a fixed 50 ms press with firmware-managed release. Inspect the preview for its result. */
+    /** Sends a fixed 50 ms press with firmware-managed release. Inspect the preview for its result. Delete acts on the current camera UI selection. */
     async press(key: NikonMenuKey): Promise<{ commandAccepted: true; visualVerificationRequired: true }> {
         if (!Object.hasOwn(keyIndices, key)) throw new Error('Unsupported Nikon menu key')
         if (!this.acceptingKeys) throw new Error('Use Nikon menu keys inside an active run callback')
