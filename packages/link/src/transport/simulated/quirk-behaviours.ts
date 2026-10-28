@@ -22,8 +22,10 @@ export class SimulatedDisconnectError extends Error {
     }
 }
 
-function sameNumbers(left: number[], right: number[]): boolean {
-    return left.length === right.length && left.every((value, index) => value === right[index])
+export function sameValues(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
+    if (left.length !== right.length) return false
+    for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return false
+    return true
 }
 
 function inRange(code: number, range: OperationRange): boolean {
@@ -63,7 +65,7 @@ export class QuirkBehaviours {
         switch (behaviour.kind) {
             case 'disconnect-on-request':
                 if (parseCode(behaviour.operation) !== operation) return undefined
-                if (behaviour.parameters && !sameNumbers(behaviour.parameters.map(parseCode), request.parameters))
+                if (behaviour.parameters && !sameValues(behaviour.parameters.map(parseCode), request.parameters))
                     return undefined
                 throw new SimulatedDisconnectError(operation)
             case 'rejects-operations':

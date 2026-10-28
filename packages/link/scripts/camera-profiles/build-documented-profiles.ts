@@ -170,13 +170,9 @@ function buildProfile(manufacturer: CatalogManufacturer, line: CatalogLine, mode
             })
         }
     }
-    if (exchanges.some(exchange => exchange.operation === '0x9114' && exchange.parameters)) {
-        // EOS M bodies document a specific remote mode value; drop the generic acceptance.
-        exchanges.splice(
-            exchanges.findIndex(exchange => exchange.operation === '0x9114' && !exchange.parameters),
-            1
-        )
-    }
+    // A documented parameter value (EOS M remote mode 0x15) supersedes a generic acceptance of the same operation.
+    const specific = new Set(exchanges.filter(exchange => exchange.parameters).map(exchange => exchange.operation))
+    const documentedExchanges = exchanges.filter(exchange => exchange.parameters || !specific.has(exchange.operation))
 
     const vendorExtension = vendorExtensionId(manufacturer)
     const lineName = shortLineName(manufacturer, line)
@@ -201,7 +197,7 @@ function buildProfile(manufacturer: CatalogManufacturer, line: CatalogLine, mode
             source: 0,
         },
         properties: [],
-        exchanges,
+        exchanges: documentedExchanges,
         events: [],
         quirks,
     }

@@ -17,7 +17,12 @@ import {
     encodeUint32,
     readDescriptorLayout,
 } from '@transport/simulated/ptp-dataset-encoding'
-import { QuirkBehaviours, SimulatedDisconnectError, type SimulatedRequest } from '@transport/simulated/quirk-behaviours'
+import {
+    QuirkBehaviours,
+    sameValues,
+    SimulatedDisconnectError,
+    type SimulatedRequest,
+} from '@transport/simulated/quirk-behaviours'
 
 export { SimulatedDisconnectError }
 
@@ -64,13 +69,29 @@ interface Reply {
     data?: Uint8Array
 }
 
-function sameNumbers(left: number[], right: number[]): boolean {
-    return left.length === right.length && left.every((value, index) => value === right[index])
+/** A recorded exchange with its codes and bytes parsed once. */
+interface ParsedExchange {
+    operation: number
+    parameters?: number[]
+    dataFromHost?: Uint8Array
+    reply: Reply
 }
 
-function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-    return left.length === right.length && left.every((value, index) => value === right[index])
+function parseExchange(exchange: RecordedExchange): ParsedExchange {
+    const { response } = exchange
+    return {
+        operation: parseCode(exchange.operation),
+        parameters: exchange.parameters?.map(parseCode),
+        dataFromHost: exchange.dataFromHost !== undefined ? parseBytes(exchange.dataFromHost) : undefined,
+        reply: {
+            code: parseCode(response.code),
+            parameters: response.parameters?.map(parseCode),
+            data: response.data !== undefined ? parseBytes(response.data) : undefined,
+        },
+    }
 }
+
+const codeSet = (codes: string[] | undefined) => (codes ? new Set(codes.map(parseCode)) : undefined)
 
 /**
  * A TransportInterface that answers PTP USB containers from a CameraProfile.
@@ -92,15 +113,29 @@ export class SimulatedTransport implements TransportInterface {
     private outgoing: Uint8Array[] = []
     private eventHandlers = new Set<(event: PTPEvent) => void>()
     private propertyValues = new Map<number, Uint8Array>()
-    private exchangeUses = new Set<RecordedExchange>()
+    private exchangeUses = new Set<ParsedExchange>()
     private sessionOpen = false
     private changedProperty?: number
     private readonly properties: Map<number, ProfileProperty>
+    private readonly exchanges: ParsedExchange[]
     private readonly quirks: QuirkBehaviours
+    private readonly advertisedOperations: Set<number>
+    /** Only set when the DeviceInfo lists are the camera's complete lists. */
+    private readonly completeOperations?: Set<number>
+    private readonly completeProperties?: Set<number>
+    private readonly announcesPropertyChanges: boolean
 
     constructor(readonly profile: CameraProfile) {
+        const deviceInfo = profile.deviceInfo
         this.properties = new Map(profile.properties.map(property => [parseCode(property.code), property]))
+        this.exchanges = profile.exchanges.map(parseExchange)
         this.quirks = new QuirkBehaviours(profile.quirks.map(quirk => quirk.behaviour))
+        this.advertisedOperations = codeSet(deviceInfo?.operationsSupported) ?? new Set()
+        if (deviceInfo?.listsComplete) {
+            this.completeOperations = this.advertisedOperations
+            this.completeProperties = codeSet(deviceInfo.devicePropertiesSupported)
+        }
+        this.announcesPropertyChanges = codeSet(deviceInfo?.eventsSupported)?.has(DEVICE_PROP_CHANGED) ?? false
     }
 
     async connect(_device?: DeviceDescriptor): Promise<void> {
@@ -212,18 +247,12 @@ export class SimulatedTransport implements TransportInterface {
         if (quirkCode !== undefined) return { code: quirkCode }
 
         const exchange = this.matchExchange(request)
-        if (exchange) {
-            return {
-                code: parseCode(exchange.response.code),
-                parameters: exchange.response.parameters?.map(parseCode),
-                data: exchange.response.data !== undefined ? parseBytes(exchange.response.data) : undefined,
-            }
-        }
+        if (exchange) return exchange.reply
 
         const standardReply = this.answerFromProfile(request)
         if (standardReply) return standardReply
 
-        if (this.completeList('operationsSupported') && !this.advertises(request.operation)) {
+        if (this.completeOperations && !this.completeOperations.has(request.operation)) {
             return { code: RESPONSE.OperationNotSupported }
         }
 
@@ -232,22 +261,12 @@ export class SimulatedTransport implements TransportInterface {
         throw missing
     }
 
-    private completeList(list: 'operationsSupported' | 'devicePropertiesSupported'): string[] | undefined {
-        const deviceInfo = this.profile.deviceInfo
-        return deviceInfo?.listsComplete ? deviceInfo[list] : undefined
-    }
-
-    private advertises(operation: number): boolean {
-        return this.profile.deviceInfo?.operationsSupported?.map(parseCode).includes(operation) ?? false
-    }
-
-    private matchExchange(request: SimulatedRequest): RecordedExchange | undefined {
-        const candidates = this.profile.exchanges.filter(exchange => {
-            if (parseCode(exchange.operation) !== request.operation) return false
-            if (exchange.parameters && !sameNumbers(exchange.parameters.map(parseCode), request.parameters))
-                return false
+    private matchExchange(request: SimulatedRequest): ParsedExchange | undefined {
+        const candidates = this.exchanges.filter(exchange => {
+            if (exchange.operation !== request.operation) return false
+            if (exchange.parameters && !sameValues(exchange.parameters, request.parameters)) return false
             if (exchange.dataFromHost === undefined) return true
-            return request.data !== undefined && sameBytes(parseBytes(exchange.dataFromHost), request.data)
+            return request.data !== undefined && sameValues(exchange.dataFromHost, request.data)
         })
         const next = candidates.find(candidate => !this.exchangeUses.has(candidate)) ?? candidates.at(-1)
         if (next) this.exchangeUses.add(next)
@@ -261,10 +280,10 @@ export class SimulatedTransport implements TransportInterface {
                 return data ? { code: RESPONSE.OK, data } : undefined
             }
             case OPERATION.OpenSession:
-                if (!this.advertises(OPERATION.OpenSession)) return undefined
+                if (!this.advertisedOperations.has(OPERATION.OpenSession)) return undefined
                 return { code: this.sessionOpen ? RESPONSE.SessionAlreadyOpen : RESPONSE.OK }
             case OPERATION.CloseSession:
-                return this.advertises(OPERATION.CloseSession) ? { code: RESPONSE.OK } : undefined
+                return this.advertisedOperations.has(OPERATION.CloseSession) ? { code: RESPONSE.OK } : undefined
             case OPERATION.GetDevicePropDesc:
             case OPERATION.GetDevicePropValue:
             case OPERATION.SetDevicePropValue:
@@ -300,8 +319,9 @@ export class SimulatedTransport implements TransportInterface {
         const property = this.properties.get(code)
         const descriptor = property ? this.descriptorBytes(code, property) : undefined
         if (!descriptor) {
-            const advertised = this.completeList('devicePropertiesSupported')?.map(parseCode)
-            return advertised && !advertised.includes(code) ? { code: RESPONSE.DevicePropNotSupported } : undefined
+            return this.completeProperties && !this.completeProperties.has(code)
+                ? { code: RESPONSE.DevicePropNotSupported }
+                : undefined
         }
 
         const layout = readDescriptorLayout(descriptor)
@@ -313,7 +333,7 @@ export class SimulatedTransport implements TransportInterface {
         if (!layout.writable) return { code: RESPONSE.AccessDenied }
         const value = request.data
         if (!value) return { code: RESPONSE.InvalidDevicePropValue }
-        if (layout.enumeration && !layout.enumeration.some(allowed => sameBytes(allowed, value))) {
+        if (layout.enumeration && !layout.enumeration.some(allowed => sameValues(allowed, value))) {
             return { code: RESPONSE.InvalidDevicePropValue }
         }
         this.propertyValues.set(code, value)
@@ -351,8 +371,7 @@ export class SimulatedTransport implements TransportInterface {
                 transactionId: 0,
                 parameters: (event.parameters ?? []).map(parseCode),
             }))
-        const announcesChanges = this.profile.deviceInfo?.eventsSupported?.map(parseCode).includes(DEVICE_PROP_CHANGED)
-        if (changedProperty !== undefined && announcesChanges) {
+        if (changedProperty !== undefined && this.announcesPropertyChanges) {
             events.push({ code: DEVICE_PROP_CHANGED, transactionId: 0, parameters: [changedProperty] })
         }
         return events

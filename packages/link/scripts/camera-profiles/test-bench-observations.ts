@@ -35,7 +35,7 @@ const canonMenuLedger = '.agents/skills/camera-re/references/canon-menu-ptp-inve
 const canonPosition = '.agents/skills/camera-re/references/canon-ptp-position.md'
 const nikonWireless = 'docs/evidence/nikon-z6-iii/wireless-profile-investigation.md'
 
-const benchProbeNote =
+export const benchProbeNote =
     'darkgrade tests/bench-probe.ts sends OpenSession(SessionID 1) and stops unless it returns OK, so a reported ' +
     '"PTP GetDeviceInfo completed" result establishes this exchange.'
 
@@ -510,5 +510,3 @@ export const testBenchObservations: CameraObservations[] = [
     sonyFx2,
     olympusEPL5,
 ]
-
-export { benchProbeNote }
