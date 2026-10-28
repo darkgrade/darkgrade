@@ -16,15 +16,15 @@ describe('explicit Canon remote mode aliases', () => {
     it('retains ENABLE/DISABLE and encodes caller-selected modes without accepting arbitrary numbers', () => {
         expect(codec.encode('ENABLE')).toEqual(Uint8Array.of(1, 0, 0, 0))
         expect(codec.encode('DISABLE')).toEqual(Uint8Array.of(0, 0, 0, 0))
-        expect(codec.encode('ENABLE_MODE_5')).toEqual(Uint8Array.of(5, 0, 0, 0))
-        expect(codec.encode('ENABLE_MODE_0X15')).toEqual(Uint8Array.of(0x15, 0, 0, 0))
+        expect(codec.encode('MODE_0x05')).toEqual(Uint8Array.of(5, 0, 0, 0))
+        expect(codec.encode('MODE_0x15')).toEqual(Uint8Array.of(0x15, 0, 0, 0))
         // The runtime boundary must reject unknown numeric values even from untyped callers.
         expect(() => Reflect.apply(codec.encode.bind(codec), codec, [0x1234])).toThrow('Invalid enum value')
     })
 
     it.each([
-        ['canon/eos-r/canon-eos-r6-mark-iii.json', 'ENABLE_MODE_5', '0x5', 'captured'],
-        ['canon/eos-m/canon-eos-m-documented.json', 'ENABLE_MODE_0X15', '0x15', 'documented'],
+        ['canon/eos-r/canon-eos-r6-mark-iii.json', 'MODE_0x05', '0x5', 'captured'],
+        ['canon/eos-m/canon-eos-m-documented.json', 'MODE_0x15', '0x15', 'documented'],
     ] as const)(
         'matches the cited %s exchange through the public typed operation',
         async (file, mode, parameter, fidelity) => {

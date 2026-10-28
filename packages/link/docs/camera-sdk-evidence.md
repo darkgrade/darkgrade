@@ -12,7 +12,7 @@ An early phase 3 or a control request before initialization reports missing prof
 
 ## Explicit Canon codec values
 
-`CanonSetRemoteMode` retains `ENABLE`/`DISABLE` and adds caller-selected `ENABLE_MODE_5` and `ENABLE_MODE_0X15`. Mode 5 is anchored to the R6 III captured profile; 0x15 is anchored to the documented EOS M profile. The names expose numbers deliberately: neither selects a camera, changes session defaults, nor promises capture support for a family. Tests replay the cited exchanges and verify exact UINT32 parameter bytes. The existing Canon connection policy continues choosing its existing mode.
+`CanonSetRemoteMode` retains `ENABLE`/`DISABLE` and exposes caller-selected `MODE_0x05`, `MODE_0x11` and `MODE_0x15` (one name per wire value; an earlier duplicate `ENABLE_MODE_5`/`ENABLE_MODE_0X15` alias pair was removed so decoding is unambiguous). Mode 5 is anchored to the R6 III captured profile; 0x15 is anchored to the documented EOS M profile. The names expose numbers deliberately: neither selects a camera, changes session defaults, nor promises capture support for a family. Tests replay the cited exchanges and verify exact UINT32 parameter bytes. The existing Canon connection policy continues choosing its existing mode.
 
 ## Constraints awaiting model scenarios
 
