@@ -35,4 +35,18 @@ describe('usbmon capture extraction', () => {
         expect(extraction.events).toEqual([{ code: 0x4006, parameters: [0x5005], afterOperation: 0x1016 }])
         expect(extraction.skippedIncomplete).toBe(1)
     })
+
+    it('skips a transaction when usbmon omitted the entire data container header', () => {
+        const extraction = extractCapture(
+            pcapng([
+                urb('S', 0x02, container(1, 0x1001, 1)),
+                urb('C', 0x81, new Uint8Array(), { length: 551 }),
+                urb('C', 0x81, container(3, 0x2001, 1)),
+                urb('S', 0x02, container(1, 0x1003, 2)),
+                urb('C', 0x81, container(3, 0x2001, 2)),
+            ])
+        )
+        expect(extraction.transactions.map(transaction => transaction.operation)).toEqual([0x1003])
+        expect(extraction.skippedIncomplete).toBe(1)
+    })
 })

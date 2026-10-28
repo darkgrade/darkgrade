@@ -1,8 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { CAPABILITIES } from '@scripts/camera-profiles/camera-capabilities'
+import { ProgressLog } from '@scripts/camera-profiles/compat-progress'
 import { loadProfileIndex } from '@scripts/camera-profiles/profile-index'
-import { runStandalone } from '@scripts/camera-profiles/standalone-run'
 import type { SupportMatrix, SupportMatrixRow } from '@scripts/camera-profiles/support-matrix'
 import { CompatApi } from '@scripts/compat-ui/compat-api'
 import { httpBackend, localBackend, type CompatBackend } from '@scripts/compat-ui/compat-backend'
@@ -10,7 +10,6 @@ import { CompatData } from '@scripts/compat-ui/compat-data'
 import { createCompatMcpServer } from '@scripts/compat-ui/compat-mcp'
 import { SuiteRunner } from '@scripts/compat-ui/compat-runner'
 import { startCompatServer, type RunningServer } from '@scripts/compat-ui/compat-server'
-import { SimulatedTransport } from '@transport/simulated/simulated-transport'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -79,18 +78,29 @@ function fixture(name: string) {
     return { results, runs, readme, api }
 }
 
+/** A historical producer-format fixture, not a simulated runtime relabelled as physical validation. */
 async function hardwareRunLog(name: string): Promise<string> {
-    const { profile, path: profilePath } = index.get('olympus-e-pl5')!
-    const run = await runStandalone({
-        profile,
-        profilePath,
-        transport: new SimulatedTransport(profile),
-        connection: 'usb',
-        timeoutMilliseconds: 2_000,
-        runsDirectory: path.join(scratch, `${name}-remote-runs`),
-        resultsDirectory: path.join(scratch, `${name}-remote-results`),
+    const row = matrixRow('olympus-e-pl5', {
+        fidelity: 'hardware',
+        source: { generatedAt: '2020-01-01T00:00:00Z', revision: 'historical-fixture' },
+        results: Object.fromEntries(
+            capabilities.map(({ id }) => [
+                id,
+                { status: 'no-data', detail: 'Historical import format fixture; no physical validation' },
+            ])
+        ),
     })
-    return run.runFile!
+    const key = `hardware/usb/${row.profile}`
+    const log = ProgressLog.start({
+        source: 'hardware',
+        capabilities,
+        rows: [{ ...row, key, transport: 'usb' }],
+        directory: path.join(scratch, `${name}-remote-runs`),
+    })
+    for (const { id } of capabilities) log.capabilityFinished(key, id, row.results[id], 0)
+    log.rowFinished(row)
+    log.finish('completed')
+    return log.file!
 }
 
 async function waitFor(condition: () => boolean, timeoutMilliseconds = 5_000): Promise<void> {
@@ -158,7 +168,7 @@ describe('compatibility HTTP API', () => {
             manufacturerSlug: 'canon',
             fidelity: 'captured',
         })
-        expect(camera.json.camera.results[0].cells['set-property']).toEqual({
+        expect(camera.json.camera.results[0].cells['set-property']).toMatchObject({
             status: 'fail',
             detail: 'camera returned 0x2019',
         })

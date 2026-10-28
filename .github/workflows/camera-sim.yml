@@ -38,12 +38,15 @@ jobs:
             - name: Typecheck
               run: ../../node_modules/.bin/tsc --noEmit -p tsconfig.json
 
+            - name: Check runtime USB identity table
+              run: bun run cameras:check
+
             - name: Validate lab camera registry
               run: bun run lab:registry
 
             # Hardware tests (tests/01_usb.test.ts and friends) need cameras on a testbench; only
             # the simulation suite runs here. Physical cameras run in the Camera device lab workflow.
-            - name: Run simulated camera suite
+            - name: Run simulation and camera driver regressions
               run: bun run test:simulation
 
             # The compatibility UI against hostile result files in Chromium: no script injection, no

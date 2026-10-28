@@ -3,6 +3,7 @@ import { genericEventRegistry } from '@ptp/definitions/event-definitions'
 import { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
 import { genericPropertyRegistry } from '@ptp/definitions/property-definitions'
 import { validateCameraProfile, type CameraProfile } from '@transport/simulated/camera-profile'
+import { ChaosDisconnectError } from '@transport/simulated/chaos-faults'
 import {
     ProfileDataMissingError,
     SimulatedDisconnectError,
@@ -72,6 +73,7 @@ function fixture(overrides: Partial<CameraProfile> = {}): CameraProfile {
 function camera(profile: CameraProfile) {
     const transport = new SimulatedTransport(profile)
     const simulated = new Camera({ transport, logger: { renderInTerminal: false, captureConsole: false } })
+    simulated.getInstance().configureTransactions({ deviceBusyRetries: 0 })
     return { transport, camera: simulated, instance: simulated.getInstance() }
 }
 
@@ -315,8 +317,358 @@ describe('SimulatedTransport', () => {
         const deviceInfo = await instance.send(genericOperationRegistry.GetDeviceInfo, {})
         expect(deviceInfo.data?.operationsSupportedRaw).not.toContain(0x1016)
 
-        const removed = new Promise(resolve => simulated.on(genericEventRegistry.ObjectRemoved, resolve))
+        const removed: unknown[] = []
+        simulated.on(genericEventRegistry.ObjectRemoved, event => removed.push(event))
         await instance.send(genericOperationRegistry.DeleteObject, { ObjectHandle: 0x77 })
-        await expect(removed).resolves.toMatchObject({ ObjectHandle: 0x77 })
+        await new Promise(resolve => setTimeout(resolve, 1))
+        expect(removed).toEqual([])
+        await expect(instance.send(vendorOperation(0x9116, 'GetEvent'), {})).rejects.toBeInstanceOf(
+            ProfileDataMissingError
+        )
+    })
+})
+
+/** Independent USB container construction: does not reuse simulator dataset encoders. */
+function wireContainer(
+    type: number,
+    operation: number,
+    transactionId: number,
+    parameters: number[] = [],
+    payload?: Uint8Array
+): Uint8Array {
+    const bytes = new Uint8Array(12 + parameters.length * 4 + (payload?.length ?? 0))
+    const view = new DataView(bytes.buffer)
+    view.setUint32(0, bytes.length, true)
+    view.setUint16(4, type, true)
+    view.setUint16(6, operation, true)
+    view.setUint32(8, transactionId, true)
+    parameters.forEach((parameter, index) => view.setUint32(12 + index * 4, parameter, true))
+    if (payload) bytes.set(payload, 12 + parameters.length * 4)
+    return bytes
+}
+
+async function wireRequest(
+    transport: SimulatedTransport,
+    operation: number,
+    transactionId: number,
+    parameters: number[] = [],
+    payload?: Uint8Array
+) {
+    await transport.send(wireContainer(1, operation, transactionId, parameters), 1, transactionId)
+    if (payload) await transport.send(wireContainer(2, operation, transactionId, [], payload), 1, transactionId)
+    let bytes = await transport.receive(256 * 1024, 1, transactionId)
+    let data: Uint8Array | undefined
+    if (new DataView(bytes.buffer, bytes.byteOffset).getUint16(4, true) === 2) {
+        data = bytes.slice(12)
+        bytes = await transport.receive(512, 1, transactionId)
+    }
+    return { code: new DataView(bytes.buffer, bytes.byteOffset).getUint16(6, true), data }
+}
+
+describe('simulator protocol and state regressions', () => {
+    it('rejects out-of-range, off-step and malformed-width writes without changing readback', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                properties: [
+                    {
+                        code: '0x500f',
+                        source: 0,
+                        descriptor: {
+                            dataType: '0x0003',
+                            writable: true,
+                            factoryDefault: 0,
+                            current: 0,
+                            form: { range: { minimum: -20, maximum: 20, step: 5 } },
+                        },
+                    },
+                ],
+            })
+        )
+        await transport.connect()
+        for (const [index, bytes] of [
+            Uint8Array.of(4, 0),
+            Uint8Array.of(21, 0),
+            Uint8Array.of(0xeb, 0xff),
+            Uint8Array.of(5),
+            Uint8Array.of(5, 0, 0),
+        ].entries()) {
+            expect((await wireRequest(transport, 0x1016, index + 1, [0x500f], bytes)).code).toBe(0x201c)
+        }
+        expect((await wireRequest(transport, 0x1016, 7, [0x500f], Uint8Array.of(0xf1, 0xff))).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1015, 8, [0x500f])).data).toEqual(Uint8Array.of(0xf1, 0xff))
+    })
+
+    it('does not let wildcard captures mask rejected writes or stale recorded reads after a write', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                exchanges: [
+                    {
+                        operation: '0x1015',
+                        parameters: ['0x5005'],
+                        response: { code: '0x2001', data: '0200' },
+                        source: 0,
+                    },
+                    { operation: '0x1016', parameters: ['0x5005'], response: { code: '0x2001' }, source: 0 },
+                    {
+                        operation: '0x1016',
+                        parameters: ['0x5005'],
+                        dataFromHost: '0200',
+                        response: { code: '0x2019' },
+                        source: 0,
+                    },
+                ],
+            })
+        )
+        await transport.connect()
+        expect((await wireRequest(transport, 0x1015, 1, [0x5005])).data).toEqual(Uint8Array.of(2, 0))
+        expect((await wireRequest(transport, 0x1016, 2, [0x5005], Uint8Array.of(3, 0))).code).toBe(0x201c)
+        expect((await wireRequest(transport, 0x1016, 3, [0x5005], Uint8Array.of(4, 0))).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1015, 4, [0x5005])).data).toEqual(Uint8Array.of(4, 0))
+        expect((await wireRequest(transport, 0x1016, 5, [0x5005], Uint8Array.of(2, 0))).code).toBe(0x2019)
+        expect((await wireRequest(transport, 0x1015, 6, [0x5005])).data).toEqual(Uint8Array.of(4, 0))
+    })
+
+    it('requires payload evidence for a recorded write without a descriptor and preserves exact successful values', async () => {
+        const profile = fixture({
+            properties: [],
+            deviceInfo: undefined,
+            exchanges: [
+                { operation: '0x1016', parameters: ['0x5005'], response: { code: '0x2001' }, source: 0 },
+                {
+                    operation: '0x1016',
+                    parameters: ['0x5005'],
+                    dataFromHost: '0400',
+                    response: { code: '0x2001' },
+                    source: 0,
+                },
+            ],
+        })
+        const transport = new SimulatedTransport(profile)
+        await transport.connect()
+        await expect(wireRequest(transport, 0x1016, 1, [0x5005], Uint8Array.of(2, 0))).rejects.toBeInstanceOf(
+            ProfileDataMissingError
+        )
+        expect((await wireRequest(transport, 0x1016, 2, [0x5005], Uint8Array.of(4, 0))).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1015, 3, [0x5005])).data).toEqual(Uint8Array.of(4, 0))
+    })
+
+    it('enforces known session state despite recorded OK replies, resetting traces without resetting camera settings', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                exchanges: [
+                    { operation: '0x1002', parameters: ['0x1'], response: { code: '0x2001' }, source: 0 },
+                    { operation: '0x9001', parameters: [], response: { code: '0x2019' }, source: 0 },
+                    { operation: '0x9001', parameters: [], response: { code: '0x2001' }, source: 0 },
+                ],
+            })
+        )
+        await transport.connect()
+        expect((await wireRequest(transport, 0x1002, 1, [0])).code).toBe(0x201d)
+        expect((await wireRequest(transport, 0x1002, 2, [1])).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1002, 3, [1])).code).toBe(0x201e)
+        expect((await wireRequest(transport, 0x9001, 4)).code).toBe(0x2019)
+        expect((await wireRequest(transport, 0x9001, 5)).code).toBe(0x2001)
+        await wireRequest(transport, 0x1016, 6, [0x5005], Uint8Array.of(4, 0))
+        await wireRequest(transport, 0x1003, 7)
+        expect((await wireRequest(transport, 0x1015, 70, [0x5005])).code).toBe(0x2003)
+        expect((await wireRequest(transport, 0x1002, 8, [1])).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x9001, 9)).code).toBe(0x2019)
+        expect((await wireRequest(transport, 0x1015, 10, [0x5005])).data).toEqual(Uint8Array.of(4, 0))
+        await transport.classRequestReset()
+        expect((await wireRequest(transport, 0x1002, 11, [1])).code).toBe(0x2001)
+        await transport.disconnect()
+        await transport.connect()
+        expect((await wireRequest(transport, 0x9001, 12)).code).toBe(0x2019)
+    })
+
+    it('keeps hidden-but-implemented codes unknown instead of using advertised-list absence as rejection evidence', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                exchanges: [],
+                quirks: [
+                    {
+                        id: 'hidden',
+                        source: 0,
+                        description: 'known hidden codes',
+                        behaviour: {
+                            kind: 'hidden-from-device-info',
+                            operations: ['0x9001'],
+                            properties: ['0x5010'],
+                        },
+                    },
+                ],
+            })
+        )
+        await transport.connect()
+        await expect(wireRequest(transport, 0x9001, 1)).rejects.toBeInstanceOf(ProfileDataMissingError)
+        await expect(wireRequest(transport, 0x1015, 2, [0x5010])).rejects.toBeInstanceOf(ProfileDataMissingError)
+        expect((await wireRequest(transport, 0x9002, 3)).code).toBe(0x2005)
+        expect((await wireRequest(transport, 0x1015, 4, [0x5011])).code).toBe(0x200a)
+    })
+
+    it('does not execute quirks whose source marks them unverified', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                quirks: [
+                    {
+                        id: 'unconfirmed',
+                        source: 0,
+                        description: 'reference only',
+                        unverified: true,
+                        behaviour: { kind: 'rejects-operations', operations: ['0x100e'], response: '0x2005' },
+                    },
+                ],
+            })
+        )
+        await transport.connect()
+        expect((await wireRequest(transport, 0x100e, 1, [0, 0])).code).toBe(0x2001)
+    })
+
+    it('rejects malformed or overlapping containers while preserving the pending command', async () => {
+        const transport = new SimulatedTransport(fixture())
+        await transport.connect()
+        await expect(transport.send(Uint8Array.of(1), 1, 1)).rejects.toThrow('Truncated PTP container')
+        const wrongLength = wireContainer(1, 0x1001, 1)
+        wrongLength[0]++
+        await expect(transport.send(wrongLength, 1, 1)).rejects.toThrow('length')
+        await expect(transport.send(wireContainer(1, 0x1001, 1, [], Uint8Array.of(0)), 1, 1)).rejects.toThrow('UINT32')
+        await expect(transport.send(wireContainer(1, 0x1001, 1, [1, 2, 3, 4, 5, 6]), 1, 1)).rejects.toThrow('five')
+        await transport.send(wireContainer(1, 0x1016, 2, [0x5005]), 1, 2)
+        await expect(transport.send(wireContainer(1, 0x1001, 3), 1, 3)).rejects.toThrow('not been drained')
+        await expect(transport.send(wireContainer(2, 0x9999, 2, [], Uint8Array.of(4, 0)), 1, 2)).rejects.toThrow(
+            'operation'
+        )
+        await transport.send(wireContainer(2, 0x1016, 2, [], Uint8Array.of(4, 0)), 1, 2)
+        await expect(transport.send(wireContainer(2, 0x1016, 2, [], Uint8Array.of(2, 0)), 1, 2)).rejects.toThrow(
+            'Duplicate'
+        )
+        expect(new DataView((await transport.receive(512, 1, 2)).buffer).getUint16(6, true)).toBe(0x2001)
+    })
+
+    it('honors receive buffer sizes and resumes a data container before delivering its response', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                exchanges: [
+                    {
+                        operation: '0x9002',
+                        parameters: [],
+                        source: 0,
+                        response: { code: '0x2001', data: 'ab'.repeat(30) },
+                    },
+                ],
+            })
+        )
+        await transport.connect()
+        await transport.send(wireContainer(1, 0x9002, 1), 1, 1)
+        await expect(transport.receive(0, 1, 1)).rejects.toThrow('positive')
+        const chunks = [
+            await transport.receive(16, 1, 1),
+            await transport.receive(16, 1, 1),
+            await transport.receive(16, 1, 1),
+        ]
+        expect(chunks.map(bytes => bytes.length)).toEqual([16, 16, 10])
+        const response = await transport.receive(16, 1, 1)
+        expect(response.length).toBe(12)
+        expect(new DataView(response.buffer).getUint16(6, true)).toBe(0x2001)
+    })
+
+    it('does not deliver an old connection event into a newly connected session', async () => {
+        const transport = new SimulatedTransport(fixture())
+        const received: number[] = []
+        transport.on(event => received.push(event.code))
+        await transport.connect()
+        await wireRequest(transport, 0x1016, 1, [0x5005], Uint8Array.of(4, 0))
+        await transport.disconnect()
+        await transport.connect()
+        await new Promise(resolve => setTimeout(resolve, 1))
+        expect(received).toEqual([])
+        await wireRequest(transport, 0x1002, 20, [1])
+        await wireRequest(transport, 0x1016, 2, [0x5005], Uint8Array.of(2, 0))
+        await new Promise(resolve => setTimeout(resolve, 1))
+        expect(received).toEqual([0x4006])
+    })
+
+    it('counts valid transaction IDs even when session or parameter validation returns an error', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                quirks: [
+                    {
+                        id: 'strict',
+                        source: 0,
+                        description: 'strict IDs',
+                        behaviour: { kind: 'strict-transaction-ids' },
+                    },
+                ],
+            })
+        )
+        await transport.connect()
+        expect((await wireRequest(transport, 0x1002, 1, [1])).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1002, 2, [1])).code).toBe(0x201e)
+        expect((await wireRequest(transport, 0x1001, 3, [7])).code).toBe(0x201d)
+        expect((await wireRequest(transport, 0x1001, 4)).code).toBe(0x2001)
+    })
+
+    it('keeps strict transaction ordering after a busy reply and does not advance it for a rejected ID', async () => {
+        const transport = new SimulatedTransport(
+            fixture({
+                quirks: [
+                    {
+                        id: 'busy',
+                        source: 0,
+                        description: 'busy first',
+                        behaviour: { kind: 'device-busy', operation: '0x1001', times: 1 },
+                    },
+                    { id: 'strict', source: 0, description: 'strict', behaviour: { kind: 'strict-transaction-ids' } },
+                ],
+            })
+        )
+        await transport.connect()
+        expect((await wireRequest(transport, 0x1001, 1)).code).toBe(0x2019)
+        expect((await wireRequest(transport, 0x1001, 2)).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1001, 8)).code).toBe(0x2004)
+        expect((await wireRequest(transport, 0x1001, 3)).code).toBe(0x2001)
+    })
+})
+
+describe('chaos and protocol-state integration', () => {
+    it('emits a successful write once after updating state, with listener failures retained', async () => {
+        const transport = new SimulatedTransport(fixture(), {
+            chaos: { seed: 1, faults: ['events-out-of-order'], probability: 0 },
+        })
+        const events: number[] = []
+        transport.on(event => events.push(event.code))
+        transport.on(() => {
+            throw new Error('listener fixture error')
+        })
+        await transport.connect()
+        await wireRequest(transport, 0x1016, 1, [0x5005], Uint8Array.of(4, 0))
+        await new Promise(resolve => setTimeout(resolve, 1))
+        expect(events).toEqual([0x4006])
+        expect(transport.eventHandlerErrors).toHaveLength(1)
+        expect((await wireRequest(transport, 0x1015, 2, [0x5005])).data).toEqual(Uint8Array.of(4, 0))
+    })
+
+    it('releases a fault-stalled read on an explicit reset and preserves normal session rules afterward', async () => {
+        const transport = new SimulatedTransport(fixture(), { chaos: { seed: 1, faults: ['stall'], probability: 1 } })
+        await transport.connect()
+        const pending = wireRequest(transport, 0x1001, 1)
+        const rejected = expect(pending).rejects.toThrow('cancelled by a device reset')
+        await new Promise(resolve => setTimeout(resolve, 1))
+        await transport.classRequestReset()
+        await rejected
+        if (!transport.chaos) throw new Error('Missing fault injector')
+        transport.chaos.enabled = false
+        expect((await wireRequest(transport, 0x1015, 2, [0x5005])).code).toBe(0x2003)
+        expect((await wireRequest(transport, 0x1002, 3, [1])).code).toBe(0x2001)
+        expect((await wireRequest(transport, 0x1015, 4, [0x5005])).data).toEqual(Uint8Array.of(2, 0))
+    })
+
+    it('reports an immediate chaos disconnect without issuing a zero-length receive', async () => {
+        const transport = new SimulatedTransport(fixture(), {
+            chaos: { seed: 1, faults: ['disconnect-mid-transaction'], probability: 1 },
+        })
+        await transport.connect()
+        await expect(wireRequest(transport, 0x1002, 1, [1])).rejects.toBeInstanceOf(ChaosDisconnectError)
+        expect(transport.isConnected()).toBe(false)
     })
 })

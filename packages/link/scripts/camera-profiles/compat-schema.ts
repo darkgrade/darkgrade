@@ -7,6 +7,7 @@
  * browser bundle can use it too.
  */
 import type { PlannedRow, ProgressEvent } from './compat-progress'
+import type { CapabilityEvidence } from './compatibility-matrix'
 import {
     rowKey,
     type CapabilityResult,
@@ -91,7 +92,7 @@ function resultsValue(value: unknown): Record<string, CapabilityResult> {
 
 /**
  * The identity fields every row-shaped record shares (matrix rows, planned rows, finished rows),
- * or undefined when it has no profile id. Unknown fields are kept so files round-trip.
+ * or undefined when it has no profile id. Only checked fields cross the file boundary.
  */
 export function identityValue(value: Record<string, unknown>) {
     const profile = textValue(value.profile)
@@ -129,18 +130,93 @@ function quirkCounts(value: unknown): SupportMatrixRow['quirks'] {
     }
 }
 
-export function matrixRowValue(value: unknown): SupportMatrixRow | undefined {
+function observationTime(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value)) ? value : undefined
+}
+
+/** Invalid supplied source time stays unknown; the aggregate header must not freshen it. */
+function sourceValue(value: unknown): NonNullable<SupportMatrixRow['source']> {
+    const source = isRecord(value) ? value : {}
+    const revision = textValue(source.revision)
+    return { generatedAt: observationTime(source.generatedAt) ?? '', ...(revision && { revision }) }
+}
+
+function evidenceValue(value: unknown): CapabilityEvidence | undefined {
+    if (!isRecord(value) || typeof value.fidelity !== 'string' || !FIDELITIES.includes(value.fidelity)) return undefined
+    const profile = textValue(value.profile)
+    const generatedAt = observationTime(value.generatedAt)
+    if (!profile || !generatedAt) return undefined
+    const firmware = textValue(value.firmware),
+        host = textValue(value.host),
+        revision = textValue(value.revision)
+    return {
+        fidelity: value.fidelity as CapabilityEvidence['fidelity'],
+        profile,
+        generatedAt,
+        ...(firmware && { firmware }),
+        ...(host && { host }),
+        ...(revision && { revision }),
+    }
+}
+
+/** Keep bounded, nonrecursive conflict sources and reject invalid provenance instead of inventing a tier. */
+function evidenceMapValue(value: unknown): Record<string, CapabilityEvidence> {
+    const entries: Record<string, CapabilityEvidence> = {}
+    if (!isRecord(value)) return entries
+    for (const [key, candidate] of Object.entries(value).slice(0, 256)) {
+        if (!safeKey(key)) continue
+        const evidence = evidenceValue(candidate)
+        if (!evidence) continue
+        const conflicts =
+            isRecord(candidate) && Array.isArray(candidate.conflicts)
+                ? candidate.conflicts.slice(0, 32).flatMap(conflict => {
+                      const source = evidenceValue(conflict)
+                      if (
+                          !source ||
+                          !isRecord(conflict) ||
+                          !['pass', 'fail', 'unsupported', 'no-data'].includes(String(conflict.status))
+                      )
+                          return []
+                      return [{ ...source, ...resultValue(conflict) }]
+                  })
+                : []
+        entries[key] = { ...evidence, ...(conflicts.length && { conflicts }) }
+    }
+    return entries
+}
+
+export type ValidatedMatrixRow = SupportMatrixRow & {
+    resultEvidence?: Record<string, CapabilityEvidence>
+    viewKey?: string
+}
+
+export function matrixRowValue(value: unknown): ValidatedMatrixRow | undefined {
     if (!isRecord(value)) return undefined
     const fields = identityValue(value)
     if (!fields) return undefined
-    return { ...fields, quirks: quirkCounts(value.quirks), results: resultsValue(value.results) }
+    const viewKey = textValue(value.viewKey, 6000)
+    const prefix = `${fields.fidelity}/${fields.transport ?? 'usb'}/${fields.profile}/`
+    return {
+        ...fields,
+        quirks: quirkCounts(value.quirks),
+        results: resultsValue(value.results),
+        ...('source' in value && { source: sourceValue(value.source) }),
+        ...('resultEvidence' in value && { resultEvidence: evidenceMapValue(value.resultEvidence) }),
+        ...(viewKey?.startsWith(prefix) && !/[\u0000-\u001f]/.test(viewKey) && { viewKey }),
+    }
 }
 
 /** A finished row as a run log's row-end event carries it (without results). */
 export function finishedRowValue(value: unknown): Omit<SupportMatrixRow, 'results'> | undefined {
     if (!isRecord(value)) return undefined
     const fields = identityValue(value)
-    return fields && { ...fields, quirks: quirkCounts(value.quirks) }
+    return (
+        fields && {
+            ...fields,
+            quirks: quirkCounts(value.quirks),
+            ...('source' in value && { source: sourceValue(value.source) }),
+        }
+    )
 }
 
 /** A support matrix with every row checked; undefined when it has no rows array. */

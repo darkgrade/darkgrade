@@ -79,9 +79,49 @@ function cellTitle(capability: { label: string }, status: CellStatus, cell: View
     return `${capability.label}: ${STATUS_LABELS[status]}${detail ? ` — ${detail}` : ''}`
 }
 
-export function renderCell(cell: ViewCell | undefined, capability: { id: string; label: string }): string {
+function evidenceDescription(cell: ViewCell | undefined): string {
+    const evidence = cell?.evidence
+    if (!evidence || typeof evidence !== 'object') return 'Evidence source unavailable'
+    const conflicts = Array.isArray(evidence.conflicts) ? evidence.conflicts : []
+    return [
+        evidence.fidelity,
+        evidence.profile,
+        evidence.firmware ? `firmware ${evidence.firmware}` : 'firmware unknown',
+        evidence.host,
+        evidence.generatedAt,
+        evidence.revision,
+        ...conflicts.map(
+            conflict => `conflict: ${conflict?.status} from ${conflict?.profile} at ${conflict?.generatedAt}`
+        ),
+    ]
+        .filter(Boolean)
+        .join(' · ')
+}
+
+export function renderCellEvidence(cell: ViewCell | undefined): string {
+    if (!cell || cell.status === 'queued' || cell.status === 'running') return ''
+    const evidence = cell.evidence
+    if (!evidence || typeof evidence !== 'object') return icon('unknown', 'Evidence source unavailable', 'warn')
+    const conflict =
+        Array.isArray(evidence.conflicts) && evidence.conflicts.length
+            ? `${icon('unknown', 'Conflicting evidence', 'warn')} `
+            : ''
+    return `${conflict}${fidelityIcon(evidence)} <span class="muted small">${escapeHtml(evidenceDescription(cell))}</span>`
+}
+
+export function renderCell(
+    cell: ViewCell | undefined,
+    capability: { id: string; label: string },
+    rowFidelity?: ViewRow['fidelity']
+): string {
     const status = knownStatus(cell?.status ?? 'no-data')
-    return `<td class="c" data-capability="${attribute(capability.id)}" title="${attribute(cellTitle(capability, status, cell))}">${icon(status, STATUS_LABELS[status], `s-${status}`, '')}</td>`
+    const evidence = cell?.evidence
+    const fallback = evidence && rowFidelity && evidence.fidelity !== rowFidelity ? ` ${fidelityIcon(evidence)}` : ''
+    const unknown =
+        cell && !evidence && rowFidelity && status !== 'queued' && status !== 'running'
+            ? ` ${icon('unknown', 'Evidence source unavailable', 'warn')}`
+            : ''
+    return `<td class="c" data-capability="${attribute(capability.id)}" title="${attribute(`${cellTitle(capability, status, cell)} · ${evidenceDescription(cell)}`)}">${icon(status, STATUS_LABELS[status], `s-${status}`, '')}${fallback}${unknown}</td>`
 }
 
 function progressMeter(done: number, total: number, label: string, wide = false): string {
@@ -105,7 +145,7 @@ export function renderRow(row: ViewRow, capabilities: { id: string; label: strin
         `<td class="ic">${transportIcon(row.transport)}</td>`,
         `<td class="ic">${unverifiedIcon(row)}</td>`,
         `<td class="progress">${progressCell}</td>`,
-        ...capabilities.map(capability => renderCell(row.cells?.[capability.id], capability)),
+        ...capabilities.map(capability => renderCell(row.cells?.[capability.id], capability, row.fidelity)),
         `<td class="time" title="${attribute(row.lastRun ?? 'never run')}" data-at="${attribute(row.lastRun ?? '')}">${escapeHtml(formatAge(row.lastRun))}</td>`,
         '</tr>',
     ].join('')
@@ -420,7 +460,8 @@ export interface CameraResultSet {
     label: string
     source: string
     at: string
-    cells: Record<string, { status: CellStatus; detail: string }>
+    cells: Record<string, ViewCell>
+    firmware?: string
 }
 
 /** Everything known about one camera profile, as plain data (the API serves it as JSON). */
@@ -455,7 +496,7 @@ export interface CameraDetailModel {
         source: string
         at: string
         label: string
-        cells: Record<string, { status: CellStatus; detail: string }>
+        cells: Record<string, ViewCell>
     }[]
     activeRun?: RunSummary
 }
@@ -476,16 +517,19 @@ export function citation(sources: { location: string; excerpt?: string }[], inde
 export function renderDetailCell(
     key: string,
     capability: { id: string; label: string },
-    cell: { status: CellStatus; detail?: string } | undefined
+    cell: ViewCell | undefined
 ): string {
     const status = knownStatus(cell?.status ?? 'no-data')
     return `<td class="detail s-${status}" data-key="${attribute(key)}" data-capability="${attribute(capability.id)}">${detailCellContent(cell)}</td>`
 }
 
-export function detailCellContent(cell: { status: CellStatus; detail?: string } | undefined): string {
+export function detailCellContent(cell: ViewCell | undefined): string {
     const status = knownStatus(cell?.status ?? 'no-data')
-    return `<span class="result">${icon(status, STATUS_LABELS[status], `s-${status}`, '')}<span class="word">${STATUS_LABELS[status]}</span></span><div class="why">${escapeHtml(cell?.detail ?? '')}</div>`
+    return `<span class="result">${icon(status, STATUS_LABELS[status], `s-${status}`, '')}<span class="word">${STATUS_LABELS[status]}</span></span><div class="why">${escapeHtml(cell?.detail ?? '')}</div><div class="cell-evidence">${renderCellEvidence(cell)}</div>`
 }
+
+/** Shared with existing consumers; the modal and full page use the same renderer. */
+export const renderDetailCellContents = detailCellContent
 
 function detailFacts(model: CameraDetailModel): [string, string][] {
     const facts: [string, string][] = [
@@ -680,8 +724,10 @@ export function renderGapsPage(context: PageContext, report: GapReport): string 
     const body = `<h1>Compatibility gaps</h1>
 <p>${totals.undefinedVendorOperations} undefined vendor operations · ${totals.inexpressibleRequests} inexpressible recorded requests · ${totals.noDataCells}/${totals.cells} no-data cells · ${totals.linesWithoutCapture}/${lines.length} lines without captured or hardware evidence · ${totals.linesWithoutMock} lines without a mock · ${totals.unverifiedModels} unverified models · ${totals.unverifiedQuirks} unverified quirks · ${totals.skippedModels} models not mocked.</p>
 <p class="muted small">The same report as JSON, grouped with next actions: <code>GET /api/v1/gaps</code>, or the <code>list_gaps</code> tool of <code>bun run compat:mcp</code>.</p>
+<h2>Test Bench workflow qualification</h2>
+<ul>${report.workflowLimitations.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
 <h2>darkgrade library gaps</h2>
-<p>Vendor classes: ${report.manufacturers.map(manufacturer => `${escapeHtml(manufacturer.name)} ${manufacturer.vendorDefinitions ? 'defined' : '<b>missing</b>'}`).join(' · ')}.</p>
+<p>Vendor definition registries (presence is not workflow support): ${report.manufacturers.map(manufacturer => `${escapeHtml(manufacturer.name)} ${manufacturer.vendorDefinitions ? 'defined' : '<b>missing</b>'}`).join(' · ')}.</p>
 <div class="table-wrap"><table class="list"><thead><tr><th>Manufacturer</th><th>Line</th><th>Undefined vendor operations</th><th>Inexpressible recorded requests</th><th>Undefined events</th></tr></thead><tbody>${library
         .map(
             line =>

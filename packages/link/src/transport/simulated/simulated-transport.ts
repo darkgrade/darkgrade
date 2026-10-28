@@ -6,6 +6,7 @@ import {
     parseBytes,
     parseCode,
     ptpIpPersonality,
+    validateCameraProfile,
     type CameraProfile,
     type ProfileProperty,
     type RecordedExchange,
@@ -13,6 +14,7 @@ import {
 import { ChaosDisconnectError, ChaosInjector, type ChaosOptions } from '@transport/simulated/chaos-faults'
 import {
     concatenateBytes,
+    descriptorAcceptsValue,
     encodeDescriptor,
     encodeDeviceInfo,
     encodeUint16,
@@ -41,14 +43,17 @@ const OPERATION = {
 
 const RESPONSE = {
     OK: 0x2001,
+    SessionNotOpen: 0x2003,
     OperationNotSupported: 0x2005,
     DevicePropNotSupported: 0x200a,
     AccessDenied: 0x200f,
     InvalidDevicePropValue: 0x201c,
+    InvalidParameter: 0x201d,
     SessionAlreadyOpen: 0x201e,
 } as const
 
 const DEVICE_PROP_CHANGED = 0x4006
+const SESSION_OPERATIONS = new Set<number>([0x1003, 0x1014, 0x1015, 0x1016])
 
 /** Thrown when answering a request would require data the profile does not contain. */
 export class ProfileDataMissingError extends Error {
@@ -108,11 +113,16 @@ const codeSet = (codes: string[] | undefined) => (codes ? new Set(codes.map(pars
 /**
  * A TransportInterface that answers PTP USB containers from a CameraProfile.
  *
- * Resolution order for every request: quirk behaviours, recorded exchanges (consumed in recorded
- * order; the last match repeats), then standard answers derived from the profile's DeviceInfo and
- * property descriptors. A code absent from a DeviceInfo whose lists are marked complete is answered
+ * Active quirks and known session state guard every request. Exact captured requests outrank
+ * wildcard captures; equally specific replies replay in order and the last one repeats. Successful
+ * standard writes update readback and obey descriptor datatype/range/choices; a capture without
+ * request bytes cannot prove an arbitrary write succeeded. Settings persist across connections,
+ * while trace cursors, pending events and session prerequisites reset. Unverified quirks stay inert.
+ * A code absent from a DeviceInfo whose lists are marked complete is answered
  * with OperationNotSupported or DevicePropNotSupported; anything else the profile cannot answer
- * raises ProfileDataMissingError instead of inventing a response.
+ * raises ProfileDataMissingError instead of inventing a response. Hidden-but-implemented codes
+ * are excluded from absence-based rejection. Partial snapshots start with unknown session state;
+ * an observed open/close/reset establishes the standard session lifecycle.
  */
 export class SimulatedTransport implements TransportInterface {
     /** Every request the profile could not answer, in order. */
@@ -133,7 +143,11 @@ export class SimulatedTransport implements TransportInterface {
     private propertyValues = new Map<number, Uint8Array>()
     private exchangeUses = new Set<ParsedExchange>()
     private sessionOpen = false
+    /** Partial captures may begin inside an existing session; closure is enforced once observed. */
+    private sessionStateKnown = false
     private changedProperty?: number
+    private eventGeneration = 0
+    private pendingPolledEvents = false
     private disconnectWhenDrained = false
     private stalledReceives = new Set<(error: Error) => void>()
     private readonly properties: Map<number, ProfileProperty>
@@ -144,15 +158,24 @@ export class SimulatedTransport implements TransportInterface {
     private readonly completeOperations?: Set<number>
     private readonly completeProperties?: Set<number>
     private readonly announcesPropertyChanges: boolean
+    private readonly hiddenOperations: Set<number>
+    private readonly hiddenProperties: Set<number>
 
     constructor(
         readonly profile: CameraProfile,
         private readonly options: SimulatedTransportOptions = {}
     ) {
+        const problems = validateCameraProfile(profile)
+        if (problems.length) throw new Error(`Invalid simulated profile ${profile.id}: ${problems.join('; ')}`)
         const deviceInfo = profile.deviceInfo
         this.properties = new Map(profile.properties.map(property => [parseCode(property.code), property]))
         this.exchanges = profile.exchanges.map(parseExchange)
-        this.quirks = new QuirkBehaviours(profile.quirks.map(quirk => quirk.behaviour))
+        this.quirks = new QuirkBehaviours(
+            profile.quirks.filter(quirk => !quirk.unverified).map(quirk => quirk.behaviour)
+        )
+        const hidden = this.quirks.hiddenCodes()
+        this.hiddenOperations = hidden.operations
+        this.hiddenProperties = hidden.properties
         this.advertisedOperations = codeSet(deviceInfo?.operationsSupported) ?? new Set()
         if (deviceInfo?.listsComplete) {
             this.completeOperations = this.advertisedOperations
@@ -173,11 +196,10 @@ export class SimulatedTransport implements TransportInterface {
 
     async disconnect(): Promise<void> {
         this.connected = false
-        this.sessionOpen = false
         this.pending = undefined
         this.outgoing = []
+        this.resetSession()
         this.disconnectWhenDrained = false
-        this.quirks.reset()
         this.releaseStalls(new Error('Simulated camera disconnected'))
     }
 
@@ -188,6 +210,7 @@ export class SimulatedTransport implements TransportInterface {
     async classRequestReset(): Promise<void> {
         this.pending = undefined
         this.outgoing = []
+        this.resetSession()
         this.disconnectWhenDrained = false
         this.releaseStalls(new Error('Simulated transfer cancelled by a device reset'))
     }
@@ -195,6 +218,16 @@ export class SimulatedTransport implements TransportInterface {
     private releaseStalls(error: Error): void {
         for (const reject of this.stalledReceives) reject(error)
         this.stalledReceives.clear()
+    }
+
+    private resetSession(): void {
+        this.sessionOpen = false
+        this.sessionStateKnown = true
+        this.changedProperty = undefined
+        this.pendingPolledEvents = false
+        this.exchangeUses.clear()
+        this.eventGeneration++
+        this.quirks.reset()
     }
 
     getType(): TransportType {
@@ -215,30 +248,39 @@ export class SimulatedTransport implements TransportInterface {
 
     async send(data: Uint8Array, _sessionId: number, _transactionId: number): Promise<void> {
         if (!this.connected) throw new Error('Simulated camera is not connected')
+        if (data.length < 12) throw new Error('Truncated PTP container header')
         const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+        if (view.getUint32(0, true) !== data.length) throw new Error('PTP container length does not match its bytes')
         const type = view.getUint16(4, true)
         const code = view.getUint16(6, true)
         const transactionId = view.getUint32(8, true)
 
         if (type === CONTAINER.command) {
+            if ((data.length - 12) % 4 || data.length > 32)
+                throw new Error('PTP commands accept at most five UINT32 parameters')
+            if (this.pending || this.outgoing.length)
+                throw new Error('Previous simulated transaction has not been drained')
             const parameters: number[] = []
             for (let offset = 12; offset + 4 <= data.length; offset += 4) parameters.push(view.getUint32(offset, true))
             this.releaseStalls(new Error('Simulated transfer abandoned: the host sent a new command'))
             this.pending = { operation: code, transactionId, parameters }
             this.commandTransactionIds.push(transactionId)
-            this.outgoing = []
             this.disconnectWhenDrained = false
             return
         }
         if (type === CONTAINER.data && this.pending?.transactionId === transactionId) {
+            if (code !== this.pending.operation) throw new Error('PTP data operation does not match its command')
+            if (this.pending.data !== undefined) throw new Error('Duplicate PTP data container')
             this.pending.data = data.slice(12)
             return
         }
         throw new Error(`Unexpected container type ${type} for transaction ${transactionId}`)
     }
 
-    async receive(_maxLength: number, _sessionId: number, _transactionId: number): Promise<Uint8Array> {
+    async receive(maxLength: number, _sessionId: number, _transactionId: number): Promise<Uint8Array> {
         if (!this.connected) throw new Error('Simulated camera is not connected')
+        if (!Number.isSafeInteger(maxLength) || maxLength < 1)
+            throw new Error('Receive length must be a positive integer')
         if (this.outgoing.length === 0 && this.disconnectWhenDrained) {
             await this.disconnect()
             throw new ChaosDisconnectError()
@@ -247,8 +289,8 @@ export class SimulatedTransport implements TransportInterface {
             const request = this.pending
             this.pending = undefined
             const reply = this.resolve(request)
-            const events = this.eventsFor(request, reply.code)
             const containers = this.containersFor(request, reply)
+            const events = this.eventsFor(request, reply.code)
             if (!this.chaos) {
                 this.deliver(events)
                 this.outgoing = containers
@@ -259,14 +301,17 @@ export class SimulatedTransport implements TransportInterface {
                 if (outcome.stall) return await this.stallUntilReset()
                 this.outgoing = outcome.containers.slice(0, outcome.disconnectAfter)
                 this.disconnectWhenDrained = outcome.disconnectAfter !== undefined
-                if (this.outgoing.length === 0 && this.disconnectWhenDrained) return await this.receive(0, 0, 0)
+                if (this.outgoing.length === 0 && this.disconnectWhenDrained)
+                    return await this.receive(maxLength, _sessionId, _transactionId)
             }
         }
         const next = this.outgoing.shift()
         // A real camera with nothing to send leaves the read pending; chaos runs need that to expose hangs.
         if (!next && this.chaos) return await this.stallUntilReset()
         if (!next) throw new Error('No simulated response is pending')
-        return next
+        if (next.length <= maxLength) return next
+        this.outgoing.unshift(next.slice(maxLength))
+        return next.slice(0, maxLength)
     }
 
     private stallUntilReset(): Promise<Uint8Array> {
@@ -274,16 +319,30 @@ export class SimulatedTransport implements TransportInterface {
     }
 
     private eventsFor(request: SimulatedRequest, responseCode: number): PTPEvent[] {
-        return [
+        const events = [
             ...this.recordedEventsAfter(request.operation, responseCode),
             ...this.quirks.afterReply(request, responseCode),
         ]
+        if (!this.quirks.polledDelivery()) return events
+        this.pendingPolledEvents ||= events.length > 0
+        return []
     }
 
     private containersFor(request: SimulatedRequest, reply: Reply): Uint8Array[] {
         this.responseCodes.push(reply.code)
-        if (reply.code === RESPONSE.OK && request.operation === OPERATION.OpenSession) this.sessionOpen = true
-        if (reply.code === RESPONSE.OK && request.operation === OPERATION.CloseSession) this.sessionOpen = false
+        if (reply.code === RESPONSE.OK && request.operation === OPERATION.SetDevicePropValue && request.data) {
+            this.propertyValues.set(request.parameters[0], request.data.slice())
+            this.changedProperty = request.parameters[0]
+        }
+        if (
+            request.operation === OPERATION.OpenSession &&
+            (reply.code === RESPONSE.OK || reply.code === RESPONSE.SessionAlreadyOpen)
+        ) {
+            this.sessionOpen = true
+            this.sessionStateKnown = true
+        }
+        if (reply.code === RESPONSE.SessionNotOpen) this.resetSession()
+        if (reply.code === RESPONSE.OK && request.operation === OPERATION.CloseSession) this.resetSession()
 
         const header = (length: number, type: number, code: number) =>
             concatenateBytes([
@@ -317,16 +376,64 @@ export class SimulatedTransport implements TransportInterface {
         const chaosCode = this.chaos?.responseOverride(request)
         if (chaosCode !== undefined) return { code: chaosCode }
 
+        if (!this.validStandardParameters(request)) return { code: RESPONSE.InvalidParameter }
+        if (request.operation === OPERATION.OpenSession && this.sessionOpen)
+            return { code: RESPONSE.SessionAlreadyOpen }
+        if (this.sessionStateKnown && !this.sessionOpen && SESSION_OPERATIONS.has(request.operation))
+            return { code: RESPONSE.SessionNotOpen }
+
+        if (this.quirks.hasUnknownSequenceResponse(request)) return this.missingReply(request)
+
+        const code = request.parameters[0]
+        const propertyWrite = request.operation === OPERATION.SetDevicePropValue
+        const changedPropertyRead =
+            this.propertyValues.has(code) &&
+            (request.operation === OPERATION.GetDevicePropDesc || request.operation === OPERATION.GetDevicePropValue)
+        if (changedPropertyRead && request.operation === OPERATION.GetDevicePropValue)
+            return { code: RESPONSE.OK, data: this.propertyValues.get(code) }
+        if (changedPropertyRead) return this.answerProperty(request) ?? this.missingReply(request)
+
         const exchange = this.matchExchange(request)
-        if (exchange) return exchange.reply
+        if (exchange && (!propertyWrite || exchange.reply.code !== RESPONSE.OK)) return exchange.reply
+
+        if (propertyWrite) {
+            const derived = this.answerProperty(request)
+            if (derived) return derived
+            if (exchange) return exchange.reply
+        }
 
         const standardReply = this.answerFromProfile(request)
         if (standardReply) return standardReply
 
-        if (this.completeOperations && !this.completeOperations.has(request.operation)) {
+        if (
+            this.completeOperations &&
+            !this.completeOperations.has(request.operation) &&
+            !this.hiddenOperations.has(request.operation)
+        ) {
             return { code: RESPONSE.OperationNotSupported }
         }
 
+        return this.missingReply(request)
+    }
+
+    private validStandardParameters(request: SimulatedRequest): boolean {
+        switch (request.operation) {
+            case OPERATION.OpenSession:
+                return request.parameters.length === 1 && request.parameters[0] !== 0 && request.data === undefined
+            case OPERATION.CloseSession:
+            case OPERATION.GetDeviceInfo:
+                return request.parameters.length === 0 && request.data === undefined
+            case OPERATION.GetDevicePropDesc:
+            case OPERATION.GetDevicePropValue:
+                return request.parameters.length === 1 && request.data === undefined
+            case OPERATION.SetDevicePropValue:
+                return request.parameters.length === 1
+            default:
+                return true
+        }
+    }
+
+    private missingReply(request: SimulatedRequest): never {
         const missing = new ProfileDataMissingError(this.profile.id, request.operation, request.parameters)
         this.missingData.push(missing)
         throw missing
@@ -336,10 +443,20 @@ export class SimulatedTransport implements TransportInterface {
         const candidates = this.exchanges.filter(exchange => {
             if (exchange.operation !== request.operation) return false
             if (exchange.parameters && !sameValues(exchange.parameters, request.parameters)) return false
+            if (
+                request.operation === OPERATION.SetDevicePropValue &&
+                exchange.reply.code === RESPONSE.OK &&
+                (exchange.parameters === undefined || exchange.dataFromHost === undefined)
+            )
+                return false
             if (exchange.dataFromHost === undefined) return true
             return request.data !== undefined && sameValues(exchange.dataFromHost, request.data)
         })
-        const next = candidates.find(candidate => !this.exchangeUses.has(candidate)) ?? candidates.at(-1)
+        const specificity = (exchange: ParsedExchange) =>
+            Number(exchange.parameters !== undefined) + Number(exchange.dataFromHost !== undefined)
+        const mostSpecific = Math.max(...candidates.map(specificity))
+        const specific = candidates.filter(candidate => specificity(candidate) === mostSpecific)
+        const next = specific.find(candidate => !this.exchangeUses.has(candidate)) ?? specific.at(-1)
         if (next) this.exchangeUses.add(next)
         return next
     }
@@ -366,6 +483,8 @@ export class SimulatedTransport implements TransportInterface {
             polled.pollOperation &&
             parseCode(polled.pollOperation) === request.operation
         ) {
+            // Empty framing is not evidence for encoding a nonempty vendor event queue.
+            if (this.pendingPolledEvents) return this.missingReply(request)
             return { code: RESPONSE.OK, data: parseBytes(polled.emptyResponse) }
         }
         return undefined
@@ -393,7 +512,7 @@ export class SimulatedTransport implements TransportInterface {
         const property = this.properties.get(code)
         const descriptor = property ? this.descriptorBytes(code, property) : undefined
         if (!descriptor) {
-            return this.completeProperties && !this.completeProperties.has(code)
+            return this.completeProperties && !this.completeProperties.has(code) && !this.hiddenProperties.has(code)
                 ? { code: RESPONSE.DevicePropNotSupported }
                 : undefined
         }
@@ -406,16 +525,13 @@ export class SimulatedTransport implements TransportInterface {
 
         if (!layout.writable) return { code: RESPONSE.AccessDenied }
         const value = request.data
-        if (!value) return { code: RESPONSE.InvalidDevicePropValue }
-        if (layout.enumeration && !layout.enumeration.some(allowed => sameValues(allowed, value))) {
+        if (!value || !descriptorAcceptsValue(layout, value)) {
             return { code: RESPONSE.InvalidDevicePropValue }
         }
-        this.propertyValues.set(code, value)
-        this.changedProperty = code
         return { code: RESPONSE.OK }
     }
 
-    /** The descriptor with any value written during this session substituted for the current value. */
+    /** Camera settings survive session close/reconnect; trace cursors and session prerequisites do not. */
     private descriptorBytes(code: number, property: ProfileProperty): Uint8Array | undefined {
         const descriptor = property.descriptor
         if (!descriptor) return undefined
@@ -436,7 +552,7 @@ export class SimulatedTransport implements TransportInterface {
     private recordedEventsAfter(operation: number, responseCode: number): PTPEvent[] {
         const changedProperty = this.changedProperty
         this.changedProperty = undefined
-        if (responseCode !== RESPONSE.OK || this.quirks.polledDelivery()) return []
+        if (responseCode !== RESPONSE.OK) return []
 
         const events: PTPEvent[] = this.profile.events
             .filter(event => parseCode(event.afterOperation) === operation)
@@ -453,9 +569,12 @@ export class SimulatedTransport implements TransportInterface {
 
     private deliver(events: PTPEvent[]): void {
         if (events.length === 0) return
-        setTimeout(() => events.forEach(event => this.eventHandlers.forEach(handler => this.notify(handler, event))), 0)
+        const generation = this.eventGeneration
+        setTimeout(() => {
+            if (!this.connected || generation !== this.eventGeneration) return
+            events.forEach(event => this.eventHandlers.forEach(handler => this.notify(handler, event)))
+        }, 0)
     }
-
     private notify(handler: (event: PTPEvent) => void, event: PTPEvent): void {
         try {
             handler(event)

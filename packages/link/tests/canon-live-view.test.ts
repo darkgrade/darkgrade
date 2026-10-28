@@ -18,6 +18,7 @@ function segment(type: number, payload: Uint8Array): Uint8Array {
 function connectedCamera(output = 'CAMERA') {
     const transport = {
         isLittleEndian: () => true,
+        isConnected: () => true,
         on: () => undefined,
         disconnect: async () => undefined,
     } as unknown as TransportInterface

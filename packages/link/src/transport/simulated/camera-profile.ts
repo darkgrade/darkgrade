@@ -77,7 +77,7 @@ export interface RecordedExchange {
     name?: string
     /** Omitted when the request parameters were not captured: any parameters then match. */
     parameters?: string[]
-    /** Host-to-camera data phase. Omitted when not captured: any (or no) data then matches. */
+    /** Host-to-camera data phase. Omitted data is not a wildcard for unknown write payloads. */
     dataFromHost?: string
     response: {
         code: string
@@ -104,6 +104,13 @@ export interface OperationRange {
     except?: string[]
 }
 
+/** A request identity used by an ordered prerequisite sequence. */
+export interface SequenceRequest {
+    operation: string
+    /** Omitted means any parameters; an empty array means no parameters. */
+    parameters?: string[]
+}
+
 /** Generic simulator behaviours a quirk can switch on. */
 export type QuirkBehaviour =
     /** Documented for reference; no simulator behaviour. */
@@ -119,6 +126,8 @@ export type QuirkBehaviour =
     | { kind: 'property-datatype'; property: string; dataType: string }
     /** Operations in `gated` answer `response` until every `unlockedBy` operation has returned OK. */
     | { kind: 'requires-operations'; unlockedBy: string[]; gated: OperationRange; response: string }
+    /** Ordered successful requests. An unknown precondition response stays missing data. */
+    | { kind: 'requires-sequence'; sequence: SequenceRequest[]; gated: OperationRange; response?: string }
     /** These operations are always refused with `response`. */
     | { kind: 'rejects-operations'; operations: string[]; response: string }
     /** Implemented but left out of the DeviceInfo the camera reports. */
@@ -144,6 +153,8 @@ export interface ProfileQuirk {
 export interface ProfileCatalogReference {
     manufacturer: string
     line: string
+    /** Exact cited model in the catalog; never inferred from a shared USB identity or line. */
+    model?: string
     /** Models in that catalog line, which this profile represents. */
     modelCount?: number
 }
@@ -194,6 +205,46 @@ export function formatBytes(bytes: Uint8Array): string {
     return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+function validateProfileStructure(profile: Partial<CameraProfile>): string[] {
+    const problems: string[] = []
+    const object = (value: unknown, where: string, optional = false): boolean => {
+        if (optional && value === undefined) return false
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) return true
+        problems.push(`${where} must be an object`)
+        return false
+    }
+    const objects = (value: unknown, where: string): unknown[] => {
+        if (!Array.isArray(value)) {
+            problems.push(`${where} must be an array`)
+            return []
+        }
+        return value.filter((entry, index) => object(entry, `${where}[${index}]`))
+    }
+    if (object(profile.provenance, 'provenance')) objects(profile.provenance?.sources, 'provenance.sources')
+    if (object(profile.usb, 'usb', true) && !Array.isArray(profile.usb?.productIds))
+        problems.push('usb.productIds must be an array')
+    object(profile.catalog, 'catalog', true)
+    object(profile.deviceInfo, 'deviceInfo', true)
+    objects(profile.properties, 'properties').forEach((entry, index) => {
+        const property = entry as ProfileProperty
+        const where = `properties[${index}].descriptor`
+        if (!object(property.descriptor, where, true)) return
+        const form = property.descriptor?.form
+        if (!object(form, `${where}.form`, true) || !form) return
+        if ('range' in form) object(form.range, `${where}.form.range`)
+        if ('enumeration' in form && !Array.isArray(form.enumeration))
+            problems.push(`${where}.form.enumeration must be an array`)
+    })
+    objects(profile.exchanges, 'exchanges').forEach((entry, index) =>
+        object((entry as RecordedExchange).response, `exchanges[${index}].response`)
+    )
+    objects(profile.events, 'events')
+    objects(profile.quirks, 'quirks').forEach((entry, index) =>
+        object((entry as ProfileQuirk).behaviour, `quirks[${index}].behaviour`)
+    )
+    return problems
+}
+
 /** Returns every problem found in a profile document; an empty list means it is valid. */
 export function validateCameraProfile(document: unknown): string[] {
     const problems: string[] = []
@@ -201,21 +252,25 @@ export function validateCameraProfile(document: unknown): string[] {
     const require = (condition: unknown, message: string) => {
         if (!condition) problems.push(message)
     }
-    const checkCode = (value: unknown, where: string) => {
+    const checkCode = (value: unknown, where: string, maximum = 0xffffffff) => {
         if (typeof value !== 'string' || !HEX_CODE.test(value)) problems.push(`${where}: invalid code ${String(value)}`)
+        else if (Number.parseInt(value.slice(2), 16) > maximum)
+            problems.push(`${where}: code exceeds ${maximum === 0xffff ? 'UINT16' : 'UINT32'}`)
     }
-    const checkCodes = (values: unknown, where: string) => {
+    const checkCodes = (values: unknown, where: string, maximum = 0xffffffff) => {
         if (values === undefined) return
         if (!Array.isArray(values)) return problems.push(`${where}: expected an array`)
-        values.forEach((value, index) => checkCode(value, `${where}[${index}]`))
+        values.forEach((value, index) => checkCode(value, `${where}[${index}]`, maximum))
     }
     const checkBytes = (value: unknown, where: string) => {
         if (value !== undefined && (typeof value !== 'string' || !HEX_BYTES.test(value)))
             problems.push(`${where}: invalid byte string`)
     }
 
-    require(typeof document === 'object' && document !== null, 'profile must be an object')
+    require(typeof document === 'object' && document !== null && !Array.isArray(document), 'profile must be an object')
     if (problems.length) return problems
+    const structure = validateProfileStructure(profile)
+    if (structure.length) return structure
 
     require(profile.schemaVersion === 1, 'schemaVersion must be 1')
     require(typeof profile.id === 'string' && /^[a-z0-9-]+$/.test(profile.id), 'id must be lowercase kebab-case')
@@ -229,7 +284,8 @@ export function validateCameraProfile(document: unknown): string[] {
     require(Array.isArray(sources) && sources.length > 0, 'provenance.sources must list at least one source')
     const sourceCount = Array.isArray(sources) ? sources.length : 0
     sources?.forEach((source, index) =>
-        require(typeof source?.location === 'string', `provenance.sources[${index}].location is required`)
+        require(typeof source?.location === 'string' &&
+            source.location.length > 0, `provenance.sources[${index}].location is required`)
     )
     const checkSource = (value: unknown, where: string, optional = false) => {
         if (optional && value === undefined) return
@@ -239,13 +295,19 @@ export function validateCameraProfile(document: unknown): string[] {
     }
 
     if (profile.usb) {
-        checkCode(profile.usb.vendorId, 'usb.vendorId')
-        checkCodes(profile.usb.productIds, 'usb.productIds')
+        checkCode(profile.usb.vendorId, 'usb.vendorId', 0xffff)
+        checkCodes(profile.usb.productIds, 'usb.productIds', 0xffff)
+        require(profile.usb.productIds.length > 0, 'usb.productIds must not be empty')
         checkSource(profile.usb.source, 'usb', true)
     }
+    if (profile.catalog?.model !== undefined)
+        require(typeof profile.catalog.model === 'string' &&
+            profile.catalog.model.trim().length > 0, 'catalog.model must be a nonempty string')
 
     const deviceInfo = profile.deviceInfo
     if (deviceInfo) {
+        if (deviceInfo.listsComplete !== undefined)
+            require(typeof deviceInfo.listsComplete === 'boolean', 'deviceInfo.listsComplete must be boolean')
         checkBytes(deviceInfo.raw, 'deviceInfo.raw')
         if (deviceInfo.vendorExtensionId !== undefined)
             checkCode(deviceInfo.vendorExtensionId, 'deviceInfo.vendorExtensionId')
@@ -256,7 +318,7 @@ export function validateCameraProfile(document: unknown): string[] {
             'captureFormats',
             'imageFormats',
         ] as const) {
-            checkCodes(deviceInfo[list], `deviceInfo.${list}`)
+            checkCodes(deviceInfo[list], `deviceInfo.${list}`, 0xffff)
         }
         checkSource(deviceInfo.source, 'deviceInfo', true)
     }
@@ -271,25 +333,32 @@ export function validateCameraProfile(document: unknown): string[] {
         checkSource(property.source, where)
         checkBytes(property.descriptor?.raw, `${where}.descriptor.raw`)
         if (property.descriptor?.dataType !== undefined)
-            checkCode(property.descriptor.dataType, `${where}.descriptor.dataType`)
+            checkCode(property.descriptor.dataType, `${where}.descriptor.dataType`, 0xffff)
+        problems.push(...validatePropertyDescriptor(property.descriptor, `${where}.descriptor`))
     })
 
     profile.exchanges?.forEach((exchange, index) => {
         const where = `exchanges[${index}]`
-        checkCode(exchange.operation, `${where}.operation`)
+        checkCode(exchange.operation, `${where}.operation`, 0xffff)
         checkCodes(exchange.parameters, `${where}.parameters`)
+        if (exchange.parameters && exchange.parameters.length > 5)
+            problems.push(`${where}.parameters exceeds five PTP parameters`)
         checkBytes(exchange.dataFromHost, `${where}.dataFromHost`)
-        checkCode(exchange.response?.code, `${where}.response.code`)
+        checkCode(exchange.response?.code, `${where}.response.code`, 0xffff)
         checkCodes(exchange.response?.parameters, `${where}.response.parameters`)
+        if (exchange.response.parameters && exchange.response.parameters.length > 5)
+            problems.push(`${where}.response.parameters exceeds five PTP parameters`)
         checkBytes(exchange.response?.data, `${where}.response.data`)
         checkSource(exchange.source, where)
     })
 
     profile.events?.forEach((event, index) => {
         const where = `events[${index}]`
-        checkCode(event.code, `${where}.code`)
+        checkCode(event.code, `${where}.code`, 0xffff)
         checkCodes(event.parameters, `${where}.parameters`)
-        checkCode(event.afterOperation, `${where}.afterOperation`)
+        if (event.parameters && event.parameters.length > 3)
+            problems.push(`${where}.parameters exceeds three PTP event parameters`)
+        checkCode(event.afterOperation, `${where}.afterOperation`, 0xffff)
         checkSource(event.source, where)
     })
 
@@ -299,10 +368,62 @@ export function validateCameraProfile(document: unknown): string[] {
         require(typeof quirk.id === 'string' && !quirkIds.has(quirk.id), `${where}.id must be unique`)
         quirkIds.add(quirk.id)
         require(typeof quirk.description === 'string', `${where}.description is required`)
+        if (quirk.unverified !== undefined)
+            require(typeof quirk.unverified === 'boolean', `${where}.unverified must be boolean`)
         checkSource(quirk.source, where)
         problems.push(...validateQuirkBehaviour(quirk.behaviour, `${where}.behaviour`))
     })
 
+    return problems
+}
+
+function validatePropertyDescriptor(descriptor: ProfilePropertyDescriptor | undefined, where: string): string[] {
+    if (!descriptor) return []
+    const problems: string[] = []
+    if (descriptor.writable !== undefined && typeof descriptor.writable !== 'boolean')
+        problems.push(`${where}.writable must be boolean`)
+    const value = (candidate: unknown, field: string) => {
+        if (typeof candidate !== 'string' && (typeof candidate !== 'number' || !Number.isSafeInteger(candidate))) {
+            problems.push(`${where}.${field} must be an integer or string`)
+            return
+        }
+        if (descriptor.dataType === undefined || descriptor.raw !== undefined) return
+        const type = Number.parseInt(descriptor.dataType.slice(2), 16)
+        if (type === 0xffff) {
+            if (typeof candidate !== 'string' || candidate.length > 254)
+                problems.push(`${where}.${field} must be a PTP string of at most 254 UTF-16 units`)
+            return
+        }
+        if (type < 1 || type > 10) return
+        try {
+            const integer = BigInt(candidate)
+            const bits = 8n << BigInt(Math.floor((type - 1) / 2))
+            const signed = type % 2 === 1
+            const minimum = signed ? -(1n << (bits - 1n)) : 0n
+            const maximum = (1n << (bits - (signed ? 1n : 0n))) - 1n
+            if (integer < minimum || integer > maximum) problems.push(`${where}.${field} exceeds datatype bounds`)
+        } catch {
+            problems.push(`${where}.${field} is not an integer`)
+        }
+    }
+    if (descriptor.factoryDefault !== undefined) value(descriptor.factoryDefault, 'factoryDefault')
+    if (descriptor.current !== undefined) value(descriptor.current, 'current')
+    const form = descriptor.form
+    if (!form) return problems
+    if ('range' in form === 'enumeration' in form)
+        problems.push(`${where}.form must specify exactly one range or enumeration`)
+    if ('enumeration' in form) {
+        if (form.enumeration.length > 0xffff) problems.push(`${where}.form.enumeration exceeds UINT16 count`)
+        form.enumeration.forEach((candidate, index) => value(candidate, `form.enumeration[${index}]`))
+    }
+    if ('range' in form) {
+        const { minimum, maximum, step } = form.range
+        if (![minimum, maximum, step].every(Number.isSafeInteger) || minimum > maximum || step < 0)
+            problems.push(`${where}.form.range must contain ordered integer bounds and a nonnegative step`)
+        value(minimum, 'form.range.minimum')
+        value(maximum, 'form.range.maximum')
+        value(step, 'form.range.step')
+    }
     return problems
 }
 
@@ -332,10 +453,12 @@ function validateQuirkBehaviour(behaviour: QuirkBehaviour | undefined, where: st
             requireCodes(behaviour.parameters, 'parameters', true)
             break
         case 'session-id':
+            if (behaviour.rule !== 'equals' && behaviour.rule !== 'nonzero') problems.push(`${where}.rule is invalid`)
             if (behaviour.rule === 'equals' && !Number.isInteger(behaviour.sessionId))
                 problems.push(`${where}.sessionId is required for rule "equals"`)
             break
         case 'event-delivery':
+            if (behaviour.mode !== 'interrupt' && behaviour.mode !== 'polled') problems.push(`${where}.mode is invalid`)
             if (behaviour.mode === 'polled') requireCode(behaviour.pollOperation, 'pollOperation')
             if (behaviour.emptyResponse !== undefined && !HEX_BYTES.test(behaviour.emptyResponse))
                 problems.push(`${where}.emptyResponse must be bytes`)
@@ -350,6 +473,20 @@ function validateQuirkBehaviour(behaviour: QuirkBehaviour | undefined, where: st
             requireCode(behaviour.gated?.to, 'gated.to')
             requireCodes(behaviour.gated?.except, 'gated.except', true)
             requireCode(behaviour.response, 'response')
+            break
+        case 'requires-sequence':
+            if (!Array.isArray(behaviour.sequence) || !behaviour.sequence.length) {
+                problems.push(`${where}.sequence must contain at least one request`)
+            } else {
+                behaviour.sequence.forEach((request, index) => {
+                    requireCode(request?.operation, `sequence[${index}].operation`)
+                    requireCodes(request?.parameters, `sequence[${index}].parameters`, true)
+                })
+            }
+            requireCode(behaviour.gated?.from, 'gated.from')
+            requireCode(behaviour.gated?.to, 'gated.to')
+            requireCodes(behaviour.gated?.except, 'gated.except', true)
+            requireCode(behaviour.response, 'response', true)
             break
         case 'rejects-operations':
             requireCodes(behaviour.operations, 'operations')
@@ -380,7 +517,8 @@ function validateQuirkBehaviour(behaviour: QuirkBehaviour | undefined, where: st
 export function ptpIpPersonality(
     profile: CameraProfile
 ): Extract<QuirkBehaviour, { kind: 'ptp-ip-personality' }> | undefined {
-    for (const { behaviour } of profile.quirks) if (behaviour.kind === 'ptp-ip-personality') return behaviour
+    for (const { behaviour, unverified } of profile.quirks)
+        if (!unverified && behaviour.kind === 'ptp-ip-personality') return behaviour
     return undefined
 }
 

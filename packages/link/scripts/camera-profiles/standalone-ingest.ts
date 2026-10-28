@@ -8,7 +8,7 @@ import {
     type ProfileSource,
     type RecordedExchange,
 } from '@transport/simulated/camera-profile'
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { format } from 'prettier'
 import { slug } from './camera-catalog'
@@ -116,31 +116,117 @@ export async function ingestCapture(
  * Takes the hardware rows of a run log (*.jsonl) or support matrix (*.json) into the hardware results
  * that `lab:results` and `compat:merge` combine; a run log is also kept for the UI's run history.
  */
+/** Imported results are data, never paths or proof of a completed live operation. */
+function validateResultRows(document: unknown): SupportMatrix {
+    const matrix = document as SupportMatrix
+    if (!matrix || !Array.isArray(matrix.rows) || !Number.isFinite(Date.parse(matrix.generatedAt)))
+        throw new Error('Result matrix requires rows and a valid original generatedAt')
+    for (const row of matrix.rows) {
+        if (!row || typeof row.profile !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(row.profile))
+            throw new Error('Result profile must be a safe lowercase kebab-case identifier')
+        for (const name of ['manufacturer', 'line', 'model'] as const)
+            if (typeof row[name] !== 'string' || !row[name]) throw new Error(`Result row is missing ${name}`)
+        if (
+            !['hardware', 'captured', 'documented'].includes(row.fidelity) ||
+            (row.transport !== undefined && !['usb', 'ptp-ip'].includes(row.transport))
+        )
+            throw new Error('Invalid result tier or transport')
+        if (!row.results || typeof row.results !== 'object' || Array.isArray(row.results))
+            throw new Error('Invalid capability results')
+        for (const result of Object.values(row.results)) {
+            if (
+                !result ||
+                !['pass', 'fail', 'no-data', 'unsupported'].includes(result.status) ||
+                typeof result.detail !== 'string'
+            )
+                throw new Error('Invalid capability status or detail')
+        }
+        if (
+            (row.firmware !== undefined && typeof row.firmware !== 'string') ||
+            (row.host !== undefined && typeof row.host !== 'string')
+        )
+            throw new Error('Invalid result firmware or host')
+        if (
+            row.usb !== undefined &&
+            (!Array.isArray(row.usb) ||
+                row.usb.some(usb => typeof usb !== 'string' || !/^[0-9a-f]{4}:[0-9a-f]{4}$/.test(usb)))
+        )
+            throw new Error('Invalid result USB identity')
+        if (row.source && !Number.isFinite(Date.parse(row.source.generatedAt)))
+            throw new Error('Invalid original result source time')
+    }
+    return matrix
+}
+
 export function ingestResults(
     file: string,
     options: { hardwareDirectory?: string; runsDirectory?: string } = {}
 ): { rows: SupportMatrixRow[]; written: string[] } {
     const text = readFileSync(file, 'utf8')
-    let rows: SupportMatrixRow[]
+    let matrix: SupportMatrix
+    let progressCopy: string | undefined
     if (file.endsWith('.jsonl')) {
         const events = parseProgress(text)
-        if (!events.some(event => event.type === 'run-start')) throw new Error(`${file} is not a compatibility run log`)
-        rows = rowsFromProgress(events)
-        const runsDirectory = options.runsDirectory ?? defaultRunsDirectory
-        mkdirSync(runsDirectory, { recursive: true })
-        const copy = path.join(runsDirectory, path.basename(file))
-        if (path.resolve(copy) !== path.resolve(file)) copyFileSync(file, copy)
-    } else {
-        rows = (JSON.parse(text) as SupportMatrix).rows
-    }
-    const hardware = rows.filter(row => row.fidelity === 'hardware')
-    const written = hardware.map(row => {
+        const start = events.find(event => event.type === 'run-start')
+        if (!start) throw new Error(`${file} is not a compatibility run log`)
+        if (events.some(event => event.runId !== start.runId))
+            throw new Error('Run log mixes multiple run IDs; import each run separately')
+        const completed = events.filter(event => event.type === 'row-end')
+        const rows = rowsFromProgress(events).flatMap(row => {
+            const end = [...completed]
+                .reverse()
+                .find(
+                    event =>
+                        event.type === 'row-end' &&
+                        event.row.profile === row.profile &&
+                        (event.row.transport ?? 'usb') === (row.transport ?? 'usb') &&
+                        event.row.firmware === row.firmware
+                )
+            return end ? [{ ...row, source: row.source ?? { generatedAt: end.at } }] : []
+        })
+        if (!rows.length)
+            throw new Error('Run log has no completed rows; partial progress is not a completed hardware result')
+        matrix = validateResultRows({ generatedAt: start.at, rows })
+        progressCopy = path.join(options.runsDirectory ?? defaultRunsDirectory, path.basename(file))
+    } else matrix = validateResultRows(JSON.parse(text))
+    const hardware = matrix.rows
+        .filter(row => row.fidelity === 'hardware')
+        .map(row => ({
+            ...row,
+            source: row.source ?? {
+                generatedAt: matrix.generatedAt,
+                ...(matrix.revision && { revision: matrix.revision }),
+            },
+        }))
+    const grouped = new Map<string, SupportMatrixRow[]>()
+    for (const row of hardware) {
         const output = path.join(
             options.hardwareDirectory ?? hardwareResultsDirectory,
             hardwareMatrixName(row.profile, row.transport ?? 'usb')
         )
-        writeMatrix(output, [row])
-        return output
-    })
+        const previous = existsSync(output) ? validateResultRows(JSON.parse(readFileSync(output, 'utf8'))) : undefined
+        const priorRows =
+            previous?.rows
+                .filter(existing => existing.fidelity === 'hardware')
+                .map(existing => ({
+                    ...existing,
+                    source: existing.source ?? {
+                        generatedAt: previous.generatedAt,
+                        ...(previous.revision && { revision: previous.revision }),
+                    },
+                })) ?? []
+        const existing = grouped.get(output) ?? priorRows
+        if (!existing.some(previous => JSON.stringify(previous) === JSON.stringify(row))) existing.push(row)
+        grouped.set(output, existing)
+    }
+    const written: string[] = []
+    for (const [output, rows] of grouped) {
+        writeMatrix(output, rows)
+        written.push(output)
+    }
+    if (progressCopy && path.resolve(progressCopy) !== path.resolve(file)) {
+        mkdirSync(path.dirname(progressCopy), { recursive: true })
+        copyFileSync(file, progressCopy)
+    }
     return { rows: hardware, written }
 }

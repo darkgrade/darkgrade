@@ -17,6 +17,8 @@ const INTEGER_SIZES: Record<number, { bytes: number; signed: boolean }> = {
     0x0006: { bytes: 4, signed: false },
     0x0007: { bytes: 8, signed: true },
     0x0008: { bytes: 8, signed: false },
+    0x0009: { bytes: 16, signed: true },
+    0x000a: { bytes: 16, signed: false },
 }
 
 export function concatenateBytes(parts: Uint8Array[]): Uint8Array {
@@ -58,34 +60,65 @@ function encodeUint16Array(codes: string[]): Uint8Array {
 }
 
 export function encodeValue(dataType: number, value: number | string): Uint8Array {
-    if (dataType === STRING_DATATYPE) return encodePtpString(String(value))
+    if (dataType === STRING_DATATYPE) {
+        if (typeof value !== 'string') throw new Error('PTP string values must be strings')
+        return encodePtpString(value)
+    }
     const size = INTEGER_SIZES[dataType]
     if (!size) throw new Error(`Datatype 0x${dataType.toString(16)} is not supported by the simulator`)
+    if (typeof value === 'number' && !Number.isSafeInteger(value))
+        throw new Error('PTP integer values must be safe integers; use a decimal string for larger values')
     const bytes = new Uint8Array(size.bytes)
-    const view = new DataView(bytes.buffer)
     const integer = BigInt(value)
-    if (size.bytes === 8) {
-        if (size.signed) view.setBigInt64(0, integer, true)
-        else view.setBigUint64(0, integer, true)
-        return bytes
+    const bits = BigInt(size.bytes * 8)
+    const minimum = size.signed ? -(1n << (bits - 1n)) : 0n
+    const maximum = (1n << (bits - (size.signed ? 1n : 0n))) - 1n
+    if (integer < minimum || integer > maximum) throw new Error(`PTP integer ${value} exceeds datatype bounds`)
+    let remaining = BigInt.asUintN(size.bytes * 8, integer)
+    for (let index = 0; index < size.bytes; index++) {
+        bytes[index] = Number(remaining & 0xffn)
+        remaining >>= 8n
     }
-    const numeric = Number(integer)
-    if (size.bytes === 1) view.setUint8(0, numeric & 0xff)
-    if (size.bytes === 2) view.setUint16(0, numeric & 0xffff, true)
-    if (size.bytes === 4) view.setUint32(0, numeric >>> 0, true)
     return bytes
+}
+
+function requireBytes(bytes: Uint8Array, offset: number, count: number): void {
+    if (!Number.isInteger(offset) || offset < 0 || offset + count > bytes.length)
+        throw new Error('Truncated PTP dataset')
 }
 
 /** Byte length of one value of `dataType` starting at `offset`. */
 export function valueLength(dataType: number, bytes: Uint8Array, offset: number): number {
     if (dataType === STRING_DATATYPE) {
+        requireBytes(bytes, offset, 1)
         const characterCount = bytes[offset]
-        if (characterCount === undefined) throw new Error('Truncated PTP string')
-        return 1 + characterCount * 2
+        const length = 1 + characterCount * 2
+        requireBytes(bytes, offset, length)
+        if (characterCount && (bytes[offset + length - 2] !== 0 || bytes[offset + length - 1] !== 0))
+            throw new Error('PTP string is missing its terminator')
+        return length
+    }
+    if ((dataType & 0x4000) !== 0) {
+        const element = INTEGER_SIZES[dataType & ~0x4000]
+        if (!element) throw new Error(`Unsupported PTP array datatype 0x${dataType.toString(16)}`)
+        requireBytes(bytes, offset, 4)
+        const count = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true)
+        const length = 4 + count * element.bytes
+        requireBytes(bytes, offset, length)
+        return length
     }
     const size = INTEGER_SIZES[dataType]
     if (!size) throw new Error(`Datatype 0x${dataType.toString(16)} is not supported by the simulator`)
+    requireBytes(bytes, offset, size.bytes)
     return size.bytes
+}
+
+function readInteger(dataType: number, bytes: Uint8Array): bigint {
+    const size = INTEGER_SIZES[dataType]
+    if (!size) throw new Error('PTP ranges require a scalar integer datatype')
+    let value = 0n
+    for (let index = size.bytes - 1; index >= 0; index--) value = (value << 8n) | BigInt(bytes[index])
+    return size.signed ? BigInt.asIntN(size.bytes * 8, value) : value
 }
 
 /**
@@ -122,9 +155,11 @@ export interface DescriptorLayout {
     currentValueStart: number
     currentValueEnd: number
     enumeration?: Uint8Array[]
+    range?: { minimum: bigint; maximum: bigint; step: bigint }
 }
 
 export function readDescriptorLayout(raw: Uint8Array): DescriptorLayout {
+    requireBytes(raw, 0, 5)
     const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
     const dataType = view.getUint16(2, true)
     const writable = raw[4] === 1
@@ -132,9 +167,25 @@ export function readDescriptorLayout(raw: Uint8Array): DescriptorLayout {
     const currentValueStart = factoryDefaultStart + valueLength(dataType, raw, factoryDefaultStart)
     const currentValueEnd = currentValueStart + valueLength(dataType, raw, currentValueStart)
     const formFlag = raw[currentValueEnd]
+    requireBytes(raw, currentValueEnd, 1)
+    if (raw[4] !== 0 && raw[4] !== 1) throw new Error('Invalid DevicePropDesc access flag')
     const layout: DescriptorLayout = { dataType, writable, currentValueStart, currentValueEnd }
-    if (formFlag !== 0x02) return layout
+    if (formFlag === 0) return layout
+    if (formFlag === 1) {
+        let offset = currentValueEnd + 1
+        const values: bigint[] = []
+        for (let index = 0; index < 3; index++) {
+            const length = valueLength(dataType, raw, offset)
+            values.push(readInteger(dataType, raw.slice(offset, offset + length)))
+            offset += length
+        }
+        const [minimum, maximum, step] = values
+        if (minimum > maximum || step < 0n) throw new Error('Invalid DevicePropDesc range')
+        return { ...layout, range: { minimum, maximum, step } }
+    }
+    if (formFlag !== 2) throw new Error('Invalid DevicePropDesc form flag')
 
+    requireBytes(raw, currentValueEnd + 1, 2)
     const count = view.getUint16(currentValueEnd + 1, true)
     const enumeration: Uint8Array[] = []
     let offset = currentValueEnd + 3
@@ -144,6 +195,26 @@ export function readDescriptorLayout(raw: Uint8Array): DescriptorLayout {
         offset += length
     }
     return { ...layout, enumeration }
+}
+
+/** Validates the complete wire value against the descriptor's datatype and advertised form. */
+export function descriptorAcceptsValue(layout: DescriptorLayout, value: Uint8Array): boolean {
+    try {
+        if (valueLength(layout.dataType, value, 0) !== value.length) return false
+        if (
+            layout.enumeration &&
+            !layout.enumeration.some(
+                allowed => allowed.length === value.length && allowed.every((byte, index) => value[index] === byte)
+            )
+        )
+            return false
+        if (!layout.range) return true
+        const integer = readInteger(layout.dataType, value)
+        const { minimum, maximum, step } = layout.range
+        return integer >= minimum && integer <= maximum && (step === 0n || (integer - minimum) % step === 0n)
+    } catch {
+        return false
+    }
 }
 
 /** Encodes a DevicePropDesc from parsed fields, or undefined when a required field is missing. */
@@ -156,6 +227,7 @@ export function encodeDescriptor(
     if (dataType === undefined || writable === undefined || factoryDefault === undefined || current === undefined)
         return undefined
     const type = dataTypeOverride ?? parseCode(dataType)
+    if (!Number.isInteger(code) || code < 0 || code > 0xffff) throw new Error('DevicePropDesc code exceeds UINT16')
     const formBytes: Uint8Array[] = [Uint8Array.of(0)]
     if (form && 'range' in form) {
         formBytes[0] = Uint8Array.of(1)
@@ -166,6 +238,7 @@ export function encodeDescriptor(
         )
     }
     if (form && 'enumeration' in form) {
+        if (form.enumeration.length > 0xffff) throw new Error('DevicePropDesc enumeration exceeds UINT16 count')
         formBytes[0] = Uint8Array.of(2)
         formBytes.push(
             encodeUint16(form.enumeration.length),

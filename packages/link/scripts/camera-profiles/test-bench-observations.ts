@@ -21,6 +21,8 @@ export interface CameraObservations {
     manufacturer: string
     line: string
     model: string
+    /** Exact catalog model association; a shared USB ID or product line cannot establish this alias. */
+    catalogModel: string
     vendorId: string
     productIds: string[]
     usbEvidence: EvidenceReference
@@ -41,6 +43,7 @@ export const benchProbeNote =
 
 const canonR6MarkIII: CameraObservations = {
     id: 'canon-eos-r6-mark-iii',
+    catalogModel: 'Canon EOS R6 Mark III',
     manufacturer: 'Canon',
     line: 'EOS R (mirrorless, RF mount)',
     model: 'EOS R6 Mark III',
@@ -211,6 +214,7 @@ const canonR6MarkIII: CameraObservations = {
 
 const canonR6: CameraObservations = {
     id: 'canon-eos-r6',
+    catalogModel: 'Canon EOS R6',
     manufacturer: 'Canon',
     line: 'EOS R (mirrorless, RF mount)',
     model: 'EOS R6',
@@ -237,6 +241,7 @@ const canonR6: CameraObservations = {
 
 const canon80D: CameraObservations = {
     id: 'canon-eos-80d',
+    catalogModel: 'Canon EOS 80D',
     manufacturer: 'Canon',
     line: 'EOS DSLR (EOS-protocol era: 40D/450D and later)',
     model: 'EOS 80D',
@@ -269,6 +274,7 @@ const canon80D: CameraObservations = {
 
 const nikonZ6III: CameraObservations = {
     id: 'nikon-z6-iii',
+    catalogModel: 'Nikon Z6 III',
     manufacturer: 'Nikon',
     line: 'Z (mirrorless, Z mount)',
     model: 'Z6 III',
@@ -345,6 +351,7 @@ const nikonZ6III: CameraObservations = {
 
 const nikonZ7: CameraObservations = {
     id: 'nikon-z7',
+    catalogModel: 'Nikon Z7',
     manufacturer: 'Nikon',
     line: 'Z (mirrorless, Z mount)',
     model: 'Z 7',
@@ -358,6 +365,7 @@ const nikonZ7: CameraObservations = {
 
 const sonyA6700: CameraObservations = {
     id: 'sony-ilce-6700',
+    catalogModel: 'Sony A6700 (PC Control)',
     manufacturer: 'Sony',
     line: 'Alpha APS-C E-mount (α6xxx / α5xxx)',
     model: 'ILCE-6700 (α6700)',
@@ -386,6 +394,7 @@ const sonyA6700: CameraObservations = {
 
 const sonyFx2: CameraObservations = {
     id: 'sony-ilme-fx2',
+    catalogModel: 'Sony ILME-FX2',
     manufacturer: 'Sony',
     line: 'Cinema Line FX / ILME',
     model: 'ILME-FX2',
@@ -426,6 +435,7 @@ const olympusEPL5Evidence = {
 
 const olympusEPL5: CameraObservations = {
     id: 'olympus-e-pl5',
+    catalogModel: 'Olympus E-PL5',
     manufacturer: 'OM System / Olympus',
     line: 'PEN / compacts / TG (download-only)',
     model: 'E-PL5',

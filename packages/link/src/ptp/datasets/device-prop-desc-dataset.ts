@@ -1,6 +1,6 @@
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
-import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
+import { CustomCodec, type CodecInstance, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
 
 export interface DevicePropDesc {
@@ -25,6 +25,23 @@ export interface DevicePropDesc {
     }
 }
 
+/**
+ * A camera can report a value its property codec does not know (newer firmware, or an enumeration
+ * entry darkgrade has not named yet). The descriptor stays usable with the raw value in that slot
+ * instead of failing as a whole.
+ */
+function decodeOrRaw(
+    codec: CodecInstance<number | bigint | string>,
+    bytes: Uint8Array,
+    raw: number | bigint | string
+): number | bigint | string {
+    try {
+        return codec.decode(bytes, 0).value
+    } catch {
+        return raw
+    }
+}
+
 export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
     private use4ByteCode: boolean
 
@@ -33,7 +50,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         this.use4ByteCode = use4ByteCode
     }
 
-    encode(value: DevicePropDesc): Uint8Array {
+    encode(_value: DevicePropDesc): Uint8Array {
         throw new Error('Encoding DevicePropDesc is not yet implemented')
     }
 
@@ -96,8 +113,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         if (propertyDef && propertyDef.codec) {
             const codecInstance =
                 typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
-            const decodedResult = codecInstance.decode(currentValueBytes, 0)
-            currentValueDecoded = decodedResult.value
+            currentValueDecoded = decodeOrRaw(codecInstance, currentValueBytes, currentValueRaw)
         }
 
         let minimumValue: number | bigint | string | undefined = undefined
@@ -141,9 +157,9 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
                     const maxBytes = datatypeCodec.encode(maximumValue)
                     const stepBytes = datatypeCodec.encode(stepSize)
 
-                    minimumValue = codecInstance.decode(minBytes, 0).value
-                    maximumValue = codecInstance.decode(maxBytes, 0).value
-                    stepSize = codecInstance.decode(stepBytes, 0).value
+                    minimumValue = decodeOrRaw(codecInstance, minBytes, minimumValue)
+                    maximumValue = decodeOrRaw(codecInstance, maxBytes, maximumValue)
+                    stepSize = decodeOrRaw(codecInstance, stepBytes, stepSize)
                 }
             }
         } else if (formFlag === 0x02) {
@@ -170,11 +186,9 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
                             ? datatypeDefinition.codec(this.registry)
                             : datatypeDefinition.codec
 
-                    supportedValuesDecoded = supportedValuesRaw.map(rawVal => {
-                        const bytes = datatypeCodec.encode(rawVal)
-                        const decoded = codecInstance.decode(bytes, 0)
-                        return decoded.value
-                    })
+                    supportedValuesDecoded = supportedValuesRaw.map(rawVal =>
+                        decodeOrRaw(codecInstance, datatypeCodec.encode(rawVal), rawVal)
+                    )
                 }
             }
         }

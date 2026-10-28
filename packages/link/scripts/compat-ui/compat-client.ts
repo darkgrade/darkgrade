@@ -437,6 +437,7 @@ function updateDetailCells(root: ParentNode, rows: ViewRow[]): void {
             const status = knownStatus(cell.status)
             target.className = `detail s-${status}`
             target.innerHTML = detailCellContent({
+                ...cell,
                 status,
                 detail: typeof cell.detail === 'string' ? cell.detail : '',
             })

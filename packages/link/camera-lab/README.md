@@ -21,23 +21,27 @@ To add a camera, add its entry with sources and a captured profile (see "Adding 
 
 ## What a lab job does
 
-For each enabled camera, on the runner of its host:
+The hardware entrypoint requires `DARKGRADE_TESTBENCH_DIR` to name the deployed bench checkout. It fails before USB access if the checkout has no shared `HardwareCoordinator`, loopback MCP is unavailable, the host or camera mapping differs, another job/recording/recovery owns the camera, or the camera is powered off or unavailable on USB. It does not power on or recover cameras.
 
-1. `bun run bench:probe -- --camera <vid:pid>` must complete PTP `GetDeviceInfo`. If it does not, the job runs the bench CLI's `recover <label> auto` (USB replug, escalating to the mapped Shelly power feed) and probes again.
-2. The bench CLI starts a usbmon capture (`capture-start <label>`).
-3. `bun run lab:hardware -- --camera <id>` runs the capability suite through `USBTransport`, selecting the camera by VID:PID. The captured profile supplies the values darkgrade must decode. Captured traffic is never replayed on hardware, and the set-property check restores the original value and reads it back. Results carry fidelity `hardware` and the firmware the camera reports.
-4. Always: the capture is stopped and uploaded as `camera-lab-capture-<id>` (kept 14 days), and the camera is probed again and recovered if needed, so it is left answering PTP.
+For each available camera:
 
-A `report` job combines the per-camera results (`bun run lab:results`), writes the matrix to the job summary, and publishes it to GCS when configured.
+1. Read fresh MCP `bench_status`, then acquire shared `HardwareCoordinator` ownership using the deployed bench’s state database. Read status again and require that MCP sees the same owner; this prevents running against a different state database or a service without shared ownership support.
+2. Start an `agent_job_start` scoped to the configured camera and heartbeat it. Run a worker under the bench’s existing per-camera `flock`; the parent retains shared ownership until that worker exits, including interruption and timeout cleanup.
+3. Run read-only connection/session and fresh PTP `GetDeviceInfo` checks. All other capabilities carry `no-data` with the read-only scope stated explicitly. Captured exchanges are never replayed against hardware. No settings, capture, power or recovery actions run, so initial settings and power are preserved.
+4. Close the worker’s camera session and finish the scoped job in `finally`, then release hardware ownership. A failed lease, lock, worker or cleanup fails the run. Results retain fidelity `hardware`, with only the actual read-only checks classified; firmware is omitted rather than inferred from the historical registry.
 
-Captures are not ingested automatically. To refresh a captured profile from one, download the artifact and run the command in its `INGEST.txt`, then review and commit the profile change.
+The parent bounds its worker to two minutes, requests termination, and waits for exit before releasing ownership. This worker awaits each operation fully, stops after failure or interruption and awaits disconnect in `finally`. Mutation, capture and live-view tests remain outside this adapter until cancellation and state restoration are implemented inside the bench. This limit avoids overlapping a timed-out command with a later capability or restoration write.
+
+A `report` job combines per-camera results (`bun run lab:results`) and publishes them when configured. No raw USB captures are uploaded by this workflow; collect and sanitize additional evidence through the guarded bench tools.
+
+A single runner per host and an idle schedule do not establish camera ownership. The bench owns that boundary so CI, Fleet and a future Outpost Simulation Bench share it.
 
 ### Limits
 
-- The bench CLI has no lease command; the `agent_job_*` lease lives in the testbench MCP server. Schedule lab runs when nobody is using the bench (the nightly run is at 03:17 US Eastern), and expect a busy camera to fail its probe.
-- The bench web/MCP service can hold a camera session; a lab job that cannot claim the USB interface reports a failed session.
-- Bodies without a card (currently FX2 and Z6 III) fail capture checks; that is a real result.
-- Only the `usb` connection is run. Wi-Fi (`sony-remote`) is recorded in the registry but not exercised.
+- The adapter requires a deployed MCP version that reports current `hardwareOwners`; older services fail closed.
+- Only read-only USB identity/session checks run. Wi-Fi, property writes, image capture, recording and live view remain untested by this tier.
+- A successful command or DeviceInfo response does not establish visual focus, exposure, recording or media behavior.
+- Busy or intentionally powered-off cameras fail the run without recovery or power changes.
 
 ## Registering the testbench hosts as runners
 
@@ -54,7 +58,7 @@ On each host, as the user that owns the `darkgrade-testbench` checkout and has U
     sudo ./svc.sh install "$USER" && sudo ./svc.sh start
     ```
 
-3. If the test-bench checkout is not at `~/darkgrade-testbench`, set the repository variable `DARKGRADE_TESTBENCH_DIR`.
+3. Set repository variable `DARKGRADE_TESTBENCH_DIR` to the deployed test-bench checkout’s absolute path. Its state directory must match the MCP service; if using a custom location, set `DARKGRADE_BENCH_STATE_DIR` in the runner’s environment. The adapter verifies ownership is visible to MCP before opening USB.
 4. When every host is registered, set the repository variable `CAMERA_LAB_ENABLED` to `true`. Until then the workflow's jobs are skipped instead of waiting for a runner.
 
 The runner only makes outbound HTTPS connections to GitHub (it long-polls for jobs), so the hosts need no inbound ports, port forwarding or tailnet exposure. A tailnet would only be needed for a different design in which CI calls an agent on each host (for example the testbench MCP server over Tailscale) instead of running jobs there.
@@ -109,7 +113,7 @@ Then set these repository variables (Settings → Secrets and variables → Acti
 
 ## Merged compatibility matrix
 
-`bun run compat:merge` combines the simulation matrix with the latest hardware matrix, when there is one, into `test-results/camera-compatibility.{json,md}`. Rows that share a USB identity are one camera (so regional names for one body collapse into one row with aliases), and each camera takes its results from its strongest evidence: hardware, then captured, then documented. Per-line documented mocks are dropped in favour of the per-model ones.
+`bun run compat:merge` combines the simulation matrix with the latest hardware matrix, when there is one, into `test-results/camera-compatibility.{json,md}`. Rows join only when USB identity and an exact catalog/profile model alias agree. Shared product IDs alone do not establish model aliases. Conflicting known firmware versions remain separate. Each capability takes its strongest available evidence (hardware, then captured, then documented), with its source retained in `resultEvidence`; a weaker source is labeled in the rendered cell. Per-line documented mocks are dropped in favour of the per-model ones.
 
 `bun run compat:readme` regenerates the "Camera compatibility matrix" section of the repository README between the `camera-compatibility` markers. To refresh it with hardware results:
 

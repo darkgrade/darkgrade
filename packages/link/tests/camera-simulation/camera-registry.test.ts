@@ -4,6 +4,22 @@ import { describe, expect, it } from 'vitest'
 const registry = loadRegistry()
 
 describe('camera-lab/cameras.lab.json', () => {
+    it('allows the same camera model on separate benches and requires serials for duplicate bodies on one bench', () => {
+        const multiple = structuredClone(registry)
+        const original = multiple.cameras.find(camera => camera.id === 'canon-eos-80d')!
+        multiple.cameras.push({
+            ...structuredClone(original),
+            id: 'second-eos-80d',
+            host: 'darkgrade02',
+            benchLabel: 'second-canon',
+        })
+        expect(validateRegistry(multiple)).toEqual([])
+        multiple.cameras.at(-1)!.host = original.host
+        expect(validateRegistry(multiple).some(problem => problem.includes('distinct explicit serials'))).toBe(true)
+        original.usb!.serial = 'body-one'
+        multiple.cameras.at(-1)!.usb!.serial = 'body-two'
+        expect(validateRegistry(multiple)).toEqual([])
+    })
     it('is valid and matches its captured profiles', () => {
         expect(validateRegistry(registry)).toEqual([])
     })

@@ -1,15 +1,34 @@
+export { identifyCamera } from '@camera/identification/camera-identification'
+export type {
+    CameraIdentification,
+    CameraIdentityCandidate,
+    CameraProfileEvidence,
+} from '@camera/identification/camera-identification'
+
 // Main protocol implementation
 export { CanonCamera } from '@camera/canon-camera'
 export { GenericCamera } from '@camera/generic-camera'
 export { Camera } from '@camera/index'
 export { NikonCamera } from '@camera/nikon-camera'
 export { SonyCamera } from '@camera/sony-camera'
+export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'
+export { VendorExtensionCamera } from '@camera/vendor-extension-camera'
+export {
+    PTPDecodeError,
+    PTPDisconnectedError,
+    PTPError,
+    PTPProtocolError,
+    PTPRecoveryRequiredError,
+    PTPResponseError,
+    PTPTimeoutError,
+    type PTPProtocolViolation,
+} from '@core/ptp-errors'
 export type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 export type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 
 // Transport implementations
 export { TransportType } from '@transport/interfaces/transport-types'
-export { IPTransport } from '@transport/ip/ip-transport'
+export { IPTransport, PTPIPTransactionCancelledError } from '@transport/ip/ip-transport'
 export type { IPTransportOptions } from '@transport/ip/ip-transport'
 export { loadCameraProfile, validateCameraProfile } from '@transport/simulated/camera-profile'
 export type {
@@ -19,7 +38,12 @@ export type {
     ProfileQuirk,
     QuirkBehaviour,
 } from '@transport/simulated/camera-profile'
-export { CHAOS_FAULTS, ChaosDisconnectError, type ChaosFault, type ChaosOptions } from '@transport/simulated/chaos-faults'
+export {
+    CHAOS_FAULTS,
+    ChaosDisconnectError,
+    type ChaosFault,
+    type ChaosOptions,
+} from '@transport/simulated/chaos-faults'
 export {
     ProfileDataMissingError,
     SimulatedDisconnectError,
@@ -84,3 +108,6 @@ export {
     SonyBluetoothRemote,
 } from '@vendors/sony/bluetooth-remote'
 export type { SonyBluetoothChannel, SonyBluetoothDirection } from '@vendors/sony/bluetooth-remote'
+
+export { NikonEventDataCodec } from '@vendors/nikon/event-data'
+export type { NikonQueuedEvent } from '@vendors/nikon/event-data'

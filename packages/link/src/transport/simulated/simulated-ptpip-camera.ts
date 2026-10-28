@@ -3,6 +3,7 @@ import {
     buildDataPacket,
     buildStartData,
     encodePTPIPPacket,
+    parseStartData,
     parseTransactionPayload,
     PTPIPPacketType,
     takePTPIPPackets,
@@ -10,7 +11,7 @@ import {
 } from '@transport/ip/ptpip-packet'
 import type { CameraProfile } from '@transport/simulated/camera-profile'
 import { concatenateBytes, encodeUint16, encodeUint32 } from '@transport/simulated/ptp-dataset-encoding'
-import { SimulatedTransport } from '@transport/simulated/simulated-transport'
+import { ProfileDataMissingError, SimulatedTransport } from '@transport/simulated/simulated-transport'
 import type { AddressInfo, Server, Socket } from 'node:net'
 
 const CONTAINER = { command: 1, data: 2, response: 3 } as const
@@ -18,6 +19,8 @@ const DATA_PHASE_FROM_HOST = 2
 const DATA_PACKET_BYTES = 64 * 1024
 const CAMERA_GUID = Uint8Array.from({ length: 16 }, (_, index) => 0xd0 + index)
 const PROTOCOL_VERSION = 0x00010000
+/** Fixture limit, not a physical camera limit. Large media stays out of profile JSON. */
+const MAX_DATA_BYTES = 64 * 1024 * 1024
 
 interface PendingOperation {
     operation: number
@@ -25,6 +28,8 @@ interface PendingOperation {
     parameters: Uint8Array
     expectsData: boolean
     data: Uint8Array[]
+    expectedBytes?: number
+    receivedBytes: number
 }
 
 function utf16String(text: string): Uint8Array {
@@ -68,6 +73,7 @@ export class SimulatedPtpIpCamera {
 
     /** Starts listening on an ephemeral loopback port and returns it. */
     async start(): Promise<{ host: string; port: number }> {
+        if (this.server) throw new Error('Simulated PTP/IP camera is already listening')
         const { createServer } = await import('node:net')
         const server = createServer(socket => this.accept(socket))
         this.server = server
@@ -80,9 +86,10 @@ export class SimulatedPtpIpCamera {
     }
 
     async stop(): Promise<void> {
-        this.transport.off(this.forwardEvent)
+        this.dropConnection()
         for (const socket of this.sockets) socket.destroy()
         this.sockets.clear()
+        await this.queue
         await this.transport.disconnect()
         const server = this.server
         this.server = undefined
@@ -92,38 +99,62 @@ export class SimulatedPtpIpCamera {
     private accept(socket: Socket): void {
         this.sockets.add(socket)
         socket.setNoDelay(true)
-        socket.on('close', () => this.sockets.delete(socket))
+        socket.on('close', () => {
+            this.sockets.delete(socket)
+            if (this.commandSocket === socket || this.eventSocket === socket) this.dropConnection()
+        })
         socket.on('error', () => socket.destroy())
         let buffered: Uint8Array = new Uint8Array()
         socket.on('data', chunk => {
-            const parsed = takePTPIPPackets(concatenateBytes([buffered, new Uint8Array(chunk)]))
-            buffered = parsed.remainder
-            for (const packet of parsed.packets) {
-                // Packets are handled strictly in order, as a camera's single command pipe would.
-                this.queue = this.queue
-                    .then(() => this.handle(socket, packet))
-                    .catch(() => {
-                        socket.destroy()
-                    })
+            try {
+                const input = concatenateBytes([buffered, new Uint8Array(chunk)])
+                if (input.length > MAX_DATA_BYTES + 12) throw new Error('Simulated PTP/IP packet exceeds fixture limit')
+                const parsed = takePTPIPPackets(input)
+                buffered = parsed.remainder
+                if (
+                    buffered.length >= 4 &&
+                    new DataView(buffered.buffer, buffered.byteOffset).getUint32(0, true) > MAX_DATA_BYTES + 12
+                )
+                    throw new Error('Simulated PTP/IP packet exceeds fixture limit')
+                for (const packet of parsed.packets) {
+                    this.queue = this.queue
+                        .then(async () => {
+                            if (!socket.destroyed) await this.handle(socket, packet)
+                        })
+                        .catch(() => {
+                            socket.destroy()
+                        })
+                }
+            } catch {
+                socket.destroy()
             }
         })
     }
 
     private async handle(socket: Socket, packet: PTPIPPacket): Promise<void> {
+        if (packet.type === PTPIPPacketType.Ping) {
+            socket.write(encodePTPIPPacket(PTPIPPacketType.Pong))
+            return
+        }
+        if (packet.type === PTPIPPacketType.InitCommandRequest) return this.openCommandChannel(socket, packet)
+        if (packet.type === PTPIPPacketType.InitEventRequest) {
+            if (
+                !this.commandSocket ||
+                this.eventSocket ||
+                packet.payload.length !== 4 ||
+                new DataView(packet.payload.buffer, packet.payload.byteOffset).getUint32(0, true) !== 1
+            )
+                throw new Error('Invalid PTP/IP event connection')
+            this.eventSocket = socket
+            socket.write(encodePTPIPPacket(PTPIPPacketType.InitEventAck))
+            return
+        }
+        if (socket !== this.commandSocket) throw new Error('PTP/IP operation is not on the command channel')
         switch (packet.type) {
-            case PTPIPPacketType.InitCommandRequest:
-                return this.openCommandChannel(socket)
-            case PTPIPPacketType.InitEventRequest:
-                this.eventSocket = socket
-                socket.write(encodePTPIPPacket(PTPIPPacketType.InitEventAck))
-                return
-            case PTPIPPacketType.Ping:
-                socket.write(encodePTPIPPacket(PTPIPPacketType.Pong))
-                return
             case PTPIPPacketType.OperationRequest:
                 return this.beginOperation(packet)
             case PTPIPPacketType.StartData:
-                return
+                return this.startData(packet)
             case PTPIPPacketType.Data:
             case PTPIPPacketType.EndData:
                 return this.acceptData(packet)
@@ -132,7 +163,15 @@ export class SimulatedPtpIpCamera {
         }
     }
 
-    private async openCommandChannel(socket: Socket): Promise<void> {
+    private async openCommandChannel(socket: Socket, packet: PTPIPPacket): Promise<void> {
+        if (this.commandSocket || packet.payload.length < 22 || packet.payload.length % 2)
+            throw new Error('Invalid or competing PTP/IP command connection')
+        const view = new DataView(packet.payload.buffer, packet.payload.byteOffset, packet.payload.byteLength)
+        if (
+            view.getUint32(packet.payload.length - 4, true) !== PROTOCOL_VERSION ||
+            view.getUint16(packet.payload.length - 6, true) !== 0
+        )
+            throw new Error('Unsupported PTP/IP version or unterminated initiator name')
         this.commandSocket = socket
         await this.transport.connect()
         this.transport.on(this.forwardEvent)
@@ -146,13 +185,23 @@ export class SimulatedPtpIpCamera {
     }
 
     private async beginOperation(packet: PTPIPPacket): Promise<void> {
+        if (
+            this.pending ||
+            packet.payload.length < 10 ||
+            (packet.payload.length - 10) % 4 ||
+            packet.payload.length > 30
+        )
+            throw new Error('Invalid or overlapping PTP/IP operation')
         const view = new DataView(packet.payload.buffer, packet.payload.byteOffset, packet.payload.byteLength)
+        if (view.getUint32(0, true) !== 1 && view.getUint32(0, true) !== DATA_PHASE_FROM_HOST)
+            throw new Error('Invalid PTP/IP data phase')
         const operation: PendingOperation = {
             expectsData: view.getUint32(0, true) === DATA_PHASE_FROM_HOST,
             operation: view.getUint16(4, true),
             transactionId: view.getUint32(6, true),
             parameters: packet.payload.slice(10),
             data: [],
+            receivedBytes: 0,
         }
         if (operation.expectsData) {
             this.pending = operation
@@ -161,12 +210,29 @@ export class SimulatedPtpIpCamera {
         await this.answer(operation)
     }
 
+    private startData(packet: PTPIPPacket): void {
+        if (packet.payload.length !== 12) throw new Error('Invalid PTP/IP start-data length')
+        const start = parseStartData(packet)
+        if (
+            !this.pending ||
+            this.pending.transactionId !== start.transactionId ||
+            this.pending.expectedBytes !== undefined ||
+            start.totalLength > MAX_DATA_BYTES
+        )
+            throw new Error('Invalid PTP/IP start-data transaction or fixture size')
+        this.pending.expectedBytes = start.totalLength
+    }
+
     private async acceptData(packet: PTPIPPacket): Promise<void> {
         const operation = this.pending
         const part = parseTransactionPayload(packet)
-        if (!operation || operation.transactionId !== part.transactionId) return
+        if (!operation || operation.transactionId !== part.transactionId || operation.expectedBytes === undefined)
+            throw new Error('PTP/IP data does not match a started transaction')
+        operation.receivedBytes += part.data.length
+        if (operation.receivedBytes > operation.expectedBytes) throw new Error('PTP/IP data exceeds its declaration')
         operation.data.push(part.data)
         if (packet.type !== PTPIPPacketType.EndData) return
+        if (operation.receivedBytes !== operation.expectedBytes) throw new Error('Truncated PTP/IP host data')
         this.pending = undefined
         await this.answer(operation)
     }
@@ -191,17 +257,20 @@ export class SimulatedPtpIpCamera {
 
         let container: Uint8Array
         try {
-            container = await this.transport.receive(0, 1, transactionId)
-        } catch {
+            container = await this.transport.receive(MAX_DATA_BYTES + 12, 1, transactionId)
+            if (new DataView(container.buffer, container.byteOffset).getUint32(0, true) !== container.length)
+                throw new Error('Simulated PTP/IP response exceeds fixture limit')
+        } catch (error) {
             // A recorded disconnect drops the link; a request the profile cannot answer is cancelled
             // instead of being given an invented response.
-            if (!this.transport.isConnected()) return this.dropConnection()
+            if (!this.transport.isConnected() || !(error instanceof ProfileDataMissingError))
+                return this.dropConnection()
             socket.write(encodePTPIPPacket(PTPIPPacketType.Cancel, encodeUint32(transactionId)))
             return
         }
         if (this.containerType(container) === CONTAINER.data) {
             this.writeData(socket, transactionId, container.slice(12))
-            container = await this.transport.receive(0, 1, transactionId)
+            container = await this.transport.receive(32, 1, transactionId)
         }
         const code = new DataView(container.buffer, container.byteOffset).getUint16(6, true)
         socket.write(
@@ -229,6 +298,7 @@ export class SimulatedPtpIpCamera {
     }
 
     private sendEvent(event: PTPEvent): void {
+        if (!this.eventSocket?.writable || this.eventSocket.destroyed) return
         this.eventSocket?.write(
             encodePTPIPPacket(
                 PTPIPPacketType.Event,
@@ -243,9 +313,14 @@ export class SimulatedPtpIpCamera {
 
     /** A recorded disconnect drops both channels, as a camera leaving the network would. */
     private dropConnection(): void {
-        this.commandSocket?.destroy()
-        this.eventSocket?.destroy()
+        const command = this.commandSocket
+        const events = this.eventSocket
         this.commandSocket = undefined
         this.eventSocket = undefined
+        this.pending = undefined
+        this.transport.off(this.forwardEvent)
+        void this.transport.disconnect()
+        command?.destroy()
+        events?.destroy()
     }
 }

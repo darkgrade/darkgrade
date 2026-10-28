@@ -1,31 +1,59 @@
 /**
- * Runs the compatibility capabilities against one physical camera outside CI, streaming progress to a
- * run log the compatibility UI tails, and writes a one-row hardware matrix that `lab:results` and
- * `compat:merge` pick up. The camera's profile supplies the values darkgrade must decode; captured
- * traffic is never replayed on hardware, and a changed property is restored before it passes.
+ * Software-only fixture runner for compatibility publication and progress tests.
+ * Physical cameras must use compat:hardware, which delegates to the guarded bench adapter.
  */
 import { Camera } from '@camera/index'
+import { usbPair, type CameraRegistry, type LabCamera } from '@scripts/camera-lab/camera-registry'
+import { runReadOnlyHardwareChecks } from '@scripts/camera-lab/read-only-hardware-checks'
 import { ResponseRecordingTransport } from '@scripts/camera-lab/response-recording-transport'
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import type { CameraProfile } from '@transport/simulated/camera-profile'
+import { SimulatedTransport } from '@transport/simulated/simulated-transport'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import path from 'node:path'
-import { CAPABILITIES, evaluateCapabilities, type CameraConnection, type SimulatedCamera } from './camera-capabilities'
+import { CAPABILITIES, type CameraConnection, type SimulatedCamera } from './camera-capabilities'
 import { packageDirectory, ProgressLog, rowKey } from './compat-progress'
 import { countStatuses, type SupportMatrix, type SupportMatrixRow } from './support-matrix'
 
 const HARDWARE_TIMEOUT_MILLISECONDS = 30_000
-const DISCONNECT_TIMEOUT_MILLISECONDS = 5_000
 
 export const hardwareResultsDirectory = path.join(packageDirectory, 'test-results/camera-lab')
+
+/** Resolve only an enabled deployed bench mapping; a documented profile cannot authorize hardware access. */
+export function resolveGuardedLabCamera(
+    registry: CameraRegistry,
+    selection: { usb?: string; profile?: string; ip?: string; host?: string; camera?: string }
+): LabCamera {
+    if (selection.ip)
+        throw new Error('PTP/IP hardware execution has no guarded bench adapter; use deployed bench MCP controls')
+    if (!selection.usb || !/^[0-9a-f]{4}:[0-9a-f]{4}$/.test(selection.usb))
+        throw new Error('Pass --usb vvvv:pppp for an enabled bench camera')
+    const candidates = registry.cameras.filter(
+        camera =>
+            camera.enabled &&
+            camera.connection === 'usb' &&
+            camera.usb &&
+            (!selection.host || camera.host === selection.host) &&
+            (!selection.camera || camera.id === selection.camera) &&
+            usbPair(camera.usb.vendorId, camera.usb.productId) === selection.usb
+    )
+    if (candidates.length > 1) throw new Error('Multiple bench bodies share this USB identity; select --camera <registry id>')
+    const camera = candidates[0]
+    if (!camera)
+        throw new Error(
+            'USB identity has no enabled guarded bench mapping; import a sanitized capture for simulation instead'
+        )
+    if (selection.profile && selection.profile !== path.basename(camera.profile, '.json'))
+        throw new Error('Selected profile differs from the guarded bench camera profile')
+    return camera
+}
 
 export interface StandaloneRunOptions {
     profile: CameraProfile
     profilePath: string
-    /** The real transport (USBTransport or IPTransport). */
-    transport: TransportInterface
+    /** Explicit simulated transport; raw USB/IP access is refused at runtime. */
+    transport: SimulatedTransport
     connection: CameraConnection
     device?: DeviceDescriptor
     vendorId?: number
@@ -44,11 +72,16 @@ export interface StandaloneRunResult {
 
 /** The one-row matrix file name for a profile and transport. */
 export function hardwareMatrixName(profileId: string, connection: CameraConnection): string {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(profileId))
+        throw new Error('Profile id must be lowercase kebab-case before constructing a result filename')
     return connection === 'ptp-ip' ? `${profileId}.ptp-ip.json` : `${profileId}.json`
 }
 
 export async function runStandalone(options: StandaloneRunOptions): Promise<StandaloneRunResult> {
     const { profile, connection } = options
+    if (!(options.transport instanceof SimulatedTransport))
+        throw new Error('Physical camera execution requires compat:hardware and the deployed guarded bench adapter')
+    const fidelity = profile.provenance.fidelity
     const transport = new ResponseRecordingTransport(options.transport)
     const target: SimulatedCamera = {
         profile,
@@ -58,15 +91,15 @@ export async function runStandalone(options: StandaloneRunOptions): Promise<Stan
             logger: { renderInTerminal: false, captureConsole: false, expanded: false },
         }),
         transport,
-        tier: 'hardware',
+        tier: 'simulated',
         connection,
         ...(options.device && { device: options.device }),
         timeoutMilliseconds: options.timeoutMilliseconds ?? HARDWARE_TIMEOUT_MILLISECONDS,
     }
-    const key = rowKey({ fidelity: 'hardware', transport: connection, profile: profile.id })
+    const key = rowKey({ fidelity, transport: connection, profile: profile.id })
     const host = options.host ?? hostname()
     const log = ProgressLog.start({
-        source: 'hardware',
+        source: 'simulation',
         capabilities: CAPABILITIES.map(({ id, label }) => ({ id, label })),
         rows: [
             {
@@ -77,7 +110,7 @@ export async function runStandalone(options: StandaloneRunOptions): Promise<Stan
                 line: profile.line,
                 ...(profile.catalog && { catalogLine: profile.catalog.line }),
                 model: profile.model,
-                fidelity: 'hardware',
+                fidelity,
                 transport: connection,
                 ...(options.usb?.length && { usb: options.usb }),
             },
@@ -85,15 +118,16 @@ export async function runStandalone(options: StandaloneRunOptions): Promise<Stan
         ...(options.runsDirectory && { directory: options.runsDirectory }),
     })
 
-    const results = await evaluateCapabilities(target, {
-        onStart: capability => log.capabilityStarted(key, capability),
-        onResult: (capability, result, duration) => log.capabilityFinished(key, capability, result, duration),
-    })
-    const firmware = results.session?.status === 'pass' ? await readFirmware(target).catch(() => undefined) : undefined
-    await Promise.race([
-        target.camera.disconnect().catch(() => undefined),
-        new Promise(resolve => setTimeout(resolve, DISCONNECT_TIMEOUT_MILLISECONDS)),
-    ])
+    let results: Awaited<ReturnType<typeof runReadOnlyHardwareChecks>>
+    try {
+        results = await runReadOnlyHardwareChecks(target, () => false)
+    } catch (error) {
+        log.finish('failed')
+        throw error
+    }
+    for (const capability of CAPABILITIES) {
+        log.capabilityFinished(key, capability.id, results[capability.id], 0)
+    }
 
     const row: SupportMatrixRow = {
         profile: profile.id,
@@ -101,8 +135,7 @@ export async function runStandalone(options: StandaloneRunOptions): Promise<Stan
         manufacturer: profile.manufacturer,
         line: profile.line,
         model: profile.model,
-        fidelity: 'hardware',
-        ...((firmware || profile.firmware) && { firmware: firmware || profile.firmware! }),
+        fidelity,
         ...(profile.catalog && { catalogLine: profile.catalog.line }),
         ...(options.usb?.length && { usb: options.usb }),
         ...(connection === 'ptp-ip' && { transport: 'ptp-ip' as const }),
@@ -112,7 +145,7 @@ export async function runStandalone(options: StandaloneRunOptions): Promise<Stan
     }
     log.rowFinished(row)
     const matrixFile = path.join(
-        options.resultsDirectory ?? hardwareResultsDirectory,
+        options.resultsDirectory ?? path.join(packageDirectory, 'test-results/standalone-simulation'),
         hardwareMatrixName(profile.id, connection)
     )
     writeMatrix(matrixFile, [row])
@@ -120,23 +153,21 @@ export async function runStandalone(options: StandaloneRunOptions): Promise<Stan
     return { row, matrixFile, ...(log.file && { runFile: log.file }) }
 }
 
-/** Writes hardware rows as a support matrix in the format `lab:results` combines. */
+/** Writes supplied rows without upgrading their fidelity; also used for historical hardware imports. */
 export function writeMatrix(file: string, rows: SupportMatrixRow[]): SupportMatrix {
     const matrix: SupportMatrix = {
         generatedAt: new Date().toISOString(),
         capabilities: CAPABILITIES.map(({ id, label }) => ({ id, label })),
         rows,
         lines: [],
-        totals: { hardware: countStatuses(rows) },
+        totals: Object.fromEntries(
+            [...new Set(rows.map(row => row.fidelity))].map(fidelity => [
+                fidelity,
+                countStatuses(rows.filter(row => row.fidelity === fidelity)),
+            ])
+        ),
     }
     mkdirSync(path.dirname(file), { recursive: true })
     writeFileSync(file, `${JSON.stringify(matrix, null, 2)}\n`)
     return matrix
-}
-
-/** The firmware the camera reports in DeviceInfo. */
-async function readFirmware(target: SimulatedCamera): Promise<string | undefined> {
-    const instance = target.camera.getInstance()
-    const response = await instance.send(instance.registry.operations.GetDeviceInfo, {})
-    return response.data?.deviceVersion || undefined
 }

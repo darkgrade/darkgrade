@@ -190,6 +190,20 @@ interface BuildOptions {
     id?: string
 }
 
+function modelQuirkWiring(quirkId: string, model: CatalogModel): QuirkWiring {
+    if (quirkId !== 'sony-sdio-connect-handshake' || !/\b(?:A6700|ILCE-6700|FX2|ILME-FX2)\b/i.test(model.name))
+        return QUIRK_WIRING[quirkId] ?? {}
+    const sequence = [1, 2, 3].map(phase => ({ operation: '0x9201', parameters: [formatCode(phase, 1), '0x0', '0x0'] }))
+    return {
+        accepts: sequence,
+        behaviour: {
+            kind: 'requires-sequence',
+            sequence,
+            gated: { from: '0x9200', to: '0x92ff', except: ['0x9201', '0x9202', '0x9210', '0x9216'] },
+        },
+    }
+}
+
 function appliesTo(quirk: CatalogQuirk, model: CatalogModel): boolean {
     return MODEL_SCOPED_QUIRKS[quirk.id]?.(model, effectiveGphotoFlags(model).flags) ?? true
 }
@@ -220,12 +234,18 @@ export function buildDocumentedProfile(
 
     for (const quirk of quirksFor(line, model, options.scope)) {
         // A line profile lists quirks scoped to other models for reference only.
-        const wiring = appliesTo(quirk, model) ? (QUIRK_WIRING[quirk.id] ?? {}) : {}
-        const source = cite(quirk.sources[0] ?? CATALOG_LOCATION)
+        const wiring = appliesTo(quirk, model) ? modelQuirkWiring(quirk.id, model) : {}
+        const source =
+            wiring.behaviour?.kind === 'requires-sequence'
+                ? cite('packages/link/camera-catalog/sdk-evidence.json#sony-sdio-phases')
+                : cite(quirk.sources[0] ?? CATALOG_LOCATION)
         quirk.sources.slice(1).forEach(cite)
         quirks.push({
             id: quirk.id,
-            description: quirk.description,
+            description:
+                wiring.behaviour?.kind === 'requires-sequence'
+                    ? 'SDK USB control initialization uses ordered SDIO phases 1, 2 and 3 with exact parameters. Missing prerequisite responses and negotiation payloads remain unknown; no firmware behavior is inferred.'
+                    : quirk.description,
             source,
             behaviour: wiring.behaviour ?? { kind: 'none' },
             ...(quirk.unverified && { unverified: true }),

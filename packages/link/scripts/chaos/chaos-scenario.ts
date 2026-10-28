@@ -4,6 +4,7 @@
  * transaction-ID drift, listener leaks, and whether the same Camera recovers once the faults stop.
  */
 import { Camera } from '@camera/index'
+import type { TransactionPolicy } from '@camera/transaction-channel'
 import { parseCode, type CameraProfile } from '@transport/simulated/camera-profile'
 import { CHAOS_FAULTS, ChaosDisconnectError, type ChaosFault } from '@transport/simulated/chaos-faults'
 import { ProfileDataMissingError, SimulatedTransport } from '@transport/simulated/simulated-transport'
@@ -117,11 +118,13 @@ export async function runChaosScenario(
     })
     // Library versions with transaction timeouts get short ones, so a stall or busy storm costs milliseconds.
     const tunable = camera.getInstance() as {
-        configureTransactions?: (policy: { timeoutMilliseconds: number; deviceBusyBackoffMilliseconds: number }) => void
+        configureTransactions?: (policy: Partial<TransactionPolicy>) => void
     }
     tunable.configureTransactions?.({
         timeoutMilliseconds: options.transactionTimeoutMilliseconds ?? 300,
         deviceBusyBackoffMilliseconds: 1,
+        // Explicit authorization is safe here because this transport is an in-process fixture only.
+        recoverTransport: () => transport.classRequestReset(),
     })
     const registry = camera.getInstance().registry
     const findings: ChaosFinding[] = []
@@ -130,98 +133,105 @@ export async function runChaosScenario(
     const onUnhandled = (reason: unknown) => unhandled.push(reason)
     process.on('unhandledRejection', onUnhandled)
 
-    const step = async (name: string, action: () => Promise<unknown>, singleTransaction = false) => {
-        const faultsBefore = chaos.injected.length
-        const handlerErrorsBefore = transport.eventHandlerErrors.length
-        let outcome: StepOutcome = 'ok'
-        let error: unknown
-        let value: unknown
-        try {
-            value = await withTimeout(action(), stepTimeout)
-        } catch (caught) {
-            error = caught
-            outcome = caught instanceof StepHung ? 'hang' : 'error'
-        }
-        const faults = chaos.injected
-            .slice(faultsBefore)
-            .map(entry => `${entry.fault} ${entry.operation}: ${entry.detail}`)
-        steps.push({ step: name, outcome, ...(error !== undefined && { error: describe(error) }), faults })
-        if (outcome === 'hang') findings.push({ kind: 'hang', step: name, detail: faults.join('; ') || 'no fault' })
-        if (outcome === 'error' && error instanceof Error && CRASH_NAMES.has(error.name)) {
-            findings.push({ kind: 'crash', step: name, detail: `${describe(error)} after ${faults.join('; ')}` })
-        } else if (outcome === 'error' && !isTypedFailure(error)) {
-            findings.push({
-                kind: 'untyped-error',
-                step: name,
-                detail: `${describe(error)} after ${faults.join('; ')}`,
-            })
-        }
-        const accepted = (value as { code?: number } | undefined)?.code === 0x2001
-        const mustDetect = chaos.injected.slice(faultsBefore).find(entry => MUST_DETECT.has(entry.fault))
-        if (singleTransaction && outcome === 'ok' && accepted && mustDetect) {
-            findings.push({
-                kind: 'silent-acceptance',
-                step: name,
-                detail: `${mustDetect.fault} ${mustDetect.operation} (${mustDetect.detail}) returned as OK`,
-            })
-        }
-        for (const handlerError of transport.eventHandlerErrors.slice(handlerErrorsBefore)) {
-            findings.push({ kind: 'event-handler-crash', step: name, detail: describe(handlerError) })
-        }
-    }
-
-    const propertyCode = describedProperty(camera, profile)
-    await step('connect', () => camera.connect())
-    await step('device-info', () => camera.send(registry.operations.GetDeviceInfo, {}), true)
-    if (propertyCode !== undefined) {
-        await step(
-            'property-desc',
-            () => camera.send(registry.operations.GetDevicePropDesc, { DevicePropCode: propertyCode }),
-            true
-        )
-    }
-    await step('list-properties', () => camera.getStandardPropertyStates())
-    await step('capture', () => camera.captureImage({ includeInfo: false, includeData: false }))
-    await step('disconnect', () => camera.disconnect())
-
-    chaos.enabled = false
-    let recovered = false
     try {
-        await withTimeout(
-            camera.disconnect().catch(() => undefined),
-            stepTimeout
-        )
-        await withTimeout(camera.connect(), stepTimeout)
-        const response = await withTimeout(camera.send(registry.operations.GetDeviceInfo, {}), stepTimeout)
-        recovered = response.code === 0x2001
-        await withTimeout(camera.disconnect(), stepTimeout)
-    } catch (error) {
-        if (options.expectRecovery !== false) {
-            findings.push({ kind: 'not-recoverable', step: 'recover', detail: describe(error) })
+        const step = async (name: string, action: () => Promise<unknown>, singleTransaction = false) => {
+            const faultsBefore = chaos.injected.length
+            const handlerErrorsBefore = transport.eventHandlerErrors.length
+            let outcome: StepOutcome = 'ok'
+            let error: unknown
+            let value: unknown
+            try {
+                value = await withTimeout(action(), stepTimeout)
+            } catch (caught) {
+                error = caught
+                outcome = caught instanceof StepHung ? 'hang' : 'error'
+            }
+            const faults = chaos.injected
+                .slice(faultsBefore)
+                .map(entry => `${entry.fault} ${entry.operation}: ${entry.detail}`)
+            steps.push({ step: name, outcome, ...(error !== undefined && { error: describe(error) }), faults })
+            if (outcome === 'hang') findings.push({ kind: 'hang', step: name, detail: faults.join('; ') || 'no fault' })
+            if (outcome === 'error' && error instanceof Error && CRASH_NAMES.has(error.name)) {
+                findings.push({ kind: 'crash', step: name, detail: `${describe(error)} after ${faults.join('; ')}` })
+            } else if (outcome === 'error' && !isTypedFailure(error)) {
+                findings.push({
+                    kind: 'untyped-error',
+                    step: name,
+                    detail: `${describe(error)} after ${faults.join('; ')}`,
+                })
+            }
+            const accepted = (value as { code?: number } | undefined)?.code === 0x2001
+            const mustDetect = chaos.injected.slice(faultsBefore).find(entry => MUST_DETECT.has(entry.fault))
+            if (singleTransaction && outcome === 'ok' && accepted && mustDetect) {
+                findings.push({
+                    kind: 'silent-acceptance',
+                    step: name,
+                    detail: `${mustDetect.fault} ${mustDetect.operation} (${mustDetect.detail}) returned as OK`,
+                })
+            }
+            for (const handlerError of transport.eventHandlerErrors.slice(handlerErrorsBefore)) {
+                findings.push({ kind: 'event-handler-crash', step: name, detail: describe(handlerError) })
+            }
         }
-    }
-    if (
-        !recovered &&
-        options.expectRecovery !== false &&
-        !findings.some(finding => finding.kind === 'not-recoverable')
-    ) {
-        findings.push({ kind: 'not-recoverable', step: 'recover', detail: 'GetDeviceInfo did not return OK' })
-    }
 
-    findings.push(...transactionIdDrift(transport.commandTransactionIds))
-    if (transport.eventHandlerCount > 1) {
-        findings.push({
-            kind: 'listener-leak',
-            step: 'teardown',
-            detail: `${transport.eventHandlerCount} transport event handlers registered by one Camera`,
-        })
-    }
-    await new Promise(resolve => setTimeout(resolve, 5))
-    process.off('unhandledRejection', onUnhandled)
-    for (const reason of unhandled)
-        findings.push({ kind: 'unhandled-rejection', step: 'any', detail: describe(reason) })
+        const propertyCode = describedProperty(camera, profile)
+        await step('connect', () => camera.connect())
+        await step('device-info', () => camera.send(registry.operations.GetDeviceInfo, {}), true)
+        if (propertyCode !== undefined) {
+            await step(
+                'property-desc',
+                () => camera.send(registry.operations.GetDevicePropDesc, { DevicePropCode: propertyCode }),
+                true
+            )
+        }
+        await step('list-properties', () => camera.getStandardPropertyStates())
+        await step('capture', () => camera.captureImage({ includeInfo: false, includeData: false }))
+        await step('disconnect', () => camera.disconnect())
 
-    return { profile: profile.id, fault, seed, injected: chaos.injected.length, steps, findings, recovered }
+        chaos.enabled = false
+        let recovered = false
+        try {
+            await withTimeout(
+                camera.disconnect().catch(() => undefined),
+                stepTimeout
+            )
+            await withTimeout(camera.connect(), stepTimeout)
+            const response = await withTimeout(camera.send(registry.operations.GetDeviceInfo, {}), stepTimeout)
+            recovered = response.code === 0x2001
+            await withTimeout(camera.disconnect(), stepTimeout)
+        } catch (error) {
+            if (options.expectRecovery !== false) {
+                findings.push({ kind: 'not-recoverable', step: 'recover', detail: describe(error) })
+            }
+        }
+        if (
+            !recovered &&
+            options.expectRecovery !== false &&
+            !findings.some(finding => finding.kind === 'not-recoverable')
+        ) {
+            findings.push({ kind: 'not-recoverable', step: 'recover', detail: 'GetDeviceInfo did not return OK' })
+        }
+
+        // Scenario timeouts can outlive high-level disconnect; explicitly settle synthetic I/O before inspection.
+        await transport.disconnect()
+        findings.push(...transactionIdDrift(transport.commandTransactionIds))
+        if (transport.eventHandlerCount > 1) {
+            findings.push({
+                kind: 'listener-leak',
+                step: 'teardown',
+                detail: `${transport.eventHandlerCount} transport event handlers registered by one Camera`,
+            })
+        }
+        await new Promise(resolve => setTimeout(resolve, 5))
+        for (const reason of unhandled)
+            findings.push({ kind: 'unhandled-rejection', step: 'any', detail: describe(reason) })
+
+        return { profile: profile.id, fault, seed, injected: chaos.injected.length, steps, findings, recovered }
+    } finally {
+        chaos.enabled = false
+        await transport.disconnect()
+        process.off('unhandledRejection', onUnhandled)
+    }
 }
 
 /** Command transaction IDs must rise by one per transaction; a skipped or repeated ID desynchronizes strict cameras. */

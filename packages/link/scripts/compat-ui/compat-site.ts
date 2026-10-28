@@ -105,12 +105,6 @@ export function tablePage(
     }
 }
 
-function resultCells(results: Record<string, { status: unknown; detail: unknown }>) {
-    return Object.fromEntries(
-        Object.entries(results).map(([capability, result]) => [capability, viewResult(result?.status, result?.detail)])
-    )
-}
-
 function resultLabel(fidelity: string, transport: string): string {
     return `${fidelity === 'hardware' ? 'Hardware' : `Simulated (${fidelity})`} · ${transport === 'ptp-ip' ? 'PTP/IP' : 'USB'}`
 }
@@ -174,14 +168,37 @@ export function cameraDetailModel(
         }),
         capabilities: view.capabilities,
         results: detail.rows.map(row => ({
-            key: `${row.fidelity}/${row.transport}/${profileId}`,
+            key: row.key,
             fidelity: row.fidelity,
             transport: row.transport,
             ...(row.host && { host: row.host }),
-            label: resultLabel(row.fidelity, row.transport) + (row.host ? ` (${row.host})` : ''),
+            ...(row.firmware && { firmware: row.firmware }),
+            label:
+                resultLabel(row.fidelity, row.transport) +
+                (row.firmware ? ` · firmware ${row.firmware}` : '') +
+                (row.host ? ` (${row.host})` : ''),
             source: row.source,
             at: row.at,
-            cells: resultCells(row.results),
+            cells: Object.fromEntries(
+                Object.entries(row.results).map(([capability, result]) => [
+                    capability,
+                    {
+                        ...viewResult(result.status, result.detail),
+                        evidence:
+                            row.resultEvidence === undefined &&
+                            Number.isFinite(Date.parse(row.at)) &&
+                            ['captured', 'documented', 'hardware'].includes(row.fidelity)
+                                ? {
+                                      fidelity: row.fidelity,
+                                      profile: profileId,
+                                      generatedAt: row.at,
+                                      ...(row.firmware && { firmware: row.firmware }),
+                                      ...(row.host && { host: row.host }),
+                                  }
+                                : row.resultEvidence?.[capability],
+                    },
+                ])
+            ),
         })),
         related: detail.related,
         quirks: (profile?.quirks ?? []).map(quirk => ({
@@ -205,7 +222,18 @@ export function cameraDetailModel(
             source: entry.source,
             at: entry.at,
             label: resultLabel(entry.fidelity, entry.transport),
-            cells: resultCells(entry.statuses),
+            cells: Object.fromEntries(
+                Object.entries(entry.statuses).map(([capability, result]) => [
+                    capability,
+                    {
+                        ...viewResult(result.status, result.detail),
+                        ...(Number.isFinite(Date.parse(entry.at)) &&
+                            ['captured', 'documented', 'hardware'].includes(entry.fidelity) && {
+                                evidence: { fidelity: entry.fidelity, profile: profileId, generatedAt: entry.at },
+                            }),
+                    },
+                ])
+            ),
         })),
         ...(view.activeRun && { activeRun: view.activeRun }),
     }

@@ -6,6 +6,7 @@
 import { slug } from '@scripts/camera-profiles/catalog-names'
 import type { PlannedRow, ProgressEvent, RunSource } from '@scripts/camera-profiles/compat-progress'
 import { matrixValue, progressEventValue } from '@scripts/camera-profiles/compat-schema'
+import type { CompatibilityCamera } from '@scripts/camera-profiles/compatibility-matrix'
 import {
     rowKey,
     type CapabilityStatus,
@@ -32,12 +33,19 @@ export function viewResult(status: unknown, detail: unknown): { status: CellStat
     return { status: 'unknown', detail: shorten(`unrecognised status "${raw}"${text ? `: ${text}` : ''}`) }
 }
 
+export type CapabilityEvidence = CompatibilityCamera['resultEvidence'][string]
+export type EvidenceSupportMatrixRow = SupportMatrixRow & {
+    resultEvidence?: Record<string, CapabilityEvidence>
+    viewKey?: string
+}
+
 export interface ViewCell {
     status: CellStatus
     detail?: string
     at?: string
     durationMilliseconds?: number
     runId?: string
+    evidence?: CapabilityEvidence
 }
 
 export interface ViewRow {
@@ -139,14 +147,41 @@ function rowIdentity(
     }
 }
 
-function viewRowFromMatrix(row: SupportMatrixRow, at: string, annotations?: RowAnnotations): ViewRow {
+/** A profile may have distinct firmware observations in one imported hardware matrix. */
+export function viewRowKey(row: EvidenceSupportMatrixRow): string {
+    return row.viewKey ?? (row.firmware ? `${rowKey(row)}/firmware/${encodeURIComponent(row.firmware)}` : rowKey(row))
+}
+
+function viewRowFromMatrix(
+    row: EvidenceSupportMatrixRow,
+    at: string,
+    annotations?: RowAnnotations,
+    revision?: string
+): ViewRow {
     const cells: Record<string, ViewCell> = {}
     for (const [capability, result] of Object.entries(row.results ?? {})) {
-        cells[capability] = { ...viewResult(result?.status, result?.detail), at }
+        const evidence =
+            row.resultEvidence === undefined &&
+            Number.isFinite(Date.parse(at)) &&
+            ['hardware', 'captured', 'documented'].includes(row.fidelity)
+                ? {
+                      fidelity: row.fidelity,
+                      profile: row.profile,
+                      generatedAt: at,
+                      ...(row.firmware && { firmware: row.firmware }),
+                      ...(row.host && { host: row.host }),
+                      ...(revision && { revision }),
+                  }
+                : row.resultEvidence?.[capability]
+        cells[capability] = {
+            ...viewResult(result?.status, result?.detail),
+            at: evidence?.generatedAt ?? at,
+            ...(evidence && { evidence }),
+        }
     }
     const unverifiedQuirks = row.quirks?.unverified ?? 0
     return {
-        ...rowIdentity({ ...row, key: rowKey(row) }),
+        ...rowIdentity({ ...row, key: viewRowKey(row) }),
         ...(row.firmware && { firmware: row.firmware }),
         ...(row.host && { host: row.host }),
         unverified: unverifiedQuirks > 0 || !!annotations?.unverifiedModel,
@@ -157,7 +192,7 @@ function viewRowFromMatrix(row: SupportMatrixRow, at: string, annotations?: RowA
     }
 }
 
-/** Adds (or replaces) every row of a completed matrix, stamped with the matrix's time. */
+/** Completed rows retain original observation time; rebuilding an aggregate cannot freshen a stale result. */
 export function applyMatrix(
     view: CompatView,
     matrix: SupportMatrix,
@@ -168,15 +203,21 @@ export function applyMatrix(
     if (!checked) return
     if (!view.capabilities.length) view.capabilities = checked.capabilities
     const index = new Map(view.rows.map((row, position) => [row.key, position]))
-    for (const row of checked.rows) {
-        const viewRow = viewRowFromMatrix(row, checked.generatedAt, annotations.get(row.profile))
+    for (const row of checked.rows as EvidenceSupportMatrixRow[]) {
+        const viewRow = viewRowFromMatrix(
+            row,
+            row.source?.generatedAt ?? checked.generatedAt,
+            annotations.get(row.profile),
+            row.source?.revision ?? checked.revision
+        )
         const position = index.get(viewRow.key)
         if (position === undefined) {
             index.set(viewRow.key, view.rows.push(viewRow) - 1)
             continue
         }
         const existing = view.rows[position]
-        if ((existing.lastRun ?? '') <= checked.generatedAt) view.rows[position] = viewRow
+        if (!existing.lastRun || Date.parse(existing.lastRun) <= Date.parse(viewRow.lastRun ?? ''))
+            view.rows[position] = viewRow
     }
     view.sources.push(source)
 }
@@ -201,6 +242,11 @@ export function applyRun(
     if (!start || start.type !== 'run-start') return { touched }
     // A log holds one run; lines from another run (a file appended to by mistake) are ignored.
     const own = checked.filter(event => event.runId === start.runId)
+    const originalSources = new Map(
+        own.flatMap(event =>
+            event.type === 'row-end' && event.row.source ? [[event.key, event.row.source] as const] : []
+        )
+    )
     if (!view.capabilities.length) view.capabilities = start.capabilities
     const end = own.find(event => event.type === 'run-end')
     const active = options.alive && !end
@@ -270,17 +316,36 @@ export function applyRun(
             const row = rows.get(event.key)
             if (!row) continue
             const result = viewResult(event.status, event.detail)
+            const originalSource = originalSources.get(event.key)
+            const observedAt = originalSource?.generatedAt ?? event.at
             finished.set(`${event.key}\u0000${event.capability}`, result.status)
             if (current?.key === event.key && current.capability === event.capability) current = undefined
             // A settled run never overrides newer results (for example a later matrix).
-            if (!active && (row.cells[event.capability]?.at ?? '') > event.at) continue
+            const previousTime = Date.parse(row.cells[event.capability]?.at ?? '')
+            const observedTime = Date.parse(observedAt)
+            if (
+                !active &&
+                Number.isFinite(previousTime) &&
+                (!Number.isFinite(observedTime) || previousTime > observedTime)
+            )
+                continue
             row.cells[event.capability] = {
                 ...result,
-                at: event.at,
+                at: observedAt,
                 durationMilliseconds: event.durationMilliseconds,
                 runId: start.runId,
+                ...(row.fidelity !== 'unknown' &&
+                    Number.isFinite(observedTime) && {
+                        evidence: {
+                            fidelity: row.fidelity,
+                            profile: row.profile,
+                            generatedAt: observedAt,
+                            ...(originalSource?.revision && { revision: originalSource.revision }),
+                        },
+                    }),
             }
-            if ((row.lastRun ?? '') < event.at) row.lastRun = event.at
+            if (Number.isFinite(observedTime) && (!row.lastRun || Date.parse(row.lastRun) < observedTime))
+                row.lastRun = observedAt
             touched.add(event.key)
             continue
         }
@@ -288,12 +353,27 @@ export function applyRun(
             const row = rows.get(event.key)
             if (!row) continue
             const plannedRow = planned.get(event.key)
+            const observedTime = Date.parse(event.row.source?.generatedAt ?? event.at)
+            if (
+                !active &&
+                row.lastRun &&
+                Number.isFinite(Date.parse(row.lastRun)) &&
+                (!Number.isFinite(observedTime) || Date.parse(row.lastRun) > observedTime)
+            ) {
+                finishedRows.add(event.key)
+                continue
+            }
             row.state = active ? 'done' : 'idle'
             row.unverifiedQuirks = event.row.quirks?.unverified ?? 0
             row.unverified = row.unverifiedQuirks > 0 || !!options.annotations?.get(row.profile)?.unverifiedModel
             if (event.row.firmware) row.firmware = event.row.firmware
             if (event.row.host) row.host = event.row.host
             if (plannedRow?.usb) row.usb = plannedRow.usb
+            for (const cell of Object.values(row.cells)) {
+                if (cell.runId !== start.runId || !cell.evidence) continue
+                if (event.row.firmware) cell.evidence.firmware = event.row.firmware
+                if (event.row.host) cell.evidence.host = event.row.host
+            }
             finishedRows.add(event.key)
             touched.add(event.key)
         }

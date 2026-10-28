@@ -99,11 +99,11 @@ describe('merged compatibility matrix', () => {
         expect(withoutHardware.cameras.find(camera => camera.usb.includes('04a9:3323'))?.fidelity).toBe('captured')
     })
 
-    it('treats models sharing a USB identity as one camera and drops line mocks when model mocks exist', () => {
+    it('keeps undocumented aliases separate and drops line mocks when model mocks exist', () => {
         const merged = mergeCompatibility(simulation)
-        expect(merged.cameras).toHaveLength(2)
-        const shared = merged.cameras.find(camera => camera.usb.includes('04a9:31ea'))!
-        expect([shared.model, ...shared.aliases].sort()).toEqual(['Canon EOS 550D', 'Canon Rebel T2i'])
+        expect(merged.cameras).toHaveLength(3)
+        const shared = merged.cameras.filter(camera => camera.usb.includes('04a9:31ea'))
+        expect(shared.map(camera => camera.model).sort()).toEqual(['Canon EOS 550D', 'Canon Rebel T2i'])
         expect(merged.cameras.flatMap(camera => camera.alsoCoveredBy).map(entry => entry.profile)).not.toContain(
             'canon-eos-r-documented'
         )

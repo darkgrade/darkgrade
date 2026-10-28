@@ -79,7 +79,7 @@ jobs:
             CAMERA_ID: ${{ matrix.camera }}
             CAMERA_USB: ${{ matrix.usb }}
             BENCH_LABEL: ${{ matrix.benchLabel }}
-            # The darkgrade/test-bench checkout on the host (bench CLI for recovery and usbmon capture).
+            # Explicit deployed checkout sharing the MCP service state and HardwareCoordinator.
             DARKGRADE_TESTBENCH_DIR: ${{ vars.DARKGRADE_TESTBENCH_DIR }}
         steps:
             - uses: actions/checkout@v4
@@ -92,84 +92,20 @@ jobs:
               working-directory: .
               run: bun install --frozen-lockfile --ignore-scripts
 
-            - name: Locate bench CLI
-              run: |
-                  bench_dir="${DARKGRADE_TESTBENCH_DIR:-$HOME/darkgrade-testbench}"
-                  if [ -x "$bench_dir/scripts/bun.sh" ] && [ -f "$bench_dir/src/cli.ts" ]; then
-                      echo "BENCH_DIR=$bench_dir" >> "$GITHUB_ENV"
-                  else
-                      echo "::warning::No darkgrade/test-bench checkout at $bench_dir; recovery and usbmon capture are skipped."
-                  fi
-
-            # A camera is healthy only when bench:probe completes PTP GetDeviceInfo (AGENTS.md).
-            - name: Probe camera, recovering once if needed
-              timeout-minutes: 8
-              run: |
-                  if timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"; then exit 0; fi
-                  if [ -z "${BENCH_DIR:-}" ]; then exit 1; fi
-                  echo "::warning::$CAMERA_ID did not answer GetDeviceInfo; running bench recover $BENCH_LABEL auto"
-                  (cd "$BENCH_DIR" && timeout 300 scripts/bun.sh run src/cli.ts recover "$BENCH_LABEL" auto)
-                  timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"
-
-            - name: Start usbmon capture
-              id: capture
-              if: env.BENCH_DIR != ''
-              continue-on-error: true
-              run: |
-                  result=$(cd "$BENCH_DIR" && timeout 60 scripts/bun.sh run src/cli.ts capture-start "$BENCH_LABEL" "camera-lab ${GITHUB_SHA::12} $CAMERA_ID")
-                  capture_id=$(printf '%s' "$result" | bun -e 'console.log(JSON.parse(await Bun.stdin.text()).id)')
-                  echo "id=$capture_id" >> "$GITHUB_OUTPUT"
-
-            - name: Run capability suite on hardware
-              timeout-minutes: 15
-              run: bun run lab:hardware -- --camera "$CAMERA_ID" --output "test-results/camera-lab/$CAMERA_ID.json"
-
-            - name: Stop usbmon capture
-              if: always() && steps.capture.outputs.id != ''
-              continue-on-error: true
-              env:
-                  CAPTURE_ID: ${{ steps.capture.outputs.id }}
-                  PROFILE_PATH: ${{ matrix.profile }}
-              run: |
-                  result=$(cd "$BENCH_DIR" && timeout 120 scripts/bun.sh run src/cli.ts capture-stop "$CAPTURE_ID")
-                  file=$(printf '%s' "$result" | bun -e 'console.log(JSON.parse(await Bun.stdin.text()).filePath ?? "")')
-                  mkdir -p test-results/camera-lab-capture
-                  if [ -f "$file" ]; then
-                      cp "$file" "test-results/camera-lab-capture/$CAMERA_ID.pcapng"
-                      profile=$(basename "$PROFILE_PATH" .json)
-                      printf 'bun run --cwd packages/link profiles:ingest -- --test-bench <test-bench checkout> --capture %s=%s.pcapng\n' \
-                          "$profile" "$CAMERA_ID" > test-results/camera-lab-capture/INGEST.txt
-                  else
-                      echo "::warning::Capture $CAPTURE_ID has no file ($file)."
-                  fi
-
-            # Leave the camera answering PTP for the next job and for the bench dashboard.
-            - name: Restore camera
-              if: always()
-              timeout-minutes: 8
-              run: |
-                  if timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"; then exit 0; fi
-                  if [ -z "${BENCH_DIR:-}" ]; then exit 1; fi
-                  (cd "$BENCH_DIR" && timeout 300 scripts/bun.sh run src/cli.ts recover "$BENCH_LABEL" auto)
-                  timeout 60 bun run bench:probe -- --camera "$CAMERA_USB"
+            # The entrypoint reads fresh MCP status, validates deployed mappings, claims shared
+            # hardware ownership and a scoped job, and holds the camera flock until its worker exits.
+            # No recovery, settings changes, capture, or power changes are run by this read-only tier.
+            - name: Run guarded read-only capability suite
+              timeout-minutes: 5
+              run: bun run lab:hardware -- --camera "$CAMERA_ID" --output "test-results/camera-lab/$CAMERA_ID-$GITHUB_RUN_ID.json"
 
             - name: Upload camera results
               if: always()
               uses: actions/upload-artifact@v4
               with:
                   name: camera-lab-results-${{ matrix.camera }}
-                  path: packages/link/test-results/camera-lab/
+                  path: packages/link/test-results/camera-lab/${{ matrix.camera }}-${{ github.run_id }}.json
                   if-no-files-found: warn
-
-            # Refresh the captured profile by ingesting this trace; nothing is committed automatically.
-            - name: Upload PTP capture
-              if: always()
-              uses: actions/upload-artifact@v4
-              with:
-                  name: camera-lab-capture-${{ matrix.camera }}
-                  path: packages/link/test-results/camera-lab-capture/
-                  if-no-files-found: ignore
-                  retention-days: 14
 
     report:
         name: Hardware support matrix
