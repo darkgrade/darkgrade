@@ -5,7 +5,7 @@
     "line": "Cinema Line FX / ILME",
     "model": "Sony ILX-LR1 (PC Control)",
     "usb": { "vendorId": "0x054c", "productIds": ["0x0e90"], "source": 1 },
-    "catalog": { "manufacturer": "Sony", "line": "Cinema Line FX / ILME", "modelCount": 3 },
+    "catalog": { "manufacturer": "Sony", "line": "Cinema Line FX / ILME", "modelCount": 4 },
     "provenance": {
         "fidelity": "documented",
         "sources": [

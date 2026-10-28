@@ -28,6 +28,16 @@ export const CanonSetRemoteMode = {
                     registry,
                     [
                         { value: 0x00000001, name: 'ENABLE', description: 'Enable Remote Mode' },
+                        {
+                            value: 0x00000005,
+                            name: 'ENABLE_MODE_5',
+                            description: 'Explicit remote mode 5; captured on EOS R6 III, not selected automatically',
+                        },
+                        {
+                            value: 0x00000015,
+                            name: 'ENABLE_MODE_0X15',
+                            description: 'Explicit remote mode 0x15; documented for some EOS M and PowerShot models',
+                        },
                         { value: 0x00000000, name: 'DISABLE', description: 'Disable Remote Mode' },
                     ] as const,
                     registry.codecs.uint32

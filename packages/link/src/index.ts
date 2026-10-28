@@ -1,3 +1,10 @@
+export { identifyCamera } from '@camera/identification/camera-identification'
+export type {
+    CameraIdentification,
+    CameraIdentityCandidate,
+    CameraProfileEvidence,
+} from '@camera/identification/camera-identification'
+
 // Main protocol implementation
 export { CanonCamera } from '@camera/canon-camera'
 export { GenericCamera } from '@camera/generic-camera'

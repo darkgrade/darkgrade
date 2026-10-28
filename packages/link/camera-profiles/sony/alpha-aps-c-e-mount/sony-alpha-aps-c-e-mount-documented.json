@@ -23,9 +23,7 @@
                 "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1403"
             },
             { "location": "https://helpguide.sony.net/ilc/1930/v1/en/contents/TP0002728092.html" },
-            {
-                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L729"
-            },
+            { "location": "packages/link/camera-catalog/sdk-evidence.json#sony-sdio-phases" },
             {
                 "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c#L4336"
             },
@@ -120,12 +118,21 @@
     "exchanges": [
         {
             "operation": "0x9201",
+            "parameters": ["0x1", "0x0", "0x0"],
             "response": { "code": "0x2001" },
             "note": "Documented by quirk sony-sdio-connect-handshake; not observed on hardware.",
             "source": 6
         },
         {
-            "operation": "0x9210",
+            "operation": "0x9201",
+            "parameters": ["0x2", "0x0", "0x0"],
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk sony-sdio-connect-handshake; not observed on hardware.",
+            "source": 6
+        },
+        {
+            "operation": "0x9201",
+            "parameters": ["0x3", "0x0", "0x0"],
             "response": { "code": "0x2001" },
             "note": "Documented by quirk sony-sdio-connect-handshake; not observed on hardware.",
             "source": 6
@@ -141,9 +148,17 @@
         },
         {
             "id": "sony-sdio-connect-handshake",
-            "description": "Required handshake: 0x9201 SDIO_Connect phase 1, phase 2 (params 0,0), then 0x9202 SDIO_GetExtDeviceInfo(protocol 0x00C8 = \"3.00\" in libgphoto2; darkgrade sends initiatorVersion 3.00) repeated until it returns a non-empty code list (libgphoto2 retries up to 20x), then SDIO_Connect phase 3. The returned list mixes opcodes (0x1xxx/0x9xxx class by mask 0x7000==0x1000), events (0x4000) and props (0x5000) that must be merged into DeviceInfo. Newer Sony (SDK) also uses 0x9210 SDIO_OpenSession with a function mode (remote / content transfer).",
+            "description": "SDK USB control initialization uses ordered SDIO phases 1, 2 and 3 with exact parameters. Missing prerequisite responses and negotiation payloads remain unknown; no firmware behavior is inferred.",
             "source": 6,
-            "behaviour": { "kind": "none" }
+            "behaviour": {
+                "kind": "requires-sequence",
+                "sequence": [
+                    { "operation": "0x9201", "parameters": ["0x1", "0x0", "0x0"] },
+                    { "operation": "0x9201", "parameters": ["0x2", "0x0", "0x0"] },
+                    { "operation": "0x9201", "parameters": ["0x3", "0x0", "0x0"] }
+                ],
+                "gated": { "from": "0x9200", "to": "0x92ff", "except": ["0x9201", "0x9202", "0x9210", "0x9216"] }
+            }
         },
         {
             "id": "sony-all-props-dump",

@@ -1,0 +1,211 @@
+{
+    "schemaVersion": 1,
+    "reviewedAt": "2026-10-28",
+    "boundary": "Static SDK observations and vendor documentation. No camera execution is established by this ledger. Proprietary artifacts and decompilations are retained privately; summaries do not redistribute them.",
+    "artifacts": [
+        {
+            "id": "canon-edsdk-linux-13.20.21",
+            "sha256": "12627628897d4ff2fce6dc4b04d7c0c4d66a7c2f87c145894f56c18129cc7333",
+            "bytes": 2552552,
+            "fileName": "libEDSDK.so"
+        },
+        {
+            "id": "canon-api-13.20.21",
+            "sha256": "011d6d6ded625cc17beb0f2cacc141f2ef6b9b03ad24639217825e40fb6cceb0",
+            "bytes": 10100770,
+            "fileName": "EDSDK_API_EN.pdf"
+        },
+        {
+            "id": "sony-crsdk-usb-2.02",
+            "sha256": "dfa0ebbae4ff1467cd4ce3b556bb054c3ad850e4bbeb63cb5a60a09ff98285b3",
+            "bytes": 508992,
+            "fileName": "libCr_PTP_USB.so"
+        },
+        {
+            "id": "nikon-z-series-2.1-nkdptp",
+            "sha256": "0470b3c2c4557c6919ddc5fdca4ad9e3165e46810bf0ed837acfbf472153b2ff",
+            "bytes": 80296,
+            "fileName": "NkdPTP.dll"
+        },
+        {
+            "id": "nikon-z6iii-command-rev2",
+            "sha256": "3ee76d2da416b6704463e1c77f3dd3f0b79f940a940df36325300ab0fa7e837e",
+            "bytes": 3709471,
+            "fileName": "Z6IIIUsbMtpE_02.pdf"
+        },
+        {
+            "id": "nikon-model-config",
+            "sha256": "9cfa1d80e51e02a05692345b0ee661e36dbe22035f193ae2098062908210a530",
+            "bytes": 1229534,
+            "fileName": "DC_PTP_Config.config"
+        },
+        {
+            "id": "nikon-readme",
+            "sha256": "2a2eacdbd545eec21f38fdd69218c2040a075d1ef924967d0aab2db032e8188a",
+            "bytes": 3187,
+            "fileName": "ReadMe_En.txt"
+        }
+    ],
+    "findings": [
+        {
+            "id": "sony-sdio-phases",
+            "vendor": "Sony",
+            "models": ["ILCE-6700", "ILME-FX2"],
+            "evidenceType": "sdk-static",
+            "artifact": "sony-crsdk-usb-2.02",
+            "evidenceIds": [
+                "ev_635f0d758717481259b6e51c8ff5e28f71f2371f1868eb5f4417d3f02574f1d5",
+                "ev_b57401cf7b3aba6f08fa213622a6289dcbb93c38e87c46ec598bbd24aea6e2a4"
+            ],
+            "locations": ["DeviceConnectionPTP::Connect@0x147360", "DeviceConnectionPTP::sDIOPhasedConnect@0x1452a0"],
+            "observation": "The SDK USB control path sends operation 0x9201 with [1,0,0], then [2,0,0], then [3,0,0]. Device information and extended capability negotiation occur between phases 2 and 3.",
+            "simulationEffect": "Parameter-sensitive ordered prerequisites on reviewed documented model profiles; reads can interleave. Missing prerequisites report missing profile data because the actual camera rejection is unknown.",
+            "limitations": [
+                "Shared SDK path is not proof that every supported Sony model or firmware follows it.",
+                "Negotiation payloads, phase replies and failure responses were not captured on these bodies.",
+                "The scoped simulator prerequisite does not model full version negotiation."
+            ]
+        },
+        {
+            "id": "sony-runtime-capability-gates",
+            "vendor": "Sony",
+            "models": [],
+            "evidenceType": "sdk-static",
+            "artifact": "sony-crsdk-usb-2.02",
+            "evidenceIds": [
+                "ev_635f0d758717481259b6e51c8ff5e28f71f2371f1868eb5f4417d3f02574f1d5",
+                "ev_0501a6421cb04a6940613884446a48c88bcc3405094fbc8d7ec8516b60ff57d4"
+            ],
+            "locations": ["DeviceConnectionPTP::Connect@0x147360", "getVenderCodeVersion@0x1469f0"],
+            "observation": "SDK connection modes check contents-transfer/media-server capability separately; version operation 0x9216 is conditional on advertisement.",
+            "simulationEffect": "Reference only. Do not infer media retrieval or network transport support from successful USB remote control.",
+            "limitations": ["No universal per-model feature table recovered."]
+        },
+        {
+            "id": "canon-wire-property-encoding",
+            "vendor": "Canon",
+            "models": [],
+            "evidenceType": "sdk-static",
+            "artifact": "canon-edsdk-linux-13.20.21",
+            "evidenceIds": [
+                "ev_48b2e25de3be4cbbb1ccb4a01c9e840a9d3a7259fb74fd91cade7a13730ce4b8",
+                "ev_5c867b8c763a94258f859fb2affed136c04349171510ecd593d061a13d280563"
+            ],
+            "locations": ["CPtpInterface::DS_SetDevicePropValueEx@0x22ed10", "CPtpCamera::SetRecord@0x1fbef0"],
+            "observation": "SDK movie Record API is translated into vendor property 0xd1b8 as UINT32 through operation 0x9110. The data begins with UINT32 total property-block byte length and UINT32 property code, followed by value bytes.",
+            "simulationEffect": "Reference only. SDK property IDs and error numbers must not be used as PTP wire IDs.",
+            "limitations": ["Does not establish movie-mode readiness or acceptance on an individual body."]
+        },
+        {
+            "id": "canon-session-model-variants",
+            "vendor": "Canon",
+            "models": [],
+            "evidenceType": "sdk-static",
+            "artifact": "canon-edsdk-linux-13.20.21",
+            "evidenceIds": [
+                "ev_8c8f777a9cbe6e4cbcedceef4a9531066fb1a567c351bba6356ff48679eb6b7b",
+                "ev_91d7f26200110d9820001412d66cbc180459373b87f782647a3ede0d24dd02c7",
+                "ev_edd48e92eb747e1e0b3853a1b10690f2ce3db82ab912fa460d0237d130c31b12"
+            ],
+            "locations": [
+                "CPtpCamera::OpenSessionSelf@0x21a680",
+                "DS_SetRemoteMode@0x22f110",
+                "DS_SetEventMode@0x22bbf0"
+            ],
+            "observation": "Session initialization selects remote mode according to camera classification and retries. Remote/event modes use 0x9114/0x9115; they are not interchangeable with movie-mode selection.",
+            "simulationEffect": "Reference only. Preserve known per-model mode values rather than assigning one handshake to all Canon bodies.",
+            "limitations": ["Classifications were not completely mapped to USB model identities."]
+        },
+        {
+            "id": "canon-movie-mode-prerequisites",
+            "vendor": "Canon",
+            "models": [],
+            "evidenceType": "sdk-documentation",
+            "artifact": "canon-api-13.20.21",
+            "locations": ["API sections 5.2.73, 6.4, 6.9; PDF pages 147, 206, 214"],
+            "observation": "Record value 4 starts and 0 stops. Software movie-mode switching has hardware-mode, camera-storage destination and cleanup prerequisites.",
+            "simulationEffect": "Reference only; do not represent movie recording as a standalone universally accepted property write.",
+            "limitations": [
+                "Some models require a physical switch; applicability requires the model feature table or bench evidence."
+            ]
+        },
+        {
+            "id": "canon-eos-m-capture-exclusions",
+            "vendor": "Canon",
+            "models": ["EOS M", "EOS M2", "EOS M3", "EOS M5", "EOS M6", "EOS M10", "EOS M100"],
+            "evidenceType": "vendor-public-documentation",
+            "sources": ["https://asia.canon/en/campaign/developerresources/sdk"],
+            "observation": "Canon lists these models for the SDK while excluding remote capture.",
+            "simulationEffect": "Reference only. SDK model listing is not a remote-capture guarantee.",
+            "limitations": ["SDK-level exclusion does not establish rejection of every PTP capture opcode."]
+        },
+        {
+            "id": "nikon-z6iii-movie-preconditions",
+            "vendor": "Nikon",
+            "models": ["Z6III"],
+            "evidenceType": "sdk-documentation",
+            "artifact": "nikon-z6iii-command-rev2",
+            "locations": ["Command sections 6.2.7.1 and 6.5.12.6; PDF pages 143 and 527"],
+            "observation": "Movie start 0x920a requires live view; nonzero recording-prohibition property 0xd0a4 prevents recording. Application mode, photo/video mode and card state are separate prerequisites.",
+            "simulationEffect": "Reference only until state/readback evidence can anchor a model-specific scenario.",
+            "limitations": [
+                "No new hardware validation; no speculative camera success, recording files or busy durations."
+            ]
+        },
+        {
+            "id": "nikon-z6iii-event-queue",
+            "vendor": "Nikon",
+            "models": ["Z6III"],
+            "evidenceType": "sdk-documentation",
+            "artifact": "nikon-z6iii-command-rev2",
+            "locations": ["Command section 6.2.2.13; PDF page 81"],
+            "observation": "GetEventEx 0x941c uses a UINT32 event count and per-event parameter counts. Parameter 1 retains queued events; zero or omitted drains them.",
+            "simulationEffect": "Reference only. Legacy Nikon 0x90c7 event framing must not be substituted for this model path.",
+            "limitations": ["The SDK defines the contract; actual event timing/content remains hardware evidence."]
+        },
+        {
+            "id": "nikon-sdk-single-camera-boundary",
+            "vendor": "Nikon",
+            "models": [],
+            "evidenceType": "sdk-documentation",
+            "artifact": "nikon-readme",
+            "locations": ["ReadMe_En.txt: Limitations and Cautions"],
+            "observation": "The vendor SDK module has a single-camera limit and warns of competing Nikon applications.",
+            "simulationEffect": "Reference only. Keep SDK process constraints separate from Darkgrade PTP or Fleet multi-camera capability.",
+            "limitations": ["Does not establish a one-camera limit for the PTP wire protocol."]
+        },
+        {
+            "id": "nikon-native-search-boundary",
+            "vendor": "Nikon",
+            "models": [],
+            "evidenceType": "sdk-static",
+            "artifact": "nikon-z-series-2.1-nkdptp",
+            "evidenceIds": ["ev_f2b1d65e94cb898308f931c005760b89a3fff55657ce6e8a8c47ff8378511193"],
+            "locations": ["Ghidra defined-string search: GetEventEx|StartMovie|Z6_3|Z6III|Invalid_Status|Not_LiveView"],
+            "observation": "No matches in the provider-defined string inventory for this bounded search.",
+            "simulationEffect": "None. Use the matched model configuration and command documentation; do not infer absence of support from a stripped binary.",
+            "limitations": ["Not a complete byte-string search or proof that functions are absent."]
+        },
+        {
+            "id": "sony-firmware-compatibility-boundary",
+            "vendor": "Sony",
+            "models": ["ILX-LR1", "ILCE-7CM2", "ILCE-7CR", "ILCE-9M3"],
+            "evidenceType": "vendor-public-documentation",
+            "sources": ["https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html"],
+            "observation": "Sony documents model/firmware-specific focus-position value incompatibility after upgrades and warns that some PTP 2 commands may become unusable from 2027. Its 2.00 release corrected incompatible command checkmarks for 25 models.",
+            "simulationEffect": "Reference only. Keep firmware and command-family provenance; do not extrapolate a supported-device list into a command compatibility guarantee.",
+            "limitations": ["No affected command list or migration behavior has been modeled."]
+        }
+    ],
+    "acquisition": {
+        "reviewedSources": [
+            "https://support.d-imaging.sony.co.jp/app/sdk/en/index.html",
+            "https://sdk.nikonimaging.com/apply/",
+            "https://asia.canon/en/campaign/developerresources/sdk",
+            "https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html",
+            "https://asia.canon/en/campaign/developerresources/camera/cap/edsdk-eos-digital-camera-sdk-release-note"
+        ],
+        "result": "Existing local Sony 2.02, Canon 13.20.21 and Nikon Z-series 2.1 already cover the current bench families. Official pages were reviewed; no application or license gate was bypassed.",
+        "next": "Acquire additional model SDKs through their official application flow when targeting an uncovered body; compare versioned command references before widening modeled behavior."
+    }
+}

@@ -104,6 +104,13 @@ export interface OperationRange {
     except?: string[]
 }
 
+/** A request identity used by an ordered prerequisite sequence. */
+export interface SequenceRequest {
+    operation: string
+    /** Omitted means any parameters; an empty array means no parameters. */
+    parameters?: string[]
+}
+
 /** Generic simulator behaviours a quirk can switch on. */
 export type QuirkBehaviour =
     /** Documented for reference; no simulator behaviour. */
@@ -119,6 +126,8 @@ export type QuirkBehaviour =
     | { kind: 'property-datatype'; property: string; dataType: string }
     /** Operations in `gated` answer `response` until every `unlockedBy` operation has returned OK. */
     | { kind: 'requires-operations'; unlockedBy: string[]; gated: OperationRange; response: string }
+    /** Ordered successful requests. An unknown precondition response stays missing data. */
+    | { kind: 'requires-sequence'; sequence: SequenceRequest[]; gated: OperationRange; response?: string }
     /** These operations are always refused with `response`. */
     | { kind: 'rejects-operations'; operations: string[]; response: string }
     /** Implemented but left out of the DeviceInfo the camera reports. */
@@ -350,6 +359,20 @@ function validateQuirkBehaviour(behaviour: QuirkBehaviour | undefined, where: st
             requireCode(behaviour.gated?.to, 'gated.to')
             requireCodes(behaviour.gated?.except, 'gated.except', true)
             requireCode(behaviour.response, 'response')
+            break
+        case 'requires-sequence':
+            if (!Array.isArray(behaviour.sequence) || !behaviour.sequence.length) {
+                problems.push(`${where}.sequence must contain at least one request`)
+            } else {
+                behaviour.sequence.forEach((request, index) => {
+                    requireCode(request?.operation, `sequence[${index}].operation`)
+                    requireCodes(request?.parameters, `sequence[${index}].parameters`, true)
+                })
+            }
+            requireCode(behaviour.gated?.from, 'gated.from')
+            requireCode(behaviour.gated?.to, 'gated.to')
+            requireCodes(behaviour.gated?.except, 'gated.except', true)
+            requireCode(behaviour.response, 'response', true)
             break
         case 'rejects-operations':
             requireCodes(behaviour.operations, 'operations')

@@ -1,5 +1,11 @@
 import type { PTPEvent } from '@transport/interfaces/transport.interface'
-import { formatCode, parseCode, type OperationRange, type QuirkBehaviour } from '@transport/simulated/camera-profile'
+import {
+    formatCode,
+    parseCode,
+    type OperationRange,
+    type QuirkBehaviour,
+    type SequenceRequest,
+} from '@transport/simulated/camera-profile'
 
 const OPEN_SESSION = 0x1002
 const OK = 0x2001
@@ -43,6 +49,7 @@ export class QuirkBehaviours {
     private busyResponsesSent = new Map<Behaviour<'device-busy'>, number>()
     private busyArmed = new Set<Behaviour<'device-busy'>>()
     private succeededOperations = new Set<number>()
+    private sequenceProgress = new Map<Behaviour<'requires-sequence'>, number>()
     private lastTransactionId?: number
 
     constructor(private readonly behaviours: QuirkBehaviour[]) {}
@@ -77,6 +84,10 @@ export class QuirkBehaviours {
                 const unlocked = behaviour.unlockedBy.every(code => this.succeededOperations.has(parseCode(code)))
                 return unlocked ? undefined : parseCode(behaviour.response)
             }
+            case 'requires-sequence':
+                return this.sequenceBlocked(behaviour, request) && behaviour.response
+                    ? parseCode(behaviour.response)
+                    : undefined
             case 'device-busy':
                 return this.busyResponse(behaviour, operation)
             case 'session-id': {
@@ -96,6 +107,28 @@ export class QuirkBehaviours {
         }
     }
 
+    /** SDK prerequisites do not establish the camera's wire response when omitted. */
+    hasUnknownSequenceResponse(request: SimulatedRequest): boolean {
+        return this.all('requires-sequence').some(
+            behaviour => behaviour.response === undefined && this.sequenceBlocked(behaviour, request)
+        )
+    }
+
+    private matchesSequenceRequest(request: SimulatedRequest, step: SequenceRequest): boolean {
+        return (
+            request.operation === parseCode(step.operation) &&
+            (step.parameters === undefined || sameValues(request.parameters, step.parameters.map(parseCode)))
+        )
+    }
+
+    private sequenceBlocked(behaviour: Behaviour<'requires-sequence'>, request: SimulatedRequest): boolean {
+        const progress = this.sequenceProgress.get(behaviour) ?? 0
+        if (progress === behaviour.sequence.length) return false
+        const stepIndex = behaviour.sequence.findIndex(step => this.matchesSequenceRequest(request, step))
+        if (stepIndex >= 0) return stepIndex > progress
+        return inRange(request.operation, behaviour.gated)
+    }
+
     private busyResponse(behaviour: Behaviour<'device-busy'>, operation: number): number | undefined {
         if (parseCode(behaviour.operation) !== operation) return undefined
         if (behaviour.afterOperation && !this.busyArmed.has(behaviour)) return undefined
@@ -108,6 +141,15 @@ export class QuirkBehaviours {
     /** Records a reply and returns the events quirks emit because of it. */
     afterReply(request: SimulatedRequest, responseCode: number): PTPEvent[] {
         if (responseCode !== OK) return []
+        if (request.operation === 0x1003) {
+            this.sequenceProgress.clear()
+            this.succeededOperations.clear()
+        }
+        for (const behaviour of this.all('requires-sequence')) {
+            const progress = this.sequenceProgress.get(behaviour) ?? 0
+            const step = behaviour.sequence[progress]
+            if (step && this.matchesSequenceRequest(request, step)) this.sequenceProgress.set(behaviour, progress + 1)
+        }
         this.succeededOperations.add(request.operation)
         for (const behaviour of this.all('device-busy')) {
             if (!behaviour.afterOperation || parseCode(behaviour.afterOperation) !== request.operation) continue
@@ -143,6 +185,7 @@ export class QuirkBehaviours {
 
     /** Forgets session state after a recorded disconnect or a transport disconnect. */
     reset(): void {
+        this.sequenceProgress.clear()
         this.succeededOperations.clear()
         this.busyArmed.clear()
         this.busyResponsesSent.clear()

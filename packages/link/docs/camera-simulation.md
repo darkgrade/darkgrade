@@ -12,7 +12,7 @@ Profiles live in `camera-profiles/<manufacturer>/<line>/<id>.json` and are typed
 - `properties`: descriptors as raw bytes or parsed fields, plus values observed on hardware for checking darkgrade's decoding.
 - `exchanges`: recorded request/response pairs. Omitted request parameters or data match anything; repeated matches are consumed in recorded order and the last one repeats.
 - `events`: events delivered after a given operation.
-- `quirks`: line or model behaviours with a citation and a simulator `behaviour`: `device-busy`, `disconnect-on-request`, `session-id`, `strict-transaction-ids`, `event-delivery`, `property-datatype`, `requires-operations`, `rejects-operations`, `hidden-from-device-info`, `emit-event`, `ptp-ip-personality`, or `none` for behaviours documented for reference only. Quirks carry `unverified: true` when their source flags them.
+- `quirks`: line or model behaviours with a citation and a simulator `behaviour`: `device-busy`, `disconnect-on-request`, `session-id`, `strict-transaction-ids`, `event-delivery`, `property-datatype`, `requires-operations`, `requires-sequence`, `rejects-operations`, `hidden-from-device-info`, `emit-event`, `ptp-ip-personality`, or `none` for behaviours documented for reference only. Quirks carry `unverified: true` when their source flags them.
 
 The simulator resolves each request through quirks, then recorded exchanges, then standard answers derived from the profile (DeviceInfo, OpenSession/CloseSession, property descriptors with state that `SetDevicePropValue` changes). An operation missing from a complete advertised list returns `OperationNotSupported`. Anything else raises `ProfileDataMissingError`: the simulator never invents a camera response.
 
@@ -109,3 +109,9 @@ The ingest script reads a `darkgrade/test-bench` checkout:
 3. Run `bun run --cwd packages/link test:simulation` and `bun run --cwd packages/link simulation:matrix`, and check `test-results/camera-support-matrix.md`.
 
 A capability is reported as `pass`, `fail`, `unsupported` (the camera answered `OperationNotSupported`/`DevicePropNotSupported`, or darkgrade does not offer it for that vendor), or `no-data`. A `fail` in a captured profile fails the suite, because it means darkgrade mishandles data a real camera produced.
+
+## Runtime identification and future application
+
+`identifyCamera` is exported from `@darkgrade/link` and included in USB discovery results. It preserves unknown identities, shared-ID ambiguity, model-readback conflicts and per-profile evidence coverage. Run `bun run cameras:build` after changing the catalog or profiles; `cameras:check` verifies the committed table. A USB match does not establish working PTP controls.
+
+The merged compatibility artifact records `resultEvidence` for every capability. A result can come from captured or documented simulation even when another capability on the same camera has hardware evidence; its tier is retained and shown in the rendered table. See [the Outpost integration boundary](simulation-bench-outpost.md) for the future application design and [SDK findings](camera-sdk-evidence.md) for artifact-backed constraints and limits.

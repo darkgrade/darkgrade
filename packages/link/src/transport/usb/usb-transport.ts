@@ -1,3 +1,4 @@
+import { identifyCamera } from '@camera/identification/camera-identification'
 import { Logger } from '@core/logger'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
@@ -110,6 +111,7 @@ export class USBTransport implements TransportInterface {
             device,
             vendorId: device.vendorId,
             productId: device.productId,
+            identification: identifyCamera({ vendorId: device.vendorId, productId: device.productId }),
             manufacturer: device.manufacturerName ?? undefined,
             model: device.productName ?? undefined,
             serialNumber: device.serialNumber ?? undefined,

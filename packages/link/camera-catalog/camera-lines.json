@@ -8317,6 +8317,17 @@
               "source": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1413"
             },
             {
+              "name": "Sony ILME-FX2",
+              "usbVendorId": "0x054c",
+              "usbProductId": "0x0f4a",
+              "ptpSupported": true,
+              "tetherSupportedBy": [
+                "Darkgrade test-bench USB control",
+                "Camera Remote SDK 2.02.00"
+              ],
+              "source": "packages/link/camera-profiles/sony/cinema-line-fx-ilme/sony-ilme-fx2.json"
+            },
+            {
               "name": "Sony PXW-Z300 / PXW-Z380",
               "ptpSupported": "unknown",
               "tetherSupportedBy": [

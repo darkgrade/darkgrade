@@ -258,6 +258,8 @@ export class SimulatedTransport implements TransportInterface {
         }
         if (quirkCode !== undefined) return { code: quirkCode }
 
+        if (this.quirks.hasUnknownSequenceResponse(request)) return this.missingReply(request)
+
         const exchange = this.matchExchange(request)
         if (exchange) return exchange.reply
 
@@ -268,6 +270,10 @@ export class SimulatedTransport implements TransportInterface {
             return { code: RESPONSE.OperationNotSupported }
         }
 
+        return this.missingReply(request)
+    }
+
+    private missingReply(request: SimulatedRequest): never {
         const missing = new ProfileDataMissingError(this.profile.id, request.operation, request.parameters)
         this.missingData.push(missing)
         throw missing

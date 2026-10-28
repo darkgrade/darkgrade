@@ -19,6 +19,7 @@ interface CapturedPacket {
 
 interface UsbTransfer {
     event: string
+    bulk: boolean
     bulkOrInterrupt: boolean
     directionIn: boolean
     endpoint: number
@@ -105,6 +106,7 @@ function parseTransfer(packet: CapturedPacket): UsbTransfer | undefined {
     const data = packet.data.subarray(headerLength)
     return {
         event: String.fromCharCode(packet.data[8]),
+        bulk: transferType === 3,
         bulkOrInterrupt: transferType === 1 || transferType === 3,
         directionIn: (endpointAddress & 0x80) !== 0,
         endpoint: endpointAddress & 0x0f,
@@ -159,7 +161,18 @@ function reassembleContainers(transfers: UsbTransfer[]): Container[] {
         const key = `${transfer.directionIn ? 'in' : 'out'}:${transfer.endpoint}`
         let stream = streams.get(key)
         if (!stream || stream.received >= stream.expected) {
-            if (transfer.data.length < 12) continue
+            if (transfer.data.length < 12) {
+                if (transfer.bulk && transfer.truncated)
+                    containers.push({
+                        type: 0,
+                        code: 0,
+                        transactionId: 0,
+                        body: new Uint8Array(),
+                        complete: false,
+                        hostToCamera: !transfer.directionIn,
+                    })
+                continue
+            }
             const expected = new DataView(transfer.data.buffer, transfer.data.byteOffset).getUint32(0, true)
             stream = { expected, parts: [], received: 0, complete: true }
             streams.set(key, stream)
@@ -199,6 +212,10 @@ export function extractCapture(buffer: Uint8Array, address?: { bus: number; addr
     let current: { command: Container; data?: Container; complete: boolean } | undefined
 
     for (const container of reassembleContainers(deviceTransfers)) {
+        if (container.type === 0) {
+            if (current) current.complete = false
+            continue
+        }
         if (container.type === 4) {
             events.push({
                 code: container.code,

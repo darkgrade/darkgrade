@@ -10,8 +10,10 @@
  *  2. Structured evidence in the checkout (*.json / *.jsonl under docs/ and artifacts/):
  *     bench-probe results and darkgrade operation logs.
  *  3. Prose observations transcribed in test-bench-observations.ts, each verified against its excerpt.
+ *  4. Sanitized checked-in live observations, or repeated --evidence files, applied without raw identifiers.
  */
 import { createCanonRegistry, createNikonRegistry, createPTPRegistry, createSonyRegistry } from '@ptp/registry'
+import { applyBenchEvidence } from '@scripts/camera-profiles/bench-evidence'
 import {
     formatCode,
     validateCameraProfile,
@@ -38,6 +40,7 @@ const packageDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url
 interface Arguments {
     testBench: string
     output: string
+    evidence: string[]
     captures: { profileId: string; file: string; address?: { bus: number; address: number } }[]
 }
 
@@ -60,6 +63,11 @@ function parseArguments(argv: string[]): Arguments {
         testBench: path.resolve(testBench),
         output: path.resolve(valueAfter('--output') ?? path.join(packageDirectory, 'camera-profiles')),
         captures,
+        evidence: argv.includes('--evidence')
+            ? argv.flatMap((argument, index) =>
+                  argument === '--evidence' ? [path.resolve(argv[index + 1] ?? '')] : []
+              )
+            : [path.join(packageDirectory, 'docs/evidence/darkgrade01-2026-10-28.json')],
     }
 }
 
@@ -281,6 +289,17 @@ async function main(): Promise<void> {
         const builder = builders.find(candidate => candidate.profile.id === capture.profileId)
         if (!builder) throw new Error(`No camera observations for profile ${capture.profileId}`)
         applyCapture(builder, capture.file, capture.address)
+    }
+    for (const file of options.evidence) {
+        const relative = path.relative(packageDirectory, file)
+        const location = relative.startsWith('..')
+            ? `sanitized bench evidence ${path.basename(file)} (sha256 ${createHash('sha256').update(readFileSync(file)).digest('hex')})`
+            : `darkgrade/darkgrade:packages/link/${relative}`
+        applyBenchEvidence(
+            builders.map(builder => builder.profile),
+            JSON.parse(readFileSync(file, 'utf8')),
+            location
+        )
     }
 
     for (const { profile } of builders) {

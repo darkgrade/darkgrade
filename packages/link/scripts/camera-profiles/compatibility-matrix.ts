@@ -1,9 +1,9 @@
 /**
  * Merges the simulation support matrix with device-lab hardware results into one camera × capability
- * table. Rows describe the same camera when they share a USB identity; the row with the strongest
- * evidence (hardware > captured > documented) supplies the results, and the others are listed as
- * also covering it.
+ * table. Matching USB identities must also share a manufacturer and product line. Known firmware
+ * versions stay separate. Each capability retains its own strongest available evidence source.
  */
+import { identifyCamera } from '@camera/identification/camera-identification'
 import {
     countStatuses,
     type CapabilityResult,
@@ -11,7 +11,7 @@ import {
     type StatusCounts,
     type SupportMatrix,
     type SupportMatrixRow,
-} from './support-matrix'
+} from '@scripts/camera-profiles/support-matrix'
 
 export const FIDELITY_RANK: Record<MatrixFidelity, number> = { hardware: 3, captured: 2, documented: 1 }
 
@@ -32,6 +32,18 @@ export interface CompatibilityCamera {
     results: Record<string, CapabilityResult>
     /** The same camera reached over standard PTP/IP, when it was simulated there. */
     ptpIp?: { fidelity: MatrixFidelity; profile: string; results: Record<string, CapabilityResult> }
+    /** Source of each selected capability; camera-level fidelity does not promote weaker results. */
+    resultEvidence: Record<
+        string,
+        {
+            fidelity: MatrixFidelity
+            profile: string
+            firmware?: string
+            host?: string
+            generatedAt: string
+            revision?: string
+        }
+    >
 }
 
 export interface CompatibilityMatrix {
@@ -43,13 +55,23 @@ export interface CompatibilityMatrix {
     totals: Partial<Record<MatrixFidelity, { cameras: number } & StatusCounts>>
 }
 
-/** Groups rows whose USB identities overlap; rows without one stay on their own. */
+/** Exact catalog/profile aliases may join rows; a shared USB ID alone cannot join models. */
+function modelIdentity(row: SupportMatrixRow, usb: string): string {
+    const [vendorId, productId] = usb.split(':').map(value => Number.parseInt(value, 16))
+    const identified = identifyCamera({ vendorId, productId, ptpModel: row.model })
+    const candidate = identified.status === 'matched' ? identified.candidates[0] : undefined
+    if (candidate) return `${candidate.manufacturer}|${candidate.line}|${candidate.models[0]}`
+    return `${row.manufacturer}|${row.catalogLine ?? row.line}|${row.model.trim().toLowerCase()}`
+}
+
+/** Groups only matching USB identities AND model aliases; unknown firmware cannot bridge versions. */
 function groupByUsb(rows: SupportMatrixRow[]): SupportMatrixRow[][] {
     const parent = rows.map((_, index) => index)
     const find = (index: number): number => (parent[index] === index ? index : (parent[index] = find(parent[index])))
     const owner = new Map<string, number>()
     rows.forEach((row, index) => {
-        for (const identity of row.usb ?? []) {
+        for (const usb of row.usb ?? []) {
+            const identity = `${modelIdentity(row, usb)}|${usb}`
             const existing = owner.get(identity)
             if (existing === undefined) owner.set(identity, index)
             else parent[find(index)] = find(existing)
@@ -57,7 +79,15 @@ function groupByUsb(rows: SupportMatrixRow[]): SupportMatrixRow[][] {
     })
     const groups = new Map<number, SupportMatrixRow[]>()
     rows.forEach((row, index) => groups.set(find(index), [...(groups.get(find(index)) ?? []), row]))
-    return [...groups.values()]
+    return [...groups.values()].flatMap(group => {
+        const firmwares = [...new Set(group.map(row => row.firmware).filter(Boolean))]
+        if (firmwares.length < 2) return [group]
+        // Unknown firmware cannot bridge conflicting known firmware observations.
+        return [
+            group.filter(row => !row.firmware),
+            ...firmwares.map(firmware => group.filter(row => row.firmware === firmware)),
+        ].filter(rows => rows.length)
+    })
 }
 
 function strongest(rows: SupportMatrixRow[]): SupportMatrixRow {
@@ -84,9 +114,28 @@ export function mergeCompatibility(
         const chosen = strongest(group)
         const identities = new Set(group.flatMap(row => row.usb ?? []))
         const network = strongestOrUndefined(
-            overPtpIp.filter(row => row.usb?.some(identity => identities.has(identity)))
+            overPtpIp.filter(row => row.usb?.some(identity => identities.has(identity) && modelIdentity(row, identity) === modelIdentity(chosen, identity)) && (!row.firmware || !chosen.firmware || row.firmware === chosen.firmware))
         )
         const models = [...new Set(group.map(row => row.model))]
+        const results: CompatibilityCamera['results'] = {}
+        const resultEvidence: CompatibilityCamera['resultEvidence'] = {}
+        const ordered = [...group].sort((left, right) => FIDELITY_RANK[right.fidelity] - FIDELITY_RANK[left.fidelity])
+        for (const capability of simulation.capabilities) {
+            const source =
+                ordered.find(row => row.results[capability.id]?.status !== 'no-data' && row.results[capability.id]) ??
+                ordered.find(row => row.results[capability.id])
+            if (!source) continue
+            results[capability.id] = source.results[capability.id]
+            const matrix = source.fidelity === 'hardware' ? (hardware ?? simulation) : simulation
+            resultEvidence[capability.id] = {
+                fidelity: source.fidelity,
+                profile: source.profile,
+                generatedAt: matrix.generatedAt,
+                ...(source.firmware && { firmware: source.firmware }),
+                ...(source.host && { host: source.host }),
+                ...(matrix.revision && { revision: matrix.revision }),
+            }
+        }
         return {
             manufacturer: chosen.manufacturer,
             line: chosen.line,
@@ -101,7 +150,8 @@ export function mergeCompatibility(
             alsoCoveredBy: group
                 .filter(row => row !== chosen)
                 .map(row => ({ fidelity: row.fidelity, profile: row.profile })),
-            results: chosen.results,
+            results,
+            resultEvidence,
             ...(network && {
                 ptpIp: { fidelity: network.fidelity, profile: network.profile, results: network.results },
             }),
@@ -162,9 +212,11 @@ function cameraTable(matrix: CompatibilityMatrix, cameras: CompatibilityCamera[]
                 camera.firmware ? `${camera.model} (fw ${camera.firmware})` : camera.model,
                 camera.usb.join(', '),
                 fidelityLabel(camera),
-                ...matrix.capabilities.map(
-                    capability => STATUS_CELL[camera.results[capability.id]?.status ?? 'no-data']
-                ),
+                ...matrix.capabilities.map(capability => {
+                    const symbol = STATUS_CELL[camera.results[capability.id]?.status ?? 'no-data']
+                    const evidence = camera.resultEvidence[capability.id]
+                    return evidence && evidence.fidelity !== camera.fidelity ? `${symbol} ${evidence.fidelity}` : symbol
+                }),
             ])
         ),
     ]
@@ -195,7 +247,7 @@ function lineRollup(matrix: CompatibilityMatrix, cameras: CompatibilityCamera[])
 }
 
 const LEGEND =
-    '✅ pass · ❌ fail · ➖ unsupported (camera refused it or darkgrade has no definition) · · no data. Fidelity: **hardware** = run on a physical body in the device lab; **captured** = replayed testbench evidence; **documented** = built from libgphoto2 and vendor documentation, not hardware-verified. A camera takes its results from its strongest evidence.'
+    '✅ pass · ❌ fail · ➖ unsupported (camera refused it or darkgrade has no definition) · · no data. Fidelity: **hardware** = run on a physical body in the device lab; **captured** = replayed testbench evidence; **documented** = built from libgphoto2 and vendor documentation, not hardware-verified. Each capability uses its strongest available evidence; a cell labels any weaker source. A pass on captured or documented data is a software result, not physical validation. Known firmware versions remain separate; shared USB IDs do not establish model aliases.'
 
 function summary(matrix: CompatibilityMatrix): string {
     const parts = (Object.keys(FIDELITY_RANK) as MatrixFidelity[])
