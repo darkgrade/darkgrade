@@ -108,15 +108,16 @@ export class NikonCamera extends GenericCamera {
         }
     }
 
-    /** Command-only release is available; this implementation does not retrieve the new still object or its metadata. */
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    /**
+     * Releases the shutter with InitiateCapture; the camera saves the still to its own configured
+     * target (its memory card). The default options fire the shutter too. Retrieving the new still
+     * object and its metadata is not implemented, so `info` and `data` are always undefined: the
+     * result never claims media it did not retrieve, whatever `includeInfo`/`includeData` ask for.
+     */
+    async captureImage(_options: { includeInfo?: boolean; includeData?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
-        if (includeInfo || includeData)
-            throw new Error(
-                'Nikon still-image retrieval is not implemented; command acceptance alone does not provide image media'
-            )
         const info: ObjectInfo | undefined = undefined
         const data: Uint8Array | undefined = undefined
 
