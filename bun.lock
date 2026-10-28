@@ -52,9 +52,9 @@
       "name": "drkgrd.co",
       "version": "0.1.0",
       "dependencies": {
-        "@darkgrade/ui": "workspace:*",
         "@types/react": "^19.1.11",
         "@types/react-dom": "^19.1.8",
+        "hls.js": "^1.7.3",
         "next": "^15.5.0",
         "posthog-js": "^1.334.1",
         "react": "19.1.1",

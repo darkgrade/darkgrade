@@ -1,60 +1,75 @@
+import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
+import { MUX_STREAM_ORIGIN } from '@/app/components/mux'
 import './globals.css'
 
-const sans = localFont({
-    src: './fonts/GoogleSansFlex.woff2',
-    preload: true,
+const tayFlapjack = localFont({
+    src: [{ path: './fonts/tay-flapjack.woff2', weight: '400', style: 'normal' }],
+    variable: '--font-tay-flapjack',
     display: 'swap',
+    preload: true,
+    fallback: ['Georgia', 'serif'],
 })
 
-export const metadata = {
-    title: process.env.NEXT_PUBLIC_DOMAIN,
-    description: process.env.NEXT_PUBLIC_DOMAIN,
+const tayRoadRunner = localFont({
+    src: [{ path: './fonts/tay-road-runner-regular.woff2', weight: '400', style: 'normal' }],
+    variable: '--font-tay-road-runner',
+    display: 'swap',
+    preload: true,
+    fallback: ['system-ui', 'sans-serif'],
+})
+
+const tayTommyTokyo = localFont({
+    src: [{ path: './fonts/tay-tommy-tokyo-regular.woff2', weight: '400', style: 'normal' }],
+    variable: '--font-tay-tommy-tokyo',
+    display: 'swap',
+    preload: true,
+    fallback: ['ui-monospace', 'monospace'],
+})
+
+const TITLE = 'Darkgrade — Shoot more. Edit less.'
+const DESCRIPTION = 'Local-first AI for creative professionals.'
+const OG_IMAGE = 'https://drkgrd.co/darkgrade_opengraph_dark.png'
+
+export const metadata: Metadata = {
+    metadataBase: new URL('https://drkgrd.co'),
+    title: TITLE,
+    description: DESCRIPTION,
+    applicationName: 'Darkgrade',
+    alternates: { canonical: 'https://darkgrade.com' },
+    icons: {
+        icon: [{ url: '/darkgrade_favicon_dark.svg', type: 'image/svg+xml' }],
+    },
+    openGraph: {
+        title: TITLE,
+        siteName: TITLE,
+        description: DESCRIPTION,
+        images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: 'Darkgrade' }],
+        type: 'website',
+        url: 'https://drkgrd.co',
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: TITLE,
+        description: DESCRIPTION,
+        images: [OG_IMAGE],
+    },
+}
+
+export const viewport: Viewport = {
+    width: 'device-width',
+    initialScale: 1,
+    themeColor: '#0A0A0B',
+    colorScheme: 'dark',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en" className={`${sans.className} bg-black overflow-x-hidden`}>
+        <html lang="en" className={`${tayRoadRunner.variable} ${tayFlapjack.variable} ${tayTommyTokyo.variable}`}>
             <head>
-                <meta charSet="utf-8" />
-                <link
-                    rel="icon"
-                    type="image/svg+xml"
-                    href={
-                        process.env.NEXT_PUBLIC_DOMAIN === 'kevinschaich.com'
-                        ? '/ks_favicon_dark.svg'
-                        : '/darkgrade_favicon_dark.svg'
-                    }
-                />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-                <meta property="og:title" content={process.env.NEXT_PUBLIC_DOMAIN} />
-                <meta property="og:site_name" content={process.env.NEXT_PUBLIC_DOMAIN} />
-                <meta property="og:description" content={process.env.NEXT_PUBLIC_DOMAIN} />
-                <meta
-                    property="og:image"
-                    content={
-                        process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co'
-                            ? 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/darkgrade_opengraph_dark.png'
-                            : 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/ks_opengraph_dark.png'
-                    }
-                />
-                <meta property="og:type" content="website" />
-                <meta property="og:url" content={'https://' + process.env.NEXT_PUBLIC_DOMAIN} />
-
-                <meta
-                    property="twitter:image"
-                    content={
-                        process.env.NEXT_PUBLIC_DOMAIN === 'drkgrd.co'
-                            ? 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/darkgrade_opengraph_dark.png'
-                            : 'https://' + process.env.NEXT_PUBLIC_DOMAIN + '/ks_opengraph_dark.png'
-                    }
-                />
-                <meta property="twitter:title" content={process.env.NEXT_PUBLIC_DOMAIN} />
-                <meta property="twitter:description" content={process.env.NEXT_PUBLIC_DOMAIN} />
-                <meta name="twitter:card" content="summary_large_image" />
+                <link rel="preconnect" href={MUX_STREAM_ORIGIN} />
             </head>
-            <body className="overflow-x-hidden">{children}</body>
+            <body>{children}</body>
         </html>
     )
 }
