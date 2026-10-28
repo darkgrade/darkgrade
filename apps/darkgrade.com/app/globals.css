@@ -152,12 +152,12 @@
 
 /* ---------- the panel ----------
    the frosted dark surface shared by the scrolled header, the footer and the
-   buttons and the marquee: 25% black over a 14px blur of what is behind it. One
+   buttons and the marquee: 25% black over a 12px blur of what is behind it. One
    shade and one radius everywhere. Built from Tailwind's own backdrop-blur. The
-   tint is deliberately light: the dim layer already sits under it at 75-85%, and
+   tint is deliberately light: the dim layer already sits under it at 60-85%, and
    a heavier panel on top leaves almost no footage to blur. */
 @utility panel {
-    @apply bg-[rgba(10,10,11,.25)] backdrop-blur-[14px];
+    @apply bg-[rgba(10,10,11,.25)] backdrop-blur-[12px];
 }
 
 /* ---------- the lamp ----------
@@ -324,10 +324,10 @@
     /* ---------- the dim layer ----------
        the one layer between the backdrop and the page: flat black, no gradient.
        JS writes --dim-p: 0 at the top of the page, 1 once the marquee reaches
-       the top of the window. Over that distance opacity runs 75% -> 85%. */
+       the top of the window. Over that distance opacity runs 60% -> 85%. */
     .dim {
         --dim-p: 0;
-        opacity: calc(0.75 + 0.1 * var(--dim-p));
+        opacity: calc(0.6 + 0.25 * var(--dim-p));
         background: #000;
     }
 }

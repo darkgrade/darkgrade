@@ -1,3 +1,101 @@
 @import 'tailwindcss';
 
-@source "../../../packages/ui/src";
+/* The darkgrade.com tokens and lamp, trimmed to what this one page uses.
+   Keep in step with apps/darkgrade.com/app/globals.css. */
+@theme {
+    --color-bg: #0a0a0b;
+    --color-ink: #eae6dc;
+    --color-ink-66: rgba(234, 230, 220, 0.66);
+    --color-ink-55: rgba(234, 230, 220, 0.55);
+    --color-ink-52: rgba(234, 230, 220, 0.52);
+    --color-hair: rgba(234, 230, 220, 0.13);
+    --color-gold: #f6dda8;
+    --color-obsidian: #0b0b0c;
+    --color-rec: #e0483e;
+
+    --font-serif: var(--font-tay-flapjack), Georgia, serif;
+    --font-sans: var(--font-tay-road-runner), system-ui, sans-serif;
+    --font-mono: var(--font-tay-tommy-tokyo), ui-monospace, monospace;
+
+    --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
+
+    --text-label: 0.875rem;
+    --text-lede: clamp(1rem, 1.25vw, 1.1562rem);
+
+    --tracking-label: 0.3em;
+    --tracking-meta: 0.2em;
+
+    --animate-blink: blink 1.6s ease-in-out 3;
+}
+
+@keyframes blink {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.15;
+    }
+}
+
+@layer base {
+    :root {
+        --gI: 1;
+    }
+
+    html,
+    body {
+        background: var(--color-bg);
+        color: var(--color-ink);
+    }
+    body {
+        font-family: var(--font-sans);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        overflow-x: clip;
+    }
+    h1 {
+        text-wrap: balance;
+    }
+    p {
+        text-wrap: pretty;
+    }
+    a {
+        color: inherit;
+        text-decoration: none;
+    }
+    ::selection {
+        background: var(--color-gold);
+        color: var(--color-bg);
+    }
+}
+
+@utility panel {
+    @apply bg-[rgba(10,10,11,.25)] backdrop-blur-[12px];
+}
+
+@utility glow-hot {
+    color: var(--color-gold);
+    text-shadow:
+        0 0 1px rgba(255, 247, 230, calc(0.85 * var(--gI))),
+        0 0 5px rgba(255, 238, 205, calc(0.7 * var(--gI))),
+        0 0 14px rgba(244, 198, 110, calc(0.55 * var(--gI))),
+        0 0 34px rgba(216, 150, 60, calc(0.34 * var(--gI))),
+        0 1px 76px rgba(190, 105, 30, calc(0.2 * var(--gI)));
+}
+
+@utility mark-glow {
+    filter: drop-shadow(0 0 calc(6px * var(--gI)) rgba(234, 230, 220, 0.16))
+        drop-shadow(0 0 calc(22px * var(--gI)) rgba(244, 198, 110, 0.1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
