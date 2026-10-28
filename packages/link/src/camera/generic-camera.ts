@@ -71,13 +71,21 @@ export class GenericCamera {
 
     async disconnect(): Promise<void> {
         this.emitter.removeAllListeners()
-
-        if (this.sessionId !== null) {
-            await this.send(this.registry.operations.CloseSession, {})
+        const failures: unknown[] = []
+        try {
+            if (this.sessionId !== null && this.transport.isConnected())
+                await this.send(this.registry.operations.CloseSession, {})
+        } catch (error) {
+            failures.push(error)
         }
-
         this.sessionId = null
-        await this.transport.disconnect()
+        try {
+            await this.transport.disconnect()
+        } catch (error) {
+            failures.push(error)
+        }
+        if (failures.length === 1) throw failures[0]
+        if (failures.length > 1) throw new AggregateError(failures, 'Camera disconnect cleanup failed')
     }
 
     /**

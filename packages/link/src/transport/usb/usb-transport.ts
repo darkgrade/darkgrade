@@ -46,11 +46,16 @@ export const PTP_DISCOVERY_VENDORS = [
 
 const LIBUSB_ENDPOINT_IN = usb.LIBUSB_ENDPOINT_IN
 
+function isUsbDeviceGone(error: unknown): boolean {
+    return error instanceof Error && /LIBUSB_(?:ERROR|TRANSFER)_NO_DEVICE\b/.test(error.message)
+}
+
 export class USBTransport implements TransportInterface {
     private device: USBDevice | null = null
     private interfaceNumber = 0
     private endpoints: EndpointConfiguration | null = null
     private connected = false
+    private deviceLost = false
     private usb: USB | null = null
     private usbScope: string | undefined
     private eventHandler: ((event: PTPEvent) => void) | null = null
@@ -160,33 +165,37 @@ export class USBTransport implements TransportInterface {
 
         this.endpoints = this.findEndpoints(alternate)
         this.connected = true
+        this.deviceLost = false
         // await this.nukeDevice()
 
         this.startInterruptListener()
     }
 
     async disconnect(): Promise<void> {
-        if (!this.connected) return
+        if (!this.device && !this.connected) return
 
         this.connected = false
         this.eventHandler = null
-
-        // Cancel the interrupt listener before closing. An interrupt read stays pending until
-        // the camera sends an event, and libusb refuses to close a device that still has one
-        // outstanding.
-        await this.stopInterruptListener()
-
-        // give events 100ms to complete if any are pending
-        await new Promise(resolve => setTimeout(resolve, 100))
-        await this.clearHalt(EndpointType.INTERRUPT)
-        // await this.device?.reset()
-        // await this.nukeDevice()
-
-        await this.device?.close()
-
-        this.device = null
-        this.interfaceNumber = 0
-        this.endpoints = null
+        const failures: unknown[] = []
+        try {
+            await this.stopInterruptListener()
+            await new Promise(resolve => setTimeout(resolve, 100))
+            if (!this.deviceLost) await this.clearHalt(EndpointType.INTERRUPT)
+        } catch (error) {
+            if (!isUsbDeviceGone(error)) failures.push(error)
+        }
+        try {
+            await this.device?.close()
+        } catch (error) {
+            if (!isUsbDeviceGone(error)) failures.push(error)
+        } finally {
+            this.device = null
+            this.interfaceNumber = 0
+            this.endpoints = null
+            this.deviceLost = false
+        }
+        if (failures.length === 1) throw failures[0]
+        if (failures.length > 1) throw new AggregateError(failures, 'USB disconnect cleanup failed')
     }
 
     private async nukeDevice(): Promise<void> {
@@ -369,11 +378,12 @@ export class USBTransport implements TransportInterface {
         this.pollingEndpoint = pollableEndpoint
         let recoveries = 0
         pollableEndpoint.on('data', (data: Buffer) => {
+            if (!this.connected || this.pollingEndpoint !== pollableEndpoint) return
             recoveries = 0
             this.handleInterruptData(new Uint8Array(data), 'ok')
         })
         pollableEndpoint.on('error', error => {
-            if (!this.connected) return
+            if (!this.connected || this.handleDeviceLoss(error)) return
             console.error('Error listening for interrupt: ', error)
             // node-usb stops polling after an error. Wait until its pending
             // transfer has ended before clearing the halt and rearming events.
@@ -427,6 +437,14 @@ export class USBTransport implements TransportInterface {
         endpoint.removeAllListeners('error')
     }
 
+    private handleDeviceLoss(error: unknown): boolean {
+        if (!isUsbDeviceGone(error)) return false
+        this.deviceLost = true
+        this.connected = false
+        this.logger.addLog({ type: 'console', level: 'info', consoleLevel: 'info', args: ['USB device disconnected'] })
+        return true
+    }
+
     private async listenForInterrupt(): Promise<void> {
         while (this.connected && this.device && this.endpoints) {
             try {
@@ -438,7 +456,7 @@ export class USBTransport implements TransportInterface {
                 }
             } catch (error) {
                 // halt will be cleared when device is disconnected, ignore
-                if (!this.connected) return
+                if (!this.connected || this.handleDeviceLoss(error)) return
 
                 console.error('Error listening for interrupt: ', error)
             }
