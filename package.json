@@ -9,7 +9,8 @@
         "test": "turbo test",
         "lint": "turbo lint",
         "format": "turbo format",
-        "studio": "bun run --cwd apps/studio dev"
+        "studio": "bun run --cwd apps/studio dev",
+        "compat:ui": "bun run --cwd packages/link compat:ui"
     },
     "trustedDependencies": ["electron", "electron-builder", "esbuild"],
     "overrides": {

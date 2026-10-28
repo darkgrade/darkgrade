@@ -45,7 +45,7 @@
             "id": "theta-ptpip",
             "description": "libgphoto2 lists \"Ricoh Theta (WLAN)\" as a PTP/IP model with capture.",
             "source": 2,
-            "behaviour": { "kind": "none" }
+            "behaviour": { "kind": "ptp-ip-personality", "port": 15740 }
         }
     ]
 }

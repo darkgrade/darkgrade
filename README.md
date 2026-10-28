@@ -328,7 +328,7 @@ await camera.connect()
 
 ### Camera compatibility matrix
 
-686 cameras: 8 captured, 678 documented. No hardware results yet.
+686 cameras: 8 captured, 678 documented. 78 also simulated over PTP/IP (Wi-Fi). No hardware results yet.
 
 ✅ pass · ❌ fail · ➖ unsupported (camera refused it or darkgrade has no definition) · · no data. Fidelity: **hardware** = run on a physical body in the device lab; **captured** = replayed testbench evidence; **documented** = built from libgphoto2 and vendor documentation, not hardware-verified. A camera takes its results from its strongest evidence.
 

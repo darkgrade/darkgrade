@@ -108,6 +108,12 @@
             },
             {
                 "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2688"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L9644"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L9718"
             }
         ]
     },
@@ -139,6 +145,7 @@
             "0x9207",
             "0x941c",
             "0x9428",
+            "0x9435",
             "0x9439"
         ],
         "eventsSupported": [],
@@ -171,6 +178,12 @@
             "response": { "code": "0x2001" },
             "note": "Documented by quirk nikon-liveview; not observed on hardware.",
             "source": 20
+        },
+        {
+            "operation": "0x9435",
+            "response": { "code": "0x2001" },
+            "note": "Documented by quirk nikon-z-application-mode; not observed on hardware.",
+            "source": 33
         }
     ],
     "events": [],
@@ -237,10 +250,9 @@
         },
         {
             "id": "nikon-z-application-mode",
-            "description": "Z bodies have DPC 0xD1F0 ApplicationMode and op 0x9435 ChangeApplicationMode (darkgrade defines OFF/ON); libgphoto2 sets it for tethered control.",
+            "description": "Nikon DPC 0xD1F0 ApplicationMode and op 0x9435 ChangeApplicationMode (darkgrade defines OFF/ON). When the camera reports them, libgphoto2 sets ApplicationMode to 1 and calls ChangeApplicationMode(1) before movie recording, and switches both back to 0 afterwards because the filesystem is otherwise unreachable.",
             "source": 33,
-            "behaviour": { "kind": "none" },
-            "unverified": true
+            "behaviour": { "kind": "none" }
         }
     ]
 }

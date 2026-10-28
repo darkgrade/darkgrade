@@ -30,6 +30,8 @@ export interface CompatibilityCamera {
     /** Weaker evidence for the same camera that the chosen row supersedes. */
     alsoCoveredBy: { fidelity: MatrixFidelity; profile: string }[]
     results: Record<string, CapabilityResult>
+    /** The same camera reached over standard PTP/IP, when it was simulated there. */
+    ptpIp?: { fidelity: MatrixFidelity; profile: string; results: Record<string, CapabilityResult> }
 }
 
 export interface CompatibilityMatrix {
@@ -62,6 +64,10 @@ function strongest(rows: SupportMatrixRow[]): SupportMatrixRow {
     return [...rows].sort((left, right) => FIDELITY_RANK[right.fidelity] - FIDELITY_RANK[left.fidelity])[0]
 }
 
+function strongestOrUndefined(rows: SupportMatrixRow[]): SupportMatrixRow | undefined {
+    return rows.length ? strongest(rows) : undefined
+}
+
 export function mergeCompatibility(
     simulation: SupportMatrix,
     hardware?: SupportMatrix,
@@ -71,9 +77,15 @@ export function mergeCompatibility(
     // Line mocks stand in for a whole line; with per-model mocks present they would duplicate one model.
     const simulated = simulation.rows.filter(row => !(hasModelMocks && row.scope === 'line'))
     const rows = [...(hardware?.rows.filter(row => row.fidelity === 'hardware') ?? []), ...simulated]
+    const overUsb = rows.filter(row => row.transport !== 'ptp-ip')
+    const overPtpIp = rows.filter(row => row.transport === 'ptp-ip')
 
-    const cameras = groupByUsb(rows).map(group => {
+    const cameras = groupByUsb(overUsb).map(group => {
         const chosen = strongest(group)
+        const identities = new Set(group.flatMap(row => row.usb ?? []))
+        const network = strongestOrUndefined(
+            overPtpIp.filter(row => row.usb?.some(identity => identities.has(identity)))
+        )
         const models = [...new Set(group.map(row => row.model))]
         return {
             manufacturer: chosen.manufacturer,
@@ -90,6 +102,9 @@ export function mergeCompatibility(
                 .filter(row => row !== chosen)
                 .map(row => ({ fidelity: row.fidelity, profile: row.profile })),
             results: chosen.results,
+            ...(network && {
+                ptpIp: { fidelity: network.fidelity, profile: network.profile, results: network.results },
+            }),
         } satisfies CompatibilityCamera
     })
     cameras.sort(
@@ -186,7 +201,8 @@ function summary(matrix: CompatibilityMatrix): string {
     const parts = (Object.keys(FIDELITY_RANK) as MatrixFidelity[])
         .filter(fidelity => matrix.totals[fidelity])
         .map(fidelity => `${matrix.totals[fidelity]!.cameras} ${fidelity}`)
-    return `${matrix.cameras.length} cameras: ${parts.join(', ')}.${matrix.revision ? ` Revision \`${matrix.revision}\`.` : ''}${
+    const network = matrix.cameras.filter(camera => camera.ptpIp).length
+    return `${matrix.cameras.length} cameras: ${parts.join(', ')}.${network ? ` ${network} also simulated over PTP/IP (Wi-Fi).` : ''}${matrix.revision ? ` Revision \`${matrix.revision}\`.` : ''}${
         matrix.sources.hardwareGeneratedAt
             ? ` Hardware results from ${matrix.sources.hardwareGeneratedAt.slice(0, 10)}.`
             : ' No hardware results yet.'

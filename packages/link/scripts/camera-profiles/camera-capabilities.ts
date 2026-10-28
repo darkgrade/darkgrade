@@ -4,6 +4,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { PropertyDefinition } from '@ptp/types/property'
 import type { CapabilityResult } from '@scripts/camera-profiles/support-matrix'
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
+import { IPTransport } from '@transport/ip/ip-transport'
 import {
     formatCode,
     parseBytes,
@@ -11,6 +12,7 @@ import {
     type CameraProfile,
     type RecordedExchange,
 } from '@transport/simulated/camera-profile'
+import { SimulatedPtpIpCamera } from '@transport/simulated/simulated-ptpip-camera'
 import { SimulatedDisconnectError, SimulatedTransport } from '@transport/simulated/simulated-transport'
 
 const OK = 0x2001
@@ -39,6 +41,8 @@ export interface SimulatedCamera {
     camera: Camera
     transport: ObservedTransport
     tier: 'simulated' | 'hardware'
+    /** The link darkgrade talks over (default "usb"); "ptp-ip" is standard PTP/IP over Wi-Fi/Ethernet. */
+    connection?: CameraConnection
     /** Passed to Camera.connect(); selects the physical camera on the hardware tier. */
     device?: DeviceDescriptor
     timeoutMilliseconds: number
@@ -51,7 +55,44 @@ export function simulateCamera(profile: CameraProfile): SimulatedCamera {
         vendorId: profile.usb ? parseCode(profile.usb.vendorId) : undefined,
         logger: { renderInTerminal: false, captureConsole: false, expanded: false },
     })
-    return { profile, camera, transport, tier: 'simulated', timeoutMilliseconds: SIMULATED_TIMEOUT_MILLISECONDS }
+    return {
+        profile,
+        camera,
+        transport,
+        tier: 'simulated',
+        connection: 'usb',
+        timeoutMilliseconds: SIMULATED_TIMEOUT_MILLISECONDS,
+    }
+}
+
+export type CameraConnection = 'usb' | 'ptp-ip'
+
+/**
+ * Serves the profile over standard PTP/IP on a loopback port and connects darkgrade's IPTransport to
+ * it. Call `stop()` when done.
+ */
+export async function simulateCameraOverPtpIp(
+    profile: CameraProfile
+): Promise<SimulatedCamera & { stop: () => Promise<void> }> {
+    const server = new SimulatedPtpIpCamera(profile)
+    const { host, port } = await server.start()
+    const camera = new Camera({
+        transport: new IPTransport({ address: host, port, timeout: SIMULATED_TIMEOUT_MILLISECONDS }),
+        vendorId: profile.usb ? parseCode(profile.usb.vendorId) : undefined,
+        logger: { renderInTerminal: false, captureConsole: false, expanded: false },
+    })
+    return {
+        profile,
+        camera,
+        transport: server.transport,
+        tier: 'simulated',
+        connection: 'ptp-ip',
+        timeoutMilliseconds: SIMULATED_TIMEOUT_MILLISECONDS,
+        stop: async () => {
+            await camera.disconnect().catch(() => undefined)
+            await server.stop()
+        },
+    }
 }
 
 /** Replaying captured traffic can change settings or card contents, so the hardware tier never does it. */
@@ -297,17 +338,29 @@ export const CAPABILITIES = [
     { id: 'vendor-operations', label: 'Vendor op definitions', run: vendorOperationDefinitions, needsSession: false },
 ] as const
 
+/** Called as each capability starts and finishes, for live progress reporting. */
+export interface CapabilityProgress {
+    onStart?: (capability: string) => void
+    onResult?: (capability: string, result: CapabilityResult, durationMilliseconds: number) => void
+}
+
 /** Runs every capability in order; session-dependent ones inherit a session that did not pass. */
-export async function evaluateCapabilities(simulated: SimulatedCamera): Promise<Record<string, CapabilityResult>> {
+export async function evaluateCapabilities(
+    simulated: SimulatedCamera,
+    progress: CapabilityProgress = {}
+): Promise<Record<string, CapabilityResult>> {
     const results: Record<string, CapabilityResult> = {}
     for (const capability of CAPABILITIES) {
+        const startedAt = Date.now()
+        progress.onStart?.(capability.id)
         const session = results.session
         if (capability.needsSession && session && session.status !== 'pass') {
             const status = session.status === 'fail' ? 'fail' : session.status
             results[capability.id] = { status, detail: `requires a session: ${session.detail}` }
-            continue
+        } else {
+            results[capability.id] = await evaluateCapability(simulated, capability.run)
         }
-        results[capability.id] = await evaluateCapability(simulated, capability.run)
+        progress.onResult?.(capability.id, results[capability.id], Date.now() - startedAt)
     }
     return results
 }

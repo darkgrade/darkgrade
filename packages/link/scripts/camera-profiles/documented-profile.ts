@@ -105,6 +105,16 @@ const QUIRK_WIRING: Record<string, QuirkWiring> = {
     'gopro-no-capture': { behaviour: REJECT_CAPTURE },
     'fuji-xt30-no-tether': { behaviour: REJECT_CAPTURE },
     'fuji-xe5-no-capture': { behaviour: REJECT_CAPTURE },
+    // Standard PTP/IP on TCP 15740 (catalog global quirk ptpip-standard-port, libgphoto2 ptpip.c).
+    'sony-ptpip-vendor-id': {
+        behaviour: {
+            kind: 'ptp-ip-personality',
+            port: 15740,
+            vendorExtensionId: '0xffffffff',
+            manufacturer: 'Sony Corporation',
+        },
+    },
+    'theta-ptpip': { behaviour: { kind: 'ptp-ip-personality', port: 15740 } },
 }
 
 /**
@@ -151,7 +161,7 @@ export function effectiveGphotoFlags(model: CatalogModel): { flags: string[]; co
 
 /** The newest capture-capable model (libgphoto2 lists models oldest first), else the newest PTP model. */
 export function representativeModel(line: CatalogLine): CatalogModel | undefined {
-    const candidates = line.models.filter(model => model.ptpSupported && model.usbProductId)
+    const candidates = line.models.filter(model => model.ptpSupported === true && model.usbProductId)
     const pinned = line.quirks.some(quirk => quirk.id === 'panasonic-hidden-ops-pid-2382')
         ? candidates.find(model => model.usbProductId?.toLowerCase() === '0x2382')
         : undefined
@@ -322,9 +332,15 @@ export function catalogModelMocks(catalog: CameraCatalog): { mocks: CatalogModel
         for (const line of manufacturer.lines) {
             for (const model of line.models) {
                 const identity = { manufacturer: manufacturer.name, line: line.name, model: model.name }
-                if (!model.ptpSupported) {
-                    skipped.push({ ...identity, reason: 'catalog marks it ptpSupported: false' })
-                    continue
+                if (model.ptpSupported !== true) {
+                    const reason =
+                        model.ptpSupported === false
+                            ? 'catalog marks it ptpSupported: false'
+                            : 'PTP support unknown (USB identity only)'
+                    if (model.usbProductId || model.ptpSupported === false) {
+                        skipped.push({ ...identity, reason })
+                        continue
+                    }
                 }
                 if (!model.usbVendorId || !model.usbProductId) {
                     skipped.push({ ...identity, reason: 'no USB vendor/product ID in the catalog' })

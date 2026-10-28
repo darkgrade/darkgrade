@@ -1,0 +1,392 @@
+:root {
+    --background: #ffffff;
+    --surface: #f6f7f8;
+    --text: #1b1d20;
+    --muted: #6b7178;
+    --border: #e1e4e8;
+    --link: #1f5fbf;
+    --pass: #1a7f37;
+    --fail: #cf222e;
+    --unsupported: #8c959f;
+    --no-data: #c3c8ce;
+    --running: #0969da;
+    --queued: #a8b0b8;
+    --hardware: #8250df;
+    --captured: #1a7f37;
+    --documented: #6b7178;
+    --warn: #9a6700;
+    --row-running: #ddf4ff;
+    color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background: #0d1117;
+        --surface: #161b22;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --border: #30363d;
+        --link: #58a6ff;
+        --pass: #3fb950;
+        --fail: #f85149;
+        --unsupported: #6e7681;
+        --no-data: #484f58;
+        --running: #58a6ff;
+        --queued: #6e7681;
+        --hardware: #bc8cff;
+        --captured: #3fb950;
+        --documented: #8b949e;
+        --warn: #d29922;
+        --row-running: #0c2d6b;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--background);
+    color: var(--text);
+    font:
+        13px/1.4 -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        Roboto,
+        'Helvetica Neue',
+        Arial,
+        sans-serif;
+}
+
+a {
+    color: var(--link);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+code {
+    font:
+        12px ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Consolas,
+        monospace;
+}
+
+header.top {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+header.top .brand {
+    font-weight: 600;
+    color: var(--text);
+}
+
+header.top nav {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+}
+
+main {
+    padding: 12px 16px 32px;
+}
+
+h1 {
+    font-size: 18px;
+    margin: 4px 0 8px;
+}
+
+h2 {
+    font-size: 14px;
+    margin: 20px 0 6px;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.small {
+    font-size: 11px;
+}
+
+.crumbs {
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: center;
+    margin: 8px 0;
+}
+
+.filters input[type='search'] {
+    width: 220px;
+}
+
+.filters input,
+.filters select,
+.filters button,
+.status-filters select {
+    font: inherit;
+    color: var(--text);
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 4px;
+}
+
+.filters .group {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.filters button {
+    cursor: pointer;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0;
+}
+
+.chips a {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1px 8px;
+}
+
+.counts {
+    margin: 6px 0;
+    color: var(--muted);
+}
+
+.counts strong {
+    color: var(--text);
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+table.matrix {
+    width: 100%;
+}
+
+table.matrix th,
+table.matrix td,
+table.list th,
+table.list td {
+    border-bottom: 1px solid var(--border);
+    padding: 2px 6px;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+table.matrix thead th {
+    position: sticky;
+    top: 0;
+    background: var(--background);
+    font-weight: 600;
+    z-index: 1;
+}
+
+table.matrix th.cap {
+    font-size: 11px;
+}
+
+table.matrix tr.status-filters th {
+    top: 22px;
+    padding-top: 0;
+}
+
+table.matrix tr.status-filters select {
+    font-size: 11px;
+    max-width: 78px;
+}
+
+table.matrix td.model {
+    font-weight: 500;
+}
+
+table.list td {
+    white-space: normal;
+}
+
+td.c {
+    text-align: center;
+    font-weight: 700;
+    width: 28px;
+}
+
+td.center {
+    text-align: center;
+    color: var(--warn);
+    font-weight: 700;
+}
+
+td.time {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+td.progress {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+tr.r-running {
+    background: var(--row-running);
+}
+
+tr.r-queued td:not(.c) {
+    color: var(--muted);
+}
+
+.s-pass {
+    color: var(--pass);
+}
+
+.s-fail {
+    color: var(--fail);
+}
+
+.s-unsupported {
+    color: var(--unsupported);
+}
+
+.s-no-data {
+    color: var(--no-data);
+}
+
+.s-running {
+    color: var(--running);
+    animation: pulse 1s ease-in-out infinite;
+}
+
+.s-queued {
+    color: var(--queued);
+}
+
+@keyframes pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+.badge {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 11px;
+    border: 1px solid currentColor;
+}
+
+.badge.f-hardware {
+    color: var(--hardware);
+}
+
+.badge.f-captured {
+    color: var(--captured);
+}
+
+.badge.f-documented {
+    color: var(--documented);
+}
+
+.badge.warn {
+    color: var(--warn);
+}
+
+.meter {
+    display: inline-block;
+    width: 40px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    vertical-align: middle;
+    overflow: hidden;
+}
+
+.meter.wide {
+    width: 160px;
+}
+
+.meter span {
+    display: block;
+    height: 100%;
+    background: var(--running);
+}
+
+.run-progress {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 8px;
+    margin: 6px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.legend {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+dl.facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px 12px;
+    margin: 8px 0;
+}
+
+dl.facts dt {
+    color: var(--muted);
+}
+
+dl.facts dd {
+    margin: 0;
+}
+
+table.detail-table td.detail {
+    white-space: normal;
+    min-width: 240px;
+    max-width: 520px;
+}
+
+table.detail-table .why {
+    color: var(--muted);
+    font:
+        11px ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Consolas,
+        monospace;
+    word-break: break-word;
+}
+
+ol.sources blockquote {
+    margin: 2px 0 6px;
+    padding-left: 8px;
+    border-left: 2px solid var(--border);
+    color: var(--muted);
+}

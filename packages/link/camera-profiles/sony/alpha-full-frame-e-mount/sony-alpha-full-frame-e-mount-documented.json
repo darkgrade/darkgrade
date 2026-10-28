@@ -174,7 +174,12 @@
             "id": "sony-ptpip-vendor-id",
             "description": "Over PTP/IP Sony reports VendorExtensionID MTP with Manufacturer \"Sony Corporation\"; libgphoto2 remaps to Sony (0x11, first observed on A900).",
             "source": 24,
-            "behaviour": { "kind": "none" }
+            "behaviour": {
+                "kind": "ptp-ip-personality",
+                "port": 15740,
+                "vendorExtensionId": "0xffffffff",
+                "manufacturer": "Sony Corporation"
+            }
         },
         {
             "id": "sony-sdk-access-auth",

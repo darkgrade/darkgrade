@@ -8,6 +8,7 @@
     { "name": "model", "type": "STRING", "mode": "REQUIRED" },
     { "name": "fidelity", "type": "STRING", "mode": "REQUIRED" },
     { "name": "scope", "type": "STRING", "mode": "NULLABLE" },
+    { "name": "transport", "type": "STRING", "mode": "NULLABLE" },
     { "name": "firmware", "type": "STRING", "mode": "NULLABLE" },
     { "name": "host", "type": "STRING", "mode": "NULLABLE" },
     { "name": "usb", "type": "STRING", "mode": "NULLABLE" },

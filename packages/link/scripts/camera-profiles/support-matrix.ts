@@ -4,6 +4,8 @@ export type CapabilityStatus = 'pass' | 'fail' | 'unsupported' | 'no-data'
 /** "hardware" rows come from the device-lab tier running the same capabilities against a physical camera. */
 export type MatrixFidelity = ProfileFidelity | 'hardware'
 export type StatusCounts = Record<CapabilityStatus, number>
+/** The link a row was exercised over. Rows without one ran over USB. */
+export type MatrixTransport = 'usb' | 'ptp-ip'
 
 export interface CapabilityResult {
     status: CapabilityStatus
@@ -23,6 +25,8 @@ export interface SupportMatrixRow {
     usb?: string[]
     /** Documented rows: a line mock (one per catalog line) or a per-model mock generated from the catalog. */
     scope?: 'line' | 'model'
+    /** "ptp-ip": the same profile served over standard PTP/IP and reached through IPTransport. */
+    transport?: MatrixTransport
     /** Hardware rows: the cameras.lab.json entry and bench host that produced them. */
     labCamera?: string
     host?: string
@@ -49,12 +53,27 @@ export interface SupportMatrix {
     lines: SupportMatrixLine[]
     /** Per fidelity, over line-scope rows; per-model documented rows are counted in `catalogModels`. */
     totals: Partial<Record<MatrixFidelity, StatusCounts>>
+    /** Rows re-run over standard PTP/IP for profiles that document a PTP/IP personality. */
+    ptpIp?: {
+        simulated: number
+        totals: StatusCounts
+        /** Catalog lines with Wi-Fi evidence that are not simulated over standard PTP/IP, and why. */
+        notSimulated: { manufacturer: string; line: string; reason: string }[]
+    }
     /** Per-model documented mocks generated from the catalog at test time. */
     catalogModels?: {
         simulated: number
         skipped: { manufacturer: string; line: string; model: string; reason: string }[]
         totals: StatusCounts
     }
+}
+
+/**
+ * Identifies one evaluated row: the same camera can run as a captured profile and a documented mock,
+ * over USB and PTP/IP, and on hardware.
+ */
+export function rowKey(row: Pick<SupportMatrixRow, 'fidelity' | 'transport' | 'profile'>): string {
+    return `${row.fidelity}/${row.transport ?? 'usb'}/${row.profile}`
 }
 
 export function emptyStatusCounts(): StatusCounts {
@@ -92,6 +111,7 @@ export interface CapabilityRecord {
     model: string
     fidelity: MatrixFidelity
     scope: string | null
+    transport: MatrixTransport
     firmware: string | null
     host: string | null
     usb: string | null
@@ -112,6 +132,7 @@ export function capabilityRecords(matrix: SupportMatrix, tier: string, revision?
             model: row.model,
             fidelity: row.fidelity,
             scope: row.scope ?? null,
+            transport: row.transport ?? 'usb',
             firmware: row.firmware ?? null,
             host: row.host ?? null,
             usb: row.usb?.join(',') ?? null,
@@ -225,15 +246,55 @@ function findings(matrix: SupportMatrix, rows: SupportMatrixRow[], statuses: Cap
     )
 }
 
+/** Profiles re-run over standard PTP/IP, rolled up by line like the per-model mocks. */
+function ptpIpSection(matrix: SupportMatrix, rows: SupportMatrixRow[]): string[] {
+    if (!matrix.ptpIp) return []
+    const byLine = new Map<string, SupportMatrixRow[]>()
+    for (const row of rows) {
+        const key = `${row.manufacturer}\u0000${row.line}`
+        byLine.set(key, [...(byLine.get(key) ?? []), row])
+    }
+    const rollup = [...byLine.entries()].map(([key, lineRows]) => {
+        const [manufacturer, line] = key.split('\u0000') as [string, string]
+        return [
+            manufacturer,
+            line,
+            String(lineRows.length),
+            ...matrix.capabilities.map(capability => compactCounts(countStatuses(lineRows, capability.id))),
+        ]
+    })
+    return [
+        `### Over PTP/IP (Wi-Fi), ${matrix.ptpIp.simulated} profiles`,
+        '',
+        `Profiles whose line documents a standard PTP/IP personality are served by \`SimulatedPtpIpCamera\` on a loopback TCP port and reached through darkgrade's \`IPTransport\`. ${totalsLine(matrix.ptpIp.totals)}.`,
+        '',
+        ...table(
+            ['Manufacturer', 'Line', 'Profiles', ...matrix.capabilities.map(capability => capability.label)],
+            rollup
+        ),
+        '',
+        ...(matrix.ptpIp.notSimulated.length
+            ? [
+                  'Not simulated over PTP/IP:',
+                  '',
+                  ...matrix.ptpIp.notSimulated.map(entry => `- ${entry.manufacturer} · ${entry.line}: ${entry.reason}`),
+                  '',
+              ]
+            : []),
+    ]
+}
+
 export function renderSupportMatrix(matrix: SupportMatrix): string {
     const order = (left: SupportMatrixRow, right: SupportMatrixRow) =>
         left.manufacturer.localeCompare(right.manufacturer) ||
         left.line.localeCompare(right.line) ||
         left.model.localeCompare(right.model)
-    const hardware = matrix.rows.filter(row => row.fidelity === 'hardware').sort(order)
-    const captured = matrix.rows.filter(row => row.fidelity === 'captured').sort(order)
-    const documented = matrix.rows.filter(row => row.fidelity === 'documented' && row.scope !== 'model').sort(order)
-    const models = matrix.rows.filter(row => row.fidelity === 'documented' && row.scope === 'model').sort(order)
+    const usbRows = matrix.rows.filter(row => row.transport !== 'ptp-ip')
+    const hardware = usbRows.filter(row => row.fidelity === 'hardware').sort(order)
+    const captured = usbRows.filter(row => row.fidelity === 'captured').sort(order)
+    const documented = usbRows.filter(row => row.fidelity === 'documented' && row.scope !== 'model').sort(order)
+    const models = usbRows.filter(row => row.fidelity === 'documented' && row.scope === 'model').sort(order)
+    const networkRows = matrix.rows.filter(row => row.transport === 'ptp-ip').sort(order)
     const hardwareSection = hardware.length
         ? [
               `### Physical cameras on the device lab (${hardware.length} cameras)`,
@@ -309,6 +370,7 @@ export function renderSupportMatrix(matrix: SupportMatrix): string {
         ...capturedSection,
         ...documentedSection,
         ...catalogModelSection(matrix, models),
+        ...ptpIpSection(matrix, networkRows),
         ...linesSection,
     ].join('\n')
 }

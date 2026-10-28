@@ -5,6 +5,7 @@ import {
     formatCode,
     parseBytes,
     parseCode,
+    ptpIpPersonality,
     type CameraProfile,
     type ProfileProperty,
     type RecordedExchange,
@@ -91,6 +92,14 @@ function parseExchange(exchange: RecordedExchange): ParsedExchange {
     }
 }
 
+export interface SimulatedTransportOptions {
+    /**
+     * The link the camera is reached over. "ptp-ip" applies the profile's `ptp-ip-personality`
+     * DeviceInfo fields; SimulatedPtpIpCamera serves the transport over TCP in that mode.
+     */
+    connection?: 'usb' | 'ptp-ip'
+}
+
 const codeSet = (codes: string[] | undefined) => (codes ? new Set(codes.map(parseCode)) : undefined)
 
 /**
@@ -125,7 +134,10 @@ export class SimulatedTransport implements TransportInterface {
     private readonly completeProperties?: Set<number>
     private readonly announcesPropertyChanges: boolean
 
-    constructor(readonly profile: CameraProfile) {
+    constructor(
+        readonly profile: CameraProfile,
+        private readonly options: SimulatedTransportOptions = {}
+    ) {
         const deviceInfo = profile.deviceInfo
         this.properties = new Map(profile.properties.map(property => [parseCode(property.code), property]))
         this.exchanges = profile.exchanges.map(parseExchange)
@@ -307,8 +319,11 @@ export class SimulatedTransport implements TransportInterface {
         const hidden = this.quirks.hiddenCodes()
         const visible = (codes: string[] | undefined, hiddenCodes: Set<number>) =>
             codes?.filter(code => !hiddenCodes.has(parseCode(code)))
+        const personality = this.options.connection === 'ptp-ip' ? ptpIpPersonality(this.profile) : undefined
         return encodeDeviceInfo({
             ...deviceInfo,
+            ...(personality?.vendorExtensionId && { vendorExtensionId: personality.vendorExtensionId }),
+            ...(personality?.manufacturer && { manufacturer: personality.manufacturer }),
             operationsSupported: visible(deviceInfo.operationsSupported, hidden.operations),
             devicePropertiesSupported: visible(deviceInfo.devicePropertiesSupported, hidden.properties),
         })

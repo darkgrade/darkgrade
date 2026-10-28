@@ -56,6 +56,13 @@ jobs:
                       echo "The simulation suite did not write a support matrix." >> "$GITHUB_STEP_SUMMARY"
                   fi
 
+            - name: Render gap report
+              if: always()
+              run: |
+                  if [ -f test-results/camera-support-matrix.json ]; then
+                      bun run compat:gaps -- --output test-results/GAPS.md
+                  fi
+
             - name: Authenticate to Google Cloud
               if: always() && env.PUBLISH_RESULTS == 'true'
               uses: google-github-actions/auth@v2
@@ -96,6 +103,7 @@ jobs:
                       packages/link/test-results/camera-support-matrix.md
                       packages/link/test-results/camera-compatibility.json
                       packages/link/test-results/camera-compatibility.md
+                      packages/link/test-results/GAPS.md
                   if-no-files-found: warn
 
             - name: Publish to gs://${{ vars.GCP_RESULTS_BUCKET }}/runs/${{ github.sha }}/

@@ -135,8 +135,7 @@
             "id": "panasonic-opcode-collision",
             "description": "libgphoto2 defines both PollEvents and GetLiveViewParameters as 0x9414 - the semantics of 0x9414 are ambiguous and parameter-dependent.",
             "source": 15,
-            "behaviour": { "kind": "none" },
-            "unverified": true
+            "behaviour": { "kind": "none" }
         }
     ]
 }

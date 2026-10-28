@@ -14,6 +14,9 @@
                 "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2814"
             },
             {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2816"
+            },
+            {
                 "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2822"
             },
             {
@@ -48,8 +51,7 @@
             "id": "pentax-ptp-mode-pids",
             "description": "Pentax K bodies appear as \"(PTP Mode)\" entries with VID 0x25FB (Ricoh Imaging); older Optio used 0x0A17. libgphoto2 assigns no capture flag; libgphoto2 has no Pentax vendor opcodes (PTP_VENDOR_PENTAX 0x0D defined only).",
             "source": 2,
-            "behaviour": { "kind": "none" },
-            "unverified": true
+            "behaviour": { "kind": "none" }
         }
     ]
 }

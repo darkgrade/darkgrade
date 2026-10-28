@@ -4836,16 +4836,18 @@
             },
             {
               "id": "nikon-z-application-mode",
-              "description": "Z bodies have DPC 0xD1F0 ApplicationMode and op 0x9435 ChangeApplicationMode (darkgrade defines OFF/ON); libgphoto2 sets it for tethered control.",
+              "description": "Nikon DPC 0xD1F0 ApplicationMode and op 0x9435 ChangeApplicationMode (darkgrade defines OFF/ON). When the camera reports them, libgphoto2 sets ApplicationMode to 1 and calls ChangeApplicationMode(1) before movie recording, and switches both back to 0 afterwards because the filesystem is otherwise unreachable.",
               "simulatorBehaviour": "Gate remote-only features (e.g. LV via PC) on ApplicationMode=1.",
               "opcodes": [
                 "0x9435"
               ],
               "sources": [
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L2688",
-                "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L653"
+                "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L653",
+                "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L9644",
+                "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L9718"
               ],
-              "unverified": true
+              "verification": "config.c _put_Nikon_Movie (lines 9644-9653 and 9718-9729) shows the set and reset sequence."
             }
           ]
         },
@@ -11408,7 +11410,7 @@
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1001",
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1002"
               ],
-              "unverified": true
+              "verification": "ptp.h defines PTP_OC_PANASONIC_PollEvents and PTP_OC_PANASONIC_GetLiveViewParameters both as 0x9414 (lines 1001-1002); the GetLiveViewParameters comment gives the parameter values 0x0d800012 (all formats) and 0x0d800011 (current format)."
             }
           ]
         },
@@ -11573,7 +11575,7 @@
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1001",
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L1002"
               ],
-              "unverified": true
+              "verification": "ptp.h defines PTP_OC_PANASONIC_PollEvents and PTP_OC_PANASONIC_GetLiveViewParameters both as 0x9414 (lines 1001-1002); the GetLiveViewParameters comment gives the parameter values 0x0d800012 (all formats) and 0x0d800011 (current format)."
             }
           ],
           "note": "No USB PIDs for S-series found in libgphoto2; likely share Panasonic PTP stack (unverified)."
@@ -12635,10 +12637,11 @@
               "description": "Pentax K bodies appear as \"(PTP Mode)\" entries with VID 0x25FB (Ricoh Imaging); older Optio used 0x0A17. libgphoto2 assigns no capture flag; libgphoto2 has no Pentax vendor opcodes (PTP_VENDOR_PENTAX 0x0D defined only).",
               "simulatorBehaviour": "Download-only PTP profile; vendor tether ops unknown (IMAGE Transmitter 2 protocol not documented in sources read).",
               "sources": [
+                "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2816",
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2822",
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L202"
               ],
-              "unverified": true
+              "verification": "library.c lists Pentax K3, K1, K3 II, K70, KP and K-3 Mark III Monochrome as \"(PTP Mode)\" entries under 0x25fb with flags 0, and Optio models under 0x0a17 (lines 2816-2833); ptp.h defines PTP_VENDOR_PENTAX 0x0D (line 202) and no PTP_OC_PENTAX operation codes."
             }
           ]
         },
@@ -12703,10 +12706,11 @@
               "description": "Pentax K bodies appear as \"(PTP Mode)\" entries with VID 0x25FB (Ricoh Imaging); older Optio used 0x0A17. libgphoto2 assigns no capture flag; libgphoto2 has no Pentax vendor opcodes (PTP_VENDOR_PENTAX 0x0D defined only).",
               "simulatorBehaviour": "Download-only PTP profile; vendor tether ops unknown (IMAGE Transmitter 2 protocol not documented in sources read).",
               "sources": [
+                "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2816",
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2822",
                 "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.h#L202"
               ],
-              "unverified": true
+              "verification": "library.c lists Pentax K3, K1, K3 II, K70, KP and K-3 Mark III Monochrome as \"(PTP Mode)\" entries under 0x25fb with flags 0, and Optio models under 0x0a17 (lines 2816-2833); ptp.h defines PTP_VENDOR_PENTAX 0x0D (line 202) and no PTP_OC_PENTAX operation codes."
             }
           ]
         },
@@ -12980,10 +12984,10 @@
     },
     {
       "name": "Hasselblad",
-      "usbVendorId": null,
+      "usbVendorId": "0x2756",
       "ptpVendorExtensionId": null,
       "unverified": true,
-      "notes": "No libgphoto2 entry; USB VID and PTP behaviour not found.",
+      "notes": "No libgphoto2 entry and no PTP behaviour found. USB vendor 0x2756 (Victor Hasselblad AB) and the X1D product ID come from usb.ids.",
       "sdks": [
         {
           "name": "Phocus / Phocus Mobile 2",
@@ -13033,7 +13037,11 @@
                 "Phocus"
               ],
               "source": "https://tethertools.com/blog/shooting-tethered-with-the-hasselblad-x1d",
-              "unverified": true
+              "unverified": true,
+              "usbVendorId": "0x2756",
+              "usbProductId": "0x0002",
+              "usbIdSource": "https://github.com/usbids/usbids/blob/5eb613762db1e34b9218da63a88f22dd26f743c5/usb.ids#L22551",
+              "note": "usb.ids names 2756:0002 \"X1D Camera\". PTP support is still unknown, so no mock is generated."
             }
           ],
           "quirks": [
@@ -13053,7 +13061,8 @@
         "lines": 1,
         "models": 4,
         "quirks": 1
-      }
+      },
+      "usbVendorIdSource": "https://github.com/usbids/usbids/blob/5eb613762db1e34b9218da63a88f22dd26f743c5/usb.ids#L22550"
     },
     {
       "name": "GoPro (other)",

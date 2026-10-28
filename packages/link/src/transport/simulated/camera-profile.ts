@@ -125,6 +125,11 @@ export type QuirkBehaviour =
     | { kind: 'hidden-from-device-info'; operations?: string[]; properties?: string[] }
     /** Emits `event` after `afterOperation` returns OK, optionally copying the request parameters. */
     | { kind: 'emit-event'; afterOperation: string; event: string; copyParameters?: boolean }
+    /**
+     * The camera also speaks standard PTP/IP on TCP `port`. Over PTP/IP its DeviceInfo reports these
+     * fields instead of the USB ones (for example Sony's MTP VendorExtensionID).
+     */
+    | { kind: 'ptp-ip-personality'; port: number; vendorExtensionId?: string; manufacturer?: string }
 
 export interface ProfileQuirk {
     id: string
@@ -358,10 +363,25 @@ function validateQuirkBehaviour(behaviour: QuirkBehaviour | undefined, where: st
             requireCode(behaviour.afterOperation, 'afterOperation')
             requireCode(behaviour.event, 'event')
             break
+        case 'ptp-ip-personality':
+            if (!Number.isInteger(behaviour.port) || behaviour.port < 1 || behaviour.port > 65535)
+                problems.push(`${where}.port must be a TCP port`)
+            requireCode(behaviour.vendorExtensionId, 'vendorExtensionId', true)
+            if (behaviour.manufacturer !== undefined && typeof behaviour.manufacturer !== 'string')
+                problems.push(`${where}.manufacturer must be a string`)
+            break
         default:
             problems.push(`${where}.kind is not a known quirk behaviour`)
     }
     return problems
+}
+
+/** The profile's standard PTP/IP personality, when a quirk documents one. */
+export function ptpIpPersonality(
+    profile: CameraProfile
+): Extract<QuirkBehaviour, { kind: 'ptp-ip-personality' }> | undefined {
+    for (const { behaviour } of profile.quirks) if (behaviour.kind === 'ptp-ip-personality') return behaviour
+    return undefined
 }
 
 /** Parses JSON text into a validated profile, throwing with every problem listed. */
