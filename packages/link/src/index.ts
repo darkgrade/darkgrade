@@ -107,3 +107,6 @@ export {MovieShutterMode,MovieShutterAngle,ExternalDCIn} from '@vendors/nikon/vi
 export {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 
 export {NikonShotControls} from '@vendors/nikon/shot-controls'
+
+export {NikonBluetoothRemote,NIKON_BLUETOOTH_REMOTE_SERVICE,NIKON_BLUETOOTH_REMOTE_COMMAND} from '@vendors/nikon/bluetooth-remote'
+export type {NikonBluetoothChannel,NikonBluetoothKey} from '@vendors/nikon/bluetooth-remote'
