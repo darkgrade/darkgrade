@@ -2,6 +2,7 @@ import { Logger } from '@core/logger'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
+import { PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
@@ -54,9 +55,17 @@ export class NikonCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
+        if (!this.transport.isConnected()) {
+            // A vanished transport cannot end live view; only local state is cleared.
+            this.liveViewStatus = 'UNKNOWN'
+            this.liveViewStartPending = false
+        }
         try {
             if (this.liveViewStatus === 'ON' || this.liveViewStartPending) await this.disableLiveView()
-        } finally { this.manualVideoExposureRequested=false; await super.disconnect() }
+        } finally {
+            this.manualVideoExposureRequested = false
+            await super.disconnect()
+        }
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -68,6 +77,13 @@ export class NikonCamera extends GenericCamera {
             DevicePropCode: property.code,
         })
 
+        if (response.code !== OK.code && response.code !== 0x2005 && response.code !== 0x200a) {
+            throw new PTPResponseError(
+                response.code,
+                `Nikon GetDevicePropDescEx returned 0x${response.code.toString(16)}`,
+                { operation: 'GetDevicePropDescEx' }
+            )
+        }
         if (!response.data) {
             throw new Error('No data received from GetDevicePropDescEx')
         }
@@ -97,7 +113,12 @@ export class NikonCamera extends GenericCamera {
             },
             encodedValue
         )
-        if (response.code !== OK.code) throw new Error(`Nikon ${property.name} write failed: ${this.responseDescription(response.code)}`)
+        if (response.code !== OK.code)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon ${property.name} write failed: ${this.responseDescription(response.code)}`,
+                { operation: 'SetDevicePropValueEx' }
+            )
     }
 
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
@@ -123,13 +144,18 @@ export class NikonCamera extends GenericCamera {
         }
     }
 
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    /**
+     * Releases the shutter with InitiateCapture; the camera saves the still to its own configured
+     * target (its memory card). The default options fire the shutter too. Retrieving the new still
+     * object and its metadata is not implemented, so `info` and `data` are always undefined: the
+     * result never claims media it did not retrieve, whatever `includeInfo`/`includeData` ask for.
+     */
+    async captureImage(_options: { includeInfo?: boolean; includeData?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
-        // TODO: Implement this
-        let info: ObjectInfo | undefined = undefined
-        let data: Uint8Array | undefined = undefined
+        const info: ObjectInfo | undefined = undefined
+        const data: Uint8Array | undefined = undefined
 
         // Setup capture
 
@@ -143,7 +169,8 @@ export class NikonCamera extends GenericCamera {
                 throw error
             }
             await this.enableLiveView()
-            await this.send(this.registry.operations.InitiateCapture, {})
+            const response = await this.send(this.registry.operations.InitiateCapture, {})
+            this.assertNikonResponse(response.code, 'InitiateCapture')
             await this.waitForDeviceReady()
             return { info, data }
         }
@@ -151,7 +178,8 @@ export class NikonCamera extends GenericCamera {
         // camera's hardware dial is in photo mode, great, screen will stay on
         if (this.liveViewMode === 'PHOTO') {
             await this.enableLiveView()
-            await this.send(this.registry.operations.InitiateCapture, {})
+            const response = await this.send(this.registry.operations.InitiateCapture, {})
+            this.assertNikonResponse(response.code, 'InitiateCapture')
             await this.waitForDeviceReady()
             await this.waitForImageBufferReady()
         }
@@ -159,22 +187,22 @@ export class NikonCamera extends GenericCamera {
         // camera's hardware dial is not in photo mode
         // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
         else if (this.liveViewMode === 'VIDEO') {
-            await this.enableRemoteMode()
-            await this.enablePhotoMode()
-            await this.enableLiveView()
-            await this.send(this.registry.operations.InitiateCapture, {})
-            await this.waitForDeviceReady()
-            await this.waitForImageBufferReady()
-            await this.enablePcCameraMode()
-            await this.waitForDeviceReady()
-        }
-
-        // if (includeInfo) {
-        //     // Nikon does not support this for live view images
-        // }
-        // if (includeData) {
-        //     const response = await this.send(this.registry.operations.InitiateCapture, {})
-        // }
+            try {
+                await this.enableRemoteMode()
+                await this.selectLiveViewMode('PHOTO')
+                await this.enableLiveView()
+                const response = await this.send(this.registry.operations.InitiateCapture, {})
+                this.assertNikonResponse(response.code, 'InitiateCapture')
+                await this.waitForDeviceReady()
+                await this.waitForImageBufferReady()
+            } finally {
+                try {
+                    await this.selectLiveViewMode('VIDEO', true)
+                } finally {
+                    await this.enablePcCameraMode()
+                }
+            }
+        } else throw new Error('Nikon live-view selector is unknown; capture was not sent')
 
         return { info: info, data: data }
     }
@@ -186,7 +214,7 @@ export class NikonCamera extends GenericCamera {
     }> {
         await this.enableLiveView()
 
-        let info: ObjectInfo | undefined = undefined
+        const info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
         let nikonMetadata: NikonLiveViewMetadata | undefined
 
@@ -194,7 +222,8 @@ export class NikonCamera extends GenericCamera {
             // Nikon does not support this for live view images
         }
         if (includeData) {
-            let response: Awaited<ReturnType<typeof this.send<typeof this.registry.operations.GetLiveViewImageEx>>> | undefined
+            let response:
+                Awaited<ReturnType<typeof this.send<typeof this.registry.operations.GetLiveViewImageEx>>> | undefined
             for (let attempt = 0; attempt < 20; attempt += 1) {
                 response = await this.send(
                     this.registry.operations.GetLiveViewImageEx,
@@ -344,6 +373,7 @@ export class NikonCamera extends GenericCamera {
         return result
     }
 
+    /** Checks the current prohibition bitfield and command result; a successful command still needs recording readback by its caller. */
     async startRecording(): Promise<void> {
         const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
         if (condition.includes('alreadyRecording')) throw new Error('Nikon is already recording; its session was preserved')
@@ -389,7 +419,12 @@ export class NikonCamera extends GenericCamera {
                 }
 
                 const response = await this.send(this.registry.operations.StartMovieRecord, {})
-                if (response.code !== OK.code) throw new Error(`Nikon StartMovieRecord failed with response 0x${response.code.toString(16)}`)
+                if (response.code !== OK.code)
+                    throw new PTPResponseError(
+                        response.code,
+                        `Nikon StartMovieRecord failed with response 0x${response.code.toString(16)}`,
+                        { operation: 'StartMovieRecord' }
+                    )
             }
             // camera's hardware dial is not in video mode
             // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
@@ -411,8 +446,13 @@ export class NikonCamera extends GenericCamera {
                 }
 
                 const response = await this.send(this.registry.operations.StartMovieRecord, {})
-                if (response.code !== OK.code) throw new Error(`Nikon StartMovieRecord failed with response 0x${response.code.toString(16)}`)
-            }
+                if (response.code !== OK.code)
+                    throw new PTPResponseError(
+                        response.code,
+                        `Nikon StartMovieRecord failed with response 0x${response.code.toString(16)}`,
+                        { operation: 'StartMovieRecord' }
+                    )
+            } else throw new Error('Nikon live-view selector is unknown; recording was not started')
         } catch (error) {
             const failures: string[] = []
             const restore = async (name: string, operation: () => Promise<void>) => {
@@ -430,7 +470,12 @@ export class NikonCamera extends GenericCamera {
 
     async stopRecording(): Promise<void> {
         const response = await this.send(this.registry.operations.EndMovieRecord, {})
-        if (response.code !== OK.code) throw new Error(`Nikon EndMovieRecord failed with response 0x${response.code.toString(16)}`)
+        if (response.code !== OK.code)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon EndMovieRecord failed with response 0x${response.code.toString(16)}`,
+                { operation: 'EndMovieRecord' }
+            )
         await this.waitForDeviceReady()
         const deadline=Date.now()+10000
         while((await this.get(this.registry.properties.MovieRecProhibitionCondition)).includes('alreadyRecording')){
@@ -444,6 +489,8 @@ export class NikonCamera extends GenericCamera {
     }
 
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+        if (!Number.isSafeInteger(objectSize) || objectSize < 0)
+            throw new Error('Nikon object size must be a nonnegative safe integer')
         // Start transfer tracking
         this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObjectEx', objectSize)
 
@@ -472,8 +519,9 @@ export class NikonCamera extends GenericCamera {
                 bytesToRead + 12
             )
 
-            if (!chunkResponse.data) {
-                throw new Error('No data received from GetPartialObjectEx')
+            this.assertNikonResponse(chunkResponse.code, 'GetPartialObjectEx')
+            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead) {
+                throw new Error('GetPartialObjectEx returned an empty or oversized chunk')
             }
 
             // Update transfer progress
@@ -503,8 +551,14 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
+        this.cameraMode = 'UNKNOWN'
         const response = await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'REMOTE' })
-        if (response.code !== OK.code) throw new Error(`Nikon ChangeCameraMode REMOTE failed: ${this.responseDescription(response.code)}`)
+        if (response.code !== OK.code)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon ChangeCameraMode REMOTE failed: ${this.responseDescription(response.code)}`,
+                { operation: 'ChangeCameraMode' }
+            )
         this.cameraMode = 'REMOTE'
         await this.waitForDeviceReady()
     }
@@ -514,8 +568,14 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
+        this.cameraMode = 'UNKNOWN'
         const response = await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'PC_CAMERA' })
-        if (response.code !== OK.code) throw new Error(`Nikon ChangeCameraMode PC_CAMERA failed: ${this.responseDescription(response.code)}`)
+        if (response.code !== OK.code)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon ChangeCameraMode PC_CAMERA failed: ${this.responseDescription(response.code)}`,
+                { operation: 'ChangeCameraMode' }
+            )
         this.cameraMode = 'PC_CAMERA'
         await this.waitForDeviceReady()
     }
@@ -563,7 +623,10 @@ export class NikonCamera extends GenericCamera {
 
         const response = await this.send(this.registry.operations.StartLiveView, {})
         if (response.code !== OK.code && response.code !== DeviceBusy.code) {
-            throw new Error(`Nikon StartLiveView failed with response 0x${response.code.toString(16)}`)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon StartLiveView failed with response 0x${response.code.toString(16)}`
+            )
         }
         this.liveViewStartPending = true
         await this.waitForDeviceReady()
@@ -574,11 +637,13 @@ export class NikonCamera extends GenericCamera {
     private async getLiveViewStatus(): Promise<void> {
         const liveViewStatus = await this.get(this.registry.properties.LiveViewStatus)
         await this.waitForDeviceReady()
-        this.liveViewStatus = liveViewStatus === 'ON' ? 'ON' : 'OFF'
+        if (liveViewStatus !== 'ON' && liveViewStatus !== 'OFF') throw new Error('Nikon live-view status is unknown')
+        this.liveViewStatus = liveViewStatus
 
         const liveViewMode = await this.get(this.registry.properties.LiveViewSelector)
         await this.waitForDeviceReady()
-        this.liveViewMode = liveViewMode === 'VIDEO' ? 'VIDEO' : 'PHOTO'
+        if (liveViewMode !== 'VIDEO' && liveViewMode !== 'PHOTO') throw new Error('Nikon live-view selector is unknown')
+        this.liveViewMode = liveViewMode
     }
 
     private async disableLiveView(): Promise<void> {
@@ -586,7 +651,10 @@ export class NikonCamera extends GenericCamera {
 
         const response = await this.send(this.registry.operations.EndLiveView, {})
         if (response.code !== OK.code && response.code !== NotLiveView.code) {
-            throw new Error(`Nikon EndLiveView failed with response 0x${response.code.toString(16)}`)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon EndLiveView failed with response 0x${response.code.toString(16)}`
+            )
         }
         await this.waitForDeviceReady()
         this.liveViewStatus = 'OFF'
@@ -594,23 +662,11 @@ export class NikonCamera extends GenericCamera {
     }
 
     private async enablePhotoMode(): Promise<void> {
-        if (this.liveViewMode === 'PHOTO') {
-            return
-        }
-
-        await this.set(this.registry.properties.LiveViewSelector, 'PHOTO')
-        this.liveViewMode = 'PHOTO'
-        await this.waitForDeviceReady()
+        await this.selectLiveViewMode('PHOTO')
     }
 
     private async enableVideoMode(): Promise<void> {
-        if (this.liveViewMode === 'VIDEO') {
-            return
-        }
-
-        await this.set(this.registry.properties.LiveViewSelector, 'VIDEO')
-        this.liveViewMode = 'VIDEO'
-        await this.waitForDeviceReady()
+        await this.selectLiveViewMode('VIDEO')
     }
 
     private responseDescription(code: number): string {
@@ -624,12 +680,26 @@ export class NikonCamera extends GenericCamera {
             const response = await this.send(this.registry.operations.DeviceReady, {})
             if (response.code === OK.code || acceptedResponses.includes(response.code)) return response.code
             if (response.code !== DeviceBusy.code)
-                throw new Error(`Nikon DeviceReady failed: ${this.responseDescription(response.code)}`)
+                throw new PTPResponseError(
+                    response.code,
+                    `Nikon DeviceReady failed: ${this.responseDescription(response.code)}`,
+                    { operation: 'DeviceReady' }
+                )
             await this.waitMs(10)
         }
         throw new Error('Nikon DeviceReady timed out')
     }
 
+    /** A failed activation may still have changed the selector; forced restoration sends the original value despite stale caches. */
+    private async selectLiveViewMode(mode: 'PHOTO' | 'VIDEO', force = false): Promise<void> {
+        if (!force && this.liveViewMode === mode) return
+        this.liveViewMode = 'UNKNOWN'
+        await this.set(this.registry.properties.LiveViewSelector, mode)
+        await this.waitForDeviceReady()
+        this.liveViewMode = mode
+    }
+
+    /** Nikon activation commands may return DeviceBusy while pending; other refusals are terminal. */
     private async waitForDeviceReady(): Promise<void> {
         await this.pollDeviceReady()
     }
@@ -642,5 +712,10 @@ export class NikonCamera extends GenericCamera {
             await this.waitMs(10)
         }
         throw new Error('Nikon image buffer did not become ready within 5000 milliseconds')
+    }
+
+    private assertNikonResponse(code: number, operation: string): void {
+        if (code !== OK.code)
+            throw new PTPResponseError(code, `Nikon ${operation} returned 0x${code.toString(16)}`, { operation })
     }
 }

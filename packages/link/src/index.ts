@@ -7,12 +7,24 @@ export type { CameraMovieAudio } from '@camera/movie-audio'
 export { NikonCamera } from '@camera/nikon-camera'
 export type { NikonFocusResult, NikonFocusPointResult, NikonLiveViewMetadata } from '@camera/nikon-camera'
 export { SonyCamera } from '@camera/sony-camera'
-export type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
+export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'
+export { VendorExtensionCamera } from '@camera/vendor-extension-camera'
+export {
+    PTPDecodeError,
+    PTPDisconnectedError,
+    PTPError,
+    PTPProtocolError,
+    PTPRecoveryRequiredError,
+    PTPResponseError,
+    PTPTimeoutError,
+    type PTPProtocolViolation,
+} from '@core/ptp-errors'
 export type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
+export type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 
 // Transport implementations
 export { TransportType } from '@transport/interfaces/transport-types'
-export { IPTransport } from '@transport/ip/ip-transport'
+export { IPTransport, PTPIPTransactionCancelledError } from '@transport/ip/ip-transport'
 export type { IPTransportOptions } from '@transport/ip/ip-transport'
 export {
     SonyRemoteSdkTransport,
@@ -58,8 +70,8 @@ export { sonyOperationRegistry } from '@ptp/definitions/vendors/sony/sony-operat
 export { sonyPropertyRegistry } from '@ptp/definitions/vendors/sony/sony-property-definitions'
 export { sonyResponseRegistry } from '@ptp/definitions/vendors/sony/sony-response-definitions'
 
-export { typeSonyWifiKeyboard, sonyWifiKeyboardCharacter } from '@vendors/sony/wifi-keyboard'
-export type { SonyKeyboardImage, SonyKeyboardControls } from '@vendors/sony/wifi-keyboard'
+export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/wifi-keyboard'
+export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'
 
 export { SonyWifiCamera, SONY_SDK_PROPERTY_CODES, validateSonyWifiAuthentication } from '@vendors/sony/sdk-camera'
 export type {
@@ -73,7 +85,12 @@ export type { SonyMonitoringFormat } from '@vendors/sony/sdk-preview'
 export { createSonySdkBridge } from '@vendors/sony/sdk-node-bridge'
 export type { SonySdkBridgeOptions } from '@vendors/sony/sdk-node-bridge'
 
-export { SonyBluetoothRemote, SONY_BLUETOOTH_REMOTE_SERVICE, SONY_BLUETOOTH_REMOTE_COMMAND, SONY_BLUETOOTH_REMOTE_NOTIFICATION } from '@vendors/sony/bluetooth-remote'
+export {
+    SONY_BLUETOOTH_REMOTE_COMMAND,
+    SONY_BLUETOOTH_REMOTE_NOTIFICATION,
+    SONY_BLUETOOTH_REMOTE_SERVICE,
+    SonyBluetoothRemote,
+} from '@vendors/sony/bluetooth-remote'
 export type { SonyBluetoothChannel, SonyBluetoothDirection } from '@vendors/sony/bluetooth-remote'
 
 export {VideoTake} from '@workflows/video-take'
@@ -110,3 +127,6 @@ export {NikonShotControls} from '@vendors/nikon/shot-controls'
 
 export {NikonBluetoothRemote,NIKON_BLUETOOTH_REMOTE_SERVICE,NIKON_BLUETOOTH_REMOTE_COMMAND} from '@vendors/nikon/bluetooth-remote'
 export type {NikonBluetoothChannel,NikonBluetoothKey} from '@vendors/nikon/bluetooth-remote'
+
+export { NikonEventDataCodec } from '@vendors/nikon/event-data'
+export type { NikonQueuedEvent } from '@vendors/nikon/event-data'

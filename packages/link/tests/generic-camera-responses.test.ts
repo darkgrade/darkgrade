@@ -26,6 +26,8 @@ function cameraWithResponses(responses: Uint8Array[]) {
     const sent: Uint8Array[] = []
     const transport = {
         isLittleEndian: () => true,
+        isConnected: () => true,
+        getType: () => 'usb',
         send: async (bytes: Uint8Array) => { sent.push(bytes) },
         receive: async () => {
             const response = responses.shift()
@@ -108,13 +110,13 @@ describe('GenericCamera response container parameters', () => {
         expect((await camera.send(camera.registry.operations.CloseSession, {})).parameters).toBeUndefined()
     })
 
-    it('retains non-word-aligned legacy payloads without decoding partial parameters', async () => {
+    it('rejects a non-word-aligned response payload as a framing violation instead of guessing at it', async () => {
         const payload = Uint8Array.of(1, 2, 3)
         const { camera } = cameraWithResponses([container(3, 0x2001, payload)])
 
-        const response = await camera.send(camera.registry.operations.GetObject, { ObjectHandle: 1 })
-
-        expect(response.data).toEqual(payload)
-        expect(response.parameters).toBeUndefined()
+        // ISO 15740 response containers carry whole UINT32 parameters only.
+        await expect(camera.send(camera.registry.operations.GetObject, { ObjectHandle: 1 })).rejects.toMatchObject({
+            name: 'PTPProtocolError',
+        })
     })
 })

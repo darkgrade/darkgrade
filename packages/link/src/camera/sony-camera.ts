@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
@@ -164,6 +165,7 @@ export class SonyCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
+        if (!this.transport.isConnected()) return super.disconnect()
         let cleanupError: unknown
         try {
             await this.disableContentTransferMode()
@@ -1004,7 +1006,7 @@ export class SonyCamera extends GenericCamera {
 
     private assertOk(responseCode: number, action: string): void {
         if (responseCode !== OK.code) {
-            throw new Error(`${action} returned PTP response 0x${responseCode.toString(16)}`)
+            throw new PTPResponseError(responseCode, `${action} returned PTP response 0x${responseCode.toString(16)}`)
         }
     }
 

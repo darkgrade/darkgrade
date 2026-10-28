@@ -20,6 +20,7 @@ function device(vendorId: number, productId: number, serialNumber = '') {
         vendorId, productId, serialNumber, deviceClass: 0, deviceSubclass: 0, deviceProtocol: 0,
         configuration: { interfaces: [{ alternate, alternates: [alternate] }] },
         open: vi.fn().mockRejectedValue(new Error('selected camera')),
+        close: vi.fn().mockResolvedValue(undefined),
     }
     return { deviceDescriptor: { idVendor: vendorId, idProduct: productId }, webDevice }
 }
