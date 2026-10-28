@@ -5,6 +5,7 @@ import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { ArrayCodec, baseCodecs, createEnumCodec, EnumCodec } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 import { PropertyDefinition } from '@ptp/types/property'
+import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 
 const UINT8 = getDatatypeByName('UINT8')!.code
 
@@ -346,13 +347,29 @@ export const InitiateCaptureRecInMedia = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
-/** ptp.h#L637 ("can do multiparameter events, compared to GetEvent"); ptp.c ptp_nikon_check_eventex. */
+/** GetEventEx has its own framing and explicit queue retention; SDK command rev 2 section 6.2.2.13. */
 export const GetEventEx = {
     code: 0x941c,
     name: 'GetEventEx',
-    description: 'Reads queued events with variable parameter counts; returned undecoded. Not hardware-verified.',
+    description: 'Read Nikon extended events; retain with parameter 1, otherwise drain the queue.',
     dataDirection: 'out',
-    operationParameters: [] as const,
+    dataCodec: registry => new NikonEventDataCodec(registry),
+    operationParameters: [
+        {
+            name: 'KeepEvents',
+            description: 'Omitted or DRAIN removes returned events; RETAIN leaves the queue unchanged.',
+            codec: registry =>
+                createEnumCodec(
+                    registry,
+                    [
+                        { value: 0, name: 'DRAIN', description: 'Remove the returned events' },
+                        { value: 1, name: 'RETAIN', description: 'Keep the returned events' },
+                    ] as const,
+                    registry.codecs.uint32
+                ),
+            required: false,
+        },
+    ] as const,
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
@@ -433,15 +450,10 @@ export const CompleteWirelessPairing = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
-/** 0x90EF deleted wireless profile 0 on the Z6 III; the request parameters were not recorded. */
-export const DeleteWirelessProfile = {
-    code: 0x90ef,
-    name: 'DeleteWirelessProfile',
-    description: 'Deletes a stored wireless profile (observed on Z6 III; parameter layout unrecorded).',
-    dataDirection: 'none',
-    operationParameters: [uint32Parameter('ProfileIndex', 'Profile to delete (assumed; not recorded)', false)] as const,
-    responseParameters: [] as const,
-} as const satisfies OperationDefinition
+/**
+ * 0x90ef DeleteWirelessProfile was observed, but its request layout was not captured.
+ * It deliberately remains outside the callable registry until a cited layout is available.
+ */
 
 export const nikonOperationRegistry = {
     GetPartialObjectEx,
@@ -472,7 +484,6 @@ export const nikonOperationRegistry = {
     GetSupportedWirelessProfileTypes,
     WirelessAuthenticate,
     CompleteWirelessPairing,
-    DeleteWirelessProfile,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type NikonOperationDef = (typeof nikonOperationRegistry)[keyof typeof nikonOperationRegistry]

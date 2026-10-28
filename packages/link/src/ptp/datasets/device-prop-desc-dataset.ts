@@ -50,7 +50,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         this.use4ByteCode = use4ByteCode
     }
 
-    encode(value: DevicePropDesc): Uint8Array {
+    encode(_value: DevicePropDesc): Uint8Array {
         throw new Error('Encoding DevicePropDesc is not yet implemented')
     }
 

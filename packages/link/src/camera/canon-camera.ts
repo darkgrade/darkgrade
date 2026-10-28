@@ -482,7 +482,7 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    async captureImage(_options: { includeInfo?: boolean; includeData?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {

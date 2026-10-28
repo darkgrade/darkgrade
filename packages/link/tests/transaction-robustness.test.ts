@@ -11,6 +11,7 @@ import {
     PTPDecodeError,
     PTPDisconnectedError,
     PTPProtocolError,
+    PTPRecoveryRequiredError,
     PTPResponseError,
     PTPTimeoutError,
 } from '@core/ptp-errors'
@@ -151,12 +152,90 @@ function deviceInfo(model = 'Stub'): number[] {
 }
 
 describe('transaction timeouts', () => {
-    it('turns a stalled camera into PTPTimeoutError and keeps the transaction queue usable', async () => {
+    it('blocks further commands after a timeout without resetting a physical transport by default', async () => {
+        const { camera, transport, operations } = cameraOn(() => 'stall')
+        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(transport.resets).toBe(0)
+        expect(transport.commands).toHaveLength(1)
+        // Only this fixture cleanup explicitly cancels the abandoned read.
+        await transport.classRequestReset()
+    })
+
+    it('preserves a rejected recovery cause and never retries it implicitly', async () => {
+        const { camera, transport, operations } = cameraOn(() => 'stall')
+        const cause = new Error('recording guard denied recovery')
+        let attempts = 0
+        camera.configureTransactions({
+            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
+            recoverTransport: async () => {
+                attempts++
+                throw cause
+            },
+        })
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.CloseSession, {})).rejects.toMatchObject({
+            name: 'PTPRecoveryRequiredError',
+            cause,
+        })
+        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(attempts).toBe(1)
+        expect(transport.resets).toBe(0)
+        expect(transport.commands).toHaveLength(1)
+        await transport.classRequestReset()
+    })
+
+    it('keeps pending recovery exclusive until both recovery and old I/O settle', async () => {
+        const { camera, transport, operations } = cameraOn((command, index) =>
+            index === 0 ? 'stall' : [ok(command.transactionId)]
+        )
+        let release!: () => void
+        const pending = new Promise<void>(resolve => {
+            release = resolve
+        })
+        let attempts = 0
+        camera.configureTransactions({
+            timeoutMilliseconds: 20,
+            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
+            recoverTransport: async () => {
+                attempts++
+                await pending
+                await transport.classRequestReset()
+            },
+        })
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        await expect(camera.disconnect()).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        await expect(camera.connect()).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(attempts).toBe(1)
+        expect(transport.commands).toHaveLength(1)
+        release()
+        expect((await camera.send(operations.CloseSession, {})).code).toBe(0x2001)
+        expect(transport.resets).toBe(1)
+    })
+
+    it('does not trust a recovery callback that leaves an abandoned read outstanding', async () => {
+        const { camera, transport, operations } = cameraOn(() => 'stall')
+        camera.configureTransactions({
+            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
+            recoverTransport: async () => undefined,
+        })
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        expect(transport.commands).toHaveLength(1)
+        expect(transport.resets).toBe(0)
+        await transport.classRequestReset()
+    })
+
+    it('recovers a stalled fixture only through an explicitly authorized synthetic callback', async () => {
         const { camera, transport, operations } = cameraOn((command, index) =>
             index === 0
                 ? 'stall'
                 : [container(CONTAINER.data, 0x1001, command.transactionId, deviceInfo()), ok(command.transactionId)]
         )
+        camera.configureTransactions({ recoverTransport: () => transport.classRequestReset() })
         await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
         const response = await camera.send(operations.GetDeviceInfo, {})
         expect(response.code).toBe(0x2001)
@@ -167,6 +246,48 @@ describe('transaction timeouts', () => {
 })
 
 describe('container framing', () => {
+    it('rejects data for another operation even when its transaction ID matches', async () => {
+        const { camera, operations } = cameraOn(command => [
+            container(CONTAINER.data, 0x1008, command.transactionId, deviceInfo()),
+            ok(command.transactionId),
+        ])
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toMatchObject({
+            violation: 'operation-mismatch',
+        })
+    })
+
+    it('uses one receive deadline across stale packets', async () => {
+        const { camera, transport, operations } = cameraOn(command =>
+            command.operation === 0x1002
+                ? [ok(command.transactionId)]
+                : [...Array.from({ length: 8 }, () => ok(command.transactionId - 1)), ok(command.transactionId)]
+        )
+        camera.configureTransactions({
+            timeoutMilliseconds: 30,
+            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
+        })
+        await camera.send(operations.OpenSession, { SessionID: 1 })
+        const originalReceive = transport.receive.bind(transport)
+        transport.receive = async () => {
+            await new Promise(resolve => setTimeout(resolve, 18))
+            return originalReceive()
+        }
+        const start = Date.now()
+        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        expect(Date.now() - start).toBeLessThan(120)
+    })
+
+    it('keeps transaction IDs unsigned through the sign boundary and skips zero on wrap', async () => {
+        const { camera, transport, operations } = cameraOn(command => [ok(command.transactionId)])
+        Reflect.set(camera, 'transactionId', 0x7fffffff)
+        await camera.send(operations.CloseSession, {})
+        await camera.send(operations.CloseSession, {})
+        Reflect.set(camera, 'transactionId', 0xffffffff)
+        await camera.send(operations.CloseSession, {})
+        await camera.send(operations.CloseSession, {})
+        expect(transport.commands.map(command => command.transactionId)).toEqual([0x80000000, 0x80000001, 1, 2])
+    })
+
     it('rejects a container shorter than its declared length', async () => {
         const { camera, operations } = cameraOn(command => [
             container(CONTAINER.data, 0x1001, command.transactionId, deviceInfo()).slice(0, 20),
@@ -204,12 +325,16 @@ describe('container framing', () => {
     })
 
     it('discards a late reply from an earlier transaction and returns this transaction’s reply', async () => {
-        const { camera, operations } = cameraOn(command => [
-            ok(command.transactionId - 1),
-            container(CONTAINER.data, 0x1001, command.transactionId, deviceInfo('Late')),
-            ok(command.transactionId),
-        ])
-        await camera.send(operations.OpenSession, { SessionID: 1 }).catch(() => undefined)
+        const { camera, operations } = cameraOn(command =>
+            command.operation === 0x1002
+                ? [ok(command.transactionId)]
+                : [
+                      ok(command.transactionId - 1),
+                      container(CONTAINER.data, 0x1001, command.transactionId, deviceInfo('Late')),
+                      ok(command.transactionId),
+                  ]
+        )
+        await camera.send(operations.OpenSession, { SessionID: 1 })
         const response = await camera.send(operations.GetDeviceInfo, {})
         expect(response.code).toBe(0x2001)
         expect(response.data?.model).toBe('Late')
@@ -284,6 +409,30 @@ describe('DeviceBusy', () => {
 })
 
 describe('local failures and vanished transports', () => {
+    it('rejects invalid transaction policies before any camera command', () => {
+        const { camera, transport } = cameraOn(command => [ok(command.transactionId)])
+        for (const timeoutMilliseconds of [0, -1, NaN, Infinity, 0x80000000])
+            expect(() => camera.configureTransactions({ timeoutMilliseconds })).toThrow()
+        for (const deviceBusyRetries of [-1, 0.5, 33])
+            expect(() => camera.configureTransactions({ deviceBusyRetries })).toThrow()
+        expect(() => camera.configureTransactions({ minimumThroughputBytesPerSecond: 0 })).toThrow()
+        expect(transport.sent).toHaveLength(0)
+    })
+
+    it('permits an explicit new connection after closing a tainted transport without another command', async () => {
+        const { camera, transport, operations } = cameraOn((command, index) =>
+            index === 0 ? 'stall' : [ok(command.transactionId)]
+        )
+        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
+        await camera.disconnect()
+        expect(transport.commands).toHaveLength(1)
+        // The fixture's reset explicitly settles its old read; it isn't library recovery.
+        await transport.classRequestReset()
+        await camera.connect()
+        expect(transport.commands.map(command => command.operation)).toEqual([0x1001, 0x1002])
+    })
+
     it('refuses a data-in operation without data before sending its command or spending a transaction ID', async () => {
         const { camera, transport, operations } = cameraOn(command => [ok(command.transactionId)])
         await expect(camera.send(operations.SetDevicePropValue, { DevicePropCode: 0x5005 })).rejects.toThrow(
