@@ -12,7 +12,7 @@ Simulation Bench should use that host pattern when its application is built. Thi
 
 - `identifyCamera({ vendorId, productId, ptpModel? })`, exported from `@darkgrade/link`, is a pure lookup. `USBTransport.discover()` includes this identification for each enumerated USB device. No request opens a camera or starts monitoring. The generated table is checked in CI with `cameras:check` and refreshed by `cameras:build` after catalog/profile changes.
 - `loadCameraProfile` and `SimulatedTransport` are package exports. Construct a separate transport for each simulated session, with a fresh profile. State must not leak between parallel app users or tasks.
-- Capability evaluation and matrix generation remain development tooling in `scripts/camera-profiles`. The JSON matrix is the reviewable result artifact; an app should import a reusable runner extracted from this tooling when needed, rather than executing hardware scripts or parsing Markdown.
+- Capability evaluation and matrix generation remain development tooling in `scripts/camera-profiles`; the existing compatibility UI in `scripts/compat-ui` presents the results without an Outpost deployment. The JSON matrix is the reviewable result artifact; an app should import a reusable runner extracted from this tooling when needed, rather than executing hardware scripts or parsing Markdown.
 - SDK findings live in `camera-catalog/sdk-evidence.json` with the interpretation and limits in `camera-sdk-evidence.md`. Source binaries, captures, camera serials and private SDK material are excluded from application assets.
 
 ## Evidence the application must preserve

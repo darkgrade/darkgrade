@@ -64,6 +64,21 @@ describe('fresh darkgrade01 evidence', () => {
         )
     })
 
+    it.each(['request-parameters', 'response-parameters', 'response-code', 'invalid-code'])(
+        'rejects incomplete exchange evidence: %s',
+        missing => {
+            const document = structuredClone(evidence)
+            const exchange = document.cameras[0].exchanges[0]
+            if (missing === 'request-parameters') delete exchange.parameters
+            if (missing === 'response-parameters') delete exchange.response.parameters
+            if (missing === 'response-code') delete exchange.response.code
+            if (missing === 'invalid-code') exchange.response.code = '0x10000'
+            expect(() => applyBenchEvidence(profileFiles.map(capturedProfile), document, 'test')).toThrow(
+                'exact request/response'
+            )
+        }
+    )
+
     it.each(profileFiles)(
         'replays the observed generic session while keeping unrecorded datasets unknown: %s',
         async file => {

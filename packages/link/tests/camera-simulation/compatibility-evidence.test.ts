@@ -41,6 +41,23 @@ describe('capability evidence boundaries', () => {
         expect(merged.cameras).toHaveLength(2)
     })
 
+    it('does not attach another model or firmware network result using a shared USB ID', () => {
+        const usb = row({ firmware: '2.00' })
+        const otherModel = row({ transport: 'ptp-ip', model: 'Sony Alpha-A7III (Control)' })
+        const olderFirmware = row({ transport: 'ptp-ip', firmware: '1.00' })
+        const merged = mergeCompatibility(matrix([usb, otherModel, olderFirmware]))
+        expect(merged.cameras).toHaveLength(1)
+        expect(merged.cameras[0].ptpIp).toBeUndefined()
+        const matching = row({ transport: 'ptp-ip', firmware: '2.00', host: 'network-source' })
+        const network = mergeCompatibility(matrix([usb, matching])).cameras[0].ptpIp
+        expect(network).toMatchObject({ firmware: '2.00', host: 'network-source', generatedAt: '2026-10-28T12:00:00Z' })
+        expect(network?.resultEvidence.session).toMatchObject({
+            firmware: '2.00',
+            host: 'network-source',
+            fidelity: 'captured',
+        })
+    })
+
     it('retains a captured result when hardware did not exercise it, with explicit provenance', () => {
         const captured = matrix([row({ results: { session: { status: 'pass', detail: 'replayed response' } } })])
         const hardware = matrix([row({ fidelity: 'hardware', host: 'darkgrade01' })])

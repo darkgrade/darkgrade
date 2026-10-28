@@ -59,7 +59,7 @@ function transportLabel(transport: string): string {
 
 export function fidelityBadge(row: Pick<ViewRow, 'fidelity' | 'scope'>): string {
     const scope = row.fidelity === 'documented' && row.scope ? ` <span class="muted">${row.scope}</span>` : ''
-    return `<span class="badge f-${row.fidelity}">${row.fidelity}</span>${scope}`
+    return `<span class="badge f-${attribute(row.fidelity)}">${escapeHtml(row.fidelity)}</span>${scope}`
 }
 
 export function cameraHref(context: PageContext, profile: string): string {
@@ -70,11 +70,50 @@ export function manufacturerHref(context: PageContext, manufacturerSlug: string,
     return `${context.base}m/${manufacturerSlug}${lineSlug ? `/${lineSlug}` : ''}`
 }
 
-export function renderCell(cell: ViewCell | undefined, capability: { id: string; label: string }): string {
+function evidenceDescription(cell: ViewCell | undefined): string {
+    const evidence = cell?.evidence
+    if (!evidence) return 'Evidence source unavailable'
+    return [
+        evidence.fidelity,
+        evidence.profile,
+        evidence.firmware ? `firmware ${evidence.firmware}` : 'firmware unknown',
+        evidence.host,
+        evidence.generatedAt,
+        evidence.revision,
+    ]
+        .filter(Boolean)
+        .join(' · ')
+}
+
+export function renderCellEvidence(cell: ViewCell | undefined): string {
+    if (!cell || cell.status === 'queued' || cell.status === 'running') return ''
+    const evidence = cell.evidence
+    if (!evidence) return '<span class="badge warn">source unavailable</span>'
+    return `${fidelityBadge(evidence)} <span class="muted small">${escapeHtml(evidenceDescription(cell))}</span>`
+}
+
+export function renderDetailCellContents(cell: ViewCell | undefined): string {
+    const status = cell?.status ?? 'no-data'
+    return `<span class="glyph">${STATUS_GLYPHS[status]}</span> <b>${STATUS_LABELS[status]}</b><div class="why">${escapeHtml(cell?.detail ?? '')}</div><div class="cell-evidence">${renderCellEvidence(cell)}</div>`
+}
+
+export function renderCell(
+    cell: ViewCell | undefined,
+    capability: { id: string; label: string },
+    rowFidelity?: ViewRow['fidelity']
+): string {
     const status = cell?.status ?? 'no-data'
     const detail = cell?.detail && cell.detail.length > 120 ? `${cell.detail.slice(0, 119)}…` : cell?.detail
-    const title = `${capability.label}: ${STATUS_LABELS[status]}${detail ? ` — ${detail}` : ''}`
-    return `<td class="c s-${status}" data-capability="${attribute(capability.id)}" title="${attribute(title)}">${STATUS_GLYPHS[status]}</td>`
+    const title = `${capability.label}: ${STATUS_LABELS[status]}${detail ? ` — ${detail}` : ''} · ${evidenceDescription(cell)}`
+    const fallback =
+        cell?.evidence && rowFidelity && cell.evidence.fidelity !== rowFidelity
+            ? ` ${fidelityBadge(cell.evidence)}`
+            : ''
+    const unknown =
+        cell && !cell.evidence && rowFidelity && status !== 'queued' && status !== 'running'
+            ? ' <span class="badge warn">source unavailable</span>'
+            : ''
+    return `<td class="c s-${status}" data-capability="${attribute(capability.id)}" title="${attribute(title)}">${STATUS_GLYPHS[status]}${fallback}${unknown}</td>`
 }
 
 export function renderRow(row: ViewRow, capabilities: { id: string; label: string }[], context: PageContext): string {
@@ -92,7 +131,7 @@ export function renderRow(row: ViewRow, capabilities: { id: string; label: strin
         `<td>${transportLabel(row.transport)}</td>`,
         `<td class="center" title="${row.unverified ? `${row.unverifiedQuirks} unverified quirks or catalog entry` : ''}">${row.unverified ? '!' : ''}</td>`,
         `<td class="progress">${progressCell}</td>`,
-        ...capabilities.map(capability => renderCell(row.cells[capability.id], capability)),
+        ...capabilities.map(capability => renderCell(row.cells[capability.id], capability, row.fidelity)),
         `<td class="time" title="${attribute(row.lastRun ?? '')}">${formatTime(row.lastRun)}</td>`,
         '</tr>',
     ].join('')
@@ -326,7 +365,7 @@ export interface CameraPageInput {
         label: string
         source: string
         at: string
-        cells: Record<string, { status: CellStatus; detail: string }>
+        cells: Record<string, ViewCell>
     }[]
     related: { profile: string; model: string; fidelity: string; path: string }[]
     quirks: { id: string; description: string; behaviour: string; unverified: boolean; citation: string }[]
@@ -337,7 +376,7 @@ export interface CameraPageInput {
         source: string
         at: string
         label: string
-        cells: Record<string, { status: CellStatus; detail: string }>
+        cells: Record<string, ViewCell>
     }[]
     activeRun?: RunSummary
 }
@@ -359,7 +398,7 @@ export function renderCameraPage(context: PageContext, input: CameraPageInput): 
         const cells = input.results.map(result => {
             const cell = result.cells[capability.id]
             const status = cell?.status ?? 'no-data'
-            return `<td class="detail s-${status}" data-key="${attribute(result.key)}" data-capability="${attribute(capability.id)}"><span class="glyph">${STATUS_GLYPHS[status]}</span> <b>${STATUS_LABELS[status]}</b><div class="why">${escapeHtml(cell?.detail ?? '')}</div></td>`
+            return `<td class="detail s-${status}" data-key="${attribute(result.key)}" data-capability="${attribute(capability.id)}">${renderDetailCellContents(cell)}</td>`
         })
         return `<tr><th scope="row">${escapeHtml(capability.label)}</th>${cells.join('')}</tr>`
     })

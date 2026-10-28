@@ -22,6 +22,7 @@ import {
     type RecordedExchange,
 } from '@transport/simulated/camera-profile'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

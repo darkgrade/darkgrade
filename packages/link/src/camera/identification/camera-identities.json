@@ -10438,6 +10438,19 @@
       "profiles": []
     }
   ],
+  "2756:0002": [
+    {
+      "manufacturer": "Hasselblad",
+      "line": "X System (X1D / X1D II / X2D / 907X)",
+      "models": [
+        "Hasselblad X1D-50c"
+      ],
+      "sources": [
+        "https://tethertools.com/blog/shooting-tethered-with-the-hasselblad-x1d"
+      ],
+      "profiles": []
+    }
+  ],
   "33a2:0136": [
     {
       "manufacturer": "OM System / Olympus",

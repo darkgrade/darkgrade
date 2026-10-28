@@ -156,14 +156,29 @@ export function cameraPage(data: CompatData, view: CompatView, context: PageCont
         capabilities: view.capabilities,
         facts,
         results: detail.rows.map(row => ({
-            key: `${row.fidelity}/${row.transport}/${profileId}`,
-            label: label(row.fidelity, row.transport) + (row.host ? ` (${row.host})` : ''),
+            key: row.key,
+            label:
+                label(row.fidelity, row.transport) +
+                (row.firmware ? ` · firmware ${row.firmware}` : '') +
+                (row.host ? ` (${row.host})` : ''),
             source: row.source,
             at: row.at,
             cells: Object.fromEntries(
                 Object.entries(row.results).map(([capability, result]) => [
                     capability,
-                    CELL(result.status, result.detail),
+                    {
+                        ...CELL(result.status, result.detail),
+                        evidence:
+                            row.resultEvidence === undefined
+                                ? {
+                                      fidelity: row.fidelity,
+                                      profile: profileId,
+                                      generatedAt: row.at,
+                                      ...(row.firmware && { firmware: row.firmware }),
+                                      ...(row.host && { host: row.host }),
+                                  }
+                                : row.resultEvidence[capability],
+                    },
                 ])
             ),
         })),
@@ -191,7 +206,14 @@ export function cameraPage(data: CompatData, view: CompatView, context: PageCont
             cells: Object.fromEntries(
                 Object.entries(entry.statuses).map(([capability, result]) => [
                     capability,
-                    CELL(result.status, result.detail),
+                    {
+                        ...CELL(result.status, result.detail),
+                        evidence: {
+                            fidelity: entry.fidelity,
+                            profile: profileId,
+                            generatedAt: entry.at,
+                        },
+                    },
                 ])
             ),
         })),

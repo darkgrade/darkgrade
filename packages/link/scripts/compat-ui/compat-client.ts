@@ -7,10 +7,10 @@ import { applyFilters, parseFilters, serializeFilters, type CompatFilters } from
 import {
     manufacturerHref,
     renderCounts,
+    renderDetailCellContents,
     renderProgress,
     renderRow,
     routePath,
-    STATUS_GLYPHS,
     type PageContext,
 } from './compat-pages'
 import type { CompatView, RunSummary, ViewRow } from './compat-view'
@@ -186,9 +186,7 @@ function updateCameraCells(rows: ViewRow[]): void {
             )
             if (!target) continue
             target.className = `detail s-${cell.status}`
-            target.querySelector('.glyph')!.textContent = STATUS_GLYPHS[cell.status]
-            target.querySelector('b')!.textContent = cell.status.replace('-', ' ')
-            if (cell.detail !== undefined) target.querySelector('.why')!.textContent = cell.detail
+            target.innerHTML = renderDetailCellContents(cell)
         }
     }
 }

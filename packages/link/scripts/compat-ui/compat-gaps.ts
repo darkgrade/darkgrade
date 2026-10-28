@@ -228,7 +228,7 @@ export function renderGapsMarkdown(report: GapReport): string {
                 `| ${cell(line.manufacturer)} | ${cell(line.line)} | ${line.undefinedVendorOperations.join(' ') || '-'} | ${line.inexpressibleRequests.join(', ') || '-'} | ${line.undefinedEvents.join(' ') || '-'} |`
         ),
         '',
-        "Inexpressible requests include `CanonSetRemoteMode` (0x9114) with mode 0x15 (EOS M, documented) and mode 0x5 (EOS R6 Mark III, captured): darkgrade's definition has no value for either.",
+        'The inexpressible requests above come from the recorded-exchange codec checks in this matrix; successfully encoded requests are omitted.',
         '',
         ...report.libraryNotes.flatMap(note => [
             `<details><summary>Catalog note: ${note.key} (${note.items.length})</summary>`,

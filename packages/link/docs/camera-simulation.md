@@ -18,7 +18,7 @@ The simulator resolves each request through quirks, then recorded exchanges, the
 
 ## Documented profiles
 
-`camera-catalog/camera-lines.json` (see its README) lists 11 manufacturers, 47 lines and 837 models with USB IDs and line quirks cited from libgphoto2 and vendor SDK pages. `bun run profiles:documented` regenerates one documented mock per line, named `<manufacturer>-<line>-documented.json`, using the newest capture-capable model with a known USB product ID. Lines with no such model (Hasselblad, Panasonic S, Pentax 645, Leica S, Sigma BF) get no mock and are listed in the matrix's line coverage table.
+`camera-catalog/camera-lines.json` (see its README) lists 11 manufacturers, 47 lines and 838 models with USB IDs and line quirks cited from libgphoto2 and vendor SDK pages. `bun run profiles:documented` regenerates one documented mock per line, named `<manufacturer>-<line>-documented.json`, using the newest capture-capable model with a known USB product ID. Lines with no such model (Hasselblad, Panasonic S, Pentax 645, Leica S, Sigma BF) get no mock and are listed in the matrix's line coverage table.
 
 A documented mock's DeviceInfo lists the ISO 15740 mandatory operations, InitiateCapture when libgphoto2 marks the model capture-capable, and the opcodes its line's verified quirks document. The lists are marked incomplete, so other requests report missing data. `QUIRK_WIRING` in `build-documented-profiles.ts` maps each catalog quirk to a simulator behaviour where the source states one, such as the Canon remote-mode gate, Canon/Nikon polled events, Nikon DeviceReady busy, Canon live-view not-ready, hidden Panasonic operations and download-only refusals. Other quirks are kept for reference with behaviour `none`, and quirks the catalog marks unverified carry `unverified: true`. For documented rows only a disagreement with a documented exchange counts as a failure; vendor operations darkgrade has no definition for are reported as unsupported, so the matrix doubles as a list of support gaps.
 
@@ -51,7 +51,7 @@ A dense table, one row per evaluated profile, tier and link. It has columns for 
     - `profile` (exact ids);
     - one key per capability with a status, for example `?set-property=fail`;
     - `sort` and `order`.
-- **Live progress:** the simulation suite and `compat:hardware` append JSONL to `test-results/compat-runs/<run id>.jsonl` as each capability starts and finishes. The UI tails these logs and pushes changes over server-sent events. It shows overall progress (rows, checks, the capability in flight) and per-row progress; rows not reached yet are queued. The format is in `scripts/camera-profiles/compat-progress.ts`. Set `COMPAT_PROGRESS=off` to write no log.
+- **Live progress:** the simulation suite appends JSONL to `test-results/compat-runs/<run id>.jsonl` as each capability starts and finishes. The UI tails these logs and pushes changes over server-sent events. It shows overall progress (rows, checks, the capability in flight) and per-row progress; rows not reached yet are queued. The format is in `scripts/camera-profiles/compat-progress.ts`. Set `COMPAT_PROGRESS=off` to write no log.
 - **Results when nothing runs:** the UI loads `test-results/camera-support-matrix.json`, the hardware matrices, imports and newer run logs. `/runs` lists every run log and matrix, opens any of them on its own (`?run=<id>`), loads a file from disk, and can start a simulation run for the current view. `compat:ui -- --results <file>` adds files too.
 - `bun run compat:ui:build [-- --out <dir> --base /compat/]` writes the same pages as static HTML (`<route>/index.html`) plus `view.json` for client-side filtering.
 
@@ -59,17 +59,18 @@ The UI is TypeScript with no framework: server-rendered pages from `scripts/comp
 
 ## Standalone testing: record, ingest, see it in the UI
 
-This is the workflow without the device lab, with a camera on your desk:
+Outside CI, collect new hardware evidence through the configured bench adapter, or import previously recorded evidence for simulation:
 
-1. **Run the capabilities on the camera.** Keep `bun run compat:ui` open while you do it:
+1. **Run guarded identity/session checks on the camera.** Keep `bun run compat:ui` open to see completed results:
 
     ```sh
-    bun run compat:hardware -- --usb 04a9:3323                     # profile picked by USB identity
-    bun run compat:hardware -- --usb 04b0:0454 --profile nikon-z6-iii
-    bun run compat:hardware -- --ip 192.168.1.2 --vendor canon --profile canon-eos-r6-mark-iii
+    # On the camera's configured bench host, with DARKGRADE_TESTBENCH_DIR set:
+    bun run compat:hardware -- --usb 04a9:3294 --profile canon-eos-80d
     ```
 
-    The run streams into the UI as a hardware row. It writes `test-results/camera-lab/<profile>.json`, which `lab:results` and `compat:merge` combine (the merge is refreshed automatically). It never replays captured traffic, and it restores any property it changes.
+    `compat:hardware` resolves only enabled USB mappings in `camera-lab/cameras.lab.json` and delegates to `lab:hardware`. The deployed bench must provide shared ownership support, matching live mappings, a scoped job and the existing per-camera lock. Busy, recording, powered-off, unregistered and PTP/IP cameras fail closed. The adapter runs read-only session and fresh DeviceInfo checks; other capabilities remain `no-data`. See [the device-lab boundary](../camera-lab/README.md). Completed results refresh the matrix shown in the UI; no settings, capture, recovery or power changes run.
+
+    The exported `runStandalone` function is a software fixture evaluator with explicit `SimulatedTransport` injection. It refuses real transports and labels its output `captured` or `documented`, with simulation progress. Its tests do not establish physical validation.
 
 2. **Record what is missing.** The UI's no-data cells and `/gaps` name the first request each profile cannot answer, for example `0x1002 [0x1]`. Record a usbmon trace of that action with the `camera-re-capture` skill.
 3. **Ingest it:**

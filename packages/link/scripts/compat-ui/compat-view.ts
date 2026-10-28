@@ -3,8 +3,9 @@
  * from completed support matrices and overlaid with run progress logs. Pure functions only, so the
  * server, the static export and the browser share them.
  */
-import type { PlannedRow, ProgressEvent, RunSource } from '@scripts/camera-profiles/compat-progress'
 import { slug } from '@scripts/camera-profiles/catalog-names'
+import type { PlannedRow, ProgressEvent, RunSource } from '@scripts/camera-profiles/compat-progress'
+import type { CompatibilityCamera } from '@scripts/camera-profiles/compatibility-matrix'
 import {
     rowKey,
     type CapabilityStatus,
@@ -17,12 +18,19 @@ import {
 export type CellStatus = CapabilityStatus | 'running' | 'queued'
 export const CELL_STATUSES: CellStatus[] = ['pass', 'fail', 'unsupported', 'no-data', 'running', 'queued']
 
+export type CapabilityEvidence = CompatibilityCamera['resultEvidence'][string]
+export type EvidenceSupportMatrixRow = SupportMatrixRow & {
+    resultEvidence?: Record<string, CapabilityEvidence>
+    viewKey?: string
+}
+
 export interface ViewCell {
     status: CellStatus
     detail?: string
     at?: string
     durationMilliseconds?: number
     runId?: string
+    evidence?: CapabilityEvidence
 }
 
 export interface ViewRow {
@@ -118,13 +126,29 @@ function rowIdentity(
     }
 }
 
-function viewRowFromMatrix(row: SupportMatrixRow, at: string, annotations?: RowAnnotations): ViewRow {
+function viewRowFromMatrix(
+    row: EvidenceSupportMatrixRow,
+    at: string,
+    annotations?: RowAnnotations,
+    revision?: string
+): ViewRow {
     const cells: Record<string, ViewCell> = {}
     for (const [capability, result] of Object.entries(row.results)) {
-        cells[capability] = { status: result.status, detail: shorten(result.detail), at }
+        const evidence =
+            row.resultEvidence === undefined
+                ? {
+                      fidelity: row.fidelity,
+                      profile: row.profile,
+                      generatedAt: at,
+                      ...(row.firmware && { firmware: row.firmware }),
+                      ...(row.host && { host: row.host }),
+                      ...(revision && { revision }),
+                  }
+                : row.resultEvidence[capability]
+        cells[capability] = { status: result.status, detail: shorten(result.detail), at, ...(evidence && { evidence }) }
     }
     return {
-        ...rowIdentity({ ...row, key: rowKey(row) }),
+        ...rowIdentity({ ...row, key: row.viewKey ?? rowKey(row) }),
         ...(row.firmware && { firmware: row.firmware }),
         ...(row.host && { host: row.host }),
         unverified: row.quirks.unverified > 0 || !!annotations?.unverifiedModel,
@@ -145,7 +169,7 @@ export function applyMatrix(
     if (!view.capabilities.length) view.capabilities = matrix.capabilities
     const index = new Map(view.rows.map((row, position) => [row.key, position]))
     for (const row of matrix.rows) {
-        const viewRow = viewRowFromMatrix(row, matrix.generatedAt, annotations.get(row.profile))
+        const viewRow = viewRowFromMatrix(row, matrix.generatedAt, annotations.get(row.profile), matrix.revision)
         const position = index.get(viewRow.key)
         if (position === undefined) {
             index.set(viewRow.key, view.rows.push(viewRow) - 1)
@@ -248,6 +272,7 @@ export function applyRun(
                 at: event.at,
                 durationMilliseconds: event.durationMilliseconds,
                 runId: start.runId,
+                evidence: { fidelity: row.fidelity, profile: row.profile, generatedAt: event.at },
             }
             if ((row.lastRun ?? '') < event.at) row.lastRun = event.at
             touched.add(event.key)
@@ -263,6 +288,11 @@ export function applyRun(
             if (event.row.firmware) row.firmware = event.row.firmware
             if (event.row.host) row.host = event.row.host
             if (plannedRow?.usb) row.usb = plannedRow.usb
+            for (const cell of Object.values(row.cells)) {
+                if (cell.runId !== start.runId || !cell.evidence) continue
+                if (event.row.firmware) cell.evidence.firmware = event.row.firmware
+                if (event.row.host) cell.evidence.host = event.row.host
+            }
             summary.finishedRows += 1
             touched.add(event.key)
         }

@@ -20,6 +20,14 @@ interface BenchObservation {
 
 const setupOperations = new Set(['0x1002', '0x1003', '0x9114', '0x9115'])
 
+function exactParameters(value: unknown): boolean {
+    return (
+        Array.isArray(value) &&
+        value.length <= 5 &&
+        value.every(word => typeof word === 'string' && /^0x[0-9a-f]{1,8}$/.test(word))
+    )
+}
+
 function observationIn(document: unknown): BenchObservation[] {
     const record = document as { schemaVersion?: unknown; cameras?: unknown }
     if (record?.schemaVersion !== 1 || !Array.isArray(record.cameras))
@@ -36,6 +44,17 @@ function observationIn(document: unknown): BenchObservation[] {
         )
             throw new Error('Bench evidence requires a responsive PTP probe, operations, exchanges and properties')
         for (const exchange of value.exchanges) {
+            if (
+                !exchange ||
+                typeof exchange !== 'object' ||
+                !exactParameters(exchange.parameters) ||
+                !exactParameters(exchange.response?.parameters) ||
+                typeof exchange.response?.code !== 'string' ||
+                !/^0x[0-9a-f]{4}$/.test(exchange.response.code)
+            )
+                throw new Error(
+                    'Sanitized bench exchanges require exact request/response parameter arrays and response codes'
+                )
             if (
                 !setupOperations.has(exchange.operation) ||
                 exchange.dataFromHost !== undefined ||

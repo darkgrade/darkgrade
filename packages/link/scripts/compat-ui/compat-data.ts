@@ -22,7 +22,15 @@ import type {
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { buildGapReport, type GapReport } from './compat-gaps'
-import { applyMatrix, applyRun, emptyView, type CompatView, type RowAnnotations } from './compat-view'
+import {
+    applyMatrix,
+    applyRun,
+    emptyView,
+    type CapabilityEvidence,
+    type CompatView,
+    type EvidenceSupportMatrixRow,
+    type RowAnnotations,
+} from './compat-view'
 
 /** A run log stops counting as in progress when it has not grown for this long. */
 const STALE_RUN_MILLISECONDS = 10 * 60 * 1000
@@ -47,7 +55,7 @@ export interface MatrixFile {
 
 /** A merged compatibility matrix (compat:merge) as support-matrix rows, so it can be viewed like one. */
 export function rowsFromCompatibility(matrix: CompatibilityMatrix): SupportMatrix {
-    const rows = matrix.cameras.flatMap(camera => {
+    const rows: EvidenceSupportMatrixRow[] = matrix.cameras.flatMap(camera => {
         const base = {
             path: camera.profile,
             manufacturer: camera.manufacturer,
@@ -55,20 +63,38 @@ export function rowsFromCompatibility(matrix: CompatibilityMatrix): SupportMatri
             ...(camera.catalogLine && { catalogLine: camera.catalogLine }),
             model: camera.model,
             usb: camera.usb,
-            ...(camera.firmware && { firmware: camera.firmware }),
-            ...(camera.host && { host: camera.host }),
             quirks: { total: 0, simulated: 0, unverified: 0 },
         }
+        const viewKey = (fidelity: MatrixFidelity, transport: MatrixTransport, profile: string, firmware?: string) =>
+            `${fidelity}/${transport}/${profile}/${encodeURIComponent(camera.model)}/${encodeURIComponent(firmware ?? 'unknown')}`
         return [
-            { ...base, profile: camera.profile, fidelity: camera.fidelity, results: camera.results },
+            {
+                ...base,
+                viewKey: viewKey(camera.fidelity, 'usb', camera.profile, camera.firmware),
+                profile: camera.profile,
+                fidelity: camera.fidelity,
+                results: camera.results,
+                resultEvidence: camera.resultEvidence ?? {},
+                ...(camera.firmware && { firmware: camera.firmware }),
+                ...(camera.host && { host: camera.host }),
+            },
             ...(camera.ptpIp
                 ? [
                       {
                           ...base,
                           profile: camera.ptpIp.profile,
+                          viewKey: viewKey(
+                              camera.ptpIp.fidelity,
+                              'ptp-ip',
+                              camera.ptpIp.profile,
+                              camera.ptpIp.firmware
+                          ),
                           fidelity: camera.ptpIp.fidelity,
                           transport: 'ptp-ip' as const,
                           results: camera.ptpIp.results,
+                          resultEvidence: camera.ptpIp.resultEvidence ?? {},
+                          ...(camera.ptpIp.firmware && { firmware: camera.ptpIp.firmware }),
+                          ...(camera.ptpIp.host && { host: camera.ptpIp.host }),
                       },
                   ]
                 : []),
@@ -86,6 +112,7 @@ export interface CameraRowDetail {
     host?: string
     firmware?: string
     results: Record<string, CapabilityResult>
+    resultEvidence?: Record<string, CapabilityEvidence>
 }
 
 export interface CameraHistoryEntry {
@@ -351,11 +378,14 @@ export class CompatData {
             if (existing < 0) rows.push(detail)
             else if (rows[existing].at <= detail.at) rows[existing] = detail
         }
-        for (const matrixFile of this.matrixFiles().filter(file => !file.standalone)) {
+        for (const matrixFile of this.matrixFiles()) {
             const matrix = this.readMatrix(matrixFile.file)
             for (const row of matrix?.rows.filter(candidate => candidate.profile === profileId) ?? []) {
                 consider({
-                    key: `${row.fidelity}/${row.transport ?? 'usb'}`,
+                    key:
+                        (row as EvidenceSupportMatrixRow).viewKey ??
+                        `${row.fidelity}/${row.transport ?? 'usb'}/${row.profile}`,
+
                     fidelity: row.fidelity,
                     transport: row.transport ?? 'usb',
                     source: matrixFile.label,
@@ -363,6 +393,7 @@ export class CompatData {
                     ...(row.host && { host: row.host }),
                     ...(row.firmware && { firmware: row.firmware }),
                     results: row.results,
+                    resultEvidence: (row as EvidenceSupportMatrixRow).resultEvidence,
                 })
             }
         }
@@ -370,7 +401,7 @@ export class CompatData {
         for (const entry of history) {
             if (Object.keys(entry.statuses).length === 0) continue
             consider({
-                key: `${entry.fidelity}/${entry.transport}`,
+                key: `${entry.fidelity}/${entry.transport}/${profileId}`,
                 fidelity: entry.fidelity,
                 transport: entry.transport,
                 source: `run ${entry.runId}`,

@@ -31,7 +31,16 @@ export interface CompatibilityCamera {
     alsoCoveredBy: { fidelity: MatrixFidelity; profile: string }[]
     results: Record<string, CapabilityResult>
     /** The same camera reached over standard PTP/IP, when it was simulated there. */
-    ptpIp?: { fidelity: MatrixFidelity; profile: string; results: Record<string, CapabilityResult> }
+    ptpIp?: {
+        fidelity: MatrixFidelity
+        profile: string
+        results: Record<string, CapabilityResult>
+        firmware?: string
+        host?: string
+        generatedAt: string
+        revision?: string
+        resultEvidence: CompatibilityCamera['resultEvidence']
+    }
     /** Source of each selected capability; camera-level fidelity does not promote weaker results. */
     resultEvidence: Record<
         string,
@@ -114,8 +123,16 @@ export function mergeCompatibility(
         const chosen = strongest(group)
         const identities = new Set(group.flatMap(row => row.usb ?? []))
         const network = strongestOrUndefined(
-            overPtpIp.filter(row => row.usb?.some(identity => identities.has(identity) && modelIdentity(row, identity) === modelIdentity(chosen, identity)) && (!row.firmware || !chosen.firmware || row.firmware === chosen.firmware))
+            overPtpIp.filter(
+                row =>
+                    row.usb?.some(
+                        identity =>
+                            identities.has(identity) && modelIdentity(row, identity) === modelIdentity(chosen, identity)
+                    ) &&
+                    (!row.firmware || !chosen.firmware || row.firmware === chosen.firmware)
+            )
         )
+        const networkMatrix = network?.fidelity === 'hardware' ? (hardware ?? simulation) : simulation
         const models = [...new Set(group.map(row => row.model))]
         const results: CompatibilityCamera['results'] = {}
         const resultEvidence: CompatibilityCamera['resultEvidence'] = {}
@@ -153,7 +170,28 @@ export function mergeCompatibility(
             results,
             resultEvidence,
             ...(network && {
-                ptpIp: { fidelity: network.fidelity, profile: network.profile, results: network.results },
+                ptpIp: {
+                    fidelity: network.fidelity,
+                    profile: network.profile,
+                    results: network.results,
+                    ...(network.firmware && { firmware: network.firmware }),
+                    ...(network.host && { host: network.host }),
+                    generatedAt: networkMatrix.generatedAt,
+                    ...(networkMatrix.revision && { revision: networkMatrix.revision }),
+                    resultEvidence: Object.fromEntries(
+                        Object.keys(network.results).map(capability => [
+                            capability,
+                            {
+                                fidelity: network.fidelity,
+                                profile: network.profile,
+                                generatedAt: networkMatrix.generatedAt,
+                                ...(network.firmware && { firmware: network.firmware }),
+                                ...(network.host && { host: network.host }),
+                                ...(networkMatrix.revision && { revision: networkMatrix.revision }),
+                            },
+                        ])
+                    ),
+                },
             }),
         } satisfies CompatibilityCamera
     })
