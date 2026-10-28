@@ -282,3 +282,128 @@ export function renderGapsMarkdown(report: GapReport): string {
         '',
     ].join('\n')
 }
+
+export type GapActionKind =
+    | 'add-vendor-definitions'
+    | 'define-operations'
+    | 'extend-definitions'
+    | 'define-events'
+    | 'find-usb-ids'
+    | 'add-line-mock'
+    | 'run-hardware'
+    | 'capture-responses'
+    | 'verify-quirks'
+    | 'verify-catalog'
+    | 'configure-ptp-ip'
+
+/** Something to change or configure to close a gap, with the command or skill that does it. */
+export interface GapAction {
+    kind: GapActionKind
+    /** "library": darkgrade's code needs a change; "data": a profile, capture or catalog entry does. */
+    area: 'library' | 'data'
+    summary: string
+    items?: string[]
+    command?: string
+}
+
+function usbIdentityHint(usbVendorId: string | null): string {
+    return usbVendorId ? `${usbVendorId.replace(/^0x/, '').padStart(4, '0')}:<pid>` : '<vid:pid>'
+}
+
+/** Every action that would close one of a line's gaps, library changes first. */
+export function gapActions(
+    line: LineGaps,
+    manufacturer: Pick<ManufacturerGaps, 'vendorDefinitions' | 'usbVendorId'>
+): GapAction[] {
+    const actions: GapAction[] = []
+    if (!manufacturer.vendorDefinitions && line.undefinedVendorOperations.length) {
+        actions.push({
+            kind: 'add-vendor-definitions',
+            area: 'library',
+            summary: `darkgrade has no vendor class for ${line.manufacturer}; add one under src/vendors/.`,
+        })
+    }
+    if (line.undefinedVendorOperations.length) {
+        actions.push({
+            kind: 'define-operations',
+            area: 'library',
+            summary: `Define ${line.undefinedVendorOperations.length} vendor operations the ${line.line} profiles document.`,
+            items: line.undefinedVendorOperations,
+            command: 'camera-re-define skill (verify with camera-re-verify)',
+        })
+    }
+    if (line.inexpressibleRequests.length) {
+        actions.push({
+            kind: 'extend-definitions',
+            area: 'library',
+            summary: 'Recorded requests use parameter values darkgrade’s definitions cannot express.',
+            items: line.inexpressibleRequests,
+            command: 'camera-re-define skill',
+        })
+    }
+    if (line.undefinedEvents.length) {
+        actions.push({
+            kind: 'define-events',
+            area: 'library',
+            summary: `Define ${line.undefinedEvents.length} events the profiles document.`,
+            items: line.undefinedEvents,
+            command: 'camera-re-define skill',
+        })
+    }
+    if (line.skippedModels.length) {
+        actions.push({
+            kind: 'find-usb-ids',
+            area: 'data',
+            summary: `${line.skippedModels.length} catalog models have no USB product ID, so they are not mocked.`,
+            items: line.skippedModels.map(skip => `${skip.model}: ${skip.reason}`),
+            command: 'bun run compat:ingest -- --capture <profile-id>=<file.pcapng>',
+        })
+    }
+    if (!line.documentedMock) {
+        actions.push({
+            kind: 'add-line-mock',
+            area: 'data',
+            summary: 'No documented line mock; add the line to camera-catalog and run profiles:documented.',
+            command: 'bun run profiles:documented',
+        })
+    }
+    if (!line.capturedProfiles.length && !line.hardwareProfiles.length) {
+        actions.push({
+            kind: 'run-hardware',
+            area: 'data',
+            summary: 'No captured or hardware evidence for this line; run a body standalone and ingest a capture.',
+            command: `bun run compat:hardware -- --usb ${usbIdentityHint(manufacturer.usbVendorId)}`,
+        })
+    }
+    if (line.missingResponses.length) {
+        actions.push({
+            kind: 'capture-responses',
+            area: 'data',
+            summary: `Profiles have no recorded response for ${line.missingResponses.length} requests (${line.noDataCells}/${line.cells} cells without data).`,
+            items: line.missingResponses,
+            command:
+                'camera-re-capture skill, then bun run compat:ingest -- --capture <profile-id>=<file.pcapng> --simulate',
+        })
+    }
+    if (line.unverifiedQuirks.length) {
+        actions.push({
+            kind: 'verify-quirks',
+            area: 'data',
+            summary: `Confirm ${line.unverifiedQuirks.length} quirks their sources mark unconfirmed.`,
+            items: line.unverifiedQuirks,
+            command: 'camera-re-verify skill',
+        })
+    }
+    if (line.unverifiedModels.length) {
+        actions.push({
+            kind: 'verify-catalog',
+            area: 'data',
+            summary: `${line.unverifiedModels.length} catalog models are unconfirmed by their sources.`,
+            items: line.unverifiedModels,
+        })
+    }
+    if (line.ptpIp && line.ptpIp !== 'simulated') {
+        actions.push({ kind: 'configure-ptp-ip', area: 'data', summary: `Not simulated over PTP/IP: ${line.ptpIp}` })
+    }
+    return actions
+}

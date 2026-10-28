@@ -10,19 +10,20 @@
  *
  * Filters and sorting are query parameters (see compat-filters.ts).
  */
+import { usbIdentities } from '@scripts/camera-profiles/profile-index'
 import type { CompatData } from './compat-data'
 import { applyFilters, parseFilters } from './compat-filters'
 import {
-    citation,
     escapeHtml,
     renderCameraPage,
     renderGapsPage,
     renderNotFound,
     renderRunsPage,
     renderTablePage,
+    type CameraDetailModel,
     type PageContext,
 } from './compat-pages'
-import type { CellStatus, CompatView, ViewRow } from './compat-view'
+import { nameSlug, viewResult, type CompatView, type ViewRow } from './compat-view'
 
 export interface PageResult {
     status: number
@@ -104,68 +105,83 @@ export function tablePage(
     }
 }
 
-const CELL = (status: string, detail: string) => ({ status: status as CellStatus, detail })
+function resultCells(results: Record<string, { status: unknown; detail: unknown }>) {
+    return Object.fromEntries(
+        Object.entries(results).map(([capability, result]) => [capability, viewResult(result?.status, result?.detail)])
+    )
+}
 
-export function cameraPage(data: CompatData, view: CompatView, context: PageContext, profileId: string): PageResult {
+function resultLabel(fidelity: string, transport: string): string {
+    return `${fidelity === 'hardware' ? 'Hardware' : `Simulated (${fidelity})`} · ${transport === 'ptp-ip' ? 'PTP/IP' : 'USB'}`
+}
+
+/** Everything known about one profile as plain data; the camera page, the modal and the API share it. */
+export function cameraDetailModel(
+    data: CompatData,
+    view: CompatView,
+    profileId: string
+): CameraDetailModel | undefined {
     const detail = data.cameraDetail(profileId)
-    if (!detail) return { status: 404, html: renderNotFound(context, `No camera profile "${profileId}".`) }
+    if (!detail) return undefined
     const profile = detail.indexed?.profile
-    const viewRow = view.rows.find(row => row.profile === profileId)
-    const sources = profile?.provenance.sources ?? []
+    const viewRows = view.rows.filter(row => row.profile === profileId)
+    const viewRow = viewRows[0]
     const catalogModel = detail.indexed?.catalogModel
-    const facts: [string, string][] = [
-        ['Profile', `<code>${escapeHtml(detail.indexed?.path ?? viewRow?.path ?? profileId)}</code>`],
-        ['Fidelity', escapeHtml(profile?.provenance.fidelity ?? viewRow?.fidelity ?? 'unknown')],
-        [
-            'USB',
-            escapeHtml(
-                profile?.usb
-                    ? `${profile.usb.vendorId} : ${profile.usb.productIds.join(', ')}`
-                    : (viewRow?.usb.join(', ') ?? '') || 'none'
-            ),
-        ],
-        ...((profile?.catalog ? [['Catalog line', escapeHtml(profile.catalog.line)]] : []) as [string, string][]),
-        ...((profile?.firmware ? [['Firmware', escapeHtml(profile.firmware)]] : []) as [string, string][]),
-        ...((catalogModel
-            ? [
-                  ['Catalog entry', citation([{ location: catalogModel.source }], 0).replace('[0] ', '')],
-                  ['libgphoto2 flags', escapeHtml(catalogModel.gphotoFlags?.join(' ') || 'none')],
-                  ['Catalog status', catalogModel.unverified ? '<span class="badge warn">unverified</span>' : 'cited'],
-              ]
-            : []) as [string, string][]),
-        ...((profile?.deviceInfo
-            ? [
-                  [
-                      'DeviceInfo',
-                      escapeHtml(
-                          `${profile.deviceInfo.manufacturer ?? ''} ${profile.deviceInfo.model ?? ''}`.trim() +
-                              ` · ${profile.deviceInfo.operationsSupported?.length ?? 0} operations` +
-                              (profile.deviceInfo.listsComplete ? ' (complete list)' : ' (incomplete list)')
-                      ),
-                  ],
-              ]
-            : []) as [string, string][]),
-    ]
-    const label = (fidelity: string, transport: string) =>
-        `${fidelity === 'hardware' ? 'Hardware' : `Simulated (${fidelity})`} · ${transport === 'ptp-ip' ? 'PTP/IP' : 'USB'}`
-    const html = renderCameraPage(context, {
+    const manufacturer = profile?.manufacturer ?? viewRow?.manufacturer ?? 'Unknown'
+    const line = profile?.line ?? viewRow?.line ?? 'Unknown'
+    const identities = profile ? usbIdentities(profile) : (viewRow?.usb ?? [])
+    const transports = [
+        ...new Set([...detail.rows.map(row => row.transport), ...viewRows.map(row => row.transport)]),
+    ].sort()
+    const unverifiedQuirks = profile?.quirks.filter(quirk => quirk.unverified).length ?? viewRow?.unverifiedQuirks ?? 0
+    const exchanges = profile?.exchanges ?? []
+    return {
         profileId,
         model: profile?.model ?? viewRow?.model ?? profileId,
-        manufacturer: profile?.manufacturer ?? viewRow?.manufacturer ?? '',
-        line: profile?.line ?? viewRow?.line ?? '',
+        manufacturer,
+        manufacturerSlug: viewRow?.manufacturerSlug ?? nameSlug(manufacturer),
+        line,
+        lineSlug: viewRow?.lineSlug ?? nameSlug(line),
+        fidelity: profile?.provenance.fidelity ?? viewRow?.fidelity ?? 'unknown',
+        ...((viewRow?.scope ?? (catalogModel ? 'model' : undefined)) && {
+            scope: viewRow?.scope ?? 'model',
+        }),
+        path: detail.indexed?.path ?? viewRow?.path ?? profileId,
+        usb: {
+            ...(profile?.usb && { vendorId: profile.usb.vendorId }),
+            productIds: profile?.usb?.productIds ?? [],
+            identities,
+        },
+        transports: transports.length ? transports : ['usb'],
+        unverified: unverifiedQuirks > 0 || !!catalogModel?.unverified || !!viewRow?.unverified,
+        unverifiedQuirks,
+        ...(profile?.catalog && { catalogLine: profile.catalog.line }),
+        ...(profile?.firmware && { firmware: profile.firmware }),
+        ...(catalogModel && {
+            catalogEntry: {
+                source: catalogModel.source,
+                gphotoFlags: catalogModel.gphotoFlags ?? [],
+                unverified: !!catalogModel.unverified,
+            },
+        }),
+        ...(profile?.deviceInfo && {
+            deviceInfo: {
+                ...(profile.deviceInfo.manufacturer && { manufacturer: profile.deviceInfo.manufacturer }),
+                ...(profile.deviceInfo.model && { model: profile.deviceInfo.model }),
+                operations: profile.deviceInfo.operationsSupported?.length ?? 0,
+                complete: !!profile.deviceInfo.listsComplete,
+            },
+        }),
         capabilities: view.capabilities,
-        facts,
         results: detail.rows.map(row => ({
             key: `${row.fidelity}/${row.transport}/${profileId}`,
-            label: label(row.fidelity, row.transport) + (row.host ? ` (${row.host})` : ''),
+            fidelity: row.fidelity,
+            transport: row.transport,
+            ...(row.host && { host: row.host }),
+            label: resultLabel(row.fidelity, row.transport) + (row.host ? ` (${row.host})` : ''),
             source: row.source,
             at: row.at,
-            cells: Object.fromEntries(
-                Object.entries(row.results).map(([capability, result]) => [
-                    capability,
-                    CELL(result.status, result.detail),
-                ])
-            ),
+            cells: resultCells(row.results),
         })),
         related: detail.related,
         quirks: (profile?.quirks ?? []).map(quirk => ({
@@ -173,31 +189,32 @@ export function cameraPage(data: CompatData, view: CompatView, context: PageCont
             description: quirk.description,
             behaviour: quirk.behaviour.kind,
             unverified: !!quirk.unverified,
-            citation: citation(sources, quirk.source),
+            ...(quirk.source !== undefined && { source: quirk.source }),
         })),
-        exchanges: (profile?.exchanges ?? []).slice(0, 80).map(exchange => ({
+        exchanges: exchanges.slice(0, 80).map(exchange => ({
             operation: `${exchange.operation}${exchange.name ? ` ${exchange.name}` : ''}`,
             parameters: exchange.parameters ? `[${exchange.parameters.join(', ')}]` : '[any]',
             response: `${exchange.response.code}${exchange.response.data ? ` + ${exchange.response.data.length / 2} bytes` : ''}`,
             note: exchange.note ?? '',
-            citation: citation(sources, exchange.source),
+            ...(exchange.source !== undefined && { source: exchange.source }),
         })),
-        sources,
+        exchangeCount: exchanges.length,
+        sources: profile?.provenance.sources ?? [],
         history: detail.history.slice(0, 30).map(entry => ({
             runId: entry.runId,
             source: entry.source,
             at: entry.at,
-            label: label(entry.fidelity, entry.transport),
-            cells: Object.fromEntries(
-                Object.entries(entry.statuses).map(([capability, result]) => [
-                    capability,
-                    CELL(result.status, result.detail),
-                ])
-            ),
+            label: resultLabel(entry.fidelity, entry.transport),
+            cells: resultCells(entry.statuses),
         })),
         ...(view.activeRun && { activeRun: view.activeRun }),
-    })
-    return { status: 200, html }
+    }
+}
+
+export function cameraPage(data: CompatData, view: CompatView, context: PageContext, profileId: string): PageResult {
+    const model = cameraDetailModel(data, view, profileId)
+    if (!model) return { status: 404, html: renderNotFound(context, `No camera profile "${profileId}".`) }
+    return { status: 200, html: renderCameraPage(context, model) }
 }
 
 export function runsPage(data: CompatData, view: CompatView, context: PageContext): PageResult {
@@ -219,7 +236,12 @@ export function routePage(data: CompatData, context: PageContext, pathname: stri
     const runId = new URLSearchParams(search).get('run')
     const view = runId ? data.singleView(runId) : data.view()
     if (!view) return { status: 404, html: renderNotFound(context, `No run or result file "${runId}".`) }
-    const segments = pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    let segments: string[]
+    try {
+        segments = pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    } catch {
+        return { status: 400, html: renderNotFound(context, 'That address is not valid.') }
+    }
     if (segments.length === 0) return tablePage(data, view, context, {}, search)
     if (segments[0] === 'm' && segments.length <= 3 && segments[1]) {
         return tablePage(

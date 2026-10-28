@@ -352,8 +352,12 @@ describe('compatibility UI server', () => {
     it('serves every route with stable URLs, filters from the query string, and 404s unknown ones', async () => {
         const home = await get('/')
         expect(home.status).toBe(200)
-        expect(home.text).toContain('Hardware run</strong> 0/1 rows')
-        expect(home.text).toContain('data-key="hardware/usb/nikon-z6-iii" class="r-running"')
+        expect(home.text).toContain('0/1 rows')
+        expect(home.text).toContain('aria-label="Hardware run"')
+        expect(home.text).toMatch(
+            /data-key="hardware\/usb\/nikon-z6-iii" data-profile="nikon-z6-iii" class="r-running"/
+        )
+        expect(home.text).toContain('<table id="matrix" class="matrix has-run">')
 
         const line = await get('/m/sony/alpha-aps-c-e-mount?transport=ptp-ip')
         expect(line.status).toBe(200)
@@ -371,14 +375,15 @@ describe('compatibility UI server', () => {
         expect((await get('/camera/nope')).status).toBe(404)
         expect((await get('/assets/client.js')).text.length).toBeGreaterThan(1000)
 
-        const view = JSON.parse((await get('/api/view')).text)
+        const view = JSON.parse((await get('/api/v1/view')).text)
         expect(view.activeRun.runId).toBe('live-run')
         expect(view.rows).toHaveLength(4)
     })
 
     it('imports a results file and opens it as its own view', async () => {
-        const response = await fetch(new URL('/api/import?name=remote.json', server.url), {
+        const response = await fetch(new URL('/api/v1/import?name=remote.json', server.url), {
             method: 'POST',
+            headers: { 'content-type': 'application/json' },
             body: JSON.stringify(matrix([matrixRow('nikon-z7')])),
         })
         const result = (await response.json()) as { open: string }

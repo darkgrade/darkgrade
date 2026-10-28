@@ -3,8 +3,9 @@
  * from completed support matrices and overlaid with run progress logs. Pure functions only, so the
  * server, the static export and the browser share them.
  */
-import type { PlannedRow, ProgressEvent, RunSource } from '@scripts/camera-profiles/compat-progress'
 import { slug } from '@scripts/camera-profiles/catalog-names'
+import type { PlannedRow, ProgressEvent, RunSource } from '@scripts/camera-profiles/compat-progress'
+import { matrixValue, progressEventValue } from '@scripts/camera-profiles/compat-schema'
 import {
     rowKey,
     type CapabilityStatus,
@@ -14,8 +15,22 @@ import {
     type SupportMatrixRow,
 } from '@scripts/camera-profiles/support-matrix'
 
-export type CellStatus = CapabilityStatus | 'running' | 'queued'
-export const CELL_STATUSES: CellStatus[] = ['pass', 'fail', 'unsupported', 'no-data', 'running', 'queued']
+/** "unknown": a result file holds a status this version does not recognise. */
+export type CellStatus = CapabilityStatus | 'running' | 'queued' | 'unknown'
+export const CELL_STATUSES: CellStatus[] = ['pass', 'fail', 'unsupported', 'no-data', 'running', 'queued', 'unknown']
+const RESULT_STATUSES: string[] = ['pass', 'fail', 'unsupported', 'no-data']
+export type ViewFidelity = MatrixFidelity | 'unknown'
+export type StatusTotals = Record<CapabilityStatus | 'unknown', number>
+
+/** A result's status for display; an unrecognised value becomes "unknown" and is named in the detail. */
+export function viewResult(status: unknown, detail: unknown): { status: CellStatus; detail: string } {
+    const text = typeof detail === 'string' ? detail : ''
+    if (typeof status === 'string' && RESULT_STATUSES.includes(status)) {
+        return { status: status as CapabilityStatus, detail: shorten(text) }
+    }
+    const raw = typeof status === 'string' ? status.slice(0, 40) : String(status)
+    return { status: 'unknown', detail: shorten(`unrecognised status "${raw}"${text ? `: ${text}` : ''}`) }
+}
 
 export interface ViewCell {
     status: CellStatus
@@ -35,7 +50,7 @@ export interface ViewRow {
     lineSlug: string
     catalogLine?: string
     model: string
-    fidelity: MatrixFidelity
+    fidelity: ViewFidelity
     scope?: 'line' | 'model'
     transport: MatrixTransport
     usb: string[]
@@ -63,7 +78,7 @@ export interface RunSummary {
     cells: number
     finishedCells: number
     current?: { key: string; capability: string }
-    counts: Record<CapabilityStatus, number>
+    counts: StatusTotals
 }
 
 export interface ViewSource {
@@ -89,8 +104,14 @@ export interface RowAnnotations {
 
 const DETAIL_LIMIT = 280
 
-function shorten(detail: string): string {
-    return detail.length > DETAIL_LIMIT ? `${detail.slice(0, DETAIL_LIMIT - 1)}…` : detail
+function shorten(detail: string | undefined): string {
+    const text = detail ?? ''
+    return text.length > DETAIL_LIMIT ? `${text.slice(0, DETAIL_LIMIT - 1)}…` : text
+}
+
+/** A URL segment for a name; names with no ASCII letters or digits still get one. */
+export function nameSlug(name: string): string {
+    return slug(name) || 'unknown'
 }
 
 export function emptyView(capabilities: { id: string; label: string }[] = []): CompatView {
@@ -106,9 +127,9 @@ function rowIdentity(
         profile: row.profile,
         path: row.path,
         manufacturer: row.manufacturer,
-        manufacturerSlug: slug(row.manufacturer),
+        manufacturerSlug: nameSlug(row.manufacturer),
         line: row.line,
-        lineSlug: slug(row.line),
+        lineSlug: nameSlug(row.line),
         ...(row.catalogLine && { catalogLine: row.catalogLine }),
         model: row.model,
         fidelity: row.fidelity,
@@ -120,15 +141,16 @@ function rowIdentity(
 
 function viewRowFromMatrix(row: SupportMatrixRow, at: string, annotations?: RowAnnotations): ViewRow {
     const cells: Record<string, ViewCell> = {}
-    for (const [capability, result] of Object.entries(row.results)) {
-        cells[capability] = { status: result.status, detail: shorten(result.detail), at }
+    for (const [capability, result] of Object.entries(row.results ?? {})) {
+        cells[capability] = { ...viewResult(result?.status, result?.detail), at }
     }
+    const unverifiedQuirks = row.quirks?.unverified ?? 0
     return {
         ...rowIdentity({ ...row, key: rowKey(row) }),
         ...(row.firmware && { firmware: row.firmware }),
         ...(row.host && { host: row.host }),
-        unverified: row.quirks.unverified > 0 || !!annotations?.unverifiedModel,
-        unverifiedQuirks: row.quirks.unverified,
+        unverified: unverifiedQuirks > 0 || !!annotations?.unverifiedModel,
+        unverifiedQuirks,
         cells,
         lastRun: at,
         state: 'idle',
@@ -142,23 +164,25 @@ export function applyMatrix(
     source: ViewSource,
     annotations: Map<string, RowAnnotations> = new Map()
 ): void {
-    if (!view.capabilities.length) view.capabilities = matrix.capabilities
+    const checked = matrixValue(matrix)
+    if (!checked) return
+    if (!view.capabilities.length) view.capabilities = checked.capabilities
     const index = new Map(view.rows.map((row, position) => [row.key, position]))
-    for (const row of matrix.rows) {
-        const viewRow = viewRowFromMatrix(row, matrix.generatedAt, annotations.get(row.profile))
+    for (const row of checked.rows) {
+        const viewRow = viewRowFromMatrix(row, checked.generatedAt, annotations.get(row.profile))
         const position = index.get(viewRow.key)
         if (position === undefined) {
             index.set(viewRow.key, view.rows.push(viewRow) - 1)
             continue
         }
         const existing = view.rows[position]
-        if ((existing.lastRun ?? '') <= matrix.generatedAt) view.rows[position] = viewRow
+        if ((existing.lastRun ?? '') <= checked.generatedAt) view.rows[position] = viewRow
     }
     view.sources.push(source)
 }
 
-function emptyCounts(): Record<CapabilityStatus, number> {
-    return { pass: 0, fail: 0, unsupported: 0, 'no-data': 0 }
+function emptyCounts(): StatusTotals {
+    return { pass: 0, fail: 0, unsupported: 0, 'no-data': 0, unknown: 0 }
 }
 
 /**
@@ -172,12 +196,14 @@ export function applyRun(
     options: { alive: boolean; annotations?: Map<string, RowAnnotations> }
 ): { summary?: RunSummary; touched: Set<string> } {
     const touched = new Set<string>()
-    const start = events.find(event => event.type === 'run-start')
+    const checked = events.flatMap(event => progressEventValue(event) ?? [])
+    const start = checked.find(event => event.type === 'run-start')
     if (!start || start.type !== 'run-start') return { touched }
+    // A log holds one run; lines from another run (a file appended to by mistake) are ignored.
+    const own = checked.filter(event => event.runId === start.runId)
     if (!view.capabilities.length) view.capabilities = start.capabilities
-    const end = events.find(event => event.type === 'run-end')
+    const end = own.find(event => event.type === 'run-end')
     const active = options.alive && !end
-    const capabilityCount = start.capabilities.length
 
     const summary: RunSummary = {
         runId: start.runId,
@@ -187,7 +213,7 @@ export function applyRun(
         pid: start.pid,
         rows: start.rows.length,
         finishedRows: 0,
-        cells: start.rows.length * capabilityCount,
+        cells: start.rows.length * start.capabilities.length,
         finishedCells: 0,
         counts: emptyCounts(),
     }
@@ -225,12 +251,17 @@ export function applyRun(
         }
     }
 
+    // Repeated results for one cell (a retried check, a duplicated line) count once, with the last status.
+    const finished = new Map<string, CellStatus>()
+    const finishedRows = new Set<string>()
     let current: { key: string; capability: string } | undefined
-    for (const event of events) {
+    for (const event of own) {
         if (event.type === 'capability-start') {
-            current = { key: event.key, capability: event.capability }
             const row = rows.get(event.key)
-            if (!row || !active) continue
+            // A start logged after its own result (out of order) does not reopen the cell.
+            if (!row || finished.has(`${event.key}\u0000${event.capability}`)) continue
+            current = { key: event.key, capability: event.capability }
+            if (!active) continue
             row.state = 'running'
             row.cells[event.capability] = { status: 'running', runId: start.runId, at: event.at }
             continue
@@ -238,13 +269,13 @@ export function applyRun(
         if (event.type === 'capability') {
             const row = rows.get(event.key)
             if (!row) continue
-            summary.finishedCells += 1
-            summary.counts[event.status] += 1
+            const result = viewResult(event.status, event.detail)
+            finished.set(`${event.key}\u0000${event.capability}`, result.status)
+            if (current?.key === event.key && current.capability === event.capability) current = undefined
             // A settled run never overrides newer results (for example a later matrix).
             if (!active && (row.cells[event.capability]?.at ?? '') > event.at) continue
             row.cells[event.capability] = {
-                status: event.status,
-                detail: shorten(event.detail),
+                ...result,
                 at: event.at,
                 durationMilliseconds: event.durationMilliseconds,
                 runId: start.runId,
@@ -258,15 +289,21 @@ export function applyRun(
             if (!row) continue
             const plannedRow = planned.get(event.key)
             row.state = active ? 'done' : 'idle'
-            row.unverifiedQuirks = event.row.quirks.unverified
+            row.unverifiedQuirks = event.row.quirks?.unverified ?? 0
             row.unverified = row.unverifiedQuirks > 0 || !!options.annotations?.get(row.profile)?.unverifiedModel
             if (event.row.firmware) row.firmware = event.row.firmware
             if (event.row.host) row.host = event.row.host
             if (plannedRow?.usb) row.usb = plannedRow.usb
-            summary.finishedRows += 1
+            finishedRows.add(event.key)
             touched.add(event.key)
         }
     }
+    for (const status of finished.values()) {
+        if (status !== 'queued' && status !== 'running') summary.counts[status] += 1
+    }
+    summary.finishedCells = finished.size
+    summary.finishedRows = finishedRows.size
+    summary.cells = Math.max(summary.cells, summary.finishedCells)
     if (active) {
         summary.current = current
         view.activeRun = summary

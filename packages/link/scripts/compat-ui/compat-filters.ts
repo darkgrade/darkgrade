@@ -23,6 +23,7 @@ const FIXED_KEYS = [
     'sort',
     'order',
     'run',
+    'camera',
 ]
 
 export interface CompatFilters {
@@ -56,6 +57,7 @@ export function parseFilters(search: string | URLSearchParams, capabilityIds: st
     const parameters = typeof search === 'string' ? new URLSearchParams(search) : search
     const status: Record<string, CellStatus[]> = {}
     for (const capability of capabilityIds) {
+        if (isReservedKey(capability)) continue
         const statuses = list(parameters.get(capability), CELL_STATUSES) as CellStatus[]
         if (statuses.length) status[capability] = statuses
     }
@@ -102,7 +104,7 @@ export function serializeFilters(filters: CompatFilters, omit: string[] = []): s
 }
 
 export function isReservedKey(key: string): boolean {
-    return FIXED_KEYS.includes(key)
+    return FIXED_KEYS.includes(key) || key === '__proto__' || key === 'constructor' || key === 'prototype'
 }
 
 export function rowKind(row: Pick<ViewRow, 'scope'>): 'model' | 'line' | 'profile' {
@@ -110,7 +112,8 @@ export function rowKind(row: Pick<ViewRow, 'scope'>): 'model' | 'line' | 'profil
 }
 
 function matchesText(row: ViewRow, query: string): boolean {
-    const haystack = `${row.manufacturer} ${row.line} ${row.model} ${row.profile} ${row.usb.join(' ')}`.toLowerCase()
+    const haystack =
+        `${row.manufacturer} ${row.line} ${row.model} ${row.profile} ${(row.usb ?? []).join(' ')}`.toLowerCase()
     return query
         .toLowerCase()
         .split(/\s+/)
@@ -127,13 +130,25 @@ export function matchesFilters(row: ViewRow, filters: CompatFilters): boolean {
     if (filters.unverified === 'yes' && !row.unverified) return false
     if (filters.unverified === 'no' && row.unverified) return false
     for (const [capability, statuses] of Object.entries(filters.status)) {
-        if (!statuses.includes(row.cells[capability]?.status ?? 'no-data')) return false
+        if (!statuses.includes(row.cells?.[capability]?.status ?? 'no-data')) return false
     }
     return !filters.q || matchesText(row, filters.q)
 }
 
-const FIDELITY_ORDER: Record<string, number> = { hardware: 0, captured: 1, documented: 2 }
-const STATUS_ORDER: Record<string, number> = { fail: 0, running: 1, queued: 2, pass: 3, unsupported: 4, 'no-data': 5 }
+const FIDELITY_ORDER: Record<string, number> = { hardware: 0, captured: 1, documented: 2, unknown: 3 }
+const STATUS_ORDER: Record<string, number> = {
+    fail: 0,
+    unknown: 1,
+    running: 2,
+    queued: 3,
+    pass: 4,
+    unsupported: 5,
+    'no-data': 6,
+}
+
+function fidelityRank(row: ViewRow): number {
+    return FIDELITY_ORDER[row.fidelity] ?? 3
+}
 
 function compareText(left: string | undefined, right: string | undefined): number {
     return (left ?? '').localeCompare(right ?? '', undefined, { numeric: true })
@@ -147,17 +162,17 @@ export function compareRows(sort: string | undefined, order: 'asc' | 'desc') {
         if (sort === 'manufacturer') result = compareText(left.manufacturer, right.manufacturer)
         else if (sort === 'line') result = compareText(left.line, right.line)
         else if (sort === 'model') result = compareText(left.model, right.model)
-        else if (sort === 'fidelity') result = FIDELITY_ORDER[left.fidelity] - FIDELITY_ORDER[right.fidelity]
+        else if (sort === 'fidelity') result = fidelityRank(left) - fidelityRank(right)
         else if (sort === 'transport') result = compareText(left.transport, right.transport)
         else if (sort === 'last-run') result = compareText(left.lastRun, right.lastRun)
         else if (sort === 'unverified') result = Number(right.unverified) - Number(left.unverified)
         else if (sort) {
-            const status = (row: ViewRow) => STATUS_ORDER[row.cells[sort]?.status ?? 'no-data'] ?? 9
+            const status = (row: ViewRow) => STATUS_ORDER[row.cells?.[sort]?.status ?? 'no-data'] ?? 1
             result = status(left) - status(right)
         }
         if (result !== 0) return result * direction
         return (
-            FIDELITY_ORDER[left.fidelity] - FIDELITY_ORDER[right.fidelity] ||
+            fidelityRank(left) - fidelityRank(right) ||
             compareText(left.manufacturer, right.manufacturer) ||
             compareText(left.line, right.line) ||
             compareText(left.model, right.model) ||

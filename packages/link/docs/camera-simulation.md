@@ -43,17 +43,26 @@ The catalog documents a standard PTP/IP personality for five Sony lines (`sony-p
 bun run compat:ui            # http://127.0.0.1:4174/ (also from the repository root)
 ```
 
-A dense table, one row per evaluated profile, tier and link. It has columns for manufacturer, line, fidelity, link (USB or PTP/IP), an unverified flag, run progress, the ten capabilities, and the last run time.
+A dense table with one row per evaluated profile, tier and link. Icons carry the data, and each icon has a tooltip and an accessible label with the full words. The **Legend** (top right) explains every icon:
 
-- **Routes** with stable URLs: `/`, `/m/<manufacturer>`, `/m/<manufacturer>/<line>`, `/camera/<profile id>`, `/runs`, and `/gaps`. A camera page shows the camera's identity, USB IDs, catalog entry and libgphoto2 flags. It also shows every result per tier and link with its full message, other profiles with the same USB identity, quirks with citations, recorded exchanges, numbered sources, and the run history.
+- Result cells: ✓ pass, ✗ fail, ⊘ unsupported, a faint dot for no data, a spinner for running, and a ring for queued. A **?** marks a status the file holds that this version does not know.
+- Tier: a camera body for hardware, a trace for captured, a page for a documented per-model mock, and stacked pages for a documented line mock.
+- Link: a plug for USB and Wi-Fi arcs for PTP/IP. A warning triangle marks unverified quirks or catalog entries.
+- Other columns: makers are three-letter codes (hover for the name), capability headings are short (hover for the label), and the last column is the age of the newest result. The progress column appears only while a run is in progress, as a thin bar per row.
+- Result filters per capability sit behind the funnel button. Tier, link and unverified filters are toggle chips.
+
+- **Camera details:** click a row or a model name to open its details in a modal. The modal has identity, USB IDs, catalog entry and libgphoto2 flags, every result per tier and link with its full message, the run history, quirks with citations, recorded exchanges, numbered sources, and other profiles with the same USB identity. The modal's URL is `?camera=<profile id>`, so it can be linked; Escape, the backdrop, the close button and Back close it. `/camera/<profile id>` shows the same content as a page.
+- **Routes** with stable URLs: `/`, `/m/<manufacturer>`, `/m/<manufacturer>/<line>`, `/camera/<profile id>`, `/runs`, and `/gaps`.
 - **Filters** live in the query string, so views can be bookmarked and shared, and back and forward work:
     - `fidelity`, `transport`, `kind` (`model`, `line` or `profile`), `unverified`, and `q` (free-text search over model, profile and VID:PID);
     - `profile` (exact ids);
-    - one key per capability with a status, for example `?set-property=fail`;
+    - one key per capability with a status, for example `?set-property=fail` or `?session=unknown`;
     - `sort` and `order`.
-- **Live progress:** the simulation suite and `compat:hardware` append JSONL to `test-results/compat-runs/<run id>.jsonl` as each capability starts and finishes. The UI tails these logs and pushes changes over server-sent events. It shows overall progress (rows, checks, the capability in flight) and per-row progress; rows not reached yet are queued. The format is in `scripts/camera-profiles/compat-progress.ts`. Set `COMPAT_PROGRESS=off` to write no log.
-- **Results when nothing runs:** the UI loads `test-results/camera-support-matrix.json`, the hardware matrices, imports and newer run logs. `/runs` lists every run log and matrix, opens any of them on its own (`?run=<id>`), loads a file from disk, and can start a simulation run for the current view. `compat:ui -- --results <file>` adds files too.
-- `bun run compat:ui:build [-- --out <dir> --base /compat/]` writes the same pages as static HTML (`<route>/index.html`) plus `view.json` for client-side filtering.
+- **Live progress:** the simulation suite and `compat:hardware` append JSONL to `test-results/compat-runs/<run id>.jsonl` as each capability starts and finishes. The UI tails these logs and pushes changes over server-sent events. It shows overall progress (rows, checks, the capability in flight) and per-row progress; rows not reached yet are queued. If the stream drops or the server restarts, the page reconnects and reloads what it missed. The format is in `scripts/camera-profiles/compat-progress.ts`. Set `COMPAT_PROGRESS=off` to write no log.
+- **Results when nothing runs:** the UI loads `test-results/camera-support-matrix.json`, the hardware matrices, imports and newer run logs. `/runs` lists every run log and matrix, opens any of them on its own (`?run=<id>`), loads a file from disk, and can start or cancel a simulation run. `compat:ui -- --results <file>` adds files too.
+- **API and MCP:** the same server answers a JSON API under `/api/v1`. `bun run compat:mcp` is an MCP server over that API, or over the files directly when no UI is running. An agent can use it to list gaps with next actions, find failing rows, start runs and ingest captures. See [compat-api.md](compat-api.md).
+- **Untrusted input:** result files and run logs are validated as they are read (`scripts/camera-profiles/compat-schema.ts`). Malformed lines are skipped, missing fields get safe defaults, oversized text is clipped, and unknown statuses show as unknown. Everything rendered is escaped. `tests/camera-simulation/compat-robustness.test.ts` fuzzes the data layer and rendering, and `bun run test:ui` loads the UI in Chromium against hostile files.
+- `bun run compat:ui:build [-- --out <dir> --base /compat/]` writes the same pages as static HTML (`<route>/index.html`) plus `view.json` for client-side filtering. The modal works there too.
 
 The UI is TypeScript with no framework: server-rendered pages from `scripts/compat-ui/compat-pages.ts`, plus a small client bundled with Vite that shares the filter and rendering code.
 

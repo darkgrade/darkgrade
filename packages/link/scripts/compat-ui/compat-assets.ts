@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build, type Rollup } from 'vite'
+import { iconStylesheet } from './compat-icons'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 
@@ -26,5 +27,5 @@ export async function buildClientBundle(): Promise<string> {
 }
 
 export function stylesheet(): string {
-    return readFileSync(path.join(directory, 'compat-ui.css'), 'utf8')
+    return `${readFileSync(path.join(directory, 'compat-ui.css'), 'utf8')}\n${iconStylesheet()}\n`
 }

@@ -46,6 +46,14 @@ jobs:
             - name: Run simulated camera suite
               run: bun run test:simulation
 
+            # The compatibility UI against hostile result files in Chromium: no script injection, no
+            # console errors, and the modal, filters and live stream keep working.
+            - name: Install Chromium for the UI smoke test
+              run: bunx playwright install --with-deps chromium
+
+            - name: Compatibility UI in a browser
+              run: bun run test:ui
+
             - name: Render support matrix
               if: always()
               run: |
