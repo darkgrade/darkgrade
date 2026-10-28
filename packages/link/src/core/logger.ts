@@ -97,6 +97,7 @@ export class Logger {
     private config: LoggerConfig
     private nextId: number = 1
     private changeListeners: Array<() => void> = []
+    private static exitHandlerInstalled = false
     private notifyTimeout: NodeJS.Timeout | null = null
     private activeTransfers: Map<number, number> = new Map()
     private registry: Registry | null = null
@@ -148,6 +149,9 @@ export class Logger {
     }
 
     private setupExitHandler() {
+        // Process-wide handlers: one set no matter how many terminal loggers are created.
+        if (Logger.exitHandlerInstalled) return
+        Logger.exitHandlerInstalled = true
         const flush = async () => {
             if (this.notifyTimeout) {
                 clearTimeout(this.notifyTimeout)

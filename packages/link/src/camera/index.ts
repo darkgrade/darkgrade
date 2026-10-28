@@ -1,3 +1,4 @@
+import type { TransactionPolicy } from '@camera/transaction-channel'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -30,6 +31,8 @@ export interface CameraOptions {
     logger?: Partial<LoggerConfig>
     device?: DeviceDescriptor
     transport?: TransportInterface
+    /** Timeouts and DeviceBusy retries for every transaction (see DEFAULT_TRANSACTION_POLICY). */
+    transactionPolicy?: Partial<TransactionPolicy>
     vendorId?: number
 }
 
@@ -58,6 +61,7 @@ export class Camera {
                 this.instance = new GenericCamera(this.transport, this.logger)
                 break
         }
+        if (options?.transactionPolicy) this.instance.configureTransactions(options.transactionPolicy)
     }
 
     getInstance(): GenericCamera {
@@ -525,6 +529,7 @@ export class Camera {
     }
 }
 
+export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'
 export { CanonCamera } from './canon-camera'
 export { GenericCamera } from './generic-camera'
 export { NikonCamera } from './nikon-camera'

@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
@@ -28,6 +29,7 @@ export class NikonCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
+        if (!this.transport.isConnected()) this.liveViewStatus = 'UNKNOWN'
         if (this.liveViewStatus === 'ON') await this.disableLiveView()
         await super.disconnect()
     }
@@ -343,7 +345,10 @@ export class NikonCamera extends GenericCamera {
 
         const response = await this.send(this.registry.operations.StartLiveView, {})
         if (response.code !== OK.code && response.code !== DeviceBusy.code) {
-            throw new Error(`Nikon StartLiveView failed with response 0x${response.code.toString(16)}`)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon StartLiveView failed with response 0x${response.code.toString(16)}`
+            )
         }
         await this.waitForDeviceReady()
         this.liveViewStatus = 'ON'
@@ -364,7 +369,10 @@ export class NikonCamera extends GenericCamera {
 
         const response = await this.send(this.registry.operations.EndLiveView, {})
         if (response.code !== OK.code && response.code !== NotLiveView.code) {
-            throw new Error(`Nikon EndLiveView failed with response 0x${response.code.toString(16)}`)
+            throw new PTPResponseError(
+                response.code,
+                `Nikon EndLiveView failed with response 0x${response.code.toString(16)}`
+            )
         }
         await this.waitForDeviceReady()
         this.liveViewStatus = 'OFF'
