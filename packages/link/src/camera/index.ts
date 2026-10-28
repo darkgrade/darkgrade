@@ -7,6 +7,14 @@ import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-
 import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
 import type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import {
+    createFujifilmRegistry,
+    createLeicaRegistry,
+    createOlympusRegistry,
+    createPanasonicRegistry,
+    createSigmaRegistry,
+    type VendorOperationRegistry,
+} from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -26,6 +34,7 @@ import {
     type SonyPropertyState,
     type SonyZoomResult,
 } from './sony-camera'
+import { VendorExtensionCamera } from './vendor-extension-camera'
 
 export interface CameraOptions {
     logger?: Partial<LoggerConfig>
@@ -37,7 +46,7 @@ export interface CameraOptions {
 }
 
 export class Camera {
-    private instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera
+    private instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera | VendorExtensionCamera
     private deviceDescriptor?: DeviceDescriptor
     private logger: Logger
     private transport: TransportInterface
@@ -47,7 +56,8 @@ export class Camera {
         this.transport = options?.transport ?? new USBTransport(this.logger)
         this.deviceDescriptor = options?.device
 
-        switch (options?.vendorId ?? options?.device?.usb?.filters?.[0]?.vendorId) {
+        const vendorId = options?.vendorId ?? options?.device?.usb?.filters?.[0]?.vendorId
+        switch (vendorId) {
             case VendorIDs.SONY:
                 this.instance = new SonyCamera(this.transport, this.logger)
                 break
@@ -57,11 +67,32 @@ export class Camera {
             case VendorIDs.CANON:
                 this.instance = new CanonCamera(this.transport, this.logger)
                 break
+            case VendorIDs.FUJIFILM:
+            case VendorIDs.PANASONIC:
+            case VendorIDs.OLYMPUS:
+            case VendorIDs.OM_DIGITAL:
+            case VendorIDs.LEICA:
+            case VendorIDs.SIGMA:
+                this.instance = this.vendorExtensionCamera(vendorId)
+                break
             default:
                 this.instance = new GenericCamera(this.transport, this.logger)
                 break
         }
         if (options?.transactionPolicy) this.instance.configureTransactions(options.transactionPolicy)
+    }
+
+    private vendorExtensionCamera(vendorId: number): VendorExtensionCamera {
+        const littleEndian = this.transport.isLittleEndian()
+        const registries: Record<number, () => VendorOperationRegistry> = {
+            [VendorIDs.FUJIFILM]: () => createFujifilmRegistry(littleEndian),
+            [VendorIDs.PANASONIC]: () => createPanasonicRegistry(littleEndian),
+            [VendorIDs.OLYMPUS]: () => createOlympusRegistry(littleEndian),
+            [VendorIDs.OM_DIGITAL]: () => createOlympusRegistry(littleEndian),
+            [VendorIDs.LEICA]: () => createLeicaRegistry(littleEndian),
+            [VendorIDs.SIGMA]: () => createSigmaRegistry(littleEndian),
+        }
+        return new VendorExtensionCamera(this.transport, this.logger, registries[vendorId](), vendorId)
     }
 
     getInstance(): GenericCamera {
@@ -535,6 +566,7 @@ export { GenericCamera } from './generic-camera'
 export { NikonCamera } from './nikon-camera'
 export { SONY_CAMERA_BUTTONS, SonyCamera } from './sony-camera'
 export type { SonyCameraButton, SonyOsdImage, SonyPropertyState, SonyZoomResult } from './sony-camera'
+export { VendorExtensionCamera } from './vendor-extension-camera'
 
 export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/wifi-keyboard'
 export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'

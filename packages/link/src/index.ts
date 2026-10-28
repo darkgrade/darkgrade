@@ -5,6 +5,7 @@ export { Camera } from '@camera/index'
 export { NikonCamera } from '@camera/nikon-camera'
 export { SonyCamera } from '@camera/sony-camera'
 export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'
+export { VendorExtensionCamera } from '@camera/vendor-extension-camera'
 export {
     PTPDecodeError,
     PTPDisconnectedError,
