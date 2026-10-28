@@ -16,7 +16,7 @@ export type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-
 
 // Transport implementations
 export { TransportType } from '@transport/interfaces/transport-types'
-export { IPTransport } from '@transport/ip/ip-transport'
+export { IPTransport, PTPIPTransactionCancelledError } from '@transport/ip/ip-transport'
 export type { IPTransportOptions } from '@transport/ip/ip-transport'
 export { loadCameraProfile, validateCameraProfile } from '@transport/simulated/camera-profile'
 export type {
@@ -90,3 +90,6 @@ export {
     SonyBluetoothRemote,
 } from '@vendors/sony/bluetooth-remote'
 export type { SonyBluetoothChannel, SonyBluetoothDirection } from '@vendors/sony/bluetooth-remote'
+
+export { NikonEventDataCodec } from '@vendors/nikon/event-data'
+export type { NikonQueuedEvent } from '@vendors/nikon/event-data'

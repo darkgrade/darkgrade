@@ -3486,8 +3486,7 @@
       "line": "EOS R (mirrorless, RF mount)",
       "models": [
         "Canon EOS R6",
-        "EOS R6",
-        "Canon Digital Camera"
+        "EOS R6"
       ],
       "sources": [
         "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L2577"
@@ -6002,8 +6001,7 @@
       "line": "Z (mirrorless, Z mount)",
       "models": [
         "Nikon Z6 III",
-        "Z6 III",
-        "NIKON DSC Z6_3"
+        "Z6 III"
       ],
       "sources": [
         "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1857"
@@ -8787,6 +8785,7 @@
       "manufacturer": "Sony",
       "line": "Alpha APS-C E-mount (α6xxx / α5xxx)",
       "models": [
+        "Sony A6700 (PC Control)",
         "ILCE-6700 (α6700)",
         "ILCE-6700"
       ],
@@ -9867,26 +9866,11 @@
       "manufacturer": "OM System / Olympus",
       "line": "PEN / compacts / TG (download-only)",
       "models": [
-        "Olympus E-PL5"
-      ],
-      "sources": [
-        "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1960"
-      ],
-      "profiles": []
-    },
-    {
-      "manufacturer": "OM System / Olympus",
-      "line": "PEN / compacts / TG (download-only)",
-      "models": [
+        "Olympus E-PL5",
         "E-PL5"
       ],
       "sources": [
-        "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
-        "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
-        "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
-        "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
-        "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
-        "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md"
+        "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/library.c#L1960"
       ],
       "profiles": [
         {

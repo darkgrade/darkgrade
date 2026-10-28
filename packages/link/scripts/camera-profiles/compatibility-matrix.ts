@@ -15,6 +15,16 @@ import {
 
 export const FIDELITY_RANK: Record<MatrixFidelity, number> = { hardware: 3, captured: 2, documented: 1 }
 
+export interface CapabilityEvidence {
+    fidelity: MatrixFidelity
+    profile: string
+    firmware?: string
+    host?: string
+    generatedAt: string
+    revision?: string
+    conflicts?: (Omit<CapabilityEvidence, 'conflicts'> & CapabilityResult)[]
+}
+
 export interface CompatibilityCamera {
     manufacturer: string
     line: string
@@ -25,6 +35,8 @@ export interface CompatibilityCamera {
     fidelity: MatrixFidelity
     profile: string
     usb: string[]
+    /** Network-only cameras retain their results without implying a USB test. */
+    primaryTransport?: 'ptp-ip'
     firmware?: string
     host?: string
     /** Weaker evidence for the same camera that the chosen row supersedes. */
@@ -42,69 +54,122 @@ export interface CompatibilityCamera {
         resultEvidence: CompatibilityCamera['resultEvidence']
     }
     /** Source of each selected capability; camera-level fidelity does not promote weaker results. */
-    resultEvidence: Record<
-        string,
-        {
-            fidelity: MatrixFidelity
-            profile: string
-            firmware?: string
-            host?: string
-            generatedAt: string
-            revision?: string
-        }
-    >
+    resultEvidence: Record<string, CapabilityEvidence>
 }
 
 export interface CompatibilityMatrix {
     generatedAt: string
     revision?: string
     capabilities: { id: string; label: string }[]
-    sources: { simulation?: string; hardware?: string; hardwareGeneratedAt?: string }
+    sources: {
+        simulation?: string
+        hardware?: string
+        hardwareGeneratedAt?: string
+        hardwareOldestGeneratedAt?: string
+    }
     cameras: CompatibilityCamera[]
     totals: Partial<Record<MatrixFidelity, { cameras: number } & StatusCounts>>
 }
 
-/** Exact catalog/profile aliases may join rows; a shared USB ID alone cannot join models. */
+const normalizeIdentity = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ')
+
+/** Catalog aliases apply only within the row's declared manufacturer and product line. */
 function modelIdentity(row: SupportMatrixRow, usb: string): string {
     const [vendorId, productId] = usb.split(':').map(value => Number.parseInt(value, 16))
     const identified = identifyCamera({ vendorId, productId, ptpModel: row.model })
     const candidate = identified.status === 'matched' ? identified.candidates[0] : undefined
-    if (candidate) return `${candidate.manufacturer}|${candidate.line}|${candidate.models[0]}`
-    return `${row.manufacturer}|${row.catalogLine ?? row.line}|${row.model.trim().toLowerCase()}`
+    const manufacturer = normalizeIdentity(row.manufacturer)
+    const line = normalizeIdentity(row.catalogLine ?? row.line)
+    const matches =
+        candidate &&
+        normalizeIdentity(candidate.manufacturer) === manufacturer &&
+        normalizeIdentity(candidate.line) === line
+    return `${manufacturer}|${line}|${normalizeIdentity(matches ? candidate.models[0] : row.model)}`
 }
 
-/** Groups only matching USB identities AND model aliases; unknown firmware cannot bridge versions. */
-function groupByUsb(rows: SupportMatrixRow[]): SupportMatrixRow[][] {
+type ObservedRow = SupportMatrixRow & { source: { generatedAt: string; revision?: string } }
+
+/** Group all transports, but never borrow results from a different or unknown firmware version. */
+function groupCameras(rows: ObservedRow[]): ObservedRow[][] {
     const parent = rows.map((_, index) => index)
     const find = (index: number): number => (parent[index] === index ? index : (parent[index] = find(parent[index])))
-    const owner = new Map<string, number>()
+    const owners = new Map<string, number>()
     rows.forEach((row, index) => {
-        for (const usb of row.usb ?? []) {
-            const identity = `${modelIdentity(row, usb)}|${usb}`
-            const existing = owner.get(identity)
-            if (existing === undefined) owner.set(identity, index)
+        const identities = row.usb?.length
+            ? row.usb.map(usb => {
+                  const identity = usb.toLowerCase()
+                  if (!/^[0-9a-f]{4}:[0-9a-f]{4}$/.test(identity)) throw new Error(`Invalid report USB identity ${usb}`)
+                  return `${modelIdentity(row, identity)}|${identity}`
+              })
+            : [
+                  `${normalizeIdentity(row.manufacturer)}|${normalizeIdentity(row.catalogLine ?? row.line)}|${normalizeIdentity(row.model)}|profile:${row.profile}`,
+              ]
+        for (const identity of identities) {
+            const key = `${identity}|firmware:${row.firmware ?? ''}`
+            const existing = owners.get(key)
+            if (existing === undefined) owners.set(key, index)
             else parent[find(index)] = find(existing)
         }
     })
-    const groups = new Map<number, SupportMatrixRow[]>()
+    const groups = new Map<number, ObservedRow[]>()
     rows.forEach((row, index) => groups.set(find(index), [...(groups.get(find(index)) ?? []), row]))
-    return [...groups.values()].flatMap(group => {
-        const firmwares = [...new Set(group.map(row => row.firmware).filter(Boolean))]
-        if (firmwares.length < 2) return [group]
-        // Unknown firmware cannot bridge conflicting known firmware observations.
-        return [
-            group.filter(row => !row.firmware),
-            ...firmwares.map(firmware => group.filter(row => row.firmware === firmware)),
-        ].filter(rows => rows.length)
-    })
+    return [...groups.values()]
 }
 
-function strongest(rows: SupportMatrixRow[]): SupportMatrixRow {
-    return [...rows].sort((left, right) => FIDELITY_RANK[right.fidelity] - FIDELITY_RANK[left.fidelity])[0]
+const observedAt = (row: ObservedRow) => Date.parse(row.source.generatedAt) || 0
+const evidenceOrder = (left: ObservedRow, right: ObservedRow) =>
+    FIDELITY_RANK[right.fidelity] - FIDELITY_RANK[left.fidelity] ||
+    observedAt(right) - observedAt(left) ||
+    left.profile.localeCompare(right.profile)
+
+function evidenceFor(row: ObservedRow): CapabilityEvidence {
+    return {
+        fidelity: row.fidelity,
+        profile: row.profile,
+        generatedAt: row.source.generatedAt,
+        ...(row.firmware && { firmware: row.firmware }),
+        ...(row.host && { host: row.host }),
+        ...(row.source.revision && { revision: row.source.revision }),
+    }
 }
 
-function strongestOrUndefined(rows: SupportMatrixRow[]): SupportMatrixRow | undefined {
-    return rows.length ? strongest(rows) : undefined
+/** Each transport/capability chooses its own source; equal-time contradictions stay visible. */
+function selectResults(rows: ObservedRow[], capabilities: SupportMatrix['capabilities']) {
+    const ordered = [...rows].sort(evidenceOrder)
+    const results: CompatibilityCamera['results'] = {}
+    const resultEvidence: CompatibilityCamera['resultEvidence'] = {}
+    for (const capability of capabilities) {
+        const known = ordered.filter(
+            row => row.results[capability.id] && row.results[capability.id].status !== 'no-data'
+        )
+        const selected = known[0] ?? ordered.find(row => row.results[capability.id])
+        if (!selected) continue
+        const peers = known.filter(
+            row => row.fidelity === selected.fidelity && observedAt(row) === observedAt(selected)
+        )
+        const conflict = new Set(peers.map(row => row.results[capability.id].status)).size > 1
+        results[capability.id] = conflict
+            ? {
+                  status: 'no-data',
+                  detail: `Conflicting ${selected.fidelity} results at the same observation time; inspect resultEvidence.conflicts`,
+              }
+            : selected.results[capability.id]
+        resultEvidence[capability.id] = {
+            ...evidenceFor(selected),
+            ...(conflict && { conflicts: peers.map(row => ({ ...evidenceFor(row), ...row.results[capability.id] })) }),
+        }
+    }
+    return { results, resultEvidence }
+}
+
+function observe(matrix: SupportMatrix): ObservedRow[] {
+    return matrix.rows.map(row => ({
+        ...row,
+        source: row.source ?? {
+            generatedAt: matrix.generatedAt,
+            ...(matrix.revision && { revision: matrix.revision }),
+        },
+    }))
 }
 
 export function mergeCompatibility(
@@ -112,47 +177,42 @@ export function mergeCompatibility(
     hardware?: SupportMatrix,
     sources: CompatibilityMatrix['sources'] = {}
 ): CompatibilityMatrix {
-    const hasModelMocks = simulation.rows.some(row => row.scope === 'model')
-    // Line mocks stand in for a whole line; with per-model mocks present they would duplicate one model.
-    const simulated = simulation.rows.filter(row => !(hasModelMocks && row.scope === 'line'))
-    const rows = [...(hardware?.rows.filter(row => row.fidelity === 'hardware') ?? []), ...simulated]
-    const overUsb = rows.filter(row => row.transport !== 'ptp-ip')
-    const overPtpIp = rows.filter(row => row.transport === 'ptp-ip')
-
-    const cameras = groupByUsb(overUsb).map(group => {
-        const chosen = strongest(group)
-        const identities = new Set(group.flatMap(row => row.usb ?? []))
-        const network = strongestOrUndefined(
-            overPtpIp.filter(
-                row =>
+    const observedSimulation = observe(simulation)
+    const modelMocks = observedSimulation.filter(row => row.scope === 'model')
+    // Filtered runs may contain model mocks for only one line or one representative body.
+    // Drop a line mock only when that exact model/USB/firmware is already represented.
+    const simulated = observedSimulation.filter(
+        row =>
+            row.scope !== 'line' ||
+            !modelMocks.some(
+                model =>
+                    model.firmware === row.firmware &&
                     row.usb?.some(
-                        identity =>
-                            identities.has(identity) && modelIdentity(row, identity) === modelIdentity(chosen, identity)
-                    ) &&
-                    (!row.firmware || !chosen.firmware || row.firmware === chosen.firmware)
+                        usb => model.usb?.includes(usb) && modelIdentity(model, usb) === modelIdentity(row, usb)
+                    )
             )
-        )
-        const networkMatrix = network?.fidelity === 'hardware' ? (hardware ?? simulation) : simulation
+    )
+    const observedHardware = hardware ? observe(hardware).filter(row => row.fidelity === 'hardware') : []
+    const rows = [...observedHardware, ...simulated]
+    const capabilities = [
+        ...new Map(
+            [
+                ...simulation.capabilities,
+                ...(hardware?.capabilities ?? []),
+                ...rows.flatMap(row => Object.keys(row.results).map(id => ({ id, label: id }))),
+            ]
+                .reverse()
+                .map(capability => [capability.id, capability])
+        ).values(),
+    ].reverse()
+    const cameras = groupCameras(rows).map(group => {
+        const usbRows = group.filter(row => row.transport !== 'ptp-ip')
+        const networkRows = group.filter(row => row.transport === 'ptp-ip')
+        const primaryRows = usbRows.length ? usbRows : networkRows
+        const chosen = [...primaryRows].sort(evidenceOrder)[0]
+        const network = usbRows.length && networkRows.length ? [...networkRows].sort(evidenceOrder)[0] : undefined
+        const networkResults = network ? selectResults(networkRows, capabilities) : undefined
         const models = [...new Set(group.map(row => row.model))]
-        const results: CompatibilityCamera['results'] = {}
-        const resultEvidence: CompatibilityCamera['resultEvidence'] = {}
-        const ordered = [...group].sort((left, right) => FIDELITY_RANK[right.fidelity] - FIDELITY_RANK[left.fidelity])
-        for (const capability of simulation.capabilities) {
-            const source =
-                ordered.find(row => row.results[capability.id]?.status !== 'no-data' && row.results[capability.id]) ??
-                ordered.find(row => row.results[capability.id])
-            if (!source) continue
-            results[capability.id] = source.results[capability.id]
-            const matrix = source.fidelity === 'hardware' ? (hardware ?? simulation) : simulation
-            resultEvidence[capability.id] = {
-                fidelity: source.fidelity,
-                profile: source.profile,
-                generatedAt: matrix.generatedAt,
-                ...(source.firmware && { firmware: source.firmware }),
-                ...(source.host && { host: source.host }),
-                ...(matrix.revision && { revision: matrix.revision }),
-            }
-        }
         return {
             manufacturer: chosen.manufacturer,
             line: chosen.line,
@@ -161,38 +221,26 @@ export function mergeCompatibility(
             aliases: models.filter(model => model !== chosen.model),
             fidelity: chosen.fidelity,
             profile: chosen.profile,
-            usb: [...new Set(group.flatMap(row => row.usb ?? []))].sort(),
+            usb: [...new Set(group.flatMap(row => row.usb ?? []).map(usb => usb.toLowerCase()))].sort(),
+            ...(!usbRows.length && { primaryTransport: 'ptp-ip' as const }),
             ...(chosen.firmware && { firmware: chosen.firmware }),
             ...(chosen.host && { host: chosen.host }),
             alsoCoveredBy: group
                 .filter(row => row !== chosen)
                 .map(row => ({ fidelity: row.fidelity, profile: row.profile })),
-            results,
-            resultEvidence,
-            ...(network && {
-                ptpIp: {
-                    fidelity: network.fidelity,
-                    profile: network.profile,
-                    results: network.results,
-                    ...(network.firmware && { firmware: network.firmware }),
-                    ...(network.host && { host: network.host }),
-                    generatedAt: networkMatrix.generatedAt,
-                    ...(networkMatrix.revision && { revision: networkMatrix.revision }),
-                    resultEvidence: Object.fromEntries(
-                        Object.keys(network.results).map(capability => [
-                            capability,
-                            {
-                                fidelity: network.fidelity,
-                                profile: network.profile,
-                                generatedAt: networkMatrix.generatedAt,
-                                ...(network.firmware && { firmware: network.firmware }),
-                                ...(network.host && { host: network.host }),
-                                ...(networkMatrix.revision && { revision: networkMatrix.revision }),
-                            },
-                        ])
-                    ),
-                },
-            }),
+            ...selectResults(primaryRows, capabilities),
+            ...(network &&
+                networkResults && {
+                    ptpIp: {
+                        fidelity: network.fidelity,
+                        profile: network.profile,
+                        ...networkResults,
+                        ...(network.firmware && { firmware: network.firmware }),
+                        ...(network.host && { host: network.host }),
+                        generatedAt: network.source.generatedAt,
+                        ...(network.source.revision && { revision: network.source.revision }),
+                    },
+                }),
         } satisfies CompatibilityCamera
     })
     cameras.sort(
@@ -200,9 +248,9 @@ export function mergeCompatibility(
             FIDELITY_RANK[right.fidelity] - FIDELITY_RANK[left.fidelity] ||
             left.manufacturer.localeCompare(right.manufacturer) ||
             left.line.localeCompare(right.line) ||
-            left.model.localeCompare(right.model)
+            left.model.localeCompare(right.model) ||
+            (left.firmware ?? '').localeCompare(right.firmware ?? '')
     )
-
     const totals: CompatibilityMatrix['totals'] = {}
     for (const fidelity of Object.keys(FIDELITY_RANK) as MatrixFidelity[]) {
         const matching = cameras.filter(camera => camera.fidelity === fidelity)
@@ -210,9 +258,19 @@ export function mergeCompatibility(
     }
     return {
         generatedAt: new Date().toISOString(),
-        ...((hardware?.revision ?? simulation.revision) && { revision: simulation.revision ?? hardware?.revision }),
-        capabilities: simulation.capabilities,
-        sources: { ...sources, ...(hardware && { hardwareGeneratedAt: hardware.generatedAt }) },
+        ...(simulation.revision && { revision: simulation.revision }),
+        capabilities,
+        sources: {
+            ...sources,
+            ...(observedHardware.length && {
+                hardwareGeneratedAt: [...observedHardware].sort(
+                    (left, right) => observedAt(right) - observedAt(left)
+                )[0].source.generatedAt,
+                hardwareOldestGeneratedAt: [...observedHardware].sort(
+                    (left, right) => observedAt(left) - observedAt(right)
+                )[0].source.generatedAt,
+            }),
+        },
         cameras,
         totals,
     }
@@ -238,6 +296,7 @@ function cameraTable(matrix: CompatibilityMatrix, cameras: CompatibilityCamera[]
         'Manufacturer',
         'Model',
         'USB',
+        'Transport',
         'Fidelity',
         ...matrix.capabilities.map(capability => capability.label),
     ]
@@ -249,6 +308,7 @@ function cameraTable(matrix: CompatibilityMatrix, cameras: CompatibilityCamera[]
                 camera.manufacturer,
                 camera.firmware ? `${camera.model} (fw ${camera.firmware})` : camera.model,
                 camera.usb.join(', '),
+                camera.primaryTransport ?? 'usb',
                 fidelityLabel(camera),
                 ...matrix.capabilities.map(capability => {
                     const symbol = STATUS_CELL[camera.results[capability.id]?.status ?? 'no-data']
@@ -291,10 +351,10 @@ function summary(matrix: CompatibilityMatrix): string {
     const parts = (Object.keys(FIDELITY_RANK) as MatrixFidelity[])
         .filter(fidelity => matrix.totals[fidelity])
         .map(fidelity => `${matrix.totals[fidelity]!.cameras} ${fidelity}`)
-    const network = matrix.cameras.filter(camera => camera.ptpIp).length
-    return `${matrix.cameras.length} cameras: ${parts.join(', ')}.${network ? ` ${network} also simulated over PTP/IP (Wi-Fi).` : ''}${matrix.revision ? ` Revision \`${matrix.revision}\`.` : ''}${
+    const network = matrix.cameras.filter(camera => camera.ptpIp || camera.primaryTransport === 'ptp-ip').length
+    return `${matrix.cameras.length} cameras: ${parts.join(', ')}.${network ? ` ${network} have PTP/IP results.` : ''}${matrix.revision ? ` Revision \`${matrix.revision}\`.` : ''}${
         matrix.sources.hardwareGeneratedAt
-            ? ` Hardware results from ${matrix.sources.hardwareGeneratedAt.slice(0, 10)}.`
+            ? ` Hardware observation dates ${matrix.sources.hardwareOldestGeneratedAt?.slice(0, 10) ?? matrix.sources.hardwareGeneratedAt.slice(0, 10)} through ${matrix.sources.hardwareGeneratedAt.slice(0, 10)}.`
             : ' No hardware results yet.'
     }`
 }

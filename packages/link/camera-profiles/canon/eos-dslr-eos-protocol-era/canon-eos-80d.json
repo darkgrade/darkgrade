@@ -6,7 +6,7 @@
     "model": "EOS 80D",
     "usb": { "vendorId": "0x04a9", "productIds": ["0x3294"], "source": 0 },
     "firmware": "3-1.0.3",
-    "catalog": { "manufacturer": "Canon", "line": "EOS DSLR (EOS-protocol era: 40D/450D and later)" },
+    "catalog": { "manufacturer": "Canon", "line": "EOS DSLR (EOS-protocol era: 40D/450D and later)", "model": "Canon EOS 80D" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

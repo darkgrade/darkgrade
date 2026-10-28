@@ -25,7 +25,7 @@
         "usb-ids": "bun run src/transport/usb/usb-ids/generate-usb-ids.ts",
         "profiles:ingest": "bun run scripts/camera-profiles/ingest-test-bench.ts",
         "profiles:documented": "bun run scripts/camera-profiles/build-documented-profiles.ts",
-        "test:simulation": "vitest run tests/camera-simulation",
+        "test:simulation": "vitest run tests/camera-simulation tests/17_olympus_generic_camera.test.ts tests/18_canon_capture_response.test.ts tests/nikon-live-view-lifecycle.test.ts tests/canon-controls.test.ts tests/canon-live-view.test.ts tests/sony-camera-buttons-osd.test.ts tests/ptpip-transport.test.ts",
         "simulation:matrix": "bun run scripts/camera-profiles/render-support-matrix.ts",
         "lab:registry": "bun run scripts/camera-lab/lab-registry.ts",
         "lab:hardware": "bun run scripts/camera-lab/run-hardware-suite.ts",

@@ -328,61 +328,61 @@ await camera.connect()
 
 ### Camera compatibility matrix
 
-808 cameras: 8 captured, 800 documented. 81 also simulated over PTP/IP (Wi-Fi). No hardware results yet.
+811 cameras: 8 captured, 803 documented. 81 have PTP/IP results. No hardware results yet.
 
 ✅ pass · ❌ fail · ➖ unsupported (camera refused it or darkgrade has no definition) · · no data. Fidelity: **hardware** = run on a physical body in the device lab; **captured** = replayed testbench evidence; **documented** = built from libgphoto2 and vendor documentation, not hardware-verified. Each capability uses its strongest available evidence; a cell labels any weaker source. A pass on captured or documented data is a software result, not physical validation. Known firmware versions remain separate; shared USB IDs do not establish model aliases.
 
-| Manufacturer | Model | USB | Fidelity | Connect / session | DeviceInfo | List properties | Get property | Set property | Capture | Live view | Events | Recorded exchanges | Vendor op definitions |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Canon | EOS 80D (fw 3-1.0.3) | 04a9:3294 | captured | ✅ documented | ✅ documented | ✅ documented | · | · | · | · | · | ✅ | ➖ |
-| Canon | EOS R6 | 04a9:32f5 | captured | ✅ documented | ✅ documented | ✅ documented | · | · | · | · | · | ✅ | ➖ documented |
-| Canon | EOS R6 Mark III (fw 1.0.1) | 04a9:3323 | captured | ✅ documented | ✅ documented | ✅ documented | · | · | · | · | · | ✅ | ➖ |
-| Nikon | Z 7 | 04b0:0442 | captured | ✅ documented | ✅ documented | ✅ documented | · | · | · | · | · | ✅ documented | ➖ documented |
-| Nikon | Z6 III (fw V2.00) | 04b0:0454 | captured | ✅ documented | ✅ documented | ✅ documented | · | · | · | · | · | ✅ | ➖ |
-| OM System / Olympus | E-PL5 | 07b4:012f | captured | ✅ | · | · | · | · | ➖ | ➖ | · | ✅ | · |
-| Sony | ILCE-6700 (α6700) (fw 2.00) | 054c:096f, 054c:0e78 | captured | · | ✅ documented | · | · | · | · | · | · | ✅ | ➖ |
-| Sony | ILME-FX2 | 054c:0f4a | captured | · | ✅ documented | · | · | · | · | · | · | ✅ documented | ✅ documented |
+| Manufacturer | Model | USB | Transport | Fidelity | Connect / session | DeviceInfo | List properties | Get property | Set property | Capture | Live view | Events | Recorded exchanges | Vendor op definitions |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Canon | EOS 80D (fw 3-1.0.3) | 04a9:3294 | usb | captured | · | · | · | · | · | · | · | · | ✅ | ➖ |
+| Canon | EOS R6 | 04a9:32f5 | usb | captured | ✅ documented | ✅ documented | · | · | · | · | ❌ documented | · | ✅ | ➖ documented |
+| Canon | EOS R6 Mark III (fw 1.0.1) | 04a9:3323 | usb | captured | · | · | · | · | · | · | · | · | ➖ | ➖ |
+| Nikon | Z 7 | 04b0:0442 | usb | captured | ✅ documented | ✅ documented | · | · | · | · | · | · | · | ➖ documented |
+| Nikon | Z6 III (fw V2.00) | 04b0:0454 | usb | captured | · | · | · | · | · | · | · | · | ➖ | ➖ |
+| OM System / Olympus | E-PL5 | 07b4:012f | usb | captured | ✅ | ✅ documented | · | · | · | ➖ | ➖ | · | · | · |
+| Sony | ILCE-6700 (α6700) (fw 2.00) | 054c:096f, 054c:0e78 | usb | captured | · | · | · | · | · | · | · | · | ✅ | ➖ |
+| Sony | ILME-FX2 | 054c:0f4a | usb | captured | · | ✅ documented | · | · | · | · | · | · | ✅ documented | ✅ documented |
 
-<details><summary>Documented cameras by line (800 cameras, not hardware-verified)</summary>
+<details><summary>Documented cameras by line (803 cameras, not hardware-verified)</summary>
 
 | Line | Cameras | Connect / session ✅ | DeviceInfo ✅ | List properties ✅ | Get property ✅ | Set property ✅ | Capture ✅ | Live view ✅ | Events ✅ | Recorded exchanges ✅ | Vendor op definitions ✅ |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Canon · Cinema EOS | 2 | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Canon · Cinema EOS | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Canon · EOS DSLR (early PTP) | 10 | 0 | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Canon · EOS DSLR (EOS-protocol era) | 54 | 54 | 54 | 54 | 0 | 0 | 0 | 0 | 0 | 54 | 0 |
-| Canon · EOS M | 11 | 0 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 11 | 0 |
-| Canon · EOS R | 13 | 13 | 13 | 13 | 0 | 0 | 0 | 0 | 0 | 13 | 0 |
-| Canon · PowerShot / IXUS (EOS-style firmware) | 19 | 0 | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 19 | 0 |
+| Canon · EOS DSLR (EOS-protocol era) | 55 | 55 | 55 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Canon · EOS M | 11 | 0 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Canon · EOS R | 14 | 14 | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Canon · PowerShot / IXUS (EOS-style firmware) | 19 | 0 | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Canon · PowerShot / IXUS (legacy Canon PTP) | 175 | 0 | 175 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · GFX | 6 | 6 | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · Legacy FinePix / X-A / X-S1 / X10-X30 / S5 Pro | 53 | 53 | 53 | 53 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-E | 4 | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-H | 3 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-Pro | 2 | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-S / X-M | 4 | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X-T | 9 | 9 | 9 | 9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Fujifilm · X100 | 3 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| GoPro · HERO action cameras | 17 | 17 | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Leica · M | 2 | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Leica · Panasonic-based compacts | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Leica · Q | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Leica · SL | 3 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Nikon · Coolpix / KeyMission | 113 | 113 | 113 | 113 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Nikon · D-series DSLR | 51 | 51 | 51 | 51 | 0 | 0 | 0 | 0 | 0 | 51 | 0 |
-| Nikon · Nikon 1 | 10 | 10 | 10 | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Nikon · Z | 11 | 11 | 11 | 11 | 0 | 0 | 0 | 0 | 0 | 11 | 0 |
-| OM System / Olympus · Olympus E-series DSLR | 2 | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| OM System / Olympus · OM-D / OM System | 7 | 7 | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| OM System / Olympus · PEN / compacts / TG | 17 | 17 | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Panasonic (LUMIX) · LUMIX compacts / bridge | 15 | 15 | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Panasonic (LUMIX) · LUMIX G / GH | 3 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Pentax / Ricoh Imaging · Legacy Optio / Caplio / WG | 9 | 9 | 9 | 9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Pentax / Ricoh Imaging · Pentax K DSLR | 6 | 6 | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Pentax / Ricoh Imaging · Ricoh GR | 3 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Pentax / Ricoh Imaging · Ricoh THETA | 5 | 5 | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Sigma · fp series | 2 | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · GFX | 6 | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · Legacy FinePix / X-A / X-S1 / X10-X30 / S5 Pro | 53 | 53 | 53 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · X-E | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · X-H | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · X-Pro | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · X-S / X-M | 4 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · X-T | 9 | 9 | 9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Fujifilm · X100 | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| GoPro · HERO action cameras | 17 | 17 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Leica · M | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Leica · Panasonic-based compacts | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Leica · Q | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Leica · SL | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Nikon · Coolpix / KeyMission | 113 | 113 | 113 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Nikon · D-series DSLR | 51 | 51 | 51 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Nikon · Nikon 1 | 10 | 10 | 10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Nikon · Z | 12 | 12 | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| OM System / Olympus · Olympus E-series DSLR | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| OM System / Olympus · OM-D / OM System | 7 | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| OM System / Olympus · PEN / compacts / TG | 16 | 16 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Panasonic (LUMIX) · LUMIX compacts / bridge | 15 | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Panasonic (LUMIX) · LUMIX G / GH | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Pentax / Ricoh Imaging · Legacy Optio / Caplio / WG | 9 | 9 | 9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Pentax / Ricoh Imaging · Pentax K DSLR | 6 | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Pentax / Ricoh Imaging · Ricoh GR | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Pentax / Ricoh Imaging · Ricoh THETA | 5 | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Sigma · fp series | 2 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Sony · A-mount SLT / ILCA | 15 | 0 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15 |
-| Sony · Alpha APS-C E-mount | 21 | 0 | 21 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 21 |
+| Sony · Alpha APS-C E-mount | 22 | 0 | 22 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 22 |
 | Sony · Alpha full-frame E-mount | 28 | 0 | 28 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 28 |
 | Sony · Cinema Line FX / ILME | 2 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
 | Sony · Legacy Cyber-shot DSC / Handycam | 63 | 0 | 63 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |

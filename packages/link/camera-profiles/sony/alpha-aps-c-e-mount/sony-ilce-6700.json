@@ -12,7 +12,7 @@
         "productString": "ILCE-6700"
     },
     "firmware": "2.00",
-    "catalog": { "manufacturer": "Sony", "line": "Alpha APS-C E-mount (α6xxx / α5xxx)" },
+    "catalog": { "manufacturer": "Sony", "line": "Alpha APS-C E-mount (α6xxx / α5xxx)", "model": "Sony A6700 (PC Control)" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

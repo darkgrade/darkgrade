@@ -147,12 +147,18 @@ export function validateRegistry(registry: CameraRegistry, directory = profileDi
         cameraIds.add(camera.id)
         validateCamera(camera, hostIds, problems, directory)
     }
-    const identities = registry.cameras
-        .filter(camera => camera.enabled && camera.usb)
-        .map(camera => usbPair(camera.usb!.vendorId, camera.usb!.productId))
-    const duplicated = identities.filter((identity, index) => identities.indexOf(identity) !== index)
-    for (const identity of new Set(duplicated))
-        problems.push(`${identity}: two enabled cameras share a USB identity; bench:probe could not tell them apart`)
+    const identities = new Map<string, LabCamera[]>()
+    for (const camera of registry.cameras.filter(camera => camera.enabled && camera.usb)) {
+        const identity = `${camera.host}:${usbPair(camera.usb!.vendorId, camera.usb!.productId)}`
+        identities.set(identity, [...(identities.get(identity) ?? []), camera])
+    }
+    // VID/PID identifies a model, not a body. Different hosts are independent; one host needs serials.
+    for (const [identity, cameras] of identities) {
+        if (cameras.length < 2) continue
+        const serials = cameras.map(camera => camera.usb!.serial)
+        if (serials.some(serial => !serial) || new Set(serials).size !== serials.length)
+            problems.push(`${identity}: cameras sharing a host and USB identity need distinct explicit serials`)
+    }
     return problems
 }
 

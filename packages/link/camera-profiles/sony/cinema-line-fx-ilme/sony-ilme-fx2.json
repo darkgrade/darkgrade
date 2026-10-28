@@ -5,7 +5,7 @@
     "line": "Cinema Line FX / ILME",
     "model": "ILME-FX2",
     "usb": { "vendorId": "0x054c", "productIds": ["0x0f4a"], "source": 0 },
-    "catalog": { "manufacturer": "Sony", "line": "Cinema Line FX / ILME" },
+    "catalog": { "manufacturer": "Sony", "line": "Cinema Line FX / ILME", "model": "Sony ILME-FX2" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

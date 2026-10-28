@@ -126,6 +126,11 @@ function rowIdentity(
     }
 }
 
+/** A profile may have distinct firmware observations in one imported hardware matrix. */
+export function viewRowKey(row: EvidenceSupportMatrixRow): string {
+    return row.viewKey ?? (row.firmware ? `${rowKey(row)}/firmware/${encodeURIComponent(row.firmware)}` : rowKey(row))
+}
+
 function viewRowFromMatrix(
     row: EvidenceSupportMatrixRow,
     at: string,
@@ -148,7 +153,7 @@ function viewRowFromMatrix(
         cells[capability] = { status: result.status, detail: shorten(result.detail), at, ...(evidence && { evidence }) }
     }
     return {
-        ...rowIdentity({ ...row, key: row.viewKey ?? rowKey(row) }),
+        ...rowIdentity({ ...row, key: viewRowKey(row) }),
         ...(row.firmware && { firmware: row.firmware }),
         ...(row.host && { host: row.host }),
         unverified: row.quirks.unverified > 0 || !!annotations?.unverifiedModel,
@@ -159,7 +164,7 @@ function viewRowFromMatrix(
     }
 }
 
-/** Adds (or replaces) every row of a completed matrix, stamped with the matrix's time. */
+/** Completed rows retain original observation time; rebuilding an aggregate cannot freshen a stale result. */
 export function applyMatrix(
     view: CompatView,
     matrix: SupportMatrix,
@@ -169,14 +174,19 @@ export function applyMatrix(
     if (!view.capabilities.length) view.capabilities = matrix.capabilities
     const index = new Map(view.rows.map((row, position) => [row.key, position]))
     for (const row of matrix.rows) {
-        const viewRow = viewRowFromMatrix(row, matrix.generatedAt, annotations.get(row.profile), matrix.revision)
+        const viewRow = viewRowFromMatrix(
+            row,
+            row.source?.generatedAt ?? matrix.generatedAt,
+            annotations.get(row.profile),
+            row.source?.revision ?? matrix.revision
+        )
         const position = index.get(viewRow.key)
         if (position === undefined) {
             index.set(viewRow.key, view.rows.push(viewRow) - 1)
             continue
         }
         const existing = view.rows[position]
-        if ((existing.lastRun ?? '') <= matrix.generatedAt) view.rows[position] = viewRow
+        if (Date.parse(existing.lastRun ?? '') <= Date.parse(viewRow.lastRun ?? '')) view.rows[position] = viewRow
     }
     view.sources.push(source)
 }

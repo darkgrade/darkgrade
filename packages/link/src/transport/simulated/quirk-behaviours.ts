@@ -60,6 +60,12 @@ export class QuirkBehaviours {
 
     /** A response code that pre-empts normal handling, or undefined. Throws for a recorded disconnect. */
     responseBefore(request: SimulatedRequest): number | undefined {
+        if (this.all('strict-transaction-ids').length) {
+            const previous = this.lastTransactionId
+            if (request.operation !== OPEN_SESSION && previous !== undefined && request.transactionId !== previous + 1)
+                return INVALID_TRANSACTION_ID
+            this.lastTransactionId = request.transactionId
+        }
         for (const behaviour of this.behaviours) {
             const code = this.responseFor(behaviour, request)
             if (code !== undefined) return code
@@ -95,12 +101,6 @@ export class QuirkBehaviours {
                 const sessionId = request.parameters[0] ?? 0
                 const accepted = behaviour.rule === 'nonzero' ? sessionId !== 0 : sessionId === behaviour.sessionId
                 return accepted ? undefined : INVALID_PARAMETER
-            }
-            case 'strict-transaction-ids': {
-                const previous = this.lastTransactionId
-                this.lastTransactionId = request.transactionId
-                if (operation === OPEN_SESSION || previous === undefined) return undefined
-                return request.transactionId === previous + 1 ? undefined : INVALID_TRANSACTION_ID
             }
             default:
                 return undefined

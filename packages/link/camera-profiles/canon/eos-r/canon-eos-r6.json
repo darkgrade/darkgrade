@@ -11,7 +11,7 @@
         "manufacturerString": "Canon Inc.",
         "productString": "Canon Digital Camera"
     },
-    "catalog": { "manufacturer": "Canon", "line": "EOS R (mirrorless, RF mount)" },
+    "catalog": { "manufacturer": "Canon", "line": "EOS R (mirrorless, RF mount)", "model": "Canon EOS R6" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

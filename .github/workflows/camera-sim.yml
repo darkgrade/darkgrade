@@ -46,7 +46,7 @@ jobs:
 
             # Hardware tests (tests/01_usb.test.ts and friends) need cameras on a testbench; only
             # the simulation suite runs here. Physical cameras run in the Camera device lab workflow.
-            - name: Run simulated camera suite
+            - name: Run simulation and camera driver regressions
               run: bun run test:simulation
 
             - name: Render support matrix

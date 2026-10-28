@@ -1,3 +1,4 @@
+import { identifyCamera } from '@camera/identification/camera-identification'
 /**
  * Every camera profile darkgrade can simulate, by id: committed profiles under camera-profiles/
  * (captured and documented line mocks) and the per-model documented mocks generated from the catalog.
@@ -34,6 +35,7 @@ export function loadProfileIndex(catalog: CameraCatalog = loadCatalog()): Map<st
     for (const file of profileFiles(profileDirectory)) {
         const relativePath = path.relative(profileDirectory, file)
         const profile = loadCameraProfile(readFileSync(file, 'utf8'), relativePath)
+        if (index.has(profile.id)) throw new Error(`Duplicate camera profile id ${profile.id}`)
         index.set(profile.id, { profile, path: path.relative(packageDirectory, file) })
     }
     for (const mock of catalogModelMocks(catalog).mocks) {
@@ -54,9 +56,24 @@ export function usbIdentities(profile: CameraProfile): string[] {
     return profile.usb.productIds.map(product => `${vendor}:${product.slice(2).padStart(4, '0')}`)
 }
 
-/** The strongest profile for a USB identity: captured first, then a per-model mock, then a line mock. */
+/** USB shortcuts require an unambiguous model association; shared IDs need an explicit profile. */
 export function findProfileByUsb(index: Map<string, IndexedProfile>, identity: string): IndexedProfile | undefined {
-    const matches = [...index.values()].filter(entry => usbIdentities(entry.profile).includes(identity.toLowerCase()))
+    if (!/^[0-9a-f]{4}:[0-9a-f]{4}$/i.test(identity)) throw new Error('Expected USB identity vvvv:pppp')
+    const [vendorId, productId] = identity.split(':').map(value => Number.parseInt(value, 16))
+    const identified = identifyCamera({ vendorId, productId })
+    if (identified.status === 'ambiguous')
+        throw new Error('USB identity matches multiple models; select an explicit --profile')
+    if (identified.status !== 'matched') return undefined
+    const candidate = identified.candidates[0]
+    const matches = [...index.values()].filter(
+        ({ profile }) =>
+            usbIdentities(profile).includes(identity.toLowerCase()) &&
+            (profile.catalog?.manufacturer ?? profile.manufacturer) === candidate.manufacturer &&
+            (profile.catalog?.line ?? profile.line) === candidate.line &&
+            [profile.catalog?.model, profile.model, profile.deviceInfo?.model].some(
+                model => !!model && candidate.models.includes(model)
+            )
+    )
     const rank = (entry: IndexedProfile) =>
         entry.profile.provenance.fidelity === 'captured' ? 0 : entry.catalogModel ? 1 : 2
     return matches.sort((left, right) => rank(left) - rank(right))[0]

@@ -160,7 +160,7 @@
             "artifact": "nikon-z6iii-command-rev2",
             "locations": ["Command section 6.2.2.13; PDF page 81"],
             "observation": "GetEventEx 0x941c uses a UINT32 event count and per-event parameter counts. Parameter 1 retains queued events; zero or omitted drains them.",
-            "simulationEffect": "Reference only. Legacy Nikon 0x90c7 event framing must not be substituted for this model path.",
+            "simulationEffect": "Typed GetEventEx operation and strict multi-parameter event codec; independently written SDK retain/drain scenarios run through Darkgrade. Camera event timing and queue behavior remain physically unverified.",
             "limitations": ["The SDK defines the contract; actual event timing/content remains hardware evidence."]
         },
         {

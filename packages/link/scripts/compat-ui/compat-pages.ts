@@ -80,6 +80,9 @@ function evidenceDescription(cell: ViewCell | undefined): string {
         evidence.host,
         evidence.generatedAt,
         evidence.revision,
+        ...(evidence.conflicts?.map(
+            conflict => `conflict: ${conflict.status} from ${conflict.profile} at ${conflict.generatedAt}`
+        ) ?? []),
     ]
         .filter(Boolean)
         .join(' · ')
@@ -89,7 +92,7 @@ export function renderCellEvidence(cell: ViewCell | undefined): string {
     if (!cell || cell.status === 'queued' || cell.status === 'running') return ''
     const evidence = cell.evidence
     if (!evidence) return '<span class="badge warn">source unavailable</span>'
-    return `${fidelityBadge(evidence)} <span class="muted small">${escapeHtml(evidenceDescription(cell))}</span>`
+    return `${evidence.conflicts?.length ? '<span class="badge warn">conflicting evidence</span> ' : ''}${fidelityBadge(evidence)} <span class="muted small">${escapeHtml(evidenceDescription(cell))}</span>`
 }
 
 export function renderDetailCellContents(cell: ViewCell | undefined): string {

@@ -90,7 +90,7 @@ class ProfileBuilder {
             manufacturer: observations.manufacturer,
             line: shortLineName(manufacturer, line),
             model: observations.model,
-            catalog: { manufacturer: manufacturer.name, line: line.name },
+            catalog: { manufacturer: manufacturer.name, line: line.name, model: observations.catalogModel },
             provenance: { fidelity: 'captured', sources: [] },
             properties: [],
             exchanges: [],
@@ -151,11 +151,13 @@ function testBenchCommit(testBench: string): string {
 }
 
 function evidenceFiles(directory: string): string[] {
-    return readdirSync(directory).flatMap(entry => {
-        const full = path.join(directory, entry)
-        if (statSync(full).isDirectory()) return evidenceFiles(full)
-        return /\.jsonl?$/.test(entry) ? [full] : []
-    })
+    return readdirSync(directory)
+        .sort()
+        .flatMap(entry => {
+            const full = path.join(directory, entry)
+            if (statSync(full).isDirectory()) return evidenceFiles(full)
+            return /\.jsonl?$/.test(entry) ? [full] : []
+        })
 }
 
 /** Yields every object in a JSON value, including objects serialized inside string fields. */

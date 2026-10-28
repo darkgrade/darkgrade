@@ -23,19 +23,23 @@ export const hardwareResultsDirectory = path.join(packageDirectory, 'test-result
 /** Resolve only an enabled deployed bench mapping; a documented profile cannot authorize hardware access. */
 export function resolveGuardedLabCamera(
     registry: CameraRegistry,
-    selection: { usb?: string; profile?: string; ip?: string }
+    selection: { usb?: string; profile?: string; ip?: string; host?: string; camera?: string }
 ): LabCamera {
     if (selection.ip)
         throw new Error('PTP/IP hardware execution has no guarded bench adapter; use deployed bench MCP controls')
     if (!selection.usb || !/^[0-9a-f]{4}:[0-9a-f]{4}$/.test(selection.usb))
         throw new Error('Pass --usb vvvv:pppp for an enabled bench camera')
-    const camera = registry.cameras.find(
+    const candidates = registry.cameras.filter(
         camera =>
             camera.enabled &&
             camera.connection === 'usb' &&
             camera.usb &&
+            (!selection.host || camera.host === selection.host) &&
+            (!selection.camera || camera.id === selection.camera) &&
             usbPair(camera.usb.vendorId, camera.usb.productId) === selection.usb
     )
+    if (candidates.length > 1) throw new Error('Multiple bench bodies share this USB identity; select --camera <registry id>')
+    const camera = candidates[0]
     if (!camera)
         throw new Error(
             'USB identity has no enabled guarded bench mapping; import a sanitized capture for simulation instead'
@@ -68,6 +72,8 @@ export interface StandaloneRunResult {
 
 /** The one-row matrix file name for a profile and transport. */
 export function hardwareMatrixName(profileId: string, connection: CameraConnection): string {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(profileId))
+        throw new Error('Profile id must be lowercase kebab-case before constructing a result filename')
     return connection === 'ptp-ip' ? `${profileId}.ptp-ip.json` : `${profileId}.json`
 }
 

@@ -59,23 +59,27 @@ export class GenericCamera {
         }
 
         this.sessionId = randomSessionId()
-        const openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+        let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
 
         if (openResult.code === SessionAlreadyOpen.code) {
-            await this.send(this.registry.operations.CloseSession, {})
-            await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            const closed = await this.send(this.registry.operations.CloseSession, {})
+            if (closed.code !== OK.code) throw new Error(`CloseSession returned 0x${closed.code.toString(16)}`)
+            openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
         }
+        if (openResult.code !== OK.code) throw new Error(`OpenSession returned 0x${openResult.code.toString(16)}`)
     }
 
     async disconnect(): Promise<void> {
         this.emitter.removeAllListeners()
-
-        if (this.sessionId !== null) {
-            await this.send(this.registry.operations.CloseSession, {})
+        try {
+            if (this.sessionId !== null) {
+                const response = await this.send(this.registry.operations.CloseSession, {})
+                if (response.code !== OK.code) throw new Error(`CloseSession returned 0x${response.code.toString(16)}`)
+            }
+        } finally {
+            this.sessionId = null
+            await this.transport.disconnect()
         }
-
-        this.sessionId = null
-        await this.transport.disconnect()
     }
 
     /**
@@ -405,7 +409,12 @@ export class GenericCamera {
         const codec = this.resolveCodec(property.codec)
         const encodedValue = codec.encode(value)
 
-        await this.send(this.registry.operations.SetDevicePropValue, { DevicePropCode: property.code }, encodedValue)
+        const response = await this.send(
+            this.registry.operations.SetDevicePropValue,
+            { DevicePropCode: property.code },
+            encodedValue
+        )
+        if (response.code !== OK.code) throw new Error(`SetDevicePropValue returned 0x${response.code.toString(16)}`)
     }
 
     async getStandardPropertyStates(): Promise<StandardPropertyState[]> {
@@ -632,6 +641,8 @@ export class GenericCamera {
     }
 
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+        if (!Number.isSafeInteger(objectSize) || objectSize < 0)
+            throw new Error('Object size must be a nonnegative safe integer')
         // Start transfer tracking
         this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObject', objectSize)
 
@@ -652,9 +663,10 @@ export class GenericCamera {
                 bytesToRead + 12
             )
 
-            if (!chunkResponse.data) {
-                throw new Error('No data received from GetPartialObject')
-            }
+            if (chunkResponse.code !== OK.code)
+                throw new Error(`GetPartialObject returned 0x${chunkResponse.code.toString(16)}`)
+            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead)
+                throw new Error('GetPartialObject returned an empty or oversized chunk')
 
             // Update transfer progress
             this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())
@@ -692,8 +704,7 @@ export class GenericCamera {
 
     protected handleEvent(event: PTPEvent): void {
         const eventDef = Object.values(this.registry.events).find(e => e.code === event.code) as
-            | EventDefinition
-            | undefined
+            EventDefinition | undefined
         if (!eventDef) return
 
         // Decode event parameters using their codecs
@@ -763,7 +774,8 @@ export class GenericCamera {
             this.on(objectAdded, handleObjectAdded)
             void this.send(this.registry.operations.InitiateCapture, {})
                 .then(response => {
-                    if (response.code !== OK.code) fail(new Error(`InitiateCapture returned 0x${response.code.toString(16)}`))
+                    if (response.code !== OK.code)
+                        fail(new Error(`InitiateCapture returned 0x${response.code.toString(16)}`))
                 })
                 .catch(fail)
         })
@@ -779,11 +791,19 @@ export class GenericCamera {
         return this.transactionId
     }
 
+    /** PTP command parameters occupy unsigned 32-bit slots even when a definition uses a narrower value codec. */
     private buildCommand(code: number, transactionId: number, params: Uint8Array[]): Uint8Array {
         const u16 = this.registry.codecs.uint16
         const u32 = this.registry.codecs.uint32
 
-        const paramBytes = params.reduce((sum, p) => sum + p.length, 0)
+        if (params.length > 5) throw new Error('PTP commands accept at most five parameters')
+        const parameterSlots = params.map(parameter => {
+            if (parameter.length > 4) throw new Error('PTP command parameters must fit a 32-bit slot')
+            const slot = new Uint8Array(4)
+            slot.set(parameter)
+            return slot
+        })
+        const paramBytes = parameterSlots.length * 4
         const length = 12 + paramBytes
 
         const parts: Uint8Array[] = [
@@ -791,7 +811,7 @@ export class GenericCamera {
             u16.encode(1),
             u16.encode(code),
             u32.encode(transactionId),
-            ...params,
+            ...parameterSlots,
         ]
 
         const buffer = new Uint8Array(length)

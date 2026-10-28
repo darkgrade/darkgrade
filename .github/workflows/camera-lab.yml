@@ -97,14 +97,14 @@ jobs:
             # No recovery, settings changes, capture, or power changes are run by this read-only tier.
             - name: Run guarded read-only capability suite
               timeout-minutes: 5
-              run: bun run lab:hardware -- --camera "$CAMERA_ID" --output "test-results/camera-lab/$CAMERA_ID.json"
+              run: bun run lab:hardware -- --camera "$CAMERA_ID" --output "test-results/camera-lab/$CAMERA_ID-$GITHUB_RUN_ID.json"
 
             - name: Upload camera results
               if: always()
               uses: actions/upload-artifact@v4
               with:
                   name: camera-lab-results-${{ matrix.camera }}
-                  path: packages/link/test-results/camera-lab/
+                  path: packages/link/test-results/camera-lab/${{ matrix.camera }}-${{ github.run_id }}.json
                   if-no-files-found: warn
 
     report:

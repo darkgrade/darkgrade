@@ -3,6 +3,7 @@ import { Logger } from '@core/logger'
 import { GetDeviceInfo, GetDevicePropDesc } from '@ptp/definitions/operation-definitions'
 import { createCanonRegistry } from '@ptp/registry'
 import { applyBenchEvidence } from '@scripts/camera-profiles/bench-evidence'
+import { evaluateCapabilities, simulateCamera } from '@scripts/camera-profiles/camera-capabilities'
 import { loadCameraProfile } from '@transport/simulated/camera-profile'
 import { ProfileDataMissingError, SimulatedTransport } from '@transport/simulated/simulated-transport'
 import { readFileSync } from 'node:fs'
@@ -30,6 +31,44 @@ function simulatedSession(file: string) {
 }
 
 describe('fresh darkgrade01 evidence', () => {
+    const establishedCapabilities = [
+        {
+            file: 'om-system-olympus/pen-compacts-tg/olympus-e-pl5.json',
+            capability: 'session',
+            evidence: 'docs/camera-compatibility.md',
+            fact: 'Olympus OpenSession through GenericCamera on the physical MTP body',
+        },
+        {
+            file: profileFiles[0],
+            capability: 'recorded-exchanges',
+            evidence: 'darkgrade01-2026-10-28.json',
+            fact: 'EOS80D captured session and typed remote/event-mode setup requests',
+        },
+        {
+            file: profileFiles[1],
+            capability: 'recorded-exchanges',
+            evidence: 'darkgrade01-2026-10-28.json',
+            fact: 'alpha6700 captured generic OpenSession/CloseSession requests; no Sony full-connect claim',
+        },
+    ]
+    it.each(establishedCapabilities)(
+        'retains source-backed support: $fact',
+        async ({ file, capability, evidence: citation, fact }) => {
+            const profile = capturedProfile(file)
+            expect(
+                profile.provenance.sources.some(source => source.location.includes(citation)),
+                fact
+            ).toBe(true)
+            const target = simulateCamera(profile)
+            try {
+                const results = await evaluateCapabilities(target)
+                expect(results[capability], `${fact}; source: ${citation}`).toMatchObject({ status: 'pass' })
+            } finally {
+                await target.camera.disconnect().catch(() => undefined)
+            }
+        }
+    )
+
     it('reconstructs both fresh profiles from the sanitized record and retains historical provenance', () => {
         const expected = profileFiles.map(capturedProfile)
         const profiles = structuredClone(expected)

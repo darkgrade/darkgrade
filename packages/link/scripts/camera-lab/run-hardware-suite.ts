@@ -3,6 +3,7 @@ import {
     assertBenchAvailable,
     assertNoActiveCardTake,
     benchTool,
+    startBenchJobHeartbeat,
     type BenchStatus,
 } from '@scripts/camera-lab/bench-ownership'
 import { loadRegistry, packageDirectory, validateRegistry } from '@scripts/camera-lab/camera-registry'
@@ -32,7 +33,6 @@ const workerArguments =
         ? argumentsList.filter((_, index) => index !== outputFlag && index !== outputFlag + 1)
         : [...argumentsList]
 workerArguments.push('--output', pendingOutput)
-rmSync(output, { force: true })
 const benchDirectory = process.env.DARKGRADE_TESTBENCH_DIR
 if (
     !benchDirectory ||
@@ -69,7 +69,6 @@ try {
                 agent: 'camera-control',
             })
             let succeeded = false
-            let heartbeatError: unknown
             let activeChild: ReturnType<typeof spawn> | undefined
             const stopChild = (signal: NodeJS.Signals = 'SIGTERM') => {
                 if (!activeChild?.pid) return
@@ -79,12 +78,11 @@ try {
                     if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
                 }
             }
-            const heartbeat = setInterval(() => {
-                void benchTool('agent_job_heartbeat', { jobId: job.id }).catch(error => {
-                    heartbeatError = error
-                    stopChild()
-                })
-            }, 20_000)
+            let heartbeatError: unknown
+            const heartbeat = startBenchJobHeartbeat(
+                () => benchTool('agent_job_heartbeat', { jobId: job.id }),
+                () => stopChild()
+            )
             try {
                 const lockDirectory = '/var/tmp/darkgrade-testbench/locks'
                 mkdirSync(lockDirectory, { recursive: true })
@@ -106,7 +104,12 @@ try {
                     {
                         stdio: 'inherit',
                         detached: true,
-                        env: { ...process.env, DARKGRADE_LAB_GUARDED_WORKER: String(process.pid) },
+                        env: {
+                            ...process.env,
+                            DARKGRADE_LAB_GUARDED_WORKER: String(process.pid),
+                            DARKGRADE_LAB_HARDWARE_OWNER: coordinator.owner,
+                            DARKGRADE_LAB_JOB_ID: job.id,
+                        },
                     }
                 )
                 const child = activeChild
@@ -124,7 +127,7 @@ try {
                         child.once('error', reject)
                         child.once('exit', code => resolve(code ?? 1))
                     })
-                    if (heartbeatError) throw heartbeatError
+                    if (heartbeat.failure) throw heartbeat.failure
                     if (timedOut)
                         throw new Error('Hardware worker interrupted; USB worker exited before ownership was released')
                     if (![0, 1].includes(exitCode) || !existsSync(pendingOutput))
@@ -141,13 +144,14 @@ try {
                     activeChild = undefined
                 }
             } finally {
-                clearInterval(heartbeat)
+                heartbeatError = await heartbeat.stop()
                 await benchTool('agent_job_finish', {
                     jobId: job.id,
-                    succeeded,
+                    succeeded: succeeded && !heartbeatError,
                     summary: 'Read-only lab identity/session checks; no settings, capture, power or recovery actions',
                 })
             }
+            if (heartbeatError) throw heartbeatError
         },
         0
     )

@@ -26,6 +26,7 @@ import {
     applyMatrix,
     applyRun,
     emptyView,
+    viewRowKey,
     type CapabilityEvidence,
     type CompatView,
     type EvidenceSupportMatrixRow,
@@ -70,9 +71,10 @@ export function rowsFromCompatibility(matrix: CompatibilityMatrix): SupportMatri
         return [
             {
                 ...base,
-                viewKey: viewKey(camera.fidelity, 'usb', camera.profile, camera.firmware),
+                viewKey: viewKey(camera.fidelity, camera.primaryTransport ?? 'usb', camera.profile, camera.firmware),
                 profile: camera.profile,
                 fidelity: camera.fidelity,
+                ...(camera.primaryTransport && { transport: camera.primaryTransport }),
                 results: camera.results,
                 resultEvidence: camera.resultEvidence ?? {},
                 ...(camera.firmware && { firmware: camera.firmware }),
@@ -382,18 +384,32 @@ export class CompatData {
             const matrix = this.readMatrix(matrixFile.file)
             for (const row of matrix?.rows.filter(candidate => candidate.profile === profileId) ?? []) {
                 consider({
-                    key:
-                        (row as EvidenceSupportMatrixRow).viewKey ??
-                        `${row.fidelity}/${row.transport ?? 'usb'}/${row.profile}`,
+                    key: viewRowKey(row as EvidenceSupportMatrixRow),
 
                     fidelity: row.fidelity,
                     transport: row.transport ?? 'usb',
                     source: matrixFile.label,
-                    at: matrix!.generatedAt,
+                    at: row.source?.generatedAt ?? matrix!.generatedAt,
                     ...(row.host && { host: row.host }),
                     ...(row.firmware && { firmware: row.firmware }),
                     results: row.results,
-                    resultEvidence: (row as EvidenceSupportMatrixRow).resultEvidence,
+                    resultEvidence:
+                        (row as EvidenceSupportMatrixRow).resultEvidence ??
+                        Object.fromEntries(
+                            Object.keys(row.results).map(capability => [
+                                capability,
+                                {
+                                    fidelity: row.fidelity,
+                                    profile: row.profile,
+                                    generatedAt: row.source?.generatedAt ?? matrix!.generatedAt,
+                                    ...((row.source?.revision ?? matrix!.revision) && {
+                                        revision: row.source?.revision ?? matrix!.revision,
+                                    }),
+                                    ...(row.firmware && { firmware: row.firmware }),
+                                    ...(row.host && { host: row.host }),
+                                },
+                            ])
+                        ),
                 })
             }
         }

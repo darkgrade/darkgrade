@@ -47,6 +47,36 @@ export const PTP_DISCOVERY_VENDORS = [
 
 const LIBUSB_ENDPOINT_IN = usb.LIBUSB_ENDPOINT_IN
 
+interface DiscoveredUSBIdentity {
+    vendorId: number
+    productId: number
+    serialNumber?: string
+    classCode?: number
+    subclassCode?: number
+    protocolCode?: number
+}
+
+/** A physical mapping must select one body, including serial and exclusions, before opening USB. */
+export function selectMatchingUSBDevice<T extends DiscoveredUSBIdentity>(
+    devices: T[],
+    descriptor?: DeviceDescriptor
+): T {
+    const { filters, exclusionFilters = [] } = descriptor?.usb ?? { filters: [{ classCode: 0x06, subclassCode: 0x01 }] }
+    type Filter = NonNullable<DeviceDescriptor['usb']>['filters'][number]
+    const matches = (device: T, filter: Filter) =>
+        (['vendorId', 'productId', 'serialNumber', 'classCode', 'subclassCode', 'protocolCode'] as const).every(
+            field => filter[field] === undefined || device[field] === filter[field]
+        )
+    const matching = devices.filter(
+        device =>
+            filters.some(filter => matches(device, filter)) && !exclusionFilters.some(filter => matches(device, filter))
+    )
+    if (!matching.length) throw new Error('No matching device found in discovered devices')
+    if (matching.length !== 1)
+        throw new Error('Multiple USB cameras match; select a unique serialNumber before connecting')
+    return matching[0]
+}
+
 export class USBTransport implements TransportInterface {
     private device: USBDevice | null = null
     private interfaceNumber = 0
@@ -117,6 +147,7 @@ export class USBTransport implements TransportInterface {
             serialNumber: device.serialNumber ?? undefined,
             classCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceClass,
             subclassCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceSubclass,
+            protocolCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceProtocol,
         }))
     }
 
@@ -136,16 +167,7 @@ export class USBTransport implements TransportInterface {
 
         console.log(formatDeviceTable(availableDevices))
 
-        const filters = device?.usb?.filters || [{ classCode: 0x06, subclassCode: 0x01 }]
-
-        const matchingDevice = availableDevices.find(d => {
-            const filter = filters[0]
-            if (filter.vendorId !== undefined && d.vendorId !== filter.vendorId) return false
-            if (filter.productId !== undefined && d.productId !== filter.productId) return false
-            if (filter.classCode !== undefined && d.classCode !== filter.classCode) return false
-            if (filter.subclassCode !== undefined && d.subclassCode !== filter.subclassCode) return false
-            return true
-        })
+        const matchingDevice = selectMatchingUSBDevice(availableDevices, device)
         if (!matchingDevice?.device) {
             throw new Error('No matching device found in discovered devices')
         }
@@ -154,49 +176,62 @@ export class USBTransport implements TransportInterface {
             `[USB] Selected device: VID:PID 0x${matchingDevice.vendorId?.toString(16).padStart(4, '0')}:0x${matchingDevice.productId?.toString(16).padStart(4, '0')} - ${matchingDevice.manufacturer || 'Unknown'} ${matchingDevice.model || 'Unknown'}`
         )
 
-        await this.device.open()
+        try {
+            await this.device.open()
 
-        const configuration = this.device.configuration ?? this.device.configurations?.[0]
-        if (!configuration) throw new Error('No USB configuration found')
+            const configuration = this.device.configuration ?? this.device.configurations?.[0]
+            if (!configuration) throw new Error('No USB configuration found')
 
-        const ptpInterface = this.findPTPInterface(configuration)
-        if (!ptpInterface) throw new Error('PTP interface not found')
+            const ptpInterface = this.findPTPInterface(configuration)
+            if (!ptpInterface) throw new Error('PTP interface not found')
 
-        this.interfaceNumber = ptpInterface.interfaceNumber
-        await this.device.claimInterface(this.interfaceNumber)
+            this.interfaceNumber = ptpInterface.interfaceNumber
+            await this.device.claimInterface(this.interfaceNumber)
 
-        const alternate = ptpInterface.alternates[0] || ptpInterface.alternate
-        if (!alternate) throw new Error('No alternate interface')
+            const alternate = ptpInterface.alternates[0] || ptpInterface.alternate
+            if (!alternate) throw new Error('No alternate interface')
 
-        this.endpoints = this.findEndpoints(alternate)
-        this.connected = true
-        // await this.nukeDevice()
+            this.endpoints = this.findEndpoints(alternate)
+            this.connected = true
+            // await this.nukeDevice()
 
-        this.startInterruptListener()
+            this.startInterruptListener()
+        } catch (error) {
+            try {
+                await this.disconnect()
+            } catch (cleanupError) {
+                throw new AggregateError([error, cleanupError], 'USB connection and cleanup failed')
+            }
+            throw error
+        }
     }
 
+    /** Close partially opened devices too; failed initialization never sets connected=true. */
     async disconnect(): Promise<void> {
-        if (!this.connected) return
-
+        if (!this.device) return
+        const wasConnected = this.connected
         this.connected = false
         this.eventHandler = null
-
-        // Cancel the interrupt listener before closing. An interrupt read stays pending until
-        // the camera sends an event, and libusb refuses to close a device that still has one
-        // outstanding.
-        await this.stopInterruptListener()
-
-        // give events 100ms to complete if any are pending
-        await new Promise(resolve => setTimeout(resolve, 100))
-        await this.clearHalt(EndpointType.INTERRUPT)
-        // await this.device?.reset()
-        // await this.nukeDevice()
-
-        await this.device?.close()
-
+        let cleanupError: unknown
+        try {
+            if (wasConnected) {
+                await this.stopInterruptListener()
+                await new Promise(resolve => setTimeout(resolve, 100))
+                await this.clearHalt(EndpointType.INTERRUPT)
+            }
+        } catch (error) {
+            cleanupError = error
+        }
+        try {
+            await this.device.close()
+        } catch (closeError) {
+            if (cleanupError) throw new AggregateError([cleanupError, closeError], 'USB event cleanup and close failed')
+            throw closeError
+        }
         this.device = null
         this.interfaceNumber = 0
         this.endpoints = null
+        if (cleanupError) throw cleanupError
     }
 
     private async nukeDevice(): Promise<void> {

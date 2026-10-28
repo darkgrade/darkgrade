@@ -1,7 +1,9 @@
 import {
     assertBenchAvailable,
+    assertGuardedWorker,
     assertNoActiveCardTake,
     benchTool,
+    startBenchJobHeartbeat,
     type BenchStatus,
 } from '@scripts/camera-lab/bench-ownership'
 import { loadRegistry } from '@scripts/camera-lab/camera-registry'
@@ -26,9 +28,62 @@ const available = (): BenchStatus => ({
 
 afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
 })
 
 describe('hardware lab bench ownership boundary', () => {
+    it('requires the owning parent process and its still-active scoped job before a worker can open USB', () => {
+        const status = available()
+        status.hardwareOwners!.push({
+            resource: `camera:${camera.benchLabel}`,
+            owner: 'mine',
+            processId: 77,
+            expiresAt: Date.now() + 60_000,
+        })
+        status.jobs.push({ id: 'scoped-job', cameraLabel: camera.benchLabel! })
+        const authorization = { parentProcessId: 77, owner: 'mine', jobId: 'scoped-job' }
+        expect(() => assertGuardedWorker(status, camera, authorization, 77)).not.toThrow()
+        expect(() => assertGuardedWorker(status, camera, authorization, 1)).toThrow(/parent/)
+        status.hardwareOwners![0].processId = 88
+        expect(() => assertGuardedWorker(status, camera, authorization, 77)).toThrow(/different process/)
+        status.hardwareOwners![0].processId = 77
+        status.jobs.length = 0
+        expect(() => assertGuardedWorker(status, camera, authorization, 77)).toThrow(/missing or expired/)
+    })
+
+    it('blocks a changed camera or serial even while the desired registry mapping is unchanged', () => {
+        const status = available()
+        status.cameras[0].health.identityChanged = true
+        expect(() => assertBenchAvailable(status, camera)).toThrow(/Live camera identity/)
+        status.cameras[0].health.identityChanged = false
+        status.cameras[0].health.observedUsbMatch = '04a9:ffff'
+        expect(() => assertBenchAvailable(status, camera)).toThrow(/Live camera identity/)
+        delete status.cameras[0].health.observedUsbMatch
+        status.cameras[0].usbSerial = 'mapped-body'
+        status.cameras[0].health.observedSerialNumber = 'other-body'
+        expect(() => assertBenchAvailable(status, camera)).toThrow(/Live USB serial/)
+    })
+
+    it('drains a delayed heartbeat rejection and never overlaps renewals before publishing results', async () => {
+        vi.useFakeTimers()
+        let rejectRenewal!: (error: Error) => void
+        const renew = vi.fn(
+            () =>
+                new Promise<void>((_, reject) => {
+                    rejectRenewal = reject
+                })
+        )
+        const onLost = vi.fn()
+        const heartbeat = startBenchJobHeartbeat(renew, onLost, 100)
+        await vi.advanceTimersByTimeAsync(300)
+        expect(renew).toHaveBeenCalledOnce()
+        const stopping = heartbeat.stop()
+        const lateFailure = new Error('job lease expired')
+        rejectRenewal(lateFailure)
+        expect(await stopping).toBe(lateFailure)
+        expect(heartbeat.failure).toBe(lateFailure)
+        expect(onLost).toHaveBeenCalledOnce()
+    })
     it('refuses persistent recording state even after its original job lease has disappeared', () => {
         for (const state of ['recording', 'stopping', 'uncertain', 'starting']) {
             expect(() =>

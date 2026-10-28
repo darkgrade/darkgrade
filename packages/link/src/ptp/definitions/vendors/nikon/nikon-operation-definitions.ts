@@ -4,6 +4,7 @@ import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { baseCodecs, createEnumCodec, EnumCodec } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 import { PropertyDefinition } from '@ptp/types/property'
+import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 
 const UINT8 = getDatatypeByName('UINT8')!.code
 
@@ -246,7 +247,34 @@ export const ChangeApplicationMode = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+/** GetEventEx has its own framing and explicit queue retention; SDK command rev 2 section 6.2.2.13. */
+export const GetEventEx = {
+    code: 0x941c,
+    name: 'GetEventEx',
+    description: 'Read Nikon extended events; retain with parameter 1, otherwise drain the queue.',
+    dataDirection: 'out',
+    dataCodec: registry => new NikonEventDataCodec(registry),
+    operationParameters: [
+        {
+            name: 'KeepEvents',
+            description: 'Omitted or DRAIN removes returned events; RETAIN leaves the queue unchanged.',
+            codec: registry =>
+                createEnumCodec(
+                    registry,
+                    [
+                        { value: 0, name: 'DRAIN', description: 'Remove the returned events' },
+                        { value: 1, name: 'RETAIN', description: 'Keep the returned events' },
+                    ] as const,
+                    registry.codecs.uint32
+                ),
+            required: false,
+        },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const nikonOperationRegistry = {
+    GetEventEx,
     GetPartialObjectEx,
     GetDevicePropDescEx,
     GetDevicePropValueEx,

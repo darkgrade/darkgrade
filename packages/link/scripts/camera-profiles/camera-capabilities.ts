@@ -1,5 +1,8 @@
+import { identifyCamera } from '@camera/identification/camera-identification'
 import { Camera } from '@camera/index'
+import { Logger } from '@core/logger'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
+import type { EventDefinition } from '@ptp/types/event'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { PropertyDefinition } from '@ptp/types/property'
 import type { CapabilityResult } from '@scripts/camera-profiles/support-matrix'
@@ -14,6 +17,7 @@ import {
 } from '@transport/simulated/camera-profile'
 import { SimulatedPtpIpCamera } from '@transport/simulated/simulated-ptpip-camera'
 import { SimulatedDisconnectError, SimulatedTransport } from '@transport/simulated/simulated-transport'
+import { isDeepStrictEqual } from 'node:util'
 
 const OK = 0x2001
 const CAMERA_REPORTS_UNSUPPORTED = new Set([0x2005, 0x200a])
@@ -46,6 +50,8 @@ export interface SimulatedCamera {
     /** Passed to Camera.connect(); selects the physical camera on the hardware tier. */
     device?: DeviceDescriptor
     timeoutMilliseconds: number
+    /** Set only after fresh GetDeviceInfo passes the profile identity and dataset checks. */
+    verifiedDeviceInfo?: { manufacturer: string; model: string; deviceVersion: string }
 }
 
 export function simulateCamera(profile: CameraProfile): SimulatedCamera {
@@ -77,7 +83,10 @@ export async function simulateCameraOverPtpIp(
     const server = new SimulatedPtpIpCamera(profile)
     const { host, port } = await server.start()
     const camera = new Camera({
-        transport: new IPTransport({ address: host, port, timeout: SIMULATED_TIMEOUT_MILLISECONDS }),
+        transport: new IPTransport(
+            { address: host, port, timeout: SIMULATED_TIMEOUT_MILLISECONDS },
+            new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
+        ),
         vendorId: profile.usb ? parseCode(profile.usb.vendorId) : undefined,
         logger: { renderInTerminal: false, captureConsole: false, expanded: false },
     })
@@ -115,11 +124,15 @@ function findOperation(simulated: SimulatedCamera, code: number): OperationDefin
 }
 
 async function connectSession(simulated: SimulatedCamera): Promise<string> {
+    const responsesBefore = simulated.transport.responseCodes.length
     await simulated.camera.connect(simulated.device)
-    return 'Camera.connect() completed'
+    if (simulated.transport.responseCodes.length === responsesBefore)
+        throw new NoProfileData('Camera.connect() completed without a camera response')
+    return 'Camera.connect() completed with a successful camera response'
 }
 
 async function readDeviceInfo(simulated: SimulatedCamera): Promise<string> {
+    delete simulated.verifiedDeviceInfo
     const response = await simulated.camera.send(registryOf(simulated).operations.GetDeviceInfo, {})
     if (response.code !== OK || !response.data) throw new Error(`GetDeviceInfo returned ${formatCode(response.code)}`)
     const deviceInfo = response.data
@@ -131,12 +144,65 @@ async function readDeviceInfo(simulated: SimulatedCamera): Promise<string> {
     if (expected?.model !== undefined && expected.model !== deviceInfo.model) {
         throw new Error(`decoded model "${deviceInfo.model}", profile has "${expected.model}"`)
     }
+    if (!expected?.model && !expected?.reportedIdentity) {
+        const aliases = new Set(
+            [simulated.profile.model, simulated.profile.usb?.productString]
+                .filter(Boolean)
+                .map(value => value!.trim().toLowerCase())
+        )
+        for (const product of simulated.profile.usb?.productIds ?? []) {
+            const lookup = identifyCamera({
+                vendorId: parseCode(simulated.profile.usb!.vendorId),
+                productId: parseCode(product),
+            })
+            for (const candidate of lookup.candidates.filter(candidate =>
+                candidate.profiles.some(profile => profile.profileId === simulated.profile.id)
+            ))
+                candidate.models.forEach(model => aliases.add(model.trim().toLowerCase()))
+        }
+        if (!aliases.has(deviceInfo.model.trim().toLowerCase()))
+            throw new Error(
+                `GetDeviceInfo model "${deviceInfo.model}" does not match an exact alias for profile ${simulated.profile.id}`
+            )
+    }
+    for (const [field, decoded] of [
+        ['operationsSupported', deviceInfo.operationsSupportedRaw],
+        ['eventsSupported', deviceInfo.eventsSupportedRaw],
+        ['devicePropertiesSupported', deviceInfo.devicePropertiesSupported],
+    ] as const) {
+        const expectedCodes = expected?.[field]
+        if (expectedCodes && !isDeepStrictEqual(expectedCodes.map(parseCode), decoded))
+            throw new Error(`GetDeviceInfo ${field} differs from the source dataset`)
+    }
+    simulated.verifiedDeviceInfo = {
+        manufacturer: deviceInfo.manufacturer,
+        model: deviceInfo.model,
+        deviceVersion: deviceInfo.deviceVersion,
+    }
     return `${identity}; ${deviceInfo.operationsSupportedRaw.length} operations, ${deviceInfo.devicePropertiesSupported.length} properties`
 }
 
 async function listProperties(simulated: SimulatedCamera): Promise<string> {
+    const response = await simulated.camera.send(registryOf(simulated).operations.GetDeviceInfo, {})
+    if (response.code !== OK || !response.data) throw new Error(`GetDeviceInfo returned ${formatCode(response.code)}`)
+    const advertised = response.data.devicePropertiesSupported
+    const defined = advertised.filter(code => findProperty(simulated, code))
+    if (advertised.length === 0) throw new NoProfileData('no advertised property list to exercise')
+    if (defined.length === 0) throw new NotOffered('darkgrade has no definitions for the advertised properties')
     const states = await simulated.camera.getStandardPropertyStates()
-    return `${states.length} standard properties decoded`
+    const decoded = new Set(states.map(state => state.code))
+    const missing = defined.filter(code => !decoded.has(code))
+    if (missing.length) {
+        const incomplete = missing.some(
+            code => !simulated.profile.properties.find(property => parseCode(property.code) === code)?.descriptor
+        )
+        if (simulated.tier === 'simulated' && incomplete)
+            throw new NoProfileData(`missing descriptors for ${missing.map(code => formatCode(code)).join(' ')}`)
+        throw new Error(
+            `decoded ${states.length}/${defined.length} advertised properties; missing ${missing.map(code => formatCode(code)).join(' ')}`
+        )
+    }
+    return `${states.length} advertised properties decoded`
 }
 
 /** Profile properties darkgrade has a definition for, preferring ones with captured descriptors. */
@@ -145,13 +211,15 @@ function candidateProperties(simulated: SimulatedCamera) {
         const definition = findProperty(simulated, parseCode(property.code))
         return definition ? [{ property, definition }] : []
     })
-    if (properties.length === 0) throw new NoProfileData('no captured properties that darkgrade defines')
+    if (simulated.profile.properties.length === 0) throw new NoProfileData('no captured properties')
+    if (properties.length === 0) throw new NotOffered('darkgrade has no definitions for the captured properties')
     return properties.sort((left, right) => Number(!!right.property.descriptor) - Number(!!left.property.descriptor))
 }
 
 async function getProperty(simulated: SimulatedCamera): Promise<string> {
     const [{ property, definition }] = candidateProperties(simulated) as [ReturnType<typeof candidateProperties>[0]]
     const value = await simulated.camera.get(definition)
+    if (value === undefined) throw new Error(`${definition.name} returned no value`)
     if (property.observedValue !== undefined && String(value) !== property.observedValue) {
         throw new Error(`${definition.name} decoded as ${String(value)}, hardware showed ${property.observedValue}`)
     }
@@ -167,72 +235,162 @@ function alternativeValue(descriptor: DevicePropDesc): number | bigint | string 
 }
 
 async function setProperty(simulated: SimulatedCamera): Promise<string> {
-    const writable = candidateProperties(simulated).filter(({ property }) => property.access !== 'get')
+    const writable = candidateProperties(simulated).filter(
+        ({ property }) => property.access !== 'get' && property.descriptor?.writable !== false
+    )
     if (writable.length === 0) throw new NotOffered('no writable property was captured')
     const { definition } = writable[0]
     const descriptorResponse = await simulated.camera.send(registryOf(simulated).operations.GetDevicePropDesc, {
         DevicePropCode: definition.code,
     })
     const descriptor = descriptorResponse.data as DevicePropDesc | undefined
-    if (!descriptor) throw new Error(`GetDevicePropDesc returned ${formatCode(descriptorResponse.code)}`)
+    if (descriptorResponse.code !== OK || !descriptor)
+        throw new Error(`GetDevicePropDesc returned ${formatCode(descriptorResponse.code)}`)
     if (descriptor.getSet !== 'GET_SET') throw new NotOffered(`${definition.name} is read-only on this camera`)
     const target = alternativeValue(descriptor)
     if (target === undefined) throw new NoProfileData(`${definition.name} descriptor lists no alternative value`)
 
     const original = descriptor.currentValueDecoded
-    await simulated.camera.set(definition, target as never)
-    const readBack = await simulated.camera.get(definition)
-    if (readBack !== target)
-        throw new Error(`${definition.name} read back ${String(readBack)} after setting ${String(target)}`)
-    await simulated.camera.set(definition, original as never)
-    const restored = await simulated.camera.get(definition)
-    if (restored !== original)
-        throw new Error(`${definition.name} read back ${String(restored)} after restoring ${String(original)}`)
-    return `${definition.name} ${String(original)} -> ${String(target)} -> ${String(restored)}`
+    let changedValue: unknown
+    const failures: unknown[] = []
+    try {
+        await simulated.camera.set(definition, target as never)
+        changedValue = await simulated.camera.get(definition)
+        if (changedValue !== target)
+            throw new Error(`${definition.name} read back ${String(changedValue)} after setting ${String(target)}`)
+    } catch (error) {
+        failures.push(error)
+    }
+    // Restore after any attempted write, including an accepted write whose readback failed.
+    try {
+        await simulated.camera.set(definition, original as never)
+        const restored = await simulated.camera.get(definition)
+        if (restored !== original)
+            throw new Error(`${definition.name} read back ${String(restored)} after restoring ${String(original)}`)
+    } catch (error) {
+        failures.push(error)
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1)
+        throw new AggregateError(
+            failures,
+            failures.map(error => (error instanceof Error ? error.message : String(error))).join('; ')
+        )
+    return `${definition.name} ${String(original)} -> ${String(changedValue)} -> ${String(original)}`
 }
 
 async function capture(simulated: SimulatedCamera): Promise<string> {
-    await simulated.camera.captureImage({ includeInfo: false, includeData: false })
-    return 'capture accepted'
+    const hasMedia = simulated.profile.exchanges.some(
+        exchange => exchange.operation === '0x1009' && exchange.response.data
+    )
+    if (
+        hasMedia &&
+        simulated.tier === 'simulated' &&
+        !simulated.profile.events.length &&
+        !simulated.profile.quirks.some(quirk => quirk.behaviour.kind === 'emit-event')
+    )
+        throw new NoProfileData('captured image bytes have no captured object event to identify the new image')
+    const result = await simulated.camera.captureImage({
+        includeInfo: hasMedia || simulated.tier === 'hardware',
+        includeData: hasMedia || simulated.tier === 'hardware',
+    })
+    if (!result.data?.length)
+        throw new NoProfileData(
+            'capture command completed without returned image media; command acceptance is not a completed capture'
+        )
+    if (!result.info)
+        throw new NoProfileData('image bytes returned without object metadata to verify the complete transfer')
+    if (result.info.objectCompressedSize !== result.data.length)
+        throw new Error(`image transfer returned ${result.data.length}/${result.info.objectCompressedSize} bytes`)
+    return `${result.data.length} captured image bytes returned through darkgrade`
+}
+
+/** Validates JPEG framing and dimensions, without asserting visual focus or exposure. */
+function jpegDimensions(bytes: Uint8Array): string {
+    if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes.at(-2) !== 0xff || bytes.at(-1) !== 0xd9)
+        throw new Error('live view returned an incomplete JPEG frame')
+    let dimensions: string | undefined
+    for (let offset = 2; offset + 3 < bytes.length;) {
+        if (bytes[offset++] !== 0xff) break
+        while (bytes[offset] === 0xff) offset++
+        const marker = bytes[offset++]
+        if (marker === 1 || (marker >= 0xd0 && marker <= 0xd7)) continue
+        if (offset + 2 > bytes.length) break
+        const length = (bytes[offset] << 8) | bytes[offset + 1]
+        if (length < 2 || offset + length > bytes.length) break
+        if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+            const height = (bytes[offset + 3] << 8) | bytes[offset + 4]
+            const width = (bytes[offset + 5] << 8) | bytes[offset + 6]
+            const components = bytes[offset + 7]
+            if (!components || length !== 8 + 3 * components || !width || !height) break
+            dimensions = `${width}x${height}`
+        }
+        if (marker === 0xda && dimensions && length >= 8 && offset + length < bytes.length - 2) return dimensions
+        offset += length
+    }
+    throw new Error('live-view JPEG has no complete frame dimensions and image scan')
 }
 
 async function liveView(simulated: SimulatedCamera): Promise<string> {
     const frame = await simulated.camera.captureLiveView({ includeInfo: false, includeData: true })
     if (!frame.data?.length) throw new Error('live view returned no image data')
-    return `${frame.data.length} byte frame`
+    return `${jpegDimensions(frame.data)} JPEG frame; ${frame.data.length} bytes`
 }
 
 async function events(simulated: SimulatedCamera): Promise<string> {
     refuseReplayOnHardware(simulated)
     const recorded = simulated.profile.events[0]
     if (!recorded) throw new NoProfileData('no captured events')
-    const definition = Object.values(registryOf(simulated).events).find(
+    const definition = (Object.values(registryOf(simulated).events) as EventDefinition[]).find(
         event => event.code === parseCode(recorded.code)
     )
     if (!definition) throw new NotOffered(`darkgrade has no definition for event ${recorded.code}`)
+    if (recorded.parameters === undefined) throw new NoProfileData('captured event parameters are unknown')
+    if (recorded.parameters.length !== definition.parameters.length)
+        throw new NotOffered(`darkgrade cannot express the captured ${definition.name} parameters`)
+    const expected: Record<string, unknown> = {}
+    definition.parameters.forEach((parameter, index) => {
+        if (!parameter) return
+        const bytes = new Uint8Array(4)
+        new DataView(bytes.buffer).setUint32(0, parseCode(recorded.parameters![index]), true)
+        expected[parameter.name] = simulated.camera.getInstance().resolveCodec(parameter.codec).decode(bytes).value
+    })
     const trigger = simulated.profile.exchanges.find(exchange => exchange.operation === recorded.afterOperation)
     if (!trigger) throw new NoProfileData(`no captured exchange for ${recorded.afterOperation} to trigger the event`)
-
-    const delivered = new Promise<string>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${definition.name} was not delivered`)), 1_000)
-        simulated.camera.on(definition, parameters => {
-            clearTimeout(timer)
-            resolve(`${definition.name} ${JSON.stringify(parameters)}`)
-        })
+    let settle: (parameters: unknown) => void = () => undefined
+    const delivered = new Promise<unknown>(resolve => {
+        settle = resolve
     })
-    const outcome = await replayExchange(simulated, trigger)
-    if (outcome !== 'matched') throw new NoProfileData(`could not replay the triggering exchange (${outcome})`)
-    return delivered
+    const listener = (parameters: unknown) => settle(parameters)
+    const timer = setTimeout(() => settle(undefined), Math.min(1000, Math.max(1, simulated.timeoutMilliseconds / 2)))
+    simulated.camera.on(definition, listener)
+    try {
+        const outcome = await replayExchange(simulated, trigger, { sessionEstablished: true })
+        if (outcome !== 'matched') throw new NoProfileData(`could not replay the triggering exchange (${outcome})`)
+        const parameters = await delivered
+        if (parameters === undefined) throw new NoProfileData(`${definition.name} was not delivered`)
+        if (!isDeepStrictEqual(parameters, expected))
+            throw new Error(`${definition.name} decoded parameters differ from the captured event`)
+        return `${definition.name} ${JSON.stringify(parameters)}`
+    } finally {
+        clearTimeout(timer)
+        simulated.camera.off(definition, listener)
+    }
 }
 
 type ReplayOutcome =
     'matched' | 'undefined' | 'inexpressible' | 'parameters-unknown' | 'blocked' | `mismatch: ${string}`
 
-async function replayExchange(simulated: SimulatedCamera, exchange: RecordedExchange): Promise<ReplayOutcome> {
+async function replayExchange(
+    simulated: SimulatedCamera,
+    exchange: RecordedExchange,
+    context: { sessionEstablished: boolean } = { sessionEstablished: false }
+): Promise<ReplayOutcome> {
     const definition = findOperation(simulated, parseCode(exchange.operation))
     if (!definition) return 'undefined'
     const parameterDefinitions = definition.operationParameters.filter(parameter => parameter !== undefined)
-    if (!exchange.parameters && parameterDefinitions.some(parameter => parameter.required)) return 'parameters-unknown'
+    if (exchange.parameters === undefined) return 'parameters-unknown'
+    if ((exchange.response.parameters?.length ?? 0) > 0) return 'inexpressible'
     if (definition.dataDirection === 'in' && exchange.dataFromHost === undefined) return 'parameters-unknown'
 
     const parameters: Record<string, unknown> = {}
@@ -244,7 +402,13 @@ async function replayExchange(simulated: SimulatedCamera, exchange: RecordedExch
             const codec = simulated.camera.getInstance().resolveCodec(parameter.codec)
             const bytes = new Uint8Array(4)
             new DataView(bytes.buffer).setUint32(0, word, true)
-            parameters[parameter.name] = codec.decode(bytes).value
+            const decoded = codec.decode(bytes).value
+            const encoded = codec.encode(decoded)
+            const slot = new Uint8Array(4)
+            if (encoded.length > 4) throw new Error('parameter does not fit a PTP slot')
+            slot.set(encoded)
+            if (!isDeepStrictEqual(slot, bytes)) throw new Error('parameter cannot round-trip through its definition')
+            parameters[parameter.name] = decoded
         })
     } catch {
         return 'inexpressible'
@@ -253,8 +417,22 @@ async function replayExchange(simulated: SimulatedCamera, exchange: RecordedExch
     const data = exchange.dataFromHost !== undefined ? parseBytes(exchange.dataFromHost) : undefined
     const response = await simulated.camera.send(definition, parameters as never, data)
     const expected = parseCode(exchange.response.code)
-    if (response.code === expected) return 'matched'
-    if (gateResponses(simulated.profile).has(response.code)) return 'blocked'
+    if (response.code === expected) {
+        if (response.code === OK && exchange.operation === '0x1002') context.sessionEstablished = true
+        if ((response.code === OK && exchange.operation === '0x1003') || response.code === 0x2003)
+            context.sessionEstablished = false
+        if (exchange.response.data !== undefined) {
+            const bytes = parseBytes(exchange.response.data)
+            const codec = definition.dataCodec && simulated.camera.getInstance().resolveCodec(definition.dataCodec)
+            const decoded = codec ? codec.decode(bytes).value : bytes
+            if (!('data' in response) || !isDeepStrictEqual(response.data, decoded))
+                return 'mismatch: response data differs from the captured dataset'
+        }
+        return 'matched'
+    }
+    // A profile aggregates observations, not necessarily a chronological session trace.
+    if (response.code === 0x2003 && !context.sessionEstablished) return 'blocked'
+    if (response.code !== 0x2003 && gateResponses(simulated.profile).has(response.code)) return 'blocked'
     return `mismatch: ${formatCode(response.code)} != ${exchange.response.code}`
 }
 
@@ -291,11 +469,19 @@ async function vendorOperationDefinitions(simulated: SimulatedCamera): Promise<s
 async function recordedExchanges(simulated: SimulatedCamera): Promise<string> {
     refuseReplayOnHardware(simulated)
     if (simulated.profile.exchanges.length === 0) throw new NoProfileData('no captured exchanges')
+    // Recorded OpenSession belongs at the start of its own connection, not after the session capability.
+    // Vendor disconnect first stops polling; missing teardown bytes are outside the recorded exchange proof.
+    await simulated.camera.disconnect().catch(() => undefined)
+    const instance = simulated.camera.getInstance()
+    await instance.transport.disconnect()
+    await instance.transport.connect(simulated.device)
+    instance.sessionId = 0
     const outcomes = new Map<string, string[]>()
+    const context = { sessionEstablished: false }
     for (const exchange of simulated.profile.exchanges) {
         let outcome: string
         try {
-            outcome = await replayExchange(simulated, exchange)
+            outcome = await replayExchange(simulated, exchange, context)
         } catch (error) {
             outcome = `mismatch: ${error instanceof Error ? error.message : String(error)}`
         }
@@ -312,15 +498,17 @@ async function recordedExchanges(simulated: SimulatedCamera): Promise<string> {
         count('undefined') && `no darkgrade definition: ${outcomes.get('undefined')!.join(' ')}`,
         count('inexpressible') && `parameters not expressible: ${outcomes.get('inexpressible')!.join(' ')}`,
         count('parameters-unknown') && `${count('parameters-unknown')} without recorded parameters`,
-        count('blocked') && `blocked by an unmet quirk prerequisite: ${outcomes.get('blocked')!.join(' ')}`,
+        count('blocked') && `blocked by missing session or quirk prerequisites: ${outcomes.get('blocked')!.join(' ')}`,
         count('mismatch') && `mismatched: ${outcomes.get('mismatch')!.join(' ')}`,
     ]
         .filter(Boolean)
         .join('; ')
 
     if (count('mismatch')) throw new Error(summary)
-    if (count('matched')) return summary
-    if (count('undefined') || count('inexpressible') || count('blocked')) throw new NotOffered(summary)
+    if (count('undefined') || count('inexpressible'))
+        throw new NotOffered(`darkgrade cannot replay every captured exchange: ${summary}`)
+    if (count('parameters-unknown') || count('blocked')) throw new NoProfileData(summary)
+    if (count('matched') === simulated.profile.exchanges.length) return summary
     throw new NoProfileData(summary)
 }
 
@@ -350,15 +538,23 @@ export async function evaluateCapabilities(
     progress: CapabilityProgress = {}
 ): Promise<Record<string, CapabilityResult>> {
     const results: Record<string, CapabilityResult> = {}
+    let stoppedAfterTimeout = false
     for (const capability of CAPABILITIES) {
         const startedAt = Date.now()
         progress.onStart?.(capability.id)
         const session = results.session
-        if (capability.needsSession && session && session.status !== 'pass') {
+        if (stoppedAfterTimeout) {
+            results[capability.id] = {
+                status: 'no-data',
+                detail: 'not run after an earlier capability timed out; no overlapping camera operation was started',
+            }
+        } else if (capability.needsSession && session && session.status !== 'pass') {
             const status = session.status === 'fail' ? 'fail' : session.status
             results[capability.id] = { status, detail: `requires a session: ${session.detail}` }
         } else {
-            results[capability.id] = await evaluateCapability(simulated, capability.run)
+            results[capability.id] = await evaluateCapability(simulated, capability.run, () => {
+                stoppedAfterTimeout = true
+            })
         }
         progress.onResult?.(capability.id, results[capability.id], Date.now() - startedAt)
     }
@@ -376,17 +572,37 @@ function withTimeout<T>(promise: Promise<T>, timeoutMilliseconds: number): Promi
 /** Runs one capability and classifies the outcome. */
 async function evaluateCapability(
     simulated: SimulatedCamera,
-    run: (simulated: SimulatedCamera) => Promise<string>
+    run: (simulated: SimulatedCamera) => Promise<string>,
+    onTimeout: () => void
 ): Promise<CapabilityResult> {
     const { transport } = simulated
     const missingBefore = transport.missingData.length
     const responsesBefore = transport.responseCodes.length
     try {
-        return { status: 'pass', detail: await withTimeout(run(simulated), simulated.timeoutMilliseconds) }
+        const detail = await withTimeout(run(simulated), simulated.timeoutMilliseconds)
+        if (run !== recordedExchanges && transport.missingData.length > missingBefore)
+            throw new NoProfileData(transport.missingData[missingBefore].message)
+        const lastResponse = transport.responseCodes.slice(responsesBefore).at(-1)
+        if (
+            run !== recordedExchanges &&
+            run !== vendorOperationDefinitions &&
+            lastResponse !== undefined &&
+            lastResponse !== OK
+        )
+            throw new Error(`operation completed after camera refusal ${formatCode(lastResponse)}`)
+        return { status: 'pass', detail }
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
+        if (error instanceof TimedOut) {
+            onTimeout()
+            if (simulated.tier === 'simulated')
+                await simulated.camera
+                    .getInstance()
+                    .transport.disconnect()
+                    .catch(() => undefined)
+        }
         if (error instanceof NoProfileData) return { status: 'no-data', detail: message }
-        if (transport.missingData.length > missingBefore) {
+        if (run !== recordedExchanges && transport.missingData.length > missingBefore) {
             return { status: 'no-data', detail: transport.missingData[missingBefore].message }
         }
         if (error instanceof NotOffered) return { status: 'unsupported', detail: message }
@@ -400,11 +616,6 @@ async function evaluateCapability(
         if (error instanceof SimulatedDisconnectError) return { status: 'fail', detail: message }
         if (/not supported|only available|not implemented/i.test(message)) {
             return { status: 'unsupported', detail: `darkgrade: ${message}` }
-        }
-        // Documented mocks lack most state (property dumps, objects, complete operation lists), so only
-        // a disagreement with a documented exchange counts as a failure for them.
-        if (simulated.profile.provenance.fidelity === 'documented' && run !== recordedExchanges) {
-            return { status: 'no-data', detail: `incomplete documented mock: ${message}` }
         }
         return { status: 'fail', detail: message }
     }

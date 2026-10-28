@@ -43,3 +43,11 @@ describe('runtime USB camera identity', () => {
         expect(identifyCamera({ vendorId: 0x054c, productId: 0x096f }).candidates.length).toBeGreaterThan(0)
     })
 })
+
+it('never picks a captured profile for another model sharing its USB ID', async () => {
+    const { findProfileByUsb, loadProfileIndex } = await import('@scripts/camera-profiles/profile-index')
+    const index = loadProfileIndex()
+    expect(() => findProfileByUsb(index, '054c:096f')).toThrow('multiple models')
+    expect(findProfileByUsb(index, '04a9:3294')?.profile.id).toBe('canon-eos-80d')
+    expect(findProfileByUsb(index, '054c:0d68')).toBeUndefined()
+})

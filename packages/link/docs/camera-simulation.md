@@ -1,6 +1,6 @@
 # Simulated cameras and the support matrix
 
-`SimulatedTransport` answers PTP requests from a camera profile, so `Camera` can be exercised in CI without hardware. The `Camera simulation` workflow runs `tests/camera-simulation` on every push and pull request, uploads the resulting support matrix (JSON and Markdown) as an artifact, and writes the table to the job summary. Hardware tests (`tests/01_usb.test.ts` and similar) are not run there; the device-lab tier runs the same capabilities on the physical testbench cameras (see [`camera-lab/README.md`](../camera-lab/README.md)). The capabilities live in `scripts/camera-profiles/camera-capabilities.ts` so both tiers share them.
+`SimulatedTransport` answers PTP requests from a camera profile, so `Camera` can be exercised in CI without hardware. The `Camera simulation` workflow runs `tests/camera-simulation` on every push and pull request, uploads the resulting support matrix (JSON and Markdown) as an artifact, and writes the table to the job summary. Hardware tests (`tests/01_usb.test.ts` and similar) are not run there; the device-lab tier runs the same capabilities on the physical testbench cameras (see [`camera-lab/README.md`](../camera-lab/README.md)). The capabilities live in `scripts/camera-profiles/camera-capabilities.ts` so both tiers share them. `test:simulation` also runs the focused software-only Canon, Sony, Nikon, Olympus and production PTP/IP regression tests; it does not run physical bench scripts.
 
 ## Profiles
 
@@ -116,3 +116,7 @@ A capability is reported as `pass`, `fail`, `unsupported` (the camera answered `
 `identifyCamera` is exported from `@darkgrade/link` and included in USB discovery results. It preserves unknown identities, shared-ID ambiguity, model-readback conflicts and per-profile evidence coverage. Run `bun run cameras:build` after changing the catalog or profiles; `cameras:check` verifies the committed table. A USB match does not establish working PTP controls.
 
 The merged compatibility artifact records `resultEvidence` for every capability. A result can come from captured or documented simulation even when another capability on the same camera has hardware evidence; its tier is retained and shown in the rendered table. See [the Outpost integration boundary](simulation-bench-outpost.md) for the future application design and [SDK findings](camera-sdk-evidence.md) for artifact-backed constraints and limits.
+
+## Audit and regression guarantees
+
+The [simulation audit and camera gotchas](simulation-audit.md) records confirmed evaluator, driver, protocol, capture, provenance and hardware-guard bugs, their regression tests, and the remaining evidence boundaries. Review it before treating a matrix pass as camera support.

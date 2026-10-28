@@ -1,6 +1,7 @@
 /** Internal worker: read-only session and DeviceInfo checks while its parent holds bench ownership. */
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
+import { assertGuardedWorker, benchTool, liveCameraSerial, type BenchStatus } from '@scripts/camera-lab/bench-ownership'
 import {
     loadRegistry,
     loadRegistryProfile,
@@ -38,12 +39,24 @@ const problems = validateRegistry(registry)
 if (problems.length) fail(`cameras.lab.json is invalid:\n  ${problems.join('\n  ')}`)
 const cameraId = valueAfter('--camera') ?? process.env.DARKGRADE_LAB_CAMERA
 const entry = registry.cameras.find(camera => camera.id === cameraId)
-if (!entry) fail(`Unknown lab camera "${cameraId ?? ''}"; pass --camera <id> from cameras.lab.json`)
+if (!entry?.enabled) fail(`Unknown or disabled lab camera "${cameraId ?? ''}"; pass an enabled --camera <id>`)
 if (entry.connection !== 'usb' || !entry.usb) fail(`${entry.id}: only the usb connection is run by the lab tier`)
 const output = path.resolve(
     valueAfter('--output') ?? path.join(packageDirectory, 'test-results/camera-lab', `${entry.id}.json`)
 )
 
+const status = await benchTool<BenchStatus>('bench_status', {})
+assertGuardedWorker(
+    status,
+    entry,
+    {
+        parentProcessId: Number(process.env.DARKGRADE_LAB_GUARDED_WORKER),
+        owner: process.env.DARKGRADE_LAB_HARDWARE_OWNER ?? '',
+        jobId: process.env.DARKGRADE_LAB_JOB_ID ?? '',
+    },
+    process.ppid
+)
+const serialNumber = liveCameraSerial(status, entry.benchLabel!)
 const profile = loadRegistryProfile(entry)
 const logger = new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
 const transport = new ResponseRecordingTransport(new USBTransport(logger))
@@ -57,7 +70,18 @@ const target: SimulatedCamera = {
     }),
     transport,
     tier: 'hardware',
-    device: { usb: { filters: [{ vendorId, productId: parseCode(entry.usb.productId), ...PTP_STILL_IMAGE_CLASS }] } },
+    device: {
+        usb: {
+            filters: [
+                {
+                    vendorId,
+                    productId: parseCode(entry.usb.productId),
+                    ...(serialNumber && { serialNumber }),
+                    ...PTP_STILL_IMAGE_CLASS,
+                },
+            ],
+        },
+    },
     timeoutMilliseconds: HARDWARE_TIMEOUT_MILLISECONDS,
 }
 
@@ -91,8 +115,9 @@ const row: SupportMatrixRow = {
     path: entry.profile,
     manufacturer: entry.manufacturer,
     line: entry.line,
-    model: entry.model,
+    model: target.verifiedDeviceInfo?.model ?? entry.model,
     fidelity: 'hardware',
+    ...(target.verifiedDeviceInfo?.deviceVersion && { firmware: target.verifiedDeviceInfo.deviceVersion }),
     ...(profile.catalog && { catalogLine: profile.catalog.line }),
     usb: [usbPair(entry.usb.vendorId, entry.usb.productId)],
     labCamera: entry.id,

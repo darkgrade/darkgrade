@@ -3,7 +3,8 @@ import { loadRegistry, packageDirectory, validateRegistry } from '@scripts/camer
 import { refreshMergedMatrix } from '@scripts/camera-profiles/refresh-matrices'
 import { resolveGuardedLabCamera } from '@scripts/camera-profiles/standalone-run'
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
+import { hostname } from 'node:os'
 import path from 'node:path'
 
 const argumentsList = process.argv.slice(2)
@@ -18,8 +19,11 @@ const camera = resolveGuardedLabCamera(registry, {
     usb: valueAfter('--usb')?.toLowerCase(),
     profile: valueAfter('--profile'),
     ip: valueAfter('--ip'),
+    host: hostname().split('.')[0],
+    camera: valueAfter('--camera'),
 })
 const output = path.join(packageDirectory, 'test-results/camera-lab', `${camera.id}.json`)
+const previousResult = existsSync(output) ? statSync(output) : undefined
 console.log(`Running guarded read-only session and GetDeviceInfo checks for ${camera.model} on ${camera.host}`)
 const child = spawnSync(
     process.execPath,
@@ -34,5 +38,10 @@ const child = spawnSync(
     { stdio: 'inherit', env: process.env }
 )
 if (child.error) throw child.error
-if (existsSync(output) && !argumentsList.includes('--no-merge')) refreshMergedMatrix()
+const published =
+    existsSync(output) &&
+    (!previousResult ||
+        statSync(output).ino !== previousResult.ino ||
+        statSync(output).mtimeMs !== previousResult.mtimeMs)
+if (published && !argumentsList.includes('--no-merge')) refreshMergedMatrix()
 process.exitCode = child.status ?? 1

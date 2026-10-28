@@ -5,7 +5,7 @@
     "line": "PEN / compacts / TG",
     "model": "E-PL5",
     "usb": { "vendorId": "0x07b4", "productIds": ["0x012f"], "source": 0 },
-    "catalog": { "manufacturer": "OM System / Olympus", "line": "PEN / compacts / TG (download-only)" },
+    "catalog": { "manufacturer": "OM System / Olympus", "line": "PEN / compacts / TG (download-only)", "model": "Olympus E-PL5" },
     "provenance": {
         "fidelity": "captured",
         "sources": [

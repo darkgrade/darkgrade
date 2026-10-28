@@ -25,7 +25,7 @@ export function container(
     code: number,
     transactionId: number,
     words: number[] = [],
-    payload = new Uint8Array()
+    payload: Uint8Array = new Uint8Array()
 ) {
     const bytes = new Uint8Array(12 + words.length * 4 + payload.length)
     const view = new DataView(bytes.buffer)

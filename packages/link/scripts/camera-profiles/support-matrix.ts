@@ -30,6 +30,8 @@ export interface SupportMatrixRow {
     /** Hardware rows: the cameras.lab.json entry and bench host that produced them. */
     labCamera?: string
     host?: string
+    /** Original evaluation metadata; aggregation must not renew an observation's age or revision. */
+    source?: { generatedAt: string; revision?: string }
     quirks: { total: number; simulated: number; unverified: number }
     results: Record<string, CapabilityResult>
 }
@@ -123,9 +125,9 @@ export interface CapabilityRecord {
 export function capabilityRecords(matrix: SupportMatrix, tier: string, revision?: string): CapabilityRecord[] {
     return matrix.rows.flatMap(row =>
         Object.entries(row.results).map(([capability, result]) => ({
-            revision: revision ?? matrix.revision ?? null,
+            revision: row.source ? (row.source.revision ?? null) : (revision ?? matrix.revision ?? null),
             tier,
-            generated_at: matrix.generatedAt,
+            generated_at: row.source?.generatedAt ?? matrix.generatedAt,
             profile: row.profile,
             manufacturer: row.manufacturer,
             line: row.line,
