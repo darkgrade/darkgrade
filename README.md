@@ -189,6 +189,30 @@ try {
 
 The physical EOS 80D resets this property when its PTP session closes. A client that needs continuous Canon HDMI preview must therefore keep one bounded session open, serialize control requests through it or pause it around controls, and restore the prior mode in cleanup. The testbench Camera Console uses the pause/resume design and physically verified a live 1920×1080 Cam Link sensor image before and after autofocus.
 
+### SDK and event protocol evidence
+
+Canon event replay was checked against EDSDK 13.20.21 for Linux, x86-64
+`libEDSDK.so` SHA-256 `12627628897d4ff2fce6dc4b04d7c0c4d66a7c2f87c145894f56c18129cc7333`.
+Static REA 6.8 / Ghidra 12.1.4 analysis of `CPtpCamera::TranslatePropAvailList32`
+confirmed that an empty incoming choice list replaces the previous cached list.
+The decoder now preserves this transition, validates record boundaries, and retains
+unknown event payloads without guessing their meaning. The analysis is evidence
+about this SDK implementation, not physical qualification of every EOS model.
+Retained analysis ID: `ev_88bce4e2731485cd5fe26eee896deea2a34ba9063870b4a0c1c522528bfdd1d2`.
+Vendor binaries and decompilations remain outside this repository.
+
+`camera.onCanonRawEvent(handler)` exposes owned copies of Canon event bytes for
+capture; `camera.offCanonRawEvent(handler)` removes the listener.
+`camera.pollNikonEvents()` explicitly drains one Nikon event batch and preserves
+unknown records; opening a session does not start a competing event poller.
+Nikon movie/SDRAM event definitions and record layouts were cross-checked against
+libgphoto2 `camlibs/ptp2/ptp.h` at commit
+`02d92fea8a269eb94330a4eade204ba799433606`.
+Nikon property access and event polling fall back to legacy operations only on
+`OperationNotSupported` (`0x2005`); a property refusal (`0x200a`) remains a refusal.
+Protocol regression tests cover framing, empty choices, opaque events, fallback
+boundaries, and the public event APIs without requiring or modifying hardware.
+
 ## 📖 Usage Examples
 
 ### Camera Settings
