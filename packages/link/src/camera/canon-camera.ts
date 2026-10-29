@@ -50,6 +50,12 @@ export interface CanonNetworkState {
     wftStatus?: number
 }
 
+export interface CanonRawEvent {
+    code: number
+    /** Owned copy of the complete EOS GetEvent record body, excluding its size/code header. */
+    data: Uint8Array
+}
+
 function bytesToHex(value: Uint8Array): string {
     return [...value].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -82,6 +88,7 @@ export class CanonCamera extends GenericCamera {
         }
     }
     private polling = false
+    private rawEventListeners = new Set<(event: CanonRawEvent) => void>()
     private pollingLoop?: Promise<void>
     private liveViewEnabled = false
     private liveViewOriginalOutput?: CodecType<CanonRegistry['properties']['CanonLiveViewMode']['codec']>
@@ -107,6 +114,15 @@ export class CanonCamera extends GenericCamera {
         super(transport, logger)
         this.registry = createCanonRegistry(transport.isLittleEndian())
         logger.setRegistry(this.registry)
+    }
+
+    /** Observe initial and later polled events, including opaque vendor records, for capture/replay. */
+    onRawEvent(listener: (event: CanonRawEvent) => void): void {
+        this.rawEventListeners.add(listener)
+    }
+
+    offRawEvent(listener: (event: CanonRawEvent) => void): void {
+        this.rawEventListeners.delete(listener)
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
@@ -852,6 +868,7 @@ export class CanonCamera extends GenericCamera {
         events: Array<{
             code: number
             parameters: Array<number | bigint>
+            rawData?: Uint8Array
             valueData?: Uint8Array
             allowedValues?: number[]
             allowedValueData?: Uint8Array[]
@@ -859,6 +876,10 @@ export class CanonCamera extends GenericCamera {
         emitGenericEvents = true
     ): void {
         events.forEach(event => {
+            if (event.rawData) {
+                for (const listener of this.rawEventListeners)
+                    listener({ code: event.code, data: event.rawData.slice() })
+            }
             if (emitGenericEvents) {
                 this.handleEvent({
                     code: event.code,
@@ -911,11 +932,11 @@ export class CanonCamera extends GenericCamera {
                 if (event.parameters && event.parameters.length >= 1) {
                     const propCode =
                         typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
-                    if (event.allowedValueData?.length || event.allowedValues?.length) {
+                    if (event.allowedValueData !== undefined || event.allowedValues !== undefined) {
                         const property = Object.values(this.registry.properties).find(p => p.code === propCode)
                         if (property) {
                             const codec = this.resolveCodec(property.codec)
-                            const encodedAllowed = event.allowedValueData?.length
+                            const encodedAllowed = event.allowedValueData !== undefined
                                 ? event.allowedValueData
                                 : event.allowedValues!.map(rawValue => this.registry.codecs.uint32.encode(rawValue))
                             this.advertisedPropertyData.set(

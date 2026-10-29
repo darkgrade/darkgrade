@@ -3,6 +3,8 @@ import { CustomCodec } from '@ptp/types/codec'
 export interface CanonEventRecord {
     code: number
     parameters: (number | bigint)[]
+    /** Complete record body, including fields whose vendor meaning is not yet known. */
+    rawData?: Uint8Array
     valueData?: Uint8Array
     allowedValues?: number[]
     allowedValueData?: Uint8Array[]
@@ -17,37 +19,34 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: CanonEventRecord[]; bytesRead: number } {
+        if (!Number.isInteger(offset) || offset < 0 || offset > buffer.length)
+            throw new Error('Invalid Canon event offset')
         const events: CanonEventRecord[] = []
         let currentOffset = offset
-        const u16 = this.codecs.uint16
         const u32 = this.codecs.uint32
 
-        while (currentOffset <= buffer.length - 8) {
+        while (currentOffset < buffer.length) {
+            if (buffer.length - currentOffset < 8) throw new Error('Truncated Canon event header')
             const eventOffset = currentOffset
             const sizeResult = u32.decode(buffer, currentOffset)
             const size = sizeResult.value
             currentOffset += sizeResult.bytesRead
-
-            if (size === 0 || size === 8) {
-                break
-            }
-
+            if (size < 8) throw new Error('Invalid Canon event record size')
             const eventEnd = eventOffset + size
-            if (eventEnd > buffer.length) {
-                break
-            }
+            if (eventEnd > buffer.length) throw new Error('Truncated Canon event record')
 
-            const eventCodeResult = u16.decode(buffer, currentOffset)
+            // EOS GetEvent records use uint32 size and event code, unlike USB event containers.
+            // gphoto/libgphoto2@02d92fea8a269eb94330a4eade204ba799433606:camlibs/ptp2/ptp-pack.c
+            const eventCodeResult = u32.decode(buffer, currentOffset)
             const eventCode = eventCodeResult.value
             currentOffset += eventCodeResult.bytesRead
-
-            if (eventCode === 0) {
+            if (size === 8 && eventCode === 0) {
                 break
             }
-
-            currentOffset += 2
+            const rawData = buffer.slice(currentOffset, eventEnd)
 
             if (eventCode === 0xc189) {
+                if (size < 12) throw new Error('Truncated Canon property event')
                 const propCodeResult = u32.decode(buffer, currentOffset)
                 const propCode = propCodeResult.value
                 currentOffset += propCodeResult.bytesRead
@@ -57,9 +56,11 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                 events.push({
                     code: eventCode,
                     parameters: [propCode, value],
+                    rawData,
                     valueData,
                 })
             } else if (eventCode === 0xc18a) {
+                if (size < 20) throw new Error('Truncated Canon allowed-values event')
                 const propCodeResult = u32.decode(buffer, currentOffset)
                 const propCode = propCodeResult.value
                 currentOffset += propCodeResult.bytesRead
@@ -75,17 +76,22 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                 const allowedValues: number[] = []
                 const allowedValueData: Uint8Array[] = []
 
-                if (type === 3 && count > 0 && count < 256) {
-                    for (let index = 0; index < count && currentOffset < eventEnd; index++) {
+                if (type === 3) {
+                    if (count > Math.floor((eventEnd - currentOffset) / 4))
+                        throw new Error('Truncated Canon allowed-values list')
+                    for (let index = 0; index < count; index++) {
+                        if (currentOffset + 4 > eventEnd) throw new Error('Truncated Canon allowed value')
                         if (imageFormatPropertyCodes.has(propCode)) {
                             const entryCount = u32.decode(buffer, currentOffset).value
                             const valueSize = 4 + entryCount * 16
-                            if ((entryCount !== 1 && entryCount !== 2) || currentOffset + valueSize > eventEnd) break
+                            if ((entryCount !== 1 && entryCount !== 2) || currentOffset + valueSize > eventEnd)
+                                throw new Error('Invalid Canon image-format choice')
                             allowedValueData.push(buffer.slice(currentOffset, currentOffset + valueSize))
                             currentOffset += valueSize
                         } else if (lengthPrefixedPropertyCodes.has(propCode)) {
                             const valueSize = u32.decode(buffer, currentOffset).value
-                            if (valueSize < 4 || valueSize % 4 !== 0 || currentOffset + valueSize > eventEnd) break
+                            if (valueSize < 4 || valueSize % 4 !== 0 || currentOffset + valueSize > eventEnd)
+                                throw new Error('Invalid Canon length-prefixed choice')
                             allowedValueData.push(buffer.slice(currentOffset, currentOffset + valueSize))
                             currentOffset += valueSize
                         } else {
@@ -100,9 +106,13 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                 events.push({
                     code: eventCode,
                     parameters: [propCode],
-                    allowedValues: allowedValues.length > 0 ? allowedValues : undefined,
-                    allowedValueData: allowedValueData.length > 0 ? allowedValueData : undefined,
+                    rawData,
+                    allowedValues: allowedValues.length > 0 || (type === 3 && count === 0) ? allowedValues : undefined,
+                    allowedValueData: type === 3 ? allowedValueData : undefined,
                 })
+            } else {
+                // Preserve opaque events for capture/replay without inventing parameter semantics.
+                events.push({ code: eventCode, parameters: [], rawData })
             }
             currentOffset = eventEnd
         }
