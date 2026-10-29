@@ -399,6 +399,12 @@ export class IPTransport implements TransportInterface {
             }
             if (packet.type === PTPIPPacketType.StartData) {
                 const data = await this.readData(connection, packet, transactionId, maxLength - 12, deadline)
+                if(!(data instanceof Uint8Array)){
+                    const response=parseResponse(data)
+                    if(12+response.parameters.length>maxLength)throw new Error('PTP/IP response exceeds receive limit')
+                    this.operationCodes.delete(transactionId)
+                    return buildUSBContainer(USBContainerType.RESPONSE,response.code,response.transactionId,response.parameters)
+                }
                 const code = this.operationCodes.get(transactionId)
                 if (code === undefined)
                     throw new Error(`No operation is registered for PTP/IP transaction ${transactionId}`)
@@ -476,8 +482,15 @@ export class IPTransport implements TransportInterface {
                 await connection.write(buildPong())
                 continue
             }
+            if(packet.type===PTPIPPacketType.OperationResponse){
+                const response=parseResponse(packet)
+                if(response.transactionId!==expectedTransactionId||response.parameters.length%4||response.parameters.length>20)throw new Error('Invalid PTP/IP data-phase rejection')
+                // A camera may reject card access after opening an empty data phase.
+                // Deliver its actual refusal without treating it as a broken connection.
+                if(response.code!==0x2001)return packet
+            }
             if (packet.type !== PTPIPPacketType.Data && packet.type !== PTPIPPacketType.EndData) {
-                throw new Error(`Expected PTP/IP data packet, received type ${packet.type}`)
+                throw new Error(`Expected PTP/IP data packet, received type ${packet.type} after ${receivedLength}/${start.totalLength} bytes${packet.type===PTPIPPacketType.OperationResponse?'; response=0x'+parseResponse(packet).code.toString(16):''}`)
             }
             const part = parseTransactionPayload(packet)
             if (part.transactionId !== expectedTransactionId) {

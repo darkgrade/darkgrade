@@ -120,3 +120,23 @@ describe('GenericCamera response container parameters', () => {
         })
     })
 })
+
+it('lists populated slots and never asks an empty storage placeholder for handles',async()=>{
+ const operations={GetStorageIDs:'ids',GetStorageInfo:'storage',GetObjectHandles:'handles',GetObjectInfo:'object'},calls:any[]=[]
+ const camera={registry:{operations},send:async(operation:string,args:any)=>{
+  calls.push({operation,args})
+  if(operation==='ids')return {code:0x2001,data:[0x10000,0x20001]}
+  if(operation==='storage')return {code:0x2001,data:{storageDescription:'Card'}}
+  if(operation==='handles')return {code:0x2001,data:[7]}
+  return {code:0x2001,data:{filename:'new.NEF'}}
+ }}
+ const listed=await GenericCamera.prototype.listObjects.call(camera as any)
+ expect(Object.keys(listed)).toEqual([String(0x20001)])
+ expect(listed[0x20001].objects[7].filename).toBe('new.NEF')
+ expect(calls.some(call=>call.args.StorageID===0x10000)).toBe(false)
+})
+
+it('preserves a card-list refusal rather than iterating an absent dataset',async()=>{
+ const camera={registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'storage',GetObjectHandles:'handles'}},send:async(operation:string)=>operation==='ids'?{code:0x2001,data:[0x20001]}:operation==='storage'?{code:0x2001,data:{}}:{code:0x2013}}
+ await expect(GenericCamera.prototype.listObjects.call(camera as any)).rejects.toThrow()
+})

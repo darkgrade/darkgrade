@@ -933,14 +933,19 @@ export class GenericCamera {
         const result: { [storageId: number]: StorageEntry } = {}
 
         const storageIdsResponse = await this.send(this.registry.operations.GetStorageIDs, {})
+        if(storageIdsResponse.code!==0x2001)throw new PTPResponseError(storageIdsResponse.code,undefined,{operation:'GetStorageIDs'})
         const storageIds = storageIdsResponse.data
+        if(!Array.isArray(storageIds))throw new Error('GetStorageIDs returned no storage dataset')
 
         for (const storageId of storageIds) {
+            if((storageId&0xffff)===0)continue
             // Get info for this storage
             const storageInfoResponse = await this.send(this.registry.operations.GetStorageInfo, {
                 StorageID: storageId,
             })
+            if(storageInfoResponse.code!==0x2001)throw new PTPResponseError(storageInfoResponse.code,undefined,{operation:'GetStorageInfo'})
             const storageInfo = storageInfoResponse.data
+            if(!storageInfo)throw new Error('GetStorageInfo returned no card dataset')
 
             // Prepare container for objects in this storage
             const storageObjects: { [objectHandle: number]: ObjectInfo } = {}
@@ -949,13 +954,17 @@ export class GenericCamera {
             const objectIdsResponse = await this.send(this.registry.operations.GetObjectHandles, {
                 StorageID: storageId,
             })
+            if(objectIdsResponse.code!==0x2001)throw new PTPResponseError(objectIdsResponse.code,undefined,{operation:'GetObjectHandles'})
             const objectHandles = objectIdsResponse.data
+            if(!Array.isArray(objectHandles))throw new Error('GetObjectHandles returned no object dataset')
 
             // Get detailed info for each object handle
             for (const objectHandle of objectHandles) {
                 const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                     ObjectHandle: objectHandle,
                 })
+                if(objectInfoResponse.code!==0x2001)throw new PTPResponseError(objectInfoResponse.code,undefined,{operation:'GetObjectInfo'})
+                if(!objectInfoResponse.data)throw new Error('GetObjectInfo returned no object metadata')
                 storageObjects[objectHandle] = objectInfoResponse.data
             }
 

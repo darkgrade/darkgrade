@@ -1,8 +1,9 @@
 import {readCameraStorages, readCameraObjectHandles} from '@camera/storage'
+import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 import {openCanonRecordingMode} from '@vendors/canon/recording-mode'
 import type {TakeMedia} from '@workflows/video-take'
 const sleep=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
-/** Persistent USB movie recording, final-file discovery and bounded-memory transfer. */
+/** Persistent PTP movie recording, final-file discovery and bounded-memory transfer. */
 export class UsbVideoRecording {
     private baseline=new Set<number>()
     private attempted=false
@@ -24,8 +25,8 @@ export class UsbVideoRecording {
         this.attempted=true
         await this.camera.startRecording()
         const states=this.vendor==='canon'?await this.camera.getCanonPropertyStates():[]
-        const confirmed=states.some((state:any)=>state.name==='CanonRecordingDestination'&&state.value==='CARD')
-        return {recordingConfirmed:confirmed,evidence:confirmed?'Camera reports card recording':'Movie-start command acknowledged; recording-state telemetry unavailable'}
+        const confirmed=this.vendor==='nikon'?(await readNikonRecordingStatus(this.camera))?.recording===true:states.some((state:any)=>state.name==='CanonRecordingDestination'&&state.value==='CARD')
+        return {recordingConfirmed:confirmed,evidence:confirmed?(this.vendor==='nikon'?'Nikon reports active movie recording':'Camera reports card recording'):'Movie-start command acknowledged; recording-state telemetry unavailable'}
     }
     getRecoveryState(){return {version:1,kind:this.vendor,handles:[...this.baseline]}}
     async stopInterrupted(recovery?:unknown){

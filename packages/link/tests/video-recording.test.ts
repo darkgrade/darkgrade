@@ -30,3 +30,11 @@ it('a missing USB baseline cannot authorize a previous card movie as a new origi
  const f=fixture();await f.recording.start();const result=await new UsbVideoRecording(f.camera,'nikon').stopInterrupted()
  expect(result.stopped).toBe(true);expect(result.media).toEqual([]);expect(f.calls.some(call=>call.operation==='GetObjectInfo')).toBe(false)
 })
+
+it('confirms Nikon recording only from the fresh movie-status descriptor',async()=>{
+ const f=fixture(),send=f.camera.send
+ f.camera.send=async(operation:any,args:any)=>operation?.name==='GetDevicePropDescEx'?{code:0x2001,data:{devicePropertyCode:0xd0a4,currentValueRaw:0x400}} as any:send(operation,args)
+ const started=await f.recording.start()
+ expect(started.recordingConfirmed).toBe(true)
+ expect(started.evidence).toBe('Nikon reports active movie recording')
+})

@@ -218,6 +218,27 @@ describe('PTP/IP transport', () => {
         }
     })
 
+    it('preserves a camera refusal after StartData and keeps the next transaction aligned',async()=>{
+        const mock=await startMockCamera((operation,transactionId,socket)=>{
+            if(operation!==0x9431)return false
+            socket.write(buildStartData(transactionId,0))
+            socket.write(operationResponse(0x2013,transactionId))
+            return true
+        })
+        servers.push(mock.server)
+        const transport=testTransport({address:mock.address,port:mock.port,timeout:500})
+        try{
+            await transport.connect()
+            await transport.send(USBContainerBuilder.buildCommand(0x9431,1,[]),1,1)
+            const rejected=USBContainerBuilder.parseContainer(await transport.receive(512,1,1))
+            expect(rejected.type).toBe(USBContainerType.RESPONSE);expect(rejected.code).toBe(0x2013)
+            expect(transport.isConnected()).toBe(true)
+            await transport.send(USBContainerBuilder.buildCommand(0x1001,2,[]),1,2)
+            expect(USBContainerBuilder.parseContainer(await transport.receive(512,1,2)).type).toBe(USBContainerType.DATA)
+            expect(USBContainerBuilder.parseContainer(await transport.receive(512,1,2)).code).toBe(0x2001)
+        }finally{await transport.disconnect()}
+    })
+
     it.each(['oversized', 'truncated', 'wrong-transaction', 'malformed-packet', 'oversized-packet-header'] as const)(
         'disconnects a %s peer without leaving unread packets for another transaction',
         async scenario => {
