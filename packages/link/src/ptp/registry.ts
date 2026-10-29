@@ -22,6 +22,7 @@ import { sonyPropertyRegistry } from '@ptp/definitions/vendors/sony/sony-propert
 import { sonyResponseRegistry } from '@ptp/definitions/vendors/sony/sony-response-definitions'
 import { createBaseCodecs } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
+import { fujifilmPropertyRegistry } from '@vendors/fujifilm/properties'
 
 export const createPTPRegistry = (littleEndian: boolean) =>
     ({
@@ -81,7 +82,10 @@ const createVendorOperationRegistry = <Operations extends Record<string, Operati
     }) as const
 
 export const createFujifilmRegistry = (littleEndian: boolean) =>
-    createVendorOperationRegistry(littleEndian, fujifilmOperationRegistry)
+    ({
+        ...createVendorOperationRegistry(littleEndian, fujifilmOperationRegistry),
+        properties: { ...genericPropertyRegistry, ...fujifilmPropertyRegistry },
+    }) as const
 export const createPanasonicRegistry = (littleEndian: boolean) =>
     createVendorOperationRegistry(littleEndian, panasonicOperationRegistry)
 export const createOlympusRegistry = (littleEndian: boolean) =>
