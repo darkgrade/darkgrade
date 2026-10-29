@@ -18,6 +18,7 @@
         "dev": "vite build --watch",
         "test": "vitest run",
         "bench:probe": "bun run tests/bench-probe.ts",
+        "bench:profile": "bun run scripts/capture-profile.ts",
         "bench:canon": "bun run tests/14_canon.ts",
         "bench:ptpip": "bun run tests/bench-ptpip.ts",
         "lint": "eslint . --ext .ts,.tsx",

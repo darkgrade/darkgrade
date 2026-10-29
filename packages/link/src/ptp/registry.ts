@@ -9,6 +9,7 @@ import { canonPropertyRegistry } from '@ptp/definitions/vendors/canon/canon-prop
 import { fujifilmOperationRegistry } from '@ptp/definitions/vendors/fujifilm/fujifilm-operation-definitions'
 import { leicaOperationRegistry } from '@ptp/definitions/vendors/leica/leica-operation-definitions'
 import { nikonOperationRegistry } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
+import { nikonEventRegistry } from '@ptp/definitions/vendors/nikon/nikon-event-definitions'
 import { nikonPropertyRegistry } from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
 import { nikonResponseRegistry } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { olympusOperationRegistry } from '@ptp/definitions/vendors/olympus/olympus-operation-definitions'
@@ -21,6 +22,7 @@ import { sonyPropertyRegistry } from '@ptp/definitions/vendors/sony/sony-propert
 import { sonyResponseRegistry } from '@ptp/definitions/vendors/sony/sony-response-definitions'
 import { createBaseCodecs } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
+import { fujifilmPropertyRegistry } from '@vendors/fujifilm/properties'
 
 export const createPTPRegistry = (littleEndian: boolean) =>
     ({
@@ -47,7 +49,7 @@ export const createNikonRegistry = (littleEndian: boolean) =>
         codecs: createBaseCodecs(littleEndian),
         operations: { ...genericOperationRegistry, ...nikonOperationRegistry },
         properties: { ...genericPropertyRegistry, ...nikonPropertyRegistry },
-        events: genericEventRegistry,
+        events: { ...genericEventRegistry, ...nikonEventRegistry },
         formats: formatRegistry,
         responses: { ...responseRegistry, ...nikonResponseRegistry },
     }) as const
@@ -80,7 +82,10 @@ const createVendorOperationRegistry = <Operations extends Record<string, Operati
     }) as const
 
 export const createFujifilmRegistry = (littleEndian: boolean) =>
-    createVendorOperationRegistry(littleEndian, fujifilmOperationRegistry)
+    ({
+        ...createVendorOperationRegistry(littleEndian, fujifilmOperationRegistry),
+        properties: { ...genericPropertyRegistry, ...fujifilmPropertyRegistry },
+    }) as const
 export const createPanasonicRegistry = (littleEndian: boolean) =>
     createVendorOperationRegistry(littleEndian, panasonicOperationRegistry)
 export const createOlympusRegistry = (littleEndian: boolean) =>

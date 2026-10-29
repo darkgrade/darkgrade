@@ -1,5 +1,6 @@
 import { Logger } from '@core/logger'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
+import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { PTPResponseError } from '@core/ptp-errors'
@@ -74,19 +75,25 @@ export class NikonCamera extends GenericCamera {
             throw new Error(`Property ${property.name} is not readable`)
         }
 
-        const response = await this.send(this.registry.operations.GetDevicePropDescEx, {
+        let operationName = 'GetDevicePropDescEx'
+        let response = await this.send(this.registry.operations.GetDevicePropDescEx, {
             DevicePropCode: property.code,
         })
-
-        if (response.code !== OK.code && response.code !== 0x2005 && response.code !== 0x200a) {
+        // Older Nikon bodies lack the four-byte extension but still implement standard PTP properties.
+        // Only OperationNotSupported permits this fallback; a refused property is not a missing operation.
+        if (response.code === 0x2005 && property.code >= 0 && property.code <= 0xffff) {
+            operationName = 'GetDevicePropDesc'
+            response = await this.send(this.registry.operations.GetDevicePropDesc, { DevicePropCode: property.code })
+        }
+        if (response.code !== OK.code) {
             throw new PTPResponseError(
                 response.code,
-                `Nikon GetDevicePropDescEx returned 0x${response.code.toString(16)}`,
-                { operation: 'GetDevicePropDescEx' }
+                `Nikon ${operationName} returned 0x${response.code.toString(16)}`,
+                { operation: operationName }
             )
         }
         if (!response.data) {
-            throw new Error('No data received from GetDevicePropDescEx')
+            throw new Error(`No data received from ${operationName}`)
         }
 
         const descriptor = response.data
@@ -107,18 +114,27 @@ export class NikonCamera extends GenericCamera {
         const codec = this.resolveCodec(property.codec)
         const encodedValue = codec.encode(value)
 
-        const response = await this.send(
+        let operationName = 'SetDevicePropValueEx'
+        let response = await this.send(
             this.registry.operations.SetDevicePropValueEx,
             {
                 DevicePropCode: property.code,
             },
             encodedValue
         )
+        if (response.code === 0x2005 && property.code >= 0 && property.code <= 0xffff) {
+            operationName = 'SetDevicePropValue'
+            response = await this.send(
+                this.registry.operations.SetDevicePropValue,
+                { DevicePropCode: property.code },
+                encodedValue
+            )
+        }
         if (response.code !== OK.code)
             throw new PTPResponseError(
                 response.code,
                 `Nikon ${property.name} write failed: ${this.responseDescription(response.code)}`,
-                { operation: 'SetDevicePropValueEx' }
+                { operation: operationName }
             )
     }
 
@@ -132,6 +148,27 @@ export class NikonCamera extends GenericCamera {
         } else {
             this.emitter.removeAllListeners(event.name)
         }
+    }
+
+    /** Drain one event batch explicitly; opening a camera does not start a background poll. */
+    async pollEvents(): Promise<NikonQueuedEvent[]> {
+        const extended = await this.send(this.registry.operations.GetEventEx, {})
+        let events: NikonQueuedEvent[]
+        if (extended.code === 0x2005) {
+            const legacy = await this.send(this.registry.operations.GetEvent, {})
+            if (legacy.code !== OK.code)
+                throw new PTPResponseError(legacy.code, undefined, { operation: 'GetEvent' })
+            if (!Array.isArray(legacy.data)) throw new Error('Nikon GetEvent returned no event dataset')
+            events = legacy.data.map(event => ({ code: event.code, parameters: [event.parameter] }))
+        } else {
+            if (extended.code !== OK.code)
+                throw new PTPResponseError(extended.code, undefined, { operation: 'GetEventEx' })
+            if (!Array.isArray(extended.data)) throw new Error('Nikon GetEventEx returned no event dataset')
+            events = extended.data.map(event => ({ code: event.code, parameters: [...event.parameters] }))
+        }
+        for (const event of events)
+            this.handleEvent({ ...event, transactionId: 0 })
+        return events
     }
 
     async setIso(value: string): Promise<void> {

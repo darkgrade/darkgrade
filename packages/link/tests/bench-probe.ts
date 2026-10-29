@@ -35,7 +35,8 @@ function writeResult(result: ProbeOutput): void {
 
 const identifier = parseIdentifier(cameraIdentifier())
 const logger = new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
-const transport = new USBTransport(logger)
+// Keep this bounded identity probe visible to Linux usbmon even on SG/IOMMU hosts.
+const transport = new USBTransport(logger, { maxBulkReadBytes: 16 * 1024 })
 const camera = new GenericCamera(transport, logger)
 const watchdog = setTimeout(() => {
     writeResult({ responsive: false, detail: 'Darkgrade PTP probe timed out before GetDeviceInfo completed' })
