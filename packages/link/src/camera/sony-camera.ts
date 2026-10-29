@@ -136,18 +136,20 @@ export class SonyCamera extends GenericCamera {
 
         this.sessionId = randomSessionId()
 
-        const openResult = await this.send(this.registry.operations.SDIO_OpenSession, {
+        let openResult = await this.send(this.registry.operations.SDIO_OpenSession, {
             SessionId: this.sessionId,
             FunctionMode: functionMode,
         })
 
         if (openResult.code === SessionAlreadyOpen.code) {
-            await this.send(this.registry.operations.CloseSession, {})
-            await this.send(this.registry.operations.SDIO_OpenSession, {
+            const closed = await this.send(this.registry.operations.CloseSession, {})
+            this.assertOk(closed.code, 'Sony CloseSession')
+            openResult = await this.send(this.registry.operations.SDIO_OpenSession, {
                 SessionId: this.sessionId,
                 FunctionMode: functionMode,
             })
         }
+        this.assertOk(openResult.code, 'Sony OpenSession')
 
         // probably not needed in recent testing
         // small delay required before authentication
@@ -274,6 +276,7 @@ export class SonyCamera extends GenericCamera {
         )
         this.assertOk(response.code, 'Sony property inventory')
         if (!response.data) throw new Error('Sony property inventory returned no data')
+        this.propertyCache.clear()
         for (const descriptor of response.data.properties) {
             this.propertyCache.set(descriptor.devicePropertyCode, descriptor)
         }
@@ -692,13 +695,17 @@ export class SonyCamera extends GenericCamera {
             const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                 ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
             })
+            this.assertOk(objectInfoResponse.code, 'Sony live-view object information')
             info = objectInfoResponse.data
         }
         if (includeData) {
             const objectResponse = await this.send(this.registry.operations.GetObject, {
                 ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
             })
+            this.assertOk(objectResponse.code, 'Sony live-view image')
+            if (!objectResponse.data?.length) throw new Error('Sony live-view response contained no dataset')
             const liveViewData = parseLiveViewDataset(objectResponse.data, this.registry)
+            if (!liveViewData.liveViewImage.length) throw new Error('Sony live-view dataset contained no image')
             data = liveViewData.liveViewImage
         }
 
@@ -728,6 +735,8 @@ export class SonyCamera extends GenericCamera {
     }
 
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+        if (!Number.isSafeInteger(objectSize) || objectSize < 0)
+            throw new Error('Sony object size must be a non-negative safe integer')
         await this.enableContentTransferMode()
 
         // Start transfer tracking
@@ -740,7 +749,7 @@ export class SonyCamera extends GenericCamera {
             const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
 
             // Split 64-bit offset into two 32-bit values
-            const offsetLower = offset & 0xffffffff
+            const offsetLower = offset >>> 0
             const offsetUpper = Math.floor(offset / 0x100000000)
 
             const chunkResponse = await this.send(
@@ -755,9 +764,9 @@ export class SonyCamera extends GenericCamera {
                 bytesToRead + 12
             )
 
-            if (!chunkResponse.data) {
-                throw new Error('No data received from SDIO_GetPartialLargeObject')
-            }
+            this.assertOk(chunkResponse.code, 'Sony partial object download')
+            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead)
+                throw new Error('Sony partial object download returned an empty or oversized chunk')
 
             // Update transfer progress
             this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())
@@ -1064,27 +1073,31 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async authenticate(): Promise<void> {
-        await this.send(this.registry.operations.SDIO_Connect, {
+        const first = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_1',
             keyCode1: 'DEFAULT',
             keyCode2: 'DEFAULT',
         })
+        this.assertOk(first.code, 'Sony authentication phase 1')
 
-        await this.send(this.registry.operations.SDIO_Connect, {
+        const second = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_2',
             keyCode1: 'DEFAULT',
             keyCode2: 'DEFAULT',
         })
+        this.assertOk(second.code, 'Sony authentication phase 2')
 
-        await this.send(this.registry.operations.SDIO_GetExtDeviceInfo, {
+        const information = await this.send(this.registry.operations.SDIO_GetExtDeviceInfo, {
             initiatorVersion: '3.00',
             flagOfDevicePropertyOption: 'ENABLE',
         })
+        this.assertOk(information.code, 'Sony extended device information')
 
-        await this.send(this.registry.operations.SDIO_Connect, {
+        const third = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_3',
             keyCode1: 'DEFAULT',
             keyCode2: 'DEFAULT',
         })
+        this.assertOk(third.code, 'Sony authentication phase 3')
     }
 }

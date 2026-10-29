@@ -3,6 +3,7 @@ import { Logger } from '@core/logger'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
+import type { USBTransportOptions } from '@transport/transport-factory'
 import { InEndpoint, Interface, usb } from 'usb'
 import { USBContainerBuilder, USBContainerType } from './usb-container'
 import { formatDeviceTable } from './usb-device-table'
@@ -102,7 +103,14 @@ export class USBTransport implements TransportInterface {
     /** Readers waiting on bulk IN; the Device Reset Request releases them so abandoned reads settle. */
     private readonly bulkInReaders = new Set<(error: Error) => void>()
 
-    constructor(private logger: Logger) {}
+    private readonly maxBulkReadBytes: number
+
+    constructor(private logger: Logger, options: USBTransportOptions = {}) {
+        const limit = options.maxBulkReadBytes ?? USB_LIMITS.MAX_USB_TRANSFER
+        if (!Number.isInteger(limit) || limit < 1024 || limit > USB_LIMITS.MAX_USB_TRANSFER || limit % 1024 !== 0)
+            throw new Error('maxBulkReadBytes must be a multiple of 1024 between 1024 and 1073741824')
+        this.maxBulkReadBytes = limit
+    }
 
     public isConnected() {
         return this.connected
@@ -337,7 +345,12 @@ export class USBTransport implements TransportInterface {
         if (!this.connected || !this.endpoints || !this.device) throw new Error('Not connected')
 
         const endpoint = this.endpoints.bulkIn.endpointNumber
-        const { result, length } = await this.readBulkIn(endpoint, maxLength)
+        const requested = Math.min(maxLength, this.maxBulkReadBytes)
+        let received = await this.readBulkIn(endpoint, requested)
+        // An exactly packet-aligned data phase can leave its terminating ZLP for the next read.
+        if (received.result.status === 'ok' && received.result.data?.byteLength === 0)
+            received = await this.readBulkIn(endpoint, requested)
+        const { result, length } = received
 
         if (result.status === 'stall') {
             await this.clearHalt(EndpointType.BULK_IN)
@@ -347,8 +360,9 @@ export class USBTransport implements TransportInterface {
             throw new Error(`Bulk IN failed: ${result.status}`)
 
         let data = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength)
-        // A transfer taken over from an abandoned reader may be shorter than this container.
+        // A bounded capture read, or a transfer taken over from an abandoned reader, may be shorter.
         const declared = data.byteLength >= 4 ? new DataView(data.buffer, data.byteOffset).getUint32(0, true) : 0
+        if (declared > maxLength) throw new Error(`USB container length ${declared} exceeds receive limit ${maxLength}`)
         if (length < maxLength && data.byteLength === length && declared > length && declared <= maxLength)
             data = await this.readRemainder(endpoint, data, declared)
         const container = USBContainerBuilder.parseContainer(data)
@@ -409,7 +423,7 @@ export class USBTransport implements TransportInterface {
         data.set(head)
         let offset = head.byteLength
         while (offset < declared) {
-            const result = await this.device!.transferIn(endpoint, declared - offset)
+            const { result } = await this.readBulkIn(endpoint, Math.min(declared - offset, this.maxBulkReadBytes))
             if (result.status !== 'ok' || !result.data || result.data.byteLength === 0)
                 throw new Error(`Bulk IN failed: ${result.status}`)
             const chunk = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength)
