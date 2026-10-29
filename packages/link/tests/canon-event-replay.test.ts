@@ -1,5 +1,5 @@
 import { CanonCamera } from '@camera/canon-camera'
-import { Logger } from '@core/logger'
+import { Camera } from '@camera/index'
 import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
 import { createCanonRegistry } from '@ptp/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
@@ -67,7 +67,12 @@ describe('Canon polled event replay', () => {
             },
             on: () => undefined,
         } as unknown as TransportInterface
-        const camera = new CanonCamera(transport, new Logger({ renderInTerminal: false, captureConsole: false }))
+        const wrapper = new Camera({
+            transport,
+            vendorId: 0x04a9,
+            logger: { renderInTerminal: false, captureConsole: false },
+        })
+        const camera = wrapper.getInstance() as CanonCamera
         const polls = [
             concat(
                 words(16, 0xc189, 0xd103, 0x48),
@@ -78,8 +83,8 @@ describe('Canon polled event replay', () => {
         ]
         const observed: number[] = []
         const mutate = (event: { data: Uint8Array }) => event.data.fill(0)
-        camera.onRawEvent(mutate)
-        camera.onRawEvent(event => {
+        wrapper.onCanonRawEvent(mutate)
+        wrapper.onCanonRawEvent(event => {
             if (event.code === 0xc1a5) observed.push(new DataView(event.data.buffer).getUint32(0, true))
         })
         camera.send = (async operation => {
@@ -95,7 +100,7 @@ describe('Canon polled event replay', () => {
             expect(camera.listPropertyStates().find(state => state.code === 0xd103)?.allowedValues).toEqual([])
             const highValue = camera.registry.events.CanonValueChanged.parameters[1].codec(camera.registry)
             expect(highValue.decode(highValue.encode(0x80000518)).value).toBe(0x80000518)
-            camera.offRawEvent(mutate)
+            wrapper.offCanonRawEvent(mutate)
         } finally {
             const disconnecting = camera.disconnect()
             await vi.runAllTimersAsync()

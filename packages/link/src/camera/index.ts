@@ -1,4 +1,5 @@
 import type { TransactionPolicy } from '@camera/transaction-channel'
+import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 export {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
@@ -24,7 +25,7 @@ import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
-import type { CanonNetworkState, CanonPropertyState, CanonUnknownPropertyState } from './canon-camera'
+import type { CanonNetworkState, CanonPropertyState, CanonRawEvent, CanonUnknownPropertyState } from './canon-camera'
 import { CanonCamera } from './canon-camera'
 import { GenericCamera, type StandardPropertyState } from './generic-camera'
 import { NikonCamera, type NikonFocusResult, type NikonFocusPointResult, type NikonLiveViewMetadata } from './nikon-camera'
@@ -98,6 +99,21 @@ export class Camera {
 
     getInstance(): GenericCamera {
         return this.instance
+    }
+
+    async pollNikonEvents(): Promise<NikonQueuedEvent[]> {
+        if (!(this.instance instanceof NikonCamera)) throw new Error('Nikon event polling requires a Nikon camera')
+        return this.instance.pollEvents()
+    }
+
+    onCanonRawEvent(listener: (event: CanonRawEvent) => void): void {
+        if (!(this.instance instanceof CanonCamera)) throw new Error('Canon raw events require a Canon camera')
+        this.instance.onRawEvent(listener)
+    }
+
+    offCanonRawEvent(listener: (event: CanonRawEvent) => void): void {
+        if (!(this.instance instanceof CanonCamera)) throw new Error('Canon raw events require a Canon camera')
+        this.instance.offRawEvent(listener)
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {

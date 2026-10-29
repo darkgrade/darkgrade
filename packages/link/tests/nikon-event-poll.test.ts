@@ -1,4 +1,5 @@
 import { NikonCamera } from '@camera/nikon-camera'
+import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
@@ -13,7 +14,12 @@ const fixture = () =>
 
 describe('Nikon event polling', () => {
     it('delivers movie, SDRAM and extended property notifications without losing unknown records', async () => {
-        const camera = fixture()
+        const wrapper = new Camera({
+            vendorId: 0x04b0,
+            transport: { isLittleEndian: () => true, on: () => undefined } as unknown as TransportInterface,
+            logger: { captureConsole: false, renderInTerminal: false },
+        })
+        const camera = wrapper.getInstance() as NikonCamera
         const codec = new NikonEventDataCodec(camera.registry)
         const recorded = [
             { code: 0xc101, parameters: [0xffff0001] },
@@ -34,7 +40,7 @@ describe('Nikon event polling', () => {
         camera.on(camera.registry.events.MovieRecordComplete, complete)
         camera.on(camera.registry.events.MovieRecordInterrupted, interrupted)
         camera.on(camera.registry.events.DevicePropChanged, property)
-        expect(await camera.pollEvents()).toEqual(recorded)
+        expect(await wrapper.pollNikonEvents()).toEqual(recorded)
         expect(object).toHaveBeenCalledWith({ ObjectHandle: 0xffff0001 })
         expect(complete).toHaveBeenCalledWith({ RecordKind: 2, StopCode: 3 })
         expect(interrupted).toHaveBeenCalledWith({ ErrorCode: 2, RecordKind: 0 })
