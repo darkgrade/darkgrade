@@ -115,6 +115,7 @@ export {normalizeCameraPower,readStandardCameraPower,readCameraPower} from '@ven
 export {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 
 export {connectNikonWifiCamera,type NikonWifiConnectionOptions} from '@vendors/nikon/wifi-camera'
+export {requestNikonWifi, type NikonSmartDeviceChannel} from '@vendors/nikon/bluetooth-wifi'
 export {discoverNikonWifiCameras,type NikonWifiAdvertisement} from '@vendors/nikon/wifi-discovery'
 export {NikonMenuController,type NikonMenuKey,type NikonMenuRunOptions} from '@vendors/nikon/menu-controls'
 export {NikonAccessoryController,encodeNikonAccessoryKey,encodeNikonAccessoryInfo} from '@vendors/nikon/accessory-controls'
