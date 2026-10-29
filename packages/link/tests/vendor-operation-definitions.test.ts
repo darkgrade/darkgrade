@@ -14,7 +14,7 @@ import type { TransportInterface } from '@transport/interfaces/transport.interfa
 import { describe, expect, it } from 'vitest'
 
 /** Records command containers and answers every transaction with OK. */
-function recordingTransport() {
+function recordingTransport(dataReplies: Map<number, Uint8Array> = new Map()) {
     const commands: number[][] = []
     const dataPhases: Uint8Array[] = []
     let pending: Uint8Array[] = []
@@ -41,7 +41,17 @@ function recordingTransport() {
             responseView.setUint16(4, 3, true)
             responseView.setUint16(6, 0x2001, true)
             responseView.setUint32(8, transactionId, true)
-            pending = [response]
+            const dataReply = dataReplies.get(words[0])
+            if (dataReply) {
+                const container = new Uint8Array(12 + dataReply.length)
+                const header = new DataView(container.buffer)
+                header.setUint32(0, container.length, true)
+                header.setUint16(4, 2, true)
+                header.setUint16(6, words[0], true)
+                header.setUint32(8, transactionId, true)
+                container.set(dataReply, 12)
+                pending = [container, response]
+            } else pending = [response]
         },
         receive: async () => pending.shift()!,
     }
@@ -61,6 +71,21 @@ function cameraFor(vendorId: number) {
 describe('Canon EOS definitions', () => {
     const registry = createCanonRegistry(true)
     const remoteMode = registry.operations.CanonSetRemoteMode.operationParameters[0].codec(registry)
+
+    it('reads the captured R6 III folder record without inventing a decoder or additional selectors', async () => {
+        const bytes = Uint8Array.from(Buffer.from('14000000000020a33130304d5344434600000000', 'hex'))
+        const recorded = recordingTransport(new Map([[0x9195, bytes]]))
+        const camera = new Camera({
+            transport: recorded.transport,
+            vendorId: VendorIDs.CANON,
+            logger: { renderInTerminal: false, captureConsole: false },
+        })
+        const response = await camera.send(registry.operations.CanonGetFolderRecord, { Selector: 'OBSERVED_FOLDER' })
+        expect(recorded.commands).toEqual([[0x9195, 1]])
+        expect(response.code).toBe(0x2001)
+        expect(response.data).toEqual(bytes)
+        expect(recorded.dataPhases).toEqual([])
+    })
 
     it('expresses CanonSetRemoteMode 5 (captured on EOS R6 Mark III) and 0x15 (libgphoto2 EOS M default)', () => {
         expect(remoteMode.decode(Uint8Array.of(0x05, 0, 0, 0)).value).toBe('MODE_0x05')

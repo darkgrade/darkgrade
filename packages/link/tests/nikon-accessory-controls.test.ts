@@ -22,7 +22,7 @@ function fixture(options:{manufacturer?:string;readyCode?:number;recording?:numb
     const camera={send,getInstance:()=>instance},controller=new NikonAccessoryController(camera as any)
     return {camera,controller,instance,send}
 }
-afterEach(()=>vi.useRealTimers())
+afterEach(()=>{vi.useRealTimers()})
 
 describe('Nikon accessory wire encodings',()=>{
     it.each([
