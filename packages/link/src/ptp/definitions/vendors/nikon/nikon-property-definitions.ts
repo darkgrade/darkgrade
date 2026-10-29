@@ -2,6 +2,7 @@ import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { BitfieldCodec, EnumCodec } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
 import {nikonVideoPropertyRegistry} from '@vendors/nikon/video-properties'
+import { nikonShootingPropertyRegistry } from './nikon-shooting-property-definitions'
 
 const UINT8 = getDatatypeByName('UINT8')!.code
 const UINT32 = getDatatypeByName('UINT32')!.code
@@ -82,6 +83,7 @@ export const ConnectionPath = {
 
 export const nikonPropertyRegistry = {
     ...nikonVideoPropertyRegistry,
+    ...nikonShootingPropertyRegistry,
     ConnectionPath,
     LiveViewStatus,
     LiveViewSelector,
