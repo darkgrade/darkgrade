@@ -18,6 +18,20 @@ function cameraFixture() {
 }
 
 describe('Sony session response validation', () => {
+    it('allows an inventory session without changing host priority or save destination', async () => {
+        const { camera, sent } = cameraFixture()
+        camera.refreshPropertyStates = async () => []
+        await camera.connect(undefined, { configure: false })
+        expect(sent).toEqual([
+            'SDIO_OpenSession',
+            'SDIO_Connect',
+            'SDIO_Connect',
+            'SDIO_GetExtDeviceInfo',
+            'SDIO_Connect',
+        ])
+        expect(camera.set).not.toHaveBeenCalled()
+    })
+
     it('stops before authentication or configuration if the camera refuses the session', async () => {
         const { camera, replies, sent } = cameraFixture()
         replies.push({ code: 0x2019 })

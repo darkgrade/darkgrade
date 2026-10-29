@@ -128,7 +128,7 @@ export class SonyCamera extends GenericCamera {
         logger.setRegistry(this.registry)
     }
 
-    async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus' } = {}): Promise<void> {
+    async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus'; configure?: boolean } = {}): Promise<void> {
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
         if (!this.transport.isConnected()) {
             await this.transport.connect({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
@@ -159,7 +159,7 @@ export class SonyCamera extends GenericCamera {
 
         await this.refreshPropertyStates()
 
-        if (options.mode === 'menus') return
+        if (options.mode === 'menus' || options.configure === false) return
 
         await this.set(this.registry.properties.PositionKeySetting, 'HOST_PRIORITY')
         await this.set(this.registry.properties.StillImageSaveDestination, 'CAMERA_DEVICE')
