@@ -143,6 +143,14 @@ export class Camera {
         return this.instance.get(property)
     }
 
+    /**
+     * Read GetDevicePropValue using the supplied property's known codec.
+     * This does not discover descriptor datatype overrides or allowed values.
+     */
+    async readValue<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
+        return this.instance.readValue(property)
+    }
+
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
         return this.instance.set(property, value)
     }
