@@ -14,6 +14,7 @@ import { EventDefinition } from '@ptp/types/event'
 import type { PropertyDefinition } from '@ptp/types/property'
 import { EventParams } from '@ptp/types/type-helpers'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
+import { TransportType } from '@transport/interfaces/transport-types'
 import { GenericCamera } from './generic-camera'
 
 export type NikonLiveViewMetadata = Omit<NikonLiveViewDataset, 'liveViewImage' | 'reserved' | 'afFrameData' | 'autoCaptureSubjectDetection' | 'reservedEnd'>
@@ -212,6 +213,7 @@ export class NikonCamera extends GenericCamera {
         data?: Uint8Array
         nikonMetadata?: NikonLiveViewMetadata
     }> {
+        if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
         await this.enableLiveView()
 
         const info: ObjectInfo | undefined = undefined
@@ -377,10 +379,11 @@ export class NikonCamera extends GenericCamera {
     async startRecording(): Promise<void> {
         const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
         if (condition.includes('alreadyRecording')) throw new Error('Nikon is already recording; its session was preserved')
-        // Card inspection can leave this body refusing application mode within
+        // USB card inspection can leave this body refusing application mode within
         // the same PTP session. Renew the idle session before preparing a movie;
         // this keeps USB connected and adds no power cycle or fixed sleep.
-        if (this.applicationMode !== 'ON' && this.sessionId !== null) {
+        // Wi-Fi must retain its authenticated session rather than applying the USB workaround.
+        if (this.transport.getType() !== TransportType.IP && this.applicationMode !== 'ON' && this.sessionId !== null) {
             await this.waitForImageBufferReady()
             const nextSession = (this.sessionId + 1) >>> 0 || 1
             const closed = await this.send(this.registry.operations.CloseSession, {})
@@ -394,6 +397,7 @@ export class NikonCamera extends GenericCamera {
             this.applicationMode = 'UNKNOWN'
             this.liveViewStatus = 'UNKNOWN'
         }
+        if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
         if(this.manualVideoExposureRequested)await this.prepareManualVideoExposure()
         // Setup capture
 

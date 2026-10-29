@@ -380,3 +380,25 @@ it('ordinary movie startup never silently enables remote Manual exposure',async(
  await camera.startRecording()
  expect(calls.some(call=>call.name==='SetDevicePropValueEx'||call.name==='ChangeCameraMode')).toBe(false)
 })
+
+
+it('starts a Wi-Fi movie within the existing session without the USB renewal workaround', async () => {
+ const {camera,calls,transport}=fixture();camera.sessionId=12
+ transport.getType=()=> 'ip'
+ vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'none') as any)
+ await camera.startRecording()
+ expect(calls.some(call=>call.name==='CloseSession'||call.name==='OpenSession')).toBe(false)
+ expect(calls.findIndex(call=>call.name==='ChangeCameraMode')).toBeLessThan(calls.findIndex(call=>call.name==='StartLiveView'))
+ expect(calls.find(call=>call.name==='ChangeCameraMode')?.params).toEqual({Mode:'REMOTE'})
+ expect(calls.some(call=>call.name==='ChangeApplicationMode')).toBe(true)
+ expect(calls.some(call=>call.name==='StartMovieRecord')).toBe(true)
+ expect(camera.sessionId).toBe(12)
+})
+
+
+it('prepares remote mode before starting a Wi-Fi preview', async () => {
+ const {camera,calls,transport}=fixture();transport.getType=()=> 'ip'
+ await camera.captureLiveView({includeInfo:false})
+ expect(calls.find(call=>call.name==='ChangeCameraMode')?.params).toEqual({Mode:'REMOTE'})
+ expect(calls.findIndex(call=>call.name==='ChangeCameraMode')).toBeLessThan(calls.findIndex(call=>call.name==='StartLiveView'))
+})

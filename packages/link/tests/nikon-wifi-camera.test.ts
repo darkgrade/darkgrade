@@ -9,7 +9,7 @@ beforeEach(()=>{vi.resetAllMocks();fixture.connect.mockResolvedValue(undefined);
 describe('verified Nikon Wi-Fi connection',()=>{
  it('preserves controller identity and verifies the active control path',async()=>{
   expect(await connectNikonWifiCamera(options)).toMatchObject({model:'Z6_3',connectionPath:'wifi',verified:true})
-  expect(fixture.transport).toHaveBeenCalledWith(expect.objectContaining({clientGuid:options.clientGuid,timeout:5000}))
+  expect(fixture.transport).toHaveBeenCalledWith(expect.objectContaining({clientGuid:options.clientGuid,timeout:20000}))
   expect(fixture.send.mock.calls.map(call=>call[0])).toEqual(['info',GetDevicePropDescEx])
   expect(fixture.disconnect).not.toHaveBeenCalled()
  })

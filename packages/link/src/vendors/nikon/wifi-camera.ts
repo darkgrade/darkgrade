@@ -19,7 +19,7 @@ export interface NikonWifiConnectionOptions {
 export async function connectNikonWifiCamera(options:NikonWifiConnectionOptions){
     if(options.clientGuid.length!==16||!options.clientGuid.some(byte=>byte!==0))throw new Error('Use a persisted, nonzero 16-byte Nikon controller GUID')
     if(!options.address.trim()||!options.expectedSerialNumber.trim()||!options.expectedSerialNumber.replace(/^0+/,''))throw new Error('Nikon Wi-Fi requires an address and expected camera serial number')
-    const timeout=options.timeoutMilliseconds??5000
+    const timeout=options.timeoutMilliseconds??20000
     if(!Number.isFinite(timeout)||timeout<250||timeout>30000)throw new Error('Nikon Wi-Fi timeout must be 250–30000 ms')
     const transport=new IPTransport({address:options.address,port:options.port,localAddress:options.localAddress,clientGuid:options.clientGuid,clientName:'Darkgrade',timeout})
     const camera=new Camera({vendorId:0x04b0,transport,logger:{renderInTerminal:false,captureConsole:false}})
