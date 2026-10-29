@@ -1,0 +1,567 @@
+{
+    "schemaVersion": 1,
+    "kind": "test-bench-workflow-baseline",
+    "bench": "darkgrade01",
+    "observedAt": "2026-10-28T18:03:33.619Z",
+    "validationScope": {
+        "physicalBaseline": true,
+        "candidateBranchTested": false,
+        "reason": "Running services used the older deployed source below. They expose no HardwareCoordinator module or hardwareOwners API; no service, checkout, environment, or deployment was changed."
+    },
+    "versions": {
+        "testBench": {
+            "repository": "darkgrade/test-bench",
+            "branch": "fix/demo-shot-tuning",
+            "revision": "b91e0654036e1a328b44aadd0032431db8f0e46a",
+            "mcpVersion": "0.22.1",
+            "webEntrypoint": "src/web-server.ts",
+            "mcpEntrypoint": "src/mcp-http-server.ts"
+        },
+        "darkgrade": {
+            "repository": "darkgrade/darkgrade",
+            "branch": "fix/demo-shot-tuning",
+            "revision": "543b5be6ba34b848e1d75ed8ea2072e993a776e5"
+        },
+        "host": {
+            "kernel": "7.0.0-38-generic",
+            "architecture": "x86_64",
+            "dumpcapVersion": "4.6.4"
+        }
+    },
+    "workflowMapping": [
+        {
+            "tools": ["camera_controls", "camera_set_iso"],
+            "path": [
+                "MCP cameraControlRequest",
+                "POST /api/cameras/{label}/controls",
+                "BenchControlPlane.runCameraControl",
+                "vendor dispatcher",
+                "DarkgradeService.canonControl or sonyControl",
+                "per-camera flock",
+                "scripts/darkgrade-canon-control.ts or darkgrade-sony-control.ts",
+                "@darkgrade/link Camera facade",
+                "CanonCamera or SonyCamera native USB/PTP"
+            ]
+        },
+        {
+            "tools": ["camera_set_canon_color_temperature"],
+            "path": [
+                "MCP",
+                "BenchControlPlane.runCanonControl",
+                "ensureCameraReady / fresh probe session",
+                "DarkgradeService.canonControl",
+                "per-camera flock",
+                "scripts/darkgrade-canon-control.ts",
+                "CanonCamera.setCanonColorTemperature",
+                "CanonSetDevicePropValue (0x9110) and property-cache readback"
+            ]
+        },
+        {
+            "tools": ["camera_live_view_frame"],
+            "path": [
+                "MCP",
+                "BenchControlPlane.runCameraAction",
+                "DarkgradeService.cameraAction",
+                "per-camera flock",
+                "scripts/darkgrade-camera-action.ts",
+                "Camera.captureLiveView",
+                "validated JPEG saved to bounded bench media cache"
+            ]
+        },
+        {
+            "tools": ["camera_preflight"],
+            "path": [
+                "MCP cameraReadinessRequest",
+                "POST /api/cameras/{label}/preflight",
+                "BenchControlPlane.preflightCamera",
+                "camera/control/storage/photo checks",
+                "recordTestClip",
+                "scripts/darkgrade-camera-action.ts test-recording",
+                "withCanonRecordingMode",
+                "Camera.startRecording / stopRecording in finally",
+                "waitForNewCameraMovie / readCameraMovieAudio"
+            ]
+        },
+        {
+            "tools": ["camera_take_start", "camera_take_record", "camera_take_stop", "camera_take_collect"],
+            "exercised": false,
+            "path": [
+                "MCP multiCameraRequest",
+                "POST /api/takes/start or record/stop/collect endpoints",
+                "VideoTakes stateful take manager",
+                "BenchControlPlane.createTakeCamera",
+                "openVideoTakeDriver",
+                "per-camera flock",
+                "scripts/darkgrade-video-take.ts",
+                "Darkgrade recording classes from separate PR #18"
+            ],
+            "boundary": "Source mapping only. Persistent take and original collection were not executed by this physical baseline."
+        }
+    ],
+    "cameras": [
+        {
+            "profile": "canon-eos-80d",
+            "benchLabel": "canon-r7",
+            "model": "Canon EOS 80D",
+            "usb": "04a9:3294",
+            "firmware": "3-1.0.3",
+            "probe": {
+                "status": "ready",
+                "ptpResponsive": true,
+                "lastProbeAt": "2026-10-28T17:53:48.313Z",
+                "firmwareVersion": "3-1.0.3",
+                "detail": "PTP GetDeviceInfo completed for Canon.Inc Canon EOS 80D"
+            },
+            "controlSnapshot": {
+                "scope": "selected real camera_controls fields; other properties/network/battery omitted",
+                "controls": {
+                    "iso": {
+                        "code": 53507,
+                        "name": "CanonIso",
+                        "description": "Canon ISO Sensitivity",
+                        "access": "GetSet",
+                        "value": "auto"
+                    },
+                    "whiteBalance": {
+                        "code": 53513,
+                        "name": "CanonWhiteBalance",
+                        "description": "Canon White Balance",
+                        "access": "GetSet",
+                        "value": "auto"
+                    },
+                    "colorTemperature": {
+                        "code": 53514,
+                        "name": "CanonColorTemperature",
+                        "description": "White-balance color temperature in kelvin.",
+                        "access": "GetSet",
+                        "value": 5200,
+                        "allowedValues": [
+                            2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900,
+                            4000, 4100, 4200, 4300, 4400, 4500, 4600, 4700, 4800, 4900, 5000, 5100, 5200, 5300, 5400,
+                            5500, 5600, 5700, 5800, 5900, 6000, 6100, 6200, 6300, 6400, 6500, 6600, 6700, 6800, 6900,
+                            7000, 7100, 7200, 7300, 7400, 7500, 7600, 7700, 7800, 7900, 8000, 8100, 8200, 8300, 8400,
+                            8500, 8600, 8700, 8800, 8900, 9000, 9100, 9200, 9300, 9400, 9500, 9600, 9700, 9800, 9900,
+                            10000
+                        ]
+                    },
+                    "liveViewAutofocusMode": {
+                        "code": 53690,
+                        "name": "CanonLiveViewAutofocusMode",
+                        "description": "Live-view AF area/system (EDSDK Evf_AFMode).",
+                        "access": "GetSet",
+                        "value": "live",
+                        "allowedValues": ["face", "multi", "live"]
+                    }
+                }
+            },
+            "settingRoundTrip": {
+                "tool": "camera_set_canon_color_temperature",
+                "parameter": "kelvin",
+                "property": "0xd10a",
+                "original": 5200,
+                "requested": 5300,
+                "readback": 5300,
+                "restored": 5200,
+                "whiteBalanceBefore": "auto",
+                "whiteBalanceAfter": "auto",
+                "physicalEffectBoundary": "Fresh property readback only. White balance stayed auto; no claim that the visible shot changed."
+            },
+            "apiSequence": [
+                "agent_job_start",
+                "camera_power(on=true)",
+                "camera_ensure_ready",
+                "camera_controls",
+                "usb_capture_start",
+                "camera_set_canon_color_temperature(5300)",
+                "usb_capture_stop",
+                "camera_controls(readback=5300)",
+                "usb_capture_start",
+                "camera_set_canon_color_temperature(5200)",
+                "usb_capture_stop",
+                "camera_controls(restored=5200)",
+                "camera_power(on=false)",
+                "agent_job_finish"
+            ],
+            "previews": {
+                "darkgradeLiveView": {
+                    "contentType": "image/jpeg",
+                    "bytes": 172167,
+                    "width": 960,
+                    "height": 640,
+                    "sha256": "22409a0461480f567a9714e3afe7f0db064433c26e639ad40fceb35e58285fef"
+                },
+                "pairedHdmiSnapshot": {
+                    "contentType": "image/jpeg",
+                    "bytes": 37579,
+                    "width": 1920,
+                    "height": 1080,
+                    "sha256": "6ac3ce7e8aac21cafc5922f411b23caec5e92251752aeda55db3d80fac49137b"
+                }
+            },
+            "cleanup": {
+                "initialPowerOn": false,
+                "finalPowerOn": false,
+                "bodyUsbCompanions": [
+                    {
+                        "hubLocation": "4-1.4",
+                        "port": 1,
+                        "initialPowered": true,
+                        "finalPowered": true,
+                        "controllerStatusUnchanged": true
+                    },
+                    {
+                        "hubLocation": "3-3.4",
+                        "port": 1,
+                        "initialPowered": true,
+                        "finalPowered": true,
+                        "controllerStatusUnchanged": true
+                    }
+                ]
+            }
+        },
+        {
+            "profile": "sony-ilce-6700",
+            "benchLabel": "sony-a6700",
+            "model": "Sony ILCE-6700",
+            "usb": "054c:0e78",
+            "firmware": "2.00",
+            "probe": {
+                "status": "ready",
+                "ptpResponsive": true,
+                "lastProbeAt": "2026-10-28T17:57:54.607Z",
+                "firmwareVersion": "2.00",
+                "detail": "PTP GetDeviceInfo completed for Sony Corporation ILCE-6700"
+            },
+            "controlSnapshot": {
+                "scope": "selected real camera_controls fields; other properties/network/battery omitted",
+                "controls": {
+                    "iso": {
+                        "code": 53790,
+                        "codeHex": "0xd21e",
+                        "name": "Iso",
+                        "description": "Get/Set the ISO sensitivity.",
+                        "value": "ISO 8000",
+                        "rawValue": 8000,
+                        "allowedValues": [
+                            "ISO AUTO",
+                            "Unknown ISO mode: 0x10000032",
+                            "Unknown ISO mode: 0x10000040",
+                            "Unknown ISO mode: 0x10000050",
+                            "ISO 100",
+                            "ISO 125",
+                            "ISO 160",
+                            "ISO 200",
+                            "ISO 250",
+                            "ISO 320",
+                            "ISO 400",
+                            "ISO 500",
+                            "ISO 640",
+                            "ISO 800",
+                            "ISO 1000",
+                            "ISO 1250",
+                            "ISO 1600",
+                            "ISO 2000",
+                            "ISO 2500",
+                            "ISO 3200",
+                            "ISO 4000",
+                            "ISO 5000",
+                            "ISO 6400",
+                            "ISO 8000",
+                            "ISO 10000",
+                            "ISO 12800",
+                            "ISO 16000",
+                            "ISO 20000",
+                            "ISO 25600",
+                            "ISO 32000",
+                            "Unknown ISO mode: 0x10009c40",
+                            "Unknown ISO mode: 0x1000c800",
+                            "Unknown ISO mode: 0x1000fa00",
+                            "Unknown ISO mode: 0x10013880",
+                            "Unknown ISO mode: 0x10019000"
+                        ],
+                        "allowedRawValues": [
+                            16777215, 268435506, 268435520, 268435536, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800,
+                            1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12800, 16000, 20000,
+                            25600, 32000, 268475456, 268486656, 268499456, 268515456, 268537856
+                        ],
+                        "writable": true,
+                        "enabled": true,
+                        "sonyEnabledFlag": 1,
+                        "sonyGetSetFlag": 1
+                    }
+                }
+            },
+            "settingRoundTrip": {
+                "tool": "camera_set_iso",
+                "parameter": "value",
+                "property": "0xd21e",
+                "original": "ISO 8000",
+                "requested": "ISO 100",
+                "readback": "ISO 100",
+                "restored": "ISO 8000",
+                "originalRaw": 8000,
+                "changedRaw": 100,
+                "restoredRaw": 8000,
+                "physicalEffectBoundary": "Fresh native USB/PTP property readback; no Sony SDK handshake capture or raw Sony property data capture was made."
+            },
+            "apiSequence": [
+                "agent_job_start",
+                "camera_power(on=true)",
+                "camera_ensure_ready",
+                "camera_probe",
+                "camera_controls",
+                "camera_set_iso(ISO 100)",
+                "camera_controls(readback=ISO 100)",
+                "camera_set_iso(ISO 8000)",
+                "camera_controls(restored=ISO 8000)",
+                "camera_live_view_frame",
+                "video_capture_snapshot",
+                "camera_power(on=false)",
+                "agent_job_finish"
+            ],
+            "previews": {
+                "darkgradeLiveView": {
+                    "contentType": "image/jpeg",
+                    "bytes": 70144,
+                    "width": 1024,
+                    "height": 680,
+                    "sha256": "ca2f08b8c825e8502e2fd6545bc5bc0bd9a2d6fcb453c91c83df15276f2ca63b"
+                },
+                "pairedHdmiSnapshot": {
+                    "contentType": "image/jpeg",
+                    "bytes": 147757,
+                    "width": 1920,
+                    "height": 1080,
+                    "sha256": "8ea622cf803e17c6e5dfc9c89d55ccedc706353fd7167f0efa7ce264b5f3b58b"
+                }
+            },
+            "cleanup": {
+                "initialPowerOn": false,
+                "finalPowerOn": false,
+                "bodyUsbCompanions": [
+                    {
+                        "hubLocation": "4-1.4.3",
+                        "port": 1,
+                        "initialPowered": true,
+                        "finalPowered": true,
+                        "controllerStatusUnchanged": true
+                    },
+                    {
+                        "hubLocation": "3-3.4.3",
+                        "port": 1,
+                        "initialPowered": true,
+                        "finalPowered": true,
+                        "controllerStatusUnchanged": true
+                    }
+                ]
+            }
+        }
+    ],
+    "canonRecordingPreflight": {
+        "request": {
+            "tool": "camera_preflight",
+            "arguments": {
+                "camera": "canon-r7",
+                "plannedMinutes": 1,
+                "autoSetup": false
+            }
+        },
+        "ready": false,
+        "items": [
+            {
+                "id": "camera",
+                "status": "pass",
+                "summary": "Canon EOS 80D is on and answering over USB"
+            },
+            {
+                "id": "battery",
+                "status": "warn",
+                "summary": "96% battery · runtime not reported",
+                "detail": "Runtime is the camera estimate for current conditions. A percentage, coarse level or powered outlet does not verify battery duration. External power may still discharge the battery. Five minutes of reserve is required when runtime is reported."
+            },
+            {
+                "id": "storage",
+                "status": "pass",
+                "summary": "Estimated 3 h 58 min available — you need 1 min · enough estimated space",
+                "detail": "Calculated automatically from the new camera-card test movie, using twice its measured data rate and a 10% free-space reserve. Variable bitrate can increase for a different scene. This is an estimate for the current settings, not camera-reported remaining time."
+            },
+            {
+                "id": "audio",
+                "status": "pass",
+                "summary": "Sound track verified on the card",
+                "detail": "This camera does not output sound over HDMI while shooting. The new original contains an audio track; its microphone level has not been measured."
+            },
+            {
+                "id": "focus",
+                "status": "confirm",
+                "summary": "ai-focus with continuous tracking",
+                "detail": "The camera keeps refocusing during the take. Check it locks onto the subject, not the background. Still photo captured without waiting for shutter autofocus. Focus is checked separately from the downloaded image and autofocus evidence."
+            },
+            {
+                "id": "exposure",
+                "status": "warn",
+                "summary": "ISO is on Auto — brightness may drift over a long take",
+                "detail": "White balance is on Auto — colour may shift as light changes Lock settings you want to stay constant for the whole take, then check the picture looks right."
+            },
+            {
+                "id": "white-balance",
+                "status": "warn",
+                "summary": "White balance: auto",
+                "detail": "Auto white balance can shift during a take. Use the same reference image as focus and exposure to judge the colour."
+            },
+            {
+                "id": "format",
+                "status": "confirm",
+                "summary": "Full HD 25 fps · MP4 · IPB (Standard) · card 1 (SD), 128 GB",
+                "detail": "Make sure this is the resolution and frame rate you planned, and that it records to the card you expect."
+            },
+            {
+                "id": "test-recording",
+                "status": "confirm",
+                "summary": "Recorded MVI_2524.MP4 (10.9 MB) — recording verified",
+                "detail": "The card file was verified. The player below is a separate HDMI monitor capture, including lead-in and tail; it is not the movie saved on the card. The EOS 80D HDMI monitor copy is silent while shooting; sound is checked from the original card movie instead."
+            }
+        ],
+        "testRecording": {
+            "requestedMilliseconds": 3000,
+            "recordingVerified": true,
+            "originalCard": {
+                "filename": "MVI_2524.MP4",
+                "bytes": 10934837
+            },
+            "cardAudio": {
+                "status": "present",
+                "detail": "The new card movie contains an audio track; its microphone level has not been measured."
+            },
+            "recordingSettings": {
+                "mode": 22,
+                "iso": "auto",
+                "aperture": "auto",
+                "shutterSpeed": "auto",
+                "whiteBalance": "auto",
+                "settingsMatched": false
+            },
+            "hdmiMonitorCopy": {
+                "contentType": "video/webm",
+                "bytes": 978978
+            },
+            "originalDownloaded": false
+        },
+        "persistentTake": {
+            "attempted": false,
+            "reason": "Agent did not force a separate persistent take after ready=false and confirmation/warning items. No application rejection of camera_take_start is claimed.",
+            "recordStopCollectCoverage": "Persistent take start/stop/original collection was not exercised."
+        },
+        "allControlValuesEqualBeforeAfter": true,
+        "confirmedStopped": true
+    },
+    "traces": [
+        {
+            "id": "387a5b60-2306-425b-8c29-4fb0ad83ffd0",
+            "sha256": "884c63f508a7410bda219a7a30a03898dd113c8a188638f8ee1130c91d44706d",
+            "bytes": 60832,
+            "interfaces": [
+                {
+                    "linktype": 220,
+                    "snaplen": 245824
+                }
+            ],
+            "packets": 582,
+            "truncatedFrames": 0
+        },
+        {
+            "id": "a7158930-246d-4fd2-90f6-2756e44d5ce2",
+            "sha256": "653ddeba3308bf05c344e0590c5e53cbd49c6f3d49045ece6340409bb63588b6",
+            "bytes": 59792,
+            "interfaces": [
+                {
+                    "linktype": 220,
+                    "snaplen": 245824
+                }
+            ],
+            "packets": 572,
+            "truncatedFrames": 0
+        },
+        {
+            "id": "aa3194f5-2a79-4c97-bb28-99cdf550f07b",
+            "sha256": "d561ec5d6d5ad980d7e9e77279c87f15431949dcbde1fb4ffcff06e9833d8c88",
+            "bytes": 60832,
+            "interfaces": [
+                {
+                    "linktype": 220,
+                    "snaplen": 245824
+                }
+            ],
+            "packets": 582,
+            "truncatedFrames": 0
+        }
+    ],
+    "capturedScalarWriteExchanges": [
+        {
+            "operation": "0x9110",
+            "parameters": [],
+            "sourceTraceSha256": "d561ec5d6d5ad980d7e9e77279c87f15431949dcbde1fb4ffcff06e9833d8c88",
+            "sourceTraceId": "aa3194f5-2a79-4c97-bb28-99cdf550f07b",
+            "dataFromHost": "0c0000000ad10000b4140000",
+            "response": {
+                "code": "0x2001",
+                "parameters": []
+            },
+            "property": "0xd10a",
+            "value": 5300,
+            "evidenceBoundary": "Complete captured host scalar write and response; property-cache data packets are absent. Independent MCP readback establishes the state change."
+        },
+        {
+            "operation": "0x9110",
+            "parameters": [],
+            "sourceTraceSha256": "884c63f508a7410bda219a7a30a03898dd113c8a188638f8ee1130c91d44706d",
+            "sourceTraceId": "387a5b60-2306-425b-8c29-4fb0ad83ffd0",
+            "dataFromHost": "0c0000000ad1000050140000",
+            "response": {
+                "code": "0x2001",
+                "parameters": []
+            },
+            "property": "0xd10a",
+            "value": 5200,
+            "evidenceBoundary": "Complete captured host scalar write and response; property-cache data packets are absent. Independent MCP readback establishes the state change."
+        }
+    ],
+    "captureLimit": {
+        "linkType": 220,
+        "snaplen": 245824,
+        "truncatedFrameCount": 0,
+        "missingBulkInFlagData": "D",
+        "missingBulkInTransferFlags": "0x00400200",
+        "matchedKernelHeaderFlag": {
+            "name": "URB_DMA_SG_COMBINED",
+            "value": "0x00400000"
+        },
+        "observation": "Successful bulk-IN URBs with requested payload lengths have len_cap=0 and flag_data=D. The bytes are absent from the saved capture, including GetDeviceInfo and property-cache data.",
+        "groundedExplanation": "The running kernel header identifies SG-combined transfers; upstream Linux v7.0 usbmon omits those IOMMU-coalesced buffers. Capture snaplen increases and parser reconstruction cannot recover absent bytes.",
+        "primarySource": "https://github.com/torvalds/linux/blob/v7.0/drivers/usb/mon/mon_bin.c#L382-L417"
+    },
+    "portableExpectations": [
+        "One high-level Canon setter can perform two complete PTP sessions: readiness probe, then vendor initialization/control/cache-readback/cleanup. Model the TestBench adapter workflow, not an isolated accepted operation.",
+        "A control without currently advertised allowedValues cannot be treated as a writable advertised choice merely because access says GetSet. Canon ISO/aperture/shutter/WB were auto with no advertised choices in the recorded still mode.",
+        "Sony writable/enabled and exact advertised labels matter. Only ISO100 and ISO8000 were exercised; unknown ISO labels in the advertised list remain unverified.",
+        "A successful setter response is weaker than an independent fresh readback and a verified restore.",
+        "JPEG bytes, dimensions and hashes establish fresh preview delivery; accepted focus or exposure commands do not establish visual tuning.",
+        "recordingVerified=true and a new card file do not imply preflight ready=true. Focus/format confirmation, Auto ISO/WB warnings and runtime-unknown battery status remain visible.",
+        "The HDMI monitor copy is separate from the original card movie. An original audio track does not establish microphone levels.",
+        "Original download/collection is a separate untested capability here.",
+        "Application-level observers are required for absent USB data phases; do not synthesize or mark reconstructed datasets captured."
+    ],
+    "finalCleanup": {
+        "generatedAt": "2026-10-28T18:03:33.619Z",
+        "camerasPoweredOff": true,
+        "activeJobs": 0,
+        "activeRecoveries": 0,
+        "runningCaptures": 0,
+        "hardwareOwnersApiAvailable": false,
+        "controllerPowerStateIsElectricalVbusProof": false,
+        "serviceRestarted": false,
+        "repositoriesChangedOnBench": false
+    },
+    "privacy": "Raw traces, complete API outputs, source snapshots and original preview media remain in the operator private evidence archive. USB serials, pairing identities, credentials, private network fields and actual media are excluded.",
+    "captureScope": "Each usbmon trace observes the whole bus; only the fully captured, known Canon scalar transactions are published here. No raw trace is committed."
+}
