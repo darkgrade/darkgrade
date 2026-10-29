@@ -456,6 +456,34 @@ export const CanonGetDebugLogEx = {
     responseParameters: [uint32Parameter('Value', 'Result (0 observed)')] as const,
 } as const satisfies OperationDefinition
 
+/**
+ * EOS R6 Mark III capture: darkgrade/test-bench@2db7a28,
+ * .agents/skills/camera-re/references/canon-menu-ptp-investigation.md.
+ * 0x9195 [1] returned OK with the 20-byte record
+ * 14000000 000020a3 3130304d5344434600000000 ("100MSDCF").
+ * Keep the response opaque: other selectors and the general record layout are not established.
+ */
+export const CanonGetFolderRecord = {
+    code: 0x9195,
+    name: 'CanonGetFolderRecord',
+    description: 'Reads the folder record observed with selector 1 on EOS R6 Mark III; other selectors are unverified.',
+    dataDirection: 'out',
+    operationParameters: [
+        {
+            name: 'Selector',
+            description: 'Only selector 1 is supported by the captured evidence.',
+            codec: registry =>
+                createEnumCodec(
+                    registry,
+                    [{ value: 1, name: 'OBSERVED_FOLDER', description: 'Captured folder selector' }],
+                    registry.codecs.uint32
+                ),
+            required: true,
+        },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const canonOperationRegistry = {
     CanonGetExtendedDeviceInfo,
     CanonSetRemoteMode,
@@ -485,6 +513,7 @@ export const canonOperationRegistry = {
     CanonTerminateViewfinder,
     CanonGetRemoteErrLogMode,
     CanonGetDebugLogEx,
+    CanonGetFolderRecord,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type CanonOperationDef = (typeof canonOperationRegistry)[keyof typeof canonOperationRegistry]

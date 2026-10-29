@@ -4,7 +4,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
 
-function container(type: number, code: number, payload = new Uint8Array()): Uint8Array {
+function container(type: number, code: number, payload: Uint8Array = new Uint8Array()): Uint8Array {
     const bytes = new Uint8Array(12 + payload.length)
     const view = new DataView(bytes.buffer)
     view.setUint32(0, bytes.length, true)
