@@ -6,12 +6,13 @@ import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
 import { SDIExtDevicePropInfoCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
-import { createCanonRegistry, createNikonRegistry, createPTPRegistry, createSonyRegistry } from '@ptp/registry'
+import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@ptp/registry'
 import type { OperationDefinition } from '@ptp/types/operation'
-import type { PropertyDefinition } from '@ptp/types/property'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
+import { capturePropertyCodes, captureRegistry } from '@vendors/capture-properties'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
+export { capturePropertyCodes } from '@vendors/capture-properties'
 
 type TraceTransaction = Omit<CapturedPtpTransaction, 'dataFromHost' | 'response'> & {
     dataFromHost?: string
@@ -37,15 +38,6 @@ export interface ProfileCaptureOptions {
     timeoutSeconds?: number
 }
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
-const registryFor = (vendorId: number) =>
-    vendorId === 0x04a9
-        ? createCanonRegistry(true)
-        : vendorId === 0x054c
-          ? createSonyRegistry(true)
-          : vendorId === 0x04b0
-            ? createNikonRegistry(true)
-            : createPTPRegistry(true)
-
 /** Empty only the original DeviceInfo serial field, leaving every other byte unchanged. */
 export function redactDeviceInfoSerial(data: Uint8Array): Uint8Array {
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
@@ -66,22 +58,6 @@ export function redactDeviceInfoSerial(data: Uint8Array): Uint8Array {
     const result = new Uint8Array(offset + 1)
     result.set(data.subarray(0, offset))
     return result
-}
-
-/** Only defined numeric control properties are retained; no device-owned free text or network state. */
-export function capturePropertyCodes(vendorId: number): Set<number> {
-    return new Set(
-        Object.values(registryFor(vendorId).properties)
-            .filter(
-                (property: PropertyDefinition) =>
-                    property.datatype >= 1 &&
-                    property.datatype <= 10 &&
-                    !/serial|owner|artist|copyright|network|wireless|wifi|ssid|password|authentication|fingerprint|address|host|gps|location|DateTime|TimeZone|Clock|name/i.test(
-                        property.name
-                    )
-            )
-            .map(property => property.code)
-    )
 }
 
 /** These vendor datasets contain only protocol versions and counted numeric code lists. */
@@ -165,7 +141,7 @@ export function sanitizeProfileTransaction(
             const codec =
                 transaction.operation === 0x9251
                     ? new SDIExtDevicePropInfoCodec(createSonyRegistry(true))
-                    : new DevicePropDescCodec(registryFor(vendorId), transaction.operation === 0x943a)
+                    : new DevicePropDescCodec(captureRegistry(vendorId), transaction.operation === 0x943a)
             const decoded = codec.decode(response.data)
             if (
                 decoded.value.devicePropertyCode !== property ||
@@ -277,7 +253,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
         }
     })
     const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
-    const registry = registryFor(options.vendorId)
+    const registry = captureRegistry(options.vendorId)
     const camera = options.initialize
         ? new Camera({
               transport: trace.transport,
