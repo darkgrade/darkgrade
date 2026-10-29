@@ -1,5 +1,6 @@
 import { Logger } from '@core/logger'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
+import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { PTPResponseError } from '@core/ptp-errors'
@@ -147,6 +148,27 @@ export class NikonCamera extends GenericCamera {
         } else {
             this.emitter.removeAllListeners(event.name)
         }
+    }
+
+    /** Drain one event batch explicitly; opening a camera does not start a background poll. */
+    async pollEvents(): Promise<NikonQueuedEvent[]> {
+        const extended = await this.send(this.registry.operations.GetEventEx, {})
+        let events: NikonQueuedEvent[]
+        if (extended.code === 0x2005) {
+            const legacy = await this.send(this.registry.operations.GetEvent, {})
+            if (legacy.code !== OK.code)
+                throw new PTPResponseError(legacy.code, undefined, { operation: 'GetEvent' })
+            if (!Array.isArray(legacy.data)) throw new Error('Nikon GetEvent returned no event dataset')
+            events = legacy.data.map(event => ({ code: event.code, parameters: [event.parameter] }))
+        } else {
+            if (extended.code !== OK.code)
+                throw new PTPResponseError(extended.code, undefined, { operation: 'GetEventEx' })
+            if (!Array.isArray(extended.data)) throw new Error('Nikon GetEventEx returned no event dataset')
+            events = extended.data.map(event => ({ code: event.code, parameters: [...event.parameters] }))
+        }
+        for (const event of events)
+            this.handleEvent({ ...event, transactionId: 0 })
+        return events
     }
 
     async setIso(value: string): Promise<void> {

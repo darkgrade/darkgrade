@@ -9,6 +9,7 @@ import { canonPropertyRegistry } from '@ptp/definitions/vendors/canon/canon-prop
 import { fujifilmOperationRegistry } from '@ptp/definitions/vendors/fujifilm/fujifilm-operation-definitions'
 import { leicaOperationRegistry } from '@ptp/definitions/vendors/leica/leica-operation-definitions'
 import { nikonOperationRegistry } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
+import { nikonEventRegistry } from '@ptp/definitions/vendors/nikon/nikon-event-definitions'
 import { nikonPropertyRegistry } from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
 import { nikonResponseRegistry } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { olympusOperationRegistry } from '@ptp/definitions/vendors/olympus/olympus-operation-definitions'
@@ -47,7 +48,7 @@ export const createNikonRegistry = (littleEndian: boolean) =>
         codecs: createBaseCodecs(littleEndian),
         operations: { ...genericOperationRegistry, ...nikonOperationRegistry },
         properties: { ...genericPropertyRegistry, ...nikonPropertyRegistry },
-        events: genericEventRegistry,
+        events: { ...genericEventRegistry, ...nikonEventRegistry },
         formats: formatRegistry,
         responses: { ...responseRegistry, ...nikonResponseRegistry },
     }) as const
