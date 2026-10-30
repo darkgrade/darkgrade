@@ -8,6 +8,8 @@ export interface OperationDefinition<T = number | bigint | string | object | Uin
     name: string
     description: string
     dataDirection: DataDirection
+    /** An additional data-container opcode used by this operation; transaction IDs still must match. */
+    dataOperationCode?: number
     dataCodec?: CodecDefinition<T>
     operationParameters: [
         ParameterDefinition?,

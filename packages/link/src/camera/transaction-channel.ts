@@ -53,6 +53,7 @@ export interface Container {
 export interface ExpectedContainer {
     operation: string
     operationCode: number
+    dataOperationCode?: number
     transactionId: number
     /** "data" accepts a data container or an early response; "response" accepts only a response. */
     phase: 'data' | 'response'
@@ -266,7 +267,8 @@ export class TransactionChannel {
                 context
             )
         }
-        if (container.type === CONTAINER_TYPE.data && container.code !== expected.operationCode)
+        if (container.type === CONTAINER_TYPE.data && container.code !== expected.operationCode &&
+            container.code !== expected.dataOperationCode)
             throw new PTPProtocolError(
                 'operation-mismatch',
                 `data belongs to opcode 0x${container.code.toString(16)}, expected 0x${expected.operationCode.toString(16)}`,

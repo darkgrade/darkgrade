@@ -262,6 +262,8 @@ export const SDIO_GetOsdImage = {
 
 export const SDIO_GetPartialLargeObject = {
     code: 0x9211,
+    // FX2 and a6700 return the standard GetPartialObject data-container code.
+    dataOperationCode: 0x101b,
     name: 'SDIO_GetPartialLargeObject',
     description:
         'Get partial object from the device. Same as GetPartialObject on PIMA 15740 but with 64-bit offset support.',

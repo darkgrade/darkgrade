@@ -567,6 +567,7 @@ export class GenericCamera {
             const dataContainer = await this.channel.receive(sessionId, {
                 operation: operation.name,
                 operationCode: operation.code,
+                dataOperationCode: operation.dataOperationCode,
                 transactionId,
                 phase: 'data',
                 maxLength: bufferSize,
