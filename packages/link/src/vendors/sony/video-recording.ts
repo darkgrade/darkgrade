@@ -1,5 +1,6 @@
 import {sonyMovieCard} from '@vendors/sony/recording-slots'
 import type {TakeMedia} from '@workflows/video-take'
+import {sonyIndexNeedsReserve} from '@vendors/sony/media-index'
 const sleep=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
 /** Camera-card take over the same official Sony SDK connection on USB or Wi-Fi. */
 export class SonyVideoRecording {
@@ -9,7 +10,9 @@ export class SonyVideoRecording {
     async prepare(){
         if((await this.camera.getSonyProperty('RecordingState')).value!=='0')throw new Error('This camera is already recording')
         if((await sonyMovieCard(this.camera)).status!=='ready')throw new Error('Insert a usable card in the selected movie slot')
-        this.baseline=new Set((await this.camera.getRecentSonyContents({all:true})).flatMap((content:any)=>(content.files||[]).map((file:any)=>JSON.stringify([String(file.name),String(file.bytes)]))))
+        const contents=await this.camera.getRecentSonyContents({all:true})
+        if(sonyIndexNeedsReserve(contents.length))throw new Error('Run recording checks to repair the Sony SDK media-index boundary before this take; no recording was started')
+        this.baseline=new Set(contents.flatMap((content:any)=>(content.files||[]).map((file:any)=>JSON.stringify([String(file.name),String(file.bytes)]))))
     }
     private newMovies(contents:any[]):TakeMedia[]{
         return contents.flatMap((content:any)=>(content.files||[]).filter((file:any)=>/\.(mp4|mov|mxf)$/i.test(file.name)&&Number(file.bytes)>0&&!this.baseline.has(JSON.stringify([String(file.name),String(file.bytes)]))).map((file:any)=>({id:`${content.id}:${file.id}`,filename:String(file.name).split(/[\\/]/).pop()||'camera-video.mp4',bytes:Number(file.bytes),verified:true})))
@@ -59,6 +62,7 @@ export class SonyVideoRecording {
             try{
                 const contents=await this.camera.getRecentSonyContents({all:true})
                 media=this.newMovies(contents)
+                if(!media.length&&this.refreshCamera&&this.camera.shouldRefreshMediaIndex?.())break
             }catch{ /* Sony's content index may lag file finalization. */ }
             if(media.length)break
             await sleep(300)

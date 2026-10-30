@@ -1,6 +1,7 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { baseCodecs, createEnumCodec, CustomCodec, EnumCodec, PTPRegistry } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
+import { sonyIsoLabel, sonyIsoRaw } from '@vendors/sony/iso-value'
 
 const UNDEF = getDatatypeByName('UNDEF')!.code
 const INT8 = getDatatypeByName('INT8')!.code
@@ -16,14 +17,6 @@ const parseAperture = (v: string | number): number => {
         .replace(/[fƒ]/g, '')
         .replace(/[\/:\s]/g, '')
     return parseFloat(s) || 0
-}
-
-const parseISO = (v: string | number): number => {
-    const s = String(v)
-        .toLowerCase()
-        .replace(/iso\s*/g, '')
-    if (s === 'auto') return 0xffffff
-    return parseInt(s) || 0
 }
 
 const parseShutter = (v: string): [number, number] => {
@@ -118,40 +111,13 @@ class ShutterSpeedCodec extends CustomCodec<string> {
 
 class IsoCodec extends CustomCodec<string> {
     encode(value: string): Uint8Array {
-        const v = String(value).toLowerCase()
-        const isoValue = parseISO(value)
-        const u32 = this.baseCodecs.uint32
-        if (isoValue === 0xffffff || v.includes('auto')) return u32.encode(0x00ffffff)
-        const modePrefix = v.includes('multi frame nr high')
-            ? 0x02000000
-            : v.includes('multi frame nr')
-              ? 0x01000000
-              : 0x00000000
-        return u32.encode(modePrefix | isoValue)
+        return this.baseCodecs.uint32.encode(sonyIsoRaw(value))
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
         const u32 = this.baseCodecs.uint32
         const result = u32.decode(buffer, offset)
-        const hexValue = result.value
-
-        if (hexValue === 0x00ffffff) {
-            return { value: 'ISO AUTO', bytesRead: result.bytesRead }
-        }
-
-        const modePrefix = hexValue & 0xff000000
-        const isoValue = hexValue & 0x00ffffff
-
-        const decoded =
-            modePrefix === 0x00000000
-                ? `ISO ${isoValue}`
-                : modePrefix === 0x01000000
-                  ? `Multi Frame NR ISO ${isoValue}`
-                  : modePrefix === 0x02000000
-                    ? `Multi Frame NR High ISO ${isoValue}`
-                    : `Unknown ISO mode: 0x${hexValue.toString(16).padStart(8, '0')}`
-
-        return { value: decoded, bytesRead: result.bytesRead }
+        return { value: sonyIsoLabel(result.value), bytesRead: result.bytesRead }
     }
 }
 
@@ -573,6 +539,18 @@ export const Iso = {
     datatype: UINT32,
     access: 'GetSet',
     codec: registry => new IsoCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const GainControlSetting = {
+    code: 0xd01c,
+    name: 'GainControlSetting',
+    description: 'ISO auto/manual switch in Sony Flexible Exposure mode.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry => createEnumCodec(registry, [
+        { value: 1, name: 'Auto', description: 'Automatic ISO sensitivity' },
+        { value: 2, name: 'Manual', description: 'Manually selected ISO sensitivity' },
+    ] as const, registry.codecs.uint8),
 } as const satisfies PropertyDefinition
 
 export const Exposure = {
@@ -1454,8 +1432,8 @@ export const StillImageSaveDestination = {
         new EnumCodec(
             registry,
             [
-                { value: 0x0001, name: 'CAMERA_DEVICE', description: 'CAMERA_DEVICE' },
-                { value: 0x0010, name: 'HOST_DEVICE', description: 'HOST_DEVICE' },
+                { value: 0x0010, name: 'CAMERA_DEVICE', description: 'Save to camera card' },
+                { value: 0x0001, name: 'HOST_DEVICE', description: 'Transfer from camera memory to host' },
                 { value: 0x0011, name: 'BOTH_DEVICES', description: 'BOTH_DEVICES' },
             ] as const,
             registry.codecs.uint16
@@ -1657,6 +1635,7 @@ export const sonyPropertyRegistry = {
     Aperture,
     ShutterSpeed,
     Iso,
+    GainControlSetting,
     WhiteBalance,
     FocusMode,
     FocusArea,

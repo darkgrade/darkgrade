@@ -92,3 +92,19 @@ it('bounds a stuck disconnect without inheriting a long recording command timeou
  try{const pending=expect(bridge.request({cmd:'disconnect'})).rejects.toThrow('timed out');await vi.advanceTimersByTimeAsync(12001);await pending}
  finally{vi.useRealTimers();await bridge.close()}
 })
+
+it('does not abort a progressing-size movie at the old nine-minute deadline',async()=>{
+ const filename=await executable("printf '%s\\n' '{\"ok\":true}'\nwhile IFS= read -r request; do :; done\n")
+ const bridge=await createSonySdkBridge({executable:filename,timeoutMilliseconds:90000})
+ vi.useFakeTimers()
+ try{
+  let settled=false
+  const request=bridge.request({cmd:'download_content'})
+  request.then(()=>{settled=true},()=>{settled=true})
+  const rejected=expect(request).rejects.toThrow('timed out')
+  await vi.advanceTimersByTimeAsync(550001)
+  expect(settled).toBe(false)
+  await vi.advanceTimersByTimeAsync(1260000)
+  await rejected
+ }finally{vi.useRealTimers();await bridge.close()}
+})

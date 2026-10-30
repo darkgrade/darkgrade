@@ -1,5 +1,6 @@
 import type { SonySdkProperty, SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
+import { sonyIsoLabel } from '@vendors/sony/iso-value'
 
 const controls: Record<string, { code: number; label: string; values?: Record<string, string> }> = {
     aperture: { code: 256, label: 'Aperture' },
@@ -37,12 +38,16 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
     aspectRatio: { code: 273, label: 'Aspect ratio', values: { '1': '3:2', '2': '16:9', '3': '4:3', '4': '1:1' } },
     movieFormat: { code: 295, label: 'Movie format' },
     movieSetting: { code: 296, label: 'Movie recording profile' },
+    movieFrameRate: { code: 297, label: 'Movie frame rate', values: {'1':'120p','2':'100p','3':'60p','4':'50p','5':'30p','6':'25p','7':'24p','8':'23.98p','9':'29.97p','10':'59.94p','22':'24p','23':'119.88p'} },
     zoomSetting: {
         code: 293,
         label: 'Zoom range',
         values: { '1': 'Optical Zoom', '2': 'Smart Zoom', '3': 'Clear Image Zoom', '4': 'Digital Zoom' },
     },
     exposureProgram: { code: 261, label: 'Exposure program' },
+    apertureMode: { code: 310, label: 'Aperture auto/manual' },
+    shutterMode: { code: 311, label: 'Shutter auto/manual' },
+    isoMode: { code: 312, label: 'ISO auto/manual' },
     exposureComp: { code: 257, label: 'Exposure compensation' },
     colorTemperature: { code: 277, label: 'Color temperature' },
     flashMode: { code: 290, label: 'Flash mode' },
@@ -70,8 +75,9 @@ function label(property: SonySdkProperty, key: string, value: string): string {
     if (key === 'aperture') return 'f/' + (Number(value) / 100).toFixed(1)
     if (key === 'zoomPosition') return String(Number(value) / 1000)
     if (key === 'exposureComp') return String(Number(value) / 1000)
-    if (key === 'iso') return value === '16777215' ? 'Auto' : value
+    if (key === 'iso') return sonyIsoLabel(Number(value)).replace(/^ISO /, '').replace(/^AUTO$/, 'Auto')
     if (key === 'shutterSpeed') {
+        if (property.code === 378) return `${Number(value) / 1000}°`
         if (value === '0') return 'BULB'
         const packed = Number(value)
         return `${packed >>> 16}/${packed & 65535}`
@@ -79,6 +85,12 @@ function label(property: SonySdkProperty, key: string, value: string): string {
     return controls[key]?.values?.[value] || SONY_SDK_SETTING_LABELS[property.code]?.[value] || value
 }
 function findProperty(properties: SonySdkProperty[], key: string): SonySdkProperty | undefined {
+    if (key === 'shutterSpeed') {
+        const speed = properties.find(property => property.code === 259)
+        const angle = properties.find(property => property.code === 378)
+        if (angle?.writable && (!speed?.writable || speed.value === '4294967295')) return angle
+        return speed
+    }
     if (key === 'jpegQuality')
         return properties.find(property => property.code === 263) || properties.find(property => property.code === 301)
     return properties.find(property => property.code === controls[key]?.code)
@@ -118,8 +130,18 @@ function settingValue(property: SonySdkProperty, key: string, value: string | nu
         if (!Number.isSafeInteger(aperture)) throw new Error('Use an aperture such as f/5.6')
         return BigInt(aperture)
     }
-    if (key === 'iso') return normalized === 'auto' ? 16777215n : BigInt(text)
+    if (key === 'iso') {
+        const wanted = normalized.replace(/^iso\s+/, '')
+        const choice = property.allowedValues?.find(candidate => label(property, key, candidate).toLowerCase() === wanted)
+        if (choice !== undefined) return BigInt(choice)
+        return wanted === 'auto' ? 16777215n : BigInt(text)
+    }
     if (key === 'shutterSpeed') {
+        if (property.code === 378) {
+            const degrees = /^\d+(?:\.\d+)?°?$/.test(text) ? Number(text.replace('°', '')) : NaN
+            if (!(degrees > 0 && degrees <= 360)) throw new Error('This camera uses shutter angle; choose an advertised angle such as 180°')
+            return BigInt(Math.round(degrees * 1000))
+        }
         if (normalized === 'bulb') return 0n
         const match = text.match(/^(\d+)(?:\/(\d+))?$/)
         if (!match || Number(match[1]) > 65535 || Number(match[2] || 1) > 65535 || Number(match[2] || 1) === 0)
@@ -136,7 +158,37 @@ function settingValue(property: SonySdkProperty, key: string, value: string | nu
 /** The same named camera controls used by USB, translated to documented SDK values. */
 export async function performSonySdkControl(camera: SonyWifiCamera, action: string, value?: string | number) {
     let result: Record<string, unknown> = {}
-    if (settingActions[action]) {
+    if (action === 'set-exposure-mode') {
+        if (value !== 'manual') throw new Error('Only advertised Manual exposure is supported')
+        const changes = []
+        let properties = await camera.getSonyPropertyStates()
+        const program = properties.find(property => property.code === 261)
+        const programLabel = program && label(program, 'exposureProgram', program.value)
+        // Flexible Exposure uses separate auto/manual switches. Keep its movie mode.
+        if (programLabel && /Movie.* F$/.test(programLabel)) {
+            for (const code of [310, 311, 312]) {
+                const property = properties.find(property => property.code === code)
+                if (!property || property.value === '2') continue
+                if (!property.writable || !property.allowedValues?.includes('2'))
+                    throw new Error(`${property.name || code} cannot be switched to Manual remotely`)
+                changes.push(await camera.setSonySetting(code, 2n))
+            }
+        } else if (program) {
+            const target = /SQMotion/.test(programLabel || '') ? '32860'
+                : /HiFrameRate/.test(programLabel || '') ? '32899'
+                : /Movie/.test(programLabel || '') ? '32851' : '1'
+            if (program.value !== target) {
+                if (!program.writable || !program.allowedValues?.includes(target))
+                    throw new Error('This camera does not advertise a remote Manual exposure mode in its current shooting mode')
+                changes.push(await camera.setSonySetting(261, BigInt(target)))
+            }
+        } else throw new Error('The camera does not publish its exposure program')
+        properties = await camera.getSonyPropertyStates()
+        const exposure = sonySdkControls(properties)
+        if (!exposure.iso?.writable || !exposure.shutterSpeed?.writable)
+            throw new Error('Manual mode was requested, but ISO or shutter remains unavailable; check the camera exposure controls')
+        result = { changes, exposureModeVerified: true }
+    } else if (settingActions[action]) {
         if (value === undefined) throw new Error('A camera setting value is required')
         const key = settingActions[action]!
         const property = findProperty(await camera.getSonyPropertyStates(), key)

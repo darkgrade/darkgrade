@@ -52,3 +52,34 @@ it('detects the legal-range HDMI white plateau that hid Sony overexposure',()=>{
  for(let y=0;y<height;y++)for(let x=0;x<width;x++)rgb.fill(100+(x+y)%136,(y*width+x)*3,(y*width+x)*3+3)
  expect(describeShot(measureShot(rgb,width,height)).exposure).toBe('balanced')
 })
+
+it('locked Auto ISO produces an actionable error instead of a silent no-op',async()=>{
+ const result=await optimiseShot({image:new Uint8Array(),controls:{iso:{value:'0',writable:false},shutterSpeed:{value:'0',writable:false}},analyse:async()=>balanced,publish:()=>{},apply:async()=>{throw new Error('Must not write locked controls')},recapture:async()=>new Uint8Array()})
+ expect(result.status).toBe('attention');expect(result.error).toContain('Manual exposure');expect(result.changes).toEqual([])
+})
+
+it('locking unknown Auto ISO restores the metered brightness instead of accepting a darker image',async()=>{
+ const controls={iso:{value:'Auto',allowedValues:['Auto','400','800','1600','3200'],writable:true},shutterSpeed:{value:'1/50'}}
+ const result=await optimiseShot({image:new Uint8Array(),controls,analyse:async()=>controls.iso.value==='Auto'?{...balanced,metrics:{...balanced.metrics,median:.33}}:Number(controls.iso.value)<1600?{...balanced,metrics:{...balanced.metrics,median:.12,p95:.42}}:balanced,publish:()=>{},apply:async(_action,value)=>{controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
+ expect(result.changes[0].after).toBe('400');expect(Number(controls.iso.value)).toBeGreaterThanOrEqual(1600);expect(result.exposureVerified).toBe(true)
+})
+
+it('a dim legal-range preview can open aperture at high ISO even when the broad histogram says balanced',async()=>{
+ const controls={iso:{value:'12800',allowedValues:['12800','25600'],writable:true},aperture:{value:'f/5.6',allowedValues:['f/4','f/5.6'],writable:true},shutterSpeed:{value:'1/60'}}
+ const result=await optimiseShot({image:new Uint8Array(),controls,analyse:async()=>controls.aperture.value==='f/4'?balanced:{...balanced,metrics:{...balanced.metrics,median:.1,p95:.4}},publish:()=>{},apply:async(action,value)=>{if(action==='set-aperture')controls.aperture.value=value;else controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
+ expect(result.changes.some(change=>change.setting==='aperture'&&change.after==='f/4'&&change.verified)).toBe(true)
+})
+
+it('bounds ISO using dim midtones even when the broad histogram calls them balanced',async()=>{
+ const controls={iso:{value:'100',allowedValues:['100','125','160','200','250','320','400','500','640','800','1000','1250','1600','2000','2500','3200','4000'],writable:true},shutterSpeed:{value:'1/50'},whiteBalance:{value:'Daylight'}}
+ const samples:Record<string,ShotAnalysis>={
+  '100':{...balanced,exposure:'dark',metrics:{...balanced.metrics,median:.086,p95:.5,dark:.46}},
+  '200':{...balanced,metrics:{...balanced.metrics,median:.12,p95:.6}},
+  '400':{...balanced,metrics:{...balanced.metrics,median:.14,p95:.88}},
+  '800':{...balanced,metrics:{...balanced.metrics,median:.26,p95:.9}},
+  '1600':{...balanced,exposure:'bright',metrics:{...balanced.metrics,median:.5,p95:.93,clipped:.12}},
+ }
+ const writes:string[]=[]
+ const report=await optimiseShot({image:new Uint8Array(),controls,publish:()=>{},analyse:async()=>{const sample=samples[controls.iso.value];if(!sample)throw new Error('Unexpected ISO probe '+controls.iso.value);return sample},apply:async(action,value)=>{expect(action).toBe('set-iso');writes.push(value);controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
+ expect(report.error).toBeUndefined(); expect(report.exposureVerified).toBe(true);expect(report.imageVerified).toBe(true);expect(Number(controls.iso.value)).toBeGreaterThan(400);expect(Number(controls.iso.value)).toBeLessThan(1600);expect(writes.length).toBeLessThanOrEqual(4);expect(controls.whiteBalance.value).toBe('Daylight')
+})

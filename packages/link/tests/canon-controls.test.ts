@@ -86,6 +86,8 @@ describe('Canon camera controls', () => {
     it('maps Canon documented movie audio values without confusing Disable and Auto', () => {
         const registry = createCanonRegistry(true)
         const codec = registry.properties.CanonMovieSoundRecording.codec(registry)
+        expect(codec.decode(registry.codecs.uint32.encode(0)).value).toBe('camera-specific-0')
+        expect(codec.encode('camera-specific-0')).toEqual(registry.codecs.uint32.encode(0))
         expect(codec.decode(registry.codecs.uint32.encode(1)).value).toBe('disabled')
         expect(codec.decode(registry.codecs.uint32.encode(2)).value).toBe('auto')
         expect(codec.decode(registry.codecs.uint32.encode(3)).value).toBe('manual')
@@ -281,4 +283,16 @@ it('bounds Canon movie-switch busy and rejects other errors immediately',async()
  await expect(camera.enterMovieMode()).rejects.toThrow('0x2019');expect(attempts).toBe(4)
  attempts=0;camera.send=(async()=>{attempts++;return {code:0x2005}}) as typeof camera.send
  await expect(camera.enterMovieMode()).rejects.toThrow('0x2005');expect(attempts).toBe(1)
+})
+
+it('an unrecognized Canon value cannot discard later exposure properties and choices',async()=>{
+ const {camera}=testCamera(),instance=camera as any
+ instance.processEvents([
+  {code:0xc189,parameters:[camera.registry.properties.CanonFocusMode.code,999]},
+  {code:0xc189,parameters:[camera.registry.properties.CanonIso.code,0x48]},
+  {code:0xc18a,parameters:[camera.registry.properties.CanonIso.code],allowedValues:[0x48,0x50,0x58]},
+ ])
+ const iso=(await camera.listPropertyStates()).find(property=>property.name==='CanonIso')
+ expect(iso?.value).toBe('100');expect(iso?.allowedValues).toEqual(['100','200','400'])
+ expect(camera.listUnknownPropertyStates().find(property=>property.code===camera.registry.properties.CanonFocusMode.code)?.rawValue).toBe(999)
 })

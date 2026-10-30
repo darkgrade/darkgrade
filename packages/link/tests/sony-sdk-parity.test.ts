@@ -1,3 +1,4 @@
+import {performSonySdkControl} from '@vendors/sony/sdk-controls'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { describe, expect, it } from 'vitest'
 
@@ -13,6 +14,7 @@ function sdkCamera(ignoreFirstPoint = false) {
         { code: 272, type: 2, value: '1', writable: true, allowedValues: ['1', '2', '3'] },
         { code: 273, type: 2, value: '1', writable: true, allowedValues: ['1', '2'] },
         { code: 275, type: 2, value: '1', writable: true, allowedValues: ['1', '4'] },
+        { code: 261, type: 3, value: '1', writable: true, allowedValues: ['1', '2', '3', '4'] },
         { code: 281, type: 2, value: '2', writable: true, allowedValues: ['1', '2', '3'] },
         { code: 282, type: 2, value: '1', writable: true, allowedValues: ['1', '2'] },
         { code: 293, type: 2, value: '1', writable: true, allowedValues: ['1', '3', '4'] },
@@ -61,6 +63,26 @@ function sdkCamera(ignoreFirstPoint = false) {
     }
 }
 describe('Sony Wi-Fi USB control parity', () => {
+    it('waits for a temporary camera lock before a verified exposure write', async () => {
+        const {camera,properties,requests}=sdkCamera()
+        await camera.connectUsb('unit-test')
+        const iso=properties.find(property=>property.code===260)!
+        iso.writable=false
+        const unlock=setTimeout(()=>{iso.writable=true},200)
+        try {
+            const result=await camera.setSonySetting(260,6400)
+            expect(result.verified).toBe(true)
+            expect(result.after.value).toBe('6400')
+            expect(requests.filter(request=>request.cmd==='set'&&request.code==='260')).toHaveLength(1)
+        } finally {clearTimeout(unlock)}
+    })
+    it('does not write a camera setting that remains locked', async () => {
+        const {camera,properties,requests}=sdkCamera()
+        await camera.connectUsb('unit-test')
+        properties.find(property=>property.code===260)!.writable=false
+        await expect(camera.setSonySetting(260,6400)).rejects.toThrow('read-only')
+        expect(requests.some(request=>request.cmd==='set'&&request.code==='260')).toBe(false)
+    })
     it('converts familiar exposure, focus, format and quality values to SDK choices', async () => {
         const { camera, properties } = sdkCamera()
         await camera.connectUsb('unit-test')
@@ -114,7 +136,10 @@ describe('Sony Wi-Fi USB control parity', () => {
     it('waits for the SDK download callback and restores the original card destination', async () => {
         const { camera, properties, requests } = sdkCamera()
         await camera.connectUsb('unit-test')
-        expect(await camera.captureAndDownload('/tmp/sdk-test')).toEqual({ path: '/tmp/sdk-test/DG00001.JPG' })
+        expect(await camera.captureAndDownload('/tmp/sdk-test')).toMatchObject({
+            path: '/tmp/sdk-test/DG00001.JPG',
+            eventObservation: { kind: 'sony-crsdk-download-callback', status: 'observed' },
+        })
         expect(properties.find(property => property.code === 281)!.value).toBe('2')
         expect(requests.some(request => request.cmd === 'wait_download')).toBe(true)
     })
@@ -149,4 +174,34 @@ describe('Sony Wi-Fi USB control parity', () => {
         await expect(camera.captureAndDownload('/tmp/sdk-test')).rejects.toThrow('Transfer failed')
         expect(properties.find(property => property.code === 281)!.value).toBe('2')
     })
+})
+
+function manualExposureCamera(program:string,allowed:string[],flex=false){
+ const properties:any[]=[{code:261,value:program,writable:true,allowedValues:allowed,valueForm:'enum'},...([256,259,260].map(code=>({code,value:'0',writable:false}))),...(flex?[310,311,312].map(code=>({code,value:'1',writable:true,allowedValues:['1','2'],valueForm:'enum'})):[])]
+ const writes:number[]=[]
+ const camera:any={getSonyPropertyStates:async()=>properties,setSonySetting:async(code:number,value:bigint)=>{writes.push(code);properties.find(p=>p.code===code).value=String(value);if(code===261||[310,311,312].every(c=>properties.find(p=>p.code===c)?.value==='2'))for(const p of properties.filter(p=>[256,259,260].includes(p.code)))p.writable=true;return {verified:true}}}
+ return {camera,properties,writes}
+}
+it('Manual exposure keeps Movie mode and requires advertised mode/readback',async()=>{
+ const f=manualExposureCamera('32848',['1','32848','32851'])
+ const result:any=await performSonySdkControl(f.camera,'set-exposure-mode','manual')
+ expect(f.properties.find(p=>p.code===261).value).toBe('32851');expect(result.exposureModeVerified).toBe(true);expect(f.writes).toEqual([261])
+})
+it('Flexible Exposure switches its three advertised auto/manual controls without leaving its video program',async()=>{
+ const f=manualExposureCamera('32853',['32853'],true)
+ const result:any=await performSonySdkControl(f.camera,'set-exposure-mode','manual')
+ expect(f.writes).toEqual([310,311,312]);expect(f.properties.find(p=>p.code===261).value).toBe('32853');expect(result.controls.iso.writable).toBe(true)
+})
+it('Manual exposure cannot claim success when the camera does not offer the requested mode',async()=>{
+ const f=manualExposureCamera('32848',['32848'])
+ await expect(performSonySdkControl(f.camera,'set-exposure-mode','manual')).rejects.toThrow('does not advertise');expect(f.writes).toEqual([])
+})
+it('a video shutter angle is usable exposure control even when shutter speed is unavailable',async()=>{
+ const f=manualExposureCamera('32853',['32853'],true)
+ f.properties.find(p=>p.code===259).value='4294967295'
+ f.properties.push({code:378,value:'180000',writable:true,valueForm:'enum',allowedValues:['90000','180000','360000']})
+ const manual:any=await performSonySdkControl(f.camera,'set-exposure-mode','manual')
+ expect(manual.controls.shutterSpeed.value).toBe('180°');expect(manual.exposureModeVerified).toBe(true)
+ await performSonySdkControl(f.camera,'set-shutter-speed','90°')
+ expect(f.properties.find(p=>p.code===378).value).toBe('90000')
 })

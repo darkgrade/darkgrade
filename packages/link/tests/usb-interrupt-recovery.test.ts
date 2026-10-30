@@ -49,7 +49,7 @@ describe('USB event polling recovery',()=>{
 describe('USB camera serial selection', () => {
  it('opens the requested body when two cameras have the same USB model', async () => {
   const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
-  const first = {open:vi.fn()}, selected = {open:vi.fn().mockRejectedValue(new Error('selected body'))}
+  const first = {vendorId:0x054c,productId:0x0f4a,serialNumber:'other',open:vi.fn()}, selected = {vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted',open:vi.fn().mockRejectedValue(new Error('selected body')),close:vi.fn().mockResolvedValue(undefined)}
   vi.spyOn(transport,'getUSB').mockResolvedValue({})
   vi.spyOn(transport,'discover').mockResolvedValue([
    {vendorId:0x054c,productId:0x0f4a,serialNumber:'other',device:first},
@@ -67,5 +67,66 @@ describe('USB camera serial selection', () => {
   vi.spyOn(console,'log').mockImplementation(()=>{})
   await expect(transport.connect({usb:{filters:[{vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted'}]}})).rejects.toThrow('No matching device')
   expect(device.open).not.toHaveBeenCalled()
+ })
+})
+
+
+describe('USB halt recovery errors', () => {
+ it.each([EndpointType.BULK_IN, EndpointType.BULK_OUT, EndpointType.INTERRUPT])('retains a disconnect failure for %s', async type => {
+  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  const failure = new Error('LIBUSB_TRANSFER_NO_DEVICE')
+  transport.device = {clearHalt:vi.fn().mockRejectedValue(failure)}
+  transport.endpoints = {bulkIn:{endpointNumber:1},bulkOut:{endpointNumber:2},interrupt:{endpointNumber:3}}
+  await expect(transport.clearHalt(type)).rejects.toBe(failure)
+  expect(transport.device.clearHalt).toHaveBeenCalledWith(type === EndpointType.BULK_OUT ? 'out' : 'in', type === EndpointType.INTERRUPT ? 3 : type === EndpointType.BULK_OUT ? 2 : 1)
+ })
+ it.each(['LIBUSB_TRANSFER_CANCELLED','LIBUSB_TRANSFER_ERROR'])('allows the existing %s recovery case', async message => {
+  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  transport.device = {clearHalt:vi.fn().mockRejectedValue(new Error(message))}
+  transport.endpoints = {interrupt:{endpointNumber:3}}
+  await expect(transport.clearHalt(EndpointType.INTERRUPT)).resolves.toBeUndefined()
+ })
+})
+
+describe('USB device removal cleanup', () => {
+ it('marks physical removal disconnected without restarting a dead endpoint', async () => {
+  const {endpoint,transport,clear}=fixture()
+  endpoint.emit('error',new Error('LIBUSB_TRANSFER_NO_DEVICE'))
+  endpoint.emit('end');await new Promise(resolve=>setImmediate(resolve))
+  expect(transport.isConnected()).toBe(false)
+  expect(clear).not.toHaveBeenCalled()
+  expect(endpoint.startPoll).toHaveBeenCalledTimes(1)
+  endpoint.emit('data',Buffer.alloc(12));expect(transport.handleInterruptData).not.toHaveBeenCalled()
+ })
+ it('closes the native handle after removal even though isConnected is false', async () => {
+  const {endpoint,transport,clear}=fixture()
+  const close=vi.fn().mockResolvedValue(undefined);transport.device={close}
+  endpoint.emit('error',new Error('LIBUSB_TRANSFER_NO_DEVICE'));endpoint.emit('end')
+  await transport.disconnect()
+  expect(close).toHaveBeenCalledOnce();expect(clear).not.toHaveBeenCalled()
+  expect(transport.device).toBeNull();expect(transport.endpoints).toBeNull()
+ })
+ it.each(['clearHalt error: Error: LIBUSB_ERROR_NO_DEVICE','unexpected halt failure'])('still closes the handle after %s', async message => {
+  const {transport,clear}=fixture(),failure=new Error(message)
+  const close=vi.fn().mockResolvedValue(undefined);transport.device={close}
+  clear.mockRejectedValue(failure)
+  if(message.includes('NO_DEVICE'))await expect(transport.disconnect()).resolves.toBeUndefined()
+  else await expect(transport.disconnect()).rejects.toBe(failure)
+  expect(close).toHaveBeenCalledOnce();expect(transport.device).toBeNull();expect(transport.isConnected()).toBe(false)
+ })
+ it('clears references and preserves both failures when halt and close fail', async () => {
+  const {transport,clear}=fixture(),haltFailure=new Error('halt failed'),closeFailure=new Error('close failed')
+  clear.mockRejectedValue(haltFailure);transport.device={close:vi.fn().mockRejectedValue(closeFailure)}
+  const failure=await transport.disconnect().catch((error:unknown)=>error)
+  expect(failure).toBeInstanceOf(AggregateError);expect(failure.errors).toEqual([haltFailure,closeFailure])
+  expect(transport.device).toBeNull();expect(transport.endpoints).toBeNull()
+ })
+ it('ends fallback interrupt reads after a missing device instead of spinning', async () => {
+  const transport:any=new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  transport.connected=true;transport.endpoints={interrupt:{endpointNumber:3}}
+  const read=vi.fn().mockRejectedValueOnce(new Error('LIBUSB_TRANSFER_NO_DEVICE')).mockImplementationOnce(async()=>{transport.connected=false;throw new Error('unexpected retry')})
+  transport.device={transferIn:read}
+  await transport.listenForInterrupt()
+  expect(read).toHaveBeenCalledOnce();expect(transport.isConnected()).toBe(false)
  })
 })

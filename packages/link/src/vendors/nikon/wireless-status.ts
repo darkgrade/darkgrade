@@ -1,4 +1,25 @@
 import type {Camera} from '@camera/index'
+import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
+import {ConnectionPath} from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
+
+/** Official Z6III USB/MTP Rev.2.00 §6.5.15.2; this verifies PTP transport, not provisioned credentials. */
+async function readConnectionPath(camera:Camera,information:{model:string;devicePropertiesSupported?:number[]},advertisedOperations:Set<number>){
+    const advertised=information.devicePropertiesSupported?.includes(ConnectionPath.code)===true
+    const canRead=advertised||information.model==='Z6_3'
+    const result:{advertised:boolean;queried:boolean;response?:number;value?:number;path:'usb'|'wifi'|'ethernet'|'unknown'}={advertised,queried:canRead,path:'unknown'}
+    if(!canRead)return result
+    const operation=advertisedOperations.has(GetDevicePropDescEx.code)||information.model==='Z6_3'
+        ?GetDevicePropDescEx:camera.getInstance().registry.operations.GetDevicePropDesc
+    try{
+        const reply=await camera.send(operation,{DevicePropCode:ConnectionPath.code})
+        result.response=reply.code
+        const descriptor=reply.data,value=descriptor?.currentValueRaw
+        if(reply.code!==0x2001||descriptor?.devicePropertyCode!==ConnectionPath.code||typeof value!=='number'||!Number.isInteger(value)||value<0||value>255)return result
+        result.value=value
+        result.path=value===0?'usb':value===2?'wifi':value===3?'ethernet':'unknown'
+    }catch{ /* Unsupported descriptors cannot establish a connection path. */ }
+    return result
+}
 
 /** Read-only Nikon WTU capabilities; a USB profile bank is not proof of an active Wi-Fi connection. */
 export async function readNikonWirelessStatus(camera:Camera) {
@@ -33,15 +54,20 @@ export async function readNikonWirelessStatus(camera:Camera) {
         }
         results[query.name]=result
     }
+    const connectionPath=await readConnectionPath(camera,information.data,advertised)
     return {
         model:information.data.model,
+        connectionPath,
         usbProvisioning:results.WsGetSupportedProfileType?.value===1?'ftp-only':'unverified',
         automaticRadioActivation:'unverified',
-        wifiControl:'requires-camera-setup',
+        wifiControl:connectionPath.path==='wifi'?'connected':connectionPath.path==='unknown'?'unverified':'not-active',
         bluetoothControl:'requires-camera-setup',
         queries:results,
         verifiedModelReadFallback:verifiedModelFallback,
-        nextSteps:[
+        nextSteps:connectionPath.path==='wifi'?[
+            'The camera confirms active Wi-Fi control. Reuse this session; no pairing or USB handoff is needed.',
+            'Active Wi-Fi does not establish first-time pairing, Bluetooth remote control or endurance qualification.',
+        ]:[
             'On the camera, select Network → Connect to computer → Camera Control, then create and enable a network profile.',
             'Use a stable host GUID for PTP/IP pairing; compare the PIN and confirm the computer on the camera. Z6 III PIN compatibility remains unverified.',
             'For Bluetooth, disconnect USB and other wireless connections, then open Wireless remote (ML-L7) options → Save wireless remote controller on the camera.',

@@ -1,3 +1,7 @@
+import type { TransactionPolicy } from '@camera/transaction-channel'
+import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
+import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
+import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
 export {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
@@ -7,6 +11,14 @@ import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-
 import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
 import type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import {
+    createFujifilmRegistry,
+    createLeicaRegistry,
+    createOlympusRegistry,
+    createPanasonicRegistry,
+    createSigmaRegistry,
+    type VendorOperationRegistry,
+} from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -15,7 +27,7 @@ import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
-import type { CanonNetworkState, CanonPropertyState, CanonUnknownPropertyState } from './canon-camera'
+import type { CanonNetworkState, CanonPropertyState, CanonRawEvent, CanonUnknownPropertyState } from './canon-camera'
 import { CanonCamera } from './canon-camera'
 import { GenericCamera, type StandardPropertyState } from './generic-camera'
 import { NikonCamera, type NikonFocusResult, type NikonFocusPointResult, type NikonLiveViewMetadata } from './nikon-camera'
@@ -26,16 +38,19 @@ import {
     type SonyPropertyState,
     type SonyZoomResult,
 } from './sony-camera'
+import { VendorExtensionCamera } from './vendor-extension-camera'
 
 export interface CameraOptions {
     logger?: Partial<LoggerConfig>
     device?: DeviceDescriptor
     transport?: TransportInterface
+    /** Timeouts and DeviceBusy retries for every transaction (see DEFAULT_TRANSACTION_POLICY). */
+    transactionPolicy?: Partial<TransactionPolicy>
     vendorId?: number
 }
 
 export class Camera {
-    private instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera
+    private instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera | VendorExtensionCamera
     private deviceDescriptor?: DeviceDescriptor
     private logger: Logger
     private transport: TransportInterface
@@ -45,7 +60,8 @@ export class Camera {
         this.transport = options?.transport ?? new USBTransport(this.logger)
         this.deviceDescriptor = options?.device
 
-        switch (options?.vendorId ?? options?.device?.usb?.filters?.[0]?.vendorId) {
+        const vendorId = options?.vendorId ?? options?.device?.usb?.filters?.[0]?.vendorId
+        switch (vendorId) {
             case VendorIDs.SONY:
                 this.instance = new SonyCamera(this.transport, this.logger)
                 break
@@ -55,14 +71,51 @@ export class Camera {
             case VendorIDs.CANON:
                 this.instance = new CanonCamera(this.transport, this.logger)
                 break
+            case VendorIDs.FUJIFILM:
+            case VendorIDs.PANASONIC:
+            case VendorIDs.OLYMPUS:
+            case VendorIDs.OM_DIGITAL:
+            case VendorIDs.LEICA:
+            case VendorIDs.SIGMA:
+                this.instance = this.vendorExtensionCamera(vendorId)
+                break
             default:
                 this.instance = new GenericCamera(this.transport, this.logger)
                 break
         }
+        if (options?.transactionPolicy) this.instance.configureTransactions(options.transactionPolicy)
+    }
+
+    private vendorExtensionCamera(vendorId: number): VendorExtensionCamera {
+        const littleEndian = this.transport.isLittleEndian()
+        const registries: Record<number, () => VendorOperationRegistry> = {
+            [VendorIDs.FUJIFILM]: () => createFujifilmRegistry(littleEndian),
+            [VendorIDs.PANASONIC]: () => createPanasonicRegistry(littleEndian),
+            [VendorIDs.OLYMPUS]: () => createOlympusRegistry(littleEndian),
+            [VendorIDs.OM_DIGITAL]: () => createOlympusRegistry(littleEndian),
+            [VendorIDs.LEICA]: () => createLeicaRegistry(littleEndian),
+            [VendorIDs.SIGMA]: () => createSigmaRegistry(littleEndian),
+        }
+        return new VendorExtensionCamera(this.transport, this.logger, registries[vendorId](), vendorId)
     }
 
     getInstance(): GenericCamera {
         return this.instance
+    }
+
+    async pollNikonEvents(): Promise<NikonQueuedEvent[]> {
+        if (!(this.instance instanceof NikonCamera)) throw new Error('Nikon event polling requires a Nikon camera')
+        return this.instance.pollEvents()
+    }
+
+    onCanonRawEvent(listener: (event: CanonRawEvent) => void): void {
+        if (!(this.instance instanceof CanonCamera)) throw new Error('Canon raw events require a Canon camera')
+        this.instance.onRawEvent(listener)
+    }
+
+    offCanonRawEvent(listener: (event: CanonRawEvent) => void): void {
+        if (!(this.instance instanceof CanonCamera)) throw new Error('Canon raw events require a Canon camera')
+        this.instance.offRawEvent(listener)
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
@@ -90,6 +143,14 @@ export class Camera {
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
         return this.instance.get(property)
+    }
+
+    /**
+     * Read GetDevicePropValue using the supplied property's known codec.
+     * This does not discover descriptor datatype overrides or allowed values.
+     */
+    async readValue<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
+        return this.instance.readValue(property)
     }
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
@@ -477,10 +538,17 @@ export class Camera {
         return this.instance.leaveMovieMode()
     }
 
-    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean }) {
-        if (params?.autofocus === false && !(this.instance instanceof CanonCamera))
-            throw new Error('Capture without autofocus is only implemented for Canon EOS cameras')
-        return this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
+    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory'; rawCompression?: 'lossless' }) {
+        if (params?.rawCompression !== undefined && this.instance.vendorId !== VendorIDs.NIKON)
+            throw new Error('RAW compression selection requires a Nikon camera')
+        if (params?.destination === 'memory' && !(this.instance instanceof NikonCamera) && !(this.instance instanceof SonyCamera))
+            throw new Error('Capture to memory is only implemented for Nikon and Sony cameras')
+        if (params?.autofocus === false && !(this.instance instanceof CanonCamera) && !(this.instance instanceof NikonCamera) && !(this.instance instanceof SonyCamera))
+            throw new Error('Capture without autofocus is only implemented for Canon EOS, Nikon and Sony cameras')
+        const capture = () => this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
+        if (this.instance instanceof SonyCamera) return withSonyPhotoMode(this, capture)
+        if (this.instance instanceof CanonCamera) return withCanonPhotoMode(this, capture)
+        return capture()
     }
 
     async captureLiveView(params?: { includeInfo?: boolean; includeData?: boolean }): Promise<{
@@ -570,11 +638,13 @@ export class Camera {
     }
 }
 
+export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'
 export { CanonCamera } from './canon-camera'
 export { GenericCamera } from './generic-camera'
 export { NikonCamera } from './nikon-camera'
 export { SONY_CAMERA_BUTTONS, SonyCamera } from './sony-camera'
 export type { SonyCameraButton, SonyOsdImage, SonyPropertyState, SonyZoomResult } from './sony-camera'
+export { VendorExtensionCamera } from './vendor-extension-camera'
 
 export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/wifi-keyboard'
 export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'

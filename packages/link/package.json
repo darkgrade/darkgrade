@@ -18,6 +18,7 @@
         "dev": "vite build --watch",
         "test": "vitest run",
         "bench:probe": "bun run tests/bench-probe.ts",
+        "bench:profile": "bun run scripts/capture-profile.ts",
         "bench:canon": "bun run tests/14_canon.ts",
         "bench:ptpip": "bun run tests/bench-ptpip.ts",
         "lint": "eslint . --ext .ts,.tsx",
@@ -38,9 +39,10 @@
     "author": "darkgrade",
     "license": "MIT",
     "dependencies": {
+        "egoroof-blowfish": "4.0.3",
         "ink": "^6.3.1",
-        "react": "^19",
         "ink-spinner": "^5.0.0",
+        "react": "^19",
         "usb": "^2.11.0"
     },
     "devDependencies": {

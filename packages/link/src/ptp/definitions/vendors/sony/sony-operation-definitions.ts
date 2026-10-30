@@ -100,7 +100,10 @@ export const SDIO_GetExtDeviceInfo = {
             codec: registry =>
                 createEnumCodec(
                     registry,
-                    [{ value: 0x012c, name: '3.00', description: 'Protocol Version 3.00' }] as const,
+                    [
+                        { value: 0x00c8, name: '2.00', description: 'Protocol Version 2.00 (ILCE-7M2 capture)' },
+                        { value: 0x012c, name: '3.00', description: 'Protocol Version 3.00' },
+                    ] as const,
                     registry.codecs.uint32
                 ),
             required: true,
@@ -117,7 +120,7 @@ export const SDIO_GetExtDeviceInfo = {
                     ] as const,
                     registry.codecs.uint32
                 ),
-            required: true,
+            required: false,
         },
     ] as const,
     responseParameters: [] as const,
@@ -164,7 +167,7 @@ export const SDIO_SetExtDevicePropValue = {
                     ] as const,
                     registry.codecs.uint32
                 ),
-            required: true,
+            required: false,
         },
     ] as const,
     responseParameters: [] as const,
@@ -194,7 +197,7 @@ export const SDIO_ControlDevice = {
                     ] as const,
                     registry.codecs.uint32
                 ),
-            required: true,
+            required: false,
         },
     ] as const,
     responseParameters: [] as const,
@@ -259,6 +262,8 @@ export const SDIO_GetOsdImage = {
 
 export const SDIO_GetPartialLargeObject = {
     code: 0x9211,
+    // FX2 and a6700 return the standard GetPartialObject data-container code.
+    dataOperationCode: 0x101b,
     name: 'SDIO_GetPartialLargeObject',
     description:
         'Get partial object from the device. Same as GetPartialObject on PIMA 15740 but with 64-bit offset support.',

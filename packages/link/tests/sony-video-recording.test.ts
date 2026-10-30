@@ -1,5 +1,20 @@
 import {it,expect,vi} from 'vitest'
 import {SonyVideoRecording} from '@vendors/sony/video-recording'
+it('refreshes a known stale post-stop snapshot without waiting fifteen seconds',async()=>{
+ vi.useFakeTimers();try{
+  const old={id:1,files:[{id:5,name:'old.MP4',bytes:100}]},fresh={id:2,files:[{id:5,name:'new.MP4',bytes:200}]}
+  const camera={stopRecording:async()=>{},getSonyProperty:async()=>({value:'0'}),getRecentSonyContents:async()=>[old],shouldRefreshMediaIndex:()=>true}
+  const renew=vi.fn(async()=>({getRecentSonyContents:async()=>[old,fresh]})),recording=new SonyVideoRecording(camera,renew)
+  ;(recording as any).attempted=true;(recording as any).baseline=new Set([JSON.stringify(['old.MP4','100'])])
+  const pending=recording.stop();await vi.advanceTimersByTimeAsync(500)
+  expect((await pending).media[0].filename).toBe('new.MP4');expect(renew).toHaveBeenCalledTimes(1)
+ }finally{vi.useRealTimers()}
+})
+it('does not arm a take that would land on the SDK pagination boundary',async()=>{
+ const camera={getSonyProperty:async(name:string)=>({value:name==='RecordingState'||name.endsWith('_Status')?'0':name==='Movie_RecordingMedia'?'1':'3600'}),getRecentSonyContents:async()=>Array.from({length:99},(_,id)=>({id,files:[]})),startRecording:vi.fn()}
+ await expect(new SonyVideoRecording(camera).prepare()).rejects.toThrow('Run recording checks')
+ expect(camera.startRecording).not.toHaveBeenCalled()
+})
 // The new clip sorts below twenty older files if the camera clock changed.
 it('verifies a new movie outside the recent-file window using the complete baseline',async()=>{
  let recorded=false

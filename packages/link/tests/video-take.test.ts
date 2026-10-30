@@ -21,6 +21,16 @@ it('finishes verified transfer progress at 100 percent even when the SDK last re
  expect(f.take.state.cameras[0]).toMatchObject({state:'collected',transferredBytes:100,totalBytes:100})
 })
 
+it('releases a finished camera before waiting for another camera transfer',async()=>{
+ const f=fixture();await f.take.start();await f.take.stop();f.calls.length=0
+ f.devices.get('two')!.collect=async files=>{
+  expect(f.calls).toContain('close:one')
+  expect(f.take.state.cameras[0].state).toBe('collected')
+  return files.map(file=>({...file,downloadUrl:'/files/'+file.id}))
+ }
+ await f.take.collect();expect(f.take.state.stage).toBe('complete')
+})
+
 it.each(['recording','stopping','ready','preparing','uncertain'] as const)('never resumes collection while a member remains %s',state=>{
  const f=fixture(),snapshot=structuredClone(f.take.state)
  snapshot.stage='attention';snapshot.cameras[0].state=state;snapshot.cameras[1].state='stopped'

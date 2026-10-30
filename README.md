@@ -24,6 +24,33 @@ This library is a comprehensive TypeScript implementation of [ISO-15740:2013](ht
     - **Nikon Z Series** - Live view, focus-point placement, AF-S lens steps, extended properties
     - **Canon EOS R Series** - Remote control, event polling
 
+## 📷 Camera support
+
+**Supported: Sony, Canon and Nikon.** Only the bodies below have been exercised on physical hardware (darkgrade test bench, [`darkgrade/test-bench` docs/camera-compatibility.md](https://github.com/darkgrade/test-bench/blob/main/docs/camera-compatibility.md) and the notes further down this README). Other bodies from these vendors use the same code paths but are untested.
+
+| Manufacturer | Body (USB ID) | What has been verified on hardware |
+| --- | --- | --- |
+| Sony | α6700 / ILCE-6700 (`054c:0e78`, fw 2.00) | USB SDIO property inventory and controls, autofocus, still/movie formats, AF-point placement; authenticated Wi-Fi controls through the Sony SDK. Re-checked 2026-10-28 on darkgrade01: ISO 8000 → 100 → 8000 with fresh readback and restore, native PTP live-view JPEG |
+| Sony | FX2 / ILME-FX2 | USB native property inventory, aperture round trip, HDMI; Wi-Fi SDK controls and live preview (no card media) |
+| Canon | EOS R6 Mark III (`04a9:3323`, fw 1.0.1) | USB/PTP exposure and white-balance controls, USB live view, preview zoom, color temperature, live-view AF area, movie recording |
+| Canon | EOS 80D (`04a9:3294`, fw 3-1.0.3) | USB controls (aperture, shutter, ISO, white balance, image format), autofocus, movie mode; PTP/IP pairing is work in progress. Re-checked 2026-10-28 on darkgrade01: color temperature 5200 → 5300 → 5200 K with independent readback, native PTP live-view JPEG, a 3-second card movie with an audio track |
+| Canon | EOS R6 (`04a9:32f5`) | USB/PTP identification only |
+| Nikon | Z6 III (`04b0:0454`, fw V2.00) | USB session, aperture and Auto/fixed ISO round trips (no card) |
+| Nikon | Z 7 (`04b0:0442`) | USB `GetDeviceInfo` probe and bench recovery |
+
+**Work in progress: every other manufacturer.** These cameras run as standard ISO 15740 PTP devices; vendor operation definitions exist only where listed and are taken from libgphoto2's `camlibs/ptp2` tables. None of the vendor definitions below is hardware-verified.
+
+| Manufacturer | Status |
+| --- | --- |
+| OM System / Olympus | Olympus E-PL5 (`07b4:012f`) tested in MTP mode: session, DeviceInfo, battery level and writable date/time, storage. The body does not offer remote capture in that mode. OM-D and E-series vendor operations (capture, live view, manual-focus drive) are defined; OM Digital Solutions USB vendor `0x33a2` is recognized. |
+| Fujifilm | Vendor `GetDeviceInfo` (0x902B) defined. Fujifilm's Wi-Fi protocol is not standard PTP/IP and is not implemented. |
+| Panasonic (LUMIX) | Vendor property, capture, movie-recording and live-view operations defined. |
+| Leica | Leica extended session open/close defined (USB vendor `0x1a98`). |
+| Sigma | fp data-group, capture-status, snap and live-view operations defined (USB vendor `0x1003`). |
+| Pentax / Ricoh Imaging, Hasselblad, GoPro and others | Standard PTP only; no vendor definitions and no hardware testing. |
+
+Transactions are bounded by timeouts, replies are checked against PTP container framing, and failures are typed (`PTPTimeoutError`, `PTPProtocolError`, `PTPDecodeError`, `PTPResponseError`, `PTPDisconnectedError`, `PTPRecoveryRequiredError`). Tune them with `new Camera({ transactionPolicy: { timeoutMilliseconds, deviceBusyRetries } })`. After a USB timeout or framing violation, the next command first sends the still-image class Device Reset Request, waits for the abandoned I/O to settle and reopens the session. Only if that automatic reset fails, or on PTP/IP (which has no class reset), do further commands fail with `PTPRecoveryRequiredError` until a disconnect/connect. Set `automaticUSBReset: false` to keep the latch, or supply `recoverTransport` to replace the reset with your own recovery (for example one that honors recording guards).
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -161,6 +188,30 @@ try {
 ```
 
 The physical EOS 80D resets this property when its PTP session closes. A client that needs continuous Canon HDMI preview must therefore keep one bounded session open, serialize control requests through it or pause it around controls, and restore the prior mode in cleanup. The testbench Camera Console uses the pause/resume design and physically verified a live 1920×1080 Cam Link sensor image before and after autofocus.
+
+### SDK and event protocol evidence
+
+Canon event replay was checked against EDSDK 13.20.21 for Linux, x86-64
+`libEDSDK.so` SHA-256 `12627628897d4ff2fce6dc4b04d7c0c4d66a7c2f87c145894f56c18129cc7333`.
+Static REA 6.8 / Ghidra 12.1.4 analysis of `CPtpCamera::TranslatePropAvailList32`
+confirmed that an empty incoming choice list replaces the previous cached list.
+The decoder now preserves this transition, validates record boundaries, and retains
+unknown event payloads without guessing their meaning. The analysis is evidence
+about this SDK implementation, not physical qualification of every EOS model.
+Retained analysis ID: `ev_88bce4e2731485cd5fe26eee896deea2a34ba9063870b4a0c1c522528bfdd1d2`.
+Vendor binaries and decompilations remain outside this repository.
+
+`camera.onCanonRawEvent(handler)` exposes owned copies of Canon event bytes for
+capture; `camera.offCanonRawEvent(handler)` removes the listener.
+`camera.pollNikonEvents()` explicitly drains one Nikon event batch and preserves
+unknown records; opening a session does not start a competing event poller.
+Nikon movie/SDRAM event definitions and record layouts were cross-checked against
+libgphoto2 `camlibs/ptp2/ptp.h` at commit
+`02d92fea8a269eb94330a4eade204ba799433606`.
+Nikon property access and event polling fall back to legacy operations only on
+`OperationNotSupported` (`0x2005`); a property refusal (`0x200a`) remains a refusal.
+Protocol regression tests cover framing, empty choices, opaque events, fallback
+boundaries, and the public event APIs without requiring or modifying hardware.
 
 ## 📖 Usage Examples
 

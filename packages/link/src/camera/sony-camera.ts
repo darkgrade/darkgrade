@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
@@ -15,6 +16,7 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import { EventParams } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
+import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { GenericCamera } from './generic-camera'
 
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
@@ -127,26 +129,26 @@ export class SonyCamera extends GenericCamera {
         logger.setRegistry(this.registry)
     }
 
-    async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus' } = {}): Promise<void> {
+    async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus'; configure?: boolean } = {}): Promise<void> {
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
-        if (!this.transport.isConnected()) {
-            await this.transport.connect({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
-        }
+        await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
         this.sessionId = randomSessionId()
 
-        const openResult = await this.send(this.registry.operations.SDIO_OpenSession, {
+        let openResult = await this.send(this.registry.operations.SDIO_OpenSession, {
             SessionId: this.sessionId,
             FunctionMode: functionMode,
         })
 
         if (openResult.code === SessionAlreadyOpen.code) {
-            await this.send(this.registry.operations.CloseSession, {})
-            await this.send(this.registry.operations.SDIO_OpenSession, {
+            const closed = await this.send(this.registry.operations.CloseSession, {})
+            this.assertOk(closed.code, 'Sony CloseSession')
+            openResult = await this.send(this.registry.operations.SDIO_OpenSession, {
                 SessionId: this.sessionId,
                 FunctionMode: functionMode,
             })
         }
+        this.assertOk(openResult.code, 'Sony OpenSession')
 
         // probably not needed in recent testing
         // small delay required before authentication
@@ -156,7 +158,7 @@ export class SonyCamera extends GenericCamera {
 
         await this.refreshPropertyStates()
 
-        if (options.mode === 'menus') return
+        if (options.mode === 'menus' || options.configure === false) return
 
         await this.set(this.registry.properties.PositionKeySetting, 'HOST_PRIORITY')
         await this.set(this.registry.properties.StillImageSaveDestination, 'CAMERA_DEVICE')
@@ -164,6 +166,7 @@ export class SonyCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
+        if (!this.transport.isConnected()) return super.disconnect()
         let cleanupError: unknown
         try {
             await this.disableContentTransferMode()
@@ -185,26 +188,14 @@ export class SonyCamera extends GenericCamera {
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
-        // Don't disable content transfer mode when checking ContentTransferEnable itself (prevents recursion)
-        if (property.code !== this.registry.properties.ContentTransferEnable.code) {
-            await this.disableContentTransferMode()
-        }
         if (!property.access.includes('Get')) {
             throw new Error(`Property ${property.name} is not readable`)
         }
-
-        const response = await this.send(this.registry.operations.SDIO_GetExtDevicePropValue, {
-            DevicePropCode: property.code,
-        })
-
-        if (!response.data) {
-            throw new Error(
-                `No data received from SDIO_GetExtDevicePropValue for ${property.name} (response code: 0x${response.code.toString(16)})`
-            )
-        }
-
-        const propInfo = response.data
-        this.propertyCache.set(propInfo.devicePropertyCode, propInfo)
+        // Alpha protocol 3 bodies expose fresh values through 0x9209. Sending the
+        // unadvertised 0x9251 variant stalled FX2 media setup and profile capture.
+        await this.refreshPropertyStates({ preserveTransferMode: property.code === this.registry.properties.ContentTransferEnable.code })
+        const propInfo = this.propertyCache.get(property.code)
+        if (!propInfo) throw new Error(`Sony ${property.name} is not advertised in the current property inventory`)
         return propInfo.currentValueDecoded as CodecType<P['codec']>
     }
 
@@ -222,10 +213,8 @@ export class SonyCamera extends GenericCamera {
                 property.name
             )
 
-        const codec = this.resolveCodec(property.codec)
-        const encodedValue = codec.encode(value)
-
         if (isMomentaryControl) {
+            const encodedValue = this.resolveCodec(property.codec).encode(value)
             const response = await this.send(
                 this.registry.operations.SDIO_ControlDevice,
                 {
@@ -238,6 +227,10 @@ export class SonyCamera extends GenericCamera {
         } else {
             const descriptor = this.propertyCache.get(property.code) ?? (await this.readDescriptor(property.code))
             this.assertPropertyEnabled(property, descriptor)
+            const codec = property.code === 0x500e
+                ? new SonyExposureProgramCodec(this.registry, descriptor.dataType)
+                : this.resolveCodec(property.codec)
+            const encodedValue = codec.encode(value)
             const targetRaw = this.decodeRawPropertyValue(descriptor, encodedValue)
             this.assertAdvertisedValue(property, descriptor, targetRaw)
 
@@ -259,8 +252,8 @@ export class SonyCamera extends GenericCamera {
         }
     }
 
-    async refreshPropertyStates(): Promise<SonyPropertyState[]> {
-        await this.disableContentTransferMode()
+    async refreshPropertyStates(options: { preserveTransferMode?: boolean } = {}): Promise<SonyPropertyState[]> {
+        if (!options.preserveTransferMode) await this.disableContentTransferMode()
         const response = await this.send(
             this.registry.operations.SDIO_GetAllExtDevicePropInfo,
             {
@@ -272,6 +265,7 @@ export class SonyCamera extends GenericCamera {
         )
         this.assertOk(response.code, 'Sony property inventory')
         if (!response.data) throw new Error('Sony property inventory returned no data')
+        this.propertyCache.clear()
         for (const descriptor of response.data.properties) {
             this.propertyCache.set(descriptor.devicePropertyCode, descriptor)
         }
@@ -334,11 +328,34 @@ export class SonyCamera extends GenericCamera {
     }
 
     async getIso(): Promise<string> {
+        await this.refreshPropertyStates()
+        const mode = this.propertyCache.get(this.registry.properties.GainControlSetting.code)
+        if (mode?.vendorExtensions.enabled && mode.currentValueRaw === 1) return 'ISO AUTO'
         return this.get(this.registry.properties.Iso)
     }
 
     async setIso(value: string): Promise<void> {
-        return this.set(this.registry.properties.Iso, value)
+        await this.refreshPropertyStates()
+        const modeProperty = this.registry.properties.GainControlSetting
+        const mode = this.propertyCache.get(modeProperty.code)
+        if (!mode?.vendorExtensions.enabled) return this.set(this.registry.properties.Iso, value)
+
+        const automatic = /^(?:iso\s*)?auto$/i.test(value.trim())
+        const targetMode = automatic ? 1 : 2
+        const originalMode = mode.currentValueRaw
+        if (![1, 2].includes(Number(originalMode))) throw new Error('Sony reported an unknown ISO control mode')
+        if (!automatic && !/^(?:iso\s*)?\d+(?:\s+\((?:extended|extension 0x[0-9a-f])\))?$/i.test(value.trim())) throw new Error('Choose Auto or a camera-advertised ISO sensitivity')
+        if (originalMode !== targetMode) await this.set(modeProperty, automatic ? 'Auto' : 'Manual')
+        if (automatic) return
+        try {
+            await this.set(this.registry.properties.Iso, value)
+        } catch (error) {
+            if (originalMode !== targetMode) {
+                try { await this.set(modeProperty, originalMode === 1 ? 'Auto' : 'Manual') }
+                catch (restorationError) { throw new AggregateError([error, restorationError], 'Sony ISO write and mode restoration failed') }
+            }
+            throw error
+        }
     }
 
     async getFocusMode(): Promise<string> {
@@ -635,29 +652,96 @@ export class SonyCamera extends GenericCamera {
         return result
     }
 
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory' } = {}): Promise<{
+        info?: ObjectInfo
+        data?: Uint8Array
+    }> {
+        if (options.destination === 'memory' && options.includeData === false)
+            throw new Error('Sony memory capture requires transfer of the captured image')
+        const destination = this.registry.properties.StillImageSaveDestination
+        const focus = this.registry.properties.FocusMode
+        const needsHostImage = options.includeInfo !== false || options.includeData !== false
+        const requestedDestination = options.destination === 'memory' ? 'HOST_DEVICE'
+            : needsHostImage ? 'BOTH_DEVICES' : undefined
+        const originalDestination = requestedDestination ? await this.get(destination) : undefined
+        const originalFocus = options.autofocus === false ? await this.get(focus) : undefined
+        let failure: unknown
+        try {
+            if (requestedDestination && originalDestination !== requestedDestination)
+                await this.set(destination, requestedDestination)
+            if (originalFocus !== undefined && originalFocus !== 'Manual') await this.set(focus, 'Manual')
+            return await this.captureWithCurrentDestination(options)
+        } catch (error) {
+            failure = error
+            throw error
+        } finally {
+            const restorationErrors: unknown[] = []
+            if (originalFocus !== undefined && originalFocus !== 'Manual') {
+                try {
+                    if (!(await this.waitForPropertyEnabled(focus.code)))
+                        throw new Error('Sony focus control remained busy after releasing the shutter')
+                    await this.set(focus, originalFocus)
+                } catch (error) { restorationErrors.push(error) }
+            }
+            if (originalDestination !== undefined && originalDestination !== requestedDestination)
+                await this.set(destination, originalDestination).catch(error => restorationErrors.push(error))
+            if (restorationErrors.length) {
+                const errors = [...(failure ? [failure] : []), ...restorationErrors]
+                throw new AggregateError(errors, `Sony capture/settings restoration failed: ${errors.map(String).join('; ')}`)
+            }
+        }
+    }
+
+    private async captureWithCurrentDestination({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
         await this.disableContentTransferMode()
-        await this.startLiveView()
-
-        await this.set(this.registry.properties.S1S2Button, 'DOWN')
-        try {
-            await this.waitForFocus()
-        } finally {
-            await this.set(this.registry.properties.S1S2Button, 'UP')
+        // Card-only callers do not consume the host post-view object. Enabling it
+        // leaves an unread image pending and can keep the camera's controls busy.
+        if (includeInfo || includeData) await this.startLiveView()
+        else {
+            await this.stopLiveView()
+            await this.set(this.registry.properties.SetPostViewEnable, 'DISABLE')
         }
-        const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle()
+
+        const release = async () => {
+            // Sony requires S1 to remain held through S2, including manual focus.
+            // libgphoto2 camera_sony_capture uses the same two-stage release.
+            try {
+                await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
+                if (autofocus) await this.waitForFocus()
+                else await this.waitMs(500)
+                await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
+                await this.waitMs(35)
+            } finally {
+                try {
+                    await this.set(this.registry.properties.ShutterReleaseButton, 'UP')
+                } finally {
+                    await this.set(this.registry.properties.ShutterHalfReleaseButton, 'UP')
+                }
+            }
+        }
+        // A card workflow verifies the newly indexed object itself. It must not
+        // require the separate host-delivery event when no host image was requested.
+        if (!includeInfo && !includeData) {
+            await this.waitForCapturedImageObjectHandle(release, false)
+            return {}
+        }
+        const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle(release)
 
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
 
-        if (includeInfo) {
+        if (includeInfo || includeData) {
             const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                 ObjectHandle: capturedImageObjectHandle,
             })
+            this.assertOk(objectInfoResponse.code, 'Sony captured-image information')
             info = objectInfoResponse.data
+            if (!info || !Number.isSafeInteger(info.objectCompressedSize) ||
+                info.objectCompressedSize <= 0 || info.objectCompressedSize > this.captureBufferSize)
+                throw new Error('Sony captured-image metadata is missing or exceeds the transfer bound')
         }
         if (includeData) {
             const objectResponse = await this.send(
@@ -668,10 +752,13 @@ export class SonyCamera extends GenericCamera {
                 undefined,
                 (info?.objectCompressedSize || this.captureBufferSize) + this.bufferPadding
             )
+            this.assertOk(objectResponse.code, 'Sony captured-image transfer')
             data = objectResponse.data
+            if (!data || data.length !== info!.objectCompressedSize)
+                throw new Error('Sony captured-image transfer length differs from its metadata')
         }
         return {
-            info: info,
+            info: includeInfo ? info : undefined,
             data: data,
         }
     }
@@ -690,13 +777,17 @@ export class SonyCamera extends GenericCamera {
             const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                 ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
             })
+            this.assertOk(objectInfoResponse.code, 'Sony live-view object information')
             info = objectInfoResponse.data
         }
         if (includeData) {
             const objectResponse = await this.send(this.registry.operations.GetObject, {
                 ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
             })
+            this.assertOk(objectResponse.code, 'Sony live-view image')
+            if (!objectResponse.data?.length) throw new Error('Sony live-view response contained no dataset')
             const liveViewData = parseLiveViewDataset(objectResponse.data, this.registry)
+            if (!liveViewData.liveViewImage.length) throw new Error('Sony live-view dataset contained no image')
             data = liveViewData.liveViewImage
         }
 
@@ -725,7 +816,14 @@ export class SonyCamera extends GenericCamera {
         return objects
     }
 
+    /** Card enumeration requires Sony content-transfer mode, even before any download. */
+    async prepareStorageRead(): Promise<void> {
+        await this.enableContentTransferMode()
+    }
+
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+        if (!Number.isSafeInteger(objectSize) || objectSize < 0)
+            throw new Error('Sony object size must be a non-negative safe integer')
         await this.enableContentTransferMode()
 
         // Start transfer tracking
@@ -738,7 +836,7 @@ export class SonyCamera extends GenericCamera {
             const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
 
             // Split 64-bit offset into two 32-bit values
-            const offsetLower = offset & 0xffffffff
+            const offsetLower = offset >>> 0
             const offsetUpper = Math.floor(offset / 0x100000000)
 
             const chunkResponse = await this.send(
@@ -753,9 +851,9 @@ export class SonyCamera extends GenericCamera {
                 bytesToRead + 12
             )
 
-            if (!chunkResponse.data) {
-                throw new Error('No data received from SDIO_GetPartialLargeObject')
-            }
+            this.assertOk(chunkResponse.code, 'Sony partial object download')
+            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead)
+                throw new Error('Sony partial object download returned an empty or oversized chunk')
 
             // Update transfer progress
             this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())
@@ -779,20 +877,23 @@ export class SonyCamera extends GenericCamera {
         return completeFile
     }
 
-    protected async waitForCapturedImageObjectHandle(): Promise<number> {
-        return new Promise<number>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.off(this.registry.events.SDIE_ObjectAdded, handler)
-                reject(new Error('Timed out after 15 seconds waiting for the Sony captured-image handle'))
-            }, 15_000)
-            const handler = (event: { ObjectHandle?: number }) => {
-                if (!event.ObjectHandle) return
-                clearTimeout(timeout)
-                this.off(this.registry.events.SDIE_ObjectAdded, handler)
-                resolve(event.ObjectHandle)
-            }
-            this.on(this.registry.events.SDIE_ObjectAdded, handler)
-        })
+    protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>, requireObject = true): Promise<number> {
+        let handle: number | undefined
+        const handler = (event: { ObjectHandle?: number }) => {
+            if (!requireObject) handle = 0
+            else if (event.ObjectHandle) handle = event.ObjectHandle
+        }
+        const event = requireObject ? this.registry.events.SDIE_ObjectAdded : this.registry.events.SDIE_CapturedEvent
+        this.on(event, handler)
+        try {
+            await capture()
+            const deadline = Date.now() + 15_000
+            while (handle === undefined && Date.now() < deadline) await this.waitMs(50)
+            if (handle === undefined) throw new Error(`Timed out after 15 seconds waiting for Sony ${requireObject ? 'captured-image handle' : 'capture completion'}`)
+            return handle
+        } finally {
+            this.off(event, handler)
+        }
     }
 
     private async waitForFocus(timeoutMilliseconds = 3_000, requireConfirmation = true): Promise<boolean> {
@@ -820,13 +921,10 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async readDescriptor(propertyCode: number): Promise<SonyDevicePropDesc> {
-        const response = await this.send(this.registry.operations.SDIO_GetExtDevicePropValue, {
-            DevicePropCode: propertyCode,
-        })
-        this.assertOk(response.code, `Sony property 0x${propertyCode.toString(16)}`)
-        if (!response.data) throw new Error(`Sony property 0x${propertyCode.toString(16)} returned no descriptor`)
-        this.propertyCache.set(propertyCode, response.data)
-        return response.data
+        await this.refreshPropertyStates({ preserveTransferMode: propertyCode === this.registry.properties.ContentTransferEnable.code })
+        const descriptor = this.propertyCache.get(propertyCode)
+        if (!descriptor) throw new Error(`Sony property 0x${propertyCode.toString(16)} is not advertised in the current inventory`)
+        return descriptor
     }
 
     private assertPropertyEnabled(property: PropertyDefinition, descriptor: SonyDevicePropDesc): void {
@@ -1004,7 +1102,7 @@ export class SonyCamera extends GenericCamera {
 
     private assertOk(responseCode: number, action: string): void {
         if (responseCode !== OK.code) {
-            throw new Error(`${action} returned PTP response 0x${responseCode.toString(16)}`)
+            throw new PTPResponseError(responseCode, `${action} returned PTP response 0x${responseCode.toString(16)}`)
         }
     }
 
@@ -1016,6 +1114,17 @@ export class SonyCamera extends GenericCamera {
             await this.set(this.registry.properties.SetLiveViewEnable, 'ENABLE')
             await this.set(this.registry.properties.SetPostViewEnable, 'ENABLE')
             this.liveViewPostViewEnabled = true
+            if (this.propertyCache.has(this.registry.properties.LiveViewStatus.code)) {
+                const deadline = Date.now() + SONY_CONTROL_SETTLE_TIMEOUT_MS
+                while (Date.now() < deadline) {
+                    await this.refreshPropertyStates()
+                    const status = this.propertyCache.get(this.registry.properties.LiveViewStatus.code)?.currentValueRaw
+                    if (status === 1) return
+                    if (status === 2) throw new Error('Sony live view is unavailable in the current camera mode')
+                    await this.waitMs(50)
+                }
+                throw new Error('Sony did not report live view ready before the startup deadline')
+            }
         }
     }
 
@@ -1028,6 +1137,8 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async enableContentTransferMode(): Promise<void> {
+        if (this.contentTransferModeEnabled) return
+        await this.stopLiveView()
         for (let attempt = 1; attempt <= SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS; attempt += 1) {
             if (this.contentTransferModeEnabled) return
             await this.send(this.registry.operations.SDIO_SetContentsTransferMode, {
@@ -1038,6 +1149,7 @@ export class SonyCamera extends GenericCamera {
             await this.waitMs(100)
             this.contentTransferModeEnabled =
                 (await this.get(this.registry.properties.ContentTransferEnable)) === 'ENABLE'
+            if (this.contentTransferModeEnabled) return
         }
         throw new Error(
             `Sony content-transfer mode did not enable after ${SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS} attempts`
@@ -1055,6 +1167,7 @@ export class SonyCamera extends GenericCamera {
             await this.waitMs(100)
             this.contentTransferModeEnabled =
                 (await this.get(this.registry.properties.ContentTransferEnable)) === 'ENABLE' // Keep enabled if still ENABLE
+            if (!this.contentTransferModeEnabled) return
         }
         throw new Error(
             `Sony content-transfer mode did not disable after ${SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS} attempts`
@@ -1062,27 +1175,31 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async authenticate(): Promise<void> {
-        await this.send(this.registry.operations.SDIO_Connect, {
+        const first = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_1',
             keyCode1: 'DEFAULT',
             keyCode2: 'DEFAULT',
         })
+        this.assertOk(first.code, 'Sony authentication phase 1')
 
-        await this.send(this.registry.operations.SDIO_Connect, {
+        const second = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_2',
             keyCode1: 'DEFAULT',
             keyCode2: 'DEFAULT',
         })
+        this.assertOk(second.code, 'Sony authentication phase 2')
 
-        await this.send(this.registry.operations.SDIO_GetExtDeviceInfo, {
+        const information = await this.send(this.registry.operations.SDIO_GetExtDeviceInfo, {
             initiatorVersion: '3.00',
             flagOfDevicePropertyOption: 'ENABLE',
         })
+        this.assertOk(information.code, 'Sony extended device information')
 
-        await this.send(this.registry.operations.SDIO_Connect, {
+        const third = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_3',
             keyCode1: 'DEFAULT',
             keyCode2: 'DEFAULT',
         })
+        this.assertOk(third.code, 'Sony authentication phase 3')
     }
 }

@@ -10,6 +10,21 @@ describe('camera-side card write capability',()=>{
 })
 
 describe('populated card object enumeration',()=>{
+ it('preserves the rejected storage operation and camera response code for MCP diagnosis',async()=>{
+  const camera={getInstance:()=>({registry:{operations:{GetStorageIDs:'ids'}}}),send:async()=>({code:0xa107})}
+  await expect(readCameraStorages(camera)).rejects.toThrow('GetStorageIDs: 0xa107')
+  await expect(readCameraObjectHandles(camera)).rejects.toThrow('GetStorageIDs: 0xa107')
+ })
+ it('prepares vendor storage before issuing standard card commands',async()=>{
+  const calls:string[]=[]
+  const instance={prepareStorageRead:async()=>{calls.push('prepare')},registry:{operations:{GetStorageIDs:'ids'}}}
+  const camera={getInstance:()=>instance,send:async()=>{calls.push('ids');return {code:0x2001,data:[]}}}
+  await readCameraStorages(camera);await readCameraObjectHandles(camera)
+  expect(calls).toEqual(['prepare','ids','prepare','ids'])
+  instance.prepareStorageRead=async()=>{throw new Error('Transfer mode refused')}
+  await expect(readCameraObjectHandles(camera)).rejects.toThrow('Transfer mode refused')
+  expect(calls).toHaveLength(4)
+ })
  it('never queries empty slots and combines populated slots without duplicate handles',async()=>{
   const calls:number[]=[]
   const camera={getInstance:()=>({registry:{operations:{GetStorageIDs:'ids',GetObjectHandles:'handles'}}}),send:async(op:string,params:any)=>{

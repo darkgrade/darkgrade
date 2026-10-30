@@ -3,10 +3,10 @@ import { TransportOptions, TransportType } from '@transport/interfaces/transport
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 
 export class TransportFactory {
-    async createUSBTransport(_options?: USBTransportOptions): Promise<TransportInterface> {
+    async createUSBTransport(options?: USBTransportOptions): Promise<TransportInterface> {
         const { USBTransport } = await import('./usb/usb-transport')
         const logger = new Logger()
-        return new USBTransport(logger)
+        return new USBTransport(logger, options)
     }
 
     async createIPTransport(options: IPTransportOptions): Promise<TransportInterface> {
@@ -31,6 +31,13 @@ export class TransportFactory {
 }
 
 export interface USBTransportOptions extends TransportOptions {
+    /**
+     * Limit each USB bulk-IN request while reassembling the full PTP container.
+     * Use 16384 while collecting Linux usbmon evidence: larger usbfs buffers can use
+     * IOMMU-coalesced scatter/gather that usbmon cannot capture (flag_data='D').
+     * Omit for the normal full-size transfer path.
+     */
+    maxBulkReadBytes?: number
     interfaceNumber?: number
     alternateInterface?: number
     claimInterface?: boolean
