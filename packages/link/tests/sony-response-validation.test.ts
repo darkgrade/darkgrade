@@ -57,6 +57,30 @@ describe('Sony session response validation', () => {
 })
 
 describe('Sony authoritative property refresh', () => {
+    it('stops remote image delivery before switching from capture to card enumeration', async () => {
+        const { camera, replies, sent } = cameraFixture()
+        Object.assign(camera, { liveViewPostViewEnabled: true })
+        const property = camera.registry.properties.ContentTransferEnable
+        replies.push({ code: 0x2001 }, { code: 0x2001, data: { properties: [{
+            devicePropertyCode: property.code, currentValueRaw: 1, currentValueDecoded: 'ENABLE',
+            vendorExtensions: { enabled: true }, getSet: 'GET',
+        }] } })
+        await camera.prepareStorageRead()
+        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.SetLiveViewEnable, 'DISABLE')
+        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.SetPostViewEnable, 'DISABLE')
+        expect(sent).toEqual(['SDIO_SetContentsTransferMode', 'SDIO_GetAllExtDevicePropInfo'])
+    })
+
+    it('retains the reserved Sony change-notification word and still accepts an empty legacy notification', () => {
+        const { camera } = cameraFixture()
+        const listener = vi.fn()
+        camera.on(camera.registry.events.SDIE_DevicePropChanged, listener)
+        ;(camera as any).handleEvent({ code: 0xc203, parameters: [0], transactionId: 1 })
+        expect(listener).toHaveBeenLastCalledWith({ Reserved: 0 })
+        ;(camera as any).handleEvent({ code: 0xc203, parameters: [], transactionId: 2 })
+        expect(listener).toHaveBeenLastCalledWith({})
+    })
+
     it('reads fresh values from bulk inventory without issuing an unadvertised individual read', async () => {
         const { camera, replies, sent } = cameraFixture()
         const property = camera.registry.properties.ContentTransferEnable
