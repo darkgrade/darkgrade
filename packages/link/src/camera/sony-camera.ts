@@ -688,7 +688,10 @@ export class SonyCamera extends GenericCamera {
         data?: Uint8Array
     }> {
         await this.disableContentTransferMode()
-        await this.startLiveView()
+        // Card-only callers do not consume the host post-view object. Enabling it
+        // leaves an unread image pending and can keep the camera's controls busy.
+        if (includeInfo || includeData) await this.startLiveView()
+        else await this.stopLiveView()
 
         const release = async () => {
             // Sony requires S1 to remain held through S2, including manual focus.

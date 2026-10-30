@@ -37,9 +37,11 @@ describe('Sony shutter and host transfer sequencing', () => {
     })
     it('does not require a host image event for explicit card-only capture', async () => {
         const { camera } = fixture()
+        Object.assign(camera, { liveViewPostViewEnabled: false })
         camera.set = vi.fn(async () => undefined)
         expect(await camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).toEqual({})
         expect(camera.send).not.toHaveBeenCalled()
+        expect(camera.set).not.toHaveBeenCalledWith(camera.registry.properties.SetPostViewEnable, 'ENABLE')
     })
     it('releases both stages even when the half-press command fails', async () => {
         const { camera } = fixture()

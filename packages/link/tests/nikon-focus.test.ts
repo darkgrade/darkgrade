@@ -349,7 +349,7 @@ it('never renews a Nikon session while its card movie is recording',async()=>{
 it('does not continue movie setup when the fresh Nikon PTP session is rejected',async()=>{
  const {camera,calls,responses}=fixture();camera.sessionId=12;responses.set('OpenSession',0x200f)
  vi.spyOn(camera,'get').mockResolvedValue('notInApplicationMode' as never)
- await expect(camera.startRecording()).rejects.toThrow('capture session open failed: AccessDenied')
+ await expect(camera.startRecording()).rejects.toThrow('movie session open failed: AccessDenied')
  expect(calls.some(call=>call.name==='StartMovieRecord'||call.name==='ChangeApplicationMode')).toBe(false)
  expect(camera.sessionId).toBeNull()
 })

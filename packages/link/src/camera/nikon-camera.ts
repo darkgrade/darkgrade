@@ -193,7 +193,6 @@ export class NikonCamera extends GenericCamera {
     }> {
         const memory = options.destination === 'memory'
         if (memory && options.includeData === false) throw new Error('Memory capture requires transfer so the new SDRAM image can be released')
-        await this.renewUsbCaptureSession()
         let info: ObjectInfo | undefined
         let data: Uint8Array | undefined
         const release = async () => {
@@ -472,10 +471,27 @@ export class NikonCamera extends GenericCamera {
         // the same PTP session. Renew the idle session before preparing a movie;
         // this keeps USB connected and adds no power cycle or fixed sleep.
         // Wi-Fi must retain its authenticated session rather than applying the USB workaround.
-        await this.renewUsbCaptureSession()
+        if (this.transport.getType() !== TransportType.IP && this.applicationMode !== 'ON' && this.sessionId !== null) {
+            await this.waitForImageBufferReady()
+            const nextSession = (this.sessionId + 1) >>> 0 || 1
+            const closed = await this.send(this.registry.operations.CloseSession, {})
+            if (closed.code !== OK.code) throw new Error(`Nikon movie session close failed: ${this.responseDescription(closed.code)}`)
+            this.sessionId = null
+            const opened = await this.send(this.registry.operations.OpenSession, {SessionID: nextSession})
+            if (opened.code !== OK.code) throw new Error(`Nikon movie session open failed: ${this.responseDescription(opened.code)}`)
+            this.sessionId = nextSession
+            this.cameraMode = 'UNKNOWN'
+            this.liveViewMode = 'UNKNOWN'
+            this.applicationMode = 'UNKNOWN'
+            this.liveViewStatus = 'UNKNOWN'
+        }
         if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
         if(this.manualVideoExposureRequested)await this.prepareManualVideoExposure()
+        // Setup capture
+
+        // update live view status and mode
         await this.getLiveViewStatus()
+
         await this.waitForDeviceReady()
 
         let ownsLiveView = false, ownsApplicationMode = false, ownsRemoteMode = false, ownsVideoMode = false
@@ -620,23 +636,6 @@ export class NikonCamera extends GenericCamera {
         }
 
         return completeFile
-    }
-
-    /** Card enumeration can leave Nikon USB capture state stale; retain authenticated Wi-Fi sessions. */
-    private async renewUsbCaptureSession(): Promise<void> {
-        if (this.sessionId === null || this.applicationMode === 'ON' || this.transport.getType() === TransportType.IP) return
-        await this.waitForImageBufferReady()
-        const nextSession = (this.sessionId + 1) >>> 0 || 1
-        const closed = await this.send(this.registry.operations.CloseSession, {})
-        if (closed.code !== OK.code) throw new Error(`Nikon capture session close failed: ${this.responseDescription(closed.code)}`)
-        this.sessionId = null
-        const opened = await this.send(this.registry.operations.OpenSession, { SessionID: nextSession })
-        if (opened.code !== OK.code) throw new Error(`Nikon capture session open failed: ${this.responseDescription(opened.code)}`)
-        this.sessionId = nextSession
-        this.cameraMode = 'UNKNOWN'
-        this.liveViewMode = 'UNKNOWN'
-        this.applicationMode = 'UNKNOWN'
-        this.liveViewStatus = 'UNKNOWN'
     }
 
     private async enableRemoteMode(): Promise<void> {
@@ -786,6 +785,8 @@ export class NikonCamera extends GenericCamera {
     /** A failed activation may still have changed the selector; forced restoration sends the original value despite stale caches. */
     private async selectLiveViewMode(mode: 'PHOTO' | 'VIDEO', force = false): Promise<void> {
         if (!force && this.liveViewMode === mode) return
+        // An active video pipeline must end before starting still live view.
+        await this.disableLiveView()
         this.liveViewMode = 'UNKNOWN'
         await this.set(this.registry.properties.LiveViewSelector, mode)
         await this.waitForDeviceReady()

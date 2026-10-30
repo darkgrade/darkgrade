@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { NikonCamera } from '@camera/nikon-camera'
 import { Logger } from '@core/logger'
-import { TransportType } from '@transport/interfaces/transport-types'
 
 function fixture(truncate = false) {
     let polls = 0
@@ -20,14 +19,25 @@ function fixture(truncate = false) {
 }
 
 describe('Nikon event-identified SDRAM capture', () => {
-    it('renews an idle USB session before capture after card access, without disconnecting USB', async () => {
+    it('restarts an active video live-view pipeline as photo before releasing the shutter', async () => {
         const { camera, send } = fixture()
-        Object.assign(camera, { sessionId: 41 })
-        Object.assign((camera as any).transport, { getType: () => TransportType.USB })
-        await camera.captureImage({ destination: 'memory', autofocus: false })
-        expect(send.mock.calls.filter(([operation]) => ['CloseSession', 'OpenSession'].includes(operation.name))
-            .map(([operation, parameters]) => [operation.name, parameters]))
-            .toEqual([['CloseSession', {}], ['OpenSession', { SessionID: 42 }]])
+        let selector = 'VIDEO', pipeline: string | undefined = 'VIDEO'
+        camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector
+            : property.name === 'LiveViewStatus' ? (pipeline ? 'ON' : 'OFF') : 'OFF') as any
+        camera.set = vi.fn(async (property, value) => {
+            if (property.name === 'LiveViewSelector') selector = String(value)
+        }) as any
+        const original = send.getMockImplementation()!
+        send.mockImplementation(async (...args) => {
+            const name = args[0].name
+            if (name === 'EndLiveView') pipeline = undefined
+            if (name === 'StartLiveView') pipeline = selector
+            if (name === 'InitiateCaptureRecInMedia' && pipeline !== 'PHOTO') return { code: 0x200c } as any
+            return original(...args)
+        })
+        const result = await camera.captureImage({ destination: 'memory', autofocus: false })
+        expect(result.data?.length).toBe(4)
+        expect(selector).toBe('VIDEO')
     })
     it('surfaces a terminal readiness error while waiting for a memory object', async () => {
         const { camera, send } = fixture()
