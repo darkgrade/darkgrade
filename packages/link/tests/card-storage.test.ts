@@ -10,6 +10,11 @@ describe('camera-side card write capability',()=>{
 })
 
 describe('populated card object enumeration',()=>{
+ it('preserves the rejected storage operation and camera response code for MCP diagnosis',async()=>{
+  const camera={getInstance:()=>({registry:{operations:{GetStorageIDs:'ids'}}}),send:async()=>({code:0xa107})}
+  await expect(readCameraStorages(camera)).rejects.toThrow('GetStorageIDs: 0xa107')
+  await expect(readCameraObjectHandles(camera)).rejects.toThrow('GetStorageIDs: 0xa107')
+ })
  it('prepares vendor storage before issuing standard card commands',async()=>{
   const calls:string[]=[]
   const instance={prepareStorageRead:async()=>{calls.push('prepare')},registry:{operations:{GetStorageIDs:'ids'}}}

@@ -60,8 +60,21 @@ export async function pairNikonWifiProfile(transport: TransportInterface, option
     if (!transport.on || !transport.off) throw new Error('Nikon pairing requires camera events')
 
     let confirmed = false
-    let timer: ReturnType<typeof setTimeout> | undefined
     let wake: (() => void) | undefined
+    const deadline = Date.now() + timeout
+    async function withinDeadline<T>(operation: () => Promise<T>, message: string): Promise<T> {
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) throw new Error(message)
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+            return await Promise.race([
+                operation(),
+                new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), remaining) }),
+            ])
+        } finally {
+            if (timer) clearTimeout(timer)
+        }
+    }
     const onEvent = (event: {code: number}) => {
         if (event.code !== 0x4008) return
         confirmed = true
@@ -69,21 +82,19 @@ export async function pairNikonWifiProfile(transport: TransportInterface, option
     }
     transport.on(onEvent)
     try {
-        await command(transport, 0x1002, 0, [1])
-        const bytes = await command(transport, 0x952b, 1)
+        await withinDeadline(() => command(transport, 0x1002, 0, [1]), 'Nikon pairing session timed out')
+        const bytes = await withinDeadline(() => command(transport, 0x952b, 1), 'Nikon pairing code timed out')
         if (!bytes) throw new Error('Nikon did not return a pairing code')
         const code = decodeNikonPairingCode(bytes)
-        if (!await options.confirmCode(code)) throw new Error('Nikon pairing code was not confirmed')
+        if (!await withinDeadline(() => options.confirmCode(code), 'Nikon pairing code comparison timed out'))
+            throw new Error('Nikon pairing code was not confirmed')
         // Only events after host approval can confirm this pairing attempt.
         confirmed = false
-        await command(transport, 0x935a, 2, [0x2001])
-        if (!confirmed) await new Promise<void>((resolve, reject) => {
-            wake = resolve
-            timer = setTimeout(() => reject(new Error('Confirm the computer on the Nikon camera to finish pairing')), timeout)
-        })
+        await withinDeadline(() => command(transport, 0x935a, 2, [0x2001]), 'Nikon pairing approval timed out')
+        if (!confirmed) await withinDeadline(() => new Promise<void>(resolve => { wake = resolve }),
+            'Confirm the computer on the Nikon camera to finish pairing')
         return {cameraConfirmed: true}
     } finally {
-        if (timer) clearTimeout(timer)
         transport.off(onEvent)
         await transport.disconnect()
     }

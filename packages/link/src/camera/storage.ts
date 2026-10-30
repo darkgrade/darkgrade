@@ -5,12 +5,12 @@ export async function readCameraStorages(camera: any) {
     await camera.getInstance().prepareStorageRead?.()
     const operations = camera.getInstance().registry.operations
     const response = await camera.send(operations.GetStorageIDs, {})
-    if (response.code !== 0x2001) throw new Error('Camera storage could not be read')
+    if (response.code !== 0x2001) throw new Error('Camera storage could not be read (GetStorageIDs: 0x' + response.code.toString(16) + ')')
     const summaries = []
     for (const storageId of response.data || []) {
         if ((Number(storageId) & 0xffff) === 0) continue
         const storage = await camera.send(operations.GetStorageInfo, {StorageID: storageId})
-        if (storage.code !== 0x2001) throw new Error('Camera card information could not be read')
+        if (storage.code !== 0x2001) throw new Error('Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
         const info = storage.data || {}
         const access = Number(info.accessCapability ?? info.AccessCapability ?? -1)
         const writable = camera.getInstance().vendorId === 0x04b0
@@ -34,7 +34,7 @@ export async function readCameraObjectHandles(camera: any): Promise<Set<number>>
     await camera.getInstance().prepareStorageRead?.()
     const operations = camera.getInstance().registry.operations
     const storage = await camera.send(operations.GetStorageIDs, {})
-    if (storage.code !== 0x2001) throw new Error('Camera storage could not be read')
+    if (storage.code !== 0x2001) throw new Error('Camera storage could not be read (GetStorageIDs: 0x' + storage.code.toString(16) + ')')
     const handles = new Set<number>()
     for (const storageId of storage.data || []) {
         if ((Number(storageId) & 0xffff) === 0) continue
