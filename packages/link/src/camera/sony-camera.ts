@@ -661,19 +661,19 @@ export class SonyCamera extends GenericCamera {
         await this.disableContentTransferMode()
         await this.startLiveView()
 
-        if (autofocus) {
-            await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
-            try {
-                await this.waitForFocus()
-            } finally {
-                await this.set(this.registry.properties.ShutterHalfReleaseButton, 'UP')
-            }
-        }
         const release = async () => {
+            // Sony requires S1 to remain held through S2, including manual focus.
+            // libgphoto2 camera_sony_capture uses the same two-stage release.
             try {
+                await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
+                if (autofocus) await this.waitForFocus()
                 await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
             } finally {
-                await this.set(this.registry.properties.ShutterReleaseButton, 'UP')
+                try {
+                    await this.set(this.registry.properties.ShutterReleaseButton, 'UP')
+                } finally {
+                    await this.set(this.registry.properties.ShutterHalfReleaseButton, 'UP')
+                }
             }
         }
         // A card workflow verifies the newly indexed object itself. It must not
