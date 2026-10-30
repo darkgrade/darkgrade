@@ -22,6 +22,20 @@ function fixture(movie = false) {
 }
 
 describe('Sony SDK still capture', () => {
+    it('honors explicit card delivery from a host-only configuration and restores that configuration', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, values, request } = fixture()
+            await camera.connectUsb('test')
+            request.mockImplementation(async command => {
+                if (command.cmd === 'command') expect(values.StillImageStoreDestination).toBe('3')
+                return command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {}
+            })
+            const pending = camera.captureAndDownload('/tmp/photos', {destination:'card'})
+            await vi.runAllTimersAsync(); await pending
+            expect(values.StillImageStoreDestination).toBe('1')
+        } finally { vi.useRealTimers() }
+    })
     it('holds S1 through S2 and restores autofocus after an explicit focus bypass', async () => {
         vi.useFakeTimers()
         try {

@@ -535,7 +535,7 @@ export class SonyWifiCamera {
         const priority = await this.getSonyProperty('PriorityKeySettings')
         const program = await this.getSonyProperty('ExposureProgramMode')
         const focus = options.autofocus === false ? await this.getSonyProperty('FocusMode') : undefined
-        const target = options.destination === 'memory' ? 1 : original.value === '2' ? 3 : Number(original.value)
+        const target = options.destination === 'memory' ? 1 : options.destination === 'card' ? 3 : original.value === '2' ? 3 : Number(original.value)
         if (![1, 3].includes(target)) throw new Error('The camera does not offer a PC photo destination')
         let changedProgram = false
         let failure: unknown

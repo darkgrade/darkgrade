@@ -105,6 +105,8 @@ export class CameraRuntime implements CameraClient {
     media(camera: string, action: string, options: MediaOptions = {}): Promise<unknown> {
         if (!mediaActions.includes(action as MediaAction))
             return Promise.reject(new Error(`Unsupported media action ${action}`))
+        if (options.autofocus !== undefined && typeof options.autofocus !== 'boolean')
+            return Promise.reject(new Error('Invalid autofocus option'))
         if (options.destination !== undefined && !['card', 'memory'].includes(options.destination))
             return Promise.reject(new Error('Invalid photo destination'))
         if (options.rawCompression !== undefined && options.rawCompression !== 'lossless')

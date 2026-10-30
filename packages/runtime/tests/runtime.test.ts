@@ -112,6 +112,7 @@ test('invalid actions and media options cannot reach a camera', async () => {
     await expect(runtime.control('sony', 'raw-command')).rejects.toThrow('Unknown')
     await expect(runtime.media('nikon', 'format-card')).rejects.toThrow('Unsupported')
     await expect(runtime.media('nikon', 'take-photo', { destination: 'invalid' as any })).rejects.toThrow('destination')
+    await expect(runtime.media('nikon', 'take-photo', { autofocus: 'false' as any })).rejects.toThrow('autofocus')
     await expect(runtime.media('nikon', 'take-photo', { rawCompression: 'invalid' as any })).rejects.toThrow(
         'compression'
     )
