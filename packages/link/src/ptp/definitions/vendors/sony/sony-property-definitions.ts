@@ -1432,8 +1432,8 @@ export const StillImageSaveDestination = {
         new EnumCodec(
             registry,
             [
-                { value: 0x0001, name: 'CAMERA_DEVICE', description: 'CAMERA_DEVICE' },
-                { value: 0x0010, name: 'HOST_DEVICE', description: 'HOST_DEVICE' },
+                { value: 0x0010, name: 'CAMERA_DEVICE', description: 'Save to camera card' },
+                { value: 0x0001, name: 'HOST_DEVICE', description: 'Transfer from camera memory to host' },
                 { value: 0x0011, name: 'BOTH_DEVICES', description: 'BOTH_DEVICES' },
             ] as const,
             registry.codecs.uint16

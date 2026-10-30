@@ -660,11 +660,15 @@ export class SonyCamera extends GenericCamera {
             throw new Error('Sony memory capture requires transfer of the captured image')
         const destination = this.registry.properties.StillImageSaveDestination
         const focus = this.registry.properties.FocusMode
-        const originalDestination = options.destination === 'memory' ? await this.get(destination) : undefined
+        const needsHostImage = options.includeInfo !== false || options.includeData !== false
+        const requestedDestination = options.destination === 'memory' ? 'HOST_DEVICE'
+            : needsHostImage ? 'BOTH_DEVICES' : undefined
+        const originalDestination = requestedDestination ? await this.get(destination) : undefined
         const originalFocus = options.autofocus === false ? await this.get(focus) : undefined
         let failure: unknown
         try {
-            if (originalDestination !== undefined) await this.set(destination, 'HOST_DEVICE')
+            if (requestedDestination && originalDestination !== requestedDestination)
+                await this.set(destination, requestedDestination)
             if (originalFocus !== undefined && originalFocus !== 'Manual') await this.set(focus, 'Manual')
             return await this.captureWithCurrentDestination(options)
         } catch (error) {
@@ -679,7 +683,7 @@ export class SonyCamera extends GenericCamera {
                     await this.set(focus, originalFocus)
                 } catch (error) { restorationErrors.push(error) }
             }
-            if (originalDestination !== undefined)
+            if (originalDestination !== undefined && originalDestination !== requestedDestination)
                 await this.set(destination, originalDestination).catch(error => restorationErrors.push(error))
             if (restorationErrors.length) {
                 const errors = [...(failure ? [failure] : []), ...restorationErrors]

@@ -13,11 +13,17 @@ function fixture() {
         return []
     })
     const sent: string[] = []
+    let destinationRaw = 0x0010
     camera.get = vi.fn(async property => property.name === 'FocusMode' ? 'AF-C' : 'CAMERA_DEVICE') as any
     camera.set = vi.fn(async (property, value) => {
         sent.push(`${property.name}:${value}`)
+        if (property.name === 'StillImageSaveDestination') {
+            const codec = camera.registry.properties.StillImageSaveDestination.codec(camera.registry)
+            destinationRaw = new DataView(codec.encode(value as any).buffer).getUint16(0, true)
+        }
         if (property.name === 'ShutterReleaseButton' && value === 'DOWN') {
-            (camera as any).handleEvent({ code: 0xc201, parameters: [7], transactionId: 1 });
+            if (destinationRaw & 1)
+                (camera as any).handleEvent({ code: 0xc201, parameters: [7], transactionId: 1 });
             (camera as any).handleEvent({ code: 0xc206, parameters: [], transactionId: 1 })
         }
     }) as any
@@ -28,6 +34,13 @@ function fixture() {
 }
 
 describe('Sony shutter and host transfer sequencing', () => {
+    it.each([['HOST_DEVICE', 1], ['CAMERA_DEVICE', 16], ['BOTH_DEVICES', 17]] as const)(
+        'encodes Sony destination %s as wire value %i', (destination, raw) => {
+            const { camera } = fixture()
+            const codec = camera.registry.properties.StillImageSaveDestination.codec(camera.registry)
+            expect(codec.encode(destination)).toEqual(Uint8Array.of(raw, 0))
+            expect(codec.decode(Uint8Array.of(raw, 0)).value).toBe(destination)
+        })
     it('waits for fresh writable focus state before restoring autofocus after capture', async () => {
         const { camera } = fixture()
         let polls = 0
@@ -54,8 +67,8 @@ describe('Sony shutter and host transfer sequencing', () => {
         const { camera, sent } = fixture()
         const result = await camera.captureImage({ autofocus: false })
         expect(result.data).toEqual(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9))
-        expect(sent).toEqual(['FocusMode:Manual', 'ShutterHalfReleaseButton:DOWN', 'ShutterReleaseButton:DOWN',
-            'ShutterReleaseButton:UP', 'ShutterHalfReleaseButton:UP', 'FocusMode:AF-C'])
+        expect(sent).toEqual(['StillImageSaveDestination:BOTH_DEVICES', 'FocusMode:Manual', 'ShutterHalfReleaseButton:DOWN', 'ShutterReleaseButton:DOWN',
+            'ShutterReleaseButton:UP', 'ShutterHalfReleaseButton:UP', 'FocusMode:AF-C', 'StillImageSaveDestination:CAMERA_DEVICE'])
     })
     it('does not require a host image event for explicit card-only capture', async () => {
         const { camera } = fixture()
@@ -74,7 +87,8 @@ describe('Sony shutter and host transfer sequencing', () => {
         await expect(camera.captureImage({ autofocus: false })).rejects.toThrow('CameraBusy')
         expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.ShutterReleaseButton, 'UP')
         expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.ShutterHalfReleaseButton, 'UP')
-        expect(camera.set).toHaveBeenLastCalledWith(camera.registry.properties.FocusMode, 'AF-C')
+        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.FocusMode, 'AF-C')
+        expect(camera.set).toHaveBeenLastCalledWith(camera.registry.properties.StillImageSaveDestination, 'CAMERA_DEVICE')
     })
     it('releases the half-press even when full-shutter release fails', async () => {
         const { camera, sent } = fixture()
