@@ -4,6 +4,7 @@
  * scripts the exact bytes on a stub transport; none of this is recorded camera behaviour.
  */
 import { CanonCamera } from '@camera/canon-camera'
+import { SonyCamera } from '@camera/sony-camera'
 import { GenericCamera } from '@camera/generic-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
@@ -656,5 +657,29 @@ describe('library objects stay out of the host process', () => {
         new IPTransport({ address: '127.0.0.1' })
         new IPTransport({ address: '127.0.0.1' })
         expect(process.listenerCount('uncaughtException') + process.listenerCount('unhandledRejection')).toBe(before)
+    })
+})
+
+
+describe('vendor reconnect after a failed transaction', () => {
+    it.each([CanonCamera, SonyCamera])('%s clears taint only after reopening the transport', async CameraType => {
+        let broken = true
+        const transport = new ScriptedTransport(command => {
+            if (broken) return [container(CONTAINER.response, 0x2001, command.transactionId + 1000)]
+            if (command.operation === 0x1001)
+                return [container(CONTAINER.data, command.operation, command.transactionId, deviceInfo('Fresh')), ok(command.transactionId)]
+            // Refuse the vendor handshake: connection must reach this reply, rather than an old recovery error.
+            return [container(CONTAINER.response, 0x2005, command.transactionId)]
+        })
+        const camera = new CameraType(transport, quietLogger())
+        camera.configureTransactions({ timeoutMilliseconds: 20, automaticUSBReset: false })
+        await expect(camera.send(camera.registry.operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPProtocolError)
+        await expect(camera.connect()).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
+        await camera.disconnect().catch(() => undefined)
+        broken = false
+        await camera.connect().catch(error => expect(error).not.toBeInstanceOf(PTPRecoveryRequiredError))
+        const response = await camera.send(camera.registry.operations.GetDeviceInfo, {})
+        expect(response.data?.model).toBe('Fresh')
+        await camera.disconnect().catch(() => undefined)
     })
 })
