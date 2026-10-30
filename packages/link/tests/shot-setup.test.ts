@@ -69,3 +69,17 @@ it('a dim legal-range preview can open aperture at high ISO even when the broad 
  const result=await optimiseShot({image:new Uint8Array(),controls,analyse:async()=>controls.aperture.value==='f/4'?balanced:{...balanced,metrics:{...balanced.metrics,median:.1,p95:.4}},publish:()=>{},apply:async(action,value)=>{if(action==='set-aperture')controls.aperture.value=value;else controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
  expect(result.changes.some(change=>change.setting==='aperture'&&change.after==='f/4'&&change.verified)).toBe(true)
 })
+
+it('bounds ISO using dim midtones even when the broad histogram calls them balanced',async()=>{
+ const controls={iso:{value:'100',allowedValues:['100','125','160','200','250','320','400','500','640','800','1000','1250','1600','2000','2500','3200','4000'],writable:true},shutterSpeed:{value:'1/50'},whiteBalance:{value:'Daylight'}}
+ const samples:Record<string,ShotAnalysis>={
+  '100':{...balanced,exposure:'dark',metrics:{...balanced.metrics,median:.086,p95:.5,dark:.46}},
+  '200':{...balanced,metrics:{...balanced.metrics,median:.12,p95:.6}},
+  '400':{...balanced,metrics:{...balanced.metrics,median:.14,p95:.88}},
+  '800':{...balanced,metrics:{...balanced.metrics,median:.26,p95:.9}},
+  '1600':{...balanced,exposure:'bright',metrics:{...balanced.metrics,median:.5,p95:.93,clipped:.12}},
+ }
+ const writes:string[]=[]
+ const report=await optimiseShot({image:new Uint8Array(),controls,publish:()=>{},analyse:async()=>{const sample=samples[controls.iso.value];if(!sample)throw new Error('Unexpected ISO probe '+controls.iso.value);return sample},apply:async(action,value)=>{expect(action).toBe('set-iso');writes.push(value);controls.iso.value=value;return controls},recapture:async()=>new Uint8Array()})
+ expect(report.error).toBeUndefined(); expect(report.exposureVerified).toBe(true);expect(report.imageVerified).toBe(true);expect(Number(controls.iso.value)).toBeGreaterThan(400);expect(Number(controls.iso.value)).toBeLessThan(1600);expect(writes.length).toBeLessThanOrEqual(4);expect(controls.whiteBalance.value).toBe('Daylight')
+})

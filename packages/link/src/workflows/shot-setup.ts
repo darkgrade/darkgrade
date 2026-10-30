@@ -28,8 +28,9 @@ export async function optimiseShot(options:{image:Uint8Array;controls:Record<str
  if((changes.length||focused)&&Date.now()<deadline){options.publish('Verifying the adjusted shot');try{analysis=await analyse(await options.recapture());imageVerified=true}catch(error){lastError=error instanceof Error?error.message:String(error)}}
  if(!changes.length&&!focused&&Date.now()<deadline)analysis=await analyse(options.image,true)
  const isoNumber=(value:string|undefined)=>Number(value?.replace(/^ISO\s*/i,''))
+ const measuredExposure=()=>needsMeterCorrection()?'dark':analysis.exposure
  const isoMeasurements=new Map<number,ShotAnalysis['exposure']>()
- if(imageVerified&&isoNumber(controls.iso?.value)>0)isoMeasurements.set(isoNumber(controls.iso?.value),analysis.exposure)
+ if(imageVerified&&isoNumber(controls.iso?.value)>0)isoMeasurements.set(isoNumber(controls.iso?.value),measuredExposure())
  const visitedIso=new Set([options.controls.iso?.value,...changes.filter(change=>change.setting==='iso'&&change.verified).map(change=>change.after)])
  // Auto ISO can hide the body's actual gain. Use the first fixed-ISO image for one bounded correction.
  for(let correction=0;correction<3&&imageVerified&&!lastError&&(analysis.exposure!=='balanced'||needsMeterCorrection())&&Date.now()+4000<deadline;correction++){
@@ -37,8 +38,9 @@ export async function optimiseShot(options:{image:Uint8Array;controls:Record<str
   let nextIso=chooseIso(controls.iso?.allowedValues||[],controls.iso?.value,analysis)
   if(analysis.exposure==='balanced'&&needsMeterCorrection()){const desired=isoNumber(controls.iso?.value)*Math.min(8,Math.pow(targetMedian/Math.max(.01,analysis.metrics.median),2.2));nextIso=(controls.iso?.allowedValues||[]).filter(value=>isoNumber(value)>=100&&isoNumber(value)<=25600).sort((left,right)=>Math.abs(Math.log(isoNumber(left)/desired))-Math.abs(Math.log(isoNumber(right)/desired)))[0]}
   const currentIso=isoNumber(controls.iso?.value)
-  const opposite=[...isoMeasurements].filter(([iso,exposure])=>analysis.exposure==='dark'?exposure==='bright'&&iso>currentIso:exposure==='dark'&&iso<currentIso).sort(([left],[right])=>Math.abs(Math.log(left/currentIso))-Math.abs(Math.log(right/currentIso)))[0]?.[0]
-  if(nextIso&&opposite&&(analysis.exposure==='dark'?isoNumber(nextIso)>=opposite:isoNumber(nextIso)<=opposite)){
+  const brightening=analysis.exposure==='dark'||needsMeterCorrection()
+  const opposite=[...isoMeasurements].filter(([iso,exposure])=>brightening?exposure==='bright'&&iso>currentIso:exposure==='dark'&&iso<currentIso).sort(([left],[right])=>Math.abs(Math.log(left/currentIso))-Math.abs(Math.log(right/currentIso)))[0]?.[0]
+  if(nextIso&&opposite&&(brightening?isoNumber(nextIso)>=opposite:isoNumber(nextIso)<=opposite)){
    const target=Math.sqrt(currentIso*opposite)
    nextIso=(controls.iso?.allowedValues||[]).filter(value=>!visitedIso.has(value)&&isoNumber(value)>Math.min(currentIso,opposite)&&isoNumber(value)<Math.max(currentIso,opposite)).sort((left,right)=>Math.abs(Math.log(isoNumber(left)/target))-Math.abs(Math.log(isoNumber(right)/target)))[0]
   }
@@ -49,7 +51,7 @@ export async function optimiseShot(options:{image:Uint8Array;controls:Record<str
   }
   await set('iso','set-iso',nextIso)
   if(controls.iso?.value)visitedIso.add(controls.iso.value)
-  if(changes.length>count&&Date.now()<deadline){options.publish('Verifying exposure correction');try{analysis=await analyse(await options.recapture());imageVerified=true;if(isoNumber(controls.iso?.value)>0)isoMeasurements.set(isoNumber(controls.iso?.value),analysis.exposure)}catch(error){lastError=error instanceof Error?error.message:String(error)}}
+  if(changes.length>count&&Date.now()<deadline){options.publish('Verifying exposure correction');try{analysis=await analyse(await options.recapture());imageVerified=true;if(isoNumber(controls.iso?.value)>0)isoMeasurements.set(isoNumber(controls.iso?.value),measuredExposure())}catch(error){lastError=error instanceof Error?error.message:String(error)}}
  }
  // A preset that introduced a visible colour regression is not retained.
  const balance=changes.find(change=>change.setting==='whiteBalance')
