@@ -8,6 +8,10 @@ The first migration covers 14 tools: controls, ISO, aperture, shutter speed,
 white balance, focus mode, autofocus, Manual exposure, movie format, photo
 capture, latest-photo download, live-view frame, card storage and Nikon memory
 status. Existing names, arguments and annotations remain compatible.
+`camera_take_photo` additionally accepts optional `autofocus`, `destination` and
+`rawCompression` arguments. For example, autofocus can be disabled for a deliberate
+shutter/transfer test, or Nikon NEF capture can request temporary lossless
+compression. A successful shutter does not certify focus or independent decoding.
 
 ## Use it
 

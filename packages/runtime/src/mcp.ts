@@ -40,11 +40,35 @@ export function registerCameraTools(server: McpServer, client: CameraClient) {
         {
             title: 'Take a photo through Darkgrade',
             description:
-                'Capture one photo using the active USB or Wi-Fi transport. Sony Wi-Fi captures and downloads completed photo files, returning validated metadata and download URLs, and shares an open Console session. USB captures write to the camera card. Camera writes temporarily block power/USB recovery.',
-            inputSchema: z.object({ camera: z.string().min(1) }),
+                'Capture one photo using the active USB or Wi-Fi transport and shared camera session. Autofocus is enabled unless explicitly disabled; a focus-lock failure does not imply a failed shutter. Memory delivery is available on Nikon and Sony. Nikon lossless RAW temporarily changes compression and restores the original value. Camera writes block power/USB recovery. Capture and transfer evidence are separate from independent image decoding.',
+            inputSchema: z.object({
+                camera: z.string().min(1),
+                autofocus: z
+                    .boolean()
+                    .optional()
+                    .describe(
+                        'False requests capture without requiring autofocus lock. Does not certify focus quality.'
+                    ),
+                destination: z
+                    .enum(['card', 'memory'])
+                    .optional()
+                    .describe(
+                        'Memory requests Nikon SDRAM or Sony host delivery. Original save settings are restored.'
+                    ),
+                rawCompression: z
+                    .literal('lossless')
+                    .optional()
+                    .describe('Nikon NEF only: temporarily select lossless RAW and restore the original compression.'),
+            }),
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
         },
-        protect(async ({ camera }) => client.media(camera as string, 'take-photo'))
+        protect(async ({ camera, autofocus, destination, rawCompression }) =>
+            client.media(camera as string, 'take-photo', {
+                ...(autofocus === undefined ? {} : { autofocus: autofocus as boolean }),
+                ...(destination === undefined ? {} : { destination: destination as 'card' | 'memory' }),
+                ...(rawCompression === undefined ? {} : { rawCompression: rawCompression as 'lossless' }),
+            })
+        )
     )
 
     server.registerTool(

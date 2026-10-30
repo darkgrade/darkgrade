@@ -156,6 +156,37 @@ test('standalone MCP discovers the migrated tools and executes against the share
     }
 })
 
+test('photo MCP supports explicit focus bypass and Nikon RAW delivery without changing legacy defaults', async () => {
+    const { runtime, calls } = fixture()
+    const server = createCameraMcpServer(runtime),
+        client = new Client({ name: 'photo-options', version: '1' })
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    try {
+        await server.connect(a)
+        await client.connect(b)
+        await client.callTool({ name: 'camera_take_photo', arguments: { camera: 'canon' } })
+        expect(calls.at(-1)).toEqual(['canon', 'take-photo', {}])
+        const result = await client.callTool({
+            name: 'camera_take_photo',
+            arguments: {
+                camera: 'nikon',
+                autofocus: false,
+                destination: 'memory',
+                rawCompression: 'lossless',
+            },
+        })
+        expect(result.isError).not.toBe(true)
+        expect(calls.at(-1)).toEqual([
+            'nikon',
+            'take-photo',
+            { autofocus: false, destination: 'memory', rawCompression: 'lossless' },
+        ])
+    } finally {
+        await client.close()
+        await server.close()
+    }
+})
+
 test('HTTP client preserves busy errors and never retries an ambiguous write', async () => {
     let calls = 0
     const client = new HttpCameraClient('http://localhost:8787', async () => {
