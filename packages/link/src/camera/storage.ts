@@ -2,6 +2,7 @@ import {nikonCanRecordToStorage} from '@vendors/nikon/card-storage'
 
 /** Read current card capacity and camera recording capability, independently of host upload access. */
 export async function readCameraStorages(camera: any) {
+    await camera.getInstance().prepareStorageRead?.()
     const operations = camera.getInstance().registry.operations
     const response = await camera.send(operations.GetStorageIDs, {})
     if (response.code !== 0x2001) throw new Error('Camera storage could not be read')
@@ -30,6 +31,7 @@ export async function readCameraStorages(camera: any) {
 
 /** Enumerate populated card slots only; an empty-slot placeholder is not a readable storage. */
 export async function readCameraObjectHandles(camera: any): Promise<Set<number>> {
+    await camera.getInstance().prepareStorageRead?.()
     const operations = camera.getInstance().registry.operations
     const storage = await camera.send(operations.GetStorageIDs, {})
     if (storage.code !== 0x2001) throw new Error('Camera storage could not be read')

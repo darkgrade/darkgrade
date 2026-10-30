@@ -188,12 +188,28 @@ export class NikonCamera extends GenericCamera {
      * object and its metadata is not implemented, so `info` and `data` are always undefined: the
      * result never claims media it did not retrieve, whatever `includeInfo`/`includeData` ask for.
      */
-    async captureImage(_options: { includeInfo?: boolean; includeData?: boolean } = {}): Promise<{
+    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
         const info: ObjectInfo | undefined = undefined
         const data: Uint8Array | undefined = undefined
+        const release = async () => {
+            if (options.autofocus !== false) {
+                const response = await this.send(this.registry.operations.InitiateCapture, {})
+                this.assertNikonResponse(response.code, 'InitiateCapture')
+                return
+            }
+            const information = await this.send(this.registry.operations.GetDeviceInfo, {})
+            this.assertNikonResponse(information.code, 'GetDeviceInfo')
+            if (!information.data?.operationsSupportedRaw.includes(0x9207))
+                throw new Error('Nikon does not advertise capture without autofocus; no shutter command sent')
+            // Z6III command reference rev 2, 6.2.4.1: normal release, save to card.
+            const response = await this.send(this.registry.operations.InitiateCaptureRecInMedia, {
+                AfMode: 0xffffffff, Target: 0,
+            })
+            this.assertNikonResponse(response.code, 'InitiateCaptureRecInMedia')
+        }
 
         // Setup capture
 
@@ -207,8 +223,7 @@ export class NikonCamera extends GenericCamera {
                 throw error
             }
             await this.enableLiveView()
-            const response = await this.send(this.registry.operations.InitiateCapture, {})
-            this.assertNikonResponse(response.code, 'InitiateCapture')
+            await release()
             await this.waitForDeviceReady()
             return { info, data }
         }
@@ -216,8 +231,7 @@ export class NikonCamera extends GenericCamera {
         // camera's hardware dial is in photo mode, great, screen will stay on
         if (this.liveViewMode === 'PHOTO') {
             await this.enableLiveView()
-            const response = await this.send(this.registry.operations.InitiateCapture, {})
-            this.assertNikonResponse(response.code, 'InitiateCapture')
+            await release()
             await this.waitForDeviceReady()
             await this.waitForImageBufferReady()
         }
@@ -229,8 +243,7 @@ export class NikonCamera extends GenericCamera {
                 await this.enableRemoteMode()
                 await this.selectLiveViewMode('PHOTO')
                 await this.enableLiveView()
-                const response = await this.send(this.registry.operations.InitiateCapture, {})
-                this.assertNikonResponse(response.code, 'InitiateCapture')
+                await release()
                 await this.waitForDeviceReady()
                 await this.waitForImageBufferReady()
             } finally {

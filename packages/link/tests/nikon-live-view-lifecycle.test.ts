@@ -85,4 +85,18 @@ describe('Nikon live-view lifecycle', () => {
             expect(send.mock.calls.map(([operation]) => operation.name)).toContain('InitiateCapture')
         }
     })
+    it('uses advertised Nikon normal release when autofocus is explicitly disabled', async () => {
+        const camera = cameraFixture()
+        vi.spyOn(camera, 'get').mockImplementation(async property =>
+            property.name === 'LiveViewSelector' ? 'PHOTO' : ('OFF' as any))
+        const send = vi.spyOn(camera, 'send').mockImplementation(async operation =>
+            ({ code: OK.code, ...(operation.name === 'GetDeviceInfo' && { data: { operationsSupportedRaw: [0x9207] } }) }) as any)
+        await camera.captureImage({ autofocus: false })
+        expect(send.mock.calls.some(([operation]) => operation.name === 'InitiateCapture')).toBe(false)
+        const release = send.mock.calls.find(([operation]) => operation.name === 'InitiateCaptureRecInMedia')
+        expect(release?.[1]).toEqual({ AfMode: 0xffffffff, Target: 0 })
+        send.mockReset().mockResolvedValue({ code: OK.code, data: { operationsSupportedRaw: [] } } as any)
+        await expect(camera.captureImage({ autofocus: false })).rejects.toThrow('does not advertise')
+        expect(send.mock.calls.some(([operation]) => operation.name === 'InitiateCaptureRecInMedia')).toBe(false)
+    })
 })

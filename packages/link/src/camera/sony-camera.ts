@@ -760,6 +760,11 @@ export class SonyCamera extends GenericCamera {
         return objects
     }
 
+    /** Card enumeration requires Sony content-transfer mode, even before any download. */
+    async prepareStorageRead(): Promise<void> {
+        await this.enableContentTransferMode()
+    }
+
     async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
         if (!Number.isSafeInteger(objectSize) || objectSize < 0)
             throw new Error('Sony object size must be a non-negative safe integer')
