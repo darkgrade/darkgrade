@@ -6,6 +6,7 @@ function fixture() {
     const facade = new Camera({ vendorId: 0x054c, transport: { isLittleEndian: () => true } as any,
         logger: { captureConsole: false, renderInTerminal: false } })
     const camera = facade.getInstance() as SonyCamera
+    vi.spyOn(facade, 'getSonyPropertyStates').mockResolvedValue([])
     Object.assign(camera, { liveViewPostViewEnabled: true })
     camera.refreshPropertyStates = vi.fn(async () => {
         (camera as any).propertyCache.set(0x500a, { vendorExtensions: { enabled: true } })
