@@ -538,7 +538,9 @@ export class Camera {
         return this.instance.leaveMovieMode()
     }
 
-    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory' }) {
+    async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory'; rawCompression?: 'lossless' }) {
+        if (params?.rawCompression !== undefined && this.instance.vendorId !== VendorIDs.NIKON)
+            throw new Error('RAW compression selection requires a Nikon camera')
         if (params?.destination === 'memory' && !(this.instance instanceof NikonCamera) && !(this.instance instanceof SonyCamera))
             throw new Error('Capture to memory is only implemented for Nikon and Sony cameras')
         if (params?.autofocus === false && !(this.instance instanceof CanonCamera) && !(this.instance instanceof NikonCamera) && !(this.instance instanceof SonyCamera))
