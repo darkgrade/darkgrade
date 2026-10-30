@@ -100,7 +100,10 @@ export const SDIO_GetExtDeviceInfo = {
             codec: registry =>
                 createEnumCodec(
                     registry,
-                    [{ value: 0x012c, name: '3.00', description: 'Protocol Version 3.00' }] as const,
+                    [
+                        { value: 0x00c8, name: '2.00', description: 'Protocol Version 2.00 (ILCE-7M2 capture)' },
+                        { value: 0x012c, name: '3.00', description: 'Protocol Version 3.00' },
+                    ] as const,
                     registry.codecs.uint32
                 ),
             required: true,
@@ -117,7 +120,7 @@ export const SDIO_GetExtDeviceInfo = {
                     ] as const,
                     registry.codecs.uint32
                 ),
-            required: true,
+            required: false,
         },
     ] as const,
     responseParameters: [] as const,

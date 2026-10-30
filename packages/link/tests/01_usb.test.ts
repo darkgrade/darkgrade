@@ -7,7 +7,6 @@ import { VendorNames } from '@ptp/definitions/vendor-ids'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { TransportFactory } from '@transport/transport-factory'
 import { USBTransport } from '@transport/usb/usb-transport'
-import {WebUSB} from 'usb'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 // Set to true for verbose output
@@ -17,7 +16,8 @@ const log = DEBUG
     ? (...args: any[]) => process.stderr.write(args.join(' ') + '\n')
     : (...args: any[]) => console.log(...args)
 
-const attachedDevices=await new WebUSB({allowAllDevices:true}).getDevices()
+// A USB hub or keyboard is not a PTP camera. Gate physical checks on the transport's camera discovery.
+const attachedCameras = await ((await new TransportFactory().createUSBTransport()) as USBTransport).discover()
 describe('USB Transport', () => {
     let transportFactory: TransportFactory
 
@@ -39,7 +39,7 @@ describe('USB Transport', () => {
             expect(usb.webusb.getDevices).toBeDefined()
         })
 
-        it.skipIf(!attachedDevices.length)('should discover devices and interfaces', async () => {
+        it.skipIf(!attachedCameras.length)('should discover devices and interfaces', async () => {
             const transport = (await transportFactory.createUSBTransport()) as USBTransport
 
             log("\nNote: In Node.js, discover() will use native USB API if WebUSB hasn't granted permissions yet.\n")
@@ -89,7 +89,7 @@ describe('USB Transport', () => {
             log('\n----------------------------------------')
         })
 
-        it.skipIf(!attachedDevices.length)('should find at least one camera device', async () => {
+        it.skipIf(!attachedCameras.length)('should find at least one camera device', async () => {
             log(`\n[TEST: Camera Detection]`)
             log('----------------------------------------')
 

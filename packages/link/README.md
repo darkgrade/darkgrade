@@ -19,3 +19,45 @@ The Olympus E-PL5 hardware test exposes battery and writable date/time in MTP mo
 Use the shared [video shooting APIs](docs/video-shooting.md) for multi-camera takes, verified original transfer, video exposure setup and persistent per-camera evidence. `VideoTake` accepts camera adapters; `UsbVideoRecording` and `SonyVideoRecording` implement the recording/media operations. Applications own process leases, storage and their UI.
 
 Validate the built ESM and CommonJS package entries with `bun run test:package` from this directory. This imports the public package under Node and does not connect to hardware.
+
+## Collecting replay evidence over USB
+
+Construct `USBTransport(logger, { maxBulkReadBytes: 16384 })`, or pass the same option
+to `TransportFactory.createUSBTransport()`, while recording Linux usbmon traffic.
+The transport reassembles complete PTP containers across these smaller reads;
+ordinary connections retain their existing transfer sizes. The bounded
+`bench:probe` uses this setting automatically.
+
+This addresses captures whose IN completion has a nonzero transfer length but
+`flag_data='D'` and no payload. Linux's
+[`mon_bin_get_data`](https://github.com/torvalds/linux/blob/master/drivers/usb/mon/mon_bin.c)
+cannot copy IOMMU-coalesced scatter/gather buffers. Its
+[`usbfs` submission path](https://github.com/torvalds/linux/blob/master/drivers/usb/core/devio.c)
+uses 16 KiB segments and avoids scatter/gather for a one-segment transfer.
+This makes new captures possible; it cannot recover bytes absent from an old trace.
+Check the resulting capture for complete command, data and response phases before
+importing it as camera evidence.
+
+For a reusable protocol snapshot, explicitly run `bun run bench:profile --camera
+VID:PID --output /absolute/new-file.json` from this package. Acquire the bench's
+camera lease first and release it afterwards. This opens a standard session,
+reads DeviceInfo and advertised numeric control descriptors, and closes the
+session; it never takes photos or starts recording. Use `--serial` when a USB
+model is ambiguous. Defaults are 128 properties and a 60-second collection bound.
+
+`--initialize` uses the vendor session and polls its property/event state. Sony
+initialization skips host-priority and save-destination changes. Canon enters and
+leaves remote/event mode. `--live-view` additionally opts into live-view activation
+and requires initialization; disconnect performs the library's normal cleanup.
+Automatic USB resets are disabled: the caller's leased bench workflow owns recovery.
+
+The `darkgrade.ptp-trace/v1` JSON contains complete request/response exchanges,
+per-check outcomes, revision and firmware. DeviceInfo serial bytes are removed.
+Authentication, media, private text and opaque payloads are omitted and marked;
+they must not be replayed as complete exchanges. Safe Canon event records and
+Sony numeric descriptors are retained separately as `observations`, preserving
+their original bytes for explicitly scoped derived profiles. Sony `0x9202`
+capability-list framing is checked against libgphoto2's
+`ptp_sony_get_vendorpropcodes` before retention. The file is created privately and
+never overwrites an existing capture. Opening an application does not invoke this
+hardware command.

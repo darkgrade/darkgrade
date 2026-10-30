@@ -1,3 +1,6 @@
+export { identifyCamera } from '@camera/identification/camera-identification'
+export type { CameraIdentification, CameraIdentityCandidate } from '@camera/identification/camera-identification'
+
 // Main protocol implementation
 export { CanonCamera } from '@camera/canon-camera'
 export { GenericCamera } from '@camera/generic-camera'
@@ -5,6 +8,7 @@ export { Camera } from '@camera/index'
 export { inspectMovieTrackHandlers, readCameraMovieAudio } from '@camera/movie-audio'
 export type { CameraMovieAudio } from '@camera/movie-audio'
 export { NikonCamera } from '@camera/nikon-camera'
+export type { CanonRawEvent } from '@camera/canon-camera'
 export type { NikonFocusResult, NikonFocusPointResult, NikonLiveViewMetadata } from '@camera/nikon-camera'
 export { SonyCamera } from '@camera/sony-camera'
 export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'

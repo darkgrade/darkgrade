@@ -1,0 +1,996 @@
+{
+    "schemaVersion": 1,
+    "id": "fujifilm-x-t50",
+    "manufacturer": "Fujifilm",
+    "line": "X-T",
+    "model": "X-T50",
+    "usb": {
+        "vendorId": "0x04cb",
+        "productIds": ["0x0306"],
+        "source": 0
+    },
+    "firmware": "1.31",
+    "catalog": {
+        "manufacturer": "Fujifilm",
+        "line": "X-T (SLR-style)",
+        "model": "Fuji Fujifilm X-T50"
+    },
+    "provenance": {
+        "fidelity": "captured",
+        "sources": [
+            {
+                "location": "https://github.com/eggricesoy/filmkit/issues/12",
+                "excerpt": "Fujifilm X-T50, Firmware V1.31"
+            },
+            {
+                "location": "https://github.com/user-attachments/files/27558954/X-T50_Profile_Read.pcapng.gz#sha256=683d5f802bc1705bbf3b652a7227cf16a327b1f7bd1d3e1f740894345d8832a9"
+            },
+            {
+                "location": "https://github.com/user-attachments/files/27558955/X-T50_Preset.Save.pcapng.gz#sha256=267fb1204d4fdc498e99bccde241ed3692e3ef53c17c9722e4369fac101d9020"
+            },
+            {
+                "location": "https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/config.c#L12079"
+            },
+            {
+                "location": "https://github.com/eggricesoy/filmkit/blob/9e3bbcf858b1f9dc522e90adf7e385554f5969e2/src/ptp/constants.ts"
+            }
+        ]
+    },
+    "deviceInfo": {
+        "raw": "640006000000640016660075006a006900660069006c006d002e0063006f002e006a0070003a00200031002e0030003b00200000000000140000000110021003100410051006100710081009100a100b1014101510161017100c900d901d900c100d10000000003d0000000550155001d007d008d00ad00bd00cd017d018d01cd023d029d02ed030d031d032d004d16ed17bd183d184d185d186d187d189d18cd18dd18ed18fd190d191d192d193d194d195d196d197d198d199d19ad19bd19cd19dd19ed19fd1a0d1a1d1a2d1a3d1a4d1a5d108d20bd212d21cd220d321d34dd36ad36bd30500000001381238003803b10d380700000001381238005002f8003803b10d3809460055004a004900460049004c004d0000000658002d0054003500300000000531002e0033003100000000",
+        "standardVersion": 100,
+        "vendorExtensionId": "0x0006",
+        "vendorExtensionVersion": 100,
+        "vendorExtensionDescription": "fujifilm.co.jp: 1.0; ",
+        "functionalMode": 0,
+        "operationsSupported": [
+            "0x1001",
+            "0x1002",
+            "0x1003",
+            "0x1004",
+            "0x1005",
+            "0x1006",
+            "0x1007",
+            "0x1008",
+            "0x1009",
+            "0x100a",
+            "0x100b",
+            "0x1014",
+            "0x1015",
+            "0x1016",
+            "0x1017",
+            "0x900c",
+            "0x900d",
+            "0x901d",
+            "0x100c",
+            "0x100d"
+        ],
+        "eventsSupported": [],
+        "devicePropertiesSupported": [
+            "0x5005",
+            "0x5015",
+            "0xd001",
+            "0xd007",
+            "0xd008",
+            "0xd00a",
+            "0xd00b",
+            "0xd00c",
+            "0xd017",
+            "0xd018",
+            "0xd01c",
+            "0xd023",
+            "0xd029",
+            "0xd02e",
+            "0xd030",
+            "0xd031",
+            "0xd032",
+            "0xd104",
+            "0xd16e",
+            "0xd17b",
+            "0xd183",
+            "0xd184",
+            "0xd185",
+            "0xd186",
+            "0xd187",
+            "0xd189",
+            "0xd18c",
+            "0xd18d",
+            "0xd18e",
+            "0xd18f",
+            "0xd190",
+            "0xd191",
+            "0xd192",
+            "0xd193",
+            "0xd194",
+            "0xd195",
+            "0xd196",
+            "0xd197",
+            "0xd198",
+            "0xd199",
+            "0xd19a",
+            "0xd19b",
+            "0xd19c",
+            "0xd19d",
+            "0xd19e",
+            "0xd19f",
+            "0xd1a0",
+            "0xd1a1",
+            "0xd1a2",
+            "0xd1a3",
+            "0xd1a4",
+            "0xd1a5",
+            "0xd208",
+            "0xd20b",
+            "0xd212",
+            "0xd21c",
+            "0xd320",
+            "0xd321",
+            "0xd34d",
+            "0xd36a",
+            "0xd36b"
+        ],
+        "captureFormats": ["0x3801", "0x3812", "0x3800", "0xb103", "0x380d"],
+        "imageFormats": ["0x3801", "0x3812", "0x5000", "0xf802", "0x3800", "0xb103", "0x380d"],
+        "manufacturer": "FUJIFILM",
+        "model": "X-T50",
+        "deviceVersion": "1.31",
+        "serialNumber": "",
+        "listsComplete": true,
+        "source": 1
+    },
+    "properties": [
+        {
+            "code": "0xd18e",
+            "name": "FujiPresetImageSize",
+            "access": "get-set",
+            "observedValue": "7",
+            "source": 2
+        },
+        {
+            "code": "0xd18f",
+            "name": "FujiPresetImageQuality",
+            "access": "get-set",
+            "observedValue": "3",
+            "source": 2
+        },
+        {
+            "code": "0xd190",
+            "name": "FujiPresetDynamicRange",
+            "access": "get-set",
+            "observedValue": "100",
+            "source": 2
+        },
+        {
+            "code": "0xd192",
+            "name": "FujiPresetFilmSimulation",
+            "access": "get-set",
+            "observedValue": "1",
+            "source": 2
+        },
+        {
+            "code": "0xd193",
+            "name": "FujiPresetMonochromeWarmCool",
+            "access": "get",
+            "observedValue": "0",
+            "source": 1
+        },
+        {
+            "code": "0xd194",
+            "name": "FujiPresetMonochromeMagentaGreen",
+            "access": "get",
+            "observedValue": "0",
+            "source": 1
+        },
+        {
+            "code": "0xd195",
+            "name": "FujiPresetGrainEffect",
+            "access": "get-set",
+            "observedValue": "4",
+            "source": 2
+        },
+        {
+            "code": "0xd196",
+            "name": "FujiPresetColorChrome",
+            "access": "get-set",
+            "observedValue": "2",
+            "source": 2
+        },
+        {
+            "code": "0xd197",
+            "name": "FujiPresetColorChromeFxBlue",
+            "access": "get-set",
+            "observedValue": "2",
+            "source": 2
+        },
+        {
+            "code": "0xd198",
+            "name": "FujiPresetSmoothSkin",
+            "access": "get-set",
+            "observedValue": "3",
+            "source": 2
+        },
+        {
+            "code": "0xd199",
+            "name": "FujiPresetWhiteBalance",
+            "access": "get-set",
+            "observedValue": "32776",
+            "source": 2
+        },
+        {
+            "code": "0xd19c",
+            "name": "FujiPresetColorTemperature",
+            "access": "get",
+            "observedValue": "5600",
+            "source": 1
+        },
+        {
+            "code": "0xd19a",
+            "name": "FujiPresetWhiteBalanceShiftRed",
+            "access": "get-set",
+            "observedValue": "-4",
+            "source": 2
+        },
+        {
+            "code": "0xd19b",
+            "name": "FujiPresetWhiteBalanceShiftBlue",
+            "access": "get-set",
+            "observedValue": "4",
+            "source": 2
+        },
+        {
+            "code": "0xd19d",
+            "name": "FujiPresetHighlightTone",
+            "access": "get-set",
+            "observedValue": "0",
+            "source": 2
+        },
+        {
+            "code": "0xd19e",
+            "name": "FujiPresetShadowTone",
+            "access": "get-set",
+            "observedValue": "20",
+            "source": 2
+        },
+        {
+            "code": "0xd19f",
+            "name": "FujiPresetColor",
+            "access": "get-set",
+            "observedValue": "30",
+            "source": 2
+        },
+        {
+            "code": "0xd1a0",
+            "name": "FujiPresetSharpness",
+            "access": "get-set",
+            "observedValue": "-40",
+            "source": 2
+        },
+        {
+            "code": "0xd1a1",
+            "name": "FujiPresetHighIsoNoiseReduction",
+            "access": "get-set",
+            "observedValue": "32768",
+            "source": 2
+        },
+        {
+            "code": "0xd1a2",
+            "name": "FujiPresetClarity",
+            "access": "get-set",
+            "observedValue": "30",
+            "source": 2
+        },
+        {
+            "code": "0xd1a3",
+            "name": "FujiPresetLongExposureNoiseReduction",
+            "access": "get-set",
+            "observedValue": "2",
+            "source": 2
+        },
+        {
+            "code": "0xd1a4",
+            "name": "FujiPresetColorSpace",
+            "access": "get-set",
+            "observedValue": "2",
+            "source": 2
+        }
+    ],
+    "exchanges": [
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18c"],
+            "dataFromHost": "0100",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 1,
+            "note": "Captured selection of custom preset C1."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd18e"],
+            "response": {
+                "code": "0x2001",
+                "data": "0700"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd18f"],
+            "response": {
+                "code": "0x2001",
+                "data": "0300"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd190"],
+            "response": {
+                "code": "0x2001",
+                "data": "6400"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd192"],
+            "response": {
+                "code": "0x2001",
+                "data": "0100"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd193"],
+            "response": {
+                "code": "0x2001",
+                "data": "0000"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd194"],
+            "response": {
+                "code": "0x2001",
+                "data": "0000"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd195"],
+            "response": {
+                "code": "0x2001",
+                "data": "0400"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd196"],
+            "response": {
+                "code": "0x2001",
+                "data": "0200"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd197"],
+            "response": {
+                "code": "0x2001",
+                "data": "0200"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd198"],
+            "response": {
+                "code": "0x2001",
+                "data": "0300"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd199"],
+            "response": {
+                "code": "0x2001",
+                "data": "0880"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd19c"],
+            "response": {
+                "code": "0x2001",
+                "data": "e015"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd19a"],
+            "response": {
+                "code": "0x2001",
+                "data": "fcff"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd19b"],
+            "response": {
+                "code": "0x2001",
+                "data": "0400"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd19d"],
+            "response": {
+                "code": "0x2001",
+                "data": "0000"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd19e"],
+            "response": {
+                "code": "0x2001",
+                "data": "1400"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd19f"],
+            "response": {
+                "code": "0x2001",
+                "data": "1e00"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd1a0"],
+            "response": {
+                "code": "0x2001",
+                "data": "d8ff"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd1a1"],
+            "response": {
+                "code": "0x2001",
+                "data": "0080"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd1a2"],
+            "response": {
+                "code": "0x2001",
+                "data": "1e00"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd1a3"],
+            "response": {
+                "code": "0x2001",
+                "data": "0200"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1015",
+            "parameters": ["0xd1a4"],
+            "response": {
+                "code": "0x2001",
+                "data": "0200"
+            },
+            "source": 1,
+            "note": "Initial custom preset C1 snapshot; not a DevicePropDesc or an allowed-value list."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18e"],
+            "dataFromHost": "0900",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18f"],
+            "dataFromHost": "0200",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd190"],
+            "dataFromHost": "6400",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd192"],
+            "dataFromHost": "0b00",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd193"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x201c"
+            },
+            "source": 2,
+            "note": "Captured camera refusal; keep the rejected value and response."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd194"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x201c"
+            },
+            "source": 2,
+            "note": "Captured camera refusal; keep the rejected value and response."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd195"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd196"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd197"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd198"],
+            "dataFromHost": "0200",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd199"],
+            "dataFromHost": "0400",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd19c"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x201c"
+            },
+            "source": 2,
+            "note": "Captured camera refusal; keep the rejected value and response."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd19a"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd19b"],
+            "dataFromHost": "feff",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd19d"],
+            "dataFromHost": "0a00",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd19e"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd19f"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd1a0"],
+            "dataFromHost": "ecff",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd1a1"],
+            "dataFromHost": "0040",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd1a2"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd1a3"],
+            "dataFromHost": "0100",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd1a4"],
+            "dataFromHost": "0100",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd018"],
+            "dataFromHost": "0200",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd007"],
+            "dataFromHost": "6400",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd02e"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd001"],
+            "dataFromHost": "0b00",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd023"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd030"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd189"],
+            "dataFromHost": "0200",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd017"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd00b"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd00c"],
+            "dataFromHost": "feff",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd320"],
+            "dataFromHost": "0a00",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd321"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd008"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd01c"],
+            "dataFromHost": "0040",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd032"],
+            "dataFromHost": "0000",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd00a"],
+            "dataFromHost": "0100",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18c"],
+            "dataFromHost": "0200",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18c"],
+            "dataFromHost": "0300",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18c"],
+            "dataFromHost": "0400",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18c"],
+            "dataFromHost": "0500",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18c"],
+            "dataFromHost": "0600",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        },
+        {
+            "operation": "0x1016",
+            "parameters": ["0xd18c"],
+            "dataFromHost": "0700",
+            "response": {
+                "code": "0x2001"
+            },
+            "source": 2,
+            "note": "Captured scalar write acknowledgement; no descriptor or arbitrary-write guarantee."
+        }
+    ],
+    "events": [],
+    "quirks": [
+        {
+            "id": "public-capture-attribution",
+            "description": "Capture contributor: apolozanionut (filmkit issue #12). Profile retains protocol facts and sanitized scalar exchanges, not PCAP files, photographs, RAW conversion blobs, serial numbers or preset names. Source fragments identify SHA-256 of decompressed captures.",
+            "source": 0,
+            "behaviour": {
+                "kind": "none"
+            }
+        },
+        {
+            "id": "usb-raw-conversion-mode",
+            "description": "Observed during USB RAW conversion/preset workflows. The complete DeviceInfo advertises 20 operations and 61 properties but no events. This is not evidence of tethered capture, live view, PTP/IP or movie control in another connection mode.",
+            "source": 1,
+            "behaviour": {
+                "kind": "none"
+            }
+        },
+        {
+            "id": "preset-initial-snapshot",
+            "description": "Read values are an initial C1 snapshot. Separate recorded writes include camera refusals. No DevicePropDesc was captured, so datatype/access/range descriptors and arbitrary preset-bank state transitions are not synthesized.",
+            "source": 1,
+            "behaviour": {
+                "kind": "none"
+            }
+        }
+    ]
+}

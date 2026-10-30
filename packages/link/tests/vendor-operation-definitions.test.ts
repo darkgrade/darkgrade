@@ -8,13 +8,13 @@ import { VendorExtensionCamera } from '@camera/vendor-extension-camera'
 import { Logger } from '@core/logger'
 import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
-import { createCanonRegistry, createNikonRegistry } from '@ptp/registry'
+import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@ptp/registry'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
 
 /** Records command containers and answers every transaction with OK. */
-function recordingTransport() {
+function recordingTransport(dataReplies: Map<number, Uint8Array> = new Map()) {
     const commands: number[][] = []
     const dataPhases: Uint8Array[] = []
     let pending: Uint8Array[] = []
@@ -41,7 +41,17 @@ function recordingTransport() {
             responseView.setUint16(4, 3, true)
             responseView.setUint16(6, 0x2001, true)
             responseView.setUint32(8, transactionId, true)
-            pending = [response]
+            const dataReply = dataReplies.get(words[0])
+            if (dataReply) {
+                const container = new Uint8Array(12 + dataReply.length)
+                const header = new DataView(container.buffer)
+                header.setUint32(0, container.length, true)
+                header.setUint16(4, 2, true)
+                header.setUint16(6, words[0], true)
+                header.setUint32(8, transactionId, true)
+                container.set(dataReply, 12)
+                pending = [container, response]
+            } else pending = [response]
         },
         receive: async () => pending.shift()!,
     }
@@ -61,6 +71,21 @@ function cameraFor(vendorId: number) {
 describe('Canon EOS definitions', () => {
     const registry = createCanonRegistry(true)
     const remoteMode = registry.operations.CanonSetRemoteMode.operationParameters[0].codec(registry)
+
+    it('reads the captured R6 III folder record without inventing a decoder or additional selectors', async () => {
+        const bytes = Uint8Array.from(Buffer.from('14000000000020a33130304d5344434600000000', 'hex'))
+        const recorded = recordingTransport(new Map([[0x9195, bytes]]))
+        const camera = new Camera({
+            transport: recorded.transport,
+            vendorId: VendorIDs.CANON,
+            logger: { renderInTerminal: false, captureConsole: false },
+        })
+        const response = await camera.send(registry.operations.CanonGetFolderRecord, { Selector: 'OBSERVED_FOLDER' })
+        expect(recorded.commands).toEqual([[0x9195, 1]])
+        expect(response.code).toBe(0x2001)
+        expect(response.data).toEqual(bytes)
+        expect(recorded.dataPhases).toEqual([])
+    })
 
     it('expresses CanonSetRemoteMode 5 (captured on EOS R6 Mark III) and 0x15 (libgphoto2 EOS M default)', () => {
         expect(remoteMode.decode(Uint8Array.of(0x05, 0, 0, 0)).value).toBe('MODE_0x05')
@@ -196,4 +221,35 @@ describe('vendor classes selected by USB vendor ID', () => {
             ).vendorId
         ).toBe(VendorIDs.SIGMA)
     })
+})
+
+
+describe('MTP requests observed in Fujifilm recordings', () => {
+    it('preserves all five list selectors and raw response bytes', async () => {
+        const bytes = Uint8Array.of(0, 0, 0, 0)
+        const recorded = recordingTransport(new Map([[0x9805, bytes]]))
+        const camera = new Camera({transport: recorded.transport, vendorId: 0x04cb, logger: {renderInTerminal: false, captureConsole: false}})
+        const response = await camera.send(camera.getInstance().registry.operations.MtpGetObjectPropList, {
+            ObjectHandle: 2, ObjectFormatCode: 0, ObjectPropertyCode: 0xffffffff, GroupCode: 0, Depth: 0,
+        })
+        expect(recorded.commands).toEqual([[0x9805, 2, 0, 0xffffffff, 0, 0]])
+        expect(response.data).toEqual(bytes)
+        expect(recorded.dataPhases).toEqual([])
+    })
+    it('can express the captured single-parameter DeleteObject and an explicit format filter', async () => {
+        const {camera, registry, commands} = cameraFor(0x04cb)
+        await camera.send(registry.operations.DeleteObject, {ObjectHandle: 2})
+        await camera.send(registry.operations.DeleteObject, {ObjectHandle: 3, ObjectFormatCode: 0x3801})
+        expect(commands).toEqual([[0x100b, 2], [0x100b, 3, 0x3801]])
+    })
+})
+
+
+it('expresses legacy Sony protocol 2.00 without a version-3 option word', async () => {
+    // Public ILCE-7M2 recording by tmandys: libgphoto2 issue 981, comment 2189832650.
+    const {camera, commands} = cameraFor(0x054c)
+    const registry = createSonyRegistry(true)
+    await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '2.00'})
+    await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '3.00', flagOfDevicePropertyOption: 'ENABLE'})
+    expect(commands).toEqual([[0x9202, 200], [0x9202, 300, 1]])
 })

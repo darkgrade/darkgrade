@@ -720,6 +720,33 @@ export class GenericCamera {
         return response.data.currentValueDecoded as CodecType<P['codec']>
     }
 
+    /** Read a standalone value with its registered codec, without requesting a property descriptor. */
+    async readValue<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
+        if (!property.access.includes('Get')) {
+            throw new Error(`Property ${property.name} is not readable`)
+        }
+        const operation = this.registry.operations.GetDevicePropValue
+        const response = await this.send(operation, { DevicePropCode: property.code })
+        if (response.code !== OK.code) {
+            throw new PTPResponseError(response.code, undefined, { operation: operation.name })
+        }
+        try {
+            if (!(response.data instanceof Uint8Array) || response.data.length === 0) {
+                throw new Error('No property value received')
+            }
+            const decoded = this.resolveCodec(property.codec).decode(response.data)
+            if (decoded.bytesRead !== response.data.length) {
+                throw new Error(`Decoded ${decoded.bytesRead} of ${response.data.length} bytes`)
+            }
+            return decoded.value as CodecType<P['codec']>
+        } catch (error) {
+            throw new PTPDecodeError(
+                `could not decode ${property.name}: ${error instanceof Error ? error.message : String(error)}`,
+                { operation: operation.name, cause: error }
+            )
+        }
+    }
+
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
         if (!property.access.includes('Set')) {
             throw new Error(`Property ${property.name} is not writable`)
