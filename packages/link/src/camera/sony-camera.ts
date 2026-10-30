@@ -656,22 +656,29 @@ export class SonyCamera extends GenericCamera {
         info?: ObjectInfo
         data?: Uint8Array
     }> {
-        if (options.destination !== 'memory') return this.captureWithCurrentDestination(options)
-        if (options.includeData === false) throw new Error('Sony memory capture requires transfer of the captured image')
-        const property = this.registry.properties.StillImageSaveDestination
-        const original = await this.get(property)
+        if (options.destination === 'memory' && options.includeData === false)
+            throw new Error('Sony memory capture requires transfer of the captured image')
+        const destination = this.registry.properties.StillImageSaveDestination
+        const focus = this.registry.properties.FocusMode
+        const originalDestination = options.destination === 'memory' ? await this.get(destination) : undefined
+        const originalFocus = options.autofocus === false ? await this.get(focus) : undefined
         let failure: unknown
         try {
-            await this.set(property, 'HOST_DEVICE')
+            if (originalDestination !== undefined) await this.set(destination, 'HOST_DEVICE')
+            if (originalFocus !== undefined && originalFocus !== 'Manual') await this.set(focus, 'Manual')
             return await this.captureWithCurrentDestination(options)
         } catch (error) {
             failure = error
             throw error
         } finally {
-            try { await this.set(property, original) }
-            catch (error) {
-                if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Sony photo destination: ${String(error)}`)
-                throw error
+            const restorationErrors: unknown[] = []
+            if (originalFocus !== undefined && originalFocus !== 'Manual')
+                await this.set(focus, originalFocus).catch(error => restorationErrors.push(error))
+            if (originalDestination !== undefined)
+                await this.set(destination, originalDestination).catch(error => restorationErrors.push(error))
+            if (restorationErrors.length) {
+                const errors = [...(failure ? [failure] : []), ...restorationErrors]
+                throw new AggregateError(errors, `Sony capture/settings restoration failed: ${errors.map(String).join('; ')}`)
             }
         }
     }

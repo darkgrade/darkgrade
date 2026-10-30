@@ -7,6 +7,7 @@ function fixture() {
         new Logger({ captureConsole: false, renderInTerminal: false }))
     Object.assign(camera, { liveViewPostViewEnabled: true })
     const sent: string[] = []
+    camera.get = vi.fn(async property => property.name === 'FocusMode' ? 'AF-C' : 'CAMERA_DEVICE') as any
     camera.set = vi.fn(async (property, value) => {
         sent.push(`${property.name}:${value}`)
         if (property.name === 'ShutterReleaseButton' && value === 'DOWN')
@@ -21,7 +22,6 @@ function fixture() {
 describe('Sony shutter and host transfer sequencing', () => {
     it('explicit memory capture enables host delivery and restores the original destination', async () => {
         const { camera, sent } = fixture()
-        camera.get = vi.fn(async () => 'CAMERA_DEVICE') as any
         const result = await camera.captureImage({ destination: 'memory', autofocus: false })
         expect(result.data).toEqual(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9))
         expect(sent[0]).toBe('StillImageSaveDestination:HOST_DEVICE')
@@ -31,8 +31,8 @@ describe('Sony shutter and host transfer sequencing', () => {
         const { camera, sent } = fixture()
         const result = await camera.captureImage({ autofocus: false })
         expect(result.data).toEqual(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9))
-        expect(sent).toEqual(['ShutterHalfReleaseButton:DOWN', 'ShutterReleaseButton:DOWN',
-            'ShutterReleaseButton:UP', 'ShutterHalfReleaseButton:UP'])
+        expect(sent).toEqual(['FocusMode:Manual', 'ShutterHalfReleaseButton:DOWN', 'ShutterReleaseButton:DOWN',
+            'ShutterReleaseButton:UP', 'ShutterHalfReleaseButton:UP', 'FocusMode:AF-C'])
     })
     it('does not require a host image event for explicit card-only capture', async () => {
         const { camera } = fixture()
@@ -45,7 +45,8 @@ describe('Sony shutter and host transfer sequencing', () => {
         camera.set = vi.fn(async (_property, value) => { if (value === 'DOWN') throw new Error('CameraBusy') }) as any
         await expect(camera.captureImage({ autofocus: false })).rejects.toThrow('CameraBusy')
         expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.ShutterReleaseButton, 'UP')
-        expect(camera.set).toHaveBeenLastCalledWith(camera.registry.properties.ShutterHalfReleaseButton, 'UP')
+        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.ShutterHalfReleaseButton, 'UP')
+        expect(camera.set).toHaveBeenLastCalledWith(camera.registry.properties.FocusMode, 'AF-C')
     })
     it('releases the half-press even when full-shutter release fails', async () => {
         const { camera, sent } = fixture()
@@ -54,6 +55,7 @@ describe('Sony shutter and host transfer sequencing', () => {
             if (property.name === 'ShutterReleaseButton' && value === 'UP') throw new Error('Release failed')
         }) as any
         await expect(camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).rejects.toThrow('Release failed')
-        expect(sent.at(-1)).toBe('ShutterHalfReleaseButton:UP')
+        expect(sent).toContain('ShutterHalfReleaseButton:UP')
+        expect(sent.at(-1)).toBe('FocusMode:AF-C')
     })
 })
