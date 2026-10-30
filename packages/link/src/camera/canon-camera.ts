@@ -1,5 +1,6 @@
 import { Logger } from '@core/logger'
 import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
+import { captureCanonCardImage } from '@vendors/canon/card-capture'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
@@ -511,6 +512,7 @@ export class CanonCamera extends GenericCamera {
                 )
             }
             try {
+                assertCanonCaptureResult(halfPress.parameters, 'autofocus half press')
                 await new Promise(resolve => setTimeout(resolve, durationMilliseconds))
             } finally {
                 await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
@@ -537,17 +539,20 @@ export class CanonCamera extends GenericCamera {
 
     async captureImage({
         autofocus = true,
+        includeInfo = true,
+        includeData = true,
     }: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
         if (typeof autofocus !== 'boolean') throw new Error('Canon capture autofocus must be true or false')
-        return this.withoutPolling(async () => {
+        const capture = () => this.withoutPolling(async () => {
             const release = async (afMode: 'AF' | 'MF') => {
                 let focusPressed = false
                 let shutterPressed = false
                 let focusAttempted = false
                 let shutterAttempted = false
+                let failure: unknown
                 try {
                     focusAttempted = true
                     const focus = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
@@ -577,37 +582,46 @@ export class CanonCamera extends GenericCamera {
                     }
                     shutterPressed = true
                     assertCanonCaptureResult(shutter.parameters, `${afMode} shutter press`)
+                } catch (error) {
+                    failure = error
+                    throw error
                 } finally {
-                    if (shutterPressed || (afMode === 'MF' && shutterAttempted)) {
-                        await this.send(this.registry.operations.CanonRemoteReleaseOff, {
-                            ReleaseMode: 'SHUTTER',
-                        }).catch(() => undefined)
+                    const cleanupErrors: unknown[] = []
+                    for (const [ReleaseMode, required] of [
+                        ['SHUTTER', shutterPressed || (afMode === 'MF' && shutterAttempted)],
+                        ['FOCUS', focusPressed || (afMode === 'MF' && focusAttempted)],
+                    ] as const) {
+                        if (!required) continue
+                        try {
+                            const response = await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode })
+                            if (response.code !== OK.code)
+                                throw new PTPResponseError(response.code, `Canon ${ReleaseMode.toLowerCase()} release returned 0x${response.code.toString(16)}`)
+                        } catch (error) { cleanupErrors.push(error) }
                     }
-                    if (focusPressed || (afMode === 'MF' && focusAttempted)) {
-                        await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' }).catch(
-                            () => undefined
-                        )
-                    }
+                    if (cleanupErrors.length)
+                        throw new AggregateError(failure ? [failure, ...cleanupErrors] : cleanupErrors,
+                            `Canon shutter cleanup failed: ${[failure, ...cleanupErrors].filter(Boolean).map(String).join('; ')}`)
                 }
             }
 
             if (!autofocus) {
                 await release('MF')
-                return {}
+                return
             }
 
             try {
                 await release('AF')
             } catch (error) {
-                if (!(error instanceof Error) || !error.message.includes('AF shutter press returned 0x2019'))
+                if (!(error instanceof PTPResponseError) || !error.message.includes('AF shutter press returned 0x2019'))
                     throw error
                 // DeviceBusy at full press generally means the body could not lock focus.
                 // Canon's second release parameter explicitly permits a no-AF fallback.
                 await release('MF')
             }
-
-            return {}
         })
+        if (includeInfo || includeData) return captureCanonCardImage(this, capture, { includeInfo, includeData })
+        await capture()
+        return {}
     }
 
     async startRecording(): Promise<void> {

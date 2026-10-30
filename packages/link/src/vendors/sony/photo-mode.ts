@@ -9,14 +9,14 @@ export async function withSonyPhotoMode<T>(camera: Camera, capture: () => Promis
     const property = camera.getInstance().registry.properties.ExposureProgramMode
     let failure: unknown
     try {
-        await camera.set(property, target)
+        await camera.set(property, String(target))
         await new Promise(resolve => setTimeout(resolve, 500))
         return await capture()
     } catch (error) {
         failure = error
         throw error
     } finally {
-        try { await camera.set(property, mode.value) }
+        try { await camera.set(property, String(mode.value)) }
         catch (error) {
             if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Sony movie mode: ${String(error)}`)
             throw error
