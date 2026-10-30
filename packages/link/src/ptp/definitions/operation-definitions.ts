@@ -210,7 +210,6 @@ export const DeleteObject = {
             description: 'Filter by format code',
             codec: baseCodecs.uint32,
             required: false,
-            defaultValue: 0,
         },
     ],
     responseParameters: [],
@@ -779,7 +778,65 @@ export const GetStream = {
     responseParameters: [],
 } as const satisfies OperationDefinition
 
+/** MTP object-property operations, also advertised by Fujifilm RAW-conversion mode.
+ * Shapes and direction: libgphoto2 ptp.c, ptp_mtp_getobjectpropssupported/getobjectpropdesc/
+ * getobjectpropvalue/getobjectproplist_generic at 02d92fea8a269eb94330a4eade204ba799433606.
+ * https://github.com/gphoto/libgphoto2/blob/02d92fea8a269eb94330a4eade204ba799433606/camlibs/ptp2/ptp.c
+ */
+export const MtpGetObjectPropsSupported = {
+    code: 0x9801,
+    name: 'MtpGetObjectPropsSupported',
+    description: 'MTP object property query; returns the original dataset bytes.',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'ObjectFormatCode', description: 'ObjectFormatCode', codec: baseCodecs.uint32, required: true },
+    ],
+    responseParameters: [],
+} as const satisfies OperationDefinition
+
+export const MtpGetObjectPropDesc = {
+    code: 0x9802,
+    name: 'MtpGetObjectPropDesc',
+    description: 'MTP object property query; returns the original dataset bytes.',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'ObjectPropertyCode', description: 'ObjectPropertyCode', codec: baseCodecs.uint32, required: true },
+        { name: 'ObjectFormatCode', description: 'ObjectFormatCode', codec: baseCodecs.uint32, required: true },
+    ],
+    responseParameters: [],
+} as const satisfies OperationDefinition
+
+export const MtpGetObjectPropValue = {
+    code: 0x9803,
+    name: 'MtpGetObjectPropValue',
+    description: 'MTP object property query; returns the original dataset bytes.',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'ObjectHandle', description: 'ObjectHandle', codec: baseCodecs.uint32, required: true },
+        { name: 'ObjectPropertyCode', description: 'ObjectPropertyCode', codec: baseCodecs.uint32, required: true },
+    ],
+    responseParameters: [],
+} as const satisfies OperationDefinition
+
+export const MtpGetObjectPropList = {
+    code: 0x9805,
+    name: 'MtpGetObjectPropList',
+    description: 'MTP object property query; returns the original dataset bytes.',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'ObjectHandle', description: 'ObjectHandle', codec: baseCodecs.uint32, required: true },
+        { name: 'ObjectFormatCode', description: 'ObjectFormatCode', codec: baseCodecs.uint32, required: true },
+        { name: 'ObjectPropertyCode', description: 'ObjectPropertyCode', codec: baseCodecs.uint32, required: true },
+        { name: 'GroupCode', description: 'GroupCode', codec: baseCodecs.uint32, required: true },
+        { name: 'Depth', description: 'Depth', codec: baseCodecs.uint32, required: true },
+    ],
+    responseParameters: [],
+} as const satisfies OperationDefinition
 export const genericOperationRegistry = {
+    MtpGetObjectPropsSupported,
+    MtpGetObjectPropDesc,
+    MtpGetObjectPropValue,
+    MtpGetObjectPropList,
     Undefined,
     GetDeviceInfo,
     OpenSession,
