@@ -537,8 +537,8 @@ export class Camera {
     }
 
     async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean }) {
-        if (params?.autofocus === false && !(this.instance instanceof CanonCamera))
-            throw new Error('Capture without autofocus is only implemented for Canon EOS cameras')
+        if (params?.autofocus === false && !(this.instance instanceof CanonCamera) && !(this.instance instanceof NikonCamera))
+            throw new Error('Capture without autofocus is only implemented for Canon EOS and Nikon cameras')
         return this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
     }
 

@@ -43,6 +43,7 @@ try {
         liveView: argumentsValue.includes('--live-view'),
         maxProperties: Number(argument('--max-properties') ?? 128),
         timeoutSeconds,
+        onCheck: check => process.stderr.write(JSON.stringify({ profileCheck: check }) + '\n'),
     })
     writeFileSync(resolve(output), JSON.stringify(report, null, 2), { flag: 'wx', mode: 0o600 })
     process.stdout.write(

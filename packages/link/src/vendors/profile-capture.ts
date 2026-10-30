@@ -36,6 +36,7 @@ export interface ProfileCaptureOptions {
     liveView?: boolean
     maxProperties?: number
     timeoutSeconds?: number
+    onCheck?: (check: { id: string; status: string; detail?: string }) => void
 }
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
 /** Empty only the original DeviceInfo serial field, leaving every other byte unchanged. */
@@ -280,6 +281,9 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 detail: `${failure.name || 'Error'}${typeof failure.code === 'number' ? ` (0x${failure.code.toString(16)})` : ''}`,
             })
             return undefined
+        } finally {
+            const last = checks.at(-1)
+            if (last) options.onCheck?.(last)
         }
     }
     const send = async (operation: OperationDefinition, parameters: Record<string, unknown> = {}) => {
