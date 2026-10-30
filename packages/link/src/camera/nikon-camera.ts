@@ -138,6 +138,37 @@ export class NikonCamera extends GenericCamera {
             )
     }
 
+    /** Photo quality remains configurable while the physical selector is in video mode. */
+    async setStandardProperty(name: string | number, value: string | number): Promise<void> {
+        const photoProperty = ['compressionsetting', 'imagesize', '0x5003', '0x5004', '20483', '20484']
+            .includes(String(name).toLowerCase())
+        if (!photoProperty) return super.setStandardProperty(name, value)
+        await this.getLiveViewStatus()
+        if (this.liveViewMode !== 'VIDEO') return super.setStandardProperty(name, value)
+        const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+        if (condition.includes('alreadyRecording')) throw new Error('Nikon photo settings cannot interrupt an active recording')
+        const restoreLiveView = this.liveViewStatus === 'ON'
+        const restorePcMode = this.cameraMode !== 'REMOTE'
+        let failure: unknown
+        try {
+            await this.enableRemoteMode()
+            await this.selectLiveViewMode('PHOTO')
+            await super.setStandardProperty(name, value)
+        } catch (error) {
+            failure = error
+            throw error
+        } finally {
+            try {
+                await this.selectLiveViewMode('VIDEO', true)
+                if (restoreLiveView) await this.enableLiveView()
+                if (restorePcMode) await this.enablePcCameraMode()
+            } catch (error) {
+                if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Nikon movie mode: ${String(error)}`)
+                throw error
+            }
+        }
+    }
+
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
         this.emitter.on<EventParams<E>>(event.name, handler)
     }
