@@ -733,11 +733,15 @@ export class SonyCamera extends GenericCamera {
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
 
-        if (includeInfo) {
+        if (includeInfo || includeData) {
             const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                 ObjectHandle: capturedImageObjectHandle,
             })
+            this.assertOk(objectInfoResponse.code, 'Sony captured-image information')
             info = objectInfoResponse.data
+            if (!info || !Number.isSafeInteger(info.objectCompressedSize) ||
+                info.objectCompressedSize <= 0 || info.objectCompressedSize > this.captureBufferSize)
+                throw new Error('Sony captured-image metadata is missing or exceeds the transfer bound')
         }
         if (includeData) {
             const objectResponse = await this.send(
@@ -748,10 +752,13 @@ export class SonyCamera extends GenericCamera {
                 undefined,
                 (info?.objectCompressedSize || this.captureBufferSize) + this.bufferPadding
             )
+            this.assertOk(objectResponse.code, 'Sony captured-image transfer')
             data = objectResponse.data
+            if (!data || data.length !== info!.objectCompressedSize)
+                throw new Error('Sony captured-image transfer length differs from its metadata')
         }
         return {
-            info: info,
+            info: includeInfo ? info : undefined,
             data: data,
         }
     }

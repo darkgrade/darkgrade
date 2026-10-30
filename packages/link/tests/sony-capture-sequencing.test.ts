@@ -63,6 +63,21 @@ describe('Sony shutter and host transfer sequencing', () => {
         expect(sent[0]).toBe('StillImageSaveDestination:HOST_DEVICE')
         expect(sent.at(-1)).toBe('StillImageSaveDestination:CAMERA_DEVICE')
     })
+    it('rejects a truncated host image even when the caller omits returned metadata', async () => {
+        const { camera, sent } = fixture()
+        camera.send = vi.fn(async operation => operation.name === 'GetObjectInfo'
+            ? { code: 0x2001, data: { objectCompressedSize: 5 } }
+            : { code: 0x2001, data: Uint8Array.of(0xff, 0xd8, 0xff, 0xd9) }) as any
+        await expect(camera.captureImage({ autofocus: false, includeInfo: false }))
+            .rejects.toThrow('transfer length differs')
+        expect(sent.at(-1)).toBe('StillImageSaveDestination:CAMERA_DEVICE')
+    })
+    it('rejects refused host-image metadata before starting a transfer', async () => {
+        const { camera } = fixture()
+        camera.send = vi.fn(async () => ({ code: 0x2009 })) as any
+        await expect(camera.captureImage({ autofocus: false })).rejects.toThrow('captured-image information')
+        expect(camera.send).toHaveBeenCalledTimes(1)
+    })
     it('observes a host image event delivered during shutter release', async () => {
         const { camera, sent } = fixture()
         const result = await camera.captureImage({ autofocus: false })
