@@ -48,7 +48,7 @@ export function Stats() {
             <div className="grid grid-cols-4 max-[900px]:grid-cols-2">
                 {STATS.map(({ values, unit, caption, link }) => (
                     <div key={unit} data-fade className="relative px-[clamp(24px,3vw,56px)] py-[clamp(44px,6vh,72px)]">
-                        <div className="font-serif text-[clamp(2.75rem,4.6vw,4.75rem)] leading-none tracking-[-.01em]">
+                        <div className="font-serif text-[clamp(2.5rem,3.8vw,4rem)] leading-none tracking-[-.01em]">
                             {/* the scrubbing digits are hidden from screen readers, which get the final value once */}
                             <span className="sr-only">
                                 {values.join('–')} {unit}
