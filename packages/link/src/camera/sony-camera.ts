@@ -1050,6 +1050,17 @@ export class SonyCamera extends GenericCamera {
             await this.set(this.registry.properties.SetLiveViewEnable, 'ENABLE')
             await this.set(this.registry.properties.SetPostViewEnable, 'ENABLE')
             this.liveViewPostViewEnabled = true
+            if (this.propertyCache.has(this.registry.properties.LiveViewStatus.code)) {
+                const deadline = Date.now() + SONY_CONTROL_SETTLE_TIMEOUT_MS
+                while (Date.now() < deadline) {
+                    await this.refreshPropertyStates()
+                    const status = this.propertyCache.get(this.registry.properties.LiveViewStatus.code)?.currentValueRaw
+                    if (status === 1) return
+                    if (status === 2) throw new Error('Sony live view is unavailable in the current camera mode')
+                    await this.waitMs(50)
+                }
+                throw new Error('Sony did not report live view ready before the startup deadline')
+            }
         }
     }
 
