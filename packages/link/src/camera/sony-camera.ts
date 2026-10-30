@@ -691,7 +691,10 @@ export class SonyCamera extends GenericCamera {
         // Card-only callers do not consume the host post-view object. Enabling it
         // leaves an unread image pending and can keep the camera's controls busy.
         if (includeInfo || includeData) await this.startLiveView()
-        else await this.stopLiveView()
+        else {
+            await this.stopLiveView()
+            await this.set(this.registry.properties.SetPostViewEnable, 'DISABLE')
+        }
 
         const release = async () => {
             // Sony requires S1 to remain held through S2, including manual focus.
@@ -713,7 +716,7 @@ export class SonyCamera extends GenericCamera {
         // A card workflow verifies the newly indexed object itself. It must not
         // require the separate host-delivery event when no host image was requested.
         if (!includeInfo && !includeData) {
-            await release()
+            await this.waitForCapturedImageObjectHandle(release, false)
             return {}
         }
         const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle(release)
@@ -858,20 +861,22 @@ export class SonyCamera extends GenericCamera {
         return completeFile
     }
 
-    protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>): Promise<number> {
+    protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>, requireObject = true): Promise<number> {
         let handle: number | undefined
         const handler = (event: { ObjectHandle?: number }) => {
-            if (event.ObjectHandle) handle = event.ObjectHandle
+            if (!requireObject) handle = 0
+            else if (event.ObjectHandle) handle = event.ObjectHandle
         }
-        this.on(this.registry.events.SDIE_ObjectAdded, handler)
+        const event = requireObject ? this.registry.events.SDIE_ObjectAdded : this.registry.events.SDIE_CapturedEvent
+        this.on(event, handler)
         try {
             await capture()
             const deadline = Date.now() + 15_000
             while (handle === undefined && Date.now() < deadline) await this.waitMs(50)
-            if (handle === undefined) throw new Error('Timed out after 15 seconds waiting for the Sony captured-image handle')
+            if (handle === undefined) throw new Error(`Timed out after 15 seconds waiting for Sony ${requireObject ? 'captured-image handle' : 'capture completion'}`)
             return handle
         } finally {
-            this.off(this.registry.events.SDIE_ObjectAdded, handler)
+            this.off(event, handler)
         }
     }
 

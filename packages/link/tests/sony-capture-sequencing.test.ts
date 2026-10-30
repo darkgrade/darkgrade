@@ -11,8 +11,10 @@ function fixture() {
     camera.get = vi.fn(async property => property.name === 'FocusMode' ? 'AF-C' : 'CAMERA_DEVICE') as any
     camera.set = vi.fn(async (property, value) => {
         sent.push(`${property.name}:${value}`)
-        if (property.name === 'ShutterReleaseButton' && value === 'DOWN')
-            (camera as any).handleEvent({ code: 0xc201, parameters: [7], transactionId: 1 })
+        if (property.name === 'ShutterReleaseButton' && value === 'DOWN') {
+            (camera as any).handleEvent({ code: 0xc201, parameters: [7], transactionId: 1 });
+            (camera as any).handleEvent({ code: 0xc206, parameters: [], transactionId: 1 })
+        }
     }) as any
     camera.send = vi.fn(async operation => operation.name === 'GetObjectInfo'
         ? { code: 0x2001, data: { objectCompressedSize: 4 } }
@@ -38,7 +40,10 @@ describe('Sony shutter and host transfer sequencing', () => {
     it('does not require a host image event for explicit card-only capture', async () => {
         const { camera } = fixture()
         Object.assign(camera, { liveViewPostViewEnabled: false })
-        camera.set = vi.fn(async () => undefined)
+        camera.set = vi.fn(async (property, value) => {
+            if (property.name === 'ShutterReleaseButton' && value === 'DOWN')
+                (camera as any).handleEvent({ code: 0xc206, parameters: [], transactionId: 1 })
+        }) as any
         expect(await camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).toEqual({})
         expect(camera.send).not.toHaveBeenCalled()
         expect(camera.set).not.toHaveBeenCalledWith(camera.registry.properties.SetPostViewEnable, 'ENABLE')
