@@ -1,5 +1,7 @@
 import type { TransactionPolicy } from '@camera/transaction-channel'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
+import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
+import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
 export {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
@@ -537,11 +539,14 @@ export class Camera {
     }
 
     async captureImage(params?: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory' }) {
-        if (params?.destination === 'memory' && !(this.instance instanceof NikonCamera))
-            throw new Error('Capture to memory is only implemented for Nikon cameras')
+        if (params?.destination === 'memory' && !(this.instance instanceof NikonCamera) && !(this.instance instanceof SonyCamera))
+            throw new Error('Capture to memory is only implemented for Nikon and Sony cameras')
         if (params?.autofocus === false && !(this.instance instanceof CanonCamera) && !(this.instance instanceof NikonCamera) && !(this.instance instanceof SonyCamera))
             throw new Error('Capture without autofocus is only implemented for Canon EOS, Nikon and Sony cameras')
-        return this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
+        const capture = () => this.instance.captureImage({ includeInfo: true, includeData: true, ...params })
+        if (this.instance instanceof SonyCamera) return withSonyPhotoMode(this, capture)
+        if (this.instance instanceof CanonCamera) return withCanonPhotoMode(this, capture)
+        return capture()
     }
 
     async captureLiveView(params?: { includeInfo?: boolean; includeData?: boolean }): Promise<{

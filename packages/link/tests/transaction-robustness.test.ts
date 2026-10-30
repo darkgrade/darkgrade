@@ -18,6 +18,7 @@ import {
 } from '@core/ptp-errors'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { createNikonRegistry } from '@ptp/registry'
+import { SDIO_GetPartialLargeObject } from '@ptp/definitions/vendors/sony/sony-operation-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
@@ -121,6 +122,26 @@ function cameraOn(reply: Reply, policy = { timeoutMilliseconds: 50, deviceBusyBa
     camera.configureTransactions(policy)
     return { camera, transport, operations: camera.registry.operations }
 }
+
+describe('Sony partial-image data container opcode', () => {
+    it.each([0x9211, 0x101b])('accepts opcode 0x%s only on the matching extended download', async code => {
+        const { camera } = cameraOn(({ transactionId }) => [
+            container(CONTAINER.data, code, transactionId, [1, 2, 3, 4]), ok(transactionId),
+        ])
+        const result = await camera.send(SDIO_GetPartialLargeObject,
+            { ObjectHandle: 1, OffsetLower: 0, OffsetUpper: 0, MaxBytes: 4 })
+        expect(result.data).toEqual(Uint8Array.of(1, 2, 3, 4))
+    })
+    it.each([[0x1009, 0, 'operation-mismatch'], [0x101b, 1, 'transaction-mismatch']] as const)(
+        'rejects unrelated data opcode %i or transaction offset %i', async (code, offset, violation) => {
+            const { camera } = cameraOn(({ transactionId }) => [
+                container(CONTAINER.data, code, transactionId + offset, [1]), ok(transactionId),
+            ])
+            await expect(camera.send(SDIO_GetPartialLargeObject,
+                { ObjectHandle: 1, OffsetLower: 0, OffsetUpper: 0, MaxBytes: 1 }))
+                .rejects.toMatchObject({ violation })
+        })
+})
 
 /** A DeviceInfo dataset with every list empty and the given model string. */
 function deviceInfo(model = 'Stub'): number[] {

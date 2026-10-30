@@ -138,6 +138,37 @@ export class NikonCamera extends GenericCamera {
             )
     }
 
+    /** Photo quality remains configurable while the physical selector is in video mode. */
+    async setStandardProperty(name: string | number, value: string | number): Promise<void> {
+        const photoProperty = ['compressionsetting', 'imagesize', '0x5003', '0x5004', '20483', '20484']
+            .includes(String(name).toLowerCase())
+        if (!photoProperty) return super.setStandardProperty(name, value)
+        await this.getLiveViewStatus()
+        if (this.liveViewMode !== 'VIDEO') return super.setStandardProperty(name, value)
+        const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+        if (condition.includes('alreadyRecording')) throw new Error('Nikon photo settings cannot interrupt an active recording')
+        const restoreLiveView = this.liveViewStatus === 'ON'
+        const restorePcMode = this.cameraMode !== 'REMOTE'
+        let failure: unknown
+        try {
+            await this.enableRemoteMode()
+            await this.selectLiveViewMode('PHOTO')
+            await super.setStandardProperty(name, value)
+        } catch (error) {
+            failure = error
+            throw error
+        } finally {
+            try {
+                await this.selectLiveViewMode('VIDEO', true)
+                if (restoreLiveView) await this.enableLiveView()
+                if (restorePcMode) await this.enablePcCameraMode()
+            } catch (error) {
+                if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Nikon movie mode: ${String(error)}`)
+                throw error
+            }
+        }
+    }
+
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
         this.emitter.on<EventParams<E>>(event.name, handler)
     }
@@ -219,7 +250,7 @@ export class NikonCamera extends GenericCamera {
                 if (options.includeInfo !== false) info = captured.info
             }
             await this.waitForDeviceReady()
-            if (!memory && waitForBuffer) await this.waitForImageBufferReady()
+            if (!memory && waitForBuffer) await this.waitForImageBufferReady(30000)
         }
 
         // Setup capture
@@ -249,19 +280,28 @@ export class NikonCamera extends GenericCamera {
         // camera's hardware dial is not in photo mode
         // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
         else if (this.liveViewMode === 'VIDEO') {
+            const failures: unknown[] = []
             try {
                 await this.enableRemoteMode()
                 await this.selectLiveViewMode('PHOTO')
                 await this.enableLiveView()
                 await release()
                 await finish()
+            } catch (error) {
+                failures.push(error)
             } finally {
                 try {
                     await this.selectLiveViewMode('VIDEO', true)
+                } catch (error) {
+                    failures.push(error)
                 } finally {
-                    await this.enablePcCameraMode()
+                    try { await this.enablePcCameraMode() }
+                    catch (error) { failures.push(error) }
                 }
             }
+            if (failures.length === 1) throw failures[0]
+            if (failures.length > 1)
+                throw new AggregateError(failures, `Nikon capture/settings restoration failed: ${failures.map(String).join('; ')}`)
         } else throw new Error('Nikon live-view selector is unknown; capture was not sent')
 
         return { info: info, data: data }
@@ -271,6 +311,9 @@ export class NikonCamera extends GenericCamera {
     private async readCapturedMemory(): Promise<{ info: ObjectInfo; data: Uint8Array }> {
         const deadline = Date.now() + 15000
         while (Date.now() < deadline) {
+            const ready = await this.send(this.registry.operations.DeviceReady, {})
+            if (ready.code !== OK.code && ready.code !== DeviceBusy.code)
+                this.assertNikonResponse(ready.code, 'DeviceReady during memory capture')
             const events = await this.pollEvents()
             const added = events.find(event => event.code === this.registry.events.ObjectAddedInSdram.code)
             const handle = added?.parameters[0]
@@ -281,12 +324,10 @@ export class NikonCamera extends GenericCamera {
                 if (!info || !Number.isSafeInteger(info.objectCompressedSize) || info.objectCompressedSize <= 0 ||
                     info.objectCompressedSize > 128 * 1024 * 1024)
                     throw new Error('Nikon memory image metadata is missing or exceeds the transfer bound')
-                const object = await this.send(this.registry.operations.GetObject, { ObjectHandle: handle },
-                    undefined, info.objectCompressedSize + 1024)
-                this.assertNikonResponse(object.code, 'GetObject')
-                if (!object.data || object.data.length !== info.objectCompressedSize)
+                const data = await this.getObject(handle, info.objectCompressedSize)
+                if (data.length !== info.objectCompressedSize)
                     throw new Error('Nikon memory image transfer length differs from its metadata')
-                return { info, data: object.data }
+                return { info, data }
             }
             await this.waitMs(100)
         }
@@ -782,6 +823,8 @@ export class NikonCamera extends GenericCamera {
     /** A failed activation may still have changed the selector; forced restoration sends the original value despite stale caches. */
     private async selectLiveViewMode(mode: 'PHOTO' | 'VIDEO', force = false): Promise<void> {
         if (!force && this.liveViewMode === mode) return
+        // An active video pipeline must end before starting still live view.
+        await this.disableLiveView()
         this.liveViewMode = 'UNKNOWN'
         await this.set(this.registry.properties.LiveViewSelector, mode)
         await this.waitForDeviceReady()
@@ -793,14 +836,14 @@ export class NikonCamera extends GenericCamera {
         await this.pollDeviceReady()
     }
 
-    private async waitForImageBufferReady(): Promise<void> {
-        const deadline = Date.now() + 5000
+    private async waitForImageBufferReady(timeoutMilliseconds = 5000): Promise<void> {
+        const deadline = Date.now() + timeoutMilliseconds
         while (Date.now() < deadline) {
             const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
             if (!condition.includes('imagesInBuffer')) return
-            await this.waitMs(10)
+            await this.waitMs(100)
         }
-        throw new Error('Nikon image buffer did not become ready within 5000 milliseconds')
+        throw new Error(`Nikon image buffer did not become ready within ${timeoutMilliseconds} milliseconds`)
     }
 
     private assertNikonResponse(code: number, operation: string): void {

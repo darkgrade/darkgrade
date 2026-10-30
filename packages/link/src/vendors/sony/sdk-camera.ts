@@ -404,7 +404,8 @@ export class SonyWifiCamera {
             await new Promise(resolve => setTimeout(resolve, 200))
             after = await this.getSonyProperty(before.code)
         } while (after.value !== String(value) && Date.now() < deadline)
-        if (after.value !== String(value)) throw new Error('The camera did not confirm the requested setting')
+        if (after.value !== String(value))
+            throw new Error(`Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`)
         return { before, after, verified: true }
     }
 
@@ -505,10 +506,13 @@ export class SonyWifiCamera {
     async captureImage(): Promise<void> {
         this.requireConnection()
         try {
+            await this.writeProperty(propertyCodes.S1, 2, 2)
+            await new Promise(resolve => setTimeout(resolve, 500))
             await this.bridge.request({ cmd: 'command', id: '0', param: '1' })
-            await new Promise(resolve => setTimeout(resolve, 300))
+            await new Promise(resolve => setTimeout(resolve, 35))
         } finally {
-            await this.bridge.request({ cmd: 'command', id: '0', param: '0' })
+            try { await this.bridge.request({ cmd: 'command', id: '0', param: '0' }) }
+            finally { await this.writeProperty(propertyCodes.S1, 2, 1) }
         }
     }
 
@@ -523,20 +527,35 @@ export class SonyWifiCamera {
     }
 
     /** Completed camera-to-host transfer through Sony's documented download callback. */
-    async captureAndDownload(directory: string): Promise<Record<string, unknown>> {
+    async captureAndDownload(directory: string, options: { autofocus?: boolean; destination?: 'card' | 'memory' } = {}): Promise<Record<string, unknown>> {
         this.requireConnection()
         if (!directory.startsWith('/') || /[\r\n\0]/.test(directory))
             throw new Error('An absolute download directory is required')
         const original = await this.getSonyProperty('StillImageStoreDestination')
         const priority = await this.getSonyProperty('PriorityKeySettings')
-        const fileType = await this.getSonyProperty('FileType')
-        const pcFormat = await this.getSonyProperty('RAW_J_PC_Save_Image').catch(() => undefined)
-        const fileCount =
-            ['3', '4'].includes(fileType.value) && (!pcFormat || ['0', '3'].includes(pcFormat.value)) ? '2' : '1'
-        const target = original.value === '2' ? 3 : Number(original.value)
+        const program = await this.getSonyProperty('ExposureProgramMode')
+        const focus = options.autofocus === false ? await this.getSonyProperty('FocusMode') : undefined
+        const target = options.destination === 'memory' ? 1 : original.value === '2' ? 3 : Number(original.value)
         if (![1, 3].includes(target)) throw new Error('The camera does not offer a PC photo destination')
+        let changedProgram = false
+        let failure: unknown
         try {
             if (priority.value !== '2') await this.setSonySetting('PriorityKeySettings', 2)
+            if (/movie|sqmotion|hiframerate/i.test(SONY_SDK_SETTING_LABELS[261]?.[program.value] || '')) {
+                const available = await this.getSonyProperty('ExposureProgramMode')
+                const photo = ['1', '2', '3', '4'].find(value => available.allowedValues?.includes(value))
+                if (photo) {
+                    changedProgram = true
+                    await this.setSonySetting('ExposureProgramMode', BigInt(photo))
+                    await new Promise(resolve => setTimeout(resolve, 500))
+                }
+            }
+            if (focus && focus.value !== '1') await this.setSonySetting('FocusMode', 1)
+            const fileType = await this.getSonyProperty('FileType')
+            const pcFormat = await this.getSonyProperty('RAW_J_PC_Save_Image').catch(() => undefined)
+            const fileCount =
+                ['3', '4'].includes(fileType.value) && (!pcFormat || ['0', '3'].includes(pcFormat.value)) ? '2' : '1'
+            const captureProgram = await this.getSonyProperty('ExposureProgramMode')
             await this.bridge.request({ cmd: 'save_info', path: directory, prefix: 'DG' })
             // Reapply the destination for this connection even when the body retained
             // its previous value; SDK photo delivery must be prepared before release.
@@ -553,16 +572,28 @@ export class SonyWifiCamera {
                 const detail = error instanceof Error ? error.message : 'Camera download failed'
                 throw new Error(
                     detail +
-                        '. Photo delivery did not complete; check focus lock or choose Manual focus, and confirm the shutter and save destination are available.'
+                        `. Photo delivery did not complete in ${SONY_SDK_SETTING_LABELS[261]?.[captureProgram.value] || captureProgram.value}; autofocus ${options.autofocus === false ? 'bypassed' : 'enabled'}, destination ${target}.`
                 )
             }
+        } catch (error) {
+            failure = error
+            throw error
         } finally {
-            try {
-                if (original.value !== String(target))
-                    await this.setSonySetting('StillImageStoreDestination', BigInt(original.value))
-            } finally {
-                if (priority.value !== '2') await this.setSonySetting('PriorityKeySettings', BigInt(priority.value))
+            const restorationErrors: unknown[] = []
+            const restore = async (name: string, value: string) => {
+                try { await this.setSonySetting(name, BigInt(value)) }
+                catch (error) { restorationErrors.push(error) }
             }
+            if (original.value !== String(target)) await restore('StillImageStoreDestination', original.value)
+            if (focus && focus.value !== '1') await restore('FocusMode', focus.value)
+            if (changedProgram) await restore('ExposureProgramMode', program.value)
+            if (priority.value !== '2') await restore('PriorityKeySettings', priority.value)
+            if (restorationErrors.length)
+                throw new AggregateError(
+                    [...(failure ? [failure] : []), ...restorationErrors],
+                    [...(failure ? [`Capture: ${String(failure)}`] : []),
+                        ...restorationErrors.map(error => `Restore: ${String(error)}`)].join('; ')
+                )
         }
     }
 

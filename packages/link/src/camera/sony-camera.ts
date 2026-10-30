@@ -652,12 +652,58 @@ export class SonyCamera extends GenericCamera {
         return result
     }
 
-    async captureImage({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
+    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory' } = {}): Promise<{
+        info?: ObjectInfo
+        data?: Uint8Array
+    }> {
+        if (options.destination === 'memory' && options.includeData === false)
+            throw new Error('Sony memory capture requires transfer of the captured image')
+        const destination = this.registry.properties.StillImageSaveDestination
+        const focus = this.registry.properties.FocusMode
+        const needsHostImage = options.includeInfo !== false || options.includeData !== false
+        const requestedDestination = options.destination === 'memory' ? 'HOST_DEVICE'
+            : needsHostImage ? 'BOTH_DEVICES' : undefined
+        const originalDestination = requestedDestination ? await this.get(destination) : undefined
+        const originalFocus = options.autofocus === false ? await this.get(focus) : undefined
+        let failure: unknown
+        try {
+            if (requestedDestination && originalDestination !== requestedDestination)
+                await this.set(destination, requestedDestination)
+            if (originalFocus !== undefined && originalFocus !== 'Manual') await this.set(focus, 'Manual')
+            return await this.captureWithCurrentDestination(options)
+        } catch (error) {
+            failure = error
+            throw error
+        } finally {
+            const restorationErrors: unknown[] = []
+            if (originalFocus !== undefined && originalFocus !== 'Manual') {
+                try {
+                    if (!(await this.waitForPropertyEnabled(focus.code)))
+                        throw new Error('Sony focus control remained busy after releasing the shutter')
+                    await this.set(focus, originalFocus)
+                } catch (error) { restorationErrors.push(error) }
+            }
+            if (originalDestination !== undefined && originalDestination !== requestedDestination)
+                await this.set(destination, originalDestination).catch(error => restorationErrors.push(error))
+            if (restorationErrors.length) {
+                const errors = [...(failure ? [failure] : []), ...restorationErrors]
+                throw new AggregateError(errors, `Sony capture/settings restoration failed: ${errors.map(String).join('; ')}`)
+            }
+        }
+    }
+
+    private async captureWithCurrentDestination({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
         await this.disableContentTransferMode()
-        await this.startLiveView()
+        // Card-only callers do not consume the host post-view object. Enabling it
+        // leaves an unread image pending and can keep the camera's controls busy.
+        if (includeInfo || includeData) await this.startLiveView()
+        else {
+            await this.stopLiveView()
+            await this.set(this.registry.properties.SetPostViewEnable, 'DISABLE')
+        }
 
         const release = async () => {
             // Sony requires S1 to remain held through S2, including manual focus.
@@ -665,7 +711,9 @@ export class SonyCamera extends GenericCamera {
             try {
                 await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
                 if (autofocus) await this.waitForFocus()
+                else await this.waitMs(500)
                 await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
+                await this.waitMs(35)
             } finally {
                 try {
                     await this.set(this.registry.properties.ShutterReleaseButton, 'UP')
@@ -677,7 +725,7 @@ export class SonyCamera extends GenericCamera {
         // A card workflow verifies the newly indexed object itself. It must not
         // require the separate host-delivery event when no host image was requested.
         if (!includeInfo && !includeData) {
-            await release()
+            await this.waitForCapturedImageObjectHandle(release, false)
             return {}
         }
         const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle(release)
@@ -685,11 +733,15 @@ export class SonyCamera extends GenericCamera {
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
 
-        if (includeInfo) {
+        if (includeInfo || includeData) {
             const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                 ObjectHandle: capturedImageObjectHandle,
             })
+            this.assertOk(objectInfoResponse.code, 'Sony captured-image information')
             info = objectInfoResponse.data
+            if (!info || !Number.isSafeInteger(info.objectCompressedSize) ||
+                info.objectCompressedSize <= 0 || info.objectCompressedSize > this.captureBufferSize)
+                throw new Error('Sony captured-image metadata is missing or exceeds the transfer bound')
         }
         if (includeData) {
             const objectResponse = await this.send(
@@ -700,10 +752,13 @@ export class SonyCamera extends GenericCamera {
                 undefined,
                 (info?.objectCompressedSize || this.captureBufferSize) + this.bufferPadding
             )
+            this.assertOk(objectResponse.code, 'Sony captured-image transfer')
             data = objectResponse.data
+            if (!data || data.length !== info!.objectCompressedSize)
+                throw new Error('Sony captured-image transfer length differs from its metadata')
         }
         return {
-            info: info,
+            info: includeInfo ? info : undefined,
             data: data,
         }
     }
@@ -822,20 +877,22 @@ export class SonyCamera extends GenericCamera {
         return completeFile
     }
 
-    protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>): Promise<number> {
+    protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>, requireObject = true): Promise<number> {
         let handle: number | undefined
         const handler = (event: { ObjectHandle?: number }) => {
-            if (event.ObjectHandle) handle = event.ObjectHandle
+            if (!requireObject) handle = 0
+            else if (event.ObjectHandle) handle = event.ObjectHandle
         }
-        this.on(this.registry.events.SDIE_ObjectAdded, handler)
+        const event = requireObject ? this.registry.events.SDIE_ObjectAdded : this.registry.events.SDIE_CapturedEvent
+        this.on(event, handler)
         try {
             await capture()
             const deadline = Date.now() + 15_000
             while (handle === undefined && Date.now() < deadline) await this.waitMs(50)
-            if (handle === undefined) throw new Error('Timed out after 15 seconds waiting for the Sony captured-image handle')
+            if (handle === undefined) throw new Error(`Timed out after 15 seconds waiting for Sony ${requireObject ? 'captured-image handle' : 'capture completion'}`)
             return handle
         } finally {
-            this.off(this.registry.events.SDIE_ObjectAdded, handler)
+            this.off(event, handler)
         }
     }
 

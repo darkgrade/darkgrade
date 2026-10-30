@@ -57,6 +57,9 @@ export const NikonMovieFocusMode = scalarProperty(
 export const NikonPrimarySlot = scalarProperty(
     'NikonPrimarySlot', 0xd156, 'uint8', 'Primary memory card slot'
 )
+export const NikonSecondarySlotMode = scalarProperty(
+    'NikonSecondarySlotMode', 0xd148, 'uint8', 'Secondary card use: 0 overflow, 1 backup, 2 RAW/JPEG split; other choices are model-specific'
+)
 export const NikonActiveSlot = scalarProperty(
     'NikonActiveSlot', 0xd1f2, 'uint8', 'Active memory card slot: 0 none', 'Get'
 )
@@ -82,6 +85,7 @@ export const nikonShootingPropertyRegistry = {
     NikonStillFocusMode,
     NikonMovieFocusMode,
     NikonPrimarySlot,
+    NikonSecondarySlotMode,
     NikonActiveSlot,
     NikonExposureRemaining,
     NikonFocusPointLock,
