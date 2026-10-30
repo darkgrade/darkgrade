@@ -36,6 +36,9 @@ export const NikonMovieISO = scalarProperty(
 export const NikonPhotoAutoISO = scalarProperty(
     'NikonPhotoAutoISO', 0xd054, 'uint8', 'Photo Auto ISO: 0 off, 1 on'
 )
+export const NikonRawCompression = scalarProperty(
+    'NikonRawCompression', 0xd016, 'uint8', 'NEF compression: 0 lossless, 3 high efficiency star, 4 high efficiency'
+)
 export const NikonMovieAutoISO = scalarProperty(
     'NikonMovieAutoISO', 0xd0ad, 'uint8', 'Movie Auto ISO in manual exposure mode: 0 off, 1 on'
 )
@@ -78,6 +81,7 @@ export const nikonShootingPropertyRegistry = {
     NikonMovieWhiteBalanceKelvin,
     NikonMovieISO,
     NikonPhotoAutoISO,
+    NikonRawCompression,
     NikonMovieAutoISO,
     NikonMovieWhiteBalance,
     NikonMovieShutterSpeed,

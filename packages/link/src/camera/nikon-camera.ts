@@ -1,5 +1,6 @@
 import { Logger } from '@core/logger'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
+import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -218,7 +219,7 @@ export class NikonCamera extends GenericCamera {
      * new SDRAM object event and retrieves that object's metadata and complete bytes.
      * Card capture returns no media; callers must discover and download its new object.
      */
-    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory' } = {}): Promise<{
+    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory'; rawCompression?: 'lossless' } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
@@ -252,6 +253,11 @@ export class NikonCamera extends GenericCamera {
             await this.waitForDeviceReady()
             if (!memory && waitForBuffer) await this.waitForImageBufferReady(30000)
         }
+        const capture = (waitForBuffer = true) => withNikonRawCompression(this, options.rawCompression, async () => {
+            await this.enableLiveView()
+            await release()
+            await finish(waitForBuffer)
+        })
 
         // Setup capture
 
@@ -264,17 +270,13 @@ export class NikonCamera extends GenericCamera {
             if (!(error instanceof Error) || !error.message.includes('No data received from GetDevicePropDescEx')) {
                 throw error
             }
-            await this.enableLiveView()
-            await release()
-            await finish(false)
+            await capture(false)
             return { info, data }
         }
 
         // camera's hardware dial is in photo mode, great, screen will stay on
         if (this.liveViewMode === 'PHOTO') {
-            await this.enableLiveView()
-            await release()
-            await finish()
+            await capture()
         }
 
         // camera's hardware dial is not in photo mode
@@ -284,9 +286,7 @@ export class NikonCamera extends GenericCamera {
             try {
                 await this.enableRemoteMode()
                 await this.selectLiveViewMode('PHOTO')
-                await this.enableLiveView()
-                await release()
-                await finish()
+                await capture()
             } catch (error) {
                 failures.push(error)
             } finally {

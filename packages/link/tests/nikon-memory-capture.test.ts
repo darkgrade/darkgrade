@@ -19,6 +19,34 @@ function fixture(truncate = false) {
 }
 
 describe('Nikon event-identified SDRAM capture', () => {
+    it('selects lossless NEF only inside Photo mode and restores compression before Movie mode', async () => {
+        const { camera, send } = fixture()
+        let selector = 'VIDEO', compression = 3
+        const changes: unknown[] = []
+        camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector
+            : property.name === 'NikonRawCompression' ? compression : 'OFF') as any
+        camera.getVendorPropertyCodes = vi.fn(async () => [0xd016])
+        camera.set = vi.fn(async (property, value) => {
+            if (property.name === 'LiveViewSelector') selector = String(value)
+            if (property.name === 'NikonRawCompression') {
+                expect(selector).toBe('PHOTO')
+                compression = Number(value)
+                changes.push(compression)
+            }
+        }) as any
+        const original = send.getMockImplementation()!
+        send.mockImplementation(async (...args) => {
+            if (args[0].name === 'GetDevicePropDescEx') return { code: 0x2001, data: {
+                formFlag: 2, getSet: 'GET_SET', currentValueRaw: compression, supportedValuesRaw: [0, 3, 4],
+            } } as any
+            if (args[0].name === 'InitiateCaptureRecInMedia') expect(compression).toBe(0)
+            return original(...args)
+        })
+        const result = await camera.captureImage({ destination: 'memory', autofocus: false, rawCompression: 'lossless' })
+        expect(result.data?.length).toBe(4)
+        expect(changes).toEqual([0, 3])
+        expect(selector).toBe('VIDEO')
+    })
     it('allows a card JPEG to finish processing before restoring movie mode', async () => {
         vi.useFakeTimers()
         try {
