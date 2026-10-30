@@ -135,7 +135,10 @@ describe('Sony Wi-Fi USB control parity', () => {
     it('waits for the SDK download callback and restores the original card destination', async () => {
         const { camera, properties, requests } = sdkCamera()
         await camera.connectUsb('unit-test')
-        expect(await camera.captureAndDownload('/tmp/sdk-test')).toEqual({ path: '/tmp/sdk-test/DG00001.JPG' })
+        expect(await camera.captureAndDownload('/tmp/sdk-test')).toMatchObject({
+            path: '/tmp/sdk-test/DG00001.JPG',
+            eventObservation: { kind: 'sony-crsdk-download-callback', status: 'observed' },
+        })
         expect(properties.find(property => property.code === 281)!.value).toBe('2')
         expect(requests.some(request => request.cmd === 'wait_download')).toBe(true)
     })

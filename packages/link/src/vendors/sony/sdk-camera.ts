@@ -544,7 +544,11 @@ export class SonyWifiCamera {
             await new Promise(resolve => setTimeout(resolve, 2000))
             await this.captureImage()
             try {
-                return await this.bridge.request({ cmd: 'wait_download', count: fileCount })
+                const downloaded = await this.bridge.request({ cmd: 'wait_download', count: fileCount })
+                return { ...downloaded, eventObservation: {
+                    kind: 'sony-crsdk-download-callback', status: 'observed',
+                    scope: 'SDK download-completion callback received for this capture; does not verify native PTP interrupt events.',
+                } }
             } catch (error) {
                 const detail = error instanceof Error ? error.message : 'Camera download failed'
                 throw new Error(
