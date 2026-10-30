@@ -45,6 +45,85 @@
     --tracking-meta: 0.2em; /* chips, status, legend, small controls */
 
     --animate-blink: blink 1.6s ease-in-out 3; /* 4.8s total: WCAG 2.2.2 allows blinking under 5s without a pause control */
+    /* linear and shared durations so each arrowhead lights exactly as the line's band reaches it.
+       a two-way cycle is a down run and an up run, so it is twice as long */
+    --animate-flow: flow 1.44s linear infinite;
+    --animate-tip-end: tip-end 1.44s linear infinite;
+    --animate-flow-both: flow-both 2.88s linear infinite;
+    --animate-tip-both-end: tip-both-end 2.88s linear infinite;
+    --animate-tip-both-start: tip-both-start 2.88s linear infinite;
+}
+
+/* a band of gold runs down a product-map arrow, then rests. both ends of the
+   gradient are the plain line colour, so under reduced motion (one 0.01ms run)
+   the line just sits still. the band leaves the bottom of the line at 56%,
+   which is when the arrowhead glows */
+@keyframes flow {
+    0% {
+        background-position: 50% 100%;
+    }
+    75%,
+    100% {
+        background-position: 50% 0%;
+    }
+}
+
+@keyframes tip-end {
+    0%,
+    49%,
+    68%,
+    100% {
+        fill: rgba(234, 230, 220, 0.25);
+        filter: drop-shadow(0 0 0 rgba(244, 198, 110, 0));
+    }
+    56% {
+        fill: var(--color-gold);
+        filter: drop-shadow(0 0 4px rgba(244, 198, 110, 0.8));
+    }
+}
+
+/* the two-way arrow: down, rest, up, rest. the band reaches the bottom head at 28%
+   and the top head at 78% */
+@keyframes flow-both {
+    0% {
+        background-position: 50% 100%;
+    }
+    37.5%,
+    50% {
+        background-position: 50% 0%;
+    }
+    87.5%,
+    100% {
+        background-position: 50% 100%;
+    }
+}
+
+@keyframes tip-both-end {
+    0%,
+    24.5%,
+    34%,
+    100% {
+        fill: rgba(234, 230, 220, 0.25);
+        filter: drop-shadow(0 0 0 rgba(244, 198, 110, 0));
+    }
+    28% {
+        fill: var(--color-gold);
+        filter: drop-shadow(0 0 4px rgba(244, 198, 110, 0.8));
+    }
+}
+
+@keyframes tip-both-start {
+    0%,
+    74.5%,
+    84%,
+    100% {
+        fill: rgba(234, 230, 220, 0.25);
+        filter: drop-shadow(0 0 0 rgba(244, 198, 110, 0));
+    }
+    78% {
+        fill: var(--color-gold);
+        filter: drop-shadow(0 0 4px rgba(244, 198, 110, 0.8));
+    }
 }
 
 @keyframes blink {
