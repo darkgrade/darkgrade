@@ -14,6 +14,7 @@ function sdkCamera(ignoreFirstPoint = false) {
         { code: 272, type: 2, value: '1', writable: true, allowedValues: ['1', '2', '3'] },
         { code: 273, type: 2, value: '1', writable: true, allowedValues: ['1', '2'] },
         { code: 275, type: 2, value: '1', writable: true, allowedValues: ['1', '4'] },
+        { code: 261, type: 3, value: '1', writable: true, allowedValues: ['1', '2', '3', '4'] },
         { code: 281, type: 2, value: '2', writable: true, allowedValues: ['1', '2', '3'] },
         { code: 282, type: 2, value: '1', writable: true, allowedValues: ['1', '2'] },
         { code: 293, type: 2, value: '1', writable: true, allowedValues: ['1', '3', '4'] },

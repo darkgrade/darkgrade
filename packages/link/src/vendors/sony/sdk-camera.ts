@@ -404,7 +404,8 @@ export class SonyWifiCamera {
             await new Promise(resolve => setTimeout(resolve, 200))
             after = await this.getSonyProperty(before.code)
         } while (after.value !== String(value) && Date.now() < deadline)
-        if (after.value !== String(value)) throw new Error('The camera did not confirm the requested setting')
+        if (after.value !== String(value))
+            throw new Error(`Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`)
         return { before, after, verified: true }
     }
 
@@ -529,14 +530,26 @@ export class SonyWifiCamera {
             throw new Error('An absolute download directory is required')
         const original = await this.getSonyProperty('StillImageStoreDestination')
         const priority = await this.getSonyProperty('PriorityKeySettings')
+        const program = await this.getSonyProperty('ExposureProgramMode')
         const fileType = await this.getSonyProperty('FileType')
         const pcFormat = await this.getSonyProperty('RAW_J_PC_Save_Image').catch(() => undefined)
         const fileCount =
             ['3', '4'].includes(fileType.value) && (!pcFormat || ['0', '3'].includes(pcFormat.value)) ? '2' : '1'
         const target = original.value === '2' ? 3 : Number(original.value)
         if (![1, 3].includes(target)) throw new Error('The camera does not offer a PC photo destination')
+        let changedProgram = false
+        let failure: unknown
         try {
             if (priority.value !== '2') await this.setSonySetting('PriorityKeySettings', 2)
+            if (Number(program.value) >= 0x8000) {
+                const available = await this.getSonyProperty('ExposureProgramMode')
+                const photo = ['1', '2', '3', '4'].find(value => available.allowedValues?.includes(value))
+                if (photo) {
+                    changedProgram = true
+                    await this.setSonySetting('ExposureProgramMode', BigInt(photo))
+                    await new Promise(resolve => setTimeout(resolve, 500))
+                }
+            }
             await this.bridge.request({ cmd: 'save_info', path: directory, prefix: 'DG' })
             // Reapply the destination for this connection even when the body retained
             // its previous value; SDK photo delivery must be prepared before release.
@@ -556,13 +569,24 @@ export class SonyWifiCamera {
                         '. Photo delivery did not complete; check focus lock or choose Manual focus, and confirm the shutter and save destination are available.'
                 )
             }
+        } catch (error) {
+            failure = error
+            throw error
         } finally {
-            try {
-                if (original.value !== String(target))
-                    await this.setSonySetting('StillImageStoreDestination', BigInt(original.value))
-            } finally {
-                if (priority.value !== '2') await this.setSonySetting('PriorityKeySettings', BigInt(priority.value))
+            const restorationErrors: unknown[] = []
+            const restore = async (name: string, value: string) => {
+                try { await this.setSonySetting(name, BigInt(value)) }
+                catch (error) { restorationErrors.push(error) }
             }
+            if (original.value !== String(target)) await restore('StillImageStoreDestination', original.value)
+            if (changedProgram) await restore('ExposureProgramMode', program.value)
+            if (priority.value !== '2') await restore('PriorityKeySettings', priority.value)
+            if (restorationErrors.length)
+                throw new AggregateError(
+                    [...(failure ? [failure] : []), ...restorationErrors],
+                    [...(failure ? [`Capture: ${String(failure)}`] : []),
+                        ...restorationErrors.map(error => `Restore: ${String(error)}`)].join('; ')
+                )
         }
     }
 
