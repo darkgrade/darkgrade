@@ -26,7 +26,7 @@ export function observeCameraEvents(camera: EventCamera) {
             finally { for (const { event, listener } of listeners) camera.off(event, listener) }
             const events = [...delivered.values()]
             return {
-                kind: 'native-ptp-events', status: events.length ? 'observed' : error ? 'failed' : 'none-observed',
+                kind: 'native-ptp-events', status: error ? 'failed' : events.length ? 'observed' : 'none-observed',
                 events, ...(error && { error }),
                 scope: 'Decoded events delivered during this operation; no claim about unobserved event types.',
             }

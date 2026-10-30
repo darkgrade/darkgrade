@@ -44,36 +44,36 @@ export interface NikonLiveViewDataset {
     afFrameCenterCoords: { horizontal: number; vertical: number }
 
     // Video recording information
-    remainingVideoTime: number // milliseconds
-    elapsedVideoTime: number // milliseconds
+    remainingVideoTime?: number // milliseconds
+    elapsedVideoTime?: number // milliseconds
 
     // Sound indicators
-    soundIndicatorPeakL: number
-    soundIndicatorPeakR: number
-    soundIndicatorCurrentL: number
-    soundIndicatorCurrentR: number
+    soundIndicatorPeakL?: number
+    soundIndicatorPeakR?: number
+    soundIndicatorCurrentL?: number
+    soundIndicatorCurrentR?: number
 
-    videoRecordingInfo: number // 0: LV execution, 1: video recording
-    syncRecordingState: number // 0: cannot perform, 1: standby, 2: performing
+    videoRecordingInfo?: number // 0: LV execution, 1: video recording
+    syncRecordingState?: number // 0: cannot perform, 1: standby, 2: performing
 
     // Timecode
-    timecodeStatus: number // 0: off, 1: on
-    timecodeHour: number
-    timecodeMinute: number
-    timecodeSecond: number
-    timecodeFrame: number
+    timecodeStatus?: number // 0: off, 1: on
+    timecodeHour?: number
+    timecodeMinute?: number
+    timecodeSecond?: number
+    timecodeFrame?: number
 
-    countdownTime: number
-    spotWbCondition: number // 0: off, 1: on standby (not acquired), 2: during acquisition, 3: success, 4: failure
-    rotation: number // 0: off, 1: counterclockwise, 2: clockwise, 3: upside down
+    countdownTime?: number
+    spotWbCondition?: number // 0: off, 1: on standby (not acquired), 2: during acquisition, 3: success, 4: failure
+    rotation?: number // 0: off, 1: counterclockwise, 2: clockwise, 3: upside down
 
     // Level angle information
-    levelAngleRolling: number
-    levelAnglePitching: number
-    levelAngleYawing: number
+    levelAngleRolling?: number
+    levelAnglePitching?: number
+    levelAngleYawing?: number
 
-    usingWhiteBalanceForPhotoLv: number
-    imagingTemperatureStatus: number // 0: normal, 1: medium (low), 2: medium (high), 3: high, 4: countdown
+    usingWhiteBalanceForPhotoLv?: number
+    imagingTemperatureStatus?: number // 0: normal, 1: medium (low), 2: medium (high), 3: high, 4: countdown
 
     // Raw reserved and AF frame data
     reserved: Uint8Array
@@ -91,6 +91,8 @@ export class NikonLiveViewDatasetCodec extends CustomCodec<NikonLiveViewDataset>
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: NikonLiveViewDataset; bytesRead: number } {
+        if (!Number.isSafeInteger(offset) || offset < 0 || buffer.length - offset < 16)
+            throw new Error('Nikon live-view dataset has an incomplete header')
         // Nikon LiveViewObject is always BIG-ENDIAN regardless of transport
         // Create big-endian codecs for this dataset
         const u8 = new Uint8Codec()
@@ -114,6 +116,16 @@ export class NikonLiveViewDatasetCodec extends CustomCodec<NikonLiveViewDataset>
         currentOffset += 4
         const liveViewImageSize = u32.decode(buffer, currentOffset).value
         currentOffset += 4
+        const headerEnd = offset + displayInfoSize
+        const imageEnd = headerEnd + liveViewImageSize
+        if (displayInfoSize < 56 || headerEnd > buffer.length || imageEnd > buffer.length)
+            throw new Error('Nikon live-view dataset is shorter than its declared header or image')
+        // Older headers end before the modern movie/temperature fields. JPEG bytes
+        // must never become telemetry, nor may an absent recording flag mean idle.
+        const optional = (codec: Uint8Codec | Uint16Codec | Uint32Codec | Int32Codec, size: number) =>
+            currentOffset + size <= headerEnd ? codec.decode(buffer, currentOffset).value : undefined
+        const headerSlice = (start: number, length: number) =>
+            buffer.slice(Math.min(start, headerEnd), Math.min(start + length, headerEnd))
 
         // Whole size (4 bytes)
         const wholeSizeH = u16.decode(buffer, currentOffset).value
@@ -179,81 +191,81 @@ export class NikonLiveViewDatasetCodec extends CustomCodec<NikonLiveViewDataset>
         // NOTE: Contains multi-byte values (96 areas × 8 bytes: horizontal size, vertical size,
         // horizontal pos, vertical pos - all 2-byte values). If parsed in the future, these
         // 2-byte values would need to be read as BIG-ENDIAN. Currently stored as raw bytes.
-        const afFrameData = buffer.slice(currentOffset, currentOffset + 760)
+        const afFrameData = headerSlice(currentOffset, 760)
         currentOffset += 760
 
         // Video recording information (offset 816-827)
-        const remainingVideoTime = u32.decode(buffer, currentOffset).value
+        const remainingVideoTime = optional(u32, 4)
         currentOffset += 4
-        const elapsedVideoTime = u32.decode(buffer, currentOffset).value
+        const elapsedVideoTime = optional(u32, 4)
         currentOffset += 4
-        const soundIndicatorPeakL = u8.decode(buffer, currentOffset).value
+        const soundIndicatorPeakL = optional(u8, 1)
         currentOffset += 1
-        const soundIndicatorPeakR = u8.decode(buffer, currentOffset).value
+        const soundIndicatorPeakR = optional(u8, 1)
         currentOffset += 1
-        const soundIndicatorCurrentL = u8.decode(buffer, currentOffset).value
+        const soundIndicatorCurrentL = optional(u8, 1)
         currentOffset += 1
-        const soundIndicatorCurrentR = u8.decode(buffer, currentOffset).value
+        const soundIndicatorCurrentR = optional(u8, 1)
         currentOffset += 1
 
         // Video recording info and sync state (offset 828-829)
-        const videoRecordingInfo = u8.decode(buffer, currentOffset).value
+        const videoRecordingInfo = optional(u8, 1)
         currentOffset += 1
-        const syncRecordingState = u8.decode(buffer, currentOffset).value
+        const syncRecordingState = optional(u8, 1)
         currentOffset += 1
 
         // Reserved (1 byte at offset 830)
         currentOffset += 1
 
         // Timecode (offset 831-835)
-        const timecodeStatus = u8.decode(buffer, currentOffset).value
+        const timecodeStatus = optional(u8, 1)
         currentOffset += 1
-        const timecodeHour = u8.decode(buffer, currentOffset).value
+        const timecodeHour = optional(u8, 1)
         currentOffset += 1
-        const timecodeMinute = u8.decode(buffer, currentOffset).value
+        const timecodeMinute = optional(u8, 1)
         currentOffset += 1
-        const timecodeSecond = u8.decode(buffer, currentOffset).value
+        const timecodeSecond = optional(u8, 1)
         currentOffset += 1
-        const timecodeFrame = u8.decode(buffer, currentOffset).value
+        const timecodeFrame = optional(u8, 1)
         currentOffset += 1
 
         // Countdown time (offset 836-837)
-        const countdownTime = u16.decode(buffer, currentOffset).value
+        const countdownTime = optional(u16, 2)
         currentOffset += 2
 
         // Spot WB condition (offset 838)
-        const spotWbCondition = u8.decode(buffer, currentOffset).value
+        const spotWbCondition = optional(u8, 1)
         currentOffset += 1
 
         // Rotation (offset 839)
-        const rotation = u8.decode(buffer, currentOffset).value
+        const rotation = optional(u8, 1)
         currentOffset += 1
 
         // Level angle information (offset 840-851)
-        const levelAngleRolling = i32.decode(buffer, currentOffset).value
+        const levelAngleRolling = optional(i32, 4)
         currentOffset += 4
-        const levelAnglePitching = i32.decode(buffer, currentOffset).value
+        const levelAnglePitching = optional(i32, 4)
         currentOffset += 4
-        const levelAngleYawing = i32.decode(buffer, currentOffset).value
+        const levelAngleYawing = optional(i32, 4)
         currentOffset += 4
 
         // White balance for photo LV (offset 852)
-        const usingWhiteBalanceForPhotoLv = u8.decode(buffer, currentOffset).value
+        const usingWhiteBalanceForPhotoLv = optional(u8, 1)
         currentOffset += 1
 
         // Imaging temperature status (offset 853)
-        const imagingTemperatureStatus = u8.decode(buffer, currentOffset).value
+        const imagingTemperatureStatus = optional(u8, 1)
         currentOffset += 1
 
         // Auto capture subject detection (offset 854-905, 52 bytes)
         // NOTE: CaptureAreaDataSet format - likely contains multi-byte values that would need
         // BIG-ENDIAN parsing if decoded in the future. Currently stored as raw bytes.
-        const autoCaptureSubjectDetection = buffer.slice(currentOffset, currentOffset + 52)
+        const autoCaptureSubjectDetection = headerSlice(currentOffset, 52)
         currentOffset += 52
 
         // Reserved (offset 906-1023, 118 bytes)
         // NOTE: Reserved/padding bytes - endianness irrelevant
-        const reservedEnd = buffer.slice(currentOffset, currentOffset + 118)
+        const reservedEnd = headerSlice(currentOffset, 118)
         currentOffset += 118
 
         // The image begins after the camera-declared display-info block. Newer bodies
@@ -261,15 +273,8 @@ export class NikonLiveViewDatasetCodec extends CustomCodec<NikonLiveViewDataset>
         // Hardcoding 1024 silently dropped otherwise valid JPEG frames from those bodies.
         // NOTE: JPEG image data - JPEG format is inherently big-endian
         // No endianness conversion needed.
-        let liveViewImage: Uint8Array = new Uint8Array()
-        const imageStartOffset = offset + (displayInfoSize || 1024)
-        const expectedEndOffset = imageStartOffset + liveViewImageSize
-
-        if (liveViewImageSize > 0 && buffer.length >= expectedEndOffset) {
-            liveViewImage = buffer.slice(imageStartOffset, expectedEndOffset)
-        }
-
-        const bytesRead = Math.max(imageStartOffset - offset + liveViewImageSize, buffer.length - offset)
+        const liveViewImage = buffer.slice(headerEnd, imageEnd)
+        const bytesRead = imageEnd - offset
 
         return {
             value: {
