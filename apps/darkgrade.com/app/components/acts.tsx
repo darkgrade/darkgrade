@@ -1,49 +1,77 @@
-import { CHIP, FILAMENT, LABEL, NPM_INSTALL } from './site-links'
+import { Drawing } from './drawing'
+import type { MotionName } from './drawing-motion'
+import { FeatureList, LINK, MATRIX, type Product, STUDIO } from './products'
+import { LABEL, NPM_INSTALL } from './site-links'
 
-/* the sweep of gold that washes across a row on hover */
-const ROW_WASH =
-    "before:absolute before:inset-0 before:opacity-0 before:transition-opacity before:duration-500 before:content-[''] hover:before:opacity-100"
-
-function Arrow() {
-    return (
-        <div className="grid size-[58px] place-items-center rounded-full bg-hair transition-[background,transform,box-shadow] duration-[450ms] ease-lamp group-hover/act:rotate-45 group-hover/act:bg-gold group-hover/act:shadow-[0_0_34px_rgba(244,198,110,.3)] max-[900px]:hidden">
-            <svg
-                aria-hidden="true"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                strokeWidth="1.5"
-                className="stroke-ink transition-transform duration-[450ms] ease-lamp group-hover/act:stroke-obsidian"
-            >
-                <path d="M7 17L17 7M9 7h8v8" />
-            </svg>
-        </div>
-    )
+type Act = {
+    number: string
+    product: Product
+    drawing: { src: string; alt: string; width: number; height: number; motion: MotionName }
+    install?: boolean
 }
 
-const ACTS = [
+/** Tall drawings are capped by height, so the studio set never towers over its text. */
+const DRAWING_MAX_HEIGHT = 440
+
+const ACTS: Act[] = [
     {
-        num: 'Act I',
-        title: 'Link',
-        chip: 'shipping' as const,
-        body: 'The open-source engine that lets any app speak fluent camera — settings, capture, live view, events. Free, today.',
+        number: 'Act I',
+        product: LINK,
+        drawing: {
+            src: '/products/link.svg',
+            alt: 'A camera whose lens lifts as its aperture stops down',
+            width: 560,
+            height: 430,
+            motion: 'aperture',
+        },
         install: true,
     },
     {
-        num: 'Act II',
-        title: 'Studio',
-        chip: 'In development' as const,
-        body: 'The app that sets the scene, rolls the take, and hands you an automatic first edit the moment you stop recording.',
+        number: 'Act II',
+        product: STUDIO,
+        drawing: {
+            src: '/products/studio.svg',
+            alt: 'A film studio: a camera on dolly rails faces a stool and backdrop, surrounded by lights and a monitor',
+            width: 850,
+            height: 750,
+            motion: 'studio',
+        },
     },
     {
-        num: 'Act III',
-        title: 'Create',
-        chip: 'The dream' as const,
-        body: 'Say what you want to make; get a finished video back. Your footage, your face, your voice — you stay the director.',
+        number: 'Act III',
+        product: MATRIX,
+        drawing: {
+            src: '/products/matrix.svg',
+            alt: 'A camera record rising from a card index',
+            width: 600,
+            height: 430,
+            motion: 'record',
+        },
     },
 ]
 
+function InstallLine() {
+    return (
+        // `npmline` is a cursor-hover hook; [data-copy] is the clipboard hook
+        <button
+            type="button"
+            data-copy={NPM_INSTALL}
+            className="npmline group/npm mt-6 inline-flex cursor-pointer items-center gap-[14px] panel rounded-[10px] border border-hair px-[18px] py-3 font-mono text-label text-ink-55 transition-[border-color,box-shadow] duration-[350ms] hover:border-gold hover:shadow-[0_0_26px_rgba(244,198,110,.1)]"
+        >
+            <span aria-hidden="true" className="text-gold">
+                $
+            </span>
+            <span>{NPM_INSTALL}</span>
+            <span className="copy text-label tracking-meta text-ink-52 uppercase transition-colors duration-300 group-hover/npm:text-gold">
+                Copy
+            </span>
+            {/* rendered empty so screen readers pick up the result when it is written */}
+            <span role="status" className="copy-status sr-only" />
+        </button>
+    )
+}
+
+/** The three products a creator touches, told in order, with the same bullets as the roadmap. */
 export function Acts() {
     return (
         <section id="product" className="pb-[clamp(100px,14vh,180px)]">
@@ -57,59 +85,40 @@ export function Acts() {
                     </span>
                 </div>
 
-                {ACTS.map(act => (
+                {ACTS.map(({ number, product, drawing, install }, index) => (
                     <article
-                        key={act.num}
+                        key={number}
+                        id={product.name.toLowerCase()}
                         data-fade
-                        // `act` is a cursor-hover hook for <SiteEffects>
-                        id={act.title.toLowerCase()}
-                        className={`act group/act relative grid grid-cols-[110px_1fr_auto] items-center gap-8 px-[clamp(8px,1.5vw,28px)] py-[clamp(34px,5vh,54px)] transition-[background] duration-500 before:bg-[image:linear-gradient(90deg,var(--color-gold-dim),transparent_60%)] ${ROW_WASH} max-[900px]:grid-cols-1 max-[900px]:gap-4`}
+                        className="grid grid-cols-2 items-center gap-[clamp(40px,6vw,96px)] py-[clamp(48px,8vh,96px)] max-[900px]:grid-cols-1"
                     >
-                        <div className="font-serif text-[1.375rem] text-ink-52 italic transition-[color,text-shadow] duration-[400ms] group-hover/act:text-gold group-hover/act:[text-shadow:0_0_16px_rgba(244,198,110,.5)] max-[900px]:text-[1rem]">
-                            {act.num}
+                        {/* drawings alternate sides so the section reads as a sequence, not a list */}
+                        <div
+                            className={`mx-auto w-full ${index % 2 ? 'order-2 max-[900px]:order-none' : ''}`}
+                            style={{ maxWidth: `${(DRAWING_MAX_HEIGHT * drawing.width) / drawing.height}px` }}
+                        >
+                            <Drawing
+                                src={drawing.src}
+                                label={drawing.alt}
+                                width={drawing.width}
+                                height={drawing.height}
+                                motion={drawing.motion}
+                            />
                         </div>
 
                         <div>
-                            <h2 className="flex flex-wrap items-center gap-[22px] font-serif text-[clamp(2.5rem,5vw,4.5rem)] leading-none font-normal tracking-[-.01em]">
-                                {act.title}{' '}
-                                {act.chip === 'shipping' ? (
-                                    <span
-                                        className={`${CHIP} bg-gold-dim text-gold shadow-[0_0_calc(22px*var(--gI))_rgba(244,198,110,.13)]`}
-                                    >
-                                        <span className={FILAMENT} />
-                                        Shipping now
-                                    </span>
-                                ) : (
-                                    <span className={`${CHIP} bg-hair text-ink-55`}>
-                                        <span className="size-[7px] shrink-0 rounded-full border border-ink-52" />
-                                        {act.chip}
-                                    </span>
-                                )}
+                            <span className="font-serif text-[1.125rem] text-ink-55 italic">{number}</span>
+                            <h2
+                                className={`mt-[10px] font-serif text-[clamp(2.25rem,4vw,3.75rem)] leading-none font-normal tracking-[-.01em] ${product.lit ? 'text-gold' : 'text-ink'}`}
+                            >
+                                {product.name}
                             </h2>
-
-                            <p className="mt-[14px] max-w-[52ch] text-body text-ink-55">{act.body}</p>
-
-                            {act.install && (
-                                // `npmline` is a cursor-hover hook; [data-copy] is the clipboard hook
-                                <button
-                                    type="button"
-                                    data-copy={NPM_INSTALL}
-                                    className="npmline group/npm mt-5 inline-flex cursor-pointer items-center gap-[14px] panel rounded-[10px] border border-hair px-[18px] py-3 font-mono text-label text-ink-55 transition-[border-color,box-shadow] duration-[350ms] hover:border-gold hover:shadow-[0_0_26px_rgba(244,198,110,.1)]"
-                                >
-                                    <span aria-hidden="true" className="text-gold">
-                                        $
-                                    </span>
-                                    <span>{NPM_INSTALL}</span>
-                                    <span className="copy text-label tracking-meta text-ink-52 uppercase transition-colors duration-300 group-hover/npm:text-gold">
-                                        Copy
-                                    </span>
-                                    {/* rendered empty so screen readers pick up the result when it is written */}
-                                    <span role="status" className="copy-status sr-only" />
-                                </button>
-                            )}
+                            <p className="mt-[14px] mb-[clamp(16px,2vw,24px)] text-label tracking-label text-ink-66 uppercase">
+                                {product.kind}
+                            </p>
+                            <FeatureList features={product.features} />
+                            {install && <InstallLine />}
                         </div>
-
-                        <Arrow />
                     </article>
                 ))}
             </div>
