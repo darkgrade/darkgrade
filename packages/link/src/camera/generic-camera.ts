@@ -88,7 +88,7 @@ export class GenericCamera {
         this.transport.on?.(event => this.handleEvent(event))
     }
 
-    async connect(device?: DeviceDescriptor): Promise<void> {
+    protected async connectTransport(device?: DeviceDescriptor): Promise<void> {
         if (this.recovery?.status === 'pending')
             throw new PTPRecoveryRequiredError('Transport recovery is still running', this.lastFailure)
         if (!this.transport.isConnected()) {
@@ -98,7 +98,10 @@ export class GenericCamera {
             this.lastFailure = undefined
             this.recovery = undefined
         } else await this.resynchronizeIfNeeded()
+    }
 
+    async connect(device?: DeviceDescriptor): Promise<void> {
+        await this.connectTransport(device)
         this.sessionId = randomSessionId()
         try {
             let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })

@@ -131,9 +131,7 @@ export class SonyCamera extends GenericCamera {
 
     async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus'; configure?: boolean } = {}): Promise<void> {
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
-        if (!this.transport.isConnected()) {
-            await this.transport.connect({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
-        }
+        await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
         this.sessionId = randomSessionId()
 

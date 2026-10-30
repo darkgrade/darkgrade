@@ -126,9 +126,7 @@ export class CanonCamera extends GenericCamera {
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
-        if (!this.transport.isConnected()) {
-            await this.transport.connect({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
-        }
+        await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
         this.sessionId = 1
         await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
