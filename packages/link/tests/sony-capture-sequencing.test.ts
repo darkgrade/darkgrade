@@ -23,7 +23,8 @@ describe('Sony shutter and host transfer sequencing', () => {
         const { camera, sent } = fixture()
         const result = await camera.captureImage({ autofocus: false })
         expect(result.data).toEqual(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9))
-        expect(sent).toEqual(['ShutterReleaseButton:DOWN', 'ShutterReleaseButton:UP'])
+        expect(sent).toEqual(['ShutterHalfReleaseButton:DOWN', 'ShutterReleaseButton:DOWN',
+            'ShutterReleaseButton:UP', 'ShutterHalfReleaseButton:UP'])
     })
     it('does not require a host image event for explicit card-only capture', async () => {
         const { camera } = fixture()
@@ -31,10 +32,20 @@ describe('Sony shutter and host transfer sequencing', () => {
         expect(await camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).toEqual({})
         expect(camera.send).not.toHaveBeenCalled()
     })
-    it('releases the shutter button even when its down command fails', async () => {
+    it('releases both stages even when the half-press command fails', async () => {
         const { camera } = fixture()
         camera.set = vi.fn(async (_property, value) => { if (value === 'DOWN') throw new Error('CameraBusy') }) as any
         await expect(camera.captureImage({ autofocus: false })).rejects.toThrow('CameraBusy')
-        expect(camera.set).toHaveBeenLastCalledWith(camera.registry.properties.ShutterReleaseButton, 'UP')
+        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.ShutterReleaseButton, 'UP')
+        expect(camera.set).toHaveBeenLastCalledWith(camera.registry.properties.ShutterHalfReleaseButton, 'UP')
+    })
+    it('releases the half-press even when full-shutter release fails', async () => {
+        const { camera, sent } = fixture()
+        camera.set = vi.fn(async (property, value) => {
+            sent.push(`${property.name}:${value}`)
+            if (property.name === 'ShutterReleaseButton' && value === 'UP') throw new Error('Release failed')
+        }) as any
+        await expect(camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).rejects.toThrow('Release failed')
+        expect(sent.at(-1)).toBe('ShutterHalfReleaseButton:UP')
     })
 })
