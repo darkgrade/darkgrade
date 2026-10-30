@@ -38,3 +38,21 @@ release acknowledged buttons and must not blindly repeat a shutter command after
 a mode-related rejection. Zero or an omitted optional result remains accepted
 for older EOS bodies; a higher-level capture-and-download check must verify a
 new image when capture completion is required.
+
+## Capture and transfer contract
+
+Canon `captureImage()` now returns the requested metadata and bytes of a newly
+indexed card still. It snapshots existing handles before the shutter, skips empty
+card slots and folders, waits for a file still being written, and bounds downloads
+to 100 MiB. If RAW and JPEG are both indexed, it prefers JPEG without changing the
+camera's image format. A missing new object, invalid metadata, or incomplete
+transfer rejects the call; an old card image is never substituted.
+
+`includeInfo: false, includeData: false` retains the command-only path for callers
+that own their media verification. Button-release failures are reported, both
+cleanup steps are attempted, and a cleanup failure prevents automatic AF fallback.
+The autofocus half-press fallback also checks the shutter-result parameter.
+
+These changes do not bypass the R6 III's physical Movie selector. The public
+photo-mode wrapper holds remote Photo through transfer and restores remote Movie
+afterward when the body permits the transition.
