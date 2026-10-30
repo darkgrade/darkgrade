@@ -7,9 +7,9 @@ type Product = { name: string; kind: string; features: Feature[]; columns: strin
 const today = (text: string): Feature => ({ text, on: true })
 const next = (text: string): Feature => ({ text })
 
-const TWO_COLUMNS = 'grid grid-cols-2 max-[720px]:grid-cols-1'
+const TWO_COLUMNS = 'grid grid-cols-2 gap-x-[clamp(28px,3.4vw,52px)] max-[720px]:grid-cols-1'
 /* short bullets sit side by side at their natural width instead of stretching across a wide box */
-const IN_A_ROW = 'flex flex-wrap'
+const IN_A_ROW = 'flex flex-wrap gap-x-[clamp(20px,1.8vw,28px)]'
 
 const STUDIO: Product = {
     name: 'Studio',
@@ -80,7 +80,7 @@ function ProductBox({ product, className = '' }: { product: Product; className?:
                 <span className={product.lit ? 'text-gold' : 'text-ink'}>{product.name}</span>
                 <span className="text-ink-52">{product.kind}</span>
             </h3>
-            <ul className={`gap-x-[clamp(28px,3.4vw,52px)] ${product.columns}`}>
+            <ul className={product.columns}>
                 {product.features.map(feature => (
                     <FeatureRow key={feature.text} feature={feature} />
                 ))}
@@ -89,16 +89,22 @@ function ProductBox({ product, className = '' }: { product: Product; className?:
     )
 }
 
-function Arrowhead({ up = false }: { up?: boolean }) {
+function headAnimation(up: boolean, twoWay: boolean) {
+    if (!twoWay) return 'animate-tip-end'
+    return up ? 'animate-tip-both-start' : 'animate-tip-both-end'
+}
+
+/** A plain triangle in the line's colour. It lights up as the line's gold band reaches it, so pass the line's timing. */
+function Arrowhead({ up = false, twoWay, delaySeconds }: { up?: boolean; twoWay: boolean; delaySeconds: number }) {
     return (
         <svg
-            width="11"
-            height="6"
-            viewBox="0 0 11 6"
-            fill="none"
-            className={`shrink-0 stroke-ink-55 ${up ? 'rotate-180' : ''}`}
+            width="12"
+            height="9"
+            viewBox="0 0 12 9"
+            className={`shrink-0 fill-ink/25 ${headAnimation(up, twoWay)} ${up ? 'rotate-180' : ''}`}
+            style={{ animationDelay: `${delaySeconds}s` }}
         >
-            <path d="M1 .5l4.5 4.5 4.5-4.5" strokeWidth="1" />
+            <path d="M0 0h12L6 9z" />
         </svg>
     )
 }
@@ -107,20 +113,25 @@ function Arrowhead({ up = false }: { up?: boolean }) {
 function Connector({
     lines,
     twoWay = false,
+    delaySeconds = 0,
     className = '',
 }: {
     lines: string[]
     twoWay?: boolean
+    delaySeconds?: number
     className?: string
 }) {
     return (
         <div
             aria-hidden="true"
-            className={`flex min-h-[64px] flex-col items-center max-[1000px]:items-start max-[1000px]:pl-[clamp(20px,8vw,48px)] ${className}`}
+            className={`flex min-h-[84px] flex-col items-center py-[10px] max-[1000px]:items-start max-[1000px]:pl-[clamp(20px,8vw,48px)] ${className}`}
         >
-            {twoWay && <Arrowhead up />}
-            <span className="relative flex w-[11px] flex-1 justify-center">
-                <span className="w-px bg-ink-55" />
+            {twoWay && <Arrowhead up twoWay delaySeconds={delaySeconds} />}
+            <span className="relative flex w-[12px] flex-1 justify-center">
+                <span
+                    className={`w-[2px] rounded-full bg-[linear-gradient(to_bottom,rgba(234,230,220,.25)_42%,var(--color-gold)_50%,rgba(234,230,220,.25)_58%)] bg-size-[100%_300%] bg-bottom ${twoWay ? 'animate-flow-both' : 'animate-flow'}`}
+                    style={{ animationDelay: `${delaySeconds}s` }}
+                />
                 {/* the label hangs off the line so the line itself stays centred under its box */}
                 <span className="absolute top-1/2 left-[25px] -translate-y-1/2 text-label leading-[1.5] tracking-meta whitespace-nowrap text-ink-55 uppercase">
                     {lines.map(line => (
@@ -130,7 +141,7 @@ function Connector({
                     ))}
                 </span>
             </span>
-            <Arrowhead />
+            <Arrowhead twoWay={twoWay} delaySeconds={delaySeconds} />
         </div>
     )
 }
@@ -159,14 +170,19 @@ export function ProductMap() {
                     <ProductBox product={TEST_BENCH} className="max-[1000px]:mt-[14px]" />
                     <Connector lines={['Every fix', 'lands in Link']} className="flex-1 max-[1000px]:hidden" />
                 </div>
-                <Connector lines={['Runs on Link']} className="max-[1000px]:hidden" />
+                <Connector lines={['Runs on Link']} delaySeconds={0.3} className="max-[1000px]:hidden" />
                 {/* stacked, a single arrow under both boxes so Studio never appears to sit on the bench */}
                 <Connector
                     lines={['Studio runs on Link', 'Fixes from the bench', 'land in Link']}
                     className="hidden max-[1000px]:flex"
                 />
                 <ProductBox product={LINK} className="col-span-full" />
-                <Connector lines={['Share what works', 'on each camera']} twoWay className="col-span-full" />
+                <Connector
+                    lines={['Share what works', 'on each camera']}
+                    twoWay
+                    delaySeconds={0.6}
+                    className="col-span-full"
+                />
                 <ProductBox product={MATRIX} className="col-span-full" />
             </div>
 
