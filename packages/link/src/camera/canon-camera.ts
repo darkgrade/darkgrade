@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
@@ -560,6 +561,7 @@ export class CanonCamera extends GenericCamera {
                         )
                     }
                     focusPressed = true
+                    assertCanonCaptureResult(focus.parameters, `${afMode} focus press`)
                     await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
 
                     shutterAttempted = true
@@ -574,6 +576,7 @@ export class CanonCamera extends GenericCamera {
                         )
                     }
                     shutterPressed = true
+                    assertCanonCaptureResult(shutter.parameters, `${afMode} shutter press`)
                 } finally {
                     if (shutterPressed || (afMode === 'MF' && shutterAttempted)) {
                         await this.send(this.registry.operations.CanonRemoteReleaseOff, {

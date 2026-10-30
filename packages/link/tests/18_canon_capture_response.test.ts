@@ -4,7 +4,7 @@ import { Logger } from '@core/logger'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
 
-function cameraWithResponses(responses: number[]) {
+function cameraWithResponses(responses: Array<number | {code: number; parameters?: number[]}>) {
     const transport = {
         isLittleEndian: () => true,
         on: () => undefined,
@@ -16,12 +16,32 @@ function cameraWithResponses(responses: number[]) {
     const operations: Array<{ name: string; params: unknown }> = []
     camera.send = (async (operation, params) => {
         operations.push({ name: operation.name, params })
-        return { code: responses.shift() ?? 0x2001 }
+        const response = responses.shift() ?? 0x2001
+        return typeof response === 'number' ? { code: response } : response
     }) as typeof camera.send
     return { camera, operations }
 }
 
 describe('Canon capture response handling', () => {
+    it.each([[true, 12], [false, 12], [false, 14]] as const)('rejects a camera-side shutter failure despite PTP OK (autofocus=%s, result=%s)', async (autofocus, result) => {
+        const {camera, operations} = cameraWithResponses([0x2001, {code: 0x2001, parameters: [result]}])
+        await expect(camera.captureImage({autofocus})).rejects.toThrow(`shutter result 0x${result.toString(16)}`)
+        expect(operations.map(operation => operation.name)).toEqual([
+            'CanonRemoteReleaseOn', 'CanonRemoteReleaseOn', 'CanonRemoteReleaseOff', 'CanonRemoteReleaseOff',
+        ])
+        expect(operations.filter(operation => (operation.params as any).ReleaseMode === 'SHUTTER')).toHaveLength(2)
+    })
+
+    it('releases an acknowledged half press with a rejected result without sending full press', async () => {
+        const {camera, operations} = cameraWithResponses([{code: 0x2001, parameters: [1]}])
+        await expect(camera.captureImage()).rejects.toThrow('focus press rejected capture')
+        expect(operations.map(operation => operation.name)).toEqual(['CanonRemoteReleaseOn', 'CanonRemoteReleaseOff'])
+    })
+
+    it('accepts explicit zero shutter results as well as legacy bodies omitting the result', async () => {
+        const {camera} = cameraWithResponses([{code: 0x2001, parameters: [0]}, {code: 0x2001, parameters: [0]}])
+        await expect(camera.captureImage({autofocus: false})).resolves.toEqual({})
+    })
     it('retries without autofocus after DeviceBusy and releases every pressed control', async () => {
         const { camera, operations } = cameraWithResponses([
             0x2001,
