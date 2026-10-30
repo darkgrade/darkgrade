@@ -24,7 +24,7 @@ export const SDIE_DevicePropChanged = {
     code: 0xc203,
     name: 'SDIE_DevicePropChanged',
     description: 'Notify that the DevicePropValue is changed',
-    parameters: [] as const,
+    parameters: [{ name: 'Reserved', description: 'Optional reserved word observed on a6700 and FX2 notifications', codec: baseCodecs.uint32 }] as const,
 } as const satisfies EventDefinition
 
 export const SDIE_DateTimeSettingResult = {

@@ -1082,6 +1082,8 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async enableContentTransferMode(): Promise<void> {
+        if (this.contentTransferModeEnabled) return
+        await this.stopLiveView()
         for (let attempt = 1; attempt <= SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS; attempt += 1) {
             if (this.contentTransferModeEnabled) return
             await this.send(this.registry.operations.SDIO_SetContentsTransferMode, {
@@ -1092,6 +1094,7 @@ export class SonyCamera extends GenericCamera {
             await this.waitMs(100)
             this.contentTransferModeEnabled =
                 (await this.get(this.registry.properties.ContentTransferEnable)) === 'ENABLE'
+            if (this.contentTransferModeEnabled) return
         }
         throw new Error(
             `Sony content-transfer mode did not enable after ${SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS} attempts`
@@ -1109,6 +1112,7 @@ export class SonyCamera extends GenericCamera {
             await this.waitMs(100)
             this.contentTransferModeEnabled =
                 (await this.get(this.registry.properties.ContentTransferEnable)) === 'ENABLE' // Keep enabled if still ENABLE
+            if (!this.contentTransferModeEnabled) return
         }
         throw new Error(
             `Sony content-transfer mode did not disable after ${SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS} attempts`
