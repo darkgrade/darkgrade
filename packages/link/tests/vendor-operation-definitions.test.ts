@@ -8,7 +8,7 @@ import { VendorExtensionCamera } from '@camera/vendor-extension-camera'
 import { Logger } from '@core/logger'
 import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
-import { createCanonRegistry, createNikonRegistry } from '@ptp/registry'
+import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@ptp/registry'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
@@ -221,4 +221,35 @@ describe('vendor classes selected by USB vendor ID', () => {
             ).vendorId
         ).toBe(VendorIDs.SIGMA)
     })
+})
+
+
+describe('MTP requests observed in Fujifilm recordings', () => {
+    it('preserves all five list selectors and raw response bytes', async () => {
+        const bytes = Uint8Array.of(0, 0, 0, 0)
+        const recorded = recordingTransport(new Map([[0x9805, bytes]]))
+        const camera = new Camera({transport: recorded.transport, vendorId: 0x04cb, logger: {renderInTerminal: false, captureConsole: false}})
+        const response = await camera.send(camera.getInstance().registry.operations.MtpGetObjectPropList, {
+            ObjectHandle: 2, ObjectFormatCode: 0, ObjectPropertyCode: 0xffffffff, GroupCode: 0, Depth: 0,
+        })
+        expect(recorded.commands).toEqual([[0x9805, 2, 0, 0xffffffff, 0, 0]])
+        expect(response.data).toEqual(bytes)
+        expect(recorded.dataPhases).toEqual([])
+    })
+    it('can express the captured single-parameter DeleteObject and an explicit format filter', async () => {
+        const {camera, registry, commands} = cameraFor(0x04cb)
+        await camera.send(registry.operations.DeleteObject, {ObjectHandle: 2})
+        await camera.send(registry.operations.DeleteObject, {ObjectHandle: 3, ObjectFormatCode: 0x3801})
+        expect(commands).toEqual([[0x100b, 2], [0x100b, 3, 0x3801]])
+    })
+})
+
+
+it('expresses legacy Sony protocol 2.00 without a version-3 option word', async () => {
+    // Public ILCE-7M2 recording by tmandys: libgphoto2 issue 981, comment 2189832650.
+    const {camera, commands} = cameraFor(0x054c)
+    const registry = createSonyRegistry(true)
+    await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '2.00'})
+    await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '3.00', flagOfDevicePropertyOption: 'ENABLE'})
+    expect(commands).toEqual([[0x9202, 200], [0x9202, 300, 1]])
 })
