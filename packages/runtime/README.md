@@ -42,11 +42,15 @@ session when work starts, so queued work follows the active connection. An
 unsupported command on a retained session fails without opening a competing
 connection. Failed writes release the operation queue after the provider settles.
 An HTTP timeout never retries a write or pretends the camera operation stopped.
+Queued photos retain a copy of the validated options supplied at submission.
 
 `HardwareCoordinator` supplies renewable, reentrant cross-process leases through
 an injected `OwnershipStore`. Test Bench supplies its existing SQLite store, so
 old and migrated callers still share the same camera and capture-device locks.
 USB switching, power recovery and shared-hub protections remain Bench services.
+Leases remain renewed until every nested operation settles, including siblings
+still running after a workflow fails. Delayed callbacks that outlive that lease
+must acquire a fresh owner; inherited async context never grants released access.
 
 Providers enforce recording/recovery guards, actual advertised capabilities,
 bounded camera transactions and media verification. A successful command reply
