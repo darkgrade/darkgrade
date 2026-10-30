@@ -50,7 +50,13 @@ export class HardwareCoordinator {
         // Count before acquisition: a sibling can finish while this call waits.
         context.operations++
         const acquire = async () => {
-            if (context.resources.has(resource)) return
+            if (context.resources.has(resource)) {
+                if (!this.database.claimHardwareResource(resource, context.owner, purpose, 45000))
+                    throw new HardwareBusyError(
+                        'Camera ownership expired or changed; no further command was sent. Inspect the current owner before retrying.'
+                    )
+                return
+            }
             const deadline = Date.now() + waitMilliseconds
             while (!this.database.claimHardwareResource(resource, context.owner, purpose, 45000)) {
                 if (Date.now() >= deadline)

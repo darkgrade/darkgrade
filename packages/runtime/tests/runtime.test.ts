@@ -274,3 +274,81 @@ test('HTTP camera identities cannot normalize into another route', async () => {
     }
     expect(calls).toBe(0)
 })
+
+test('photo options cannot change an HTTP action or bypass validation', async () => {
+    const calls: unknown[] = []
+    const client = new HttpCameraClient('http://localhost:8787', async (_url, request) => {
+        calls.push(JSON.parse(String(request.body)))
+        return Response.json({})
+    })
+    for (const options of [{ action: 'take-photo' }, { autofocus: 'false' }, null, []]) {
+        await expect(client.media('sony', 'storage', options as any)).rejects.toThrow('option')
+    }
+    expect(calls).toEqual([])
+})
+
+test('a lost HTTP reply reports uncertain completion without repeating an executed photo', async () => {
+    const { runtime, calls } = fixture()
+    const server = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        async fetch(_request, server) {
+            await runtime.media('sony', 'take-photo')
+            await server.stop(true)
+            return Response.json({ ok: true })
+        },
+    })
+    try {
+        const client = new HttpCameraClient(server.url.href)
+        await expect(client.media('sony', 'take-photo')).rejects.toThrow('may still be running')
+        expect(calls).toEqual([['sony', 'take-photo', {}]])
+    } finally {
+        await server.stop(true)
+    }
+})
+
+test('a failed observation does not repeat the completed write or poison queued camera work', async () => {
+    const { runtime, provider, calls } = fixture()
+    let observations = 0
+    provider.observeControls = async (_camera, state) => {
+        if (++observations === 1) throw new Error('Battery telemetry unavailable')
+        return state
+    }
+    const write = runtime.control('sony', 'set-iso', '800').catch(error => error.message)
+    const read = runtime.control('sony', 'status')
+    expect(await write).toBe('Battery telemetry unavailable')
+    expect(await read).toEqual({ transport: 'usb' })
+    expect(calls.filter(call => Array.isArray(call) && call[1] === 'set-iso')).toHaveLength(1)
+})
+
+test('mixed queued requests remain serial per camera through repeated failures', async () => {
+    const { runtime, provider } = fixture()
+    const active = new Set<string>(), seen: string[] = []
+    let overlap = false
+    const operation = async (camera: string, value: string) => {
+        if (active.has(camera)) overlap = true
+        active.add(camera)
+        try {
+            await Bun.sleep(1)
+            seen.push(`${camera}:${value}`)
+            if (value === 'fail') throw new Error('Rejected command')
+            return {}
+        } finally {
+            active.delete(camera)
+        }
+    }
+    provider.control = (camera, _action, value) => operation(camera, String(value))
+    provider.media = camera => operation(camera, 'photo')
+    const pending: Promise<unknown>[] = []
+    for (let index = 0; index < 100; index++) {
+        const camera = index % 2 ? 'sony' : 'nikon'
+        pending.push((index % 3
+            ? runtime.control(camera, 'set-iso', index % 5 ? String(index) : 'fail')
+            : runtime.media(camera, 'take-photo')).catch(() => undefined))
+    }
+    await Promise.all(pending)
+    expect(overlap).toBe(false)
+    expect(seen).toHaveLength(100)
+    expect(active.size).toBe(0)
+    expect(await runtime.control('sony', 'status', 'after')).toEqual({})
+})

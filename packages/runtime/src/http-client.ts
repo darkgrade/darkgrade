@@ -1,5 +1,5 @@
 import { HardwareBusyError } from './errors.ts'
-import type { CameraClient, MediaOptions } from './runtime.ts'
+import { validateMediaOptions, type CameraClient, type MediaOptions } from './runtime.ts'
 
 /** Connect to the existing owning host. Does not create a local hardware session. */
 export class HttpCameraClient implements CameraClient {
@@ -26,11 +26,13 @@ export class HttpCameraClient implements CameraClient {
                 redirect: 'error',
             })
         } catch (error) {
-            if (error instanceof Error && error.name === 'TimeoutError')
-                throw new Error(
-                    'Runtime request timed out; the camera operation may still be running. Inspect the host before retrying.'
-                )
-            throw error
+            const message = error instanceof Error && error.name === 'TimeoutError'
+                ? 'Runtime request timed out'
+                : 'Runtime connection failed'
+            throw new Error(
+                `${message}; the camera operation may still be running or have completed. Inspect the host before retrying.`,
+                { cause: error }
+            )
         }
         let result: unknown
         try {
@@ -51,7 +53,7 @@ export class HttpCameraClient implements CameraClient {
     control(camera: string, action: string, value?: string | number, property?: string) {
         return this.call(camera, 'controls', { action, value, property })
     }
-    media(camera: string, action: string, options: MediaOptions = {}) {
-        return this.call(camera, 'media-action', { action, ...options })
+    async media(camera: string, action: string, options: MediaOptions = {}) {
+        return this.call(camera, 'media-action', { ...validateMediaOptions(options), action })
     }
 }

@@ -51,6 +51,14 @@ USB switching, power recovery and shared-hub protections remain Bench services.
 Leases remain renewed until every nested operation settles, including siblings
 still running after a workflow fails. Delayed callbacks that outlive that lease
 must acquire a fresh owner; inherited async context never grants released access.
+Nested calls recheck the shared store before using a cached resource. If another
+process acquired an expired lease, the old owner cannot issue another nested
+command or release the new owner's lock.
+
+The HTTP client validates the same photo options as the embedded runtime.
+Unexpected option keys cannot replace an action. A lost connection may follow a
+completed camera command; the client reports that uncertainty and never retries
+automatically.
 
 Providers enforce recording/recovery guards, actual advertised capabilities,
 bounded camera transactions and media verification. A successful command reply
