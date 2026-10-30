@@ -16,3 +16,21 @@ it('records decoded delivery without exporting parameters and removes listeners 
     expect(JSON.stringify(result)).not.toContain('secret')
     expect(listeners.size).toBe(0)
 })
+
+it('keeps partial notifications without claiming event success after a poll failure', async () => {
+    const listeners = new Map<string, (value: unknown) => void>()
+    const observer = observeCameraEvents({
+        registry: { events: genericEventRegistry },
+        on: (event, listener) => { listeners.set(event.name, listener) },
+        off: event => { listeners.delete(event.name) },
+        pollEvents: async () => {
+            listeners.get('ObjectAdded')?.({ ObjectHandle: 123 })
+            throw new Error('GetEventEx returned DeviceBusy')
+        },
+    })
+    const result = await observer.finish()
+    expect(result.status).toBe('failed')
+    expect(result.error).toBe('GetEventEx returned DeviceBusy')
+    expect(result.events).toContainEqual({ code: 0x4002, name: 'ObjectAdded', count: 1 })
+    expect(listeners.size).toBe(0)
+})
