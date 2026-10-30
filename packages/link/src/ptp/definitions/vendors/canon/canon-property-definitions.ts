@@ -452,6 +452,7 @@ export const CanonMovieSoundRecording = {
     description: 'Sound recorded in the camera movie',
     datatype: UINT32,
     codec: registry => createEnumCodec(registry, [
+        { value: 0, name: 'camera-specific-0', description: 'R6 Mark III reports this value with choices 0/1; audio semantics require model-specific verification' },
         { value: 1, name: 'disabled', description: 'Sound recording disabled' },
         { value: 2, name: 'auto', description: 'Automatic sound level' },
         { value: 3, name: 'manual', description: 'Manual sound level' },

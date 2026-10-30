@@ -251,5 +251,7 @@ it('expresses legacy Sony protocol 2.00 without a version-3 option word', async 
     const registry = createSonyRegistry(true)
     await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '2.00'})
     await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '3.00', flagOfDevicePropertyOption: 'ENABLE'})
-    expect(commands).toEqual([[0x9202, 200], [0x9202, 300, 1]])
+    await camera.send(registry.operations.SDIO_SetExtDevicePropValue, {DevicePropCode: 0xd25a}, Uint8Array.of(1, 0))
+    await camera.send(registry.operations.SDIO_ControlDevice, {sdiControlCode: 0xd2c2}, Uint8Array.of(2, 0))
+    expect(commands).toEqual([[0x9202, 200], [0x9202, 300, 1], [0x9205, 0xd25a], [0x9207, 0xd2c2]])
 })

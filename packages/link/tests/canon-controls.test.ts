@@ -86,6 +86,8 @@ describe('Canon camera controls', () => {
     it('maps Canon documented movie audio values without confusing Disable and Auto', () => {
         const registry = createCanonRegistry(true)
         const codec = registry.properties.CanonMovieSoundRecording.codec(registry)
+        expect(codec.decode(registry.codecs.uint32.encode(0)).value).toBe('camera-specific-0')
+        expect(codec.encode('camera-specific-0')).toEqual(registry.codecs.uint32.encode(0))
         expect(codec.decode(registry.codecs.uint32.encode(1)).value).toBe('disabled')
         expect(codec.decode(registry.codecs.uint32.encode(2)).value).toBe('auto')
         expect(codec.decode(registry.codecs.uint32.encode(3)).value).toBe('manual')

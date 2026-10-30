@@ -202,6 +202,15 @@ describe('retained payload privacy', () => {
         })
     })
 
+    it('retains only public zero-key phase acknowledgement when Sony returns an opaque unused reply', () => {
+        const handshake = transaction(0x9201, Buffer.from('PRIVATE_REPLY'), [2, 0, 0])
+        handshake.response.parameters = [123456]
+        expect(sanitizeProfileTransaction(handshake, 0x054c, [])).toEqual({
+            operation: 0x9201, transactionId: handshake.transactionId, parameters: [2, 0, 0],
+            response: { code: 0x2001, parameters: [] }, redactions: ['unused-sony-handshake-reply'],
+        })
+    })
+
     it('omits media and authentication bytes, including authentication response words', () => {
         const secret = Buffer.from('PRIVATE_PASSWORD')
         const auth = transaction(0x9201, secret, [1, 123, 456])
