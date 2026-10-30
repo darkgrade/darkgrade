@@ -34,10 +34,12 @@ export function supportsSonyPtpSettings(properties: SonyPropertyState[], request
 /** Camera-advertised PTP values, preserving their native codes and decoded labels. */
 export function sonyPtpControls(properties: SonyPropertyState[]) {
     const property = (...names: string[]) => names.map(name => properties.find(candidate => candidate.name === name)).find(Boolean)
+    const iso = property('Iso')
+    const isoMode = property('GainControlSetting')
     return {
         aperture: property('FNumber', 'Aperture'),
         shutterSpeed: property('ShutterSpeed'),
-        iso: property('Iso'),
+        iso: iso && isoMode?.enabled && isoMode.rawValue === 1 ? { ...iso, value: 'ISO AUTO' } : iso,
         whiteBalance: property('WhiteBalance'),
         focusMode: property('FocusMode'),
         imageFormat: property('StillFileFormat', 'CompressionSetting'),

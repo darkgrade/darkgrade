@@ -339,11 +339,34 @@ export class SonyCamera extends GenericCamera {
     }
 
     async getIso(): Promise<string> {
+        await this.refreshPropertyStates()
+        const mode = this.propertyCache.get(this.registry.properties.GainControlSetting.code)
+        if (mode?.vendorExtensions.enabled && mode.currentValueRaw === 1) return 'ISO AUTO'
         return this.get(this.registry.properties.Iso)
     }
 
     async setIso(value: string): Promise<void> {
-        return this.set(this.registry.properties.Iso, value)
+        await this.refreshPropertyStates()
+        const modeProperty = this.registry.properties.GainControlSetting
+        const mode = this.propertyCache.get(modeProperty.code)
+        if (!mode?.vendorExtensions.enabled) return this.set(this.registry.properties.Iso, value)
+
+        const automatic = /^(?:iso\s*)?auto$/i.test(value.trim())
+        const targetMode = automatic ? 1 : 2
+        const originalMode = mode.currentValueRaw
+        if (![1, 2].includes(Number(originalMode))) throw new Error('Sony reported an unknown ISO control mode')
+        if (!automatic && !/^(?:iso\s*)?\d+$/i.test(value.trim())) throw new Error('Choose Auto or a camera-advertised ISO sensitivity')
+        if (originalMode !== targetMode) await this.set(modeProperty, automatic ? 'Auto' : 'Manual')
+        if (automatic) return
+        try {
+            await this.set(this.registry.properties.Iso, value)
+        } catch (error) {
+            if (originalMode !== targetMode) {
+                try { await this.set(modeProperty, originalMode === 1 ? 'Auto' : 'Manual') }
+                catch (restorationError) { throw new AggregateError([error, restorationError], 'Sony ISO write and mode restoration failed') }
+            }
+            throw error
+        }
     }
 
     async getFocusMode(): Promise<string> {
@@ -1027,6 +1050,17 @@ export class SonyCamera extends GenericCamera {
             await this.set(this.registry.properties.SetLiveViewEnable, 'ENABLE')
             await this.set(this.registry.properties.SetPostViewEnable, 'ENABLE')
             this.liveViewPostViewEnabled = true
+            if (this.propertyCache.has(this.registry.properties.LiveViewStatus.code)) {
+                const deadline = Date.now() + SONY_CONTROL_SETTLE_TIMEOUT_MS
+                while (Date.now() < deadline) {
+                    await this.refreshPropertyStates()
+                    const status = this.propertyCache.get(this.registry.properties.LiveViewStatus.code)?.currentValueRaw
+                    if (status === 1) return
+                    if (status === 2) throw new Error('Sony live view is unavailable in the current camera mode')
+                    await this.waitMs(50)
+                }
+                throw new Error('Sony did not report live view ready before the startup deadline')
+            }
         }
     }
 

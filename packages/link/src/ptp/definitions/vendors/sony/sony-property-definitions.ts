@@ -575,6 +575,18 @@ export const Iso = {
     codec: registry => new IsoCodec(registry),
 } as const satisfies PropertyDefinition
 
+export const GainControlSetting = {
+    code: 0xd01c,
+    name: 'GainControlSetting',
+    description: 'ISO auto/manual switch in Sony Flexible Exposure mode.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry => createEnumCodec(registry, [
+        { value: 1, name: 'Auto', description: 'Automatic ISO sensitivity' },
+        { value: 2, name: 'Manual', description: 'Manually selected ISO sensitivity' },
+    ] as const, registry.codecs.uint8),
+} as const satisfies PropertyDefinition
+
 export const Exposure = {
     code: 0x0000,
     name: 'Exposure',
@@ -1657,6 +1669,7 @@ export const sonyPropertyRegistry = {
     Aperture,
     ShutterSpeed,
     Iso,
+    GainControlSetting,
     WhiteBalance,
     FocusMode,
     FocusArea,

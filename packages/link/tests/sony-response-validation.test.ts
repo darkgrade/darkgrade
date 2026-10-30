@@ -77,6 +77,33 @@ describe('Sony authoritative property refresh', () => {
 })
 
 describe('Sony preview results', () => {
+    it('waits for advertised live-view readiness before requesting the image', async () => {
+        const { camera, replies, sent } = cameraFixture()
+        const status = (value: number) => ({
+            devicePropertyCode: 0xd221, currentValueRaw: value, currentValueDecoded: value,
+            vendorExtensions: { enabled: true }, getSet: 'GET',
+        } as SonyDevicePropDesc)
+        replies.push({ code: 0x2001, data: { properties: [status(0)] } })
+        await camera.refreshPropertyStates()
+        const bytes = new Uint8Array(28)
+        new DataView(bytes.buffer).setUint32(0, 24, true)
+        new DataView(bytes.buffer).setUint32(4, 4, true)
+        bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
+        replies.push({ code: 0x2001, data: { properties: [status(1)] } }, { code: 0x2001, data: bytes })
+        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
+        expect(sent.slice(-2)).toEqual(['SDIO_GetAllExtDevicePropInfo', 'GetObject'])
+    })
+
+    it('does not request an image when the camera reports live view unsupported', async () => {
+        const { camera, replies, sent } = cameraFixture()
+        const status = { devicePropertyCode: 0xd221, currentValueRaw: 2, vendorExtensions: { enabled: true }, getSet: 'GET' } as SonyDevicePropDesc
+        replies.push({ code: 0x2001, data: { properties: [status] } })
+        await camera.refreshPropertyStates()
+        replies.push({ code: 0x2001, data: { properties: [status] } })
+        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow('unavailable')
+        expect(sent).not.toContain('GetObject')
+    })
+
     it('preserves the camera refusal rather than decoding the response words as an image', async () => {
         const { camera, replies } = cameraFixture()
         replies.push({ code: 0x200f, data: new Uint8Array(4) })

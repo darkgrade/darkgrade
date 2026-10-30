@@ -24,6 +24,12 @@ describe('native Sony settings backend selection', () => {
         const current = property('StillFileFormat', 'JPEG', ['JPEG', 'RAW'])
         expect(sonyPtpControls([property('CompressionSetting', 'RAW', ['RAW']), current]).imageFormat).toBe(current)
     })
+    it('reports Auto from the separate mode without changing retained raw ISO or availability', () => {
+        const iso = property('Iso', 'ISO 1250', [], { rawValue: 1250, writable: false, enabled: false })
+        const mode = property('GainControlSetting', 'Auto', ['Auto', 'Manual'], { rawValue: 1 })
+        expect(sonyPtpControls([iso, mode]).iso).toMatchObject({ value: 'ISO AUTO', rawValue: 1250, writable: false })
+        expect(iso.value).toBe('ISO 1250')
+    })
     it('writes an advertised native value and reads fresh state afterward', async () => {
         const calls: string[] = []
         let states = structuredClone(properties)
