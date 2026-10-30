@@ -4,6 +4,7 @@ import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { SONY_SDK_PROPERTY_NAMES } from '@ptp/definitions/vendors/sony/sony-sdk-property-names'
 import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
+import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 
 /**
  * Sony-specific device property descriptor extensions
@@ -146,7 +147,9 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
 
         if (propertyDef && propertyDef.codec && currentValueBytes.length > 0) {
             const codecInstance =
-                typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
+                devicePropertyCode === 0x500e && (dataType === 0x0004 || dataType === 0x0006)
+                    ? new SonyExposureProgramCodec(this.registry, dataType)
+                    : typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
 
             try {
                 const decodedResult = codecInstance.decode(currentValueBytes, 0)

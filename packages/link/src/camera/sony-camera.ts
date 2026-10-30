@@ -16,6 +16,7 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import { EventParams } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
+import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { GenericCamera } from './generic-camera'
 
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
@@ -226,10 +227,8 @@ export class SonyCamera extends GenericCamera {
                 property.name
             )
 
-        const codec = this.resolveCodec(property.codec)
-        const encodedValue = codec.encode(value)
-
         if (isMomentaryControl) {
+            const encodedValue = this.resolveCodec(property.codec).encode(value)
             const response = await this.send(
                 this.registry.operations.SDIO_ControlDevice,
                 {
@@ -242,6 +241,10 @@ export class SonyCamera extends GenericCamera {
         } else {
             const descriptor = this.propertyCache.get(property.code) ?? (await this.readDescriptor(property.code))
             this.assertPropertyEnabled(property, descriptor)
+            const codec = property.code === 0x500e
+                ? new SonyExposureProgramCodec(this.registry, descriptor.dataType)
+                : this.resolveCodec(property.codec)
+            const encodedValue = codec.encode(value)
             const targetRaw = this.decodeRawPropertyValue(descriptor, encodedValue)
             this.assertAdvertisedValue(property, descriptor, targetRaw)
 

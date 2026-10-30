@@ -15,6 +15,26 @@ function join(...chunks: Uint8Array[]): Uint8Array {
 }
 
 describe('Sony extended property inventory', () => {
+    test.each([4, 6])('preserves exposure program width and full mode identity for datatype %s', datatype => {
+        const codecs = littleEndianRegistry.codecs
+        const values = datatype === 6 ? [0x00010002, 0x00078090, 0x12348090] : [2, 0x8090, 0x809f]
+        const wire = datatype === 6 ? codecs.uint32 : codecs.uint16
+        const payload = join(
+            codecs.uint32.encode(1), codecs.uint32.encode(0),
+            codecs.uint16.encode(0x500e), codecs.uint16.encode(datatype),
+            codecs.uint8.encode(1), codecs.uint8.encode(1),
+            wire.encode(values[0]!), wire.encode(values[1]!), codecs.uint8.encode(2),
+            codecs.uint16.encode(values.length), ...values.map(value => wire.encode(value)),
+        )
+        const decoded = new SDIDevicePropInfoArrayCodec(littleEndianRegistry).decode(payload)
+        expect(decoded.bytesRead).toBe(payload.length)
+        expect(decoded.value.properties[0]).toMatchObject({
+            currentValueRaw: values[1],
+            currentValueDecoded: 'Movie Flexible Exposure',
+            supportedValuesRaw: values,
+            supportedValuesDecoded: ['Program Auto', 'Movie Flexible Exposure', `Mode 0x${values[2]!.toString(16)}`],
+        })
+    })
     test('decodes the count header, range forms, and a single enum list without consuming the next property', () => {
         const codecs = littleEndianRegistry.codecs
         const rangeProperty = join(
