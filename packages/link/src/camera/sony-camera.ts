@@ -696,7 +696,9 @@ export class SonyCamera extends GenericCamera {
             try {
                 await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
                 if (autofocus) await this.waitForFocus()
+                else await this.waitMs(500)
                 await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
+                await this.waitMs(35)
             } finally {
                 try {
                     await this.set(this.registry.properties.ShutterReleaseButton, 'UP')

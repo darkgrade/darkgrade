@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { NikonCamera } from '@camera/nikon-camera'
 import { Logger } from '@core/logger'
+import { TransportType } from '@transport/interfaces/transport-types'
 
 function fixture(truncate = false) {
     let polls = 0
@@ -19,6 +20,15 @@ function fixture(truncate = false) {
 }
 
 describe('Nikon event-identified SDRAM capture', () => {
+    it('renews an idle USB session before capture after card access, without disconnecting USB', async () => {
+        const { camera, send } = fixture()
+        Object.assign(camera, { sessionId: 41 })
+        Object.assign((camera as any).transport, { getType: () => TransportType.USB })
+        await camera.captureImage({ destination: 'memory', autofocus: false })
+        expect(send.mock.calls.filter(([operation]) => ['CloseSession', 'OpenSession'].includes(operation.name))
+            .map(([operation, parameters]) => [operation.name, parameters]))
+            .toEqual([['CloseSession', {}], ['OpenSession', { SessionID: 42 }]])
+    })
     it('surfaces a terminal readiness error while waiting for a memory object', async () => {
         const { camera, send } = fixture()
         const original = send.getMockImplementation()!

@@ -48,14 +48,16 @@ export async function withCanonPhotoMode<T>(camera:any,capture:()=>Promise<T>):P
  try{
   await camera.leaveMovieMode()
   await new Promise(resolve=>setTimeout(resolve,700))
-  if(await movie())throw new Error('Canon retained movie mode after MovieSelectSwitchOff; still capture requires the body selector in photo mode')
+  if(await movie())throw new Error('Set the Canon body’s physical still/movie selector to Photo; it retained movie mode after the remote Photo command')
   return await capture()
  }catch(error){failure=error;throw error}
  finally{
   try{
-   await camera.enterMovieMode()
-   await new Promise(resolve=>setTimeout(resolve,700))
-   if(!await movie())throw new Error('Canon did not restore movie mode')
+   if(!await movie()){
+    await camera.enterMovieMode()
+    await new Promise(resolve=>setTimeout(resolve,700))
+    if(!await movie())throw new Error('Canon did not restore movie mode')
+   }
    await copySettings(camera,before)
   }catch(error){
    if(failure)throw new AggregateError([failure,error],`${String(failure)}; restoring movie mode: ${String(error)}`)
