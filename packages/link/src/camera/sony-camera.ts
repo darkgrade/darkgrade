@@ -190,26 +190,14 @@ export class SonyCamera extends GenericCamera {
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
-        // Don't disable content transfer mode when checking ContentTransferEnable itself (prevents recursion)
-        if (property.code !== this.registry.properties.ContentTransferEnable.code) {
-            await this.disableContentTransferMode()
-        }
         if (!property.access.includes('Get')) {
             throw new Error(`Property ${property.name} is not readable`)
         }
-
-        const response = await this.send(this.registry.operations.SDIO_GetExtDevicePropValue, {
-            DevicePropCode: property.code,
-        })
-
-        if (!response.data) {
-            throw new Error(
-                `No data received from SDIO_GetExtDevicePropValue for ${property.name} (response code: 0x${response.code.toString(16)})`
-            )
-        }
-
-        const propInfo = response.data
-        this.propertyCache.set(propInfo.devicePropertyCode, propInfo)
+        // Alpha protocol 3 bodies expose fresh values through 0x9209. Sending the
+        // unadvertised 0x9251 variant stalled FX2 media setup and profile capture.
+        await this.refreshPropertyStates({ preserveTransferMode: property.code === this.registry.properties.ContentTransferEnable.code })
+        const propInfo = this.propertyCache.get(property.code)
+        if (!propInfo) throw new Error(`Sony ${property.name} is not advertised in the current property inventory`)
         return propInfo.currentValueDecoded as CodecType<P['codec']>
     }
 
@@ -266,8 +254,8 @@ export class SonyCamera extends GenericCamera {
         }
     }
 
-    async refreshPropertyStates(): Promise<SonyPropertyState[]> {
-        await this.disableContentTransferMode()
+    async refreshPropertyStates(options: { preserveTransferMode?: boolean } = {}): Promise<SonyPropertyState[]> {
+        if (!options.preserveTransferMode) await this.disableContentTransferMode()
         const response = await this.send(
             this.registry.operations.SDIO_GetAllExtDevicePropInfo,
             {
@@ -862,13 +850,10 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async readDescriptor(propertyCode: number): Promise<SonyDevicePropDesc> {
-        const response = await this.send(this.registry.operations.SDIO_GetExtDevicePropValue, {
-            DevicePropCode: propertyCode,
-        })
-        this.assertOk(response.code, `Sony property 0x${propertyCode.toString(16)}`)
-        if (!response.data) throw new Error(`Sony property 0x${propertyCode.toString(16)} returned no descriptor`)
-        this.propertyCache.set(propertyCode, response.data)
-        return response.data
+        await this.refreshPropertyStates({ preserveTransferMode: propertyCode === this.registry.properties.ContentTransferEnable.code })
+        const descriptor = this.propertyCache.get(propertyCode)
+        if (!descriptor) throw new Error(`Sony property 0x${propertyCode.toString(16)} is not advertised in the current inventory`)
+        return descriptor
     }
 
     private assertPropertyEnabled(property: PropertyDefinition, descriptor: SonyDevicePropDesc): void {
