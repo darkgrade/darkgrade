@@ -39,6 +39,31 @@ export async function withCanonRecordingMode<T>(camera:any,record:(settings:Cano
  }
 }
 
+/** Hold a verified still mode through capture and transfer, restoring the operator's movie mode afterward. */
+export async function withCanonPhotoMode<T>(camera:any,capture:()=>Promise<T>):Promise<T>{
+ const movie=async()=>(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
+ if(!await movie())return capture()
+ const before=await snapshot(camera)
+ let failure:unknown
+ try{
+  await camera.leaveMovieMode()
+  await new Promise(resolve=>setTimeout(resolve,700))
+  if(await movie())throw new Error('Canon retained movie mode after MovieSelectSwitchOff; still capture requires the body selector in photo mode')
+  return await capture()
+ }catch(error){failure=error;throw error}
+ finally{
+  try{
+   await camera.enterMovieMode()
+   await new Promise(resolve=>setTimeout(resolve,700))
+   if(!await movie())throw new Error('Canon did not restore movie mode')
+   await copySettings(camera,before)
+  }catch(error){
+   if(failure)throw new AggregateError([failure,error],`${String(failure)}; restoring movie mode: ${String(error)}`)
+   throw error
+  }
+ }
+}
+
 /** Read actual movie choices without copying photo-only values into movie mode. */
 export async function probeCanonRecordingControls(camera:any){
  const before=await snapshot(camera)

@@ -652,7 +652,31 @@ export class SonyCamera extends GenericCamera {
         return result
     }
 
-    async captureImage({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
+    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory' } = {}): Promise<{
+        info?: ObjectInfo
+        data?: Uint8Array
+    }> {
+        if (options.destination !== 'memory') return this.captureWithCurrentDestination(options)
+        if (options.includeData === false) throw new Error('Sony memory capture requires transfer of the captured image')
+        const property = this.registry.properties.StillImageSaveDestination
+        const original = await this.get(property)
+        let failure: unknown
+        try {
+            await this.set(property, 'HOST_DEVICE')
+            return await this.captureWithCurrentDestination(options)
+        } catch (error) {
+            failure = error
+            throw error
+        } finally {
+            try { await this.set(property, original) }
+            catch (error) {
+                if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Sony photo destination: ${String(error)}`)
+                throw error
+            }
+        }
+    }
+
+    private async captureWithCurrentDestination({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {

@@ -271,6 +271,9 @@ export class NikonCamera extends GenericCamera {
     private async readCapturedMemory(): Promise<{ info: ObjectInfo; data: Uint8Array }> {
         const deadline = Date.now() + 15000
         while (Date.now() < deadline) {
+            const ready = await this.send(this.registry.operations.DeviceReady, {})
+            if (ready.code !== OK.code && ready.code !== DeviceBusy.code)
+                this.assertNikonResponse(ready.code, 'DeviceReady during memory capture')
             const events = await this.pollEvents()
             const added = events.find(event => event.code === this.registry.events.ObjectAddedInSdram.code)
             const handle = added?.parameters[0]

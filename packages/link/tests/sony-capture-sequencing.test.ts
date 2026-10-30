@@ -19,6 +19,14 @@ function fixture() {
 }
 
 describe('Sony shutter and host transfer sequencing', () => {
+    it('explicit memory capture enables host delivery and restores the original destination', async () => {
+        const { camera, sent } = fixture()
+        camera.get = vi.fn(async () => 'CAMERA_DEVICE') as any
+        const result = await camera.captureImage({ destination: 'memory', autofocus: false })
+        expect(result.data).toEqual(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9))
+        expect(sent[0]).toBe('StillImageSaveDestination:HOST_DEVICE')
+        expect(sent.at(-1)).toBe('StillImageSaveDestination:CAMERA_DEVICE')
+    })
     it('observes a host image event delivered during shutter release', async () => {
         const { camera, sent } = fixture()
         const result = await camera.captureImage({ autofocus: false })

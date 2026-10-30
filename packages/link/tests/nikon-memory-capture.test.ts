@@ -19,6 +19,18 @@ function fixture(truncate = false) {
 }
 
 describe('Nikon event-identified SDRAM capture', () => {
+    it('surfaces a terminal readiness error while waiting for a memory object', async () => {
+        const { camera, send } = fixture()
+        const original = send.getMockImplementation()!
+        let released = false
+        send.mockImplementation(async (...args) => {
+            if (args[0].name === 'InitiateCaptureRecInMedia') released = true
+            if (released && args[0].name === 'DeviceReady') return { code: 0x200c } as any
+            return original(...args)
+        })
+        await expect(camera.captureImage({ destination: 'memory', autofocus: false })).rejects.toThrow('DeviceReady during memory capture')
+        expect(send.mock.calls.some(([operation]) => operation.name === 'GetObject')).toBe(false)
+    })
     it('transfers the new memory object with full metadata length and delivers its event', async () => {
         const { camera, send } = fixture()
         const event = vi.fn()
