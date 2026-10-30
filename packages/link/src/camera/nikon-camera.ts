@@ -183,19 +183,20 @@ export class NikonCamera extends GenericCamera {
     }
 
     /**
-     * Releases the shutter with InitiateCapture; the camera saves the still to its own configured
-     * target (its memory card). The default options fire the shutter too. Retrieving the new still
-     * object and its metadata is not implemented, so `info` and `data` are always undefined: the
-     * result never claims media it did not retrieve, whatever `includeInfo`/`includeData` ask for.
+     * Saves a still to the camera card by default. Explicit memory capture waits for a
+     * new SDRAM object event and retrieves that object's metadata and complete bytes.
+     * Card capture returns no media; callers must discover and download its new object.
      */
-    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean } = {}): Promise<{
+    async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory' } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
-        const info: ObjectInfo | undefined = undefined
-        const data: Uint8Array | undefined = undefined
+        const memory = options.destination === 'memory'
+        if (memory && options.includeData === false) throw new Error('Memory capture requires transfer so the new SDRAM image can be released')
+        let info: ObjectInfo | undefined
+        let data: Uint8Array | undefined
         const release = async () => {
-            if (options.autofocus !== false) {
+            if (!memory && options.autofocus !== false) {
                 const response = await this.send(this.registry.operations.InitiateCapture, {})
                 this.assertNikonResponse(response.code, 'InitiateCapture')
                 return
@@ -203,12 +204,22 @@ export class NikonCamera extends GenericCamera {
             const information = await this.send(this.registry.operations.GetDeviceInfo, {})
             this.assertNikonResponse(information.code, 'GetDeviceInfo')
             if (!information.data?.operationsSupportedRaw.includes(0x9207))
-                throw new Error('Nikon does not advertise capture without autofocus; no shutter command sent')
+                throw new Error('Nikon does not advertise the requested capture mode; no shutter command sent')
+            if (memory) await this.pollEvents()
             // Z6III command reference rev 2, 6.2.4.1: normal release, save to card.
             const response = await this.send(this.registry.operations.InitiateCaptureRecInMedia, {
-                AfMode: 0xffffffff, Target: 0,
+                AfMode: options.autofocus === false ? 0xffffffff : 0xfffffffe, Target: memory ? 1 : 0,
             })
             this.assertNikonResponse(response.code, 'InitiateCaptureRecInMedia')
+        }
+        const finish = async (waitForBuffer = true) => {
+            if (memory) {
+                const captured = await this.readCapturedMemory()
+                data = captured.data
+                if (options.includeInfo !== false) info = captured.info
+            }
+            await this.waitForDeviceReady()
+            if (!memory && waitForBuffer) await this.waitForImageBufferReady()
         }
 
         // Setup capture
@@ -224,7 +235,7 @@ export class NikonCamera extends GenericCamera {
             }
             await this.enableLiveView()
             await release()
-            await this.waitForDeviceReady()
+            await finish(false)
             return { info, data }
         }
 
@@ -232,8 +243,7 @@ export class NikonCamera extends GenericCamera {
         if (this.liveViewMode === 'PHOTO') {
             await this.enableLiveView()
             await release()
-            await this.waitForDeviceReady()
-            await this.waitForImageBufferReady()
+            await finish()
         }
 
         // camera's hardware dial is not in photo mode
@@ -244,8 +254,7 @@ export class NikonCamera extends GenericCamera {
                 await this.selectLiveViewMode('PHOTO')
                 await this.enableLiveView()
                 await release()
-                await this.waitForDeviceReady()
-                await this.waitForImageBufferReady()
+                await finish()
             } finally {
                 try {
                     await this.selectLiveViewMode('VIDEO', true)
@@ -256,6 +265,32 @@ export class NikonCamera extends GenericCamera {
         } else throw new Error('Nikon live-view selector is unknown; capture was not sent')
 
         return { info: info, data: data }
+    }
+
+    /** Transfer the new SDRAM object identified by Nikon's event queue; never reads or deletes card images. */
+    private async readCapturedMemory(): Promise<{ info: ObjectInfo; data: Uint8Array }> {
+        const deadline = Date.now() + 15000
+        while (Date.now() < deadline) {
+            const events = await this.pollEvents()
+            const added = events.find(event => event.code === this.registry.events.ObjectAddedInSdram.code)
+            const handle = added?.parameters[0]
+            if (handle !== undefined) {
+                const response = await this.send(this.registry.operations.GetObjectInfo, { ObjectHandle: handle })
+                this.assertNikonResponse(response.code, 'GetObjectInfo')
+                const info = response.data
+                if (!info || !Number.isSafeInteger(info.objectCompressedSize) || info.objectCompressedSize <= 0 ||
+                    info.objectCompressedSize > 128 * 1024 * 1024)
+                    throw new Error('Nikon memory image metadata is missing or exceeds the transfer bound')
+                const object = await this.send(this.registry.operations.GetObject, { ObjectHandle: handle },
+                    undefined, info.objectCompressedSize + 1024)
+                this.assertNikonResponse(object.code, 'GetObject')
+                if (!object.data || object.data.length !== info.objectCompressedSize)
+                    throw new Error('Nikon memory image transfer length differs from its metadata')
+                return { info, data: object.data }
+            }
+            await this.waitMs(100)
+        }
+        throw new Error('Nikon did not report a new SDRAM image within 15 seconds')
     }
 
     async captureLiveView({ includeInfo = true, includeData = true } = {}): Promise<{

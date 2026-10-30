@@ -57,6 +57,20 @@ describe('Sony session response validation', () => {
 })
 
 describe('Sony authoritative property refresh', () => {
+    it('reads fresh values from bulk inventory without issuing an unadvertised individual read', async () => {
+        const { camera, replies, sent } = cameraFixture()
+        const property = camera.registry.properties.ContentTransferEnable
+        Object.assign(camera, { contentTransferModeEnabled: true })
+        replies.push({ code: 0x2001, data: { properties: [{
+            devicePropertyCode: property.code, currentValueRaw: 1, currentValueDecoded: 'ENABLE',
+            vendorExtensions: { enabled: true }, getSet: 'GET',
+        }] } })
+        expect(await camera.get(property)).toBe('ENABLE')
+        expect(sent).toEqual(['SDIO_GetAllExtDevicePropInfo'])
+        replies.push({ code: 0x2001, data: { properties: [] } })
+        await expect(camera.get(property)).rejects.toThrow('not advertised')
+    })
+
     it('removes controls absent from the next full inventory and retains the last valid inventory after a refusal', async () => {
         const { camera, replies } = cameraFixture()
         const property = {

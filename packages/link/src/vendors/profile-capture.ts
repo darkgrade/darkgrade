@@ -335,7 +335,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
             const supported = new Set(identity.operationsSupportedRaw)
             const safe = capturePropertyCodes(options.vendorId)
             let properties = identity.devicePropertiesSupported.filter(code => safe.has(code))
-            if (options.vendorId === 0x054c && supported.has(0x9209)) {
+            if (options.vendorId === 0x054c && options.initialize && supported.has(0x9209)) {
                 await check('sony-property-inventory', () =>
                     send(createSonyRegistry(true).operations.SDIO_GetAllExtDevicePropInfo, {
                         flagOfGetOnlyDifferenceData: 0,
@@ -351,6 +351,10 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                     ]),
                 ]
             }
+            // Sony's initialized inventory already contains the actual descriptors.
+            // Neither standard GetDevicePropDesc nor 0x9251 is implied by those
+            // property codes; probing them stalled the FX2 after a valid inventory.
+            if (options.vendorId === 0x054c) properties = []
             if (options.vendorId === 0x04b0 && supported.has(0x9439)) {
                 const data = await check('nikon-vendor-property-codes', () =>
                     send(createNikonRegistry(true).operations.GetVendorCodes, { Kind: 13 })
