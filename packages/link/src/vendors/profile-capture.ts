@@ -12,6 +12,7 @@ import type { TransportInterface } from '@transport/interfaces/transport.interfa
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
 import { capturePropertyCodes, captureRegistry } from '@vendors/capture-properties'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
+import { qualifyProfileProperty } from '@vendors/profile-qualification'
 export { capturePropertyCodes } from '@vendors/capture-properties'
 
 type TraceTransaction = Omit<CapturedPtpTransaction, 'dataFromHost' | 'response'> & {
@@ -37,6 +38,7 @@ export interface ProfileCaptureOptions {
     maxProperties?: number
     timeoutSeconds?: number
     onCheck?: (check: { id: string; status: string; detail?: string }) => void
+    qualify?: { property: number; value: string | number }
 }
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
 /** Empty only the original DeviceInfo serial field, leaving every other byte unchanged. */
@@ -123,7 +125,16 @@ export function sanitizeProfileTransaction(
             redactions: ['authentication-payload'],
         }
     }
-    const propertyOperation = [0x1014, 0x1015, 0x1016, 0x943a, 0x943b, 0x943c, 0x9251].includes(transaction.operation)
+    const propertyOperation = [0x1014, 0x1015, 0x1016, 0x943a, 0x943b, 0x943c, 0x9251].includes(transaction.operation) ||
+        vendorId === 0x054c && [0x9205, 0x9207].includes(transaction.operation)
+    if (vendorId === 0x04a9 && transaction.operation === 0x9110 && dataFromHost && !response.data && !transaction.parameters.length) {
+        const view = new DataView(dataFromHost.buffer, dataFromHost.byteOffset, dataFromHost.byteLength)
+        if (dataFromHost.length >= 12 && dataFromHost.length <= 24 &&
+            view.getUint32(0, true) === dataFromHost.length && safe.has(view.getUint32(4, true))) {
+            result.dataFromHost = hex(dataFromHost)
+            return result
+        }
+    }
     if (response.data && transaction.operation === 0x1001 && response.code === 0x2001) {
         result.response.data = hex(redactDeviceInfoSerial(response.data))
         result.redactions = ['device-serial']
@@ -207,6 +218,7 @@ export function sanitizeProfileTransaction(
 /** Runs only when explicitly invoked; callers own the physical bench lease and recovery policy. */
 export async function captureCameraProfile(source: TransportInterface, options: ProfileCaptureOptions) {
     if (options.liveView && !options.initialize) throw new Error('Live view requires explicit initialization')
+    if (options.qualify && !options.initialize) throw new Error('Property qualification requires explicit initialization')
     const limit = options.maxProperties ?? 128
     const seconds = options.timeoutSeconds ?? 60
     if (!Number.isInteger(limit) || limit < 1 || limit > 512) throw new Error('maxProperties must be between 1 and 512')
@@ -219,6 +231,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
     const checks: Array<{ id: string; status: 'pass' | 'error' | 'skipped'; detail?: string }> = []
     let retainedBytes = 0
     let budgetReached = false
+    let qualification: Awaited<ReturnType<typeof qualifyProfileProperty>> | undefined
     const device: { vendorId: number; productId: number; manufacturer?: string; model?: string; firmware?: string } = {
         vendorId: options.vendorId,
         productId: options.productId,
@@ -384,6 +397,14 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                     const frame = await camera.captureLiveView({ includeInfo: false, includeData: true })
                     if (!frame.data?.length) throw new Error('No live-view image')
                 })
+            if (options.qualify && deadline - Date.now() < 30000)
+                checks.push({ id: 'property-roundtrip', status: 'skipped', detail: 'Insufficient time remains for write, fresh reads and restoration' })
+            else if (options.qualify) {
+                qualification = await check('property-roundtrip', () =>
+                    qualifyProfileProperty(camera, options.vendorId, options.qualify!.property, options.qualify!.value))
+                if (qualification && !qualification.passed)
+                    checks.push({ id: 'property-roundtrip-verification', status: 'error', detail: qualification.restored ? 'Target readback failed; original restored' : 'Original-value restoration failed' })
+            }
             if (properties.length > limit || Date.now() >= deadline)
                 checks.push({
                     id: 'property-coverage',
@@ -409,6 +430,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
         checks,
         transactions,
         observations,
+        ...(qualification && { qualification }),
         events: trace.events,
         skippedIncomplete: trace.skippedIncomplete(),
     }

@@ -9,6 +9,7 @@ import {
     type ProfileObservation,
 } from '@vendors/profile-capture'
 import { describe, expect, it } from 'vitest'
+import { qualifyProfileProperty } from '@vendors/profile-qualification'
 
 const codecs = createPTPRegistry(true).codecs
 const join = (...bytes: Uint8Array[]) => new Uint8Array(bytes.flatMap(bytes => [...bytes]))
@@ -91,6 +92,30 @@ function transaction(operation: number, data: Uint8Array, parameters: number[] =
 }
 
 describe('explicit profile capture', () => {
+    it('records a qualified native property with independent reads and restoration after an ambiguous write', async () => {
+        let current = '100', ambiguous = false
+        const writes: string[] = []
+        const camera = {
+            registry: createPTPRegistry(true),
+            send: async () => ({ code: 0x2001, data: { currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] } }),
+            set: async (_property: unknown, value: string) => { writes.push(value); current = value; if (ambiguous && value === '200') throw new Error('Ambiguous response') },
+        }
+        const passed = await qualifyProfileProperty(camera as any, 0x04b0, 0x500f, '200')
+        expect(passed).toMatchObject({ property: 0x500f, passed: true, restored: true, observed: '200', restoredValue: '100' })
+        ambiguous = true
+        const failed = await qualifyProfileProperty(camera as any, 0x04b0, 0x500f, '200')
+        expect(failed).toMatchObject({ passed: false, restored: true, error: 'Ambiguous response' })
+        expect(writes).toEqual(['200', '100', '200', '100'])
+        await expect(qualifyProfileProperty(camera as any, 0x04b0, 0x5011, 'private')).rejects.toThrow('allowlist')
+    })
+    it('retains allowlisted native write bytes without retaining unrelated payloads', () => {
+        const data = join(codecs.uint32.encode(12), codecs.uint32.encode(0xd103), codecs.uint32.encode(0x50))
+        const write = { operation: 0x9110, transactionId: 1, parameters: [], dataFromHost: data, response: { code: 0x2001, parameters: [] } }
+        expect(sanitizeProfileTransaction(write, 0x04a9, []).dataFromHost).toBe(Buffer.from(data).toString('hex'))
+        const privateWrite = { ...write, dataFromHost: join(codecs.uint32.encode(12), codecs.uint32.encode(0xd115), codecs.uint32.encode(1)) }
+        expect(sanitizeProfileTransaction(privateWrite, 0x04a9, []).dataFromHost).toBeUndefined()
+        expect(sanitizeProfileTransaction({ ...write, operation: 0x9205, parameters: [0xd21e, 1], dataFromHost: codecs.uint32.encode(800) }, 0x054c, []).dataFromHost).toBe('20030000')
+    })
     it('captures complete identity and numeric descriptors without writes, serials or private text properties', async () => {
         const { transport, commands, descriptor } = fixture()
         const result = await captureCameraProfile(transport, { vendorId: 0x1234, productId: 1, revision: 'fixture' })

@@ -18,6 +18,9 @@ const argument = (name: string) => {
 }
 const identifier = argument('--camera')?.match(/^([0-9a-f]{4}):([0-9a-f]{4})$/i)
 const output = argument('--output')
+const qualifiedProperty = argument('--qualify-property')
+const qualifiedValue = argument('--qualify-value')
+if ((qualifiedProperty === undefined) !== (qualifiedValue === undefined)) throw new Error('Supply both qualification property and value')
 if (!identifier || !output) throw new Error('Usage: ' + usage)
 if (existsSync(resolve(output))) throw new Error('Choose a new output file; existing captures are never overwritten')
 const timeoutSeconds = Number(argument('--timeout-seconds') ?? 60)
@@ -44,6 +47,7 @@ try {
         maxProperties: Number(argument('--max-properties') ?? 128),
         timeoutSeconds,
         onCheck: check => process.stderr.write(JSON.stringify({ profileCheck: check }) + '\n'),
+        ...(qualifiedProperty && { qualify: { property: Number(qualifiedProperty), value: qualifiedValue! } }),
     })
     writeFileSync(resolve(output), JSON.stringify(report, null, 2), { flag: 'wx', mode: 0o600 })
     process.stdout.write(
