@@ -7,6 +7,10 @@ function fixture() {
         logger: { captureConsole: false, renderInTerminal: false } })
     const camera = facade.getInstance() as SonyCamera
     Object.assign(camera, { liveViewPostViewEnabled: true })
+    camera.refreshPropertyStates = vi.fn(async () => {
+        (camera as any).propertyCache.set(0x500a, { vendorExtensions: { enabled: true } })
+        return []
+    })
     const sent: string[] = []
     camera.get = vi.fn(async property => property.name === 'FocusMode' ? 'AF-C' : 'CAMERA_DEVICE') as any
     camera.set = vi.fn(async (property, value) => {
@@ -23,6 +27,21 @@ function fixture() {
 }
 
 describe('Sony shutter and host transfer sequencing', () => {
+    it('waits for fresh writable focus state before restoring autofocus after capture', async () => {
+        const { camera } = fixture()
+        let polls = 0
+        camera.refreshPropertyStates = vi.fn(async () => {
+            (camera as any).propertyCache.set(0x500a, { vendorExtensions: { enabled: ++polls > 2 } })
+            return []
+        })
+        const original = (camera.set as any).getMockImplementation()
+        camera.set = vi.fn(async (property, value) => {
+            if (property.name === 'FocusMode' && value === 'AF-C') expect(polls).toBe(3)
+            return original(property, value)
+        }) as any
+        await camera.captureImage({ autofocus: false })
+        expect(polls).toBe(3)
+    })
     it('explicit memory capture enables host delivery and restores the original destination', async () => {
         const { facade, sent } = fixture()
         const result = await facade.captureImage({ destination: 'memory', autofocus: false })

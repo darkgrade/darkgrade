@@ -250,7 +250,7 @@ export class NikonCamera extends GenericCamera {
                 if (options.includeInfo !== false) info = captured.info
             }
             await this.waitForDeviceReady()
-            if (!memory && waitForBuffer) await this.waitForImageBufferReady()
+            if (!memory && waitForBuffer) await this.waitForImageBufferReady(30000)
         }
 
         // Setup capture
@@ -280,19 +280,28 @@ export class NikonCamera extends GenericCamera {
         // camera's hardware dial is not in photo mode
         // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
         else if (this.liveViewMode === 'VIDEO') {
+            const failures: unknown[] = []
             try {
                 await this.enableRemoteMode()
                 await this.selectLiveViewMode('PHOTO')
                 await this.enableLiveView()
                 await release()
                 await finish()
+            } catch (error) {
+                failures.push(error)
             } finally {
                 try {
                     await this.selectLiveViewMode('VIDEO', true)
+                } catch (error) {
+                    failures.push(error)
                 } finally {
-                    await this.enablePcCameraMode()
+                    try { await this.enablePcCameraMode() }
+                    catch (error) { failures.push(error) }
                 }
             }
+            if (failures.length === 1) throw failures[0]
+            if (failures.length > 1)
+                throw new AggregateError(failures, `Nikon capture/settings restoration failed: ${failures.map(String).join('; ')}`)
         } else throw new Error('Nikon live-view selector is unknown; capture was not sent')
 
         return { info: info, data: data }
@@ -315,12 +324,10 @@ export class NikonCamera extends GenericCamera {
                 if (!info || !Number.isSafeInteger(info.objectCompressedSize) || info.objectCompressedSize <= 0 ||
                     info.objectCompressedSize > 128 * 1024 * 1024)
                     throw new Error('Nikon memory image metadata is missing or exceeds the transfer bound')
-                const object = await this.send(this.registry.operations.GetObject, { ObjectHandle: handle },
-                    undefined, info.objectCompressedSize + 1024)
-                this.assertNikonResponse(object.code, 'GetObject')
-                if (!object.data || object.data.length !== info.objectCompressedSize)
+                const data = await this.getObject(handle, info.objectCompressedSize)
+                if (data.length !== info.objectCompressedSize)
                     throw new Error('Nikon memory image transfer length differs from its metadata')
-                return { info, data: object.data }
+                return { info, data }
             }
             await this.waitMs(100)
         }
@@ -829,14 +836,14 @@ export class NikonCamera extends GenericCamera {
         await this.pollDeviceReady()
     }
 
-    private async waitForImageBufferReady(): Promise<void> {
-        const deadline = Date.now() + 5000
+    private async waitForImageBufferReady(timeoutMilliseconds = 5000): Promise<void> {
+        const deadline = Date.now() + timeoutMilliseconds
         while (Date.now() < deadline) {
             const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
             if (!condition.includes('imagesInBuffer')) return
-            await this.waitMs(10)
+            await this.waitMs(100)
         }
-        throw new Error('Nikon image buffer did not become ready within 5000 milliseconds')
+        throw new Error(`Nikon image buffer did not become ready within ${timeoutMilliseconds} milliseconds`)
     }
 
     private assertNikonResponse(code: number, operation: string): void {

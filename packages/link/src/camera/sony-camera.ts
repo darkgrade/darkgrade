@@ -672,8 +672,13 @@ export class SonyCamera extends GenericCamera {
             throw error
         } finally {
             const restorationErrors: unknown[] = []
-            if (originalFocus !== undefined && originalFocus !== 'Manual')
-                await this.set(focus, originalFocus).catch(error => restorationErrors.push(error))
+            if (originalFocus !== undefined && originalFocus !== 'Manual') {
+                try {
+                    if (!(await this.waitForPropertyEnabled(focus.code)))
+                        throw new Error('Sony focus control remained busy after releasing the shutter')
+                    await this.set(focus, originalFocus)
+                } catch (error) { restorationErrors.push(error) }
+            }
             if (originalDestination !== undefined)
                 await this.set(destination, originalDestination).catch(error => restorationErrors.push(error))
             if (restorationErrors.length) {
