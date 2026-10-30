@@ -355,7 +355,7 @@ export class SonyCamera extends GenericCamera {
         const targetMode = automatic ? 1 : 2
         const originalMode = mode.currentValueRaw
         if (![1, 2].includes(Number(originalMode))) throw new Error('Sony reported an unknown ISO control mode')
-        if (!automatic && !/^(?:iso\s*)?\d+$/i.test(value.trim())) throw new Error('Choose Auto or a camera-advertised ISO sensitivity')
+        if (!automatic && !/^(?:iso\s*)?\d+(?:\s+\((?:extended|extension 0x[0-9a-f])\))?$/i.test(value.trim())) throw new Error('Choose Auto or a camera-advertised ISO sensitivity')
         if (originalMode !== targetMode) await this.set(modeProperty, automatic ? 'Auto' : 'Manual')
         if (automatic) return
         try {

@@ -1,4 +1,8 @@
 export { identifyCamera } from '@camera/identification/camera-identification'
+export { observeCameraEvents } from '@workflows/camera-event-observation'
+export { compareSonyModels, sonyModelContracts } from '@vendors/sony/model-contracts'
+export { cameraControlContract, qualifyCameraSetting, qualificationSettings } from '@workflows/camera-qualification'
+export type { QualificationCamera, QualificationSetting } from '@workflows/camera-qualification'
 export type { CameraIdentification, CameraIdentityCandidate } from '@camera/identification/camera-identification'
 
 // Main protocol implementation

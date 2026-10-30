@@ -1,5 +1,6 @@
 import type { SonySdkProperty, SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
+import { sonyIsoLabel } from '@vendors/sony/iso-value'
 
 const controls: Record<string, { code: number; label: string; values?: Record<string, string> }> = {
     aperture: { code: 256, label: 'Aperture' },
@@ -74,7 +75,7 @@ function label(property: SonySdkProperty, key: string, value: string): string {
     if (key === 'aperture') return 'f/' + (Number(value) / 100).toFixed(1)
     if (key === 'zoomPosition') return String(Number(value) / 1000)
     if (key === 'exposureComp') return String(Number(value) / 1000)
-    if (key === 'iso') return value === '16777215' ? 'Auto' : value
+    if (key === 'iso') return sonyIsoLabel(Number(value)).replace(/^ISO /, '').replace(/^AUTO$/, 'Auto')
     if (key === 'shutterSpeed') {
         if (property.code === 378) return `${Number(value) / 1000}°`
         if (value === '0') return 'BULB'
@@ -129,7 +130,12 @@ function settingValue(property: SonySdkProperty, key: string, value: string | nu
         if (!Number.isSafeInteger(aperture)) throw new Error('Use an aperture such as f/5.6')
         return BigInt(aperture)
     }
-    if (key === 'iso') return normalized === 'auto' ? 16777215n : BigInt(text)
+    if (key === 'iso') {
+        const wanted = normalized.replace(/^iso\s+/, '')
+        const choice = property.allowedValues?.find(candidate => label(property, key, candidate).toLowerCase() === wanted)
+        if (choice !== undefined) return BigInt(choice)
+        return wanted === 'auto' ? 16777215n : BigInt(text)
+    }
     if (key === 'shutterSpeed') {
         if (property.code === 378) {
             const degrees = /^\d+(?:\.\d+)?°?$/.test(text) ? Number(text.replace('°', '')) : NaN
