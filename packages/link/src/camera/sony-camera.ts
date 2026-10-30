@@ -654,20 +654,35 @@ export class SonyCamera extends GenericCamera {
         return result
     }
 
-    async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
+    async captureImage({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
         await this.disableContentTransferMode()
         await this.startLiveView()
 
-        await this.set(this.registry.properties.S1S2Button, 'DOWN')
-        try {
-            await this.waitForFocus()
-        } finally {
-            await this.set(this.registry.properties.S1S2Button, 'UP')
+        if (autofocus) {
+            await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
+            try {
+                await this.waitForFocus()
+            } finally {
+                await this.set(this.registry.properties.ShutterHalfReleaseButton, 'UP')
+            }
         }
-        const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle()
+        const release = async () => {
+            try {
+                await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
+            } finally {
+                await this.set(this.registry.properties.ShutterReleaseButton, 'UP')
+            }
+        }
+        // A card workflow verifies the newly indexed object itself. It must not
+        // require the separate host-delivery event when no host image was requested.
+        if (!includeInfo && !includeData) {
+            await release()
+            return {}
+        }
+        const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle(release)
 
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
@@ -809,20 +824,21 @@ export class SonyCamera extends GenericCamera {
         return completeFile
     }
 
-    protected async waitForCapturedImageObjectHandle(): Promise<number> {
-        return new Promise<number>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.off(this.registry.events.SDIE_ObjectAdded, handler)
-                reject(new Error('Timed out after 15 seconds waiting for the Sony captured-image handle'))
-            }, 15_000)
-            const handler = (event: { ObjectHandle?: number }) => {
-                if (!event.ObjectHandle) return
-                clearTimeout(timeout)
-                this.off(this.registry.events.SDIE_ObjectAdded, handler)
-                resolve(event.ObjectHandle)
-            }
-            this.on(this.registry.events.SDIE_ObjectAdded, handler)
-        })
+    protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>): Promise<number> {
+        let handle: number | undefined
+        const handler = (event: { ObjectHandle?: number }) => {
+            if (event.ObjectHandle) handle = event.ObjectHandle
+        }
+        this.on(this.registry.events.SDIE_ObjectAdded, handler)
+        try {
+            await capture()
+            const deadline = Date.now() + 15_000
+            while (handle === undefined && Date.now() < deadline) await this.waitMs(50)
+            if (handle === undefined) throw new Error('Timed out after 15 seconds waiting for the Sony captured-image handle')
+            return handle
+        } finally {
+            this.off(this.registry.events.SDIE_ObjectAdded, handler)
+        }
     }
 
     private async waitForFocus(timeoutMilliseconds = 3_000, requireConfirmation = true): Promise<boolean> {

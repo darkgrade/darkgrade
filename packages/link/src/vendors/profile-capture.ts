@@ -114,10 +114,12 @@ export function sanitizeProfileTransaction(
             transaction.parameters[1] === 0 &&
             transaction.parameters[2] === 0 &&
             response.code === 0x2001 &&
-            response.parameters.length === 0 &&
-            !dataFromHost?.length &&
-            !response.data?.length
-        if (standardHandshake) return result
+            !dataFromHost?.length
+        if (standardHandshake) {
+            if (!response.parameters.length && !response.data?.length) return result
+            return { ...result, response: { code: response.code, parameters: [] },
+                redactions: ['unused-sony-handshake-reply'] }
+        }
         return {
             ...result,
             parameters: [],

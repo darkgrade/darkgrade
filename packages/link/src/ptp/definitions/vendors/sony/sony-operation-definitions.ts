@@ -167,7 +167,7 @@ export const SDIO_SetExtDevicePropValue = {
                     ] as const,
                     registry.codecs.uint32
                 ),
-            required: true,
+            required: false,
         },
     ] as const,
     responseParameters: [] as const,
@@ -197,7 +197,7 @@ export const SDIO_ControlDevice = {
                     ] as const,
                     registry.codecs.uint32
                 ),
-            required: true,
+            required: false,
         },
     ] as const,
     responseParameters: [] as const,
