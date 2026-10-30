@@ -25,12 +25,12 @@ export function SiteHeader() {
             id="hdr"
             className="fixed inset-x-0 top-0 z-[80] transition-[background,backdrop-filter] duration-500 [&.scrolled]:panel"
         >
-            <div className="shell flex h-[76px] items-center justify-between transition-[height] duration-500 ease-lamp [.scrolled_&]:h-[64px]">
+            <div className="shell flex h-[64px] items-center justify-between transition-[height] duration-500 ease-lamp [.scrolled_&]:h-[56px]">
                 <Link href="/" aria-label="Darkgrade" className="block text-ink">
-                    <Wordmark className="mark-glow block h-[17px] w-auto max-[400px]:h-[14px]" />
+                    <Wordmark className="mark-glow block h-[15px] w-auto max-[400px]:h-[13px]" />
                 </Link>
 
-                <nav className="flex gap-[38px] max-[900px]:hidden">
+                <nav className="flex gap-[32px] max-[900px]:hidden">
                     {/* site pages move client-side, inside the (site) layout */}
                     {NAV.map(({ label, href, external }) =>
                         external ? (

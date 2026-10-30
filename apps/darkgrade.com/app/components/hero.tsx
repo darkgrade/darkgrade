@@ -9,7 +9,7 @@ export function Hero() {
         // pt clears the fixed 76px header: content is bottom-anchored, so when it is
         // taller than the screen the section must grow downward rather than let the
         // eyebrow and headline slide up underneath the header.
-        <section className="hero relative flex min-h-[calc(100dvh_-_var(--mq-h))] flex-col justify-end pt-[96px] pb-[clamp(56px,8vh,100px)]">
+        <section className="hero relative flex min-h-[calc(100dvh_-_var(--mq-h))] flex-col justify-end pt-[84px] pb-[clamp(56px,8vh,100px)]">
             <div className="shell">
                 <div className="mb-[clamp(20px,3vh,36px)]" data-fade>
                     <span className={`${LABEL} text-ink max-[480px]:tracking-meta`}>
@@ -23,7 +23,7 @@ export function Hero() {
                     // line down to ~320px wide in Flapjack (about 5em across); the 16svh cap
                     // shrinks it on short windows and landscape phones. svh, not dvh, so the
                     // size doesn't jump as mobile browser toolbars collapse.
-                    className="hero-title ml-[-.04em] font-serif text-[clamp(2.5rem,min(17vw,16svh),12.25rem)] leading-[.94] font-normal tracking-[-.015em]"
+                    className="hero-title ml-[-.04em] font-serif text-[clamp(2.5rem,min(14vw,12.5svh),10rem)] leading-[.94] font-normal tracking-[-.015em]"
                 >
                     <span className="mask" data-reveal>
                         <span>Shoot more.</span>

@@ -3,10 +3,10 @@
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 
+import { createMuxBackdrop } from '@/app/components/backgrounds/mux'
 import { getBgMode, setBgMode, subscribeBgMode } from './background-mode'
 import { createBackgrounds } from './backgrounds'
 import { BACKGROUND_VIDEO_ID, CONTOUR_BACKGROUND_ENABLED, VIDEO_BACKGROUND_ENABLED } from './backgrounds/field'
-import { createMuxBackdrop } from '@/app/components/backgrounds/mux'
 import { formatStatValue } from './stats'
 
 /**

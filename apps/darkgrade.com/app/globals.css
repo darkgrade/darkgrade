@@ -35,10 +35,10 @@
        big numbers) stays fluid, set per element with clamp(). The faces ship one
        weight each (400), so there are no weight tokens: hierarchy is size, colour
        and tracking. */
-    --text-label: 0.875rem; /* 14px: the smallest text on the site */
-    --text-body-sm: 0.9375rem; /* 15px: list rows, footer */
-    --text-body: 1rem; /* 16px: paragraphs */
-    --text-lede: clamp(1rem, 1.25vw, 1.1562rem); /* the hero paragraph */
+    --text-label: 0.8125rem; /* 13px: the smallest text on the site */
+    --text-body-sm: 0.875rem; /* 14px: list rows, footer */
+    --text-body: 0.9375rem; /* 15px: paragraphs */
+    --text-lede: clamp(0.875rem, 0.95vw, 1rem); /* the hero paragraph */
 
     /* uppercase micro-labels take one of two trackings */
     --tracking-label: 0.3em; /* section eyebrows, column heads, subheads */
@@ -73,7 +73,7 @@
     49%,
     68%,
     100% {
-        fill: rgba(234, 230, 220, 0.25);
+        fill: rgba(234, 230, 220, 0.4);
         filter: drop-shadow(0 0 0 rgba(244, 198, 110, 0));
     }
     56% {
@@ -103,7 +103,7 @@
     24.5%,
     34%,
     100% {
-        fill: rgba(234, 230, 220, 0.25);
+        fill: rgba(234, 230, 220, 0.4);
         filter: drop-shadow(0 0 0 rgba(244, 198, 110, 0));
     }
     28% {
@@ -117,7 +117,7 @@
     74.5%,
     84%,
     100% {
-        fill: rgba(234, 230, 220, 0.25);
+        fill: rgba(234, 230, 220, 0.4);
         filter: drop-shadow(0 0 0 rgba(244, 198, 110, 0));
     }
     78% {
@@ -138,7 +138,7 @@
 
 @layer base {
     :root {
-        --mq-h: 62px; /* marquee height - the hero subtracts it so both fit one screen */
+        --mq-h: 54px; /* marquee height - the hero subtracts it so both fit one screen */
         --gI: 1; /* lamp intensity - one knob for every gold glow on the page */
     }
 
@@ -225,7 +225,8 @@
    NOT called `container`: Tailwind ships a utility of that name (width:100%
    plus breakpoint max-widths) which would cap this. */
 @utility shell {
-    width: min(1560px, calc(100% - clamp(40px, 6vw, 128px)));
+    /* the gutter grows quickly past tablet widths, so a 14" laptop gets the roomy margins of a big screen */
+    width: min(1560px, calc(100% - clamp(40px, calc(36vw - 280px), 264px)));
     margin-inline: auto;
 }
 
