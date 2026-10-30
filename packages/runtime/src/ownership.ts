@@ -10,13 +10,16 @@ export interface OwnershipStore {
 interface Context {
     owner: string
     resources: Set<string>
+    operations: number
+    heartbeat?: ReturnType<typeof setInterval>
 }
 /** Cross-process camera ownership, with reentrant nested calls on the same operation. */
 export class HardwareCoordinator {
     private readonly context = new AsyncLocalStorage<Context>()
     constructor(private readonly database: OwnershipStore) {}
     get owner() {
-        return this.context.getStore()?.owner
+        const context = this.context.getStore()
+        return context?.operations ? context.owner : undefined
     }
     claim(resource: string, purpose: string) {
         const owner = randomUUID()
@@ -41,9 +44,13 @@ export class HardwareCoordinator {
     }
     async run<T>(resource: string, purpose: string, operation: () => Promise<T>, waitMilliseconds = 15000): Promise<T> {
         const existing = this.context.getStore()
-        if (existing?.resources.has(resource)) return operation()
-        const context = existing || { owner: randomUUID(), resources: new Set<string>() }
+        const context: Context = existing?.operations
+            ? existing
+            : { owner: randomUUID(), resources: new Set<string>(), operations: 0 }
+        // Count before acquisition: a sibling can finish while this call waits.
+        context.operations++
         const acquire = async () => {
+            if (context.resources.has(resource)) return
             const deadline = Date.now() + waitMilliseconds
             while (!this.database.claimHardwareResource(resource, context.owner, purpose, 45000)) {
                 if (Date.now() >= deadline)
@@ -53,19 +60,21 @@ export class HardwareCoordinator {
                 await new Promise(resolve => setTimeout(resolve, 50))
             }
             context.resources.add(resource)
-        }
-        if (existing) {
-            await acquire()
-            return operation()
+            context.heartbeat ??= setInterval(
+                () => this.database.heartbeatHardwareOwner(context.owner, 45000),
+                10000
+            )
         }
         return this.context.run(context, async () => {
-            await acquire()
-            const heartbeat = setInterval(() => this.database.heartbeatHardwareOwner(context.owner, 45000), 10000)
             try {
+                await acquire()
                 return await operation()
             } finally {
-                clearInterval(heartbeat)
-                this.database.releaseHardwareOwner(context.owner)
+                context.operations--
+                if (!context.operations) {
+                    clearInterval(context.heartbeat)
+                    this.database.releaseHardwareOwner(context.owner)
+                }
             }
         })
     }

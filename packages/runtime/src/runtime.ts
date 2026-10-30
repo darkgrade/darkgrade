@@ -73,7 +73,7 @@ export class CameraRuntime implements CameraClient {
     constructor(private readonly provider: CameraProvider) {}
 
     private async run<T>(camera: string, operation: () => Promise<T>): Promise<T> {
-        if (!camera.trim()) throw new Error('A camera identity is required')
+        if (typeof camera !== 'string' || !camera.trim()) throw new Error('A camera identity is required')
         const previous = this.operations.get(camera) ?? Promise.resolve()
         const pending = previous.catch(() => undefined).then(operation)
         this.operations.set(camera, pending)
@@ -102,15 +102,18 @@ export class CameraRuntime implements CameraClient {
         })
     }
 
-    media(camera: string, action: string, options: MediaOptions = {}): Promise<unknown> {
+    async media(camera: string, action: string, options: MediaOptions = {}): Promise<unknown> {
         if (!mediaActions.includes(action as MediaAction))
-            return Promise.reject(new Error(`Unsupported media action ${action}`))
-        if (options.autofocus !== undefined && typeof options.autofocus !== 'boolean')
-            return Promise.reject(new Error('Invalid autofocus option'))
-        if (options.destination !== undefined && !['card', 'memory'].includes(options.destination))
-            return Promise.reject(new Error('Invalid photo destination'))
-        if (options.rawCompression !== undefined && options.rawCompression !== 'lossless')
-            return Promise.reject(new Error('Invalid RAW compression'))
-        return this.run(camera, () => this.provider.media(camera, action as MediaAction, options))
+            throw new Error(`Unsupported media action ${action}`)
+        if (!options || typeof options !== 'object' || Array.isArray(options))
+            throw new Error('Invalid photo options')
+        const accepted = { ...options }
+        if (accepted.autofocus !== undefined && typeof accepted.autofocus !== 'boolean')
+            throw new Error('Invalid autofocus option')
+        if (accepted.destination !== undefined && !['card', 'memory'].includes(accepted.destination))
+            throw new Error('Invalid photo destination')
+        if (accepted.rawCompression !== undefined && accepted.rawCompression !== 'lossless')
+            throw new Error('Invalid RAW compression')
+        return this.run(camera, () => this.provider.media(camera, action as MediaAction, accepted))
     }
 }

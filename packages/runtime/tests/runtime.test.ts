@@ -126,6 +126,37 @@ test('RAW destination and autofocus reach the media provider unchanged', async (
     expect(calls).toEqual([['nikon', 'take-photo', options]])
 })
 
+test('queued photos keep the options accepted at submission', async () => {
+    const { runtime, provider, calls } = fixture()
+    const entered = latch(), held = latch()
+    provider.control = async () => {
+        entered.release()
+        await held.promise
+        return {}
+    }
+    const first = runtime.control('nikon', 'status')
+    await entered.promise
+    const options = { autofocus: false, destination: 'memory' as const, rawCompression: 'lossless' as const }
+    const photo = runtime.media('nikon', 'take-photo', options)
+    Object.assign(options, { autofocus: true, destination: 'card', rawCompression: 'invalid' })
+    held.release()
+    await Promise.all([first, photo])
+    expect(calls).toEqual([
+        ['nikon', 'take-photo', { autofocus: false, destination: 'memory', rawCompression: 'lossless' }],
+    ])
+})
+
+test('malformed caller input rejects consistently before reaching the provider', async () => {
+    const { runtime, calls } = fixture()
+    for (const camera of [null, undefined, 12, {}, '', '   ']) {
+        await expect(runtime.control(camera as any, 'status')).rejects.toThrow('camera identity')
+    }
+    for (const options of [null, false, 'memory', []]) {
+        await expect(runtime.media('nikon', 'take-photo', options as any)).rejects.toThrow('photo options')
+    }
+    expect(calls).toEqual([])
+})
+
 test('standalone MCP discovers the migrated tools and executes against the shared runtime', async () => {
     const { runtime, calls, provider } = fixture()
     const server = createCameraMcpServer(runtime),
@@ -216,4 +247,30 @@ test('HTTP client encodes camera identity and sends the existing owning-host con
     ])
     expect(() => new HttpCameraClient('file:///tmp/runtime')).toThrow('HTTP')
     expect(() => new HttpCameraClient('http://secret:password@host')).toThrow('credentials')
+})
+
+test('HTTP transport reports non-JSON failures without hiding status or exposing response bodies', async () => {
+    let calls = 0
+    const client = new HttpCameraClient('http://localhost:8787', async () => {
+        calls++
+        return new Response('<html>private gateway details</html>', { status: 502 })
+    })
+    await expect(client.media('sony', 'take-photo')).rejects.toThrow(
+        'Camera request failed (502); the camera operation may still be running'
+    )
+    expect(calls).toBe(1)
+    const invalid = new HttpCameraClient('http://localhost:8787', async () => new Response('not-json'))
+    await expect(invalid.media('sony', 'take-photo')).rejects.toThrow('invalid JSON')
+})
+
+test('HTTP camera identities cannot normalize into another route', async () => {
+    let calls = 0
+    const client = new HttpCameraClient('http://localhost:8787', async () => {
+        calls++
+        return Response.json({})
+    })
+    for (const camera of ['.', '..', '', '   ']) {
+        await expect(client.control(camera, 'status')).rejects.toThrow('camera identity')
+    }
+    expect(calls).toBe(0)
 })

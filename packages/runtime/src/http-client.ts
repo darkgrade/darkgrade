@@ -13,6 +13,8 @@ export class HttpCameraClient implements CameraClient {
             throw new Error('Use an HTTP(S) runtime URL without embedded credentials')
     }
     private async call(camera: string, endpoint: string, body: unknown): Promise<unknown> {
+        if (typeof camera !== 'string' || !camera.trim() || camera === '.' || camera === '..')
+            throw new Error('A valid camera identity is required')
         const url = new URL(`/api/cameras/${encodeURIComponent(camera)}/${endpoint}`, this.base)
         let response: Response
         try {
@@ -30,10 +32,20 @@ export class HttpCameraClient implements CameraClient {
                 )
             throw error
         }
-        const result = (await response.json()) as { error?: string; code?: string }
-        if (response.status === 409 && result.code === 'HARDWARE_BUSY')
-            throw new HardwareBusyError(result.error || 'Camera is busy')
-        if (!response.ok) throw new Error(result.error || `Camera request failed (${response.status})`)
+        let result: unknown
+        try {
+            result = await response.json()
+        } catch {
+            const message = response.ok
+                ? 'Camera runtime returned invalid JSON'
+                : `Camera request failed (${response.status})`
+            throw new Error(`${message}; the camera operation may still be running. Inspect the host before retrying.`)
+        }
+        const failure = result && typeof result === 'object' ? result as { error?: unknown; code?: unknown } : {}
+        const message = typeof failure.error === 'string' ? failure.error : undefined
+        if (response.status === 409 && failure.code === 'HARDWARE_BUSY')
+            throw new HardwareBusyError(message || 'Camera is busy')
+        if (!response.ok) throw new Error(message || `Camera request failed (${response.status})`)
         return result
     }
     control(camera: string, action: string, value?: string | number, property?: string) {
