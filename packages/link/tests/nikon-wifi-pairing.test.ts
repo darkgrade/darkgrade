@@ -52,6 +52,16 @@ describe('Nikon PTP/IP profile pairing',()=>{
         expect(commands).toEqual([0x1002,0x952b])
         expect(transport.disconnect).toHaveBeenCalledOnce()
     })
+    it('bounds an unanswered code comparison and never approves a late answer',async()=>{
+        const {transport,commands,options}=fixture()
+        let approve!:(value:boolean)=>void
+        options.confirmCode=vi.fn(()=>new Promise<boolean>(resolve=>{approve=resolve}))
+        await expect(pairNikonWifiProfile(transport,options)).rejects.toThrow('comparison timed out')
+        approve(true)
+        await Promise.resolve()
+        expect(commands).toEqual([0x1002,0x952b])
+        expect(transport.disconnect).toHaveBeenCalledOnce()
+    })
     it('requires a camera confirmation event rather than treating operation OK as paired',async()=>{
         const {transport,options}=fixture({notify:false})
         await expect(pairNikonWifiProfile(transport,options)).rejects.toThrow('Confirm the computer')

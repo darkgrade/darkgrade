@@ -60,11 +60,14 @@ export async function readNikonWirelessStatus(camera:Camera) {
         connectionPath,
         usbProvisioning:results.WsGetSupportedProfileType?.value===1?'ftp-only':'unverified',
         automaticRadioActivation:'unverified',
-        wifiControl:'requires-camera-setup',
+        wifiControl:connectionPath.path==='wifi'?'connected':connectionPath.path==='unknown'?'unverified':'not-active',
         bluetoothControl:'requires-camera-setup',
         queries:results,
         verifiedModelReadFallback:verifiedModelFallback,
-        nextSteps:[
+        nextSteps:connectionPath.path==='wifi'?[
+            'The camera confirms active Wi-Fi control. Reuse this session; no pairing or USB handoff is needed.',
+            'Active Wi-Fi does not establish first-time pairing, Bluetooth remote control or endurance qualification.',
+        ]:[
             'On the camera, select Network → Connect to computer → Camera Control, then create and enable a network profile.',
             'Use a stable host GUID for PTP/IP pairing; compare the PIN and confirm the computer on the camera. Z6 III PIN compatibility remains unverified.',
             'For Bluetooth, disconnect USB and other wireless connections, then open Wireless remote (ML-L7) options → Save wireless remote controller on the camera.',
