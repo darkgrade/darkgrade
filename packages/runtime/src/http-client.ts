@@ -54,6 +54,6 @@ export class HttpCameraClient implements CameraClient {
         return this.call(camera, 'controls', { action, value, property })
     }
     async media(camera: string, action: string, options: MediaOptions = {}) {
-        return this.call(camera, 'media-action', { ...validateMediaOptions(options), action })
+        return this.call(camera, 'media-action', { ...validateMediaOptions(options, action), action })
     }
 }
