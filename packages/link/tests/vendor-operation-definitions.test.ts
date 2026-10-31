@@ -95,6 +95,17 @@ describe('Canon EOS definitions', () => {
         expect([...remoteMode.encode('ENABLE')]).toEqual([0x01, 0, 0, 0])
     })
 
+    it('replays the public R5 Mark II remote-mode 2 request without changing the default ENABLE encoding', async () => {
+        // gphoto/libgphoto2#1028 comment 2382684065, remote-capture.txt:
+        // transaction 21: 10000000010014911500000002000000; response 0x2001.
+        const { camera, commands } = cameraFor(VendorIDs.CANON)
+        const mode = remoteMode.decode(Uint8Array.of(2, 0, 0, 0)).value
+        expect(mode).toBe('MODE_0x02')
+        await camera.send(registry.operations.CanonSetRemoteMode, { RemoteMode: mode })
+        await camera.send(registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
+        expect(commands).toEqual([[0x9114, 2], [0x9114, 1]])
+    })
+
     it('expresses the EOS M combined release CanonRemoteReleaseOn [3, 0] that libgphoto2 sends', () => {
         const releaseMode = registry.operations.CanonRemoteReleaseOn.operationParameters[0].codec(registry)
         expect([...releaseMode.encode('FOCUS_AND_SHUTTER')]).toEqual([0x03, 0, 0, 0])
