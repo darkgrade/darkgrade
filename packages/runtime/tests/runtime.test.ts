@@ -196,6 +196,13 @@ test('photo MCP supports explicit focus bypass and Nikon RAW delivery without ch
     try {
         await server.connect(a)
         await client.connect(b)
+        for (const extra of [{ rawCompresion: 'lossless' }, { autoFocus: false }, { destination: 'disk' }, { action: 'storage' }]) {
+            const rejected = await client.callTool({
+                name: 'camera_take_photo', arguments: { camera: 'nikon', ...extra },
+            })
+            expect(rejected.isError).toBe(true)
+        }
+        expect(calls).toEqual([])
         await client.callTool({ name: 'camera_take_photo', arguments: { camera: 'canon' } })
         expect(calls.at(-1)).toEqual(['canon', 'take-photo', {}])
         const result = await client.callTool({

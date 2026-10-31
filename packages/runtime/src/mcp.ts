@@ -59,7 +59,7 @@ export function registerCameraTools(server: McpServer, client: CameraClient) {
                     .literal('lossless')
                     .optional()
                     .describe('Nikon NEF only: temporarily select lossless RAW and restore the original compression.'),
-            }),
+            }).strict(),
             annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
         },
         protect(async ({ camera, autofocus, destination, rawCompression }) =>
@@ -225,7 +225,7 @@ export function registerCameraTools(server: McpServer, client: CameraClient) {
 }
 export function createCameraMcpServer(client: CameraClient) {
     const server = new McpServer(
-        { name: 'darkgrade', version: '0.1.0' },
+        { name: 'darkgrade', version: '0.1.1' },
         {
             instructions:
                 'Camera controls and media follow the active transport. Read camera_controls before writing. Commands share the owning runtime session. A busy camera is not a reason to switch USB or power. A timed-out write may still be running; inspect the host before retrying.',
