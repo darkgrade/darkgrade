@@ -126,6 +126,23 @@ test('RAW destination and autofocus reach the media provider unchanged', async (
     expect(calls).toEqual([['nikon', 'take-photo', options]])
 })
 
+test('photo options cannot silently change the meaning of read-only media requests', async () => {
+    const { runtime, calls } = fixture()
+    let requests = 0
+    const http = new HttpCameraClient('http://localhost:8787', async () => {
+        requests++
+        return Response.json({})
+    })
+    for (const client of [runtime, http]) {
+        for (const action of ['storage', 'latest-photo', 'live-view', 'memory-status']) {
+            await expect(client.media('nikon', action, { rawCompression: 'lossless' })).rejects.toThrow('take-photo')
+        }
+        await expect(client.media('nikon', 'format-card')).rejects.toThrow('Unsupported')
+    }
+    expect(calls).toEqual([])
+    expect(requests).toBe(0)
+})
+
 test('queued photos keep the options accepted at submission', async () => {
     const { runtime, provider, calls } = fixture()
     const entered = latch(), held = latch()
@@ -168,6 +185,12 @@ test('standalone MCP discovers the migrated tools and executes against the share
         const { tools } = await client.listTools()
         expect(tools).toHaveLength(14)
         expect(tools.some(tool => tool.name === 'plug_power')).toBe(false)
+        for (const tool of tools) {
+            const required = Object.fromEntries((tool.inputSchema.required || []).map(key => [key, key === 'camera' ? 'sony' : '800']))
+            const rejected = await client.callTool({ name: tool.name, arguments: { ...required, misspelledOption: true } })
+            expect(rejected.isError).toBe(true)
+        }
+        expect(calls).toEqual([])
         expect(
             (await client.callTool({ name: 'camera_set_iso', arguments: { camera: 'sony', value: '800' } })).isError
         ).not.toBe(true)

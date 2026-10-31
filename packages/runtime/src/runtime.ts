@@ -37,12 +37,16 @@ export interface MediaOptions {
     rawCompression?: 'lossless'
 }
 /** Snapshot the public photo contract before queueing or sending it to a host. */
-export function validateMediaOptions(options: MediaOptions): MediaOptions {
+export function validateMediaOptions(options: MediaOptions, action: string = 'take-photo'): MediaOptions {
+    if (!mediaActions.includes(action as MediaAction))
+        throw new Error(`Unsupported media action ${action}`)
     if (!options || typeof options !== 'object' || Array.isArray(options))
         throw new Error('Invalid photo options')
     const accepted = { ...options }
     if (Object.keys(accepted).some(key => !['autofocus', 'destination', 'rawCompression'].includes(key)))
         throw new Error('Unknown photo option')
+    if (action !== 'take-photo' && Object.keys(accepted).length)
+        throw new Error('Invalid media options: photo options apply only to take-photo')
     if (accepted.autofocus !== undefined && typeof accepted.autofocus !== 'boolean')
         throw new Error('Invalid autofocus option')
     if (accepted.destination !== undefined && !['card', 'memory'].includes(accepted.destination))
@@ -118,9 +122,7 @@ export class CameraRuntime implements CameraClient {
     }
 
     async media(camera: string, action: string, options: MediaOptions = {}): Promise<unknown> {
-        if (!mediaActions.includes(action as MediaAction))
-            throw new Error(`Unsupported media action ${action}`)
-        const accepted = validateMediaOptions(options)
+        const accepted = validateMediaOptions(options, action)
         return this.run(camera, () => this.provider.media(camera, action as MediaAction, accepted))
     }
 }
