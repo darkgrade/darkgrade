@@ -29,6 +29,17 @@ export const CanonSetRemoteMode = {
                     [
                         { value: 0x00000001, name: 'ENABLE', description: 'Enable Remote Mode' },
                         { value: 0x00000000, name: 'DISABLE', description: 'Disable Remote Mode' },
+                        // https://github.com/gphoto/libgphoto2/issues/1028#issuecomment-2382684065
+                        // https://github.com/user-attachments/files/17187948/remote-capture.txt
+                        {
+                            value: 0x00000002,
+                            name: 'MODE_0x02',
+                            description:
+                                'Remote mode 2 acknowledged in an EOS R5 Mark II public PTP export. ' +
+                                'Meaning and firmware not established; not a Photo-mode override. ' +
+                                'Source: gphoto/libgphoto2#1028, issuecomment-2382684065; ' +
+                                'attachment uploader Marcus Meissner (msmeissn), issue reporter karlkopf.',
+                        },
                         {
                             value: 0x00000005,
                             name: 'MODE_0x05',
