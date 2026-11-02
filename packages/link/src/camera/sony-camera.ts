@@ -992,6 +992,8 @@ export class SonyCamera extends GenericCamera {
         for (let attempt = 0; attempt < 100; attempt++) {
             const descriptor = this.propertyCache.get(property.code) ?? (await this.readDescriptor(property.code))
             if (descriptor.currentValueRaw === targetRaw) return
+            this.assertPropertyEnabled(property, descriptor)
+            this.assertAdvertisedValue(property, descriptor, targetRaw)
 
             const currentIndex = descriptor.supportedValuesRaw?.findIndex(value => value === descriptor.currentValueRaw) ?? -1
             const targetIndex = descriptor.supportedValuesRaw?.findIndex(value => value === targetRaw) ?? -1
@@ -1021,6 +1023,7 @@ export class SonyCamera extends GenericCamera {
                     `Sony accepted the ${property.name} command but its value did not change from ${String(before)}`
                 )
             }
+            if (changed.currentValueRaw === targetRaw) return
         }
         throw new Error(`${property.name} did not reach ${String(targetRaw)} within 100 Sony control steps`)
     }
