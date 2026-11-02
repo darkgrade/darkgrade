@@ -283,6 +283,8 @@ export class NikonCamera extends GenericCamera {
     }> {
         const memory = options.destination === 'memory'
         if (memory && options.includeData === false) throw new Error('Memory capture requires transfer so the new SDRAM image can be released')
+        // Wi-Fi control must retain its authenticated remote session, as live view does.
+        if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
         let info: ObjectInfo | undefined
         let data: Uint8Array | undefined
         const release = async () => {
@@ -340,6 +342,7 @@ export class NikonCamera extends GenericCamera {
         // camera's hardware dial is not in photo mode
         // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
         else if (this.liveViewMode === 'VIDEO') {
+            const restorePcMode = this.cameraMode !== 'REMOTE'
             const failures: unknown[] = []
             try {
                 await this.enableRemoteMode()
@@ -353,7 +356,7 @@ export class NikonCamera extends GenericCamera {
                 } catch (error) {
                     failures.push(error)
                 } finally {
-                    try { await this.enablePcCameraMode() }
+                    try { if (restorePcMode) await this.enablePcCameraMode() }
                     catch (error) { failures.push(error) }
                 }
             }
