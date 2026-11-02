@@ -167,7 +167,7 @@ export class Uint8Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (buffer.length - offset < 1) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 1) {
             throw new Error('Insufficient buffer size for UINT8')
         }
         return { value: buffer[offset], bytesRead: 1 }
@@ -190,10 +190,10 @@ export class Uint16Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (buffer.length - offset < 2) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 2) {
             throw new Error('Insufficient buffer size for UINT16')
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
         return { value: view.getUint16(0, this.littleEndian), bytesRead: 2 }
     }
 }
@@ -214,10 +214,10 @@ export class Uint32Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (buffer.length - offset < 4) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 4) {
             throw new Error('Insufficient buffer size for UINT32')
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
         return { value: view.getUint32(0, this.littleEndian), bytesRead: 4 }
     }
 }
@@ -238,10 +238,10 @@ export class Uint64Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: bigint; bytesRead: number } {
-        if (buffer.length - offset < 8) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 8) {
             throw new Error('Insufficient buffer size for UINT64')
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
         return { value: view.getBigUint64(0, this.littleEndian), bytesRead: 8 }
     }
 }
@@ -257,10 +257,10 @@ export class Int8Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (buffer.length - offset < 1) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 1) {
             throw new Error('Insufficient buffer size for INT8')
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
         return { value: view.getInt8(0), bytesRead: 1 }
     }
 }
@@ -281,10 +281,10 @@ export class Int16Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (buffer.length - offset < 2) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 2) {
             throw new Error('Insufficient buffer size for INT16')
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
         return { value: view.getInt16(0, this.littleEndian), bytesRead: 2 }
     }
 }
@@ -305,10 +305,10 @@ export class Int32Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (buffer.length - offset < 4) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 4) {
             throw new Error('Insufficient buffer size for INT32')
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
         return { value: view.getInt32(0, this.littleEndian), bytesRead: 4 }
     }
 }
@@ -329,10 +329,10 @@ export class Int64Codec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: bigint; bytesRead: number } {
-        if (buffer.length - offset < 8) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 8) {
             throw new Error('Insufficient buffer size for INT64')
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
         return { value: view.getBigInt64(0, this.littleEndian), bytesRead: 8 }
     }
 }
@@ -346,6 +346,7 @@ export class StringCodec {
     }
 
     encode(value: string): Uint8Array {
+        if (value.length > 254) throw new Error('PTP string exceeds 254 UTF-16 code units')
         const numChars = value.length + 1
         const buffer = new Uint8Array(1 + numChars * 2)
         const view = new DataView(buffer.buffer)
@@ -363,7 +364,7 @@ export class StringCodec {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
-        if (buffer.length - offset < 1) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 1) {
             throw new Error('Insufficient buffer size for string length')
         }
 
@@ -374,11 +375,13 @@ export class StringCodec {
         }
 
         const totalBytes = 1 + numChars * 2
-        if (buffer.length - offset < totalBytes) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < totalBytes) {
             throw new Error('Insufficient buffer size for string')
         }
 
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset)
+        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
+        if (view.getUint16(totalBytes - 2, this.littleEndian) !== 0)
+            throw new Error('PTP string is missing its terminator')
         const chars: number[] = []
         for (let i = 0; i < numChars - 1; i++) {
             const charCode = view.getUint16(1 + i * 2, this.littleEndian)
@@ -491,7 +494,7 @@ export class ArrayCodec<T> extends CustomCodec<T[]> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: T[]; bytesRead: number } {
-        if (buffer.length - offset < 4) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 4) {
             throw new Error('Insufficient buffer size for array length')
         }
 

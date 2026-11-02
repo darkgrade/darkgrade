@@ -68,6 +68,13 @@ connector. Keep contributor/source attribution attached, and do not infer a lend
 Keep this work on one ongoing branch/PR until the user requests a merge; the current batch is
 `feat/private-camera-recordings`. Do not create a separate PR per small follow-up fix.
 
+Run `bun run --cwd packages/link test:fuzz` for reproducible PTP input mutation checks.
+The fixed seed `0x4d415452` covers standard/Sony descriptors and Canon/Nikon event records,
+including truncated views into larger buffers, invalid offsets and string length boundaries.
+These synthetic parser checks neither contact hardware nor certify model support. Matrix keeps
+independent copies of the wire seeds in its fixed candidate harness so driver changes cannot
+silently weaken their own regression gate.
+
 ## Optional camera contributions
 
 `packages/contribute` is a separately packaged, consent-controlled diagnostics observer.
