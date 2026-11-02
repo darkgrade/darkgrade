@@ -35,6 +35,8 @@ export interface ProfileCaptureOptions {
     revision: string
     initialize?: boolean
     liveView?: boolean
+    /** Explicitly writes a new still; autofocus is stated separately from transfer success. */
+    takePhoto?: { autofocus: boolean }
     maxProperties?: number
     timeoutSeconds?: number
     onCheck?: (check: { id: string; status: string; detail?: string }) => void
@@ -220,6 +222,8 @@ export function sanitizeProfileTransaction(
 /** Runs only when explicitly invoked; callers own the physical bench lease and recovery policy. */
 export async function captureCameraProfile(source: TransportInterface, options: ProfileCaptureOptions) {
     if (options.liveView && !options.initialize) throw new Error('Live view requires explicit initialization')
+    if (options.takePhoto && (!options.initialize || typeof options.takePhoto.autofocus !== 'boolean'))
+        throw new Error('Still capture requires explicit initialization and autofocus choice')
     if (options.qualify && !options.initialize) throw new Error('Property qualification requires explicit initialization')
     const limit = options.maxProperties ?? 128
     const seconds = options.timeoutSeconds ?? 60
@@ -270,13 +274,14 @@ export async function captureCameraProfile(source: TransportInterface, options: 
     })
     const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
     const registry = captureRegistry(options.vendorId)
-    const camera = options.initialize
+    const facade = options.initialize
         ? new Camera({
               transport: trace.transport,
               vendorId: options.vendorId,
               logger: { renderInTerminal: false, captureConsole: false },
-          }).getInstance()
-        : new GenericCamera(trace.transport, logger)
+          })
+        : undefined
+    const camera = facade?.getInstance() ?? new GenericCamera(trace.transport, logger)
     if (!options.initialize) Object.assign(camera, { registry })
     camera.configureTransactions({ timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false })
     const check = async <T>(id: string, action: () => Promise<T>, cleanup = false): Promise<T | undefined> => {
@@ -398,6 +403,12 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 )
             else if (options.vendorId === 0x04b0 && supported.has(0x90c7))
                 await check('nikon-events', () => send(createNikonRegistry(true).operations.GetEvent))
+            if (options.takePhoto)
+                await check('take-photo', async () => {
+                    const photo = await facade!.captureImage({ includeInfo: true, includeData: true,
+                        autofocus: options.takePhoto!.autofocus })
+                    if (!photo.info || !photo.data?.length) throw new Error('No transferred still photo with metadata')
+                })
             if (options.liveView)
                 await check('live-view', async () => {
                     const frame = await camera.captureLiveView({ includeInfo: false, includeData: true })

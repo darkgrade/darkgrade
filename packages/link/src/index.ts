@@ -42,6 +42,8 @@ export {
 } from '@transport/sony-remote/sony-remote-sdk-transport'
 export { TransportFactory } from '@transport/transport-factory'
 export { USBTransport } from '@transport/usb/usb-transport'
+export { recordFullTransport } from '@transport/recording-transport'
+export type { TransportRecordingEntry, TransportRecordingOptions } from '@transport/recording-transport'
 
 // Logger configuration
 export { defaultLoggerConfig } from '@core/logger-config'

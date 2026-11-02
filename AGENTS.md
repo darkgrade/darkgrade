@@ -48,6 +48,26 @@ bun run --cwd packages/link bench:probe -- --camera 04a9:32f5
 
 # Software Engineering Principles for Agents
 
+## Private camera recordings
+
+`recordFullTransport` wraps the chosen transport before Camera construction and records all
+sent/received bytes, events, operation timing and failures. It does not open another session.
+`createRecordingBundle` writes a new private directory with hashed blobs and explicit provenance;
+storage loss invalidates completeness without preventing camera cleanup. Full traces can contain
+private image/identity metadata. Never commit the blobs or publish them through Matrix.
+
+Use the existing `bench:profile` command with `--recording-directory NEW_DIRECTORY` for an
+explicit recording. `--initialize --take-photo --autofocus true|false --live-view` requests a still
+and live frame as well as the profile; this writes a photo and requires normal bench ownership.
+The profile output stays sanitized. The private recording stays separate and requires independent
+media decoding before asserting image validity. A complete recording can include failed operations:
+completeness describes preservation of evidence, not camera compatibility. Never run on page open.
+Outpost's private recording utility archives/restores these bundles through the existing Drive
+connector. Keep contributor/source attribution attached, and do not infer a lender or person.
+
+Keep this work on one ongoing branch/PR until the user requests a merge; the current batch is
+`feat/private-camera-recordings`. Do not create a separate PR per small follow-up fix.
+
 **Core Philosophy**: Prioritize readability and maintainability over premature optimization. Code is written for humans to understand.
 
 ## 1. Composition Over Inheritance
