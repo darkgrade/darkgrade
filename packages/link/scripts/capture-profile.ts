@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 
 const argumentsValue = process.argv.slice(2)
 const usage =
-    'bun run bench:profile --camera VID:PID --output NEW_FILE [--serial SERIAL] [--initialize] [--live-view] [--take-photo --autofocus true|false] [--max-properties 128] [--timeout-seconds 60] [--recording-directory NEW_DIRECTORY]'
+    'bun run bench:profile --camera VID:PID --output NEW_FILE [--serial SERIAL] [--initialize] [--live-view] [--take-photo --autofocus true|false --destination card|memory --raw-compression lossless] [--repetitions 1|2|3] [--max-properties 128] [--timeout-seconds 60] [--recording-directory NEW_DIRECTORY]'
 if (argumentsValue.includes('--help')) {
     process.stdout.write(usage + '\n')
     process.exit(0)
@@ -34,14 +34,23 @@ if (argumentsValue.includes('--recording-directory') && (!recordingDirectory || 
     throw new Error('--recording-directory requires a new directory path')
 const takePhoto = argumentsValue.includes('--take-photo')
 const autofocus = argument('--autofocus')
+const destination = argument('--destination')
+const rawCompression = argument('--raw-compression')
+const repetitions = Number(argument('--repetitions') ?? 1)
 if (takePhoto && (!argumentsValue.includes('--initialize') || !['true', 'false'].includes(autofocus ?? '')))
     throw new Error('--take-photo requires --initialize and --autofocus true|false')
 if (!takePhoto && autofocus !== undefined) throw new Error('--autofocus requires --take-photo')
+if ((destination || rawCompression) && !takePhoto) throw new Error('Media options require --take-photo')
+if (destination !== undefined && !['card', 'memory'].includes(destination)) throw new Error('Invalid destination')
+if (rawCompression !== undefined && (rawCompression !== 'lossless' || identifier[1].toLowerCase() !== '04b0'))
+    throw new Error('Lossless RAW requires Nikon')
+if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 3) throw new Error('Repeat 1–3 times')
 const recording = recordingDirectory ? await createRecordingBundle(transport, resolve(recordingDirectory), {
     evidence: 'hardware', camera: identifier[0], firmware: 'unknown-before-probe', transport: 'usb',
     revision: revision + (dirty ? '+dirty' : ''), scenario: [
-        'profile', ...(takePhoto ? [`still-autofocus-${autofocus}`] : []),
+        'profile', ...(takePhoto ? [`still-autofocus-${autofocus}`, destination ?? 'card', rawCompression ?? 'original-format'] : []),
         ...(argumentsValue.includes('--live-view') ? ['live-view'] : []),
+        `repeat-${repetitions}`,
     ].join('-'),
     contributors: [{ name: 'Darkgrade test bench', role: 'hardware capture' }],
     sources: [`darkgrade/darkgrade@${revision}`],
@@ -66,7 +75,10 @@ try {
         revision,
         initialize: argumentsValue.includes('--initialize'),
         liveView: argumentsValue.includes('--live-view'),
-        ...(takePhoto && { takePhoto: { autofocus: autofocus === 'true' } }),
+        ...(takePhoto && { takePhoto: { autofocus: autofocus === 'true',
+            ...(destination && { destination: destination as 'card' | 'memory' }),
+            ...(rawCompression && { rawCompression: 'lossless' as const }) } }),
+        repetitions,
         maxProperties: Number(argument('--max-properties') ?? 128),
         timeoutSeconds,
         onCheck: check => process.stderr.write(JSON.stringify({ profileCheck: check }) + '\n'),
@@ -79,13 +91,18 @@ try {
             output: resolve(output),
             device: report.device,
             checks: report.checks,
+            media: report.media,
             transactions: report.transactions.length,
             observations: report.observations.length,
             skippedIncomplete: report.skippedIncomplete,
         }) + '\n'
     )
-    const required = ['device-info', ...(takePhoto ? ['take-photo'] : []), ...(argumentsValue.includes('--live-view') ? ['live-view'] : [])]
+    const required = ['device-info', 'disconnect', ...Array.from({ length: repetitions }, (_, index) => {
+        const suffix = index ? `-${index + 1}` : ''
+        return [...(takePhoto ? ['take-photo' + suffix] : []), ...(argumentsValue.includes('--live-view') ? ['live-view' + suffix] : [])]
+    }).flat(), ...(qualifiedProperty ? ['property-roundtrip'] : [])]
     process.exitCode = required.every(id => report.checks.some(check => check.id === id && check.status === 'pass')) ? 0 : 1
+    if (qualifiedProperty && report.qualification?.passed !== true) process.exitCode = 1
 } finally {
     clearTimeout(watchdog)
     if (recording) {

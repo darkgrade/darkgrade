@@ -12,6 +12,20 @@ import { describe, expect, it } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 
 const codecs = createPTPRegistry(true).codecs
+it('rejects invalid or unintended media recording requests before connecting', async () => {
+    for (const extra of [
+        { repetitions: 2 },
+        { initialize: true, repetitions: 4, liveView: true },
+        { initialize: true, takePhoto: { autofocus: false, destination: 'other' } },
+        { initialize: true, takePhoto: { autofocus: false, rawCompression: 'lossless' } },
+    ]) {
+        const source = fixture()
+        await expect(captureCameraProfile(source.transport, {
+            vendorId: 0x054c, productId: 1, revision: 'test', ...extra,
+        } as Parameters<typeof captureCameraProfile>[1])).rejects.toThrow()
+        expect(source.commands).toEqual([])
+    }
+})
 const join = (...bytes: Uint8Array[]) => new Uint8Array(bytes.flatMap(bytes => [...bytes]))
 const information = new DeviceInfoCodec(createPTPRegistry(true))
 const identity: DeviceInfo = {
