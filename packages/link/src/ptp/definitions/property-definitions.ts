@@ -167,22 +167,15 @@ export const ExposureTime = {
                     return uint32.encode(0xffffffff)
                 }
 
-                // Handle fractional format: 1/250
-                if (value.includes('/')) {
-                    const [num, denom] = value.split('/').map(s => parseInt(s.trim()))
-                    const seconds = num / denom
-                    return uint32.encode(Math.round(seconds * 10000))
-                }
-
-                // Handle seconds format: 1.3" or 1"
-                if (value.includes('"')) {
-                    const seconds = parseFloat(value.replace('"', ''))
-                    return uint32.encode(Math.round(seconds * 10000))
-                }
-
-                // Assume raw seconds as number string
-                const seconds = parseFloat(value)
-                return uint32.encode(Math.round(seconds * 10000))
+                const text = value.trim()
+                const fraction = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/.exec(text)
+                const seconds = fraction
+                    ? Number(fraction[1]) / Number(fraction[2])
+                    : /^\d+(?:\.\d+)?"?$/.test(text) ? Number(text.replace('"', '')) : NaN
+                const ticks = Math.round(seconds * 10000)
+                if (!Number.isFinite(seconds) || seconds <= 0 || ticks < 1 || ticks >= 0xffffffff)
+                    throw new Error(`Invalid or unrepresentable exposure time: ${value}`)
+                return uint32.encode(ticks)
             }
             decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
                 const uint32 = this.baseCodecs.uint32
@@ -197,23 +190,12 @@ export const ExposureTime = {
                 // Convert to seconds
                 const seconds = rawValue / 10000
 
-                // Format based on value
-                if (seconds < 0.3) {
-                    // Fast shutter speeds - show as fraction
-                    const denominator = Math.round(1 / seconds)
-                    return { value: `1/${denominator}`, bytesRead: result.bytesRead }
-                } else if (seconds >= 1) {
-                    // Slow shutter speeds - show in seconds with quote mark
-                    if (seconds === Math.floor(seconds)) {
-                        return { value: `${Math.floor(seconds)}"`, bytesRead: result.bytesRead }
-                    } else {
-                        return { value: `${seconds.toFixed(1)}"`, bytesRead: result.bytesRead }
-                    }
-                } else {
-                    // Medium speeds - show as decimal fraction
-                    const denominator = Math.round(1 / seconds)
-                    return { value: `1/${denominator}`, bytesRead: result.bytesRead }
-                }
+                if (rawValue === 0) throw new Error('Exposure time cannot be zero')
+                const denominator = Math.round(1 / seconds)
+                // Keep familiar fractions only when encoding them preserves the camera's exact ticks.
+                const value = seconds < 1 && Math.round(10000 / denominator) === rawValue
+                    ? `1/${denominator}` : `${seconds}"`
+                return { value, bytesRead: result.bytesRead }
             }
         })(),
 } as const satisfies PropertyDefinition

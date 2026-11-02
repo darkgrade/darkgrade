@@ -121,7 +121,7 @@ describe('explicit profile capture', () => {
             send: async (operation: { code: number }) => {
                 operations.push(operation.code)
                 return operation.code === 0x943a ? { code: responseCode } : {
-                    code: 0x2001, data: { currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] },
+                    code: 0x2001, data: { devicePropertyCode: 0x500f, currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] },
                 }
             },
             set: async (_property: unknown, value: string) => { writes.push(value); current = value },
@@ -138,7 +138,7 @@ describe('explicit profile capture', () => {
         const writes: string[] = []
         const camera = {
             registry: createPTPRegistry(true),
-            send: async () => ({ code: 0x2001, data: { currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] } }),
+            send: async () => ({ code: 0x2001, data: { devicePropertyCode: 0x500f, currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] } }),
             set: async (_property: unknown, value: string) => { writes.push(value); current = value; if (ambiguous && value === '200') throw new Error('Ambiguous response') },
         }
         const passed = await qualifyProfileProperty(camera as any, 0x04b0, 0x500f, '200')

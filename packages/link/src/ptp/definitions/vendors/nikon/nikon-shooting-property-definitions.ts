@@ -48,6 +48,11 @@ export const NikonMovieWhiteBalance = scalarProperty(
 export const NikonMovieShutterSpeed = scalarProperty(
     'NikonMovieShutterSpeed', 0xd1a8, 'uint32', 'Movie exposure time: upper 16 bits numerator, lower 16 bits denominator'
 )
+/** Nikon Z6III USB/MTP Rev.2 §6.5.6.10, pp.460–461; documented, not a new hardware capture. */
+export const NikonPhotoShutterSpeed = scalarProperty(
+    'NikonPhotoShutterSpeed', 0xd100, 'uint32',
+    'Exact photo shutter: upper 16 bits numerator, lower 16 bits denominator; 0xffffffff Bulb, 0xfffffffd Time. Choices depend on camera mode and shutter type.'
+)
 export const NikonMovieFNumber = scalarProperty(
     'NikonMovieFNumber', 0xd1a9, 'uint16', 'Movie aperture in hundredths of an f-number'
 )
@@ -85,6 +90,7 @@ export const nikonShootingPropertyRegistry = {
     NikonMovieAutoISO,
     NikonMovieWhiteBalance,
     NikonMovieShutterSpeed,
+    NikonPhotoShutterSpeed,
     NikonMovieFNumber,
     NikonStillFocusMode,
     NikonMovieFocusMode,

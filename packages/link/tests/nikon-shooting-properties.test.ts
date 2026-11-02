@@ -36,6 +36,22 @@ function fixture() {
 }
 
 describe('Nikon captured shooting properties', () => {
+    it('retains exact documented photo shutter fractions and Bulb/Time sentinels', async () => {
+        const camera = fixture()
+        const instance = camera.getInstance()
+        const property = instance.registry.properties.NikonPhotoShutterSpeed
+        expect(property.code).toBe(0xd100)
+        const codec = new DevicePropDescCodec(instance.registry, true)
+        const send = vi.spyOn(instance, 'send')
+        for (const raw of [0x00011f40, 0x00010fa0, 0x000d000a, 0xffffffff, 0xfffffffd]) {
+            send.mockResolvedValueOnce({ code: 0x2001, data: codec.decode(descriptor(0xd100, 6, raw)).value } as any)
+            await expect(camera.get(property)).resolves.toBe(raw)
+            send.mockResolvedValueOnce({ code: 0x2001 } as any)
+            await camera.set(property, raw)
+            const wire = send.mock.lastCall?.[2]!
+            expect(new DataView(wire.buffer, wire.byteOffset, wire.byteLength).getUint32(0, true)).toBe(raw)
+        }
+    })
     it('reads all fifteen captured controls using exact descriptor widths and numeric values', async () => {
         const camera = fixture()
         const instance = camera.getInstance()

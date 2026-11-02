@@ -4,7 +4,7 @@ import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { PTPResponseError } from '@core/ptp-errors'
+import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
@@ -102,6 +102,8 @@ export class NikonCamera extends GenericCamera {
         if (!descriptor || typeof descriptor !== 'object' || !('currentValueDecoded' in descriptor)) {
             throw new Error('Invalid property descriptor structure')
         }
+        if (descriptor.devicePropertyCode !== property.code)
+            throw new PTPDecodeError(`Nikon ${operationName} returned a descriptor for a different property`)
 
         // Cast needed: TypeScript knows data exists but can't narrow to specific property's codec type
         return descriptor.currentValueDecoded as CodecType<P['codec']>

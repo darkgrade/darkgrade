@@ -26,6 +26,8 @@ export async function qualifyProfileProperty(camera: GenericCamera, vendorId: nu
                 response = await camera.send(operations.GetDevicePropDesc, { DevicePropCode: code } as never) as typeof response
             if (response.code !== 0x2001 || !response.data) throw new Error('Camera did not return a property descriptor')
             const descriptor = response.data as any
+            if (descriptor.devicePropertyCode !== code)
+                throw new Error('Camera returned a descriptor for a different property')
             control = { value: descriptor.currentValueDecoded, writable: descriptor.getSet === 'GET_SET', allowedValues: descriptor.supportedValuesDecoded }
         }
         return { controls: { iso: control } }

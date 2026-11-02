@@ -33,7 +33,7 @@ describe('Nikon video shutter and external power properties', () => {
 
     it('reads external power from the extended descriptor and refuses writes before sending', async () => {
         const {camera, send} = fixture()
-        send.mockResolvedValue({code: OK.code, data: {currentValueDecoded: 'CONNECTED'}} as any)
+        send.mockResolvedValue({code: OK.code, data: {devicePropertyCode: 0xd101, currentValueDecoded: 'CONNECTED'}} as any)
         expect(await camera.get(ExternalDCIn)).toBe('CONNECTED')
         expect(send).toHaveBeenCalledWith(camera.registry.operations.GetDevicePropDescEx, {DevicePropCode: 0xd101})
         await expect(camera.set(ExternalDCIn, 'CONNECTED')).rejects.toThrow('not writable')
