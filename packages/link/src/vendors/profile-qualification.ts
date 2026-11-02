@@ -21,7 +21,9 @@ export async function qualifyProfileProperty(camera: GenericCamera, vendorId: nu
             control = camera.listPropertyStates().find(item => item.code === code) as QualificationControl || {}
         } else {
             const operations = camera.registry.operations as Record<string, OperationDefinition>
-            const response = await camera.send(operations.GetDevicePropDescEx || operations.GetDevicePropDesc, { DevicePropCode: code } as never) as { code: number; data?: unknown }
+            let response = await camera.send(operations.GetDevicePropDescEx || operations.GetDevicePropDesc, { DevicePropCode: code } as never) as { code: number; data?: unknown }
+            if (vendorId === 0x04b0 && operations.GetDevicePropDescEx && response.code === 0x2005 && code <= 0xffff)
+                response = await camera.send(operations.GetDevicePropDesc, { DevicePropCode: code } as never) as typeof response
             if (response.code !== 0x2001 || !response.data) throw new Error('Camera did not return a property descriptor')
             const descriptor = response.data as any
             control = { value: descriptor.currentValueDecoded, writable: descriptor.getSet === 'GET_SET', allowedValues: descriptor.supportedValuesDecoded }

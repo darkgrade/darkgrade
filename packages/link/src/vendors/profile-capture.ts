@@ -398,9 +398,17 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                     await check('canon-event-properties', () => send(operations.CanonGetEventData))
             }
             if (options.vendorId === 0x04b0 && supported.has(0x941c))
-                await check('nikon-events', () =>
-                    send(createNikonRegistry(true).operations.GetEventEx, { KeepEvents: 'RETAIN' })
-                )
+                await check('nikon-events', async () => {
+                    const operation = createNikonRegistry(true).operations.GetEventEx
+                    try {
+                        return await send(operation, { KeepEvents: 'RETAIN' })
+                    } catch (error) {
+                        // Older bodies expose this operation without a retention parameter.
+                        // Capture owns this session, so a documented drain is safe here.
+                        if ((error as { code?: number })?.code !== 0x2006) throw error
+                        return send(operation)
+                    }
+                })
             else if (options.vendorId === 0x04b0 && supported.has(0x90c7))
                 await check('nikon-events', () => send(createNikonRegistry(true).operations.GetEvent))
             if (options.takePhoto)
