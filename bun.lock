@@ -14,6 +14,16 @@
         "typescript": "^5.9.2",
       },
     },
+    "apps/contribution-collector": {
+      "name": "@darkgrade/contribution-collector",
+      "version": "0.1.0",
+      "dependencies": {
+        "@darkgrade/contribute": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "20.19.43",
+      },
+    },
     "apps/darkgrade.com": {
       "name": "darkgrade.com",
       "version": "0.1.0",
@@ -119,6 +129,13 @@
         "vitest": "^3.2.0",
       },
     },
+    "packages/contribute": {
+      "name": "@darkgrade/contribute",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/node": "20.19.43",
+      },
+    },
     "packages/link": {
       "name": "@darkgrade/link",
       "version": "0.1.0",
@@ -130,6 +147,7 @@
         "usb": "^2.11.0",
       },
       "devDependencies": {
+        "@darkgrade/contribute": "workspace:*",
         "@darkgrade/typescript-config": "workspace:*",
         "@types/node": "^20.11.0",
         "@types/react": "^19.1.11",
@@ -242,6 +260,10 @@
     "@bcoe/v8-coverage": ["@bcoe/v8-coverage@0.2.3", "", {}, "sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw=="],
 
     "@chriscourses/perlin-noise": ["@chriscourses/perlin-noise@1.0.6", "", {}, "sha512-q9CgS+02HU8x7PZmKLvB/m3OfcgA5Z93NSKuH1bcWL44u883u5qmMpVVG47GfF667mAhejHVT2jzMleeAUMMPw=="],
+
+    "@darkgrade/contribute": ["@darkgrade/contribute@workspace:packages/contribute"],
+
+    "@darkgrade/contribution-collector": ["@darkgrade/contribution-collector@workspace:apps/contribution-collector"],
 
     "@darkgrade/link": ["@darkgrade/link@workspace:packages/link"],
 

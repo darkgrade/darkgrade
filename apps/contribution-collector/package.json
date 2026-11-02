@@ -1,0 +1,22 @@
+{
+    "name": "@darkgrade/contribution-collector",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "imports": {
+        "#collector/*": "./dist/*.js"
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test": "npm run build && node --test tests/*.test.ts",
+        "start": "node dist/main.js",
+        "token": "node dist/mint-token.js"
+    },
+    "dependencies": {
+        "@darkgrade/contribute": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/node": "20.19.43"
+    }
+}

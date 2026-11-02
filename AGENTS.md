@@ -68,6 +68,28 @@ connector. Keep contributor/source attribution attached, and do not infer a lend
 Keep this work on one ongoing branch/PR until the user requests a merge; the current batch is
 `feat/private-camera-recordings`. Do not create a separate PR per small follow-up fix.
 
+## Optional camera contributions
+
+`packages/contribute` is a separately packaged, consent-controlled diagnostics observer.
+Importing Link or the contribution package never enables collection. Consent defaults off;
+`setConsent(false)` stops collection and clears buffered diagnostics, while `optOut()` also
+revokes the contributor grant and requests cloud deletion. Honor environment overrides.
+Full recordings and image payloads stay in the existing explicit private recording workflow.
+Do not route those blobs through the metadata-only collector or automatically promote uploads.
+
+`apps/contribution-collector` provides the scoped-token collector and validated GCP Terraform.
+Use workload identity and Secret Manager; no cloud/signing credentials belong in npm clients.
+Uploads remain private/unreviewed with contributor ID, optional consented credit, terms version,
+source hash, firmware, dirty flag and driver revision. Retain that reference in derived artifacts.
+Revocation tombstones are permanent; quota records expire after two days, diagnostics after 30.
+The application still owns enrollment, notice, grant refresh and withdrawal retry UI. Cloud
+project/deployment identity and an approved enrollment flow are required before customer rollout.
+Keep the signing key version pinned until old grants have a supported withdrawal migration.
+
+Build the new workspaces before tests/package checks. Run their public-seam tests plus Link's
+contribution transfer test; verify package contents and Terraform without deploying credentials.
+Keep all this work on `feat/private-camera-recordings` and the same PR until requested to merge.
+
 **Core Philosophy**: Prioritize readability and maintainability over premature optimization. Code is written for humans to understand.
 
 ## 1. Composition Over Inheritance

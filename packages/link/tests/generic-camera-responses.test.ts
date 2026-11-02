@@ -1,7 +1,8 @@
+import { createContributions } from '@darkgrade/contribute'
 import { GenericCamera } from '@camera/generic-camera'
 import { Logger } from '@core/logger'
 import type { OperationDefinition } from '@ptp/types/operation'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
 
 function container(type: number, code: number, payload: Uint8Array = new Uint8Array()): Uint8Array {
@@ -139,4 +140,34 @@ it('lists populated slots and never asks an empty storage placeholder for handle
 it('preserves a card-list refusal rather than iterating an absent dataset',async()=>{
  const camera={registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'storage',GetObjectHandles:'handles'}},send:async(operation:string)=>operation==='ids'?{code:0x2001,data:[0x20001]}:operation==='storage'?{code:0x2001,data:{}}:{code:0x2013}}
  await expect(GenericCamera.prototype.listObjects.call(camera as any)).rejects.toThrow()
+})
+
+
+it('optional contributions preserve the real Link transfer while omitting its image and response parameters', async () => {
+    const payload = new TextEncoder().encode('private-image-and-serial-8675309')
+    const responses = [container(2, 0x1009, payload), container(3, 0x2001, parameterBytes([8675309]))]
+    let uploaded = ''
+    const diagnostics = await createContributions({
+        endpoint: 'https://collector.example', accessToken: async () => 'fixture-token',
+        camera: { manufacturer: 'Canon', model: 'Synthetic', firmware: 'unknown', revision: '2e5ba0f', dirty: false, transport: 'usb', evidence: 'synthetic' },
+        consent: { read: async () => true, write: async () => {} },
+        fetch: async (_url, init) => { uploaded = String(init?.body); return new Response(null, { status: 202 }) },
+    })
+    const source: TransportInterface = {
+        isLittleEndian: () => true, isConnected: () => true, getType: () => TransportType.USB,
+        connect: async () => {}, disconnect: async () => {}, classRequestReset: async () => {}, send: async () => {},
+        receive: async () => responses.shift()!,
+    }
+    const observation = diagnostics.observe(source)
+    const observed: TransportInterface = observation.transport
+    const camera = new GenericCamera(observed, new Logger({ captureConsole: false, renderInTerminal: false }))
+    try {
+        const result = await camera.send(camera.registry.operations.GetObject, { ObjectHandle: 8675309 })
+        expect(result.data).toEqual(payload)
+        expect(result.parameters).toEqual([8675309])
+        expect(await diagnostics.flush()).toBe('sent')
+        expect(JSON.parse(uploaded).entries.map((entry: { code: number }) => entry.code)).toEqual([0x1009, 0x1009, 0x2001])
+        expect(uploaded).not.toContain('private-image')
+        expect(uploaded).not.toContain('8675309')
+    } finally { observation.detach(); diagnostics.close() }
 })
