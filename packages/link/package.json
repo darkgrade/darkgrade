@@ -20,6 +20,7 @@
         "test:fuzz": "vitest run tests/ptp-input-fuzz.test.ts",
         "bench:probe": "bun run tests/bench-probe.ts",
         "bench:profile": "bun run scripts/capture-profile.ts",
+        "bench:inspect-recording": "bun run scripts/inspect-recording.ts",
         "bench:canon": "bun run tests/14_canon.ts",
         "bench:ptpip": "bun run tests/bench-ptpip.ts",
         "lint": "eslint . --ext .ts,.tsx",

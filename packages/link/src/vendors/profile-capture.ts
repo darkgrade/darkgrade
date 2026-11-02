@@ -13,6 +13,7 @@ import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-
 import { capturePropertyCodes, captureRegistry } from '@vendors/capture-properties'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
+import { captureProfilePhoto } from '@vendors/profile-media'
 export { capturePropertyCodes } from '@vendors/capture-properties'
 
 type TraceTransaction = Omit<CapturedPtpTransaction, 'dataFromHost' | 'response'> & {
@@ -430,8 +431,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
               const suffix = index ? `-${index + 1}` : ''
               if (options.takePhoto)
                 await check('take-photo' + suffix, async () => {
-                    const photo = await facade!.captureImage({ includeInfo: true, includeData: true,
-                        ...options.takePhoto! })
+                    const photo = await captureProfilePhoto(facade!, options.takePhoto!)
                     if (!photo.info || !photo.data?.length) throw new Error('No transferred still photo with metadata')
                     media.push({ check: 'take-photo' + suffix, bytes: photo.data.length, metadataPresent: true })
                 })
