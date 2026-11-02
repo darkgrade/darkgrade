@@ -1,6 +1,6 @@
 import {expect, it} from 'vitest'
 import {captureProfilePhoto} from '@vendors/profile-media'
-import {createNikonRegistry} from '@ptp/registry'
+import {createNikonRegistry, createSonyRegistry} from '@ptp/registry'
 import type {Camera} from '@camera/index'
 
 it.each([false, true])('recorded Nikon card photo transfers only the new object; truncated=%s', async truncated => {
@@ -26,4 +26,25 @@ it.each([false, true])('recorded Nikon card photo transfers only the new object;
     else expect((await photo).data?.length).toBe(3)
     expect(shutters).toBe(1)
     expect(downloaded).toEqual([8])
+})
+
+it.each([false, true])('Sony recorder claims host dial priority and restores it after still success/failure=%s', async fail => {
+    let priority = 'CAMERA_PRIORITY'
+    const writes: string[] = []
+    const camera = {
+        getInstance: () => ({vendorId: 0x054c, registry: createSonyRegistry(true)}),
+        get: async () => priority,
+        set: async (_: unknown, value: string) => {writes.push(value); priority = value},
+        getSonyPropertyStates: async () => [],
+        captureImage: async () => {
+            expect(priority).toBe('HOST_PRIORITY')
+            if (fail) throw new Error('Transfer refused')
+            return {data: new Uint8Array(3)}
+        },
+    }
+    const result = captureProfilePhoto(camera as unknown as Camera, {autofocus: false, destination: 'memory'})
+    if (fail) await expect(result).rejects.toThrow('Transfer refused')
+    else expect((await result).data?.length).toBe(3)
+    expect(writes).toEqual(['HOST_PRIORITY', 'CAMERA_PRIORITY'])
+    expect(priority).toBe('CAMERA_PRIORITY')
 })

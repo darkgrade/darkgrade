@@ -9,9 +9,10 @@ export async function captureProfilePhoto(camera: Camera, options: {
     autofocus: boolean; destination?: 'card' | 'memory'; rawCompression?: 'lossless'
 }): Promise<{info?: ObjectInfo; data?: Uint8Array}> {
     const vendor = camera.getInstance().vendorId
-    if (options.destination === 'memory' || ![0x04b0, 0x054c].includes(vendor!))
+    if ((options.destination === 'memory' && vendor !== 0x054c) || ![0x04b0, 0x054c].includes(vendor!))
         return camera.captureImage({includeInfo: true, includeData: true, ...options})
     const capture = async () => {
+        if (options.destination === 'memory') return camera.captureImage({includeInfo: true, includeData: true, ...options})
         const baseline = await readCameraObjectHandles(camera)
         await camera.captureImage({includeInfo: false, includeData: false, ...options})
         const deadline = Date.now() + 8000
@@ -38,5 +39,25 @@ export async function captureProfilePhoto(camera: Camera, options: {
         } while (Date.now() < deadline)
         throw new Error('Shutter completed but no new card image appeared')
     }
-    return vendor === 0x054c ? withSonyPhotoMode(camera, capture) : capture()
+    if (vendor !== 0x054c) return capture()
+    // Read-only profile initialization preserves the body's dial priority. A still workflow
+    // must temporarily claim host priority before changing Movie to Photo, then restore it.
+    const priority = camera.getInstance().registry.properties.PositionKeySetting
+    const original = await camera.get(priority)
+    const destination = camera.getInstance().registry.properties.StillImageSaveDestination
+    const originalDestination = options.destination !== 'memory' ? await camera.get(destination) : undefined
+    let failure: unknown
+    try {
+        if (original !== 'HOST_PRIORITY') await camera.set(priority, 'HOST_PRIORITY')
+        if (originalDestination !== undefined && originalDestination !== 'CAMERA_DEVICE')
+            await camera.set(destination, 'CAMERA_DEVICE')
+        return await withSonyPhotoMode(camera, capture)
+    } catch (error) {failure = error; throw error}
+    finally {
+        const errors: unknown[] = []
+        if (originalDestination !== undefined && originalDestination !== 'CAMERA_DEVICE')
+            await camera.set(destination, originalDestination).catch(error => errors.push(error))
+        if (original !== 'HOST_PRIORITY') await camera.set(priority, original).catch(error => errors.push(error))
+        if (errors.length) throw new AggregateError([...(failure ? [failure] : []), ...errors], 'Sony recording settings restoration failed')
+    }
 }
