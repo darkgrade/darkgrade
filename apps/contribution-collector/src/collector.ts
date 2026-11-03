@@ -1,4 +1,5 @@
-import { verifyGrant } from '#collector/token'
+import { verifyLegacyWithdrawal } from '#collector/legacy-withdrawal'
+import { validateVerificationKeys, verifyGrant, type VerificationKeys } from '#collector/token'
 import { MAXIMUM_BODY_BYTES, validateContribution } from '@darkgrade/contribute/schema'
 import { createHash } from 'node:crypto'
 
@@ -40,8 +41,12 @@ async function boundedBody(request: Request) {
 }
 
 /** Data remains private and unreviewed. This endpoint never promotes an upload into Matrix. */
-export function createCollector(store: ContributionStore, signingKey: string) {
-    if (Buffer.byteLength(signingKey) < 32) throw new Error('Missing collector signing key')
+export function createCollector(
+    store: ContributionStore,
+    verificationKeys: VerificationKeys,
+    legacyWithdrawalKeys: readonly string[] = []
+) {
+    validateVerificationKeys(verificationKeys)
     return async (request: Request): Promise<Response> => {
         const url = new URL(request.url)
         if (url.pathname === '/healthz' && request.method === 'GET') return response(200)
@@ -51,7 +56,11 @@ export function createCollector(store: ContributionStore, signingKey: string) {
         try {
             const authorization = request.headers.get('authorization') ?? ''
             if (!authorization.startsWith('Bearer ')) return response(401, 'Authentication required')
-            grant = verifyGrant(authorization.slice(7), signingKey, request.method === 'DELETE')
+            const token = authorization.slice(7)
+            grant =
+                request.method === 'DELETE' && token.split('.').length === 2 && legacyWithdrawalKeys.length
+                    ? verifyLegacyWithdrawal(token, legacyWithdrawalKeys)
+                    : verifyGrant(token, verificationKeys, request.method === 'DELETE')
         } catch {
             return response(401, 'Invalid contribution token')
         }

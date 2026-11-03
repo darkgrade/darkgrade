@@ -56,8 +56,8 @@ function setup(
     }
 }
 
-test('no consent means no collection, token retrieval or network requests', async () => {
-    const options = setup(null, async () => {
+test('explicit opt-out means no collection, token retrieval or network requests', async () => {
+    const options = setup(false, async () => {
         throw Error('Must not send')
     })
     options.accessToken = async () => {
@@ -225,12 +225,12 @@ test('cloud withdrawal still runs when saving local opt-out fails', async () => 
     client.close()
 })
 
-test('file preferences default off, survive reopening, and contain no credentials', async () => {
+test('missing preferences are unset, saved choices survive reopening, and corruption fails closed', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-consent-'))
     const file = join(directory, 'preference.json')
     try {
         const store = fileConsentStore(file)
-        assert.equal(await store.read(), false)
+        assert.equal(await store.read(), null)
         await store.write(true)
         assert.equal(await fileConsentStore(file).read(), true)
         await store.write(false)
@@ -259,5 +259,40 @@ test('permanent payload rejection drops that batch; quota responses defer retrie
     assert.equal(await client.flush(), 'retry')
     assert.equal(await client.flush(), 'retry')
     assert.equal(calls, 2)
+    client.close()
+})
+
+test('new initialized clients collect metadata by default; saved opt-out survives reopening', async () => {
+    let uploads = 0
+    const options = setup(null, async () => {
+        uploads++
+        return new Response(null, { status: 202 })
+    })
+    const client = await createContributions(options)
+    assert.equal(client.enabled(), true)
+    await client.observe(transport()).transport.send(packet(), 1, 1)
+    assert.equal(await client.flush(), 'sent')
+    await client.setConsent(false)
+    client.close()
+    const reopened = await createContributions(options)
+    assert.equal(reopened.enabled(), false)
+    await reopened.observe(transport()).transport.send(packet(), 1, 1)
+    assert.equal(await reopened.flush(), 'disabled')
+    assert.equal(uploads, 1)
+    reopened.close()
+})
+
+test('withdrawal uses the retained credential when upload enrollment is unavailable', async () => {
+    const options = setup(true, async (_url, init) => {
+        if (init?.method === 'DELETE')
+            assert.equal(new Headers(init.headers).get('authorization'), 'Bearer retained-grant')
+        return new Response(null, { status: 200 })
+    })
+    options.accessToken = async () => {
+        throw Error('Enrollment offline')
+    }
+    const client = await createContributions({ ...options, withdrawalToken: async () => 'retained-grant' })
+    await client.optOut()
+    assert.equal(client.enabled(), false)
     client.close()
 })

@@ -46,74 +46,112 @@ export function recordFullTransport(source: TransportInterface, options: Transpo
     let activeOperations = 0
     let writes = Promise.resolve()
     const listeners = new Set<(event: PTPEvent) => void>()
-    const fail = (reason: string) => { recordingError ??= reason }
+    const fail = (reason: string) => {
+        recordingError ??= reason
+    }
     const append = (entry: TransportRecordingEntry) => {
         const size = entry.bytes?.byteLength ?? 0
-        if (closed || recordingError || entry.sequence >= maximumEntries ||
-            pendingBytes + size > maximumPendingBytes || totalBytes + size > maximumTotalBytes) {
+        if (
+            closed ||
+            recordingError ||
+            entry.sequence >= maximumEntries ||
+            pendingBytes + size > maximumPendingBytes ||
+            totalBytes + size > maximumTotalBytes
+        ) {
             droppedEntries++
             fail(closed ? 'Recording closed during camera activity' : 'Recording capacity exceeded')
             return
         }
-        const saved = { ...entry, ...(entry.bytes && { bytes: entry.bytes.slice() }) }
+        const saved = { ...entry, ...(entry.bytes && { bytes: Uint8Array.from(entry.bytes) }) }
         pendingBytes += size
         pendingEntries++
         totalBytes += size
         writes = writes.then(async () => {
-            try { await options.write(saved) }
-            catch { fail('Recording storage failed') }
-            finally { pendingBytes -= size; pendingEntries-- }
+            try {
+                await options.write(saved)
+            } catch {
+                fail('Recording storage failed')
+            } finally {
+                pendingBytes -= size
+                pendingEntries--
+            }
         })
     }
     const operation = async <T>(
         kind: TransportRecordingEntry['kind'],
         run: () => Promise<T>,
-        fields: Partial<TransportRecordingEntry> = {},
+        fields: Partial<TransportRecordingEntry> = {}
     ): Promise<T> => {
         const entry = { ...fields, sequence: sequence++, kind, startedMilliseconds: elapsed() }
         // Source transports may reuse their outbound buffer before an async write completes.
-        if (entry.bytes) entry.bytes = entry.bytes.slice()
+        if (entry.bytes) entry.bytes = Uint8Array.from(entry.bytes)
         activeOperations++
         try {
             const result = await run()
-            append({ ...entry, finishedMilliseconds: elapsed(),
-                ...(kind === 'receive' && { bytes: result as Uint8Array }) })
+            append({
+                ...entry,
+                finishedMilliseconds: elapsed(),
+                ...(kind === 'receive' && { bytes: result as Uint8Array }),
+            })
             return result
         } catch (error) {
             append({ ...entry, finishedMilliseconds: elapsed(), failed: true })
             throw error
-        } finally { activeOperations-- }
+        } finally {
+            activeOperations--
+        }
     }
     const onEvent = (event: PTPEvent) => {
         const now = elapsed()
-        append({ sequence: sequence++, kind: 'event', startedMilliseconds: now, finishedMilliseconds: now,
-            event: { code: event.code, transactionId: event.transactionId, parameters: [...event.parameters] } })
+        append({
+            sequence: sequence++,
+            kind: 'event',
+            startedMilliseconds: now,
+            finishedMilliseconds: now,
+            event: { code: event.code, transactionId: event.transactionId, parameters: [...event.parameters] },
+        })
         for (const listener of listeners) listener(event)
     }
     source.on?.(onEvent)
     const transport: TransportInterface = {
-        connect: (device?: DeviceDescriptor) => operation('connect', () => {
-            source.on?.(onEvent)
-            return source.connect(device)
-        }),
+        connect: (device?: DeviceDescriptor) =>
+            operation('connect', () => {
+                source.on?.(onEvent)
+                return source.connect(device)
+            }),
         disconnect: () => operation('disconnect', () => source.disconnect()),
-        classRequestReset: () => operation('reset', async () => {
-            try { await source.classRequestReset() }
-            finally { source.on?.(onEvent) }
-        }),
+        classRequestReset: () =>
+            operation('reset', async () => {
+                try {
+                    await source.classRequestReset()
+                } finally {
+                    source.on?.(onEvent)
+                }
+            }),
         isConnected: () => source.isConnected(),
         isLittleEndian: () => source.isLittleEndian(),
         getType: () => source.getType(),
         send: (bytes, sessionId, transactionId) =>
             operation('send', () => source.send(bytes, sessionId, transactionId), { bytes, sessionId, transactionId }),
         receive: (maxLength, sessionId, transactionId) =>
-            operation('receive', () => source.receive(maxLength, sessionId, transactionId), { maxLength, sessionId, transactionId }),
-        on: handler => { listeners.add(handler) },
-        off: handler => { listeners.delete(handler) },
+            operation('receive', () => source.receive(maxLength, sessionId, transactionId), {
+                maxLength,
+                sessionId,
+                transactionId,
+            }),
+        on: handler => {
+            listeners.add(handler)
+        },
+        off: handler => {
+            listeners.delete(handler)
+        },
     }
     const status = () => ({
         complete: closed && !recordingError && activeOperations === 0 && pendingEntries === 0,
-        entries: sequence, totalBytes, droppedEntries, ...(recordingError && { error: recordingError }),
+        entries: sequence,
+        totalBytes,
+        droppedEntries,
+        ...(recordingError && { error: recordingError }),
     })
     return {
         transport,

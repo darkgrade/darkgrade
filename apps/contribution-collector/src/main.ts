@@ -4,8 +4,9 @@ import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 
 const handle = createCollector(
-    googleCloudStore(process.env.CONTRIBUTION_BUCKET ?? ''),
-    process.env.CONTRIBUTION_SIGNING_KEY ?? ''
+    googleCloudStore(process.env.CONTRIBUTION_BUCKET ?? '', process.env.GOOGLE_CLOUD_PROJECT ?? ''),
+    JSON.parse(process.env.CONTRIBUTION_VERIFICATION_KEYS ?? '{}'),
+    JSON.parse(process.env.CONTRIBUTION_LEGACY_WITHDRAWAL_KEYS ?? '[]')
 )
 const server = createServer(async (incoming, outgoing) => {
     try {
@@ -19,6 +20,22 @@ const server = createServer(async (incoming, outgoing) => {
                 }),
         })
         const result = await handle(request)
+        if (new URL(request.url).pathname === '/v1/contributions')
+            console.log(
+                JSON.stringify({
+                    component: 'contribution-collector',
+                    status: result.status,
+                    outcome:
+                        result.status === 429
+                            ? 'quota'
+                            : result.status >= 500
+                              ? 'unavailable'
+                              : result.status >= 400
+                                ? 'rejected'
+                                : 'accepted',
+                    method: ['POST', 'DELETE'].includes(request.method) ? request.method : 'other',
+                })
+            )
         outgoing.writeHead(result.status, Object.fromEntries(result.headers))
         outgoing.end(await result.text())
     } catch {

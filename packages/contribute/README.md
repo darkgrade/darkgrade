@@ -1,9 +1,9 @@
 # @darkgrade/contribute
 
-Optional camera diagnostics for Darkgrade Link. Importing this package never starts
-collection. A missing consent preference means **off**. Applications must present
-their notice, record the user's choice and obtain a per-contributor upload grant
-from their server. Never use one shared grant for all customers.
+Camera diagnostics for Darkgrade Link. Explicitly initializing the client enables
+metadata collection by default; a missing saved preference means **on**. Importing
+the package alone has no side effects. Applications show a diagnostic notice and
+an opt-out setting, and obtain a per-contributor upload grant from their server. Never use one shared grant for all customers.
 
 This first protocol sends manufacturer/model, firmware, exact driver revision and dirty-build flag,
 transport and reported hardware/synthetic origin, plus command/response/event codes,
@@ -32,7 +32,8 @@ const diagnostics = await createContributions({
     endpoint: process.env.DARKGRADE_COLLECTOR_URL!,
     // Supply a scoped grant from your authenticated application server.
     // Never ship a cloud credential or collector signing key.
-    accessToken: async () => process.env.DARKGRADE_CONTRIBUTOR_TOKEN!,
+    accessToken: async () => obtainFreshGrantFromYourServer(),
+    withdrawalToken: async () => readRetainedGrantFromYourSecureCredentialStore(),
     consent: fileConsentStore('/path/to/app-settings/camera-diagnostics.json'),
     camera: {
         manufacturer: 'Canon', model: 'EOS 80D', firmware: '1.0.3',
@@ -40,8 +41,7 @@ const diagnostics = await createContributions({
     },
 })
 
-// After the person chooses to participate in your application's settings:
-await diagnostics.setConsent(true)
+// Enabled by default unless this person previously opted out.
 // Wrap the chosen Link transport before constructing the camera.
 const observation = diagnostics.observe(existingCameraTransport)
 // Pass observation.transport to the existing camera constructor/factory.
@@ -53,9 +53,10 @@ observation.detach()
 diagnostics.close()
 ```
 
-The application owns the notice and enrollment UI. Do not put `setConsent(true)`
-in automatic startup code. A browser can implement `ConsentStore` with its own
-settings storage; missing or unreadable preferences must remain off. Use one
+The application owns the notice and opt-out setting. Do not call `setConsent(true)`
+on startup: that would override a saved opt-out. A browser can implement `ConsentStore`
+with its own settings storage: return null for a missing preference and false for
+an unreadable/corrupt preference. The Node file store follows this behavior. Use one
 client per contributor and camera context. Close it before changing accounts,
 camera firmware or driver revisions.
 
@@ -67,14 +68,15 @@ An interrupted/failed upload reuses its contribution ID and content for deduplic
 The client drops excess records and reports their count instead of delaying the camera.
 Network errors stay separate from camera-operation errors.
 
-## Stop or withdraw
+## Opt-out setting and withdrawal
 
+- Connect the visible "Share camera diagnostics" setting to `setConsent(enabled)`. It starts on for a new preference and respects existing opt-outs.
 - `setConsent(false)` saves the local opt-out immediately, clears queued data and
   aborts uploads. It does not delete previous cloud contributions.
 - `optOut()` also revokes this contributor's grant and requests deletion of their
   stored diagnostics. If the cloud is unavailable it throws, remains opted out,
   and can be retried. Keep access to the grant for retry; a correctly signed expired
-  grant remains usable for withdrawal.
+  grant remains usable for withdrawal. Supply `withdrawalToken` backed by the application's secure credential store so withdrawal does not depend on fresh upload enrollment. Public verification keys remain available after rotation; an in-memory last grant is also retained as a fallback.
 - `DARKGRADE_CONTRIBUTIONS=0`, `DO_NOT_TRACK=1` or the application's `disabled`
   callback override stored consent. These stop future collection/uploads; they
   do not contact the cloud to withdraw past contributions.

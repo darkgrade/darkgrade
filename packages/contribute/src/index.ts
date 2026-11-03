@@ -20,7 +20,10 @@ export interface ContributionOptions {
     endpoint: string
     /** Obtain a scoped contribution token from the application's server. Never embed cloud credentials. */
     accessToken(): Promise<string>
+    /** Saved opt-out preference. null means the default-on behavior for a newly initialized client. */
     consent: ConsentStore
+    /** Retrieve a retained grant for withdrawal even when fresh upload enrollment is unavailable. */
+    withdrawalToken?(): Promise<string>
     camera: CameraContext
     /** Honor application/environment opt-outs on every collection and upload operation. */
     disabled?: () => boolean
@@ -35,7 +38,7 @@ function environmentDisabled() {
     return environment?.DARKGRADE_CONTRIBUTIONS === '0' || environment?.DO_NOT_TRACK === '1'
 }
 
-/** Importing this package does nothing. Consent is required before observing or uploading diagnostics. */
+/** Importing this package does nothing. Explicit client initialization enables metadata diagnostics unless the saved preference or environment opts out. */
 export async function createContributions(options: ContributionOptions) {
     const endpoint = new URL(options.endpoint)
     if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash)
@@ -56,7 +59,9 @@ export async function createContributions(options: ContributionOptions) {
         entries: [],
         droppedEntries: 0,
     })
-    let consent = (await options.consent.read()) === true
+    const savedPreference = await options.consent.read()
+    let consent = savedPreference === null || savedPreference === true
+    let lastGrant: string | undefined
     let generation = 0
     let entries: DiagnosticEntry[] = []
     let droppedEntries = 0
@@ -77,7 +82,7 @@ export async function createContributions(options: ContributionOptions) {
             return false
         }
     }
-    const accessToken = (signal: AbortSignal) =>
+    const accessToken = (signal: AbortSignal, withdrawal = false) =>
         new Promise<string>((resolve, reject) => {
             const cancelled = () => reject(new Error('Token request cancelled'))
             if (signal.aborted) {
@@ -86,7 +91,17 @@ export async function createContributions(options: ContributionOptions) {
             }
             signal.addEventListener('abort', cancelled, { once: true })
             Promise.resolve()
-                .then(() => options.accessToken())
+                .then(() => (withdrawal && options.withdrawalToken ? options.withdrawalToken() : options.accessToken()))
+                .then(
+                    token => {
+                        lastGrant = token
+                        return token
+                    },
+                    error => {
+                        if (withdrawal && lastGrant) return lastGrant
+                        throw error
+                    }
+                )
                 .then(resolve, reject)
                 .finally(() => signal.removeEventListener('abort', cancelled))
         })
@@ -198,6 +213,7 @@ export async function createContributions(options: ContributionOptions) {
         }),
         flush,
         async setConsent(value: boolean) {
+            if (typeof value !== 'boolean') throw new Error('Contribution preference must be boolean')
             const epoch = ++generation
             consent = false
             abort?.abort()
@@ -219,7 +235,7 @@ export async function createContributions(options: ContributionOptions) {
                 persistenceFailed = true
             }
             const signal = AbortSignal.timeout(timeout)
-            const token = await accessToken(signal)
+            const token = await accessToken(signal, true)
             const response = await request(`${base}/v1/contributions`, {
                 method: 'DELETE',
                 headers: { authorization: `Bearer ${token}` },

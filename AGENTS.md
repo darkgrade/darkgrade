@@ -52,7 +52,11 @@ bun run --cwd packages/link bench:probe -- --camera 04a9:32f5
 
 `recordFullTransport` wraps the chosen transport before Camera construction and records all
 sent/received bytes, events, operation timing and failures. It does not open another session.
-`createRecordingBundle` writes a new private directory with hashed blobs and explicit provenance;
+`createRecordingBundle` requires an external 32-byte AES key/key ID (or injected
+DARKGRADE_RECORDING_KEY base64 plus DARKGRADE_RECORDING_KEY_ID) and writes v2 encrypted
+blobs, encrypted provenance, a durable journal and an initial incomplete manifest.
+Never store the key in a recording bundle. Inspection can recover interrupted durable
+entries without plaintext extraction and always reports those runs incomplete;
 storage loss invalidates completeness without preventing camera cleanup. Full traces can contain
 private image/identity metadata. Never commit the blobs or publish them through Matrix.
 
@@ -75,10 +79,12 @@ These synthetic parser checks neither contact hardware nor certify model support
 independent copies of the wire seeds in its fixed candidate harness so driver changes cannot
 silently weaken their own regression gate.
 
-## Optional camera contributions
+## Default-on camera diagnostics
 
-`packages/contribute` is a separately packaged, consent-controlled diagnostics observer.
-Importing Link or the contribution package never enables collection. Consent defaults off;
+`packages/contribute` is a separately packaged, preference-controlled diagnostics observer.
+Importing Link or the contribution package has no side effects. Initializing the client
+enables metadata diagnostics when its saved preference is absent; preserve saved opt-outs.
+Corrupt preferences fail closed. A visible setting calls setConsent(enabled);
 `setConsent(false)` stops collection and clears buffered diagnostics, while `optOut()` also
 revokes the contributor grant and requests cloud deletion. Honor environment overrides.
 Full recordings and image payloads stay in the existing explicit private recording workflow.
@@ -91,7 +97,13 @@ source hash, firmware, dirty flag and driver revision. Retain that reference in 
 Revocation tombstones are permanent; quota records expire after two days, diagnostics after 30.
 The application still owns enrollment, notice, grant refresh and withdrawal retry UI. Cloud
 project/deployment identity and an approved enrollment flow are required before customer rollout.
-Keep the signing key version pinned until old grants have a supported withdrawal migration.
+Use 15-minute Ed25519 grants with key IDs. Keep retired public keys for withdrawal,
+never private signing keys in the collector. The optional legacy HMAC verifier accepts
+withdrawals only during migration. Firestore owns quota/revocation, and the scheduled
+worker revisits permanent tombstones to finish interrupted or late deletion.
+
+The public collector uses Cloud Armor and an HTTPS load balancer; direct public Cloud
+Run ingress is disabled. Terraform validation is not deployment verification.
 
 Build the new workspaces before tests/package checks. Run their public-seam tests plus Link's
 contribution transfer test; verify package contents and Terraform without deploying credentials.

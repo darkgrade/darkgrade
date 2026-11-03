@@ -1,11 +1,13 @@
 import { createCollector, type ContributionStore } from '#collector/collector'
 import { googleCloudStore } from '#collector/gcs'
-import { issueGrant } from '#collector/token'
+import { issueGrant, verifyGrant } from '#collector/token'
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
+import { createHmac, generateKeyPairSync, randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 
-const key = 'test-signing-key-with-at-least-thirty-two-bytes'
+const pair = generateKeyPairSync('ed25519')
+const signingKey = { id: 'test-1', privateKey: pair.privateKey }
+const key = { 'test-1': { publicKey: pair.publicKey, uploads: true } }
 function setup() {
     const objects = new Map<string, string>()
     const revoked = new Set<string>()
@@ -30,7 +32,7 @@ function setup() {
     const contributorId = randomUUID()
     const token = issueGrant(
         { contributorId, expiresAt: Math.floor(Date.now() / 1000) + 60, termsVersion: 'notice/v1' },
-        key
+        signingKey
     )
     const body = {
         schema: 'darkgrade.diagnostics/v1',
@@ -79,7 +81,7 @@ test('unsigned, expired and modified tokens cannot upload; withdrawal still acce
             termsVersion: 'notice/v1',
             expiresAt: Math.floor(Date.now() / 1000) - 1,
         },
-        key,
+        signingKey,
         Date.now() - 60_000
     )
     for (const token of ['', fixture.token + 'x', expired])
@@ -154,30 +156,9 @@ test('daily quota blocks new objects without changing consent or permitting unau
     assert.equal((await handle(fixture.request('POST', fixture.body, 'bad-token'))).status, 401)
 })
 
-test('GCS quota uses generation preconditions and preserves reservations across retries', async () => {
-    let saved: string[] | undefined
-    const digest = 'a'.repeat(64)
-    const store = googleCloudStore('camera-test-bucket', async (url, init) => {
-        const address = String(url)
-        if (address.includes('metadata.google.internal'))
-            return Response.json({ access_token: 'token', expires_in: 3600 })
-        if (init?.method === 'POST') {
-            assert.match(address, /ifGenerationMatch=0/)
-            saved = JSON.parse(String(init.body))
-            return new Response(null, { status: 200 })
-        }
-        if (address.includes('alt=media')) return Response.json(saved)
-        return saved ? Response.json({ generation: '123' }) : new Response(null, { status: 404 })
-    })
-    const contributor = randomUUID()
-    assert.equal(await store.admit(contributor, digest), true)
-    assert.equal(await store.admit(contributor, digest), true)
-    assert.deepEqual(saved, [digest])
-})
-
 test('GCS adapter uses workload identity, immutable writes and scoped deletion; auth errors fail closed', async () => {
     const requests: { url: string; init?: RequestInit }[] = []
-    const store = googleCloudStore('camera-test-bucket', async (url, init) => {
+    const store = googleCloudStore('camera-test-bucket', 'camera-project', async (url, init) => {
         requests.push({ url: String(url), init })
         if (String(url).includes('metadata.google.internal'))
             return Response.json({ access_token: 'workload-token', expires_in: 3600 })
@@ -187,5 +168,50 @@ test('GCS adapter uses workload identity, immutable writes and scoped deletion; 
     assert.equal(await store.create('contributions/test/id.json', '{}'), false)
     assert.match(requests[1].url, /ifGenerationMatch=0/)
     assert.equal(new Headers(requests[1].init?.headers).get('authorization'), 'Bearer workload-token')
-    await assert.rejects(store.revoked(randomUUID()), /Consent check failed/)
+    await assert.rejects(store.revoked(randomUUID()), /Firestore read failed/)
+})
+
+test('short-lived keyed grants survive rotation for withdrawal but cannot upload with retired keys', () => {
+    const fixture = setup()
+    const retired = { 'test-1': { ...key['test-1'], uploads: false } }
+    assert.throws(() => verifyGrant(fixture.token, retired), /Retired/)
+    assert.equal(verifyGrant(fixture.token, retired, true).contributorId, fixture.contributorId)
+    assert.throws(() => verifyGrant(fixture.token, {}), /key ID/)
+    assert.throws(
+        () =>
+            issueGrant(
+                {
+                    contributorId: fixture.contributorId,
+                    termsVersion: 'v1',
+                    expiresAt: Math.floor(Date.now() / 1000) + 901,
+                },
+                signingKey
+            ),
+        /Invalid contributor grant/
+    )
+    const old = issueGrant(
+        { contributorId: fixture.contributorId, termsVersion: 'v1', expiresAt: Math.floor(Date.now() / 1000) - 1 },
+        signingKey,
+        Date.now() - 60000
+    )
+    assert.throws(() => verifyGrant(old, key), /Expired/)
+    assert.equal(verifyGrant(old, retired, true).contributorId, fixture.contributorId)
+})
+
+test('legacy migration authorizes withdrawal only and never accepts the old 90-day grant for uploads', async () => {
+    const fixture = setup(),
+        legacyKey = 'legacy-secret-kept-only-during-migration-12345'
+    const payload = Buffer.from(
+        JSON.stringify({ contributorId: fixture.contributorId, expiresAt: 1, termsVersion: 'v1' })
+    ).toString('base64url')
+    const token =
+        payload +
+        '.' +
+        createHmac('sha256', legacyKey)
+            .update('darkgrade-contribution-v1.' + payload)
+            .digest('base64url')
+    const handle = createCollector(fixture.store, key, [legacyKey])
+    assert.equal((await handle(fixture.request('POST', fixture.body, token))).status, 401)
+    assert.equal((await handle(fixture.request('DELETE', undefined, token))).status, 200)
+    assert.equal((await handle(fixture.request('POST'))).status, 410)
 })
