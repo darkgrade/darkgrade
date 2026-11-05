@@ -16,10 +16,14 @@ const ENTRY_BYTES = 6
  */
 export class NikonEventListCodec extends CustomCodec<NikonQueuedEvent[]> {
     encode(events: NikonQueuedEvent[]): Uint8Array {
+        if (events.length > 0xffff) throw new Error('Too many Nikon legacy events')
         const bytes = new Uint8Array(COUNT_BYTES + events.length * ENTRY_BYTES)
         const view = new DataView(bytes.buffer)
         view.setUint16(0, events.length, true)
         events.forEach((event, index) => {
+            if (!Number.isInteger(event.code) || event.code < 0 || event.code > 0xffff ||
+                !Number.isInteger(event.parameter) || event.parameter < 0 || event.parameter > 0xffffffff)
+                throw new Error('Invalid Nikon legacy event code or parameter')
             view.setUint16(COUNT_BYTES + index * ENTRY_BYTES, event.code, true)
             view.setUint32(COUNT_BYTES + index * ENTRY_BYTES + 2, event.parameter >>> 0, true)
         })
@@ -27,6 +31,8 @@ export class NikonEventListCodec extends CustomCodec<NikonQueuedEvent[]> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: NikonQueuedEvent[]; bytesRead: number } {
+        if (!Number.isInteger(offset) || offset < 0 || offset > buffer.length)
+            throw new Error('Invalid Nikon event list offset')
         const available = buffer.length - offset
         if (available < COUNT_BYTES) throw new Error(`Nikon event list needs ${COUNT_BYTES} bytes, got ${available}`)
         const view = new DataView(buffer.buffer, buffer.byteOffset + offset, available)
@@ -35,6 +41,7 @@ export class NikonEventListCodec extends CustomCodec<NikonQueuedEvent[]> {
         if (length > available) {
             throw new Error(`Nikon event list declares ${count} events (${length} bytes) but has ${available} bytes`)
         }
+        if (length !== available) throw new Error('Unexpected bytes after Nikon legacy event records')
         const events: NikonQueuedEvent[] = []
         for (let index = 0; index < count; index++) {
             const entry = COUNT_BYTES + index * ENTRY_BYTES

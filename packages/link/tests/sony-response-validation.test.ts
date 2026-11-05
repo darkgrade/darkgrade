@@ -17,6 +17,39 @@ function cameraFixture() {
     return { camera, sent, replies }
 }
 
+describe('Sony incremental property boundaries', () => {
+    it.each(['final-step', 'disabled', 'range-changed'] as const)('%s uses each fresh descriptor', async scenario => {
+        const camera = new SonyCamera(
+            { isLittleEndian: () => true } as unknown as TransportInterface,
+            new Logger({ captureConsole: false, renderInTerminal: false })
+        )
+        let raw = 0, writes = 0
+        vi.spyOn(camera, 'send').mockImplementation(async (operation, parameters, data) => {
+            if (operation.code === 0x9209) return { code: 0x2001, data: { properties: [{
+                devicePropertyCode: 0x5010, dataType: 3, currentValueRaw: raw, currentValueDecoded: `${raw / 1000}`,
+                sonyGetSetFlag: 0, sonyEnabledFlag: scenario === 'disabled' && writes ? 0 : 1,
+                vendorExtensions: { enabled: scenario !== 'disabled' || writes === 0 }, getSet: 'GET',
+                minimumValue: 0, maximumValue: scenario === 'range-changed' && writes ? 500 : 1000, stepSize: 10,
+            }] } } as any
+            expect(operation.code).toBe(0x9207)
+            expect(parameters).toMatchObject({ sdiControlCode: 0x5010 })
+            expect(data).toEqual(Uint8Array.of(1))
+            writes++
+            raw += 10
+            return { code: 0x2001 } as any
+        })
+        const action = camera.set(camera.registry.properties.ExposureCompensation, '+1 EV')
+        if (scenario === 'final-step') {
+            await expect(action).resolves.toBeUndefined()
+            expect(writes).toBe(100)
+            expect(raw).toBe(1000)
+        } else {
+            await expect(action).rejects.toThrow(scenario === 'disabled' ? 'disabled' : 'range')
+            expect(writes).toBe(1)
+        }
+    })
+})
+
 describe('Sony session response validation', () => {
     it('allows an inventory session without changing host priority or save destination', async () => {
         const { camera, sent } = cameraFixture()

@@ -61,3 +61,14 @@ capability-list framing is checked against libgphoto2's
 `ptp_sony_get_vendorpropcodes` before retention. The file is created privately and
 never overwrites an existing capture. Opening an application does not invoke this
 hardware command.
+
+
+## Private encrypted recording bundles
+
+The bench profile workflow writes version 2 bundles when `--recording-directory` is requested. Supply `DARKGRADE_RECORDING_KEY` (canonical base64 for 32 random bytes) and `DARKGRADE_RECORDING_KEY_ID` through the host's secret store. Programmatic callers can pass `{ id, key }` as the fourth argument to `createRecordingBundle`. No key is generated beside the data, and missing keys fail before recording starts. Preserve old keys while their recordings are retained.
+
+Payloads, journal records, provenance and the final trace use AES-256-GCM with independent nonces and bundle/file associated data. The public manifest contains key ID, bundle ID, state and ciphertext hashes, without camera/contributor identity. The encrypted metadata authenticates provenance and file references. This detects tampering for a holder of the decryption key; it is not a public author-attestation signature.
+
+An initial incomplete manifest and fsynced append journal exist before camera operations begin. Blob files are atomically installed and synced before their journal entry. Completion atomically replaces the manifest only after all writes settle. A crash can lose queued/in-flight entries; the inspector recovers committed rows and always labels an unfinished bundle incomplete. It does not extract plaintext onto disk. Data and journal bounds leave room inside the 512 MiB archive limit.
+
+`bench:inspect-recording DIRECTORY NEW_SUMMARY` reads the injected key; `inspectRecording(directory, { [keyId]: keyBytes })` accepts a key ring. Existing version 1 recordings remain readable. Archivers must support the v2 manifest/ciphertext file index before this writer is deployed into an older archive pipeline; do not convert it to plaintext as a compatibility workaround. The existing Matrix archive validator currently accepts v1 and will reject v2 until that consumer is upgraded. These changes do not automatically enable full recordings or send them through metadata contributions.

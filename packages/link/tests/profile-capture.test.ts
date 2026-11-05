@@ -1,5 +1,5 @@
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { createPTPRegistry } from '@ptp/registry'
+import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
 import {
@@ -12,6 +12,20 @@ import { describe, expect, it } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 
 const codecs = createPTPRegistry(true).codecs
+it('rejects invalid or unintended media recording requests before connecting', async () => {
+    for (const extra of [
+        { repetitions: 2 },
+        { initialize: true, repetitions: 4, liveView: true },
+        { initialize: true, takePhoto: { autofocus: false, destination: 'other' } },
+        { initialize: true, takePhoto: { autofocus: false, rawCompression: 'lossless' } },
+    ]) {
+        const source = fixture()
+        await expect(captureCameraProfile(source.transport, {
+            vendorId: 0x054c, productId: 1, revision: 'test', ...extra,
+        } as Parameters<typeof captureCameraProfile>[1])).rejects.toThrow()
+        expect(source.commands).toEqual([])
+    }
+})
 const join = (...bytes: Uint8Array[]) => new Uint8Array(bytes.flatMap(bytes => [...bytes]))
 const information = new DeviceInfoCodec(createPTPRegistry(true))
 const identity: DeviceInfo = {
@@ -44,8 +58,9 @@ function packet(type: number, code: number, transactionId: number, data: Uint8Ar
     bytes.set(data, 12)
     return bytes
 }
-function fixture(refuseProperty = false) {
+function fixture(refuseProperty = false, nikonEventResponse?: number) {
     const commands: number[] = []
+    const eventParameters: number[][] = []
     const replies: Uint8Array[] = []
     let connected = false
     const descriptor = join(
@@ -75,8 +90,18 @@ function fixture(refuseProperty = false) {
             const code = view.getUint16(6, true)
             const id = view.getUint32(8, true)
             commands.push(code)
-            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(identity)))
+            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? identity : {
+                ...identity, manufacturer: 'Nikon', model: 'Z 6', operationsSupportedRaw: [...identity.operationsSupportedRaw, 0x941c],
+            })))
             if (code === 0x1014 && !refuseProperty) replies.push(packet(2, code, id, descriptor))
+            if (code === 0x941c) {
+                const parameters = Array.from({ length: (bytes.length - 12) / 4 }, (_, index) => view.getUint32(12 + index * 4, true))
+                eventParameters.push(parameters)
+                const response = parameters.length ? nikonEventResponse! : 0x2001
+                if (response === 0x2001) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
+                replies.push(packet(3, response, id))
+                return
+            }
             replies.push(packet(3, code === 0x1014 && refuseProperty ? 0x200a : 0x2001, id))
         },
         receive: async () => {
@@ -85,19 +110,49 @@ function fixture(refuseProperty = false) {
             return bytes
         },
     }
-    return { transport, commands, descriptor }
+    return { transport, commands, descriptor, eventParameters }
 }
 function transaction(operation: number, data: Uint8Array, parameters: number[] = []): CapturedPtpTransaction {
     return { operation, transactionId: 7, parameters, response: { code: 0x2001, parameters: [], data } }
 }
 
 describe('explicit profile capture', () => {
+    it.each([0x2001, 0x2006, 0x2005, 0x200f, 0x2019])('preserves Nikon event refusals except unsupported retention (0x%s)', async response => {
+        const { transport, commands, eventParameters } = fixture(false, response)
+        const result = await captureCameraProfile(transport, { vendorId: 0x04b0, productId: 1, revision: 'fixture' })
+        expect(result.checks.find(check => check.id === 'nikon-events')?.status).toBe(
+            response === 0x2001 || response === 0x2006 ? 'pass' : 'error')
+        expect(eventParameters).toEqual(response === 0x2006 ? [[1], []] : [[1]])
+        expect(commands.at(-1)).toBe(0x1003)
+        expect(transport.isConnected()).toBe(false)
+    })
+
+    it.each([0x2005, 0x200a, 0x200f, 0x2019])('qualifies older Nikon properties only when the extension is unsupported (0x%s)', async responseCode => {
+        let current = '100'
+        const operations: number[] = [], writes: string[] = []
+        const camera = {
+            registry: createNikonRegistry(true),
+            send: async (operation: { code: number }) => {
+                operations.push(operation.code)
+                return operation.code === 0x943a ? { code: responseCode } : {
+                    code: 0x2001, data: { devicePropertyCode: 0x500f, currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] },
+                }
+            },
+            set: async (_property: unknown, value: string) => { writes.push(value); current = value },
+        }
+        const result = qualifyProfileProperty(camera as any, 0x04b0, 0x500f, '200')
+        if (responseCode === 0x2005)
+            await expect(result).resolves.toMatchObject({ passed: true, restored: true, restoredValue: '100' })
+        else await expect(result).rejects.toThrow('Camera did not return a property descriptor')
+        expect(writes).toEqual(responseCode === 0x2005 ? ['200', '100'] : [])
+        expect(operations.includes(0x1014)).toBe(responseCode === 0x2005)
+    })
     it('records a qualified native property with independent reads and restoration after an ambiguous write', async () => {
         let current = '100', ambiguous = false
         const writes: string[] = []
         const camera = {
             registry: createPTPRegistry(true),
-            send: async () => ({ code: 0x2001, data: { currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] } }),
+            send: async () => ({ code: 0x2001, data: { devicePropertyCode: 0x500f, currentValueDecoded: current, getSet: 'GET_SET', supportedValuesDecoded: ['100', '200'] } }),
             set: async (_property: unknown, value: string) => { writes.push(value); current = value; if (ambiguous && value === '200') throw new Error('Ambiguous response') },
         }
         const passed = await qualifyProfileProperty(camera as any, 0x04b0, 0x500f, '200')

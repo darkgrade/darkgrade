@@ -12,12 +12,19 @@ function cameraFixture() {
 }
 
 describe('Nikon standard property fallback', () => {
+    it('rejects a response describing a different property', async () => {
+        const camera = cameraFixture()
+        vi.spyOn(camera, 'send').mockResolvedValue({
+            code: 0x2001, data: { devicePropertyCode: 0x5007, currentValueDecoded: '200' },
+        } as any)
+        await expect(camera.get(camera.registry.properties.ExposureIndex)).rejects.toThrow('different property')
+    })
     it('reads and writes a standard property when the body refuses only the extension operation', async () => {
         const camera = cameraFixture()
         const property = camera.registry.properties.ExposureIndex
         const send = vi.spyOn(camera, 'send').mockImplementation(async operation => {
             if (operation.code === 0x943a || operation.code === 0x943c) return { code: 0x2005 } as any
-            if (operation.code === 0x1014) return { code: 0x2001, data: { currentValueDecoded: '200' } } as any
+            if (operation.code === 0x1014) return { code: 0x2001, data: { devicePropertyCode: 0x500f, currentValueDecoded: '200' } } as any
             return { code: 0x2001 } as any
         })
         await expect(camera.get(property)).resolves.toBe('200')

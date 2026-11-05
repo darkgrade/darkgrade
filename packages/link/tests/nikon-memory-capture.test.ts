@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { NikonCamera } from '@camera/nikon-camera'
 import { Logger } from '@core/logger'
+import { TransportType } from '@transport/interfaces/transport-types'
 
-function fixture(truncate = false) {
+function fixture(truncate = false, transportType = TransportType.USB) {
     let polls = 0
     const camera = new NikonCamera({
-        isLittleEndian: () => true, isConnected: () => true, on: () => undefined,
+        isLittleEndian: () => true, isConnected: () => true, on: () => undefined, getType: () => transportType,
     } as any, new Logger({ captureConsole: false, renderInTerminal: false }))
     vi.spyOn(camera, 'get').mockImplementation(async property => property.name === 'LiveViewSelector' ? 'PHOTO' : 'OFF' as any)
     const send = vi.spyOn(camera, 'send').mockImplementation(async operation => {
@@ -19,6 +20,21 @@ function fixture(truncate = false) {
 }
 
 describe('Nikon event-identified SDRAM capture', () => {
+    it('retains remote Wi-Fi ownership after a still and never resets the link to PC camera mode', async () => {
+        const {camera, send} = fixture(false, TransportType.IP)
+        let selector = 'VIDEO'
+        camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector : 'OFF') as any
+        camera.set = vi.fn(async (property, value) => {
+            if (property.name === 'LiveViewSelector') selector = String(value)
+        }) as any
+        await camera.captureImage({destination: 'memory', autofocus: false})
+        expect(selector).toBe('VIDEO')
+        expect(send.mock.calls.filter(([operation]) => operation.name === 'ChangeCameraMode').map(([, parameters]) => parameters))
+            .toEqual([{Mode: 'REMOTE'}])
+        // A second operation stays in the same remote session.
+        await camera.captureImage({destination: 'memory', autofocus: false})
+        expect(send.mock.calls.filter(([operation]) => operation.name === 'ChangeCameraMode')).toHaveLength(1)
+    })
     it('selects lossless NEF only inside Photo mode and restores compression before Movie mode', async () => {
         const { camera, send } = fixture()
         let selector = 'VIDEO', compression = 3

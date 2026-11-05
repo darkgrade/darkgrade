@@ -57,8 +57,9 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
     decode(buffer: Uint8Array, offset = 0): { value: DevicePropDesc; bytesRead: number } {
         let currentOffset = offset
 
-        if (buffer.length < 6) {
-            throw new Error(`Buffer too short: expected at least 6 bytes, got ${buffer.length}`)
+        const headerSize = this.use4ByteCode ? 7 : 5
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < headerSize) {
+            throw new Error('Invalid or truncated property descriptor header')
         }
 
         const u8 = this.registry.codecs.uint8
@@ -85,6 +86,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         // GetSet (1 byte)
         const getSetResult = u8.decode(buffer, currentOffset)
         const getSet = getSetResult.value
+        if (getSet !== 0 && getSet !== 1) throw new Error(`Invalid property access flag: ${getSet}`)
         currentOffset += getSetResult.bytesRead
 
         const valueCodec = new VariableValueCodec(this.registry, dataType)
@@ -103,6 +105,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         // FormFlag (1 byte)
         const formFlagResult = u8.decode(buffer, currentOffset)
         const formFlag = formFlagResult.value
+        if (formFlag > 2) throw new Error(`Invalid property form flag: ${formFlag}`)
         currentOffset += formFlagResult.bytesRead
 
         const propertyDef = Object.values(this.registry.properties).find((p: any) => p.code === devicePropertyCode)

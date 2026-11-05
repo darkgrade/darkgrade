@@ -1,10 +1,12 @@
 import { Logger } from '@core/logger'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
+import {matchesNikonShutter, nikonShutterLabel} from '@vendors/nikon/shutter-values'
+import type {DevicePropDesc} from '@ptp/datasets/device-prop-desc-dataset'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { PTPResponseError } from '@core/ptp-errors'
+import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
@@ -72,6 +74,10 @@ export class NikonCamera extends GenericCamera {
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
+        return (await this.propertyDescriptor(property)).currentValueDecoded as CodecType<P['codec']>
+    }
+
+    private async propertyDescriptor(property: PropertyDefinition): Promise<DevicePropDesc> {
         if (!property.access.includes('Get')) {
             throw new Error(`Property ${property.name} is not readable`)
         }
@@ -102,9 +108,61 @@ export class NikonCamera extends GenericCamera {
         if (!descriptor || typeof descriptor !== 'object' || !('currentValueDecoded' in descriptor)) {
             throw new Error('Invalid property descriptor structure')
         }
+        if (descriptor.devicePropertyCode !== property.code)
+            throw new PTPDecodeError(`Nikon ${operationName} returned a descriptor for a different property`)
 
         // Cast needed: TypeScript knows data exists but can't narrow to specific property's codec type
-        return descriptor.currentValueDecoded as CodecType<P['codec']>
+        return descriptor as DevicePropDesc
+    }
+
+    private async shutterDescriptor() {
+        let mode: string
+        try { mode = await this.get(this.registry.properties.LiveViewSelector) }
+        catch (error) {
+            if (error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)) return undefined
+            throw error
+        }
+        if (mode !== 'PHOTO' && mode !== 'VIDEO') throw new Error('Nikon shutter selector is unknown')
+        const property = mode === 'PHOTO' ? this.registry.properties.NikonPhotoShutterSpeed : this.registry.properties.NikonMovieShutterSpeed
+        try {
+            const descriptor = await this.propertyDescriptor(property)
+            if (descriptor.dataType !== 6 || typeof descriptor.currentValueRaw !== 'number')
+                throw new Error('Invalid Nikon shutter descriptor datatype')
+            return { property, descriptor, mode }
+        } catch (error) {
+            // A supported native property must never fall back after busy, denial or malformed data.
+            if (error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)) return undefined
+            throw error
+        }
+    }
+
+    async getShutterSpeed(): Promise<string> {
+        const native = await this.shutterDescriptor()
+        return native ? nikonShutterLabel(native.descriptor.currentValueRaw as number) : super.getShutterSpeed()
+    }
+
+    async setShutterSpeed(value: string): Promise<void> {
+        const native = await this.shutterDescriptor()
+        if (!native) return super.setShutterSpeed(value)
+        const {property, descriptor, mode} = native
+        if (mode === 'VIDEO') {
+            try {
+                if (await this.get(this.registry.properties.MovieShutterMode) !== 'SHUTTER_SPEED')
+                    throw new Error('Nikon movie shutter is in angle mode; choose shutter-speed mode before setting it')
+            } catch (error) {
+                if (!(error instanceof PTPResponseError) || ![0x2005, 0x200a].includes(error.code)) throw error
+            }
+        }
+        if (descriptor.getSet !== 'GET_SET' || descriptor.formFlag !== 2)
+            throw new Error('Nikon shutter requires a writable advertised enumeration')
+        const target = descriptor.supportedValuesRaw?.find(raw =>
+            typeof raw === 'number' && matchesNikonShutter(raw, value))
+        if (typeof target !== 'number') throw new Error('Requested Nikon shutter speed is not advertised')
+        if (await this.get(this.registry.properties.LiveViewSelector) !== mode)
+            throw new Error('Nikon photo/video mode changed before shutter write')
+        await this.set(property, target)
+        const observed = await this.propertyDescriptor(property)
+        if (observed.currentValueRaw !== target) throw new Error('Nikon shutter readback differs from the requested value')
     }
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
@@ -225,6 +283,8 @@ export class NikonCamera extends GenericCamera {
     }> {
         const memory = options.destination === 'memory'
         if (memory && options.includeData === false) throw new Error('Memory capture requires transfer so the new SDRAM image can be released')
+        // Wi-Fi control must retain its authenticated remote session, as live view does.
+        if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
         let info: ObjectInfo | undefined
         let data: Uint8Array | undefined
         const release = async () => {
@@ -282,6 +342,7 @@ export class NikonCamera extends GenericCamera {
         // camera's hardware dial is not in photo mode
         // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
         else if (this.liveViewMode === 'VIDEO') {
+            const restorePcMode = this.cameraMode !== 'REMOTE'
             const failures: unknown[] = []
             try {
                 await this.enableRemoteMode()
@@ -295,7 +356,7 @@ export class NikonCamera extends GenericCamera {
                 } catch (error) {
                     failures.push(error)
                 } finally {
-                    try { await this.enablePcCameraMode() }
+                    try { if (restorePcMode) await this.enablePcCameraMode() }
                     catch (error) { failures.push(error) }
                 }
             }
