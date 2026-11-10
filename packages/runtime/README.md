@@ -43,6 +43,11 @@ unsupported command on a retained session fails without opening a competing
 connection. Failed writes release the operation queue after the provider settles.
 An HTTP timeout never retries a write or pretends the camera operation stopped.
 Queued photos retain a copy of the validated options supplied at submission.
+Retained controls receive the property selector as well as the action and value.
+Status and live-view status reads preserve existing recording checks. If a command
+returns successfully but the subsequent controls/battery observation fails, the error
+explicitly reports completed execution: read the current state instead of repeating
+the write. This does not certify setting readback, optical focus or image decoding.
 
 `HardwareCoordinator` supplies renewable, reentrant cross-process leases through
 an injected `OwnershipStore`. Test Bench supplies its existing SQLite store, so

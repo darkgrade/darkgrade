@@ -61,7 +61,7 @@ export interface CameraClient {
 }
 export interface ControlSession {
     supports(action: ControlAction): boolean
-    control(action: ControlAction, value?: string | number): Promise<unknown>
+    control(action: ControlAction, value?: string | number, property?: string): Promise<unknown>
 }
 /** Platform hosts supply connections and physical services, never a second MCP-owned session. */
 export interface CameraProvider {
@@ -81,6 +81,7 @@ const imageActions = new Set([
     'autofocus',
     'touch-focus',
 ])
+const readActions = new Set<ControlAction>(['status', 'live-view-status'])
 
 /**
  * One runtime per session-owning host. All frontends share its camera queue.
@@ -113,11 +114,19 @@ export class CameraRuntime implements CameraClient {
             const session = this.provider.session(camera)
             if (session && !session.supports(command))
                 throw new Error(`The active session cannot run ${command}; close its Console before retrying`)
-            if (command !== 'status') this.provider.invalidate(camera, imageActions.has(command))
-            const result = session?.supports(command)
-                ? await session.control(command, value)
+            if (!readActions.has(command)) this.provider.invalidate(camera, imageActions.has(command))
+            const result = session
+                ? await session.control(command, value, property)
                 : await this.provider.control(camera, command, value, property)
-            return this.provider.observeControls(camera, result)
+            try {
+                return await this.provider.observeControls(camera, result)
+            } catch (error) {
+                if (readActions.has(command)) throw error
+                throw new Error(
+                    `Camera command ${command} completed, but refreshing camera controls failed. Read the current state before issuing another write; do not repeat this command just to refresh it.`,
+                    { cause: error }
+                )
+            }
         })
     }
 
