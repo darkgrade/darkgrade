@@ -7,11 +7,21 @@ import { describe, expect, it, vi } from 'vitest'
 // Wire types independently checked against the model command specification Rev.2.00.
 // These are descriptor fixtures; this test does not communicate with hardware.
 const observed = [
-    [0xd01e, 0x0004, 5000], [0xd21a, 0x0004, 5000], [0xd1aa, 0x0006, 20000],
-    [0xd054, 0x0002, 1], [0xd0ad, 0x0002, 0], [0xd23a, 0x0004, 32789],
-    [0xd1a8, 0x0006, 65586], [0xd1a9, 0x0004, 400], [0xd061, 0x0002, 0],
-    [0xd1fa, 0x0002, 2], [0xd156, 0x0002, 1], [0xd1f2, 0x0002, 2],
-    [0xd1f1, 0x0006, 12323], [0x1d015, 0x0002, 0], [0x1d016, 0x0002, 0],
+    [0xd01e, 0x0004, 5000],
+    [0xd21a, 0x0004, 5000],
+    [0xd1aa, 0x0006, 20000],
+    [0xd054, 0x0002, 1],
+    [0xd0ad, 0x0002, 0],
+    [0xd23a, 0x0004, 32789],
+    [0xd1a8, 0x0006, 65586],
+    [0xd1a9, 0x0004, 400],
+    [0xd061, 0x0002, 0],
+    [0xd1fa, 0x0002, 2],
+    [0xd156, 0x0002, 1],
+    [0xd1f2, 0x0002, 2],
+    [0xd1f1, 0x0006, 12323],
+    [0x1d015, 0x0002, 0],
+    [0x1d016, 0x0002, 0],
 ] as const
 
 function descriptor(code: number, datatype: number, current: number) {
@@ -36,6 +46,25 @@ function fixture() {
 }
 
 describe('Nikon captured shooting properties', () => {
+    it('retains exact documented photo shutter fractions and Bulb/Time sentinels', async () => {
+        const camera = fixture()
+        const instance = camera.getInstance()
+        const properties = instance.registry.properties
+        if (!('NikonPhotoShutterSpeed' in properties))
+            throw new Error('Nikon fixture registry is missing shutter speed')
+        const property = properties.NikonPhotoShutterSpeed
+        expect(property.code).toBe(0xd100)
+        const codec = new DevicePropDescCodec(instance.registry, true)
+        const send = vi.spyOn(instance, 'send')
+        for (const raw of [0x00011f40, 0x00010fa0, 0x000d000a, 0xffffffff, 0xfffffffd]) {
+            send.mockResolvedValueOnce({ code: 0x2001, data: codec.decode(descriptor(0xd100, 6, raw)).value } as any)
+            await expect(camera.get(property)).resolves.toBe(raw)
+            send.mockResolvedValueOnce({ code: 0x2001 } as any)
+            await camera.set(property, raw)
+            const wire = send.mock.lastCall?.[2]!
+            expect(new DataView(wire.buffer, wire.byteOffset, wire.byteLength).getUint32(0, true)).toBe(raw)
+        }
+    })
     it('reads all fifteen captured controls using exact descriptor widths and numeric values', async () => {
         const camera = fixture()
         const instance = camera.getInstance()

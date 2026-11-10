@@ -13,6 +13,7 @@ import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-
 import { capturePropertyCodes, captureRegistry } from '@vendors/capture-properties'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
+import { captureProfilePhoto } from '@vendors/profile-media'
 export { capturePropertyCodes } from '@vendors/capture-properties'
 
 type TraceTransaction = Omit<CapturedPtpTransaction, 'dataFromHost' | 'response'> & {
@@ -35,6 +36,10 @@ export interface ProfileCaptureOptions {
     revision: string
     initialize?: boolean
     liveView?: boolean
+    /** Explicitly writes a new still; autofocus is stated separately from transfer success. */
+    takePhoto?: { autofocus: boolean; destination?: 'card' | 'memory'; rawCompression?: 'lossless' }
+    /** Repeat still/live in the same session to expose state left behind by an earlier operation. */
+    repetitions?: number
     maxProperties?: number
     timeoutSeconds?: number
     onCheck?: (check: { id: string; status: string; detail?: string }) => void
@@ -220,6 +225,17 @@ export function sanitizeProfileTransaction(
 /** Runs only when explicitly invoked; callers own the physical bench lease and recovery policy. */
 export async function captureCameraProfile(source: TransportInterface, options: ProfileCaptureOptions) {
     if (options.liveView && !options.initialize) throw new Error('Live view requires explicit initialization')
+    if (options.takePhoto && (!options.initialize || typeof options.takePhoto.autofocus !== 'boolean'))
+        throw new Error('Still capture requires explicit initialization and autofocus choice')
+    if (options.takePhoto?.destination !== undefined && !['card', 'memory'].includes(options.takePhoto.destination))
+        throw new Error('Still destination must be card or memory')
+    if (options.takePhoto?.rawCompression !== undefined &&
+        (options.takePhoto.rawCompression !== 'lossless' || options.vendorId !== 0x04b0))
+        throw new Error('Lossless RAW recording requires a Nikon camera')
+    const repetitions = options.repetitions ?? 1
+    if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 3 ||
+        (repetitions > 1 && !options.takePhoto && !options.liveView))
+        throw new Error('Repeat 1–3 explicit still/live workflows')
     if (options.qualify && !options.initialize) throw new Error('Property qualification requires explicit initialization')
     const limit = options.maxProperties ?? 128
     const seconds = options.timeoutSeconds ?? 60
@@ -231,6 +247,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
     const transactions: TraceTransaction[] = []
     const observations: ProfileObservation[] = []
     const checks: Array<{ id: string; status: 'pass' | 'error' | 'skipped'; detail?: string }> = []
+    const media: Array<{ check: string; bytes: number; metadataPresent: boolean }> = []
     let retainedBytes = 0
     let budgetReached = false
     let qualification: Awaited<ReturnType<typeof qualifyProfileProperty>> | undefined
@@ -270,13 +287,14 @@ export async function captureCameraProfile(source: TransportInterface, options: 
     })
     const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
     const registry = captureRegistry(options.vendorId)
-    const camera = options.initialize
+    const facade = options.initialize
         ? new Camera({
               transport: trace.transport,
               vendorId: options.vendorId,
               logger: { renderInTerminal: false, captureConsole: false },
-          }).getInstance()
-        : new GenericCamera(trace.transport, logger)
+          })
+        : undefined
+    const camera = facade?.getInstance() ?? new GenericCamera(trace.transport, logger)
     if (!options.initialize) Object.assign(camera, { registry })
     camera.configureTransactions({ timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false })
     const check = async <T>(id: string, action: () => Promise<T>, cleanup = false): Promise<T | undefined> => {
@@ -393,16 +411,37 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                     await check('canon-event-properties', () => send(operations.CanonGetEventData))
             }
             if (options.vendorId === 0x04b0 && supported.has(0x941c))
-                await check('nikon-events', () =>
-                    send(createNikonRegistry(true).operations.GetEventEx, { KeepEvents: 'RETAIN' })
-                )
+                await check('nikon-events', async () => {
+                    const operation = createNikonRegistry(true).operations.GetEventEx
+                    try {
+                        return await send(operation, { KeepEvents: 'RETAIN' })
+                    } catch (error) {
+                        // Older bodies expose this operation without a retention parameter.
+                        // Capture owns this session, so a documented drain is safe here.
+                        if ((error as { code?: number })?.code !== 0x2006) throw error
+                        return send(operation)
+                    }
+                })
             else if (options.vendorId === 0x04b0 && supported.has(0x90c7))
                 await check('nikon-events', () => send(createNikonRegistry(true).operations.GetEvent))
-            if (options.liveView)
-                await check('live-view', async () => {
+            // Full transfers and busy polling need more time than descriptor reads.
+            if (options.takePhoto || options.liveView)
+                camera.configureTransactions({ timeoutMilliseconds: 30000, deviceBusyRetries: 0, automaticUSBReset: false })
+            for (let index = 0; index < repetitions; index++) {
+              const suffix = index ? `-${index + 1}` : ''
+              if (options.takePhoto)
+                await check('take-photo' + suffix, async () => {
+                    const photo = await captureProfilePhoto(facade!, options.takePhoto!)
+                    if (!photo.info || !photo.data?.length) throw new Error('No transferred still photo with metadata')
+                    media.push({ check: 'take-photo' + suffix, bytes: photo.data.length, metadataPresent: true })
+                })
+              if (options.liveView)
+                await check('live-view' + suffix, async () => {
                     const frame = await camera.captureLiveView({ includeInfo: false, includeData: true })
                     if (!frame.data?.length) throw new Error('No live-view image')
+                    media.push({ check: 'live-view' + suffix, bytes: frame.data.length, metadataPresent: false })
                 })
+            }
             if (options.qualify && deadline - Date.now() < 30000)
                 checks.push({ id: 'property-roundtrip', status: 'skipped', detail: 'Insufficient time remains for write, fresh reads and restoration' })
             else if (options.qualify) {
@@ -434,6 +473,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
         device,
         mode: options.initialize ? ('initialized' as const) : ('read-only' as const),
         checks,
+        media,
         transactions,
         observations,
         ...(qualification && { qualification }),

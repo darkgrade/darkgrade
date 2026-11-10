@@ -54,7 +54,7 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
     decode(buffer: Uint8Array, offset = 0): { value: SonyDevicePropDesc; bytesRead: number } {
         let currentOffset = offset
 
-        if (buffer.length < 6) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 6) {
             throw new Error(`Buffer too short: expected at least 6 bytes, got ${buffer.length}`)
         }
 
@@ -90,6 +90,7 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
 
         const formFlagResult = u8.decode(buffer, currentOffset)
         const formFlag = formFlagResult.value
+        if (formFlag > 2) throw new Error(`Invalid Sony property form flag: ${formFlag}`)
         currentOffset += formFlagResult.bytesRead
 
         const enumValuesSet: (number | bigint | string)[] = []

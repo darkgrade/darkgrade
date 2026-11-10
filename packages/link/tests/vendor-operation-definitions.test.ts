@@ -163,6 +163,13 @@ describe('Nikon definitions', () => {
         expect(codec.encode(codec.decode(bytes).value)).toEqual(bytes)
         expect(codec.decode(Uint8Array.of(0, 0)).value).toEqual([])
         expect(() => codec.decode(Uint8Array.of(0x03, 0x00, 0x02, 0x40))).toThrow('declares 3 events')
+        expect(() => codec.decode(Uint8Array.of(0, 0, 6, 0x40, 0x0f, 0x50, 0, 0))).toThrow('Unexpected bytes')
+        for (const offset of [-1, 0.5, NaN, bytes.length + 1])
+            expect(() => codec.decode(bytes, offset)).toThrow('offset')
+        for (const event of [{ code: 0x10000, parameter: 1 }, { code: 0x4006, parameter: -1 },
+            { code: 0x4006, parameter: 0x100000000 }])
+            expect(() => codec.encode([event])).toThrow('Invalid')
+        expect(() => codec.encode(Array.from({ length: 0x10000 }, () => ({ code: 0x4006, parameter: 1 })))).toThrow('Too many')
     })
 
     it('registers SDRAM capture, legacy live view and event operations with libgphoto2 data directions', () => {

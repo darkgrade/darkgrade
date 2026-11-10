@@ -98,6 +98,39 @@ test('unsupported held-session commands never open a competing connection', asyn
     expect(calls).toEqual([])
 })
 
+test('retained sessions receive the same property selector as standalone controls', async () => {
+    const { runtime, calls, setSession } = fixture()
+    const received: unknown[] = []
+    setSession({
+        supports: () => true,
+        control: async (...arguments_) => {
+            received.push(arguments_)
+            return {}
+        },
+    })
+    await runtime.control('camera', 'set-property', 800, 'ISO')
+    expect(received).toEqual([['set-property', 800, 'ISO']])
+    expect(calls.filter(call => Array.isArray(call) && call[0] !== 'invalidate')).toEqual([])
+})
+
+test('a changing held-session capability cannot fall through into a second connection', async () => {
+    const { runtime, calls, setSession } = fixture()
+    let checks = 0
+    setSession({
+        supports: () => ++checks === 1,
+        control: async () => { throw new Error('Session disconnected') },
+    })
+    await expect(runtime.control('canon', 'set-iso', 800)).rejects.toThrow('Session disconnected')
+    expect(checks).toBe(1)
+    expect(calls).toEqual([['invalidate', 'canon', true]])
+})
+
+test('preview status reads do not invalidate a verified recording check', async () => {
+    const { runtime, calls } = fixture()
+    await runtime.control('canon', 'live-view-status')
+    expect(calls).toEqual([['canon', 'live-view-status', undefined, undefined]])
+})
+
 test('recording/tuning guards are checked before a held-session write', async () => {
     const { runtime, provider, calls } = fixture()
     provider.assertControlAllowed = () => {
@@ -346,9 +379,18 @@ test('a failed observation does not repeat the completed write or poison queued 
     }
     const write = runtime.control('sony', 'set-iso', '800').catch(error => error.message)
     const read = runtime.control('sony', 'status')
-    expect(await write).toBe('Battery telemetry unavailable')
+    expect(await write).toContain('set-iso completed, but refreshing camera controls failed')
     expect(await read).toEqual({ transport: 'usb' })
     expect(calls.filter(call => Array.isArray(call) && call[1] === 'set-iso')).toHaveLength(1)
+})
+
+test('failed read refreshes preserve the error without suggesting a camera write completed', async () => {
+    const { runtime, provider } = fixture()
+    const failure = new Error('Battery telemetry unavailable')
+    provider.observeControls = async () => { throw failure }
+    for (const action of ['status', 'live-view-status']) {
+        await expect(runtime.control('canon', action)).rejects.toBe(failure)
+    }
 })
 
 test('mixed queued requests remain serial per camera through repeated failures', async () => {

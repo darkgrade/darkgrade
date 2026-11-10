@@ -77,18 +77,26 @@ function bytesToHex(value: Uint8Array): string {
  */
 export class CanonCamera extends GenericCamera {
     private async withoutPolling<T>(fn: () => Promise<T>): Promise<T> {
-        const wasPolling = this.polling
-        if (wasPolling) {
-            await this.stopPolling()
+        if (this.pollingSuspensions++ === 0) {
+            this.resumePolling = this.polling
+            this.polling = false
+            this.pollingPause = this.pollingLoop
         }
         try {
+            await this.pollingPause
             return await fn()
         } finally {
-            if (wasPolling) {
-                this.startPolling()
+            if (--this.pollingSuspensions === 0) {
+                this.pollingPause = undefined
+                const resume = this.resumePolling
+                this.resumePolling = false
+                if (resume) this.startPolling()
             }
         }
     }
+    private pollingSuspensions = 0
+    private resumePolling = false
+    private pollingPause?: Promise<void>
     private polling = false
     private rawEventListeners = new Set<(event: CanonRawEvent) => void>()
     private pollingLoop?: Promise<void>
@@ -992,6 +1000,10 @@ export class CanonCamera extends GenericCamera {
      * other operation.
      */
     private startPolling(intervalMs: number = 200): void {
+        if (this.pollingSuspensions) {
+            this.resumePolling = true
+            return
+        }
         if (this.polling) {
             return
         }
@@ -1016,6 +1028,7 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async stopPolling(): Promise<void> {
+        this.resumePolling = false
         this.polling = false
         await this.pollingLoop
         this.pollingLoop = undefined

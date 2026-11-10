@@ -4,7 +4,7 @@ import { CanonLiveViewDatasetCodec, canonLiveViewPosition } from '@ptp/datasets/
 import { createCanonRegistry } from '@ptp/registry'
 import type { PropertyDefinition } from '@ptp/types/property'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 function segment(type: number, payload: Uint8Array): Uint8Array {
     const buffer = new Uint8Array(8 + payload.length)
@@ -190,6 +190,86 @@ describe('Canon viewport position readback', () => {
 })
 
 describe('Canon live-view lifecycle and controls', () => {
+    it.each([false, true])('keeps polling paused through overlapping reads (first fails: %s)', async failure => {
+        const { camera } = connectedCamera('HOST')
+        const pending: (() => void)[] = []
+        let eventReads = 0
+        const originalSend = camera.send.bind(camera)
+        camera.send = (async (operation, ...arguments_) => {
+            if (operation.code === 0x9116) {
+                eventReads++
+                return { code: 0x2001, data: [] }
+            }
+            if (operation.code === 0x9153) {
+                const index = pending.length
+                await new Promise<void>(resolve => pending.push(resolve))
+                if (failure && index === 0) throw new Error('Frame read failed')
+            }
+            return originalSend(operation, ...arguments_)
+        }) as typeof camera.send
+        const polling = camera as unknown as { polling: boolean; pollingLoop: Promise<void> }
+        let drain!: () => void
+        polling.polling = true
+        polling.pollingLoop = new Promise<void>(resolve => { drain = resolve })
+        const first = camera.captureViewfinderFrame().catch(error => error as Error)
+        const second = camera.captureViewfinderFrame()
+        try {
+            await Promise.resolve()
+            await Promise.resolve()
+            // Both callers must wait for an already-running event transaction.
+            expect(pending).toHaveLength(0)
+            drain()
+            await vi.waitFor(() => expect(pending).toHaveLength(2))
+            pending[0]()
+            const result = await first
+            expect(result instanceof Error).toBe(failure)
+            expect(eventReads).toBe(0)
+            pending[1]()
+            await second
+            expect(eventReads).toBe(1)
+        } finally {
+            drain()
+            await vi.waitFor(() => expect(pending).toHaveLength(2))
+            for (const release of pending) release()
+            await Promise.allSettled([first, second])
+            await camera.disconnect()
+        }
+    })
+
+    it('does not resume event polling when a frame finishes after disconnect', async () => {
+        const { camera } = connectedCamera('HOST')
+        let finish!: () => void
+        let entered!: () => void
+        const started = new Promise<void>(resolve => { entered = resolve })
+        const held = new Promise<void>(resolve => { finish = resolve })
+        let eventReads = 0
+        const originalSend = camera.send.bind(camera)
+        camera.send = (async (operation, ...arguments_) => {
+            if (operation.code === 0x9116) {
+                eventReads++
+                return { code: 0x2001, data: [] }
+            }
+            if (operation.code === 0x9153) {
+                entered()
+                await held
+            }
+            return originalSend(operation, ...arguments_)
+        }) as typeof camera.send
+        ;(camera as unknown as { polling: boolean }).polling = true
+        const frame = camera.captureViewfinderFrame()
+        try {
+            await started
+            await camera.disconnect()
+            finish()
+            await frame
+            expect(eventReads).toBe(0)
+        } finally {
+            finish()
+            await frame
+            await camera.disconnect()
+        }
+    })
+
     it('closes the transport even if restoring live-view output is rejected', async () => {
         const { camera, transport } = connectedCamera()
         await camera.captureLiveView()
