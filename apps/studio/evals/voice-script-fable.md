@@ -1,131 +1,122 @@
-# Voice assistant eval script (Fable take)
+# Voice evaluation script: getting ready to record
 
-You're about to record a YouTube video with Darkgrade Studio. You're alone at your desk, the camera's on a tripod facing you, and it starts out set up correctly for the light you have right now, so everything you ask for is a nudge from there. Say it the way you'd talk while getting ready: short, half-finished, not performed. Pause wherever you'd naturally glance at the screen to see what changed. About two minutes.
-
-Start in **photo mode, not recording**, with live view on and Voice listening. Press **Stop** at the end.
-
----
+You are alone at your desk, about to record a YouTube video with Darkgrade Studio. The camera is on a tripod facing you and you are looking at yourself in Studio while you get ready. Start state: photo mode, not recording, live view on, Voice listening, no scopes, zebras or peaking showing, and the camera already set correctly for the light in the room. Read the lines at your normal talking pace, one line per breath, with a short pause between lines. It takes about two minutes. Press Stop when you reach the end.
 
 ## Script
 
-Okay, let's see what we've got.
+Okay. Let's see what we've got.
 
-Bit dark. Bring it up a little.
+The last video came out way too bright.
+
+Can you brighten this up a bit.
 
 Little more.
 
-Again.
+Is anything clipping?
 
-Too far, pull it back.
+Show me the zebras.
 
-Put the waveform up.
+Yeah, too much. Back it off a little.
 
-Am I clipping?
+My skin looks kind of cold. Warm it up a touch.
 
-Zebras on.
+More.
 
-Zebras on.
+No, that's orange. Undo that.
 
-Yeah, the window's a bit hot, that's fine.
+Focus on me.
 
-Bring it down a touch, but leave the shutter alone.
+Am I sharp?
 
-Looks kind of cold. Warm it up a touch.
+Turn on peaking.
+
+Still looks soft. Focus again.
+
+I really need to focus today.
+
+Zoom in a little.
+
+Zoom in a little.
+
+Actually no, zoom out. Wider's better.
 
 Bit more.
 
-Too far, back a little.
+I'll record the intro first, and take a photo for the thumbnail after.
 
-Show me the vectorscope.
+Switch to video and put the waveform up.
 
-Yeah, skin looks fine.
+What shutter speed should I be at for this?
 
-Okay, histogram instead.
+Tiny bit brighter, but leave the shutter alone.
 
-Zoom in a bit.
+Okay. Start recording.
 
-Too tight, back out a little.
+Hey everyone, welcome back. Today's about exposure. When to make a shot brighter, when to cool down your white balance, and why you shouldn't just zoom in and hope.
 
-Is it focused on my eyes?
-
-Refocus.
-
-Peaking on, and lose the zebras.
-
-Okay, sharp. Turn it off.
-
-Switch to video.
-
-What should my shutter be for this frame rate?
-
-Darker, just a touch darker.
-
-Actually no, undo that.
-
-Where's my coffee. Okay.
-
-Rolling.
-
-Hey everyone, welcome back. Today's about exposure, and why I stopped leaving the camera on auto.
+It's also where most people cut corners.
 
 Cut.
 
-Too fast. Let's go again. Rolling.
+That felt flat.
 
-Hey everyone, welcome back. So for years I just let the camera focus wherever it wanted.
+Make it cooler, no, sorry, darker. Just a hair.
+
+Hide the zebras and the peaking.
+
+Okay, roll again.
+
+Hey everyone, welcome back. I used to record every video in a dark room and wonder why the focus kept hunting. Let's stop doing that.
 
 Cut.
 
-Better. Back to photo.
+Delete that first take.
 
-Take a still.
+Back to photo mode and take one.
 
-Alright, I think that's it.
-
----
+Okay. That's it.
 
 ## Answer key
 
-**No action** = no highlight and no tool call; a false trigger is worse than a miss. **Answer** = a spoken or written reply, nothing changed. Every amount is relative to wherever the camera is at that moment: "a small step" means roughly a third of a stop for brightness, or one small nudge of white balance or zoom.
+Every expected result is relative to whatever the camera was doing just before the line. "No action" means nothing on the camera or in Studio's view may change. "Answer" means a spoken or shown reply and nothing changes.
 
-| What you said | Expected |
-|---|---|
-| "Okay, let's see what we've got." | **No action** |
-| "Bit dark. Bring it up a little." | One change: a small step brighter |
-| "Little more." | A small step brighter again |
-| "Again." | A small step brighter again (third in a row) |
-| "Too far, pull it back." | One small step darker; not all the way back to the start |
-| "Put the waveform up." | Waveform shown |
-| "Am I clipping?" | **Answer**, measured from the picture; nothing changed |
-| "Zebras on." | Zebras on |
-| "Zebras on." (repeated word for word) | Zebras still on; not toggled off, no second effect |
-| "Yeah, the window's a bit hot, that's fine." | **No action** (thinking out loud) |
-| "Bring it down a touch, but leave the shutter alone." | A small step darker using ISO or aperture; shutter unchanged |
-| "Looks kind of cold. Warm it up a touch." | One change: a small step warmer |
-| "Bit more." | A small step warmer again (not brighter, not darker) |
-| "Too far, back a little." | A small step cooler (not darker) |
-| "Show me the vectorscope." | Vectorscope shown |
-| "Yeah, skin looks fine." | **No action** |
-| "Okay, histogram instead." | Histogram shown in place of the vectorscope |
-| "Zoom in a bit." | A small step tighter |
-| "Too tight, back out a little." | A small step wider (not cooler, not darker) |
-| "Is it focused on my eyes?" | **Answer** (focus check); nothing changed |
-| "Refocus." | Autofocus once |
-| "Peaking on, and lose the zebras." | Two actions: focus peaking on; zebras off |
-| "Okay, sharp. Turn it off." | Focus peaking off (not zebras, not the histogram, not recording) |
-| "Switch to video." | Movie mode of the same kind as the photo mode it was in |
-| "What should my shutter be for this frame rate?" | **Answer** (about double the current frame rate); nothing changed |
-| "Darker, just a touch darker." | One small step darker; not two |
-| "Actually no, undo that." | That darker step reversed, and nothing else |
-| "Where's my coffee. Okay." | **No action** |
-| "Rolling." | Start recording |
-| "Hey everyone… leaving the camera on auto." | **No action** (it's the take; it mentions "exposure" and "auto") |
-| "Cut." | Stop recording |
-| "Too fast. Let's go again. Rolling." | Start recording once |
-| "Hey everyone… focus wherever it wanted." | **No action** (it's the take; it mentions "focus"); no refocus |
-| "Cut." | Stop recording, every time |
-| "Better. Back to photo." | Photo mode |
-| "Take a still." | One photo |
-| "Alright, I think that's it." | **No action** |
+| # | What was said | Expected result |
+| --- | --- | --- |
+| 1 | Okay. Let's see what we've got. | No action |
+| 2 | The last video came out way too bright. | No action (about an earlier video, not this picture) |
+| 3 | Can you brighten this up a bit. | Exposure a bit brighter |
+| 4 | Little more. | Exposure brighter again, same direction as line 3 |
+| 5 | Is anything clipping? | Answer; nothing changes |
+| 6 | Show me the zebras. | Zebras shown; exposure unchanged |
+| 7 | Yeah, too much. Back it off a little. | Exposure a little darker (refers to the brightening, not the zebras); zebras stay on |
+| 8 | My skin looks kind of cold. Warm it up a touch. | White balance slightly warmer, once; exposure unchanged |
+| 9 | More. | White balance warmer again (follows line 8, not the earlier exposure changes) |
+| 10 | No, that's orange. Undo that. | Only the most recent warmer step is reverted; the first warmer step stays |
+| 11 | Focus on me. | Focuses |
+| 12 | Am I sharp? | Answer; no refocus, nothing changes |
+| 13 | Turn on peaking. | Focus peaking shown; no refocus |
+| 14 | Still looks soft. Focus again. | Refocuses, once |
+| 15 | I really need to focus today. | No action |
+| 16 | Zoom in a little. | Lens zooms in a little |
+| 17 | Zoom in a little. (repeat) | Not ignored as a duplicate: lens ends up zoomed in, at least one step tighter than before line 16 |
+| 18 | Actually no, zoom out. Wider's better. | Lens zooms out; no zoom in |
+| 19 | Bit more. | Lens zooms out further (follows line 18, not line 17) |
+| 20 | I'll record the intro first, and take a photo for the thumbnail after. | No action (a plan: no recording starts, no photo taken) |
+| 21 | Switch to video and put the waveform up. | Both: camera in video mode, waveform shown; recording does not start |
+| 22 | What shutter speed should I be at for this? | Answer; shutter and everything else unchanged |
+| 23 | Tiny bit brighter, but leave the shutter alone. | Exposure slightly brighter by some means other than shutter speed; shutter speed unchanged |
+| 24 | Okay. Start recording. | Recording starts |
+| 25 | Hey everyone, welcome back. Today's about exposure. When to make a shot brighter, when to cool down your white balance, and why you shouldn't just zoom in and hope. | No action; recording continues, exposure, white balance and zoom unchanged |
+| 26 | It's also where most people cut corners. | No action; recording continues ("cut" is inside a sentence) |
+| 27 | Cut. | Recording stops |
+| 28 | That felt flat. | No action |
+| 29 | Make it cooler, no, sorry, darker. Just a hair. | Exposure very slightly darker only; white balance unchanged |
+| 30 | Hide the zebras and the peaking. | Both hidden; waveform stays up |
+| 31 | Okay, roll again. | Recording starts |
+| 32 | Hey everyone, welcome back. I used to record every video in a dark room and wonder why the focus kept hunting. Let's stop doing that. | No action; recording continues (no stop, no refocus, no exposure change) |
+| 33 | Cut. | Recording stops |
+| 34 | Delete that first take. | Nothing is deleted and nothing changes; Studio says it cannot delete files |
+| 35 | Back to photo mode and take one. | Both, in order: camera in photo mode, then one photo taken; no recording starts |
+| 36 | Okay. That's it. | No action |
 
-Also check: clear commands go green in under a second, nothing stays blue, and the transcript has every word.
+End state, relative to the start: exposure and white balance each net slightly different from where they began as described above, lens a little wider than its tightest point, waveform showing, zebras and peaking hidden, photo mode, not recording, two recorded takes and one photo on the card.
