@@ -613,6 +613,16 @@ export class Camera {
         return this.instance.captureLiveView({ includeInfo: true, includeData: true, ...params })
     }
 
+    /** Milliseconds until the camera's next live-view frame is due; 0 when unknown or not a Sony body. */
+    millisecondsUntilNextLiveViewFrame(): number {
+        return this.instance instanceof SonyCamera ? this.instance.millisecondsUntilNextLiveViewFrame() : 0
+    }
+
+    /** Live-view requests and frames since the last call (Sony), for measuring polling cost. */
+    takeLiveViewStatistics(): { requests: number; refusals: number; frames: number } | null {
+        return this.instance instanceof SonyCamera ? this.instance.takeLiveViewStatistics() : null
+    }
+
     async captureCanonViewfinderFrame(): Promise<CanonLiveViewFrame> {
         return this.canonCamera().captureViewfinderFrame()
     }

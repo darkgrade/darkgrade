@@ -18,7 +18,7 @@ import {
     SHUTTER_VALUES,
     shutterToNumber,
     stepValue,
-} from '@renderer/lib/exposure-stops'
+} from '@shared/exposure-stops'
 import type { CameraControl, CameraControlName, CameraState } from '@shared/ipc'
 import { useRef } from 'react'
 

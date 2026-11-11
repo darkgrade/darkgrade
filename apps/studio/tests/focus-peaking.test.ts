@@ -35,6 +35,30 @@ function edge(low: number, high: number, blurPixels: number): (column: number) =
     }
 }
 
+/**
+ * Irregular fine grain across the middle third of each row, of the given contrast, optionally blurred by
+ * a Gaussian of the given width in pixels, as a lens out of focus would.
+ */
+function texture(base: number, contrast: number, blurPixels: number): (column: number) => number {
+    // Irregular grain (fixed per column), in the middle third only: real frames are mostly flat, which sets
+    // the noise floor, and real texture such as leather or stubble is irregular.
+    const random = noiseSource(11)
+    const values = Array.from({ length: SIZE + 16 }, () => random() + 0.5)
+    const grain = (column: number) =>
+        column < SIZE / 3 || column >= (2 * SIZE) / 3 ? base : base + contrast * (values[column + 8] - 0.5)
+    if (blurPixels === 0) return grain
+    return column => {
+        let sum = 0
+        let weights = 0
+        for (let tap = -4; tap <= 4; tap++) {
+            const weight = Math.exp(-(tap * tap) / (2 * blurPixels * blurPixels))
+            sum += weight * grain(column + tap)
+            weights += weight
+        }
+        return sum / weights
+    }
+}
+
 function peakedPixels(pixels: Uint8ClampedArray, sensitivity = 70): number {
     const settings = { zebras: false, zebraLevelPercent: 95, focusPeaking: true, peakingSensitivity: sensitivity }
     const overlay = paintAssists(pixels, SIZE, SIZE, settings, 0)
@@ -44,14 +68,11 @@ function peakedPixels(pixels: Uint8ClampedArray, sensitivity = 70): number {
 }
 
 describe('focus peaking', () => {
-    it('marks a sharp edge that falls between two pixels', () => {
-        const betweenPixels = (column: number) => edge(60, 76, 0.01)(column + 0.5)
-        expect(peakedPixels(picture(betweenPixels, 1.5))).toBeGreaterThan(SIZE * 0.8)
-    })
-
-    it('marks a sharp edge even when its contrast is low (leather texture in a dim room)', () => {
-        // At least one marked pixel on most rows: the whole edge is traced.
-        expect(peakedPixels(picture(edge(60, 76, 0.5), 1.5))).toBeGreaterThan(SIZE * 0.8)
+    it('marks fine texture in focus, and far less of it once it is out of focus', () => {
+        const sharp = peakedPixels(picture(texture(60, 20, 0), 1.5))
+        const soft = peakedPixels(picture(texture(60, 20, 1.5), 1.5))
+        expect(sharp).toBeGreaterThan(100)
+        expect(sharp).toBeGreaterThanOrEqual(10 * Math.max(soft, 1))
     })
 
     it('ignores a blurred edge however strong its contrast (out-of-focus glasses)', () => {

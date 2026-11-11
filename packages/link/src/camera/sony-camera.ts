@@ -103,7 +103,15 @@ const SONY_OSD_ENABLE_SETTLE_MS = 500
 const SONY_ACCESS_DENIED = 0x200f
 /** Live view runs at up to 30 fps: wait up to a few frame times for the next before giving up. */
 const SONY_LIVE_VIEW_NEXT_FRAME_TIMEOUT_MS = 150
-const SONY_LIVE_VIEW_RETRY_MS = 4
+/** Ask for the next frame this long before it's due, so a frame never waits for us. */
+const SONY_LIVE_VIEW_EARLY_MS = 1.5
+/** Between "not ready" answers; keeps a camera that refuses instantly from being asked in a tight loop. */
+const SONY_LIVE_VIEW_RETRY_MS = 1
+/** Frame intervals averaged to predict the next frame (about a third of a second at 30 fps). */
+const SONY_LIVE_VIEW_INTERVAL_SAMPLES = 9
+/** Intervals outside this range (pauses, focus moves) say nothing about the camera's frame rate. */
+const SONY_LIVE_VIEW_INTERVAL_MIN_MS = 15
+const SONY_LIVE_VIEW_INTERVAL_MAX_MS = 70
 const SONY_AF_AREA_Y_MAX = 479
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
@@ -942,20 +950,70 @@ export class SonyCamera extends GenericCamera {
         return { info, data, sonyFocalFrames }
     }
 
+    /** Requests and frames since the last read, for measuring how much asking live view costs. */
+    private liveViewCounters = { requests: 0, refusals: 0, frames: 0 }
+    private liveViewLastFrameRequestMs = 0
+    private liveViewIntervalsMs: number[] = []
+
+    /** How many requests live view has made, and how many frames they returned, since the last call. */
+    takeLiveViewStatistics(): { requests: number; refusals: number; frames: number } {
+        const counters = this.liveViewCounters
+        this.liveViewCounters = { requests: 0, refusals: 0, frames: 0 }
+        return counters
+    }
+
+    /** The camera's measured frame interval: the median of recent ones, or null until there are enough. */
+    private liveViewFrameIntervalMs(): number | null {
+        if (this.liveViewIntervalsMs.length < 3) return null
+        const sorted = [...this.liveViewIntervalsMs].sort((a, b) => a - b)
+        return sorted[Math.floor(sorted.length / 2)]
+    }
+
     /**
-     * The camera makes at most 30 live-view frames a second and answers Access Denied (0x200F) when
-     * asked before the next is ready; the reference says to ask again. Retry briefly instead of failing,
-     * so a caller polling as fast as it can gets every frame.
+     * The camera makes a new live-view frame every frame interval (33 ms at 30 fps) and answers
+     * Access Denied (0x200F) when asked before it's ready. Rather than asking constantly, wait until
+     * just before the next frame is due, measured from when the last frame was requested, then ask
+     * every millisecond until it arrives. That costs one or two requests a frame and adds at most a
+     * request's round trip of delay.
      */
+    /**
+     * Milliseconds until the next live-view frame is due (0 when it may already be). Callers that
+     * share the camera with other commands can wait this out first, so the wait never blocks them.
+     */
+    millisecondsUntilNextLiveViewFrame(): number {
+        const intervalMs = this.liveViewFrameIntervalMs()
+        if (intervalMs === null) return 0
+        const dueMs = this.liveViewLastFrameRequestMs + intervalMs - SONY_LIVE_VIEW_EARLY_MS
+        return Math.max(0, dueMs - performance.now())
+    }
+
     private async nextLiveViewObject(): Promise<{ code: number; data?: Uint8Array }> {
+        const waitMs = this.millisecondsUntilNextLiveViewFrame()
+        if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs))
         const deadline = Date.now() + SONY_LIVE_VIEW_NEXT_FRAME_TIMEOUT_MS
         for (;;) {
+            const requestStartedMs = performance.now()
             const response = await this.send(this.registry.operations.GetObject, {
                 ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
             })
-            if (response.code !== SONY_ACCESS_DENIED || Date.now() >= deadline) return response
+            this.liveViewCounters.requests++
+            if (response.code !== SONY_ACCESS_DENIED) {
+                this.recordLiveViewFrame(requestStartedMs)
+                return response
+            }
+            this.liveViewCounters.refusals++
+            if (Date.now() >= deadline) return response
             await new Promise(resolve => setTimeout(resolve, SONY_LIVE_VIEW_RETRY_MS))
         }
+    }
+
+    private recordLiveViewFrame(requestStartedMs: number): void {
+        this.liveViewCounters.frames++
+        const intervalMs = requestStartedMs - this.liveViewLastFrameRequestMs
+        this.liveViewLastFrameRequestMs = requestStartedMs
+        if (intervalMs < SONY_LIVE_VIEW_INTERVAL_MIN_MS || intervalMs > SONY_LIVE_VIEW_INTERVAL_MAX_MS) return
+        this.liveViewIntervalsMs.push(intervalMs)
+        if (this.liveViewIntervalsMs.length > SONY_LIVE_VIEW_INTERVAL_SAMPLES) this.liveViewIntervalsMs.shift()
     }
 
     async startRecording(): Promise<void> {

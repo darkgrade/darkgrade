@@ -5,6 +5,10 @@ directories:
 files:
     - out/**
     - package.json
+extraResources:
+    # llama.cpp's server runs the local speech model; fetched by scripts/download-llama-server.ts
+    - from: resources/llama-server
+      to: llama-server
 asarUnpack:
     # node-usb ships native prebuilds that must live outside the asar
     - '**/node_modules/usb/**'
@@ -15,5 +19,5 @@ mac:
         - dmg
         - zip
     extendInfo:
-        NSMicrophoneUsageDescription: Darkgrade Studio uses the microphone for local, on-device voice control. Audio never leaves your Mac.
+        NSMicrophoneUsageDescription: Darkgrade Studio uses the microphone for live transcription, which runs on this Mac. Audio never leaves your Mac.
 npmRebuild: false

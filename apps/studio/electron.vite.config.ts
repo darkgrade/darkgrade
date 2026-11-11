@@ -33,9 +33,5 @@ export default defineConfig({
         worker: {
             format: 'es',
         },
-        build: {
-            // transformers.js is large; raise the warning ceiling rather than splitting it
-            chunkSizeWarningLimit: 4096,
-        },
     },
 })

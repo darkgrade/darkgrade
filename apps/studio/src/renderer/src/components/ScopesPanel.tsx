@@ -4,20 +4,19 @@ import { Histogram } from '@renderer/scopes/Histogram'
 import type { PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import { Vectorscope } from '@renderer/scopes/Vectorscope'
 import { Waveform } from '@renderer/scopes/Waveform'
-import { useState } from 'react'
+import { createStore } from '@renderer/lib/external-store'
+import { SCOPE_IDS, type ScopeId } from '@shared/ipc'
 
-const SCOPES = [
+const SCOPES: { id: ScopeId; label: string }[] = [
     { id: 'histogram', label: 'Histogram' },
     { id: 'waveform', label: 'Waveform' },
     { id: 'vectorscope', label: 'Vectorscope' },
-] as const
-
-type ScopeId = (typeof SCOPES)[number]['id']
+]
 
 const STORAGE_KEY = 'studio.scope'
 
 function isScopeId(value: unknown): value is ScopeId {
-    return SCOPES.some(scope => scope.id === value)
+    return SCOPE_IDS.includes(value as ScopeId)
 }
 
 function readSavedScope(): ScopeId {
@@ -29,9 +28,21 @@ function readSavedScope(): ScopeId {
     }
 }
 
+/** The scope on show; a tool can switch it too (see App), and the choice is remembered. */
+export const scopeChoice = createStore<ScopeId>(readSavedScope())
+
+export function chooseScope(next: ScopeId): void {
+    scopeChoice.set(next)
+    try {
+        localStorage.setItem(STORAGE_KEY, next)
+    } catch {
+        // The choice still applies for this session.
+    }
+}
+
 interface ScopesPanelProps {
-    /** The latest live-view frame; the chosen scope follows it frame by frame. */
-    frameUrl: string | null
+    /** Live view is running, so the scopes have frames to read. */
+    active: boolean
     /** Zebras and focus peaking, drawn over the preview by Studio rather than the camera. */
     assists: PreviewAssistSettings
     onAssistsChange: (assists: PreviewAssistSettings) => void
@@ -75,17 +86,8 @@ function PreviewAssist(props: PreviewAssistProps): React.JSX.Element {
 }
 
 /** One scope of the live feed at a time, chosen like Resolve's scope menu and remembered. */
-export function ScopesPanel({ frameUrl, assists, onAssistsChange }: ScopesPanelProps): React.JSX.Element {
-    const [scope, setScope] = useState<ScopeId>(readSavedScope)
-
-    const choose = (next: ScopeId): void => {
-        setScope(next)
-        try {
-            localStorage.setItem(STORAGE_KEY, next)
-        } catch {
-            // The choice still applies for this session.
-        }
-    }
+export function ScopesPanel({ active, assists, onAssistsChange }: ScopesPanelProps): React.JSX.Element {
+    const scope = scopeChoice.use()
 
     return (
         <InspectorSection title="Scopes" collapsible defaultOpen>
@@ -96,7 +98,7 @@ export function ScopesPanel({ frameUrl, assists, onAssistsChange }: ScopesPanelP
                 value={[scope]}
                 onValueChange={value => {
                     const next = value[0]
-                    if (isScopeId(next)) choose(next)
+                    if (isScopeId(next)) chooseScope(next)
                 }}
                 aria-label="Scope"
             >
@@ -110,11 +112,11 @@ export function ScopesPanel({ frameUrl, assists, onAssistsChange }: ScopesPanelP
                     </ToggleGroupItem>
                 ))}
             </ToggleGroup>
-            {scope === 'histogram' && <Histogram frameUrl={frameUrl} />}
-            {scope === 'waveform' && <Waveform frameUrl={frameUrl} />}
+            {scope === 'histogram' && <Histogram active={active} />}
+            {scope === 'waveform' && <Waveform active={active} />}
             {scope === 'vectorscope' && (
                 <div className="mx-auto w-52">
-                    <Vectorscope frameUrl={frameUrl} />
+                    <Vectorscope active={active} />
                 </div>
             )}
             <PreviewAssist

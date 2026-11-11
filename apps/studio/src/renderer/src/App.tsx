@@ -8,19 +8,19 @@ import { LiveViewPanel } from '@renderer/components/LiveViewPanel'
 import { LiveViewStats } from '@renderer/components/LiveViewStats'
 import { PreviewDialog, type PreviewState } from '@renderer/components/PreviewDialog'
 import { RecordingPanel } from '@renderer/components/RecordingPanel'
-import { ScopesPanel } from '@renderer/components/ScopesPanel'
+import { chooseScope, scopeChoice, ScopesPanel } from '@renderer/components/ScopesPanel'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
 import { TopBar } from '@renderer/components/TopBar'
-import { VoicePanel } from '@renderer/components/VoicePanel'
+import { VoicePanel, VoiceStatusButton } from '@renderer/components/VoicePanel'
 import { readJpegSize } from '@renderer/lib/jpeg-size'
+import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
 import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
-import type { CameraState, DownloadProgress, FileEntry, FocusFrame, LogEntry } from '@shared/ipc'
-import { executeIntent } from '@voice/execute-intent'
-import { parseIntent } from '@voice/intent-parser'
-import { useVoice } from '@voice/use-voice'
+import type { CameraState, DownloadProgress, FileEntry, LogEntry } from '@shared/ipc'
+import { useLiveTranscription } from '@voice/use-live-transcription'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const MAX_LOG_ENTRIES = 500
+const VOICE_RELEASE_DELAY_MS = 60_000
 
 const INITIAL_STATE: CameraState = {
     connected: false,
@@ -56,8 +56,6 @@ export function App(): React.JSX.Element {
     const previewEntryRef = useRef<FileEntry | null>(null)
     previewEntryRef.current = previewEntry
     const [previewState, setPreviewState] = useState<PreviewState>({ status: 'loading' })
-    const [liveFrameUrl, setLiveFrameUrl] = useState<string | null>(null)
-    const [focusFrames, setFocusFrames] = useState<FocusFrame[]>([])
     const [osdFrameUrl, setOsdFrameUrl] = useState<string | null>(null)
     const [previewAssists, setPreviewAssists] = useState<PreviewAssistSettings>(DEFAULT_PREVIEW_ASSISTS)
     const liveFrameTimes = useRef<number[]>([])
@@ -67,7 +65,6 @@ export function App(): React.JSX.Element {
     const [capturing, setCapturing] = useState(false)
     const [logExpanded, setLogExpanded] = useState(false)
 
-    const liveFrameUrlRef = useRef<string | null>(null)
     const zoomingRef = useRef(false)
 
     // A held zoom must stop if the window loses focus mid-press.
@@ -115,12 +112,9 @@ export function App(): React.JSX.Element {
                 setLiveFrameSize(previous =>
                     previous?.width === size.width && previous.height === size.height ? previous : size
                 )
-            const url = URL.createObjectURL(new Blob([jpeg as BlobPart], { type: 'image/jpeg' }))
-            if (liveFrameUrlRef.current) URL.revokeObjectURL(liveFrameUrlRef.current)
-            liveFrameUrlRef.current = url
-            setLiveFrameUrl(url)
+            publishLiveFrame(jpeg)
         })
-        const unsubscribeFocusFrames = api.onFocusFrames(setFocusFrames)
+        const unsubscribeFocusFrames = api.onFocusFrames(publishFocusFrames)
         const frameRateTimer = setInterval(() => {
             const now = performance.now()
             const recent = liveFrameTimes.current.filter(time => now - time <= FRAME_RATE_WINDOW_MS)
@@ -192,13 +186,6 @@ export function App(): React.JSX.Element {
         [log]
     )
 
-    /** Voice asks for the list on demand; the result also arrives through onFiles. */
-    const refreshFiles = useCallback(async (): Promise<FileEntry[]> => {
-        const result = await api.listFiles()
-        if (!result.ok) throw new Error(result.error)
-        return result.data
-    }, [api])
-
     const openPreview = useCallback(
         async (entry: FileEntry) => {
             previewEntryRef.current = entry
@@ -251,34 +238,37 @@ export function App(): React.JSX.Element {
         return () => window.removeEventListener('keydown', onKeyDown)
     }, [busy, cardBusy, previewEntry, cameraState.connected, capture, focus])
 
+    // ------------------------------------------------------------- studio view
+
+    // Tools (the assistant, MCP clients) can switch the scope and the preview assists.
+    const scope = scopeChoice.use()
+    useEffect(
+        () =>
+            api.onViewChange(change => {
+                if (change.scope) chooseScope(change.scope)
+                const { scope: _scope, ...assists } = change
+                if (Object.keys(assists).length) setPreviewAssists(previous => ({ ...previous, ...assists }))
+            }),
+        [api]
+    )
+    useEffect(() => {
+        void api.reportViewState({ scope, ...previewAssists })
+    }, [api, scope, previewAssists])
+
     // ------------------------------------------------------------------- voice
 
-    const handleTranscript = useCallback(
-        async (transcript: string): Promise<{ reply: string; ok: boolean } | null> => {
-            const parsed = parseIntent(transcript)
-            if (!parsed) {
-                log('voice', `Heard "${transcript}" — no matching command`)
-                return null
-            }
-            log('voice', `"${transcript}" → ${parsed.intent}${parsed.value ? ` (${parsed.value})` : ''}`)
-            try {
-                const reply = await executeIntent(parsed, { api, refreshFiles })
-                log('voice', reply)
-                return { reply, ok: true }
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error)
-                log('voice', message, 'error')
-                // Full error goes to the log; keep the spoken reply short.
-                return { reply: "That didn't work", ok: false }
-            }
-        },
-        [api, log, refreshFiles]
-    )
-
-    const voice = useVoice({
-        onTranscript: handleTranscript,
-        onLog: (message, level) => log('voice', message, level),
-    })
+    const voice = useLiveTranscription()
+    const [voiceExpanded, setVoiceExpanded] = useState(false)
+    const voiceIdle = !voiceExpanded && voice.listening === 'off'
+    // The speech engine holds several GB; give it back a while after voice is put away.
+    useEffect(() => {
+        if (!voiceIdle) return
+        const timer = setTimeout(() => {
+            void api.voiceRelease()
+            void api.assistantRelease()
+        }, VOICE_RELEASE_DELAY_MS)
+        return () => clearTimeout(timer)
+    }, [api, voiceIdle])
 
     // --------------------------------------------------------------------- UI
 
@@ -286,11 +276,10 @@ export function App(): React.JSX.Element {
         <TooltipProvider delay={400}>
             <Toaster>
                 <div className="relative flex h-full flex-col">
-                    <AmbientBackdrop frameUrl={cameraState.connected ? liveFrameUrl : null} />
+                    <AmbientBackdrop active={cameraState.connected} />
                     <TopBar
                         cameraState={cameraState}
                         busy={busy}
-                        voiceListening={voice.mode === 'continuous' || voice.pttActive}
                         onConnect={() => void run(() => api.connect())}
                         onDisconnect={() => void run(() => api.disconnect())}
                         onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
@@ -299,8 +288,6 @@ export function App(): React.JSX.Element {
                         <main className="flex min-w-0 flex-1 flex-col">
                             <LiveViewPanel
                                 cameraState={cameraState}
-                                liveFrameUrl={liveFrameUrl}
-                                focusFrames={focusFrames}
                                 previewAssists={previewAssists}
                                 osdFrameUrl={cameraState.osdOverlay ? osdFrameUrl : null}
                                 busy={busy}
@@ -318,13 +305,18 @@ export function App(): React.JSX.Element {
                                 onStartRecording={() => void run(() => api.recordStart())}
                                 onStopRecording={() => void run(() => api.recordStop())}
                             />
+                            <VoicePanel
+                                voice={voice}
+                                expanded={voiceExpanded}
+                                onCollapse={() => setVoiceExpanded(false)}
+                            />
                         </main>
                         <aside
                             className="flex w-80 shrink-0 flex-col overflow-y-auto bg-black/55"
                             aria-label="Camera controls"
                         >
                             <ScopesPanel
-                                frameUrl={cameraState.connected && cameraState.liveView ? liveFrameUrl : null}
+                                active={cameraState.connected && cameraState.liveView}
                                 assists={previewAssists}
                                 onAssistsChange={setPreviewAssists}
                             />
@@ -374,13 +366,19 @@ export function App(): React.JSX.Element {
                                 onChooseDir={() => void run(() => api.chooseDownloadDir())}
                                 onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
                             />
-                            <VoicePanel voice={voice} />
                         </aside>
                     </div>
                     <EventLog
                         logs={logs}
                         expanded={logExpanded}
                         onToggle={() => setLogExpanded(previous => !previous)}
+                        leading={
+                            <VoiceStatusButton
+                                voice={voice}
+                                expanded={voiceExpanded}
+                                onToggle={() => setVoiceExpanded(previous => !previous)}
+                            />
+                        }
                         trailing={
                             cameraState.connected && (
                                 <LiveViewStats

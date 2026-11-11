@@ -7,6 +7,8 @@ interface EventLogProps {
     logs: LogEntry[]
     expanded: boolean
     onToggle: () => void
+    /** Shown at the left end of the bar, before the activity log (the voice button). */
+    leading?: React.ReactNode
     /** Shown at the right end of the bar (live view stats). */
     trailing?: React.ReactNode
 }
@@ -26,7 +28,7 @@ const SOURCE_COLORS: Record<LogEntry['source'], string> = {
     voice: 'text-violet-400',
 }
 
-export function EventLog({ logs, expanded, onToggle, trailing }: EventLogProps): React.JSX.Element {
+export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventLogProps): React.JSX.Element {
     const scrollRef = useRef<HTMLDivElement>(null)
     const latest = logs.at(-1)
     const errorCount = logs.filter(entry => entry.level === 'error').length
@@ -39,6 +41,7 @@ export function EventLog({ logs, expanded, onToggle, trailing }: EventLogProps):
     return (
         <div className="flex shrink-0 flex-col bg-black/55">
             <div className="flex h-8 items-center gap-3 px-3 text-xs">
+                {leading}
                 <Button variant="ghost" size="xs" onClick={onToggle} aria-expanded={expanded} aria-controls="event-log">
                     {expanded ? <ChevronDown /> : <ChevronUp />} Activity
                     <span className="text-muted-foreground tabular-nums">{logs.length}</span>

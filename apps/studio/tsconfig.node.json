@@ -15,10 +15,10 @@
         "src/main/**/*",
         "src/preload/**/*",
         "src/shared/**/*",
-        "src/renderer/src/voice/intent-parser.ts",
-        "src/renderer/src/voice/number-words.ts",
-        "src/renderer/src/lib/exposure-stops.ts",
         "src/renderer/src/scopes/preview-assists-painting.ts",
+        "src/renderer/src/voice/intent-follower.ts",
+        "src/renderer/src/voice/transcript-store.ts",
+        "src/renderer/src/lib/external-store.ts",
         "electron.vite.config.ts",
         "tests/**/*"
     ]

@@ -31,6 +31,20 @@ export const IPC = {
     KillCameraDaemon: 'system:kill-camera-daemon',
     ChooseDownloadDir: 'system:choose-download-dir',
     RevealPath: 'system:reveal-path',
+    VoiceGetStatus: 'voice:get-status',
+    VoicePrepare: 'voice:prepare',
+    VoiceRelease: 'voice:release',
+    VoiceSaveSessionAudio: 'voice:save-session-audio',
+    PreferencesGet: 'preferences:get',
+    PreferencesSet: 'preferences:set',
+    McpServerGetStatus: 'mcp:get-status',
+    AssistantGetStatus: 'assistant:get-status',
+    AssistantProcessTranscript: 'assistant:process-transcript',
+    AssistantRelease: 'assistant:release',
+    AssistantPrepare: 'assistant:prepare',
+    AssistantWarmUp: 'assistant:warm-up',
+    ViewReportState: 'view:report-state',
+    VoiceDiagnostic: 'voice:diagnostic',
 } as const
 
 export const IPC_EVENTS = {
@@ -43,6 +57,12 @@ export const IPC_EVENTS = {
     FilesProgress: 'evt:files-progress',
     PreviewProgress: 'evt:preview-progress',
     Files: 'evt:files',
+    VoiceStatus: 'evt:voice-status',
+    Preferences: 'evt:preferences',
+    McpServerStatus: 'evt:mcp-status',
+    AssistantStatus: 'evt:assistant-status',
+    VoiceIntent: 'evt:voice-intent',
+    ViewChange: 'evt:view-change',
 } as const
 
 export type IpcResult<T = void> = { ok: true; data: T } | { ok: false; error: string }
@@ -84,6 +104,30 @@ export const CAMERA_CONTROL_NAMES = [
     'iso',
 ] as const
 export type CameraControlName = (typeof CAMERA_CONTROL_NAMES)[number]
+
+/** What each setting is called on screen, in logs and in tool descriptions. */
+export const CAMERA_CONTROL_LABELS: Record<CameraControlName, string> = {
+    whiteBalance: 'White balance',
+    colorTemperature: 'Colour temperature',
+    imageSize: 'Photo size',
+    aspectRatio: 'Aspect ratio',
+    jpegQuality: 'JPEG quality',
+    movieFrameRate: 'Frame rate',
+    zoomMode: 'Zoom mode',
+    liveViewQuality: 'Live view quality',
+    exposureProgram: 'Shooting mode',
+    aperture: 'Aperture',
+    shutterSpeed: 'Shutter speed',
+    iso: 'ISO',
+    focusMode: 'Focus mode',
+    focusArea: 'Focus area',
+    subjectRecognition: 'Eye tracking',
+    recognitionTarget: 'Recognition target',
+    eyeSelect: 'Eye',
+    stillFormat: 'Photo format',
+    movieFormat: 'Movie format',
+    movieSetting: 'Movie quality',
+}
 export type CameraControls = Record<CameraControlName, CameraControl | null>
 
 /** The attached lens and where its zoom sits. */
@@ -219,6 +263,69 @@ export interface DownloadProgress {
     fileBytes: number
 }
 
+/** A local model (speech or assistant): its download, startup and the port its server listens on. */
+export interface LocalModelStatus {
+    phase: 'idle' | 'not-downloaded' | 'downloading' | 'starting' | 'ready' | 'error'
+    receivedBytes: number
+    totalBytes: number
+    port: number | null
+    message: string | null
+}
+
+export type VoiceEngineStatus = LocalModelStatus
+
+/** A stretch of live transcript handed to the assistant. Times are milliseconds since the epoch, for the timing log. */
+export interface TranscriptSegment {
+    segmentId: number
+    text: string
+    context: string
+    /** When its last word arrived from the speech engine. */
+    lastWordAtMs: number
+    /** When it was handed over (after waiting for the sentence to end). */
+    handedOverAtMs: number
+}
+
+/** A camera request heard in the live transcript, as the assistant recognises and carries it out. */
+export interface VoiceIntent {
+    id: number
+    /** The transcript stretch it was found in (see assistantProcessTranscript). */
+    segmentId: number
+    /** The words that made the request, as spoken. */
+    quote: string
+    instruction: string
+    state: 'recognized' | 'running' | 'done' | 'failed'
+    /** The assistant's one-line answer once finished. */
+    reply: string | null
+}
+
+export const SCOPE_IDS = ['histogram', 'waveform', 'vectorscope'] as const
+export type ScopeId = (typeof SCOPE_IDS)[number]
+
+/** What Studio's own window shows over and beside the preview: its scopes, zebras and focus peaking. */
+export interface StudioViewState {
+    scope: ScopeId
+    zebras: boolean
+    /** Brightness (percent of full scale) at or above which zebra stripes appear, 70–100. */
+    zebraLevelPercent: number
+    focusPeaking: boolean
+    /** 1–100: higher marks softer edges too. */
+    peakingSensitivity: number
+}
+
+/** Studio's saved settings (Preferences window). */
+export interface Preferences {
+    /** Serve Studio's camera tools to MCP clients on this Mac. Off by default. */
+    mcpServerEnabled: boolean
+    mcpServerPort: number
+}
+
+export interface McpServerStatus {
+    running: boolean
+    /** Where clients connect, while running. */
+    url: string | null
+    error: string | null
+}
+
 /** API surface exposed on `window.studio` by the preload script. */
 export interface StudioApi {
     connect(): Promise<IpcResult<CameraState>>
@@ -262,4 +369,33 @@ export interface StudioApi {
     onFilesProgress(callback: (progress: DownloadProgress) => void): () => void
     onPreviewProgress(callback: (progress: PreviewProgress) => void): () => void
     onFiles(callback: (update: FilesUpdate) => void): () => void
+    voiceGetStatus(): Promise<IpcResult<VoiceEngineStatus>>
+    /** Downloads the speech model if needed and starts the engine; resolves with its local port. */
+    voicePrepare(): Promise<IpcResult<number>>
+    /** Stops the speech engine to free its memory. */
+    voiceRelease(): Promise<IpcResult<void>>
+    /** Saves the last session's audio as a WAV in Application Support; resolves with its path. */
+    voiceSaveSessionAudio(pcm: Uint8Array): Promise<IpcResult<string>>
+    /** Adds a line to the speech engine's log file. */
+    voiceDiagnostic(message: string): Promise<IpcResult<void>>
+    onVoiceStatus(callback: (status: VoiceEngineStatus) => void): () => void
+    getPreferences(): Promise<IpcResult<Preferences>>
+    setPreferences(change: Partial<Preferences>): Promise<IpcResult<Preferences>>
+    onPreferences(callback: (preferences: Preferences) => void): () => void
+    getMcpServerStatus(): Promise<IpcResult<McpServerStatus>>
+    onMcpServerStatus(callback: (status: McpServerStatus) => void): () => void
+    assistantGetStatus(): Promise<IpcResult<LocalModelStatus>>
+    /** Hands a stretch of live transcript to the assistant to find and carry out camera requests. */
+    assistantProcessTranscript(segment: TranscriptSegment): Promise<IpcResult<void>>
+    assistantRelease(): Promise<IpcResult<void>>
+    /** Downloads the assistant model if needed and starts it. */
+    assistantPrepare(): Promise<IpcResult<number>>
+    /** The words so far, for the assistant to read ahead while the speaker is still talking. */
+    assistantWarmUp(preview: { text: string; context: string }): Promise<IpcResult<void>>
+    onAssistantStatus(callback: (status: LocalModelStatus) => void): () => void
+    onVoiceIntent(callback: (intent: VoiceIntent) => void): () => void
+    /** Tells the main process what the window shows, so tools can read it. */
+    reportViewState(state: StudioViewState): Promise<IpcResult<void>>
+    /** A tool asked the window to change what it shows. */
+    onViewChange(callback: (change: Partial<StudioViewState>) => void): () => void
 }

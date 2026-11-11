@@ -40,11 +40,11 @@ function measure(sample: FrameSample | null): Float32Array {
 }
 
 /** Live RGB waveform of the camera feed; channels add toward white where they agree. */
-export function Waveform({ frameUrl }: { frameUrl: string | null }): React.JSX.Element {
+export function Waveform({ active }: { active: boolean }): React.JSX.Element {
     const target = useRef<Float32Array>(new Float32Array(COLUMNS * ROWS * 3))
     const shown = useRef<Float32Array>(new Float32Array(COLUMNS * ROWS * 3))
     const traceRef = useRef<HTMLCanvasElement | null>(null)
-    useFrameSamples(frameUrl, sample => {
+    useFrameSamples(active, sample => {
         target.current = measure(sample)
     })
 

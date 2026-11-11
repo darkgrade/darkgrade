@@ -72,11 +72,11 @@ function measure(sample: FrameSample | null): Float32Array {
 }
 
 /** Live vectorscope of the camera feed with Resolve's targets and skin-tone line. */
-export function Vectorscope({ frameUrl }: { frameUrl: string | null }): React.JSX.Element {
+export function Vectorscope({ active }: { active: boolean }): React.JSX.Element {
     const target = useRef<Float32Array>(new Float32Array(GRID * GRID * 4))
     const shown = useRef<Float32Array>(new Float32Array(GRID * GRID * 4))
     const traceRef = useRef<HTMLCanvasElement | null>(null)
-    useFrameSamples(frameUrl, sample => {
+    useFrameSamples(active, sample => {
         target.current = measure(sample)
     })
 

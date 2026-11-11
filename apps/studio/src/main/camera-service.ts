@@ -37,7 +37,7 @@ import type {
     LogEntry,
     PreviewProgress,
 } from '@shared/ipc'
-import { CAMERA_CONTROL_NAMES, IPC_EVENTS } from '@shared/ipc'
+import { CAMERA_CONTROL_LABELS, CAMERA_CONTROL_NAMES, IPC_EVENTS } from '@shared/ipc'
 import { app } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
@@ -50,6 +50,7 @@ const PREVIEWABLE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp']
 const PREVIEW_MAX_BYTES = 40 * 1024 * 1024
 /** Link waits for each new frame itself (Sony makes up to 30 a second), so only yield between frames. */
 const LIVE_VIEW_FRAME_DELAY_MS = 0
+const LIVE_VIEW_STATISTICS_INTERVAL_MS = 10_000
 const LIVE_VIEW_ERROR_DELAY_MS = 500
 const LIVE_VIEW_MAX_CONSECUTIVE_ERRORS = 3
 const CONNECT_RETRY_DELAY_MS = 400
@@ -109,28 +110,6 @@ const SONY_CONTROL_PROPERTIES: Record<CameraControlName, string[]> = {
     stillFormat: ['StillFileFormat', 'CompressionSetting'],
     movieFormat: ['MovieFileFormat'],
     movieSetting: ['MovieRecordingSetting'],
-}
-const CONTROL_LABELS: Record<CameraControlName, string> = {
-    whiteBalance: 'White balance',
-    colorTemperature: 'Colour temperature',
-    imageSize: 'Photo size',
-    aspectRatio: 'Aspect ratio',
-    jpegQuality: 'JPEG quality',
-    movieFrameRate: 'Frame rate',
-    zoomMode: 'Zoom mode',
-    liveViewQuality: 'Live view quality',
-    exposureProgram: 'Shooting mode',
-    aperture: 'Aperture',
-    shutterSpeed: 'Shutter speed',
-    iso: 'ISO',
-    focusMode: 'Focus mode',
-    focusArea: 'Focus area',
-    subjectRecognition: 'Eye tracking',
-    recognitionTarget: 'Recognition target',
-    eyeSelect: 'Eye',
-    stillFormat: 'Photo format',
-    movieFormat: 'Movie format',
-    movieSetting: 'Movie quality',
 }
 /** Sony's touch-focus coordinates are on a fixed 640×480 grid regardless of the picture size. */
 const SONY_AF_GRID_WIDTH = 640
@@ -779,9 +758,14 @@ export class CameraService {
             await camera.set(properties[propertyName] as never, encoded as never)
             // Choosing an area by hand replaces any switch click-to-focus made.
             if (name === 'focusArea') this.focusAreaBeforeTouch = null
-            this.log('system', `${CONTROL_LABELS[name]} → ${value}`)
-            await delay(SET_APPLY_DELAY_MS)
-            await this.refreshSettingsRaw()
+            this.log('system', `${CAMERA_CONTROL_LABELS[name]} → ${value}`)
+            // A mode change reshapes what the other settings allow, so those still read back before returning.
+            if (name === 'exposureProgram' || name === 'whiteBalance' || name === 'focusMode') {
+                await delay(SET_APPLY_DELAY_MS)
+                await this.refreshSettingsRaw()
+            } else {
+                this.applyOptimistically(name, value)
+            }
             // A new area or subject setting only takes effect once AF runs again; in PC Remote it doesn't
             // run on its own, so focus once now (e.g. back to Wide finds the eye again).
             if (REFOCUS_CONTROLS.has(name) && !/^(MF|DMF)/i.test(this.controls?.focusMode?.value ?? '')) {
@@ -793,32 +777,46 @@ export class CameraService {
     }
 
     async setIso(value: string): Promise<CameraSettings> {
-        return this.enqueue(async () => {
-            await this.requireCameraForControl().setIso(value)
-            this.log('system', `ISO → ${value}`)
-            // Sony applies asynchronously — give it a beat before reading back.
-            // DevicePropChanged events keep the UI in sync after this too.
-            await delay(SET_APPLY_DELAY_MS)
-            return this.refreshSettingsRaw()
-        })
+        await this.enqueue(() => this.requireCameraForControl().setIso(value))
+        this.log('system', `ISO → ${value}`)
+        return this.applyOptimistically('iso', value)
     }
 
     async setShutterSpeed(value: string): Promise<CameraSettings> {
-        return this.enqueue(async () => {
-            await this.requireCameraForControl().setShutterSpeed(value)
-            this.log('system', `Shutter → ${value}`)
-            await delay(SET_APPLY_DELAY_MS)
-            return this.refreshSettingsRaw()
-        })
+        await this.enqueue(() => this.requireCameraForControl().setShutterSpeed(value))
+        this.log('system', `Shutter → ${value}`)
+        return this.applyOptimistically('shutterSpeed', value)
     }
 
     async setAperture(value: string): Promise<CameraSettings> {
-        return this.enqueue(async () => {
-            await this.requireCameraForControl().setAperture(value)
-            this.log('system', `Aperture → ${value}`)
-            await delay(SET_APPLY_DELAY_MS)
-            return this.refreshSettingsRaw()
-        })
+        await this.enqueue(() => this.requireCameraForControl().setAperture(value))
+        this.log('system', `Aperture → ${value}`)
+        return this.applyOptimistically('aperture', value)
+    }
+
+    /**
+     * The camera accepted a value: show it now rather than after a fixed wait and a full re-read
+     * (which cost about half a second per change). One re-read follows in the background once
+     * changes settle, so anything the camera did differently still shows up.
+     */
+    private applyOptimistically(name: CameraControlName, value: string): CameraSettings {
+        const control = this.controls?.[name]
+        if (this.controls && control) this.controls = { ...this.controls, [name]: { ...control, value } }
+        if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture') this.settings = { ...this.settings, [name]: value }
+        this.broadcastState()
+        this.scheduleSettingsConfirmation()
+        return this.settings
+    }
+
+    private settingsConfirmationTimer: ReturnType<typeof setTimeout> | null = null
+
+    private scheduleSettingsConfirmation(): void {
+        if (this.settingsConfirmationTimer) clearTimeout(this.settingsConfirmationTimer)
+        // Sony applies asynchronously; read back once it has had a moment, after the last of a burst of changes.
+        this.settingsConfirmationTimer = setTimeout(() => {
+            this.settingsConfirmationTimer = null
+            if (this.connected) void this.enqueue(() => this.refreshSettingsRaw()).catch(() => {})
+        }, SET_APPLY_DELAY_MS)
     }
 
     // ------------------------------------------------------------------ focus
@@ -936,13 +934,34 @@ export class CameraService {
 
         this.liveViewLoopDone = (async () => {
             let consecutiveErrors = 0
+            let statisticsStartedMs = performance.now()
+            let captureMs = 0
             while (!this.liveViewStopRequested && this.connected && this.camera) {
                 const camera = this.camera
                 try {
+                    // Wait for the next frame outside the command queue, so clicks never wait behind it.
+                    const untilNextFrameMs = camera.millisecondsUntilNextLiveViewFrame()
+                    if (untilNextFrameMs > 0) await delay(untilNextFrameMs)
+                    const captureStartedMs = performance.now()
                     const { data, sonyFocalFrames } = await this.enqueue(() =>
                         camera.captureLiveView({ includeInfo: false })
                     )
+                    captureMs += performance.now() - captureStartedMs
+                    if (performance.now() - statisticsStartedMs > LIVE_VIEW_STATISTICS_INTERVAL_MS) {
+                        const statistics = camera.takeLiveViewStatistics()
+                        const seconds = (performance.now() - statisticsStartedMs) / 1000
+                        if (statistics?.frames) {
+                            console.log(
+                                `[live view] ${(statistics.frames / seconds).toFixed(1)} fps, ` +
+                                    `${(statistics.requests / statistics.frames).toFixed(2)} requests per frame, ` +
+                                    `${(captureMs / statistics.frames).toFixed(1)} ms per capture`
+                            )
+                        }
+                        statisticsStartedMs = performance.now()
+                        captureMs = 0
+                    }
                     if (data && !this.liveViewStopRequested) {
+                        this.latestLiveViewFrame = data
                         this.broadcast(IPC_EVENTS.LiveViewFrame, data)
                         this.broadcastFocusFrames(sonyFocalFrames ?? [])
                         await this.refreshOsdFrame(camera)
@@ -983,6 +1002,8 @@ export class CameraService {
     }
 
     private liveViewLoopDone: Promise<void> | null = null
+    /** The newest live-view JPEG, for tools that look at or measure the picture. */
+    latestLiveViewFrame: Uint8Array | null = null
 
     async stopLiveView(): Promise<CameraState> {
         if (this.liveViewRunning) {
