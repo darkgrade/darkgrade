@@ -136,3 +136,140 @@ img {
     .tally { animation: none; }
     .tally-comet { display: none; }
 }
+
+/*
+ * Voice: the panel grows up from the status bar and the preview shrinks to make room. Each word fades
+ * in; a caret breathes where the next one goes. Only opacity animates, and a finished fade is dropped
+ * (fill: backwards), so a long transcript costs nothing to keep on screen.
+ */
+.voice-panel {
+    height: 0;
+    border-top-color: transparent;
+    transition:
+        height 280ms cubic-bezier(0.32, 0.72, 0, 1),
+        border-color 280ms;
+}
+.voice-panel[data-expanded='true'] {
+    height: clamp(200px, 38%, 380px);
+    border-top-color: var(--border);
+}
+.transcript-paragraph {
+    margin-bottom: 0.75em;
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    letter-spacing: -0.005em;
+    text-wrap: pretty;
+    transition: color 600ms ease;
+}
+@keyframes transcript-word-in {
+    from {
+        opacity: 0;
+    }
+}
+.transcript-word {
+    display: inline;
+    white-space: pre-wrap;
+    animation: transcript-word-in 200ms ease-out backwards;
+}
+@keyframes transcript-caret {
+    0%, 100% { opacity: 0.15; }
+    50% { opacity: 0.7; }
+}
+.transcript-caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    margin-left: 3px;
+    vertical-align: -0.2em;
+    border-radius: 1px;
+    background: var(--color-live);
+    animation: transcript-caret 1.1s ease-in-out infinite;
+}
+@keyframes voice-live-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-live) 55%, transparent); }
+    50% { box-shadow: 0 0 0 4px transparent; }
+}
+.voice-live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--color-live);
+    animation: voice-live-pulse 1.6s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .voice-panel { transition: none; }
+    .transcript-word { animation-duration: 1ms; }
+    .transcript-caret,
+    .voice-live-dot { animation: none; }
+}
+
+/*
+ * A request heard in speech: blue while the assistant recognises and carries it out, green once
+ * done, red if it failed. Colour and a soft underline fade between states.
+ */
+.transcript-intent {
+    border-radius: 4px;
+    padding: 1px 3px;
+    margin: 0 -3px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    transition:
+        color 300ms ease,
+        background-color 300ms ease,
+        text-decoration-color 300ms ease;
+}
+.transcript-intent-recognized,
+.transcript-intent-running {
+    color: oklch(0.8 0.12 240);
+    background-color: oklch(0.65 0.15 240 / 14%);
+    text-decoration-color: oklch(0.7 0.15 240 / 60%);
+}
+.transcript-intent-running {
+    animation: transcript-intent-working 1.2s ease-in-out infinite;
+}
+.transcript-intent-done {
+    color: oklch(0.82 0.15 150);
+    background-color: oklch(0.7 0.16 150 / 12%);
+    text-decoration-color: oklch(0.72 0.17 150 / 55%);
+}
+.transcript-intent-failed {
+    color: oklch(0.75 0.17 25);
+    background-color: oklch(0.64 0.2 25 / 14%);
+    text-decoration-color: oklch(0.68 0.2 25 / 60%);
+}
+@keyframes transcript-intent-working {
+    0%, 100% { background-color: oklch(0.65 0.15 240 / 10%); }
+    50% { background-color: oklch(0.65 0.15 240 / 24%); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .transcript-intent-running { animation: none; }
+}
+
+/* The assistant's answer, tucked under the paragraph that asked, in the colour of its highlight. */
+.transcript-reply {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin: -0.35em 0 0.9em;
+    padding-left: 0.1rem;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    animation: transcript-word-in 200ms ease-out backwards;
+}
+.transcript-reply > svg {
+    flex-shrink: 0;
+    margin-top: 0.15em;
+}
+.transcript-reply-recognized,
+.transcript-reply-running {
+    color: oklch(0.75 0.08 240);
+}
+.transcript-reply-done {
+    color: oklch(0.78 0.1 150);
+}
+.transcript-reply-failed {
+    color: oklch(0.74 0.14 25);
+}

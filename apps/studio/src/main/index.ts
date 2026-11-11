@@ -1,6 +1,10 @@
 import { cameraService } from '@main/camera-service'
 import { registerIpcHandlers } from '@main/ipc-handlers'
 import { startCameraDaemonKillerLoop, stopCameraDaemonKillerLoop } from '@main/macos-camera-daemon'
+import { assistantService } from '@main/assistant/assistant-service'
+import { studioMcpServer } from '@main/mcp/mcp-server'
+import { installApplicationMenu } from '@main/preferences-window'
+import { voiceService } from '@main/voice/voice-service'
 import { app, BrowserWindow, powerMonitor, session, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -83,7 +87,7 @@ if (!hasSingleInstanceLock) {
         // Auto-connect when a camera is plugged in, clean up when unplugged
         cameraService.startAutoDetect()
 
-        // Microphone permission for local voice control
+        // Microphone permission for live transcription
         if (process.platform === 'darwin') {
             void systemPreferences.askForMediaAccess('microphone')
         }
@@ -91,6 +95,7 @@ if (!hasSingleInstanceLock) {
             callback(permission === 'media')
         })
 
+        installApplicationMenu()
         registerIpcHandlers(() => mainWindow)
         createWindow()
 
@@ -117,7 +122,7 @@ app.on('before-quit', event => {
     event.preventDefault()
     stopCameraDaemonKillerLoop()
     const timeout = new Promise<void>(resolve => setTimeout(resolve, QUIT_DISCONNECT_TIMEOUT_MS))
-    void Promise.race([cameraService.dispose(), timeout]).finally(() => {
+    void Promise.race([Promise.all([cameraService.dispose(), voiceService.release(), assistantService.release(), studioMcpServer.stop()]), timeout]).finally(() => {
         cameraReleased = true
         app.quit()
     })

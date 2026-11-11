@@ -6,7 +6,7 @@ import {
     SHUTTER_VALUES,
     shutterToNumber,
     stepValue,
-} from '@renderer/lib/exposure-stops'
+} from '@shared/exposure-stops'
 import { describe, expect, it } from 'vitest'
 
 describe('stepValue', () => {

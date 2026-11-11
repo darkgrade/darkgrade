@@ -721,7 +721,7 @@ export class GenericCamera {
         }
 
         const isPropertyOp = operation.name.includes('GetDevicePropValue')
-        const finalData = logId !== -1 ? this.logger.getLogs().find(l => l.id === logId) : undefined
+        const finalData = logId !== -1 ? this.logger.getLogById(logId) : undefined
         let returnData: any =
             !isPropertyOp &&
             finalData &&

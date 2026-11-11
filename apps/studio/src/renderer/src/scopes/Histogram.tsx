@@ -86,10 +86,10 @@ function tracePath(
 }
 
 /** Live RGB histogram of the camera feed, eased between frames so it moves smoothly. */
-export function Histogram({ frameUrl }: { frameUrl: string | null }): React.JSX.Element {
+export function Histogram({ active }: { active: boolean }): React.JSX.Element {
     const target = useRef<Float32Array>(new Float32Array(BIN_COUNT * 3))
     const shown = useRef<Float32Array>(new Float32Array(BIN_COUNT * 3))
-    useFrameSamples(frameUrl, sample => {
+    useFrameSamples(active, sample => {
         target.current = measure(sample)
     })
 

@@ -11,26 +11,24 @@ export const DEFAULT_PREVIEW_ASSISTS: PreviewAssistSettings = {
     zebras: false,
     zebraLevelPercent: 95,
     focusPeaking: false,
-    peakingSensitivity: 70,
+    peakingSensitivity: 30,
 }
 
 /** Width of one black or white zebra stripe, in preview pixels. */
 export const STRIPE_PIXELS = 4
 /**
- * Focus peaking by edge width at single-pixel scale, independent of contrast. The preview is about an
- * eighth of the sensor's width, so a subject slightly out of focus is blurred by only a pixel or two here:
- * no smoothing may come first. For each direction, compare the change across the two pixels either side
- * of a point with the change across four. A focused edge makes all of its change within those two pixels
- * whatever its phase against the pixel grid (ratio 0.98–1); blurred by 1.3 pixels it reaches only 0.81–0.91,
- * by 1.5 pixels 0.77–0.87, however bright or dark it is. Noise is rejected twice: the span must stand well above the frame's noise
- * level, and a mark must touch another, since edges are lines and noise is isolated dots.
+ * Focus peaking by fine detail, measured on real A7 V frames (one focused on the background, one on a face).
+ * In focus, texture such as stubble, fabric or leather grain changes brightness within a pixel or two and often
+ * reverses direction, so the change across two pixels exceeds the change across four. Defocus, even 1–2 preview
+ * pixels of it, smooths that away: the two-pixel change shrinks and the four-pixel change catches up. A pixel is
+ * marked where its two-pixel change is well above the frame's noise and at least 1.5 times its four-pixel change.
+ * On those frames this marked in-focus areas about six times as often as the same areas out of focus.
  */
-/** Share of the span made in one step, needed at sensitivity 1 and at sensitivity 100. */
-const PEAKING_RATIO_AT_LEAST_SENSITIVE = 0.99
-const PEAKING_RATIO_AT_MOST_SENSITIVE = 0.85
-/** How many noise levels above the frame's noise a span must be. */
-const PEAKING_NOISE_MULTIPLE = 6
-/** Floor for the noise level in perfectly clean frames, in 0–255 luma. */
+const PEAKING_DETAIL_RATIO = 1.5
+/** How many times the frame's typical one-pixel change a two-pixel change must be, at sensitivity 1 and 100. */
+const PEAKING_NOISE_MULTIPLE_AT_LEAST_SENSITIVE = 14
+const PEAKING_NOISE_MULTIPLE_AT_MOST_SENSITIVE = 6
+/** Floor for the typical change in perfectly clean frames, in 0–255 luma. */
 const PEAKING_MINIMUM_NOISE = 0.75
 const PEAKING_COLOR = [255, 48, 48] as const
 
@@ -52,15 +50,15 @@ export function paintAssists(
 ): Uint8ClampedArray {
     const overlay = new Uint8ClampedArray(width * height * 4)
     const luma = lumaOf(pixels, width, height)
-    if (settings.focusPeaking) paintPeaking(overlay, luma, width, height, peakingRatio(settings))
+    if (settings.focusPeaking) paintPeaking(overlay, luma, width, height, peakingNoiseMultiple(settings))
     if (settings.zebras) paintZebras(overlay, luma, width, height, (settings.zebraLevelPercent / 100) * 255, phase)
     return overlay
 }
 
-function peakingRatio(settings: PreviewAssistSettings): number {
+function peakingNoiseMultiple(settings: PreviewAssistSettings): number {
     const sensitivity = Math.min(100, Math.max(1, settings.peakingSensitivity)) / 100
-    const range = PEAKING_RATIO_AT_LEAST_SENSITIVE - PEAKING_RATIO_AT_MOST_SENSITIVE
-    return PEAKING_RATIO_AT_LEAST_SENSITIVE - sensitivity * range
+    const range = PEAKING_NOISE_MULTIPLE_AT_LEAST_SENSITIVE - PEAKING_NOISE_MULTIPLE_AT_MOST_SENSITIVE
+    return PEAKING_NOISE_MULTIPLE_AT_LEAST_SENSITIVE - sensitivity * range
 }
 
 /** The median of a sample of values: most of any picture is flat, so this is its noise level. */
@@ -71,38 +69,22 @@ function medianOfSample(values: Float32Array, stride: number): number {
     return sample[sample.length >> 1] ?? 0
 }
 
-/** Along one direction (offset 1 for rows, width for columns): the change across 2 pixels and across 4. */
-function edgeAlong(luma: Float32Array, center: number, offset: number): { step: number; span: number } {
-    const step = Math.abs(luma[center + offset] - luma[center - offset])
-    const span = Math.abs(luma[center + 2 * offset] - luma[center - 2 * offset])
-    return { step, span }
-}
-
-/** Marks in red the pixels on edges no wider than the grid allows that stand clear of the noise. */
+/** Marks in red the pixels with in-focus fine detail: a large two-pixel change that beats the four-pixel one. */
 function paintPeaking(
     output: Uint8ClampedArray,
     luma: Float32Array,
     width: number,
     height: number,
-    ratio: number
+    noiseMultiple: number
 ): void {
     const neighbourSteps = new Float32Array(luma.length)
     for (let pixel = 1; pixel < luma.length; pixel++) neighbourSteps[pixel] = Math.abs(luma[pixel] - luma[pixel - 1])
-    const minimumSpan = Math.max(PEAKING_MINIMUM_NOISE, medianOfSample(neighbourSteps, 7)) * PEAKING_NOISE_MULTIPLE
-    const sharp = new Uint8Array(luma.length)
+    const minimumStep = Math.max(PEAKING_MINIMUM_NOISE, medianOfSample(neighbourSteps, 7)) * noiseMultiple
     for (let row = 2; row < height - 2; row++) {
         for (let column = 2; column < width - 2; column++) {
             const center = row * width + column
-            for (const offset of [1, width]) {
-                const { step, span } = edgeAlong(luma, center, offset)
-                if (span >= minimumSpan && step >= ratio * span) sharp[center] = 1
-            }
-        }
-    }
-    for (let row = 3; row < height - 3; row++) {
-        for (let column = 3; column < width - 3; column++) {
-            const center = row * width + column
-            if (!sharp[center] || !hasSharpNeighbour(sharp, width, center)) continue
+            if (!hasFineDetail(luma, center, 1, minimumStep) && !hasFineDetail(luma, center, width, minimumStep))
+                continue
             const index = center * 4
             output[index] = PEAKING_COLOR[0]
             output[index + 1] = PEAKING_COLOR[1]
@@ -112,11 +94,11 @@ function paintPeaking(
     }
 }
 
-function hasSharpNeighbour(sharp: Uint8Array, width: number, center: number): boolean {
-    for (const offset of [-width - 1, -width, -width + 1, -1, 1, width - 1, width, width + 1]) {
-        if (sharp[center + offset]) return true
-    }
-    return false
+/** Along one direction (offset 1 for rows, width for columns): a large two-pixel change that beats the four-pixel one. */
+function hasFineDetail(luma: Float32Array, center: number, offset: number, minimumStep: number): boolean {
+    const step = Math.abs(luma[center + offset] - luma[center - offset])
+    if (step < minimumStep) return false
+    return step >= PEAKING_DETAIL_RATIO * Math.abs(luma[center + 2 * offset] - luma[center - 2 * offset])
 }
 
 function paintZebras(

@@ -1,4 +1,5 @@
 import { App } from '@renderer/App'
+import { PreferencesWindow } from '@renderer/components/PreferencesWindow'
 import '@renderer/styles.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -29,6 +30,6 @@ watchScrolling()
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
-        <App />
+        {window.location.hash === '#preferences' ? <PreferencesWindow /> : <App />}
     </StrictMode>
 )

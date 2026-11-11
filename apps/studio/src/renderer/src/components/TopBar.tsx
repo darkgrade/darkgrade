@@ -12,12 +12,11 @@ import {
 import brandMark from '@renderer/assets/darkgrade_icon_dark.svg'
 import { formatFocalLength } from '@renderer/components/LensPanel'
 import type { CameraBattery, CameraState } from '@shared/ipc'
-import { BatteryFull, BatteryLow, BatteryMedium, BatteryWarning, CardSim, Mic, PlugZap } from 'lucide-react'
+import { BatteryFull, BatteryLow, BatteryMedium, BatteryWarning, CardSim, PlugZap } from 'lucide-react'
 
 interface TopBarProps {
     cameraState: CameraState
     busy: boolean
-    voiceListening: boolean
     onConnect: () => void
     onDisconnect: () => void
     onOsdOverlayChange: (enabled: boolean) => void
@@ -162,7 +161,6 @@ function CameraDetails({ cameraState }: { cameraState: CameraState }): React.JSX
 export function TopBar({
     cameraState,
     busy,
-    voiceListening,
     onConnect,
     onDisconnect,
     onOsdOverlayChange,
@@ -212,7 +210,6 @@ export function TopBar({
                         </span>
                     )}
                     {cameraState.recording && <span className="font-semibold text-rec">REC</span>}
-                    {voiceListening && <Mic aria-label="Listening" className="text-muted-foreground" />}
                 </PopoverTrigger>
                 <PopoverContent className="w-80 gap-4 p-4">
                     <PopoverHeader>

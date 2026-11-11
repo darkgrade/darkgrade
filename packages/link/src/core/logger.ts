@@ -100,6 +100,8 @@ export class Logger {
     private static exitHandlerInstalled = false
     private notifyTimeout: NodeJS.Timeout | null = null
     private activeTransfers: Map<number, number> = new Map()
+    /** Which transaction each log id belongs to, so updates find their log without a scan. */
+    private logKeys: Map<number, string> = new Map()
     private registry: Registry | null = null
     private originalConsole = {
         log: console.log.bind(console),
@@ -201,6 +203,7 @@ export class Logger {
     addLog(log: NewLog): number {
         const id = this.nextId++
         const timestamp = Date.now()
+        this.logKeys.set(id, this.keyForNewLog(log, id))
 
         if (log.type === 'console') {
             const consoleLog: ConsoleLog = { ...log, id, timestamp }
@@ -249,14 +252,19 @@ export class Logger {
         return id
     }
 
+    private keyForNewLog(log: NewLog, id: number): string {
+        if (log.type === 'console') return `console:${id}`
+        if (log.type === 'ptp_event') return `event:${log.sessionId}:${id}`
+        return this.getKey(log.sessionId, log.transactionId)
+    }
+
     updateLog(id: number, updates: Partial<Log>): number {
-        for (const logs of this.logs.values()) {
-            const index = logs.findIndex(l => l.id === id)
-            if (index !== -1) {
-                logs[index] = Object.assign({}, logs[index], updates)
-                this.notifyChange()
-                break
-            }
+        const key = this.logKeys.get(id)
+        const logs = key === undefined ? undefined : this.logs.get(key)
+        const index = logs?.findIndex(l => l.id === id) ?? -1
+        if (logs && index !== -1) {
+            logs[index] = Object.assign({}, logs[index], updates)
+            this.notifyChange()
         }
         return id
     }
@@ -274,11 +282,8 @@ export class Logger {
     }
 
     getLogById(id: number): Log | undefined {
-        for (const logs of this.logs.values()) {
-            const found = logs.find(l => l.id === id)
-            if (found) return found
-        }
-        return undefined
+        const key = this.logKeys.get(id)
+        return key === undefined ? undefined : this.logs.get(key)?.find(l => l.id === id)
     }
 
     getLogsByTransaction(sessionId: number, transactionId: number): Log[] {
@@ -309,6 +314,7 @@ export class Logger {
         this.logs.clear()
         this.orderedTransactions = []
         this.activeTransfers.clear()
+        this.logKeys.clear()
         this.nextId = 1
     }
 
@@ -361,6 +367,7 @@ export class Logger {
         }
         // Use object handle in key to avoid collisions for multi-chunk transfers
         const key = `transfer:${sessionId}:${objectHandle}`
+        this.logKeys.set(transferLog.id, key)
         this.logs.set(key, [transferLog])
         this.orderedTransactions.push({ key, timestamp: transferLog.timestamp })
         this.registerTransfer(objectHandle, transferLog.id)
@@ -399,8 +406,30 @@ export class Logger {
         })
     }
 
+    /**
+     * Drops the oldest transactions beyond maxTransactions. Logs keep each response's data, so
+     * without this a long live-view session holds every frame it ever received.
+     */
     private trimIfNeeded(): void {
-        // No-op for now. Can be removed or used for future trimming logic if needed.
+        const maximum = this.config.maxTransactions ?? defaultLoggerConfig.maxTransactions!
+        // Trim in batches of a tenth, so a full log isn't rebuilt on every new transaction.
+        if (this.orderedTransactions.length <= maximum * 1.1) return
+        const excess = this.orderedTransactions.length - maximum
+        const activeTransferIds = new Set(this.activeTransfers.values())
+        const kept: typeof this.orderedTransactions = []
+        let dropped = 0
+        for (const transaction of this.orderedTransactions) {
+            const logs = this.logs.get(transaction.key) ?? []
+            const inProgress = logs.some(log => activeTransferIds.has(log.id))
+            if (dropped >= excess || inProgress) {
+                kept.push(transaction)
+                continue
+            }
+            for (const log of logs) this.logKeys.delete(log.id)
+            this.logs.delete(transaction.key)
+            dropped++
+        }
+        this.orderedTransactions = kept
     }
 }
 

@@ -1,6 +1,6 @@
 /**
- * Shared third-stop tables + stepping logic. Used by the exposure dial UI and
- * by relative voice commands ("raise the ISO", "faster shutter", "brighter").
+ * Shared third-stop tables + stepping logic, used by the exposure dials and by
+ * the tools that adjust exposure in stops.
  * One full photographic stop = 3 entries in these tables.
  */
 

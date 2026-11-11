@@ -4,14 +4,15 @@
     "version": "0.1.0",
     "private": true,
     "type": "module",
-    "description": "Darkgrade Studio — desktop camera control with local AI voice",
+    "description": "Darkgrade Studio — desktop camera control with local live transcription",
     "main": "out/main/index.js",
     "scripts": {
         "build:link": "bun run --cwd ../../packages/link build",
         "ensure:electron": "node scripts/ensure-electron.mjs",
-        "dev": "bun run ensure:electron && bun run build:link && electron-vite dev",
+        "ensure:llama-server": "bun scripts/download-llama-server.ts",
+        "dev": "bun run ensure:electron && bun run ensure:llama-server && bun run build:link && electron-vite dev",
         "start": "bun run dev",
-        "build": "bun run build:link && electron-vite build",
+        "build": "bun run ensure:llama-server && bun run build:link && electron-vite build",
         "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
         "test": "vitest run",
         "lint": "eslint . --ext .ts,.tsx",
@@ -20,13 +21,14 @@
     },
     "dependencies": {
         "@darkgrade/link": "workspace:*",
-        "@huggingface/transformers": "^4.2.0",
         "@kevinschaich/components": "0.7.0",
-        "kokoro-js": "^1.2.1",
+        "@modelcontextprotocol/node": "2.1.2",
+        "@modelcontextprotocol/server": "2.4.0",
         "lucide-react": "^1.71.0",
         "react": "^19",
         "react-dom": "^19",
-        "usb": "^2.11.0"
+        "usb": "^2.11.0",
+        "zod": "^4.2.0"
     },
     "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",
