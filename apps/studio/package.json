@@ -1,5 +1,6 @@
 {
     "name": "@darkgrade/studio",
+    "productName": "Darkgrade Studio",
     "version": "0.1.0",
     "private": true,
     "type": "module",
@@ -20,21 +21,25 @@
     "dependencies": {
         "@darkgrade/link": "workspace:*",
         "@huggingface/transformers": "^4.2.0",
+        "@kevinschaich/components": "0.7.0",
         "kokoro-js": "^1.2.1",
+        "lucide-react": "^1.71.0",
         "react": "^19",
         "react-dom": "^19",
         "usb": "^2.11.0"
     },
     "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",
+        "@tailwindcss/vite": "^4.3.5",
         "@types/node": "^22",
         "@types/react": "^19",
-        "@types/w3c-web-usb": "^1.0.13",
         "@types/react-dom": "^19",
+        "@types/w3c-web-usb": "^1.0.13",
         "@vitejs/plugin-react": "^5.0.0",
         "electron": "^43.1.0",
         "electron-builder": "^26.0.0",
         "electron-vite": "^5.0.0",
+        "tailwindcss": "^4.3.5",
         "typescript": "^5.9.2",
         "vite": "^7.1.7",
         "vitest": "^3.2.0"

@@ -3,10 +3,11 @@ import * as Ops from '@ptp/definitions/operation-definitions'
 import * as Props from '@ptp/definitions/property-definitions'
 import * as NikonOps from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import { USBTransport } from '@transport/usb/usb-transport'
+import { fileURLToPath } from 'node:url'
 
 import { NikonCamera } from '@camera/nikon-camera'
 
-const capturedImagesDir = '/Users/kevinschaich/repositories/darkgrade/packages/link/captured_images'
+const capturedImagesDir = fileURLToPath(new URL('../captured_images', import.meta.url))
 
 const logger = new Logger({
     expanded: true, // Show all details

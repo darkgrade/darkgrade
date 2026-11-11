@@ -144,8 +144,20 @@ describe('Sony preview results', () => {
 
     it('preserves the camera refusal rather than decoding the response words as an image', async () => {
         const { camera, replies } = cameraFixture()
-        replies.push({ code: 0x200f, data: new Uint8Array(4) })
+        // A camera that keeps refusing past the retry window: Access Denied (0x200F) every time.
+        for (let refusal = 0; refusal < 200; refusal++) replies.push({ code: 0x200f, data: new Uint8Array(4) })
         await expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
+    })
+
+    it('asks again when the next live-view frame is not ready yet', async () => {
+        const { camera, replies } = cameraFixture()
+        const bytes = new Uint8Array(28)
+        const header = new DataView(bytes.buffer)
+        header.setUint32(0, 24, true)
+        header.setUint32(4, 4, true)
+        bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
+        replies.push({ code: 0x200f, data: new Uint8Array(4) }, { code: 0x2001, data: bytes })
+        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
     })
 
     it.each([undefined, new Uint8Array(), new Uint8Array(16)])(

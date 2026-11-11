@@ -618,7 +618,13 @@ export class NikonCamera extends GenericCamera {
         await this.enablePcCameraMode()
     }
 
-    async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+    /** Downloads an object in chunks; onProgress reports bytes received after each chunk. */
+    async getObject(
+        objectHandle: number,
+        objectSize: number,
+        onProgress?: (receivedBytes: number, totalBytes: number) => void,
+        signal?: AbortSignal
+    ): Promise<Uint8Array> {
         if (!Number.isSafeInteger(objectSize) || objectSize < 0)
             throw new Error('Nikon object size must be a nonnegative safe integer')
         // Start transfer tracking
@@ -628,6 +634,8 @@ export class NikonCamera extends GenericCamera {
         let offset = 0
 
         while (offset < objectSize) {
+            // Aborting between chunks leaves no transaction in flight: the camera stays usable.
+            signal?.throwIfAborted()
             const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
 
             // Split offset and size into lower/upper 32-bit values
@@ -659,6 +667,7 @@ export class NikonCamera extends GenericCamera {
 
             chunks.push(chunkResponse.data)
             offset += chunkResponse.data.length
+            onProgress?.(offset, objectSize)
         }
 
         // Complete transfer tracking

@@ -45,7 +45,10 @@ describe('Sony shutter and host transfer sequencing', () => {
         const { camera } = fixture()
         let polls = 0
         camera.refreshPropertyStates = vi.fn(async () => {
-            (camera as any).propertyCache.set(0x500a, { vendorExtensions: { enabled: ++polls > 2 } })
+            const enabled = ++polls > 2
+            ;(camera as any).propertyCache.set(0x500a, { vendorExtensions: { enabled } })
+            // The save destination is writable again once the body has finished with the shot.
+            ;(camera as any).propertyCache.set(camera.registry.properties.StillImageSaveDestination.code, { vendorExtensions: { enabled } })
             return []
         })
         const original = (camera.set as any).getMockImplementation()
@@ -54,7 +57,8 @@ describe('Sony shutter and host transfer sequencing', () => {
             return original(property, value)
         }) as any
         await camera.captureImage({ autofocus: false })
-        expect(polls).toBe(3)
+        // Focus restores after the third read; the destination check then reads once more.
+        expect(polls).toBe(4)
     })
     it('explicit memory capture enables host delivery and restores the original destination', async () => {
         const { facade, sent } = fixture()

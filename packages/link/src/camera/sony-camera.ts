@@ -1,3 +1,5 @@
+import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
+import { parseSonyContentInfoList, type SonyContentInfoList } from '@vendors/sony/content-info-list'
 import { Logger } from '@core/logger'
 import { PTPResponseError } from '@core/ptp-errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -21,6 +23,31 @@ import { GenericCamera } from './generic-camera'
 
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
 const SONY_ZOOM_CONTROL_CODE = 0xd214
+const SONY_ZOOM_SPEED_RANGE_CODE = 0xd25e
+const SONY_DATE_TIME_RESULT_TIMEOUT_MS = 5_000
+const SONY_CONTENT_LIST_LIMIT = 1000
+const SONY_CONTENT_LIST_MAX_BYTES = 64 * 1024 * 1024
+const SONY_CONTENT_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
+const SONY_DATE_TIME_RESULTS: Record<number, string> = {
+    0: 'invalid',
+    2: 'parameter error',
+    3: 'exclusion error (the camera is busy)',
+    4: 'system error',
+}
+
+/** "20261111T001530.0-0700": local wall time with tenths of a second and the UTC offset. */
+export function sonyDateTimeString(moment: Date): string {
+    const pad = (value: number, width = 2): string => String(value).padStart(width, '0')
+    const offsetMinutes = -moment.getTimezoneOffset()
+    const sign = offsetMinutes >= 0 ? '+' : '-'
+    const absolute = Math.abs(offsetMinutes)
+    return (
+        `${moment.getFullYear()}${pad(moment.getMonth() + 1)}${pad(moment.getDate())}` +
+        `T${pad(moment.getHours())}${pad(moment.getMinutes())}${pad(moment.getSeconds())}` +
+        `.${Math.floor(moment.getMilliseconds() / 100)}` +
+        `${sign}${pad(Math.floor(absolute / 60))}${pad(absolute % 60)}`
+    )
+}
 // Verified Sony zoom-operation control code: SDIO_ControlDevice (0x9207) with this
 // code and an int8 direction (+1 tele / -1 wide / 0 stop) drives the zoom. Captured
 // from the Sony Camera Remote SDK on the ILCE-6700 via the darkgrade-testbench.
@@ -72,6 +99,11 @@ export const SONY_CAMERA_BUTTONS = {
 export type SonyCameraButton = keyof typeof SONY_CAMERA_BUTTONS
 // The first OSD frame after enabling OsdImageMode (0xd207) arrives within ~0.4 s.
 const SONY_OSD_ENABLE_SETTLE_MS = 500
+/** Access Denied: for live view, "no new frame yet, ask again". */
+const SONY_ACCESS_DENIED = 0x200f
+/** Live view runs at up to 30 fps: wait up to a few frame times for the next before giving up. */
+const SONY_LIVE_VIEW_NEXT_FRAME_TIMEOUT_MS = 150
+const SONY_LIVE_VIEW_RETRY_MS = 4
 const SONY_AF_AREA_Y_MAX = 479
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
@@ -535,15 +567,16 @@ export class SonyCamera extends GenericCamera {
     }
 
     /**
-     * Tap-to-focus: switch the body into Flexible Spot, move the AF area to (x, y)
+     * Tap-to-focus: keep a movable focus area (Zone, Flexible Spot) or switch to Flexible Spot, move it to (x, y)
      * on the 640x480 grid, then optionally run autofocus at that spot. Returns the
      * coordinates that were sent.
      */
     async touchFocus(x: number, y: number, options: { focus?: boolean } = {}): Promise<{ x: number; y: number }> {
         const focus = options.focus ?? true
-        // Flexible Spot is required for a point AF position to take effect. If the
-        // body is already in a flexible-spot area this is a cheap no-op.
-        await this.set(this.registry.properties.FocusArea, 'Flexible Spot S')
+        // Every Flexible Spot moves to the point as it is; only
+        // areas without a position (Wide, Zone, Center) switch to Flexible Spot S first.
+        const area = String(await this.get(this.registry.properties.FocusArea))
+        if (!isMovableFocusArea(area)) await this.set(this.registry.properties.FocusArea, 'Flexible Spot S')
         await this.setAfAreaPosition(x, y)
         if (focus) await this.autofocus()
         return { x, y }
@@ -596,6 +629,112 @@ export class SonyCamera extends GenericCamera {
             this.registry.codecs.uint32.encode((((buttonCode << 16) | action) >>> 0))
         )
         this.assertOk(response.code, 'Sony camera button')
+    }
+
+    /**
+     * The card's contents as the camera indexes them (Remote Control with Transfer Mode). This
+     * does not enter content-transfer mode, so live view keeps running.
+     */
+    async listContents(options: { slot?: 1 | 2; limit?: number; sinceUtcMs?: number } = {}): Promise<SonyContentInfoList> {
+        const since = BigInt(Math.max(0, Math.floor(options.sinceUtcMs ?? 0)))
+        const response = await this.send(
+            this.registry.operations.SDIO_GetContentInfoList,
+            {
+                CreateTimeLower: Number(since & 0xffffffffn),
+                CreateTimeUpper: Number(since >> 32n),
+                ContentLimit: options.limit ?? SONY_CONTENT_LIST_LIMIT,
+                Extra1: options.slot ?? 1,
+                Extra2: 0,
+            },
+            undefined,
+            SONY_CONTENT_LIST_MAX_BYTES
+        )
+        this.assertOk(response.code, 'Sony content list')
+        if (!(response.data instanceof Uint8Array) || response.data.length === 0) {
+            return { version: 0, listCreatedUtcMs: 0, slot: options.slot ?? 1, contents: [] }
+        }
+        return parseSonyContentInfoList(response.data)
+    }
+
+    /** A content's JPEG thumbnail (small) or screennail (larger), for photos and videos alike. */
+    async getContentPreview(contentId: number, fileId: number, options: { slot?: 1 | 2; size?: 'thumbnail' | 'screennail' } = {}): Promise<Uint8Array> {
+        const slot = options.slot ?? 1
+        const response = await this.send(
+            this.registry.operations.SDIO_GetContentCompressedData,
+            { ContentID: contentId, SlotAndFileID: ((slot & 0xff) << 24) | (fileId & 0xffff), Type: options.size === 'screennail' ? 2 : 1 },
+            undefined,
+            SONY_CONTENT_PREVIEW_MAX_BYTES
+        )
+        this.assertOk(response.code, 'Sony content preview')
+        if (!(response.data instanceof Uint8Array) || response.data.length === 0) throw new Error('The camera returned no preview')
+        return response.data
+    }
+
+    /**
+     * Sets the camera clock to the given moment in the host's local time and offset, and waits for
+     * the camera to confirm. Date/Time Setting (0xD223) is write-only, so this writes it directly
+     * rather than through set(), which reads values back.
+     */
+    async setDateTime(moment: Date = new Date()): Promise<string> {
+        await this.disableContentTransferMode()
+        const value = sonyDateTimeString(moment)
+        let result: number | undefined
+        const handler = (event: Record<string, unknown>) => {
+            result = Number(event['Setting Result'] ?? Object.values(event)[0])
+        }
+        const event = this.registry.events.SDIE_DateTimeSettingResult
+        this.on(event, handler as never)
+        try {
+            const response = await this.send(
+                this.registry.operations.SDIO_SetExtDevicePropValue,
+                { DevicePropCode: this.registry.properties.DateTimeSetting.code, flagOfDevicePropertyOption: 'ENABLE' },
+                this.registry.codecs.string.encode(value)
+            )
+            this.assertOk(response.code, 'Sony date/time setting')
+            const deadline = Date.now() + SONY_DATE_TIME_RESULT_TIMEOUT_MS
+            while (result === undefined && Date.now() < deadline) await this.waitMs(50)
+        } finally {
+            this.off(event, handler as never)
+        }
+        if (result === undefined) throw new Error('The camera did not confirm the new date and time')
+        if (result !== 1) throw new Error(`The camera refused the date and time: ${SONY_DATE_TIME_RESULTS[result] ?? `result ${result}`}`)
+        return value
+    }
+
+    /**
+     * Starts the zoom moving and returns at once, for press-and-hold control: the body keeps zooming
+     * (optically on a power-zoom lens, Clear Image/digital otherwise) until stopZoom(). One control
+     * transaction each, so live view and other commands keep running while the zoom moves.
+     */
+    async startZoom(direction: 'wide' | 'tele', speed?: number): Promise<void> {
+        const maximum = await this.maximumZoomSpeed()
+        // Default to the fastest speed the body allows; Zoom Operation's value is the speed itself.
+        const chosen = Math.min(maximum, Math.max(1, Math.round(speed ?? maximum)))
+        await this.sendZoomOperation(direction === 'tele' ? chosen : -chosen, `Sony zoom ${direction}`)
+    }
+
+    /**
+     * The top of Zoom Speed Range (0xD25E), whose range matches Zoom Operation's. Speed 1 is the
+     * slowest; a body set to a fixed remote zoom speed reports 1.
+     */
+    private async maximumZoomSpeed(): Promise<number> {
+        const cached = this.propertyCache.get(SONY_ZOOM_SPEED_RANGE_CODE)
+        const descriptor = cached ?? (await this.readDescriptor(SONY_ZOOM_SPEED_RANGE_CODE).catch(() => undefined))
+        const maximum = Number(descriptor?.maximumValue)
+        return Number.isInteger(maximum) && maximum >= 1 ? maximum : 1
+    }
+
+    async stopZoom(): Promise<void> {
+        await this.sendZoomOperation(0, 'Sony zoom stop')
+    }
+
+    private async sendZoomOperation(directionValue: number, action: string): Promise<void> {
+        const response = await this.send(
+            this.registry.operations.SDIO_ControlDevice,
+            { sdiControlCode: SONY_ZOOM_OPERATION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
+            this.registry.codecs.int8.encode(directionValue)
+        )
+        this.assertOk(response.code, action)
     }
 
     async powerZoom(direction: 'wide' | 'tele', pulses = 1): Promise<SonyZoomResult> {
@@ -683,8 +822,14 @@ export class SonyCamera extends GenericCamera {
                     await this.set(focus, originalFocus)
                 } catch (error) { restorationErrors.push(error) }
             }
-            if (originalDestination !== undefined && originalDestination !== requestedDestination)
-                await this.set(destination, originalDestination).catch(error => restorationErrors.push(error))
+            if (originalDestination !== undefined && originalDestination !== requestedDestination) {
+                try {
+                    // The body disables the destination control while it writes the image to the card.
+                    // Wait for it, then restore either way and let the camera's answer decide.
+                    await this.waitForPropertyEnabled(destination.code)
+                    await this.set(destination, originalDestination)
+                } catch (error) { restorationErrors.push(error) }
+            }
             if (restorationErrors.length) {
                 const errors = [...(failure ? [failure] : []), ...restorationErrors]
                 throw new AggregateError(errors, `Sony capture/settings restoration failed: ${errors.map(String).join('; ')}`)
@@ -766,12 +911,15 @@ export class SonyCamera extends GenericCamera {
     async captureLiveView({ includeInfo = true, includeData = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
+        /** The frames the camera draws over this picture: its focus area, faces and tracked subjects. */
+        sonyFocalFrames?: SonyFocalFrame[]
     }> {
         await this.disableContentTransferMode()
         await this.startLiveView()
 
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
+        let sonyFocalFrames: SonyFocalFrame[] | undefined = undefined
 
         if (includeInfo) {
             const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
@@ -781,17 +929,33 @@ export class SonyCamera extends GenericCamera {
             info = objectInfoResponse.data
         }
         if (includeData) {
-            const objectResponse = await this.send(this.registry.operations.GetObject, {
-                ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
-            })
+            const objectResponse = await this.nextLiveViewObject()
             this.assertOk(objectResponse.code, 'Sony live-view image')
             if (!objectResponse.data?.length) throw new Error('Sony live-view response contained no dataset')
             const liveViewData = parseLiveViewDataset(objectResponse.data, this.registry)
             if (!liveViewData.liveViewImage.length) throw new Error('Sony live-view dataset contained no image')
             data = liveViewData.liveViewImage
+            const focalFrameData = liveViewData.focalFrameInfo?.data
+            sonyFocalFrames = focalFrameData ? parseSonyFocalFrameInfo(focalFrameData).frames : []
         }
 
-        return { info: info, data: data }
+        return { info, data, sonyFocalFrames }
+    }
+
+    /**
+     * The camera makes at most 30 live-view frames a second and answers Access Denied (0x200F) when
+     * asked before the next is ready; the reference says to ask again. Retry briefly instead of failing,
+     * so a caller polling as fast as it can gets every frame.
+     */
+    private async nextLiveViewObject(): Promise<{ code: number; data?: Uint8Array }> {
+        const deadline = Date.now() + SONY_LIVE_VIEW_NEXT_FRAME_TIMEOUT_MS
+        for (;;) {
+            const response = await this.send(this.registry.operations.GetObject, {
+                ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
+            })
+            if (response.code !== SONY_ACCESS_DENIED || Date.now() >= deadline) return response
+            await new Promise(resolve => setTimeout(resolve, SONY_LIVE_VIEW_RETRY_MS))
+        }
     }
 
     async startRecording(): Promise<void> {
@@ -821,7 +985,13 @@ export class SonyCamera extends GenericCamera {
         await this.enableContentTransferMode()
     }
 
-    async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+    /** Downloads an object in chunks; onProgress reports bytes received after each chunk. */
+    async getObject(
+        objectHandle: number,
+        objectSize: number,
+        onProgress?: (receivedBytes: number, totalBytes: number) => void,
+        signal?: AbortSignal
+    ): Promise<Uint8Array> {
         if (!Number.isSafeInteger(objectSize) || objectSize < 0)
             throw new Error('Sony object size must be a non-negative safe integer')
         await this.enableContentTransferMode()
@@ -833,6 +1003,8 @@ export class SonyCamera extends GenericCamera {
         let offset = 0
 
         while (offset < objectSize) {
+            // Aborting between chunks leaves no transaction in flight: the camera stays usable.
+            signal?.throwIfAborted()
             const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
 
             // Split 64-bit offset into two 32-bit values
@@ -860,6 +1032,7 @@ export class SonyCamera extends GenericCamera {
 
             chunks.push(chunkResponse.data)
             offset += chunkResponse.data.length
+            onProgress?.(offset, objectSize)
         }
 
         // Complete transfer tracking
@@ -1156,6 +1329,18 @@ export class SonyCamera extends GenericCamera {
         )
     }
 
+    /**
+     * Puts the body back into remote shooting regardless of what this session believes: leaves
+     * content-transfer mode unconditionally, waits for the camera to confirm it, and forces the
+     * next live-view frame to re-enable live view and post view. Use after card access, or when
+     * live view answers AccessDenied (0x200F) because the body is still showing playback.
+     */
+    async resumeShooting(): Promise<void> {
+        this.contentTransferModeEnabled = true
+        await this.disableContentTransferMode()
+        this.liveViewPostViewEnabled = false
+    }
+
     private async disableContentTransferMode(): Promise<void> {
         for (let attempt = 1; attempt <= SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS; attempt += 1) {
             if (!this.contentTransferModeEnabled) return
@@ -1202,4 +1387,9 @@ export class SonyCamera extends GenericCamera {
         })
         this.assertOk(third.code, 'Sony authentication phase 3')
     }
+}
+
+/** Focus areas that take an AF area position: every Flexible Spot (sizes, Expand, Free Size), plain or Lock on AF. Zone ignores it. */
+export function isMovableFocusArea(area: string): boolean {
+    return /flexible spot/i.test(area)
 }

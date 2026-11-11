@@ -3,9 +3,10 @@ import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { USBTransport } from '@transport/usb/usb-transport'
 import fs from 'fs'
+import { fileURLToPath } from 'node:url'
 import path from 'path'
 
-const capturedImagesDir = '/Users/kevinschaich/repositories/darkgrade/packages/link/captured_images'
+const capturedImagesDir = fileURLToPath(new URL('../captured_images', import.meta.url))
 
 const logger = new Logger({
     expanded: true, // Show all details
