@@ -1,6 +1,6 @@
 {
     "name": "@darkgrade/contribution-collector",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "private": true,
     "type": "module",
     "imports": {
@@ -11,7 +11,12 @@
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "npm run build && node --test tests/*.test.ts",
         "start": "node dist/main.js",
-        "token": "node dist/mint-token.js"
+        "token": "node dist/mint-token.js",
+        "cleanup": "node dist/operations.js cleanup",
+        "review": "node dist/operations.js review",
+        "export:matrix": "node dist/operations.js export",
+        "test:emulator": "npm run build && node --test tests/emulator.test.ts",
+        "smoke": "node dist/smoke.js"
     },
     "dependencies": {
         "@darkgrade/contribute": "workspace:*"

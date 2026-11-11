@@ -16,7 +16,7 @@
     },
     "apps/contribution-collector": {
       "name": "@darkgrade/contribution-collector",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@darkgrade/contribute": "workspace:*",
       },
@@ -107,6 +107,7 @@
       "name": "@darkgrade/studio",
       "version": "0.1.0",
       "dependencies": {
+        "@darkgrade/contribute": "workspace:*",
         "@darkgrade/link": "workspace:*",
         "@kevinschaich/components": "0.7.0",
         "@modelcontextprotocol/node": "2.1.2",
@@ -136,7 +137,7 @@
     },
     "packages/contribute": {
       "name": "@darkgrade/contribute",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "devDependencies": {
         "@types/node": "20.19.43",
       },

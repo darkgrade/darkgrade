@@ -1,11 +1,20 @@
-import { cameraService } from '@main/camera-service'
-import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import { assistantService } from '@main/assistant/assistant-service'
+import { cameraService } from '@main/camera-service'
+import { changeDiagnostics, diagnosticsContact, diagnosticsStatus } from '@main/diagnostics'
+import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
 import { preferences } from '@main/preferences'
 import { studioView } from '@main/studio-view'
 import { voiceService } from '@main/voice/voice-service'
-import type { CameraControlName, CaptureOptions, DownloadRequest, IpcResult, Preferences, StudioViewState, TranscriptSegment } from '@shared/ipc'
+import type {
+    CameraControlName,
+    CaptureOptions,
+    DownloadRequest,
+    IpcResult,
+    Preferences,
+    StudioViewState,
+    TranscriptSegment,
+} from '@shared/ipc'
 import { IPC, IPC_EVENTS } from '@shared/ipc'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 
@@ -31,13 +40,17 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     }
     /** Settings are shown in more than one window, so their updates go to all of them. */
     const broadcastToAll = (channel: string, payload: unknown): void => {
-        for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(channel, payload)
+        for (const window of BrowserWindow.getAllWindows())
+            if (!window.isDestroyed()) window.webContents.send(channel, payload)
     }
     preferences.onChange(current => {
         broadcastToAll(IPC_EVENTS.Preferences, current)
         void studioMcpServer.apply(current.mcpServerEnabled, current.mcpServerPort)
     })
     studioMcpServer.onStatus(status => broadcastToAll(IPC_EVENTS.McpServerStatus, status))
+    handle(IPC.DiagnosticsStatus, diagnosticsStatus)
+    handle(IPC.DiagnosticsChange, changeDiagnostics)
+    handle(IPC.DiagnosticsContact, diagnosticsContact)
     handle(IPC.PreferencesGet, () => preferences.get())
     handle(IPC.PreferencesSet, (change: Partial<Preferences>) => preferences.set(change))
     handle(IPC.McpServerGetStatus, () => studioMcpServer.getStatus())
@@ -45,9 +58,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     studioView.setBroadcast(broadcast)
     handle(IPC.ViewReportState, (state: StudioViewState) => studioView.report(state))
     handle(IPC.AssistantGetStatus, () => assistantService.getStatus())
-    handle(IPC.AssistantProcessTranscript, (segment: TranscriptSegment) =>
-        assistantService.processTranscript(segment)
-    )
+    handle(IPC.AssistantProcessTranscript, (segment: TranscriptSegment) => assistantService.processTranscript(segment))
     handle(IPC.AssistantRelease, () => assistantService.release())
     handle(IPC.AssistantPrepare, () => assistantService.prepare())
     handle(IPC.AssistantWarmUp, (preview: { text: string; context: string }) => assistantService.warmUp(preview))

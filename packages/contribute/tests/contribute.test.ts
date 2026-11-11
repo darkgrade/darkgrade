@@ -88,7 +88,14 @@ test('protocol diagnostics exclude payloads, parameters, serials, transaction ID
     assert.equal(await client.flush(), 'sent')
     validateContribution(JSON.parse(bodies[0]))
     assert.equal(JSON.parse(bodies[0]).entries.length, 3)
-    assert.doesNotMatch(bodies[0], /PRIVATE|8675309|923|serial-secret|parameters|sessionId|transactionId/)
+    assert.doesNotMatch(bodies[0], /PRIVATE|serial-secret|parameters|sessionId|transactionId/)
+    // Random UUIDs can contain the digits of a session ID; inspect the actual entry schema.
+    for (const entry of JSON.parse(bodies[0]).entries)
+        assert.ok(
+            Object.keys(entry).every(key =>
+                ['kind', 'code', 'direction', 'bytes', 'durationMilliseconds', 'failed'].includes(key)
+            )
+        )
     assert.deepEqual(
         JSON.parse(bodies[0]).entries.map((entry: { kind: string }) => entry.kind),
         ['command', 'data', 'disconnect']

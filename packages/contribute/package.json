@@ -1,6 +1,6 @@
 {
     "name": "@darkgrade/contribute",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Consent-controlled, payload-free camera diagnostics for Darkgrade",
     "type": "module",
     "license": "MIT",
@@ -20,6 +20,18 @@
         "./node": {
             "types": "./dist/node.d.ts",
             "import": "./dist/node.js"
+        },
+        "./application": {
+            "types": "./dist/application.d.ts",
+            "import": "./dist/application.js"
+        },
+        "./batch": {
+            "types": "./dist/batch.d.ts",
+            "import": "./dist/batch.js"
+        },
+        "./installation-store": {
+            "types": "./dist/installation-store.d.ts",
+            "import": "./dist/installation-store.js"
         }
     },
     "imports": {

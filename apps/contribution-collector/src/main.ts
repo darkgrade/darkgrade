@@ -1,13 +1,18 @@
-import { createCollector } from '#collector/collector'
-import { googleCloudStore } from '#collector/gcs'
+import { firestoreDatabase } from '#collector/database'
+import { createTelemetry, resendContactSender } from '#collector/telemetry'
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 
-const handle = createCollector(
-    googleCloudStore(process.env.CONTRIBUTION_BUCKET ?? '', process.env.GOOGLE_CLOUD_PROJECT ?? ''),
-    JSON.parse(process.env.CONTRIBUTION_VERIFICATION_KEYS ?? '{}'),
-    JSON.parse(process.env.CONTRIBUTION_LEGACY_WITHDRAWAL_KEYS ?? '[]')
-)
+const database = firestoreDatabase(process.env.GOOGLE_CLOUD_PROJECT ?? '', {
+    ...(process.env.FIRESTORE_EMULATOR_HOST && { emulator: process.env.FIRESTORE_EMULATOR_HOST }),
+})
+const handle = createTelemetry(database, {
+    publicUrl: process.env.TELEMETRY_PUBLIC_URL ?? '',
+    allowedOrigins: JSON.parse(process.env.TELEMETRY_ALLOWED_ORIGINS ?? '[]'),
+    ...(process.env.TELEMETRY_EMAIL_API_KEY && {
+        sendContact: resendContactSender(process.env.TELEMETRY_EMAIL_API_KEY, process.env.TELEMETRY_EMAIL_FROM ?? ''),
+    }),
+})
 const server = createServer(async (incoming, outgoing) => {
     try {
         const request = new Request(`http://collector${incoming.url}`, {
@@ -20,22 +25,21 @@ const server = createServer(async (incoming, outgoing) => {
                 }),
         })
         const result = await handle(request)
-        if (new URL(request.url).pathname === '/v1/contributions')
-            console.log(
-                JSON.stringify({
-                    component: 'contribution-collector',
-                    status: result.status,
-                    outcome:
-                        result.status === 429
-                            ? 'quota'
-                            : result.status >= 500
-                              ? 'unavailable'
-                              : result.status >= 400
-                                ? 'rejected'
-                                : 'accepted',
-                    method: ['POST', 'DELETE'].includes(request.method) ? request.method : 'other',
-                })
-            )
+        console.log(
+            JSON.stringify({
+                component: 'contribution-collector',
+                status: result.status,
+                outcome:
+                    result.status === 429
+                        ? 'quota'
+                        : result.status >= 500
+                          ? 'unavailable'
+                          : result.status >= 400
+                            ? 'rejected'
+                            : 'accepted',
+                method: ['POST', 'DELETE'].includes(request.method) ? request.method : 'other',
+            })
+        )
         outgoing.writeHead(result.status, Object.fromEntries(result.headers))
         outgoing.end(await result.text())
     } catch {
