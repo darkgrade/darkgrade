@@ -1,6 +1,6 @@
 import { cameraService } from '@main/camera-service'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
-import type { FileEntry, IpcResult } from '@shared/ipc'
+import type { CameraControlName, CaptureOptions, DownloadRequest, IpcResult } from '@shared/ipc'
 import { IPC } from '@shared/ipc'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 
@@ -32,17 +32,23 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     handle(IPC.SetIso, (value: string) => cameraService.setIso(value))
     handle(IPC.SetShutterSpeed, (value: string) => cameraService.setShutterSpeed(value))
     handle(IPC.SetAperture, (value: string) => cameraService.setAperture(value))
+    handle(IPC.ZoomStart, (direction: 'wide' | 'tele') => cameraService.zoomStart(direction))
+    handle(IPC.ZoomStop, () => cameraService.zoomStop())
+    handle(IPC.SetControl, (name: CameraControlName, value: string) => cameraService.setControl(name, value))
     handle(IPC.Focus, () => cameraService.focus())
-    handle(IPC.Capture, () => cameraService.capture())
+    handle(IPC.FocusAt, (x: number, y: number) => cameraService.focusAt(x, y))
+    handle(IPC.Capture, (options?: CaptureOptions) => cameraService.capture(options))
     handle(IPC.LiveViewStart, () => cameraService.startLiveView())
     handle(IPC.LiveViewStop, () => cameraService.stopLiveView())
     handle(IPC.RecordStart, () => cameraService.startRecording())
     handle(IPC.RecordStop, () => cameraService.stopRecording())
     handle(IPC.ListFiles, () => cameraService.listFiles())
-    handle(IPC.DownloadFile, (entry: Pick<FileEntry, 'objectHandle' | 'sizeBytes' | 'filename'>) =>
-        cameraService.downloadFile(entry)
-    )
+    handle(IPC.DownloadFile, (entry: DownloadRequest) => cameraService.downloadFile(entry))
     handle(IPC.DownloadAll, () => cameraService.downloadAll())
+    handle(IPC.SetOsdOverlay, (enabled: boolean) => cameraService.setOsdOverlay(enabled))
+    handle(IPC.Thumbnail, (entry: DownloadRequest) => cameraService.thumbnail(entry))
+    handle(IPC.PreviewFile, (entry: DownloadRequest) => cameraService.previewFile(entry))
+    handle(IPC.CancelPreview, () => cameraService.cancelPreview())
 
     handle(IPC.KillCameraDaemon, async () => {
         const killed = await killMacCameraDaemons()

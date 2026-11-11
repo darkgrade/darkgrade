@@ -357,6 +357,45 @@ export const SDIO_SetContentsTransferMode = {
     responseParameters: [] as const,
 } as const satisfies OperationDefinition
 
+export const SDIO_GetCapturedDateList = {
+    code: 0x923b,
+    name: 'SDIO_GetCapturedDateList',
+    description: 'Get the capture dates of representative content on a slot (UINT64 local-time ms array).',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'SlotNumber', description: '1 = SLOT1, 2 = SLOT2', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const SDIO_GetContentInfoList = {
+    code: 0x923c,
+    name: 'SDIO_GetContentInfoList',
+    description: 'Get the card content list from a creation time, in Remote Control with Transfer Mode.',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'CreateTimeLower', description: 'Creation time in Unix ms, lower 32 bits', codec: baseCodecs.uint32, required: true },
+        { name: 'CreateTimeUpper', description: 'Creation time in Unix ms, upper 32 bits', codec: baseCodecs.uint32, required: true },
+        { name: 'ContentLimit', description: 'Maximum number of contents to return', codec: baseCodecs.uint32, required: true },
+        { name: 'Extra1', description: 'Bits 7-0: slot number', codec: baseCodecs.uint32, required: true },
+        { name: 'Extra2', description: 'Bits 1-0: time type (0 = UTC, 1 = local time)', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
+export const SDIO_GetContentCompressedData = {
+    code: 0x923e,
+    name: 'SDIO_GetContentCompressedData',
+    description: 'Get a content thumbnail (1) or screennail (2) as JPEG.',
+    dataDirection: 'out',
+    operationParameters: [
+        { name: 'ContentID', description: 'Content ID within the slot', codec: baseCodecs.uint32, required: true },
+        { name: 'SlotAndFileID', description: 'Bits 31-24: slot number; bits 15-0: file ID', codec: baseCodecs.uint32, required: true },
+        { name: 'Type', description: '1 = thumbnail, 2 = screennail', codec: baseCodecs.uint32, required: true },
+    ] as const,
+    responseParameters: [] as const,
+} as const satisfies OperationDefinition
+
 export const sonyOperationRegistry = {
     SDIO_OpenSession,
     SDIO_Connect,
@@ -369,6 +408,9 @@ export const sonyOperationRegistry = {
     SDIO_GetOsdImage,
     SDIO_GetPartialLargeObject,
     SDIO_SetContentsTransferMode,
+    SDIO_GetCapturedDateList,
+    SDIO_GetContentInfoList,
+    SDIO_GetContentCompressedData,
 } as const satisfies { [key: string]: OperationDefinition }
 
 export type SonyOperationDef = (typeof sonyOperationRegistry)[keyof typeof sonyOperationRegistry]

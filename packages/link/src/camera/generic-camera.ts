@@ -25,6 +25,13 @@ import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 /** ISO 15740 standard operation codes; their DeviceBusy answers mean "not performed, retry later". */
+/** How long a camera takes to enumerate again after a USB port reset. */
+const PORT_RESET_SETTLE_MS = 1500
+
+function delay(milliseconds: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
 const STANDARD_OPERATIONS = { from: 0x1000, to: 0x1fff } as const
 
 export interface StandardPropertyState {
@@ -93,6 +100,8 @@ export class GenericCamera {
             throw new PTPRecoveryRequiredError('Transport recovery is still running', this.lastFailure)
         if (!this.transport.isConnected()) {
             await this.transport.connect(device)
+            // The transport drops its event handler on disconnect; subscribe again for this connection.
+            this.transport.on?.(event => this.handleEvent(event))
             this.channel.newConnection()
             this.needsResynchronization = false
             this.lastFailure = undefined
@@ -100,8 +109,29 @@ export class GenericCamera {
         } else await this.resynchronizeIfNeeded()
     }
 
+    /**
+     * Opens the transport and a session. A camera left mid-transfer by a host that crashed never
+     * answers OpenSession; then the USB port is reset, as a replug would, and the open retried once.
+     */
     async connect(device?: DeviceDescriptor): Promise<void> {
         await this.connectTransport(device)
+        try {
+            await this.openFreshSession()
+        } catch (error) {
+            const unanswered = error instanceof PTPTimeoutError || error instanceof PTPRecoveryRequiredError
+            if (!unanswered || !this.transport.resetPort) throw error
+            await this.recovery?.task.catch(() => undefined)
+            await this.transport.resetPort()
+            this.recovery = undefined
+            this.lastFailure = undefined
+            this.needsResynchronization = false
+            await delay(PORT_RESET_SETTLE_MS)
+            await this.connectTransport(device)
+            await this.openFreshSession()
+        }
+    }
+
+    private async openFreshSession(): Promise<void> {
         this.sessionId = randomSessionId()
         try {
             let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
@@ -130,6 +160,19 @@ export class GenericCamera {
                 this.lastFailure
             )
         this.emitter.removeAllListeners()
+        await this.closeSessionAndTransport()
+    }
+
+    /**
+     * Closes and reopens the PTP session on the same device, keeping the caller's event
+     * subscriptions. For bodies that only leave a state (such as Sony playback) on a new session.
+     */
+    async reopenSession(device?: DeviceDescriptor): Promise<void> {
+        await this.closeSessionAndTransport()
+        await this.connect(device)
+    }
+
+    private async closeSessionAndTransport(): Promise<void> {
         const failures: unknown[] = []
         try {
             // A tainted pipe gets no CloseSession; the transport is still released below.
@@ -1008,7 +1051,13 @@ export class GenericCamera {
         return result
     }
 
-    async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
+    /** Downloads an object in chunks; onProgress reports bytes received after each chunk. */
+    async getObject(
+        objectHandle: number,
+        objectSize: number,
+        onProgress?: (receivedBytes: number, totalBytes: number) => void,
+        signal?: AbortSignal
+    ): Promise<Uint8Array> {
         if (!Number.isSafeInteger(objectSize) || objectSize < 0)
             throw new Error('Object size must be a nonnegative safe integer')
         // Start transfer tracking
@@ -1018,6 +1067,8 @@ export class GenericCamera {
         let offset = 0
 
         while (offset < objectSize) {
+            // Aborting between chunks leaves no transaction in flight: the camera stays usable.
+            signal?.throwIfAborted()
             const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
 
             const chunkResponse = await this.send(
@@ -1041,6 +1092,7 @@ export class GenericCamera {
 
             chunks.push(chunkResponse.data)
             offset += chunkResponse.data.length
+            onProgress?.(offset, objectSize)
         }
 
         // Complete transfer tracking

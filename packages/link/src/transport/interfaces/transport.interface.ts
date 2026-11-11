@@ -17,6 +17,12 @@ export interface TransportInterface {
     receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array>
     isConnected(): boolean
     classRequestReset(): Promise<void>
+    /**
+     * Resets the device's USB port and releases it, as if it were unplugged and replugged.
+     * Clears a pipe a crashed host left mid-transfer, which a Device Reset Request does not.
+     * The transport must be connected again afterwards.
+     */
+    resetPort?(): Promise<void>
     getType(): TransportType
 
     /**

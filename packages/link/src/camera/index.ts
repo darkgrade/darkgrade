@@ -1,3 +1,4 @@
+import type { SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import type { TransactionPolicy } from '@camera/transaction-channel'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
@@ -39,6 +40,9 @@ import {
     type SonyZoomResult,
 } from './sony-camera'
 import { VendorExtensionCamera } from './vendor-extension-camera'
+
+const SONY_CAMERA_OPERATING_MODE = 0xd0bc
+const SONY_OPERATING_MODE_PLAYBACK = 2
 
 export interface CameraOptions {
     logger?: Partial<LoggerConfig>
@@ -277,6 +281,23 @@ export class Camera {
         return this.instance.setHdmiLiveViewMode(value)
     }
 
+    /**
+     * Sony: return the body to remote shooting after card access. Reading the card switches the
+     * body's CameraOperatingMode (0xD0BC) to Playback, which is read-only over PTP and survives
+     * leaving content-transfer mode; live view then serves the playback image. When the body still
+     * reports Playback, this reopens the session (about 350 ms on an α7 V), which restores Record
+     * mode. Returns true when it reopened, since object handles may change with the session.
+     */
+    async resumeSonyShooting(): Promise<boolean> {
+        if (!(this.instance instanceof SonyCamera)) return false
+        await this.instance.resumeShooting()
+        const states = await this.instance.refreshPropertyStates()
+        const operatingMode = states.find(state => state.code === SONY_CAMERA_OPERATING_MODE)
+        if (operatingMode?.rawValue !== SONY_OPERATING_MODE_PLAYBACK) return false
+        await this.instance.reopenSession(this.deviceDescriptor)
+        return true
+    }
+
     async getSonyPropertyStates(): Promise<SonyPropertyState[]> {
         if (!(this.instance instanceof SonyCamera)) {
             throw new Error('Sony property state is only available for Sony cameras')
@@ -377,6 +398,35 @@ export class Camera {
         return this.instance.getZoomPosition()
     }
 
+    /** Sony: the card's contents without entering content-transfer mode (live view keeps running). */
+    async listSonyContents(options?: { slot?: 1 | 2; limit?: number; sinceUtcMs?: number }) {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony content listing is only available for Sony cameras')
+        return this.instance.listContents(options)
+    }
+
+    /** Sony: a content's JPEG thumbnail or screennail. */
+    async getSonyContentPreview(contentId: number, fileId: number, options?: { slot?: 1 | 2; size?: 'thumbnail' | 'screennail' }): Promise<Uint8Array> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony content previews are only available for Sony cameras')
+        return this.instance.getContentPreview(contentId, fileId, options)
+    }
+
+    /** Sony: set the camera clock from the host (default: now). Returns the string the camera accepted. */
+    async setSonyDateTime(moment?: Date): Promise<string> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony clock setting is only available for Sony cameras')
+        return this.instance.setDateTime(moment)
+    }
+
+    /** Sony: start zooming and return immediately; call sonyStopZoom() to stop. */
+    async sonyStartZoom(direction: 'wide' | 'tele', speed?: number): Promise<void> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony zoom is only available for Sony cameras')
+        await this.instance.startZoom(direction, speed)
+    }
+
+    async sonyStopZoom(): Promise<void> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony zoom is only available for Sony cameras')
+        await this.instance.stopZoom()
+    }
+
     async sonyPowerZoom(direction: 'wide' | 'tele', pulses?: number): Promise<SonyZoomResult> {
         if (!(this.instance instanceof SonyCamera))
             throw new Error('Sony power zoom is only available for Sony cameras')
@@ -396,6 +446,12 @@ export class Camera {
         if (!(this.instance instanceof SonyCamera))
             throw new Error('Sony camera buttons are only available for Sony cameras')
         return this.instance.pressButton(button, options)
+    }
+
+    /** Turns the camera's on-screen display stream on or off; captureSonyOsdImage turns it on by itself. */
+    async setSonyOsdImageMode(enabled: boolean): Promise<void> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony OSD image is only available for Sony cameras')
+        return this.instance.setOsdImageMode(enabled)
     }
 
     async captureSonyOsdImage(): Promise<SonyOsdImage> {
@@ -552,7 +608,7 @@ export class Camera {
     }
 
     async captureLiveView(params?: { includeInfo?: boolean; includeData?: boolean }): Promise<{
-        info?: ObjectInfo; data?: Uint8Array; nikonMetadata?: NikonLiveViewMetadata
+        info?: ObjectInfo; data?: Uint8Array; nikonMetadata?: NikonLiveViewMetadata; sonyFocalFrames?: SonyFocalFrame[]
     }> {
         return this.instance.captureLiveView({ includeInfo: true, includeData: true, ...params })
     }
@@ -633,8 +689,14 @@ export class Camera {
         return this.instance.listObjects()
     }
 
-    async getObject(objectHandle: number, objectSize: number): Promise<Uint8Array> {
-        return this.instance.getObject(objectHandle, objectSize)
+    /** Downloads an object; onProgress reports bytes received after each chunk. */
+    async getObject(
+        objectHandle: number,
+        objectSize: number,
+        onProgress?: (receivedBytes: number, totalBytes: number) => void,
+        signal?: AbortSignal
+    ): Promise<Uint8Array> {
+        return this.instance.getObject(objectHandle, objectSize, onProgress, signal)
     }
 }
 

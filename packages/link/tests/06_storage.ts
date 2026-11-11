@@ -4,6 +4,7 @@ import * as Ops from '@ptp/definitions/operation-definitions'
 import * as SonyOps from '@ptp/definitions/vendors/sony/sony-operation-definitions'
 import * as SonyProps from '@ptp/definitions/vendors/sony/sony-property-definitions'
 import { USBTransport } from '@transport/usb/usb-transport'
+import { fileURLToPath } from 'node:url'
 import { ObjectInfo } from 'src'
 
 const logger = new Logger({
@@ -83,7 +84,7 @@ async function main() {
     const path = await import('path')
 
     // Ensure captured-images directory exists
-    const capturedImagesDir = '/Users/kevinschaich/repositories/darkgrade/packages/link/captured_images'
+    const capturedImagesDir = fileURLToPath(new URL('../captured_images', import.meta.url))
     if (!fs.existsSync(capturedImagesDir)) {
         fs.mkdirSync(capturedImagesDir, { recursive: true })
     }

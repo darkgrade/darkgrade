@@ -203,11 +203,8 @@ export const FocusMode = {
         ),
 } as const satisfies PropertyDefinition
 
-// Sony autofocus area (PTP 0xd22c). Wide=0x0001 and Flexible Spot S=0x0101 were
-// verified on the darkgrade-testbench against the Sony Camera Remote SDK; the rest
-// follow the documented Sony PTP ordering. Unknown areas decode to "Area 0x…" so
-// bodies in extended modes still report, and the value is set via the normal
-// SDIO_SetExtDevicePropValue path.
+// Sony autofocus area (PTP 0xd22c), as listed in Sony's Camera Control PTP 3 reference. Unknown
+// areas still decode to "Area 0x…" so a newer body reports rather than fails.
 const SONY_FOCUS_AREA_NAMES: Record<number, string> = {
     0x0001: 'Wide',
     0x0002: 'Zone',
@@ -216,9 +213,26 @@ const SONY_FOCUS_AREA_NAMES: Record<number, string> = {
     0x0102: 'Flexible Spot M',
     0x0103: 'Flexible Spot L',
     0x0104: 'Expand Flexible Spot',
-    0x0201: 'Tracking Wide',
-    0x0202: 'Tracking Zone',
-    0x0203: 'Tracking Center',
+    0x0105: 'Flexible Spot',
+    0x0106: 'Flexible Spot XS',
+    0x0107: 'Flexible Spot XL',
+    0x1101: 'Flexible Spot Free Size 1',
+    0x1102: 'Flexible Spot Free Size 2',
+    0x1103: 'Flexible Spot Free Size 3',
+    0x0201: 'Lock on AF Wide',
+    0x0202: 'Lock on AF Zone',
+    0x0203: 'Lock on AF Center',
+    0x0204: 'Lock on AF Flexible Spot S',
+    0x0205: 'Lock on AF Flexible Spot M',
+    0x0206: 'Lock on AF Flexible Spot L',
+    0x0207: 'Lock on AF Expand Flexible Spot',
+    0x0208: 'Lock on AF Flexible Spot',
+    0x0209: 'Lock on AF Flexible Spot XS',
+    0x020a: 'Lock on AF Flexible Spot XL',
+    0x1201: 'Lock on AF Flexible Spot Free Size 1',
+    0x1202: 'Lock on AF Flexible Spot Free Size 2',
+    0x1203: 'Lock on AF Flexible Spot Free Size 3',
+    // Not in the PTP 3 reference; reported by older bodies.
     0x0301: 'Tracking Flexible Spot S',
     0x0302: 'Tracking Flexible Spot M',
     0x0303: 'Tracking Flexible Spot L',
@@ -396,22 +410,214 @@ export const MovieFileFormat = {
 export const MovieRecordingSetting = {
     code: 0xd242,
     name: 'MovieRecordingSetting',
-    description: 'Sony movie bitrate, chroma sampling, and bit-depth profile; exact bitrate depends on file format and frame rate.',
+    description: 'Sony movie recording setting (bitrate, chroma sampling and bit depth), per the Camera Control PTP 3 reference.',
     datatype: UINT16,
     access: 'GetSet',
     codec: registry =>
         createEnumCodec(
             registry,
             [
-                { value: 52, name: 'High bitrate · 4:2:2 10-bit', description: 'High-bitrate 4:2:2 10-bit profile' },
-                { value: 56, name: 'Standard bitrate · 4:2:0 8-bit', description: 'Standard-bitrate 4:2:0 8-bit profile' },
-                { value: 60, name: 'Low bitrate · 4:2:0 8-bit', description: 'Low-bitrate 4:2:0 8-bit profile' },
-                { value: 61, name: '50M · 4:2:2 10-bit', description: '50 Mbps 4:2:2 10-bit profile' },
-                { value: 63, name: '50M · 4:2:0 8-bit', description: '50 Mbps 4:2:0 8-bit profile' },
-                { value: 66, name: 'Low bitrate · 4:2:0 8-bit', description: 'Frame-rate-dependent lower bitrate 4:2:0 8-bit profile' },
+                { value: 0x01, name: '60p 50M · XAVC S', description: '60p 50M · XAVC S' },
+                { value: 0x02, name: '30p 50M · XAVC S', description: '30p 50M · XAVC S' },
+                { value: 0x03, name: '24p 50M · XAVC S', description: '24p 50M · XAVC S' },
+                { value: 0x04, name: '50p 50M · XAVC S', description: '50p 50M · XAVC S' },
+                { value: 0x05, name: '25p 50M · XAVC S', description: '25p 50M · XAVC S' },
+                { value: 0x06, name: '60i 24M (FX) · AVCHD', description: '60i 24M (FX) · AVCHD' },
+                { value: 0x07, name: '50i 24M (FX) · AVCHD', description: '50i 24M (FX) · AVCHD' },
+                { value: 0x08, name: '60i 17M (FH) · AVCHD', description: '60i 17M (FH) · AVCHD' },
+                { value: 0x09, name: '50i 17M (FH) · AVCHD', description: '50i 17M (FH) · AVCHD' },
+                { value: 0x0a, name: '60p 28M (PS) · AVCHD', description: '60p 28M (PS) · AVCHD' },
+                { value: 0x0b, name: '50p 28M (PS) · AVCHD', description: '50p 28M (PS) · AVCHD' },
+                { value: 0x0c, name: '24p 24M (FX) · AVCHD', description: '24p 24M (FX) · AVCHD' },
+                { value: 0x0d, name: '25p 24M (FX) · AVCHD', description: '25p 24M (FX) · AVCHD' },
+                { value: 0x0e, name: '24p 17M (FH) · AVCHD', description: '24p 17M (FH) · AVCHD' },
+                { value: 0x0f, name: '25p 17M (FH) · AVCHD', description: '25p 17M (FH) · AVCHD' },
+                { value: 0x10, name: '720 120p 50M · XAVC S', description: '720 120p 50M · XAVC S' },
+                { value: 0x11, name: '720 100p 50M · XAVC S', description: '720 100p 50M · XAVC S' },
+                { value: 0x12, name: '1080 30p 16M · MP4', description: '1080 30p 16M · MP4' },
+                { value: 0x13, name: '1080 25p 16M · MP4', description: '1080 25p 16M · MP4' },
+                { value: 0x14, name: '720 30p 6M · MP4', description: '720 30p 6M · MP4' },
+                { value: 0x15, name: '720 25p 6M · MP4', description: '720 25p 6M · MP4' },
+                { value: 0x16, name: '1080 60p 28M · MP4', description: '1080 60p 28M · MP4' },
+                { value: 0x17, name: '1080 50p 28M · MP4', description: '1080 50p 28M · MP4' },
+                { value: 0x18, name: '60p 25M · XAVC S HD', description: '60p 25M · XAVC S HD' },
+                { value: 0x19, name: '50p 25M · XAVC S HD', description: '50p 25M · XAVC S HD' },
+                { value: 0x1a, name: '30p 16M · XAVC S HD', description: '30p 16M · XAVC S HD' },
+                { value: 0x1b, name: '25p 16M · XAVC S HD', description: '25p 16M · XAVC S HD' },
+                { value: 0x1c, name: '1080 120p 100M · XAVC S HD', description: '1080 120p 100M · XAVC S HD' },
+                { value: 0x1d, name: '1080 100p 100M · XAVC S HD', description: '1080 100p 100M · XAVC S HD' },
+                { value: 0x1e, name: '1080 120p 60M · XAVC S HD', description: '1080 120p 60M · XAVC S HD' },
+                { value: 0x1f, name: '1080 100p 60M · XAVC S HD', description: '1080 100p 60M · XAVC S HD' },
+                { value: 0x20, name: '30p 100M · XAVC S 4K', description: '30p 100M · XAVC S 4K' },
+                { value: 0x21, name: '25p 100M · XAVC S 4K', description: '25p 100M · XAVC S 4K' },
+                { value: 0x22, name: '24p 100M · XAVC S 4K', description: '24p 100M · XAVC S 4K' },
+                { value: 0x23, name: '30p 60M · XAVC S 4K', description: '30p 60M · XAVC S 4K' },
+                { value: 0x24, name: '25p 60M · XAVC S 4K', description: '25p 60M · XAVC S 4K' },
+                { value: 0x25, name: '24p 60M · XAVC S 4K', description: '24p 60M · XAVC S 4K' },
+                { value: 0x26, name: '600M 4:2:2 10-bit', description: '600M 4:2:2 10-bit' },
+                { value: 0x27, name: '500M 4:2:2 10-bit', description: '500M 4:2:2 10-bit' },
+                { value: 0x28, name: '400M 4:2:0 10-bit', description: '400M 4:2:0 10-bit' },
+                { value: 0x29, name: '300M 4:2:2 10-bit', description: '300M 4:2:2 10-bit' },
+                { value: 0x2a, name: '280M 4:2:2 10-bit', description: '280M 4:2:2 10-bit' },
+                { value: 0x2b, name: '250M 4:2:2 10-bit', description: '250M 4:2:2 10-bit' },
+                { value: 0x2c, name: '240M 4:2:2 10-bit', description: '240M 4:2:2 10-bit' },
+                { value: 0x2d, name: '222M 4:2:2 10-bit', description: '222M 4:2:2 10-bit' },
+                { value: 0x2e, name: '200M 4:2:2 10-bit', description: '200M 4:2:2 10-bit' },
+                { value: 0x2f, name: '200M 4:2:0 10-bit', description: '200M 4:2:0 10-bit' },
+                { value: 0x30, name: '200M 4:2:0 8-bit', description: '200M 4:2:0 8-bit' },
+                { value: 0x31, name: '185M 4:2:2 10-bit', description: '185M 4:2:2 10-bit' },
+                { value: 0x32, name: '150M 4:2:0 10-bit', description: '150M 4:2:0 10-bit' },
+                { value: 0x33, name: '150M 4:2:0 8-bit', description: '150M 4:2:0 8-bit' },
+                { value: 0x34, name: '140M 4:2:2 10-bit', description: '140M 4:2:2 10-bit' },
+                { value: 0x35, name: '111M 4:2:2 10-bit', description: '111M 4:2:2 10-bit' },
+                { value: 0x36, name: '100M 4:2:2 10-bit', description: '100M 4:2:2 10-bit' },
+                { value: 0x37, name: '100M 4:2:0 10-bit', description: '100M 4:2:0 10-bit' },
+                { value: 0x38, name: '100M 4:2:0 8-bit', description: '100M 4:2:0 8-bit' },
+                { value: 0x39, name: '93M 4:2:2 10-bit', description: '93M 4:2:2 10-bit' },
+                { value: 0x3a, name: '89M 4:2:2 10-bit', description: '89M 4:2:2 10-bit' },
+                { value: 0x3b, name: '75M 4:2:0 10-bit', description: '75M 4:2:0 10-bit' },
+                { value: 0x3c, name: '60M 4:2:0 8-bit', description: '60M 4:2:0 8-bit' },
+                { value: 0x3d, name: '50M 4:2:2 10-bit', description: '50M 4:2:2 10-bit' },
+                { value: 0x3e, name: '50M 4:2:0 10-bit', description: '50M 4:2:0 10-bit' },
+                { value: 0x3f, name: '50M 4:2:0 8-bit', description: '50M 4:2:0 8-bit' },
+                { value: 0x40, name: '45M 4:2:0 10-bit', description: '45M 4:2:0 10-bit' },
+                { value: 0x41, name: '30M 4:2:0 10-bit', description: '30M 4:2:0 10-bit' },
+                { value: 0x42, name: '25M 4:2:0 8-bit', description: '25M 4:2:0 8-bit' },
+                { value: 0x43, name: '16M 4:2:0 8-bit', description: '16M 4:2:0 8-bit' },
+                { value: 0x44, name: '520M 4:2:2 10-bit', description: '520M 4:2:2 10-bit' },
+                { value: 0x45, name: '260M 4:2:2 10-bit', description: '260M 4:2:2 10-bit' },
             ] as const,
             registry.codecs.uint16
         ),
+} as const satisfies PropertyDefinition
+
+export const SubjectRecognitionInAF = {
+    code: 0xd157,
+    name: 'SubjectRecognitionInAF',
+    description: 'Sony subject recognition (face and eye detection) in AF.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Off', description: 'Off' },
+                { value: 0x02, name: 'On', description: 'On' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const RecognitionTarget = {
+    code: 0xd158,
+    name: 'RecognitionTarget',
+    description: 'Sony subject recognition target.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Person', description: 'Person' },
+                { value: 0x02, name: 'Animal + Bird', description: 'Animal + Bird' },
+                { value: 0x03, name: 'Animal', description: 'Animal' },
+                { value: 0x04, name: 'Bird', description: 'Bird' },
+                { value: 0x05, name: 'Insect', description: 'Insect' },
+                { value: 0x06, name: 'Car/Train', description: 'Car/Train' },
+                { value: 0x07, name: 'Plane', description: 'Plane' },
+                { value: 0xffff, name: 'Auto', description: 'Auto' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const RightLeftEyeSelect = {
+    code: 0xd159,
+    name: 'RightLeftEyeSelect',
+    description: 'Sony right/left eye select for subject recognition.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Auto', description: 'Auto' },
+                { value: 0x02, name: 'Right Eye', description: 'Right Eye' },
+                { value: 0x03, name: 'Left Eye', description: 'Left Eye' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const FaceEyeFrameDisplay = {
+    code: 0xd1b8,
+    name: 'FaceEyeFrameDisplay',
+    description: 'Sony face/eye frame display.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'OFF', description: 'OFF' },
+                { value: 0x02, name: 'ON', description: 'ON' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieRecordingFrameRate = {
+    code: 0xd286,
+    name: 'MovieRecordingFrameRate',
+    description: 'Sony movie recording frame rate, per the Camera Control PTP 3 reference.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: '120p', description: '120p' },
+                { value: 0x02, name: '100p', description: '100p' },
+                { value: 0x03, name: '60p', description: '60p' },
+                { value: 0x04, name: '50p', description: '50p' },
+                { value: 0x05, name: '30p', description: '30p' },
+                { value: 0x06, name: '25p', description: '25p' },
+                { value: 0x07, name: '24p', description: '24p' },
+                { value: 0x08, name: '23.98p', description: '23.98p' },
+                { value: 0x09, name: '29.97p', description: '29.97p' },
+                { value: 0x0a, name: '59.94p', description: '59.94p' },
+                { value: 0x0b, name: '19.98p', description: '19.98p' },
+                { value: 0x0c, name: '14.99p', description: '14.99p' },
+                { value: 0x0d, name: '12.50p', description: '12.50p' },
+                { value: 0x0e, name: '12.00p', description: '12.00p' },
+                { value: 0x0f, name: '11.99p', description: '11.99p' },
+                { value: 0x10, name: '10.00p', description: '10.00p' },
+                { value: 0x11, name: '9.99p', description: '9.99p' },
+                { value: 0x12, name: '6.00p', description: '6.00p' },
+                { value: 0x13, name: '5.99p', description: '5.99p' },
+                { value: 0x14, name: '5.00p', description: '5.00p' },
+                { value: 0x15, name: '4.995p', description: '4.995p' },
+                { value: 0x16, name: '24.00p', description: '24.00p' },
+                { value: 0x17, name: '119.88p', description: '119.88p' },
+                { value: 0x41, name: '120i', description: '120i' },
+                { value: 0x42, name: '100i', description: '100i' },
+                { value: 0x43, name: '60i', description: '60i' },
+                { value: 0x44, name: '50i', description: '50i' },
+                { value: 0x45, name: '30i', description: '30i' },
+                { value: 0x46, name: '25i', description: '25i' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const DateTimeSetting = {
+    code: 0xd223,
+    name: 'DateTimeSetting',
+    description:
+        'Sets the camera clock (write-only). ISO 8601 "YYYYMMDDThhmmss.s±hhmm"; valid from 2016-01-01. The result arrives as SDIE_DateTimeSettingResult.',
+    datatype: getDatatypeByName('STR')!.code,
+    access: 'GetSet',
+    codec: registry => registry.codecs.string,
 } as const satisfies PropertyDefinition
 
 export const MovieRecordingState = {
@@ -1639,6 +1845,10 @@ export const sonyPropertyRegistry = {
     WhiteBalance,
     FocusMode,
     FocusArea,
+    SubjectRecognitionInAF,
+    RecognitionTarget,
+    RightLeftEyeSelect,
+    FaceEyeFrameDisplay,
     CompressionSetting,
     SonyImageSize,
     AspectRatio,
@@ -1677,6 +1887,8 @@ export const sonyPropertyRegistry = {
     LiveViewImageQuality,
     ContentTransferEnable,
     FocusIndication,
+    MovieRecordingFrameRate,
+    DateTimeSetting,
 } as const satisfies { [key: string]: PropertyDefinition }
 
 export type SonyPropertyDef = (typeof sonyPropertyRegistry)[keyof typeof sonyPropertyRegistry]

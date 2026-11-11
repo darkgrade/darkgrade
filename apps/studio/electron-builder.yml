@@ -10,6 +10,7 @@ asarUnpack:
     - '**/node_modules/usb/**'
 mac:
     category: public.app-category.photography
+    icon: build/icon.icns
     target:
         - dmg
         - zip

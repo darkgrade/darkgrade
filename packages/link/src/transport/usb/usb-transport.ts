@@ -235,6 +235,18 @@ export class USBTransport implements TransportInterface {
         }
     }
 
+    async resetPort(): Promise<void> {
+        const nodeUsbDevice = (this.device as unknown as { device?: { reset(callback: (error?: unknown) => void): void } })
+            ?.device
+        if (!nodeUsbDevice) throw new Error('Not connected')
+        await this.stopInterruptListener()
+        await new Promise<void>((resolve, reject) =>
+            nodeUsbDevice.reset(error => (error && !isUsbDeviceGone(error) ? reject(error) : resolve()))
+        )
+        this.deviceLost = true
+        await this.disconnect()
+    }
+
     /** Close partially opened devices too; failed initialization never sets connected=true. */
     async disconnect(): Promise<void> {
         if (!this.device && !this.connected) return
