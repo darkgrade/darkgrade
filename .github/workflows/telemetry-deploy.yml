@@ -1,0 +1,57 @@
+name: Deploy telemetry
+on:
+    workflow_dispatch:
+permissions:
+    contents: read
+    id-token: write
+concurrency:
+    group: telemetry-deployment
+    cancel-in-progress: false
+jobs:
+    deploy:
+        environment: telemetry
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        env:
+            PROJECT: ${{ vars.TELEMETRY_PROJECT }}
+            REGION: ${{ vars.TELEMETRY_REGION }}
+            PUBLIC_URL: ${{ vars.TELEMETRY_PUBLIC_URL }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: '1.4.2'
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+            - run: bun install --frozen-lockfile --ignore-scripts
+            - run: npm run test --prefix packages/contribute && npm run test --prefix apps/contribution-collector
+            - name: Check deployment configuration
+              run: test -n "$PROJECT" && test -n "$REGION" && test -n "$PUBLIC_URL"
+            - uses: google-github-actions/auth@v2
+              with:
+                  workload_identity_provider: ${{ vars.TELEMETRY_WIF_PROVIDER }}
+                  service_account: ${{ vars.TELEMETRY_DEPLOY_ACCOUNT }}
+            - uses: google-github-actions/setup-gcloud@v2
+            - name: Publish reviewed image
+              run: |
+                  set -euo pipefail
+                  REGISTRY="$REGION-docker.pkg.dev/$PROJECT/darkgrade-telemetry"
+                  IMAGE="$REGISTRY/collector:$GITHUB_SHA"
+                  gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+                  docker build -f apps/contribution-collector/Dockerfile -t "$IMAGE" .
+                  docker push "$IMAGE"
+                  DIGEST=$(gcloud artifacts docker images describe "$IMAGE" --format='value(image_summary.digest)')
+                  test -n "$DIGEST"
+                  echo "TELEMETRY_IMAGE=$REGISTRY/collector@$DIGEST" >> "$GITHUB_ENV"
+            - name: Update service and withdrawal worker
+              run: |
+                  set -euo pipefail
+                  gcloud run services update darkgrade-telemetry --project="$PROJECT" --region="$REGION" --image="$TELEMETRY_IMAGE" --quiet
+                  gcloud run jobs update darkgrade-telemetry-cleanup --project="$PROJECT" --region="$REGION" --image="$TELEMETRY_IMAGE" --quiet
+            - name: Verify public service and cleanup job
+              run: |
+                  set -euo pipefail
+                  TELEMETRY_SMOKE_URL="$PUBLIC_URL" npm run smoke --prefix apps/contribution-collector
+                  gcloud run jobs execute darkgrade-telemetry-cleanup --project="$PROJECT" --region="$REGION" --wait --quiet
+                  echo "Verified image: $TELEMETRY_IMAGE" >> "$GITHUB_STEP_SUMMARY"

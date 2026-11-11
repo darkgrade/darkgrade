@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { randomUUID } from 'node:crypto'
 import { HardwareBusyError } from './errors.ts'
 export interface OwnershipStore {
     claimHardwareResource(resource: string, owner: string, purpose: string, lifetimeMilliseconds: number): boolean
@@ -22,7 +21,7 @@ export class HardwareCoordinator {
         return context?.operations ? context.owner : undefined
     }
     claim(resource: string, purpose: string) {
-        const owner = randomUUID()
+        const owner = crypto.randomUUID()
         if (!this.database.claimHardwareResource(resource, owner, purpose, 45000))
             throw new HardwareBusyError('This camera input is already owned by another operation')
         const heartbeat = setInterval(() => this.database.heartbeatHardwareOwner(owner, 45000), 10000)
@@ -46,7 +45,7 @@ export class HardwareCoordinator {
         const existing = this.context.getStore()
         const context: Context = existing?.operations
             ? existing
-            : { owner: randomUUID(), resources: new Set<string>(), operations: 0 }
+            : { owner: crypto.randomUUID(), resources: new Set<string>(), operations: 0 }
         // Count before acquisition: a sibling can finish while this call waits.
         context.operations++
         const acquire = async () => {

@@ -1,0 +1,58 @@
+name: Telemetry checks
+on:
+    pull_request:
+        paths:
+            - 'packages/contribute/**'
+            - 'apps/contribution-collector/**'
+            - 'apps/studio/**'
+            - 'bun.lock'
+            - '.github/workflows/telemetry-checks.yml'
+    workflow_dispatch:
+permissions:
+    contents: read
+jobs:
+    test:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: '1.4.2'
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+            - run: bun install --frozen-lockfile --ignore-scripts
+            - run: npm run test --prefix packages/contribute
+            - run: npm run test --prefix apps/contribution-collector
+            - run: npm run build --prefix packages/link && npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
+            - name: Start Firestore emulator
+              run: |
+                  docker run -d --name telemetry-firestore -p 127.0.0.1:8788:8080 \
+                    gcr.io/google.com/cloudsdktool/google-cloud-cli@sha256:3989a42372d3b984bade6db02213d456d94a0ba3765e8b744b95c4188b6fcc89 \
+                    gcloud beta emulators firestore start --host-port=0.0.0.0:8080 --project=demo-darkgrade
+                  for attempt in $(seq 1 60); do
+                    if curl --silent --fail http://127.0.0.1:8788/ >/dev/null; then exit 0; fi
+                    sleep 1
+                  done
+                  exit 1
+            - run: npm run test:emulator --prefix apps/contribution-collector
+              env:
+                  FIRESTORE_EMULATOR_HOST: 127.0.0.1:8788
+            - run: docker build -f apps/contribution-collector/Dockerfile -t telemetry-check .
+            - name: Test actual collector HTTP container
+              run: |
+                  docker run -d --name telemetry-service --network container:telemetry-firestore \
+                    -e GOOGLE_CLOUD_PROJECT=demo-darkgrade -e FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+                    -e TELEMETRY_PUBLIC_URL=https://telemetry.example -e PORT=8081 telemetry-check
+                  for attempt in $(seq 1 30); do
+                    if docker exec telemetry-service node -e "fetch('http://127.0.0.1:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then break; fi
+                    sleep 1
+                  done
+                  docker exec -e TELEMETRY_SMOKE_URL=http://127.0.0.1:8081 telemetry-service node dist/smoke.js
+            - name: Validate infrastructure
+              run: |
+                  docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 init -backend=false
+                  docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 validate
+            - if: always()
+              run: docker rm -f telemetry-service telemetry-firestore || true

@@ -1,4 +1,56 @@
-# @darkgrade/contribute
+# Application diagnostics (v0.2)
+
+Use `@darkgrade/contribute/application` for the current Firestore collector. Initialize
+one client per application, after displaying its first-run notice. Sharing starts on;
+saved opt-outs and environment overrides (`DARKGRADE_CONTRIBUTIONS=0` or `DO_NOT_TRACK=1`)
+remain off. Returning `false` from `presentNotice` opts out immediately. Importing the
+package has no collection side effects.
+
+```ts
+import { createApplicationDiagnostics } from '@darkgrade/contribute/application'
+const diagnostics = await createApplicationDiagnostics({
+    endpoint: configuredCollectorOrigin,
+    store: secureInstallationStore,
+    presentNotice: showDiagnosticsNotice,
+})
+const { transport, detach } = diagnostics.observe(existingTransport, {
+    manufacturer: 'Canon', model: 'EOS 90D', firmware: 'unknown',
+    revision: buildGitCommit, dirty: buildIsDirty, transport: 'usb', evidence: 'hardware',
+})
+// Pass transport to Link's Camera; do not open a second connection.
+// A hardware origin describes where diagnostics came from, not a qualified hardware pass.
+```
+
+Call `setConsent(false)` to stop and clear unsent data; `withdraw()` additionally revokes
+and deletes uploads. Show `status().withdrawalPending` and a retry button calling
+`retryWithdrawal()`. Keep the client alive for retry, and call `close()` at application
+shutdown. Optional `requestContact(email, {name, publish: true})` requests verified public
+credit; `contactStatus()` and `removeContact()` manage it. Credit is a separate choice.
+Email functions require an existing enrollment and configured server-side mail delivery.
+
+`@darkgrade/contribute/installation-store` supplies an atomic Node file store with injected
+OS credential protection. Electron Studio uses safeStorage and refuses plaintext fallback.
+Never embed a shared encryption key. Browser apps must provide durable secure application
+storage/proxy handling; do not put the install credential in a URL or expose it to an
+untrusted renderer. Use one serialized store owner across processes. The client binds its
+saved credential to the HTTPS collector origin and never resets corrupt preferences.
+
+The queue is shared across up to 16 camera contexts and bounded to 1,000 entries plus one
+pending retry batch. Headers only are observed; images, parameters, serials, raw errors and
+transaction IDs are excluded. Transport cleanup/reset methods continue to work. Firmware
+must be a real observation or `unknown`; never infer it from a neighboring camera. A lost
+anonymous credential cannot recover withdrawal, so retain secure state across updates.
+
+See `apps/contribution-collector/README.md` for deployment, review/export, limits, and the
+24-hour downstream withdrawal/expiry contract. The package and deployment require explicit
+release/configuration; this source change does not publish npm or enroll customers.
+
+## Legacy v0.1 API
+
+The root `createContributions` API below remains for old signed-grant deployments. It does
+not speak the v2 application-enrollment protocol; new applications use the subpath above.
+
+### @darkgrade/contribute
 
 Camera diagnostics for Darkgrade Link. Explicitly initializing the client enables
 metadata collection by default; a missing saved preference means **on**. Importing

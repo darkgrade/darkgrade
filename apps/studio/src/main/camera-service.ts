@@ -14,6 +14,7 @@ import {
     type SonyFocalFrame,
     type TransactionPolicy,
 } from '@darkgrade/link'
+import { diagnosticUsbTransport } from '@main/diagnostics'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import type {
     CameraBattery,
@@ -426,7 +427,12 @@ export class CameraService {
             ? { usb: { filters: [{ vendorId: discovered.vendorId, productId: discovered.productId }] } }
             : undefined
 
+        const transport =
+            discovered?.model && !discovered.model.endsWith('(or similar)')
+                ? await diagnosticUsbTransport(VENDOR_NAMES[discovered.vendorId] ?? 'Unknown', discovered.model)
+                : undefined
         const camera = new Camera({
+            transport,
             logger: { expanded: false, renderInTerminal: false, captureConsole: false },
             device,
             transactionPolicy: TRANSACTION_POLICY,
@@ -802,7 +808,8 @@ export class CameraService {
     private applyOptimistically(name: CameraControlName, value: string): CameraSettings {
         const control = this.controls?.[name]
         if (this.controls && control) this.controls = { ...this.controls, [name]: { ...control, value } }
-        if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture') this.settings = { ...this.settings, [name]: value }
+        if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture')
+            this.settings = { ...this.settings, [name]: value }
         this.broadcastState()
         this.scheduleSettingsConfirmation()
         return this.settings

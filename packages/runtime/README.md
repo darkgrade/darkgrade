@@ -1,8 +1,9 @@
 # Darkgrade camera runtime
 
 `@darkgrade/runtime` owns the common camera MCP contract, frontend operation
-ordering, and shared lease coordinator. It is a Bun package separate from the
-portable `@darkgrade/link` camera library.
+ordering, and shared lease coordinator. Its host entry runs on Bun; a separate
+browser entry exposes the portable core. Both remain separate from the
+`@darkgrade/link` camera library.
 
 The first migration covers 14 tools: controls, ISO, aperture, shutter speed,
 white balance, focus mode, autofocus, Manual exposure, movie format, photo
@@ -33,6 +34,23 @@ Other hosts can embed `CameraRuntime` with a `CameraProvider`, then pass that
 runtime to `createCameraMcpServer()`. UI and CLI callers use the same runtime.
 `registerCameraTools()` also installs the identical tools into an existing MCP
 server, which is how Test Bench keeps its old API.
+
+## In a browser
+
+`@darkgrade/runtime/browser` (also what bundlers resolve for the package under the
+`browser` condition) exports `CameraRuntime`, the tool contract, `HttpCameraClient`
+and `HardwareBusyError` with no `node:` imports; `@darkgrade/runtime/mcp` is
+browser-safe too. `HardwareCoordinator` stays in the default entry and
+`@darkgrade/runtime/ownership`: its cross-process leases rely on Node's
+`AsyncLocalStorage` and a shared store. A `CameraRuntime` queue coordinates only
+that instance, not other tabs, workers or applications. Use `HttpCameraClient`
+with the owning host to retain shared hardware leases; a direct browser provider
+must supply its own ownership mechanism. This entry does not provide WebUSB
+drivers or make host authentication and CORS automatic.
+
+Lease owners use the standard Web Crypto `crypto.randomUUID()`.
+`tests/browser.test.ts` checks the package's browser condition and explicit
+browser/MCP exports, rejecting Node built-ins in their dependency graphs.
 
 ## Ownership
 

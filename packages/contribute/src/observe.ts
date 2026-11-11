@@ -12,6 +12,7 @@ export interface CameraTransport<Device = unknown, Kind extends string = string>
     send(bytes: Uint8Array, session: number, transaction: number): Promise<void>
     receive(length: number, session: number, transaction: number): Promise<Uint8Array>
     classRequestReset(): Promise<void>
+    resetPort?(): Promise<void>
     isConnected(): boolean
     isLittleEndian(): boolean
     getType(): Kind
@@ -105,6 +106,7 @@ export function observeTransport<Device, Kind extends string>(
                     source.on?.(onEvent)
                 }
             }),
+        ...(source.resetPort && { resetPort: () => operation('lifecycle', 'reset', () => source.resetPort!()) }),
         send: (bytes, session, transaction) =>
             operation('out', 'unknown', () => source.send(bytes, session, transaction), bytes),
         receive: (length, session, transaction) =>

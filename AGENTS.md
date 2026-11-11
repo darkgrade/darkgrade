@@ -70,7 +70,7 @@ Outpost's private recording utility archives/restores these bundles through the 
 connector. Keep contributor/source attribution attached, and do not infer a lender or person.
 
 Keep this work on one ongoing branch/PR until the user requests a merge; the current batch is
-`feat/private-camera-recordings`. Do not create a separate PR per small follow-up fix.
+`feat/runtime-browser-core`. Do not create a separate PR per small follow-up fix.
 
 Run `bun run --cwd packages/link test:fuzz` for reproducible PTP input mutation checks.
 The fixed seed `0x4d415452` covers standard/Sony descriptors and Canon/Nikon event records,
@@ -90,24 +90,28 @@ revokes the contributor grant and requests cloud deletion. Honor environment ove
 Full recordings and image payloads stay in the existing explicit private recording workflow.
 Do not route those blobs through the metadata-only collector or automatically promote uploads.
 
-`apps/contribution-collector` provides the scoped-token collector and validated GCP Terraform.
-Use workload identity and Secret Manager; no cloud/signing credentials belong in npm clients.
-Uploads remain private/unreviewed with contributor ID, optional consented credit, terms version,
-source hash, firmware, dirty flag and driver revision. Retain that reference in derived artifacts.
-Revocation tombstones are permanent; quota records expire after two days, diagnostics after 30.
-The application still owns enrollment, notice, grant refresh and withdrawal retry UI. Cloud
-project/deployment identity and an approved enrollment flow are required before customer rollout.
-Use 15-minute Ed25519 grants with key IDs. Keep retired public keys for withdrawal,
-never private signing keys in the collector. The optional legacy HMAC verifier accepts
-withdrawals only during migration. Firestore owns quota/revocation, and the scheduled
-worker revisits permanent tombstones to finish interrupted or late deletion.
+The current pipeline follows Explainer Studio project 18: `createApplicationDiagnostics`
+from `@darkgrade/contribute/application` owns one bounded queue across cameras, visible
+notice, lazy installation-key enrollment, saved preferences and withdrawal retries.
+`apps/contribution-collector/src/telemetry.ts` is the v2 service: Firestore diagnostics
+expire after 90 days; contact confirmation is separate; revocation is atomic with upload,
+quota and review guards. The daily cleanup job runs `dist/operations.js cleanup`.
+Permanent tombstones remain after data deletion. Legacy signed-grant/GCS code is not
+served by main.ts or scheduled by the current Terraform.
 
-The public collector uses Cloud Armor and an HTTPS load balancer; direct public Cloud
-Run ingress is disabled. Terraform validation is not deployment verification.
+Operator-reviewed exports retain source hashes, transport, firmware, revision and install
+linkage. Matrix must replace full snapshots, reject rollback, and stop using expired data
+within 24 hours; metadata never becomes a physical pass. Credit requires current verified
+email plus an explicit public-credit choice. Do not copy evidence into untracked artifacts.
 
-Build the new workspaces before tests/package checks. Run their public-seam tests plus Link's
-contribution transfer test; verify package contents and Terraform without deploying credentials.
-Keep all this work on `feat/private-camera-recordings` and the same PR until requested to merge.
+Studio stores installation state through OS safeStorage, exposes sharing/withdrawal settings,
+and remains unconfigured without DARKGRADE_TELEMETRY_URL. Corrupt settings fail closed.
+No cloud project, deployment, npm publication or customer enrollment is implied by builds.
+Read the collector README for the lean GCP bootstrap, manual OIDC workflow and limitations.
+Keep all Darkgrade changes on `feat/runtime-browser-core`, PR #58, until the user requests
+merging. Build/test the SDK and collector, run the real Firestore emulator and container
+smoke, and validate Terraform before pushing. SDK camera diagnostics never need hardware
+power operations just to validate enrollment or withdrawal.
 
 **Core Philosophy**: Prioritize readability and maintainability over premature optimization. Code is written for humans to understand.
 

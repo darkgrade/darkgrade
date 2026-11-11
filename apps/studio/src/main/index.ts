@@ -1,7 +1,8 @@
+import { assistantService } from '@main/assistant/assistant-service'
 import { cameraService } from '@main/camera-service'
+import { closeDiagnostics, initializeDiagnostics } from '@main/diagnostics'
 import { registerIpcHandlers } from '@main/ipc-handlers'
 import { startCameraDaemonKillerLoop, stopCameraDaemonKillerLoop } from '@main/macos-camera-daemon'
-import { assistantService } from '@main/assistant/assistant-service'
 import { studioMcpServer } from '@main/mcp/mcp-server'
 import { installApplicationMenu } from '@main/preferences-window'
 import { voiceService } from '@main/voice/voice-service'
@@ -85,6 +86,7 @@ if (!hasSingleInstanceLock) {
         powerMonitor.on('resume', () => void cameraService.syncClock())
 
         // Auto-connect when a camera is plugged in, clean up when unplugged
+        await initializeDiagnostics()
         cameraService.startAutoDetect()
 
         // Microphone permission for live transcription
@@ -121,8 +123,17 @@ app.on('before-quit', event => {
     if (cameraReleased) return
     event.preventDefault()
     stopCameraDaemonKillerLoop()
+    closeDiagnostics()
     const timeout = new Promise<void>(resolve => setTimeout(resolve, QUIT_DISCONNECT_TIMEOUT_MS))
-    void Promise.race([Promise.all([cameraService.dispose(), voiceService.release(), assistantService.release(), studioMcpServer.stop()]), timeout]).finally(() => {
+    void Promise.race([
+        Promise.all([
+            cameraService.dispose(),
+            voiceService.release(),
+            assistantService.release(),
+            studioMcpServer.stop(),
+        ]),
+        timeout,
+    ]).finally(() => {
         cameraReleased = true
         app.quit()
     })

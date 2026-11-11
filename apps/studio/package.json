@@ -4,10 +4,10 @@
     "version": "0.1.0",
     "private": true,
     "type": "module",
-    "description": "Darkgrade Studio — desktop camera control with local live transcription",
+    "description": "Darkgrade Studio \u2014 desktop camera control with local live transcription",
     "main": "out/main/index.js",
     "scripts": {
-        "build:link": "bun run --cwd ../../packages/link build",
+        "build:link": "bun run --cwd ../../packages/contribute build && bun run --cwd ../../packages/link build",
         "ensure:electron": "node scripts/ensure-electron.mjs",
         "ensure:llama-server": "bun scripts/download-llama-server.ts",
         "dev": "bun run ensure:electron && bun run ensure:llama-server && bun run build:link && electron-vite dev",
@@ -28,7 +28,8 @@
         "react": "^19",
         "react-dom": "^19",
         "usb": "^2.11.0",
-        "zod": "^4.2.0"
+        "zod": "^4.2.0",
+        "@darkgrade/contribute": "workspace:*"
     },
     "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",
@@ -49,5 +50,9 @@
     "engines": {
         "node": ">=18"
     },
-    "trustedDependencies": ["electron", "electron-builder", "esbuild"]
+    "trustedDependencies": [
+        "electron",
+        "electron-builder",
+        "esbuild"
+    ]
 }
