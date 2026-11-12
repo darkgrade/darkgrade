@@ -15,7 +15,7 @@ import {
 } from '@shared/ipc'
 import { SHOOTING_GUIDANCE } from '@shared/shooting-guidance'
 import { app } from 'electron'
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
 
@@ -37,6 +37,8 @@ const PROGRESS_INTERVAL_MS = 150
 const REQUEST_TIMEOUT_MS = 30_000
 /** One tool (a camera command) gets this long before it counts as failed. */
 const TOOL_TIMEOUT_MS = 12_000
+/** Frames shown to the assistant kept for checking its choices; older ones are deleted. */
+const KEPT_ASSISTANT_FRAMES = 200
 
 /** Rejects with `message` if `promise` hasn't settled within `milliseconds`. */
 function withTimeout<Value>(promise: Promise<Value>, milliseconds: number, message: string): Promise<Value> {
@@ -651,6 +653,7 @@ class AssistantService {
         try {
             const result = await withTimeout(tool.run(input), TOOL_TIMEOUT_MS, `${tool.title} didn't answer in time`)
             progress.onToolResult?.(tool.name, true, result.data, Date.now() - toolStartedMs)
+            if (result.image) this.keepFrame(result.image.base64, progress.label)
             return {
                 ok: true,
                 text: typeof result.data === 'string' ? result.data : JSON.stringify(result.data),
@@ -757,6 +760,26 @@ class AssistantService {
             this.log(message, 'error')
             this.setStatus({ phase: 'error', port: null, message })
             throw error
+        }
+    }
+
+    /**
+     * Keeps each picture the assistant was shown, named after its run, so its choices (focus_at in
+     * the log) can be checked against what was really in the frame. Private: stays on this Mac.
+     */
+    private keepFrame(base64: string, label = 'agent'): void {
+        try {
+            const directory = join(app.getPath('userData'), 'assistant-frames')
+            mkdirSync(directory, { recursive: true })
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+            const path = join(directory, `${stamp} ${label.replace(/[^\w -]/g, '')}.jpg`)
+            writeFileSync(path, Buffer.from(base64, 'base64'))
+            this.trace(`${label} saved frame ${path}`)
+            for (const old of readdirSync(directory).sort().slice(0, -KEPT_ASSISTANT_FRAMES)) {
+                rmSync(join(directory, old), { force: true })
+            }
+        } catch {
+            // Diagnostics only.
         }
     }
 
