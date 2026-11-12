@@ -1,7 +1,7 @@
 import type { VoiceEngineStatus } from '@shared/ipc'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
 import { IntentFollower } from '@voice/intent-follower'
-import { microphoneLevel, transcriptParagraphs } from '@voice/transcript-store'
+import { microphoneLevel, transcriptParagraphs, transcriptPartial } from '@voice/transcript-store'
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import TranscriptionWorker from '@voice/transcription.worker?worker'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -149,12 +149,17 @@ export function useLiveTranscription() {
         (event: MessageEvent<TranscriptionEvent>) => {
             const message = event.data
             if (message.type === 'listening') setListening('listening')
-            if (message.type === 'delta') appendText(message.text)
+            if (message.type === 'delta') {
+                transcriptPartial.set('')
+                appendText(message.text)
+            }
+            if (message.type === 'partial') transcriptPartial.set(message.text)
             if (message.type === 'paragraph') paragraphPendingRef.current = true
             if (message.type === 'error') setError(message.message)
             if (message.type === 'diagnostic') void api.voiceDiagnostic(message.message)
             if (message.type === 'session-audio') void api.voiceSaveSessionAudio(new Uint8Array(message.pcm))
             if (message.type !== 'stopped') return
+            transcriptPartial.set('')
             workerRef.current?.terminate()
             workerRef.current = null
             void stopCapture()

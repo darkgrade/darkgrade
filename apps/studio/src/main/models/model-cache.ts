@@ -1,5 +1,5 @@
 import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
@@ -15,13 +15,12 @@ export interface CachedModel {
     files: ModelFile[]
 }
 
-const VOXTRAL_REPOSITORY = 'https://huggingface.co/ggml-org/Voxtral-Mini-4B-Realtime-2602-GGUF/resolve/main'
 
 const QWEN_REPOSITORY = 'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main'
 
 /**
  * The assistant: Qwen3.5 4B (Apache 2.0), a general model with tool calling that also reads images,
- * with its vision encoder. Sized for a 16 GB Mac alongside Voxtral; larger Macs can use the 9B later.
+ * with its vision encoder. Sized for a 16 GB Mac alongside the speech model; larger Macs can use the 9B later.
  */
 export const QWEN_ASSISTANT: CachedModel = {
     id: 'qwen3.5-4b',
@@ -31,20 +30,21 @@ export const QWEN_ASSISTANT: CachedModel = {
     ],
 }
 
-/** Mistral's streaming speech recognition model (Apache 2.0), with its audio encoder. */
-export const VOXTRAL_REALTIME: CachedModel = {
-    id: 'voxtral-mini-4b-realtime-2602',
+const BARK_PLUS_REPOSITORY =
+    'https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus/resolve/28a7d4234146b0f01c11e0c6b72dfa29028a4758'
+
+/**
+ * Conway Research's Underdog Bark 3.0 Plus (CC BY-NC 4.0), Voicebench's most accurate and fastest
+ * model. Pinned to the revision whose code is vendored in resources/bark-sidecar.
+ */
+export const BARK_PLUS: CachedModel = {
+    id: 'underdog-bark-3.0-plus',
     files: [
-        {
-            name: 'Voxtral-Mini-4B-Realtime-2602-Q4_K_M.gguf',
-            url: `${VOXTRAL_REPOSITORY}/Voxtral-Mini-4B-Realtime-2602-Q4_K_M.gguf`,
-            bytes: 2_551_244_000,
-        },
-        {
-            name: 'mmproj-Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf',
-            url: `${VOXTRAL_REPOSITORY}/mmproj-Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf`,
-            bytes: 1_063_756_032,
-        },
+        { name: 'model.bark', url: `${BARK_PLUS_REPOSITORY}/model.bark`, bytes: 179_524_845 },
+        { name: 'mlx/config.json', url: `${BARK_PLUS_REPOSITORY}/mlx/config.json`, bytes: 237_042 },
+        { name: 'mlx/tokenizer.model', url: `${BARK_PLUS_REPOSITORY}/mlx/tokenizer.model`, bytes: 360_621 },
+        { name: 'mlx/tokenizer.vocab', url: `${BARK_PLUS_REPOSITORY}/mlx/tokenizer.vocab`, bytes: 101_024 },
+        { name: 'mlx/vocab.txt', url: `${BARK_PLUS_REPOSITORY}/mlx/vocab.txt`, bytes: 46_772 },
     ],
 }
 
@@ -117,6 +117,7 @@ export class ModelCache {
             return
         }
         const partialPath = `${finalPath}.part`
+        mkdirSync(dirname(partialPath), { recursive: true })
         let startByte = fileSize(partialPath)
         if (startByte > file.bytes) startByte = 0
         onBytes(startByte)

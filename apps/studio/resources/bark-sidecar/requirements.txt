@@ -1,0 +1,7 @@
+# Pinned to the versions Voicebench scored Underdog Bark 3.0 Plus with (voicebench bench/setup.ts).
+mlx==0.32.2
+mlx-audio==0.5.3
+constriction==0.5.0
+numpy==2.4.6
+soundfile==0.14.0
+soxr==1.1.0
