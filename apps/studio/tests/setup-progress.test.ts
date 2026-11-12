@@ -10,6 +10,7 @@ function voiceStatus(change: Partial<VoiceEngineStatus>): VoiceEngineStatus {
         port: null,
         message: null,
         setupStep: null,
+        speechModelBytes: 180,
         ...change,
     }
 }
@@ -54,6 +55,17 @@ describe('setup progress across Python, tools, speech and the assistant', () => 
         const loading = summarizeSetup(voiceStatus({ phase: 'starting', setupStep: 'loading' }), null)
         expect(loading.steps[2].state).toBe('working')
         expect(loading.steps[2].fraction).toBeGreaterThan(0.5)
+    })
+
+    it('reports one overall download, not the current step', () => {
+        const summary = summarizeSetup(
+            voiceStatus({ phase: 'ready' }),
+            assistantStatus({ phase: 'downloading', receivedBytes: 1_000, totalBytes: 6_000 })
+        )
+        expect(summary.totalBytes).toBe(6_180)
+        expect(summary.receivedBytes).toBe(180 + 1_000)
+        const fresh = summarizeSetup(voiceStatus({}), assistantStatus({ totalBytes: 6_000 }))
+        expect(fresh).toMatchObject({ receivedBytes: 0, totalBytes: 6_180 })
     })
 
     it('is complete only when voice is ready and the assistant is loaded or cached', () => {

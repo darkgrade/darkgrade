@@ -278,6 +278,8 @@ export type VoiceSetupStep = 'python' | 'tools' | 'speech-model' | 'loading'
 
 export interface VoiceEngineStatus extends LocalModelStatus {
     setupStep: VoiceSetupStep | null
+    /** The chosen speech model's full download size, whatever step setup is on. */
+    speechModelBytes: number
 }
 
 /** A stretch of live transcript handed to the assistant. Times are milliseconds since the epoch, for the timing log. */

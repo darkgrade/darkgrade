@@ -40,6 +40,7 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
     port: null,
     message: null,
     setupStep: null,
+    speechModelBytes: 0,
 }
 
 /** A small meter that shows the microphone is hearing you. */
@@ -151,13 +152,12 @@ function EngineMessage({
         return <p className="text-sm text-muted-foreground">Listening — start speaking</p>
     }
     if (engine?.phase === 'not-downloaded') {
-        const assistantBytes = voice.assistant?.phase === 'not-downloaded' ? voice.assistant.totalBytes : 0
         return (
             <div className="flex flex-col items-center gap-5 text-center">
                 <div className="flex flex-col items-center gap-2.5">
                     <p className="text-sm text-pretty">
                         Enabling local voice features requires a one-time download of about{' '}
-                        {formatDownloadSize(engine.totalBytes + assistantBytes)}.
+                        {formatDownloadSize(summary.totalBytes)}.
                     </p>
                     <ModelLicenseNotice speechModelId={voice.speechModelId} />
                 </div>

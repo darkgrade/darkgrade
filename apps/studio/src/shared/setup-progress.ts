@@ -24,6 +24,9 @@ export interface SetupSummary {
     /** 1-based position of `current`, for "Step 2 of 4". */
     currentNumber: number
     complete: boolean
+    /** Bytes of the model downloads (speech and assistant) received so far, and in all. Python's small download is not counted. */
+    receivedBytes: number
+    totalBytes: number
 }
 
 const STEP_LABELS: Record<SetupStepId, string> = {
@@ -61,32 +64,35 @@ function voiceSteps(voice: VoiceEngineStatus): SetupStep[] {
     const activeId = running && voice.setupStep ? VOICE_STEP_TO_SETUP_STEP[voice.setupStep] : null
     const activeIndex = activeId ? STEP_ORDER.indexOf(activeId) : -1
     return STEP_ORDER.slice(0, 3).map((id, index) => {
-        if (ready || (activeIndex >= 0 && index < activeIndex)) return step(id, 'done')
-        if (id !== activeId) return step(id, 'waiting')
+        const totalBytes = id === 'speech' ? voice.speechModelBytes : 0
+        if (ready || (activeIndex >= 0 && index < activeIndex)) return step(id, 'done', 1, totalBytes, totalBytes)
+        if (id !== activeId) return step(id, 'waiting', 0, 0, totalBytes)
         const downloading = voice.phase === 'downloading' && voice.totalBytes > 0
         const fraction = downloading
             ? voice.receivedBytes / voice.totalBytes
             : voice.setupStep === 'loading'
               ? LOADING_FRACTION
               : 0
-        return step(id, 'working', fraction, downloading ? voice.receivedBytes : 0, downloading ? voice.totalBytes : 0)
+        const receivedBytes = id !== 'speech' ? 0 : voice.setupStep === 'loading' ? totalBytes : voice.receivedBytes
+        return step(id, 'working', fraction, receivedBytes, totalBytes)
     })
 }
 
 function assistantStep(assistant: LocalModelStatus | null): SetupStep {
     if (!assistant) return step('assistant', 'waiting')
+    const { totalBytes } = assistant
     switch (assistant.phase) {
         case 'idle':
         case 'ready':
-            return step('assistant', 'done')
+            return step('assistant', 'done', 1, totalBytes, totalBytes)
         case 'downloading': {
-            const fraction = assistant.totalBytes ? assistant.receivedBytes / assistant.totalBytes : 0
-            return step('assistant', 'working', fraction, assistant.receivedBytes, assistant.totalBytes)
+            const fraction = totalBytes ? assistant.receivedBytes / totalBytes : 0
+            return step('assistant', 'working', fraction, assistant.receivedBytes, totalBytes)
         }
         case 'starting':
-            return step('assistant', 'working', LOADING_FRACTION)
+            return step('assistant', 'working', LOADING_FRACTION, totalBytes, totalBytes)
         default:
-            return step('assistant', 'waiting')
+            return step('assistant', 'waiting', 0, 0, totalBytes)
     }
 }
 
@@ -102,5 +108,7 @@ export function summarizeSetup(voice: VoiceEngineStatus, assistant: LocalModelSt
         current,
         currentNumber: current ? steps.indexOf(current) + 1 : steps.length,
         complete: steps.every(each => each.state === 'done'),
+        receivedBytes: steps.reduce((sum, each) => sum + each.receivedBytes, 0),
+        totalBytes: steps.reduce((sum, each) => sum + each.totalBytes, 0),
     }
 }

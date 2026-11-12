@@ -111,8 +111,13 @@ function describeResult(action: string, data: Record<string, unknown>): string {
     switch (action) {
         case 'set_setting':
             return `${CAMERA_CONTROL_LABELS[data.setting as keyof typeof CAMERA_CONTROL_LABELS] ?? data.setting}: ${data.to}`
-        case 'adjust_exposure':
-            return `${data.changed} ${data.from} → ${data.to}`
+        case 'adjust_exposure': {
+            const switched = data.switchedFromAuto as { setting: string; nowManual: string } | undefined
+            const change = `${data.changed} ${data.from} → ${data.to}`
+            return switched
+                ? `${switched.setting} was on auto, so I set it to ${switched.nowManual} first. ${change}`
+                : change
+        }
         case 'adjust_color_temperature': {
             const changes = (data.changes as { colorTemperature?: { from: unknown; to: unknown } }[]) ?? []
             const temperature = changes.find(change => change.colorTemperature)?.colorTemperature
@@ -402,7 +407,7 @@ class AssistantService {
             if (request.action !== 'agent') directCommands++
             this.trace(`segment ${segment.segmentId} line after ${Date.now() - findingStartedMs} ms: ${line}`)
             this.startRequest(segment, quote, request)
-        })
+        }, () => this.showCommandStarting(segment, quote))
         this.trace(
             `segment ${segment.segmentId} (${Date.now() - findingStartedMs} ms) ${JSON.stringify(segment.text)} → ${JSON.stringify(lines)}`
         )
@@ -427,6 +432,21 @@ class AssistantService {
                 chat_template_kwargs: { enable_thinking: false },
             }),
         }).catch(() => {})
+    }
+
+    /**
+     * The finding model has started writing a request: show the words as recognised now, ahead of the
+     * finished request. Its negative id marks it as provisional; the real request replaces it.
+     */
+    private showCommandStarting(segment: TranscriptSegment, quote: string): void {
+        this.broadcast(IPC_EVENTS.VoiceIntent, {
+            id: -segment.segmentId,
+            segmentId: segment.segmentId,
+            quote,
+            instruction: quote,
+            state: 'recognized',
+            reply: null,
+        } satisfies VoiceIntent)
     }
 
     /** Shows a request as recognised and queues it: straight to its tool, or to the agent. */
@@ -471,7 +491,11 @@ class AssistantService {
      * Asks the finding model about a stretch of speech, streaming its answer and handing over each
      * complete line as soon as it's written. Logs the server's timings like the other calls.
      */
-    private async streamFinding(segment: TranscriptSegment, onLine: (line: string) => void): Promise<void> {
+    private async streamFinding(
+        segment: TranscriptSegment,
+        onLine: (line: string) => void,
+        onCommandStarted: () => void
+    ): Promise<void> {
         const port = await this.prepare()
         if (!this.findingTemplate) await this.loadFindingTemplate(port)
         const template = this.findingTemplate!
@@ -498,6 +522,7 @@ class AssistantService {
         const decoder = new TextDecoder()
         let buffered = ''
         let answer = ''
+        let commandStarted = false
         let timings: {
             prompt_n?: number
             prompt_ms?: number
@@ -517,6 +542,12 @@ class AssistantService {
                 const chunk = JSON.parse(data) as { content?: string; stop?: boolean; timings?: typeof timings }
                 if (chunk.timings) timings = chunk.timings
                 answer += chunk.content ?? ''
+                // "none" means nothing to do; any other first word is already a request being written.
+                const begun = answer.trimStart().toLowerCase()
+                if (!commandStarted && begun && !'none'.startsWith(begun)) {
+                    commandStarted = true
+                    onCommandStarted()
+                }
                 // A request is complete at its "; " separator or the final newline: run it then.
                 let end = answer.search(/[;\n]/)
                 while (end >= 0) {

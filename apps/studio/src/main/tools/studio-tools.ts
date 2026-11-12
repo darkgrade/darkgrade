@@ -1,6 +1,12 @@
 import { cameraService } from '@main/camera-service'
 import { studioView } from '@main/studio-view'
-import { apertureToNumber, isoToNumber, shutterToNumber } from '@shared/exposure-stops'
+import {
+    apertureToNumber,
+    isAutoValue,
+    isoToNumber,
+    nearestNumericOption,
+    shutterToNumber,
+} from '@shared/exposure-stops'
 import { exposureVerdict } from '@shared/exposure-verdict'
 import { analyseFrame } from '@shared/frame-analysis'
 import {
@@ -171,11 +177,16 @@ const EXPOSURE_SETTINGS: {
     name: 'iso' | 'shutterSpeed' | 'aperture'
     read: (value: string) => number | null
     stopsPerDoubling: number
+    /**
+     * Where to start when the camera is choosing this setting itself. It doesn't report what it chose,
+     * so this is a neutral middle value: base ISO, a normal shutter, a lens' common f-stop.
+     */
+    manualStart: number
 }[] = [
-    { name: 'iso', read: isoToNumber, stopsPerDoubling: 1 },
-    { name: 'shutterSpeed', read: shutterToNumber, stopsPerDoubling: 1 },
+    { name: 'iso', read: isoToNumber, stopsPerDoubling: 1, manualStart: 100 },
+    { name: 'shutterSpeed', read: shutterToNumber, stopsPerDoubling: 1, manualStart: 1 / 60 },
     // f-numbers scale with the square root of light: f/2.8 → f/4 is one stop darker.
-    { name: 'aperture', read: apertureToNumber, stopsPerDoubling: -2 },
+    { name: 'aperture', read: apertureToNumber, stopsPerDoubling: -2, manualStart: 4 },
 ]
 
 /** The option closest to `stops` brighter than the current value, or null when it can't move. */
@@ -226,14 +237,40 @@ async function adjustExposure(stops: number, using: string): Promise<unknown> {
             reasons.push(`${name}: locked in the current mode`)
             continue
         }
-        const next = stepByStops(control, definition.read, stops, definition.stopsPerDoubling)
+        let current = control
+        let switchedFromAuto: string | null = null
+        if (isAutoValue(control.value, definition.read)) {
+            const manual = nearestNumericOption(control.options, definition.read, definition.manualStart)
+            if (!manual) {
+                reasons.push(`${name}: set to auto and has no manual value to switch to`)
+                continue
+            }
+            switchedFromAuto = control.value
+            await applySetting(definition.name, manual)
+            current = availableSettings()[definition.name] ?? { ...control, value: manual }
+        }
+        const next = stepByStops(current, definition.read, stops, definition.stopsPerDoubling)
         if (!next) {
-            reasons.push(`${name}: already at its limit or set to auto (${control.value})`)
+            reasons.push(`${name}: already at its limit (${current.value})`)
             continue
         }
-        const from = control.value
+        const from = current.value
         const applied = await applySetting(definition.name, next)
-        return { changed: CAMERA_CONTROL_LABELS[definition.name], from, to: applied, requestedStops: stops }
+        return {
+            changed: CAMERA_CONTROL_LABELS[definition.name],
+            from,
+            to: applied,
+            requestedStops: stops,
+            ...(switchedFromAuto
+                ? {
+                      switchedFromAuto: {
+                          setting: CAMERA_CONTROL_LABELS[definition.name],
+                          was: switchedFromAuto,
+                          nowManual: from,
+                      },
+                  }
+                : {}),
+        }
     }
     throw new Error(`Couldn't change exposure: ${reasons.join('; ')}`)
 }

@@ -18,7 +18,8 @@ export function describeMicrophoneError(error: unknown): MicrophoneProblem | nul
     }
     if (name === 'NotFoundError' || name === 'OverconstrainedError') {
         return {
-            message: "Couldn't find that microphone. Pick another one from the microphone menu, or plug one in.",
+            message:
+                "Studio can't find a microphone. Some Macs, like the Mac mini, don't have one built in. Plug in a USB microphone or headset, then press Start again.",
             blockedByMacos: false,
         }
     }

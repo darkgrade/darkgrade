@@ -62,13 +62,20 @@ export class IntentFollower {
         if (!/[\p{L}\p{N}]/u.test(segment.text)) return
         const segmentId = this.nextSegmentId++
         this.segments.set(segmentId, segment)
-        void this.api.assistantProcessTranscript({
-            segmentId,
-            text: segment.text,
-            context,
-            lastWordAtMs: this.lastWordAtMs,
-            handedOverAtMs: Date.now(),
-        })
+        void this.api
+            .assistantProcessTranscript({
+                segmentId,
+                text: segment.text,
+                context,
+                lastWordAtMs: this.lastWordAtMs,
+                handedOverAtMs: Date.now(),
+            })
+            .finally(() => this.removeProvisional(segmentId))
+    }
+
+    /** A provisional highlight (negative id) is replaced by the real request, or dropped if none came of it. */
+    private removeProvisional(segmentId: number): void {
+        intentHighlights.set(intentHighlights.get().filter(highlight => highlight.id !== -segmentId))
     }
 
     /**
@@ -110,10 +117,11 @@ export class IntentFollower {
             intentHighlights.set(highlights.map(highlight => (highlight.id === intent.id ? { ...highlight, state: intent.state, reply: intent.reply } : highlight)))
             return
         }
+        if (intent.id > 0) this.removeProvisional(intent.segmentId)
         const segment = this.segments.get(intent.segmentId)
         const found = segment && locateQuote(segment.text, intent.quote)
         if (!segment || !found) return
         const start = segment.start + found.start
-        intentHighlights.set([...highlights, { id: intent.id, start, end: segment.start + found.end, state: intent.state, reply: intent.reply }])
+        intentHighlights.set([...intentHighlights.get(), { id: intent.id, start, end: segment.start + found.end, state: intent.state, reply: intent.reply }])
     }
 }

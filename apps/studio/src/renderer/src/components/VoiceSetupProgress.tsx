@@ -17,12 +17,14 @@ export function formatDownloadSize(bytes: number): string {
     return `${Math.max(1, Math.round(bytes / 1e6))} MB`
 }
 
-function stepDetail(step: SetupStep): string | null {
-    if (step.totalBytes > 0)
-        return `${formatDownloadSize(step.receivedBytes)} of ${formatDownloadSize(step.totalBytes)}`
-    if (step.id === 'tools') return 'This can take a minute or two'
-    if (step.id === 'speech') return 'Almost there'
-    return null
+/** One line under the bar: the whole download so far (not the current step's own), plus a note for the slow step. */
+function setupDetail(summary: SetupSummary): string | null {
+    const parts: string[] = []
+    if (summary.totalBytes > 0) {
+        parts.push(`${formatDownloadSize(summary.receivedBytes)} of ${formatDownloadSize(summary.totalBytes)}`)
+    }
+    if (summary.current?.id === 'tools') parts.push('this step can take a minute or two')
+    return parts.length ? parts.join(' · ') : null
 }
 
 function StepIcon({ step }: { step: SetupStep }): React.JSX.Element {
@@ -52,7 +54,7 @@ function StepList({ steps }: { steps: SetupStep[] }): React.JSX.Element {
 /** The one-time setup in the voice panel: one bar for everything, the step in progress, and a short checklist. */
 export function VoiceSetupProgress({ summary }: { summary: SetupSummary }): React.JSX.Element {
     const { current } = summary
-    const detail = current ? stepDetail(current) : null
+    const detail = setupDetail(summary)
     return (
         <div className="w-80 space-y-3" role="status" aria-live="polite">
             <div className="space-y-1 text-center">

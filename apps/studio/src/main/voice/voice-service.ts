@@ -29,6 +29,7 @@ class VoiceService {
         port: null,
         message: null,
         setupStep: null,
+        speechModelBytes: 0,
     }
     /** The model the running engine loaded, so a change of choice unloads it. */
     private loadedModel: SpeechModelId | null = null
@@ -53,10 +54,11 @@ class VoiceService {
 
     getStatus(): VoiceEngineStatus {
         const files = SPEECH_MODEL_FILES[this.chosenModel]
+        const speechModelBytes = totalModelBytes(files)
         if (this.status.phase === 'idle' && !this.cache.isCached(files)) {
-            return { ...this.status, totalBytes: totalModelBytes(files), phase: 'not-downloaded' }
+            return { ...this.status, totalBytes: speechModelBytes, speechModelBytes, phase: 'not-downloaded' }
         }
-        return this.status
+        return { ...this.status, speechModelBytes }
     }
 
     /** Downloads the model if needed and starts the engine; resolves with its local port. */
