@@ -44,6 +44,15 @@ variable "allowed_origins" {
   type    = list(string)
   default = []
 }
+variable "email_api_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+variable "email_from" {
+  type    = string
+  default = ""
+}
 variable "deploy_ref" {
   type    = string
   default = "refs/heads/main"
@@ -61,7 +70,7 @@ provider "google" {
   region  = var.region
 }
 resource "google_project_service" "api" {
-  for_each           = toset(["run.googleapis.com", "sqladmin.googleapis.com", "secretmanager.googleapis.com", "artifactregistry.googleapis.com", "iam.googleapis.com", "iamcredentials.googleapis.com", "sts.googleapis.com"])
+  for_each           = toset(["run.googleapis.com", "sqladmin.googleapis.com", "secretmanager.googleapis.com", "artifactregistry.googleapis.com", "iam.googleapis.com", "iamcredentials.googleapis.com", "sts.googleapis.com", "monitoring.googleapis.com", "billingbudgets.googleapis.com"])
   service            = each.value
   disable_on_destroy = false
 }
@@ -81,12 +90,14 @@ resource "google_sql_database_instance" "telemetry" {
     edition         = "ENTERPRISE"
     disk_size       = 10
     disk_autoresize = true
+    deletion_protection_enabled = true
     backup_configuration {
       enabled                        = true
       point_in_time_recovery_enabled = true
     }
     ip_configuration {
       ipv4_enabled = true
+      ssl_mode = "ENCRYPTED_ONLY"
       # No authorized networks. Only the authenticated Cloud SQL connector can connect.
     }
   }
@@ -111,18 +122,35 @@ resource "google_service_account_iam_member" "bootstrap_act_as" {
   role               = "roles/iam.serviceAccountUser"
   member             = var.bootstrap_principal
 }
+resource "google_project_iam_member" "bootstrap_monitoring" {
+  count   = var.bootstrap_principal == "" ? 0 : 1
+  project = var.project_id
+  role    = "roles/monitoring.editor"
+  member  = var.bootstrap_principal
+}
 resource "google_project_iam_member" "sql" {
   project = var.project_id
   role    = "roles/cloudsql.client"
   member  = "serviceAccount:${google_service_account.collector.email}"
 }
 resource "google_secret_manager_secret" "configuration" {
-  for_each  = toset(["database", "operator"])
+  for_each  = toset(concat(["database", "operator"], nonsensitive(var.email_api_key != "") ? ["email"] : []))
   secret_id = "darkgrade-telemetry-${each.key}"
   replication {
     auto {}
   }
   depends_on = [google_project_service.api]
+}
+resource "google_secret_manager_secret_version" "email" {
+  count       = nonsensitive(var.email_api_key != "") ? 1 : 0
+  secret      = google_secret_manager_secret.configuration["email"].id
+  secret_data = var.email_api_key
+  lifecycle {
+    precondition {
+      condition     = var.email_from != "" && !can(regex("[\\r\\n]", var.email_from))
+      error_message = "Configure the verified sender address with the email key."
+    }
+  }
 }
 resource "google_secret_manager_secret_version" "database" {
   secret      = google_secret_manager_secret.configuration["database"].id
@@ -190,6 +218,25 @@ resource "google_cloud_run_v2_service" "collector" {
       env {
         name  = "TELEMETRY_ALLOWED_ORIGINS"
         value = jsonencode(var.allowed_origins)
+      }
+      dynamic "env" {
+        for_each = nonsensitive(var.email_api_key != "") ? [1] : []
+        content {
+          name = "TELEMETRY_EMAIL_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.configuration["email"].secret_id
+              version = google_secret_manager_secret_version.email[0].version
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = nonsensitive(var.email_api_key != "") ? [1] : []
+        content {
+          name = "TELEMETRY_EMAIL_FROM"
+          value = var.email_from
+        }
       }
       startup_probe {
         http_get { path = "/healthz" }

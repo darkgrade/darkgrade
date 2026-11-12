@@ -31,6 +31,89 @@ function settings(initial: InstallationState | null = null) {
 }
 const bytes = new Uint8Array([12, 0, 0, 0, 1, 0, 1, 16, 0, 0, 0, 0])
 
+test('busy camera sessions flush bounded batches early without dropping healthy traffic', async () => {
+    const fixture = memoryDatabase()
+    const handle = createTelemetry(fixture.database, { publicUrl: 'https://telemetry.example' })
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: settings().store,
+        fetch: (url, init) => handle(new Request(url, init)),
+    })
+    try {
+        const source = client.observe(transport(), camera)
+        for (let index = 0; index < 2700; index++) {
+            await source.transport.send(bytes, 1, index)
+            if (index % 100 === 0) await new Promise(resolve => setImmediate(resolve))
+        }
+        while (client.status().queuedEntries) assert.equal(await client.flush(), 'sent')
+        const batches = await fixture.database.list('diagnostics')
+        assert.ok(batches.length >= 3)
+        assert.equal(
+            batches.reduce(
+                (sum, row) =>
+                    sum +
+                    JSON.parse(row.data.payload).contributions.reduce(
+                        (count: number, contribution: any) => count + contribution.entries.length,
+                        0
+                    ),
+                0
+            ),
+            2700
+        )
+        assert.equal(client.status().droppedEntries, 0)
+    } finally {
+        client.close()
+    }
+})
+
+test('email enrollment works before camera use; verification, logout and opt-out stay independent', async () => {
+    const fixture = memoryDatabase(),
+        saved = settings()
+    const messages: { confirmationUrl: string }[] = []
+    const handle = createTelemetry(fixture.database, {
+        publicUrl: 'https://telemetry.example',
+        sendContact: async message => {
+            messages.push(message)
+        },
+    })
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: saved.store,
+        fetch: (url, init) => handle(new Request(url, init)),
+    })
+    try {
+        await client.requestContact('camera@example.com', { name: 'Camera Contributor', publish: true })
+        assert.equal(client.status().enrolled, true)
+        assert.equal(messages.length, 1)
+        assert.equal(await client.contactStatus(), null)
+        const token = new URL(messages[0].confirmationUrl).hash.slice(1)
+        const confirm = () =>
+            handle(
+                new Request('https://telemetry.example/v2/contact/confirm', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ token }),
+                })
+            )
+        assert.equal((await confirm()).status, 200)
+        assert.equal((await client.contactStatus())?.verified, true)
+        assert.equal((await confirm()).status, 410, 'confirmation cannot be replayed')
+        await client.setConsent(false)
+        assert.equal((await client.contactStatus())?.email, 'camera@example.com')
+        await client.removeContact()
+        assert.equal(await client.contactStatus(), null)
+        assert.equal(client.status().sharingEnabled, false)
+        assert.equal(
+            (await fixture.database.list('diagnostics')).length,
+            0,
+            'contact login creates no synthetic camera events'
+        )
+        await client.withdraw()
+    } finally {
+        client.close()
+    }
+})
+
 test('resuming deletion and repeating delete share the existing request instead of aborting it', async () => {
     const fixture = memoryDatabase()
     const handle = createTelemetry(fixture.database, { publicUrl: 'https://telemetry.example' })
@@ -355,9 +438,10 @@ test('transient failures retry an immutable batch, bounded queues drop overflow,
             camera
         )
         await observed.transport.resetPort!()
-        for (let index = 0; index < 1100; index++) await observed.transport.send(bytes, 1, index)
-        assert.equal(client.status().queuedEntries, 1000)
-        assert.equal(client.status().droppedEntries, 101)
+        for (let index = 0; index < 2100; index++) await observed.transport.send(bytes, 1, index)
+        assert.ok(client.status().queuedEntries <= 2000, 'at most one immutable retry batch and one bounded queue')
+        assert.ok(client.status().droppedEntries > 0)
+        assert.equal(client.status().queuedEntries + client.status().droppedEntries, 2101)
         assert.equal(resets, 1)
         assert.equal(await client.flush(), 'retry')
         assert.equal(await client.flush(), 'retry')

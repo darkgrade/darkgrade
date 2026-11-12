@@ -1,4 +1,5 @@
 import { operatorAuthorized } from '#collector/investigate'
+import { exportMatrixPage, InvalidMatrixCursor, MatrixExportChanged } from '#collector/matrix-pages'
 import type { EventFilters } from '#collector/operator-queries'
 import type { postgresDatabase } from '#collector/postgres'
 import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
@@ -42,7 +43,7 @@ export async function operatorApi(
     const parameters = Object.fromEntries(url.searchParams)
     if (
         new Set(url.searchParams.keys()).size !== [...url.searchParams].length ||
-        Object.values(parameters).some(value => value.length > (path === '/internal/api/session' ? 600 : 100))
+        Object.values(parameters).some(value => value.length > 800)
     )
         return json({ error: 'Invalid filters' }, 400)
     if (
@@ -50,17 +51,54 @@ export async function operatorApi(
         (request.headers.has('origin') || request.headers.get('x-darkgrade-operator') !== '1')
     )
         return json({ error: 'Server operator request required' }, 403)
+    if (path === '/internal/api/matrix/page' && request.method === 'GET') {
+        if (Object.keys(parameters).some(key => key !== 'cursor')) return json({ error: 'Invalid cursor' }, 400)
+        try {
+            return json(await exportMatrixPage(database, parameters.cursor))
+        } catch (error) {
+            if (error instanceof MatrixExportChanged || error instanceof InvalidMatrixCursor)
+                return json({ error: error.message }, error instanceof MatrixExportChanged ? 409 : 400)
+            throw error
+        }
+    }
+    if (path === '/internal/api/review-queue' && request.method === 'GET') {
+        if (
+            Object.keys(parameters).some(key => key !== 'after') ||
+            (parameters.after && !/^diagnostics\/[a-f0-9-]{36}_[a-f0-9-]{36}$/.test(parameters.after))
+        )
+            return json({ error: 'Invalid review cursor' }, 400)
+        return json(await database.operator.reviewQueue(parameters.after))
+    }
     if (path === '/internal/api/report' && request.method === 'GET') {
         if (
             Object.keys(parameters).some(
-                key => !['days', 'installation', 'model', 'session', 'revision', 'transport'].includes(key)
+                key => !['days', 'installation', 'model', 'session', 'revision', 'transport', 'after'].includes(key)
             ) ||
             ![1, 7, 30, 90].includes(Number(parameters.days || 7)) ||
             ['installation', 'session'].some(key => parameters[key] && !uuid.test(parameters[key]))
         )
             return json({ error: 'Invalid filters' }, 400)
+        let after: EventFilters['after']
+        if (parameters.after) {
+            try {
+                if (!/^[A-Za-z0-9_-]+$/.test(parameters.after)) throw Error()
+                const value = JSON.parse(Buffer.from(parameters.after, 'base64url').toString())
+                if (
+                    !value ||
+                    Object.keys(value).sort().join(',') !== 'installation,session,time' ||
+                    !uuid.test(value.installation) ||
+                    !uuid.test(value.session) ||
+                    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(value.time) ||
+                    !Number.isFinite(Date.parse(value.time))
+                )
+                    throw Error()
+                after = value
+            } catch {
+                return json({ error: 'Invalid sessions cursor' }, 400)
+            }
+        }
         return json(
-            await database.operator.report({ ...parameters, days: Number(parameters.days || 7) } as EventFilters)
+            await database.operator.report({ ...parameters, after, days: Number(parameters.days || 7) } as EventFilters)
         )
     }
     if (path === '/internal/api/session' && request.method === 'GET') {

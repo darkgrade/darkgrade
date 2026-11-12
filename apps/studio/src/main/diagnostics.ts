@@ -49,7 +49,7 @@ export async function initializeDiagnostics() {
 
 export function diagnosticsStatus(): DiagnosticsStatus {
     return {
-        configured: !!client,
+        configured: !!client && !!process.env.DARKGRADE_TELEMETRY_URL,
         enabled: false,
         enrolled: false,
         withdrawalPending: false,

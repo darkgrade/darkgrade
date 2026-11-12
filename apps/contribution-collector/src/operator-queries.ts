@@ -7,6 +7,7 @@ export interface EventFilters {
     session?: string
     revision?: string
     transport?: string
+    after?: { time: string; installation: string; session: string }
 }
 
 /** Parameterized, bounded operator queries; never return installation credentials or contact data. */
@@ -27,6 +28,30 @@ export function operatorQueries(pool: Pool) {
         filters.transport || null,
     ]
     return {
+        async reviewQueue(after?: string) {
+            const condition = `split_part(d.path,'/',1)='diagnostics'
+                AND d.data->>'expiresAt' > to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                AND EXISTS (SELECT 1 FROM telemetry_state i WHERE i.path='installations/'||(d.data->>'installId')
+                    AND NOT coalesce((i.data->>'revoked')::boolean,false))
+                AND NOT EXISTS (SELECT 1 FROM telemetry_state r WHERE r.path='reviewedPatterns/'||split_part(d.path,'/',2))`
+            const [count, items] = await Promise.all([
+                pool.query(`SELECT count(*)::int AS pending FROM telemetry_state d WHERE ${condition}`),
+                pool.query(
+                    `SELECT d.path, d.data->>'receivedAt' AS received_at, d.data->>'expiresAt' AS expires_at,
+                    d.data->>'installId' AS installation,
+                    (SELECT jsonb_agg(c->'camera') FROM jsonb_array_elements((d.data->>'payload')::jsonb->'contributions') c) AS cameras
+                    FROM telemetry_state d WHERE ${condition} AND ($1::text IS NULL OR d.path COLLATE "C" > $1 COLLATE "C")
+                    ORDER BY d.path COLLATE "C" LIMIT 21`,
+                    [after || null]
+                ),
+            ])
+            const selected = items.rows.slice(0, 20)
+            return {
+                pending: count.rows[0].pending,
+                items: selected,
+                next: items.rows.length > 20 ? selected.at(-1)!.path : null,
+            }
+        },
         async report(filters: EventFilters) {
             const parameters = values(filters)
             const [summary, issues, events, sessions] = await Promise.all([
@@ -62,14 +87,37 @@ export function operatorQueries(pool: Pool) {
                     (array_agg(manufacturer ORDER BY (model='Unknown'),received_at DESC))[1] AS manufacturer,
                     array_agg(DISTINCT transport) AS transports,array_agg(DISTINCT evidence) AS evidence,
                     array_agg(DISTINCT revision) AS revisions
+                    ,bool_or(coalesce((properties->>'droppedEntries')::int,0)>0) AS truncated
+                    ,to_char(max(received_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
                     FROM telemetry_events WHERE ${where} AND session_id IS NOT NULL
-                    GROUP BY installation_id,session_id ORDER BY max(received_at) DESC,installation_id,session_id LIMIT 100`,
-                    parameters
+                    GROUP BY installation_id,session_id
+                    HAVING ($7::timestamptz IS NULL OR (max(received_at),installation_id,session_id)<($7::timestamptz,$8::uuid,$9::uuid))
+                    ORDER BY max(received_at) DESC,installation_id DESC,session_id DESC LIMIT 101`,
+                    [
+                        ...parameters,
+                        filters.after?.time || null,
+                        filters.after?.installation || null,
+                        filters.after?.session || null,
+                    ]
                 ),
             ])
+            const selected = sessions.rows.slice(0, 100),
+                last = selected.at(-1)
+            const sessionsNext =
+                sessions.rows.length > 100
+                    ? Buffer.from(
+                          JSON.stringify({
+                              time: last.cursor_time,
+                              installation: last.installation_id,
+                              session: last.session_id,
+                          })
+                      ).toString('base64url')
+                    : null
+            for (const row of selected) delete row.cursor_time
             return {
                 summary: summary.rows[0],
-                sessions: sessions.rows,
+                sessions: selected,
+                sessionsNext,
                 sessionLimit: 100,
                 issues: issues.rows,
                 events: events.rows,

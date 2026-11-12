@@ -118,6 +118,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     let closed = false,
         epoch = 0,
         count = 0,
+        queueBytes = 0,
         dropped = 0,
         retryAt = 0
     let storageError = false,
@@ -158,6 +159,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     const clear = () => {
         queue.clear()
         count = 0
+        queueBytes = 0
         pending = undefined
         dropped = 0
     }
@@ -281,6 +283,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             pending = { schema: BATCH_SCHEMA, id: crypto.randomUUID(), contributions: [...queue.values()] }
             queue.clear()
             count = 0
+            queueBytes = 0
         }
         const batch = pending
         try {
@@ -366,6 +369,8 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     ;(timer as unknown as { unref?: () => void }).unref?.()
     if (state.withdrawalPending) void retryWithdrawal().catch(() => {})
     const contactCall = async (method: string, body?: unknown) => {
+        // Explicit contact enrollment need not wait for the first camera operation.
+        if (method === 'POST' && !state.installKey && enabled()) await enroll(epoch)
         if (closed || !state.installKey || state.withdrawalPending)
             throw new Error('No active diagnostics installation')
         const { response, data } = await call('/v2/contact', method, body, state.installKey)
@@ -379,8 +384,19 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         } catch {
             /* Local diagnostics cannot break camera control. */
         }
-        if (!enabled()) return
-        if (count >= MAXIMUM_ENTRIES || (!queue.has(group) && queue.size >= MAXIMUM_BATCH_CAMERAS)) {
+        if (!enabled()) {
+            // A preference changed in another process must also discard previously queued
+            // sharing data, even if sharing is restored before the next interval.
+            clear()
+            return
+        }
+        const entryBytes = new TextEncoder().encode(JSON.stringify(entry)).length + 1
+        const groupBytes = queue.has(group) ? 0 : new TextEncoder().encode(group).length + 512
+        if (
+            count >= MAXIMUM_ENTRIES ||
+            queueBytes + entryBytes + groupBytes > MAXIMUM_BODY_BYTES - 1024 ||
+            (!queue.has(group) && queue.size >= MAXIMUM_BATCH_CAMERAS)
+        ) {
             dropped = Math.min(Number.MAX_SAFE_INTEGER, dropped + 1)
             const previous = queue.get(group)
             if (previous) previous.droppedEntries = Math.min(Number.MAX_SAFE_INTEGER, previous.droppedEntries + 1)
@@ -400,6 +416,10 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         }
         contribution.entries.push(entry)
         count++
+        queueBytes += entryBytes + groupBytes
+        // Flush a busy camera session before the interval fills the bounded batch.
+        // Never await cloud I/O from a camera operation.
+        if (count >= 800 || queueBytes >= MAXIMUM_BODY_BYTES * 0.8) void flush().catch(() => {})
     }
     return {
         enabled,

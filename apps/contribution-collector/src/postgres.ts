@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS telemetry_state (
 );
 CREATE INDEX IF NOT EXISTS telemetry_state_install ON telemetry_state ((data->>'installId'));
 CREATE INDEX IF NOT EXISTS telemetry_state_expiry ON telemetry_state ((data->>'expiresAt'));
+CREATE INDEX IF NOT EXISTS telemetry_state_collection_path ON telemetry_state ((split_part(path,'/',1)),path COLLATE "C");
 CREATE TABLE IF NOT EXISTS telemetry_events (
     batch_path text NOT NULL REFERENCES telemetry_state(path) ON DELETE CASCADE,
     sequence integer NOT NULL,
@@ -32,6 +33,8 @@ CREATE INDEX IF NOT EXISTS telemetry_events_install_time ON telemetry_events (in
 CREATE INDEX IF NOT EXISTS telemetry_events_session ON telemetry_events (session_id, occurred_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_model ON telemetry_events (manufacturer, model, transport);
 CREATE INDEX IF NOT EXISTS telemetry_events_received ON telemetry_events (received_at);
+CREATE INDEX IF NOT EXISTS telemetry_events_session_replay ON telemetry_events
+    (installation_id,session_id,(coalesce(occurred_at,received_at)),batch_path,sequence);
 `
 
 function checkedPath(path: string) {
@@ -163,7 +166,7 @@ export async function postgresDatabase(connectionString: string) {
             const result = await pool.query(
                 `SELECT path,data FROM telemetry_state WHERE split_part(path,'/',1)=$1
                  AND ($2::text IS NULL OR data->$2=$3::jsonb)
-                 AND ($4::text IS NULL OR path > $4) ORDER BY path COLLATE "C" LIMIT 100`,
+                 AND ($4::text IS NULL OR path COLLATE "C" > $4 COLLATE "C") ORDER BY path COLLATE "C" LIMIT 100`,
                 [collection, field ?? null, field ? JSON.stringify(value) : null, after ?? null]
             )
             return result.rows.map(row => ({ path: row.path, data: restoreDates(row.data) }))

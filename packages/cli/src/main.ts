@@ -9,13 +9,19 @@ import { randomUUID } from 'node:crypto'
 
 const [group, action, ...args] = process.argv.slice(2)
 const usage =
-    'darkgrade telemetry <status|whoami|opt-out|opt-in|delete|benchmark --camera VID:PID [--capture] [--live]>'
+    'darkgrade telemetry <status|whoami|opt-out|opt-in|delete|login EMAIL|logout|benchmark --camera VID:PID [--capture] [--live]>'
 try {
     if (
         group !== 'telemetry' ||
-        !['status', 'whoami', 'opt-out', 'opt-in', 'delete', 'benchmark'].includes(action ?? '')
+        !['status', 'whoami', 'opt-out', 'opt-in', 'delete', 'login', 'logout', 'benchmark'].includes(action ?? '')
     )
         throw new Error(usage)
+    if (action !== 'benchmark' && action !== 'login' && args.length) throw new Error(usage)
+    if (
+        action === 'login' &&
+        (args.length !== 1 || args[0].length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(args[0]))
+    )
+        throw new Error('Use darkgrade telemetry login EMAIL')
     const store = sharedSettings()
     const saved = await store.read()
     if (!saved) throw new Error('Telemetry settings unavailable')
@@ -25,6 +31,12 @@ try {
             JSON.stringify({
                 installationId: saved.installationId ?? saved.installKey?.slice(4, 40),
                 sharing: saved.enabled,
+                effectiveSharing:
+                    saved.enabled &&
+                    !saved.withdrawalPending &&
+                    !!process.env.DARKGRADE_TELEMETRY_URL &&
+                    process.env.DARKGRADE_CONTRIBUTIONS !== '0' &&
+                    process.env.DO_NOT_TRACK !== '1',
                 configured: !!process.env.DARKGRADE_TELEMETRY_URL,
                 deletionPending: saved.withdrawalPending,
                 settings: settingsDirectory(),
@@ -41,6 +53,17 @@ try {
                 : {}),
         })
         console.log(action === 'opt-out' ? 'Sharing disabled.' : 'Sharing enabled.')
+    } else if (action === 'login' || action === 'logout') {
+        if (!process.env.DARKGRADE_TELEMETRY_URL)
+            throw new Error('Configure the telemetry collector before linking an email')
+        const client = await nodeDiagnostics()
+        if (action === 'login') {
+            await client.requestContact(args[0])
+            console.log('Confirmation email requested. Open its link to finish linking this installation.')
+        } else {
+            if (saved.installKey) await client.removeContact()
+            console.log('Email association removed. Your sharing preference is unchanged.')
+        }
     } else if (action === 'delete') {
         // Disable locally before touching network, including when the service is not configured.
         await store.write({
@@ -84,7 +107,10 @@ try {
             process.exitCode = 124
             console.error('Benchmark exceeded its deadline; disconnecting the camera')
             setTimeout(() => process.exit(124), 15_000).unref()
-            void camera.disconnect().catch(() => {}).finally(() => process.exit(124))
+            void camera
+                .disconnect()
+                .catch(() => {})
+                .finally(() => process.exit(124))
         }, 120_000)
         try {
             await camera.connect()

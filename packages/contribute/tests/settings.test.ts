@@ -6,6 +6,54 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+test('a temporary external opt-out cannot leave old sharing entries queued for a later opt-in', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-opt-out-queue-'))
+    const store = sharedSettings(directory),
+        other = sharedSettings(directory)
+    let calls = 0,
+        localEntries = 0
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store,
+        localRecord: () => {
+            localEntries++
+        },
+        fetch: async () => {
+            calls++
+            throw Error('No upload expected')
+        },
+    })
+    const camera = {
+        manufacturer: 'Nikon',
+        model: 'Z5II',
+        firmware: '1',
+        revision: 'abcdef0',
+        dirty: false,
+        transport: 'usb' as const,
+        evidence: 'synthetic' as const,
+    }
+    const entry = {
+        kind: 'command' as const,
+        direction: 'out' as const,
+        bytes: 12,
+        durationMilliseconds: 1,
+        failed: false,
+    }
+    try {
+        client.record(camera, entry)
+        const state = (await other.read())!
+        await other.write({ ...state, enabled: false })
+        client.record(camera, entry)
+        await other.write({ ...(await other.read())!, enabled: true })
+        assert.equal(await client.flush(), 'empty')
+        assert.equal(calls, 0)
+        assert.equal(localEntries, 2)
+    } finally {
+        client.close()
+        await rm(directory, { recursive: true, force: true })
+    }
+})
+
 test('processes share random identity and stale enrollment writes cannot reverse an opt-out', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-settings-'))
     try {

@@ -1,4 +1,5 @@
 import type { Database, Transaction } from '#collector/database'
+import { changeMatrixGeneration } from '#collector/matrix-generation'
 import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/contribute/batch'
 import { MAXIMUM_BODY_BYTES } from '@darkgrade/contribute/schema'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
@@ -170,6 +171,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     credit: challenge!.credit,
                 })
                 transaction.delete(challengePath)
+                changeMatrixGeneration(transaction)
             })
             return Response.json({ confirmed: true })
         }
@@ -324,6 +326,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     emailGeneration: install.emailGeneration + 1,
                 })
                 transaction.delete(`contacts/${installId}`)
+                changeMatrixGeneration(transaction)
             })
             await removeRows(database, 'contactChallenges', installId)
             return Response.json({ removed: true })
@@ -381,6 +384,7 @@ export async function withdrawInstallation(database: Database, installId: string
             revokedAt: install!.revokedAt ?? date,
             emailGeneration: install!.emailGeneration + 1,
         })
+        changeMatrixGeneration(transaction)
     })
     const complete = await cleanupInstallation(database, installId).catch(() => false)
     return { revoked: true, deletionPending: !complete }

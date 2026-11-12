@@ -1,4 +1,5 @@
 import type { Database } from '#collector/database'
+import { changeMatrixGeneration } from '#collector/matrix-generation'
 import { validateBatch } from '@darkgrade/contribute/batch'
 import { createHash } from 'node:crypto'
 
@@ -70,7 +71,8 @@ export async function reviewDiagnostic(database: Database, recordId: string, now
             patterns,
         }
         // Credit is resolved from the current verified contact at export, not copied permanently.
-        transaction.set(`reviewedPatterns/${recordId}`, { ...pattern, credit: null })
+        transaction.set(`reviewedPatterns/${recordId}`, { ...pattern, credit: null, expiresAt: record.expiresAt })
+        changeMatrixGeneration(transaction)
         return pattern
     })
 }
@@ -79,6 +81,7 @@ export async function reviewDiagnostic(database: Database, recordId: string, now
 export async function exportReviewedPatterns(database: Database, now = new Date()) {
     const records: Record<string, any>[] = []
     let bytes = 1024
+    let expiresAt = +now + 24 * 3_600_000
     let after: string | undefined
     for (;;) {
         const page = await database.list('reviewedPatterns', undefined, undefined, after)
@@ -88,9 +91,13 @@ export async function exportReviewedPatterns(database: Database, now = new Date(
                 if (!pattern) return undefined
                 const install = await transaction.get(`installations/${pattern.installId}`)
                 if (!install || install.revoked) return undefined
+                const original = await transaction.get(`diagnostics/${pattern.sourceRecord}`)
+                if (!original || !(original.expiresAt instanceof Date) || +original.expiresAt <= +now) return undefined
+                expiresAt = Math.min(expiresAt, +original.expiresAt)
                 const contact = await transaction.get(`contacts/${pattern.installId}`)
+                const { expiresAt: _expiry, ...publicPattern } = pattern
                 return {
-                    ...pattern,
+                    ...publicPattern,
                     credit: contact?.confirmedAt && contact?.credit?.publish === true ? contact.credit : null,
                 }
             })
@@ -109,7 +116,7 @@ export async function exportReviewedPatterns(database: Database, now = new Date(
     return {
         schema: 'darkgrade.matrix-diagnostics/v1',
         generatedAt: now.toISOString(),
-        expiresAt: new Date(+now + 24 * 3_600_000).toISOString(),
+        expiresAt: new Date(expiresAt).toISOString(),
         replace: true,
         hardwarePass: false,
         records,

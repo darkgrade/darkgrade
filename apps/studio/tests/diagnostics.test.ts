@@ -40,7 +40,7 @@ afterEach(async () => {
 test('Studio has preferences offline but uploads stay off until an endpoint exists', async () => {
     vi.stubEnv('DARKGRADE_TELEMETRY_URL', '')
     await current.initializeDiagnostics()
-    expect(current.diagnosticsStatus()).toMatchObject({ configured: true, enabled: false, sharingEnabled: true })
+    expect(current.diagnosticsStatus()).toMatchObject({ configured: false, enabled: false, sharingEnabled: true })
     expect(fixture.notices).toBe(0)
 })
 test('default sharing needs no notice; a saved opt-out survives reopening and credentials stay private', async () => {

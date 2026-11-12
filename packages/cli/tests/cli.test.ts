@@ -20,6 +20,27 @@ test('CLI identity persists, preferences work offline, and delete disables shari
         assert.equal(JSON.parse((await run('status')).stdout).sharing, false)
         await run('opt-in')
         assert.equal(JSON.parse((await run('status')).stdout).sharing, true)
+        assert.equal(
+            JSON.parse((await run('status')).stdout).effectiveSharing,
+            false,
+            'no endpoint means no cloud sharing'
+        )
+        const overridden = await promisify(execFile)(process.execPath, ['dist/main.js', 'telemetry', 'status'], {
+            env: {
+                ...process.env,
+                DARKGRADE_HOME: directory,
+                DARKGRADE_TELEMETRY_URL: 'https://telemetry.example',
+                DO_NOT_TRACK: '1',
+            },
+        })
+        assert.equal(JSON.parse(overridden.stdout).effectiveSharing, false)
+        for (const args of [['login'], ['login', 'invalid'], ['login', 'camera@example.com'], ['opt-out', 'extra']])
+            await assert.rejects(
+                promisify(execFile)(process.execPath, ['dist/main.js', 'telemetry', ...args], {
+                    env: { ...process.env, DARKGRADE_HOME: directory, DARKGRADE_TELEMETRY_URL: '' },
+                })
+            )
+        assert.equal(JSON.parse((await run('status')).stdout).sharing, true, 'invalid commands cannot change consent')
         await run('delete')
         const state = JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8'))
         assert.equal(state.enabled, false)

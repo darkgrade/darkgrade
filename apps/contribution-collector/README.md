@@ -33,12 +33,15 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   delayed requests cannot recreate withdrawn records.
 - Batches expire after 90 days. The resident service removes expired batches and their flat
   events, and retries interrupted withdrawals every minute. It catches up after downtime.
-  Reviewed patterns remain withdrawal-linked; minimal credential tombstones prevent replay.
+  Reviewed patterns expire with their original batch and remain withdrawal-linked;
+  minimal credential tombstones prevent replay.
 - Admission limits: 1,000 registrations/day across the service and 4,096 batches/day per
   installation. Bodies are capped at 256 KiB, 1,000 entries and 16 camera contexts. These
   bounds do not prevent the cost of arbitrary rejected HTTP traffic.
-- Existing optional contact endpoints remain compatibility-only and disabled without an
-  explicit mail sender. CLI/Studio use `whoami` / Copy diagnostic ID, not email login.
+- Optional email linking uses a single-use confirmation. CLI `telemetry login EMAIL`
+  can enroll before camera use; `logout` removes the association without changing sharing.
+  It stays unavailable until `TELEMETRY_EMAIL_API_KEY` (Resend) and a verified
+  `TELEMETRY_EMAIL_FROM` are configured. Anonymous `whoami` works without email.
 
 ## Investigation and Matrix
 
@@ -50,7 +53,8 @@ The page reports observations and camera responses; it does not infer a proven r
 
 Outpost's Telemetry app uses the same operator credential through `/internal/api`.
 It reads bounded issue/event reports and anonymous installation IDs, reviews original
-batches, exports full Matrix snapshots and revokes/deletes an installation. Mutations
+batches, exports full Matrix snapshots and revokes/deletes an installation. Sessions and
+the unreviewed batch queue use cursors so older evidence remains reachable. Mutations
 require JSON, a server operator header and no browser Origin; an ID deletion also confirms
 the exact ID. Credentials and optional contact details are never returned. Internal
 installation labels live in Outpost and are not contributor attribution.
@@ -66,7 +70,12 @@ npm run cleanup
 Review retains model, firmware, transport, revision, synthetic/hardware origin and hashes.
 Non-OK response codes count as error observations, including retries; they do not establish
 a failed final workflow. Matrix's existing `import_diagnostics` tool replaces the complete
-snapshot; records expire within 24 hours and disappear after withdrawal/re-export. Neither
+snapshot. The scalable path uses `/internal/api/matrix/page` and Matrix's
+`import_diagnostics_page`: 100 source records per page, staged in SQLite and published
+only after the final page. Review, withdrawal and contributor changes invalidate a
+running export; the client restarts with a fresh generation. Records expire within
+24 hours or at the source expiry, whichever comes first. A replacement removes withdrawn
+evidence. Neither
 an observation nor a reviewed pattern automatically becomes a hardware pass. Automated
 agent diagnosis/PR creation and exact byte replay remain future work, not this timeline.
 
@@ -78,6 +87,11 @@ supplies HTTPS; Cloud SQL supplies encrypted storage/backups. No custom load bal
 needed. One resident, CPU-allocated Cloud Run instance runs cleanup and scales to at most
 two. This has an idle cost; it is a simplicity choice, not a scale-to-zero claim. The small
 Postgres instance is single-zone, with backups and point-in-time recovery, not HA.
+Terraform also enables server-side deletion protection, encrypted connections, an external
+HTTPS/database uptime check, and sustained database CPU/disk alerts. Set
+`notification_channels` to existing verified Cloud Monitoring channel IDs; without them,
+alerts create console incidents only. Billing budgets require separate billing-account
+permissions. Optional `email_api_key` and `email_from` inject the sender through Secret Manager.
 
 1. Select the billing-enabled project and region. Create a private versioned Terraform
    state bucket; run `terraform init -backend-config=bucket=BUCKET -backend-config=prefix=telemetry`.

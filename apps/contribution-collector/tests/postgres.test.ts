@@ -10,6 +10,44 @@ import { test } from 'node:test'
 import { batch, enroll, request } from './telemetry-fixture.ts'
 
 test(
+    'session lists page across tied timestamps and review queues omit reviewed and withdrawn sources',
+    { skip: !process.env.DATABASE_URL },
+    async () => {
+        const database = await postgresDatabase(process.env.DATABASE_URL!)
+        const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
+        const user = await enroll(handle),
+            payload = batch(),
+            entry = payload.contributions[0].entries[0]
+        payload.contributions[0].entries = Array.from({ length: 111 }, () => ({
+            ...entry,
+            sessionId: randomUUID(),
+            occurredAt: new Date().toISOString(),
+        }))
+        try {
+            assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, payload))).status, 202)
+            const first = await database.operator.report({ days: 1, installation: user.installId })
+            assert.equal(first.sessions.length, 100)
+            assert.ok(first.sessionsNext)
+            const after = JSON.parse(Buffer.from(first.sessionsNext!, 'base64url').toString())
+            const last = await database.operator.report({ days: 1, installation: user.installId, after })
+            assert.equal(last.sessions.length, 11)
+            assert.equal(last.sessionsNext, null)
+            assert.equal(new Set([...first.sessions, ...last.sessions].map(row => row.session_id)).size, 111)
+            const path = `diagnostics/${user.installId}_${payload.id}`
+            let queue = await database.operator.reviewQueue()
+            for (let count = 0; !queue.items.some(row => row.path === path) && queue.next && count < 10; count++)
+                queue = await database.operator.reviewQueue(queue.next)
+            assert.ok(queue.items.some(row => row.path === path))
+            await reviewDiagnostic(database, `${user.installId}_${payload.id}`)
+            assert.ok(!(await database.operator.reviewQueue()).items.some(row => row.path === path))
+        } finally {
+            await handle(request('/v2/installation', 'DELETE', user.installKey))
+            await database.close()
+        }
+    }
+)
+
+test(
     'operator API scopes issues, guards mutations, preserves provenance and revokes uploads',
     { skip: !process.env.DATABASE_URL },
     async () => {

@@ -1,4 +1,4 @@
-import { Button, Field, FieldContent, FieldDescription, FieldLabel, Switch } from '@kevinschaich/components'
+import { Button, Field, FieldContent, FieldDescription, FieldLabel, Input, Switch } from '@kevinschaich/components'
 import type { DiagnosticsStatus } from '@shared/ipc'
 import { useEffect, useState } from 'react'
 
@@ -6,11 +6,17 @@ export function DiagnosticsSettings() {
     const [status, setStatus] = useState<DiagnosticsStatus | null>(null)
     const [busy, setBusy] = useState(false)
     const [message, setMessage] = useState('')
+    const [email, setEmail] = useState('')
     useEffect(() => {
         let active = true
         const refresh = async () => {
-            const result = await window.studio.getDiagnosticsStatus()
-            if (active && result.ok) setStatus(result.data)
+            try {
+                const result = await window.studio.getDiagnosticsStatus()
+                if (active && result.ok) setStatus(result.data)
+                else if (active && !result.ok) setMessage(result.error)
+            } catch {
+                if (active) setMessage('Telemetry settings could not be loaded.')
+            }
         }
         void refresh()
         const timer = setInterval(() => void refresh(), 5000)
@@ -48,7 +54,29 @@ export function DiagnosticsSettings() {
             setBusy(false)
         }
     }
-    if (!status) return null
+    const contact = async (action: 'request' | 'remove' | 'status') => {
+        setBusy(true)
+        try {
+            const result = await window.studio.diagnosticsContact(action, action === 'request' ? email : undefined)
+            setMessage(
+                result.ok
+                    ? action === 'request'
+                        ? 'Check your email to confirm this installation.'
+                        : action === 'remove'
+                          ? 'Email association removed.'
+                          : result.data
+                            ? `Verified: ${result.data.email}`
+                            : 'No verified email linked.'
+                    : result.error
+            )
+            if (result.ok && action !== 'status') setEmail('')
+        } catch {
+            setMessage('Email settings could not be updated. Try again.')
+        } finally {
+            setBusy(false)
+        }
+    }
+    if (!status) return message ? <p role="status">{message}</p> : null
     return (
         <section className="mt-8 space-y-3 border-t border-foreground/10 pt-5">
             <Field orientation="horizontal">
@@ -63,11 +91,11 @@ export function DiagnosticsSettings() {
                 <Switch
                     id="camera-diagnostics"
                     checked={status.sharingEnabled ?? status.enabled}
-                    disabled={busy || !status.configured || status.withdrawalPending}
+                    disabled={busy || !status.installationId || status.withdrawalPending}
                     onCheckedChange={value => void change('sharing', value)}
                 />
             </Field>
-            {status.configured && (
+            {status.installationId && (
                 <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" variant="outline" disabled={busy} onClick={() => void benchmark()}>
                         Check camera
@@ -88,12 +116,60 @@ export function DiagnosticsSettings() {
                     <Button
                         size="sm"
                         variant="ghost"
-                        disabled={busy}
+                        disabled={busy || !status.configured}
                         onClick={() => void change(status.withdrawalPending ? 'retry' : 'withdraw')}
                     >
                         {status.withdrawalPending ? 'Retry deletion' : 'Delete cloud data'}
                     </Button>
                 </div>
+            )}
+            {status.configured && (
+                <details>
+                    <summary className="cursor-pointer text-sm">Link an email (optional)</summary>
+                    <form
+                        className="mt-2 flex flex-wrap items-center gap-2"
+                        onSubmit={event => {
+                            event.preventDefault()
+                            void contact('request')
+                        }}
+                    >
+                        <label className="sr-only" htmlFor="telemetry-email">
+                            Email address
+                        </label>
+                        <Input
+                            id="telemetry-email"
+                            type="email"
+                            autoComplete="email"
+                            required
+                            maxLength={254}
+                            value={email}
+                            onChange={event => setEmail(event.target.value)}
+                            placeholder="you@example.com"
+                            disabled={busy}
+                        />
+                        <Button size="sm" type="submit" disabled={busy || !email || status.withdrawalPending}>
+                            Send confirmation
+                        </Button>
+                        <Button
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => void contact('status')}
+                        >
+                            Check status
+                        </Button>
+                        <Button
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => void contact('remove')}
+                        >
+                            Unlink
+                        </Button>
+                    </form>
+                </details>
             )}
             {(message || status.error) && (
                 <p role="status" className="text-xs text-muted-foreground">

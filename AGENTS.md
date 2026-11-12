@@ -81,6 +81,14 @@ silently weaken their own regression gate.
 
 ## Shared telemetry — November 12, 2026
 
+The ingestion audit adds early bounded SDK flushes, email login/logout, paged session lists,
+an operator review queue and generation-consistent Matrix exports. Reviewed evidence expires
+with its original diagnostic. Test with real Postgres and a separate growth-test database:
+reviewing or withdrawing during an export deliberately invalidates its cursor.
+Terraform now includes encrypted-only SQL connections, server-side deletion protection and
+minimal health/CPU/disk monitoring. Notification delivery requires verified channel IDs;
+email requires a configured sender. Do not claim live email delivery from a mock sender test.
+
 The user replaced project 18 with one HTTPS service and Postgres. Keep this on PR #58,
 `feat/runtime-browser-core`; do not merge. `apps/contribution-collector/src/postgres.ts`
 stores flat telemetry_events plus operational state; main.ts performs its own cleanup and
