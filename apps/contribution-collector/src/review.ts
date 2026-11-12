@@ -3,6 +3,73 @@ import { changeMatrixGeneration } from '#collector/matrix-generation'
 import { validateBatch } from '@darkgrade/contribute/batch'
 import { createHash } from 'node:crypto'
 
+/** Deterministic validated diagnostics; a review label is independent of import eligibility. */
+export function diagnosticPattern(
+    recordId: string,
+    record: Record<string, any>,
+    reviewedAt: Date | null = null,
+    credit: { name: string; publish: true } | null = null
+) {
+    if (createHash('sha256').update(record.payload).digest('hex') !== record.sha256)
+        throw new Error('Diagnostic integrity check failed')
+    const batch = JSON.parse(record.payload)
+    validateBatch(batch)
+    const patterns = batch.contributions.map(contribution => {
+        const observed = new Map<
+            string,
+            {
+                kind: string
+                operation?: string
+                direction: string
+                code: number | null
+                count: number
+                errors: number
+                bytes: number
+                totalMilliseconds: number
+            }
+        >()
+        for (const entry of contribution.entries) {
+            const key = `${entry.kind}/${entry.direction}/${entry.operation ?? 'ptp'}/${entry.code ?? 'none'}`
+            const summary = observed.get(key) ?? {
+                kind: entry.kind,
+                ...(entry.operation && { operation: entry.operation }),
+                direction: entry.direction,
+                code: entry.code ?? null,
+                count: 0,
+                errors: 0,
+                bytes: 0,
+                totalMilliseconds: 0,
+            }
+            summary.count++
+            summary.errors += Number(
+                entry.failed || (entry.kind === 'response' && entry.code !== undefined && entry.code !== 0x2001)
+            )
+            summary.bytes += entry.bytes
+            summary.totalMilliseconds += entry.durationMilliseconds
+            observed.set(key, summary)
+        }
+        return {
+            camera: contribution.camera,
+            droppedEntries: contribution.droppedEntries,
+            observed: [...observed.values()],
+        }
+    })
+    const pattern = {
+        schema: reviewedAt ? 'darkgrade.reviewed-pattern/v1' : 'darkgrade.diagnostic-pattern/v1',
+        evidence: 'diagnostic-pattern',
+        hardwarePass: false,
+        installId: record.installId,
+        sourceRecord: recordId,
+        sourceHash: record.sha256,
+        noticeVersion: record.noticeVersion,
+        reviewedAt,
+        source: '@darkgrade/contribute',
+        credit,
+        patterns,
+    }
+    return pattern
+}
+
 /** Operator review uses database credentials, never the public installation-key API. */
 export async function reviewDiagnostic(database: Database, recordId: string, now = new Date()) {
     if (!/^[a-f0-9-]{36}_[a-f0-9-]{36}$/.test(recordId)) throw new Error('Invalid diagnostic record ID')
@@ -13,63 +80,12 @@ export async function reviewDiagnostic(database: Database, recordId: string, now
         const install = await transaction.get(`installations/${record.installId}`)
         if (!install || install.revoked) throw new Error('Contributor withdrew')
         const contact = await transaction.get(`contacts/${record.installId}`)
-        if (createHash('sha256').update(record.payload).digest('hex') !== record.sha256)
-            throw new Error('Diagnostic integrity check failed')
-        const batch = JSON.parse(record.payload)
-        validateBatch(batch)
-        const patterns = batch.contributions.map(contribution => {
-            const observed = new Map<
-                string,
-                {
-                    kind: string
-                    operation?: string
-                    direction: string
-                    code: number | null
-                    count: number
-                    errors: number
-                    bytes: number
-                    totalMilliseconds: number
-                }
-            >()
-            for (const entry of contribution.entries) {
-                const key = `${entry.kind}/${entry.direction}/${entry.operation ?? 'ptp'}/${entry.code ?? 'none'}`
-                const summary = observed.get(key) ?? {
-                    kind: entry.kind,
-                    ...(entry.operation && { operation: entry.operation }),
-                    direction: entry.direction,
-                    code: entry.code ?? null,
-                    count: 0,
-                    errors: 0,
-                    bytes: 0,
-                    totalMilliseconds: 0,
-                }
-                summary.count++
-                summary.errors += Number(
-                    entry.failed || (entry.kind === 'response' && entry.code !== undefined && entry.code !== 0x2001)
-                )
-                summary.bytes += entry.bytes
-                summary.totalMilliseconds += entry.durationMilliseconds
-                observed.set(key, summary)
-            }
-            return {
-                camera: contribution.camera,
-                droppedEntries: contribution.droppedEntries,
-                observed: [...observed.values()],
-            }
-        })
-        const pattern = {
-            schema: 'darkgrade.reviewed-pattern/v1',
-            evidence: 'diagnostic-pattern',
-            hardwarePass: false,
-            installId: record.installId,
-            sourceRecord: recordId,
-            sourceHash: record.sha256,
-            noticeVersion: record.noticeVersion,
-            reviewedAt: now,
-            source: '@darkgrade/contribute',
-            credit: contact?.confirmedAt && contact?.credit?.publish === true ? contact.credit : null,
-            patterns,
-        }
+        const pattern = diagnosticPattern(
+            recordId,
+            record,
+            now,
+            contact?.confirmedAt && contact?.credit?.publish === true ? contact.credit : null
+        )
         // Credit is resolved from the current verified contact at export, not copied permanently.
         transaction.set(`reviewedPatterns/${recordId}`, { ...pattern, credit: null, expiresAt: record.expiresAt })
         changeMatrixGeneration(transaction)

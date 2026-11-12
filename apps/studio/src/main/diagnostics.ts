@@ -5,6 +5,7 @@ import {
     nodeDiagnostics,
     settingsDirectory,
     sharedSettings,
+    telemetryEndpoint,
 } from '@darkgrade/contribute/settings'
 import type { DiagnosticsStatus } from '@shared/ipc'
 import { app, safeStorage } from 'electron'
@@ -18,7 +19,7 @@ let initializationError: string | null = null
 export async function initializeDiagnostics() {
     try {
         // Preserve the unpublished previous Studio opt-out when moving to the shared CLI file.
-        const endpoint = process.env.DARKGRADE_TELEMETRY_URL
+        const endpoint = telemetryEndpoint()
         if (endpoint && !existsSync(join(settingsDirectory(), 'settings.json'))) {
             const identity = createHash('sha256').update(new URL(endpoint).origin).digest('hex').slice(0, 20)
             const legacy = join(app.getPath('userData'), `diagnostics-${identity}.bin`)
@@ -49,7 +50,7 @@ export async function initializeDiagnostics() {
 
 export function diagnosticsStatus(): DiagnosticsStatus {
     return {
-        configured: !!client && !!process.env.DARKGRADE_TELEMETRY_URL,
+        configured: !!client,
         enabled: false,
         enrolled: false,
         withdrawalPending: false,

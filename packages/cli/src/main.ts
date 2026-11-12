@@ -34,10 +34,9 @@ try {
                 effectiveSharing:
                     saved.enabled &&
                     !saved.withdrawalPending &&
-                    !!process.env.DARKGRADE_TELEMETRY_URL &&
                     process.env.DARKGRADE_CONTRIBUTIONS !== '0' &&
                     process.env.DO_NOT_TRACK !== '1',
-                configured: !!process.env.DARKGRADE_TELEMETRY_URL,
+                configured: true,
                 deletionPending: saved.withdrawalPending,
                 settings: settingsDirectory(),
             })
@@ -54,8 +53,6 @@ try {
         })
         console.log(action === 'opt-out' ? 'Sharing disabled.' : 'Sharing enabled.')
     } else if (action === 'login' || action === 'logout') {
-        if (!process.env.DARKGRADE_TELEMETRY_URL)
-            throw new Error('Configure the telemetry collector before linking an email')
         const client = await nodeDiagnostics()
         if (action === 'login') {
             await client.requestContact(args[0])
@@ -72,8 +69,6 @@ try {
             withdrawalPending: !!saved.installKey || !!saved.registrationPending,
         })
         if (saved.installKey || saved.registrationPending) {
-            if (!process.env.DARKGRADE_TELEMETRY_URL)
-                throw new Error('Sharing is off; configure the original collector to finish deletion')
             const client = await nodeDiagnostics()
             await client.retryWithdrawal()
             console.log(

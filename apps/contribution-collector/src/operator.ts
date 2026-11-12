@@ -55,10 +55,21 @@ export async function operatorApi(
         if (
             Object.keys(parameters).some(
                 key =>
-                    !['field', 'q', 'days', 'installation', 'model', 'session', 'revision', 'transport'].includes(key)
+                    ![
+                        'field',
+                        'q',
+                        'days',
+                        'installation',
+                        'model',
+                        'session',
+                        'revision',
+                        'transport',
+                        'hardware',
+                    ].includes(key)
             ) ||
-            !['model', 'installation', 'session', 'revision'].includes(parameters.field) ||
+            !['model', 'installation', 'session', 'revision', 'hardware'].includes(parameters.field) ||
             (parameters.q?.length ?? 0) > 100 ||
+            (parameters.hardware && !/^camera-v1:[a-f0-9]{64}$/.test(parameters.hardware)) ||
             ![1, 7, 30, 90].includes(Number(parameters.days || 7)) ||
             ['installation', 'session'].some(key => parameters[key] && !uuid.test(parameters[key])) ||
             (parameters.model?.length ?? 0) > 100 ||
@@ -94,12 +105,24 @@ export async function operatorApi(
     if (path === '/internal/api/report' && request.method === 'GET') {
         if (
             Object.keys(parameters).some(
-                key => !['days', 'installation', 'model', 'session', 'revision', 'transport', 'after'].includes(key)
+                key =>
+                    ![
+                        'days',
+                        'installation',
+                        'model',
+                        'session',
+                        'revision',
+                        'transport',
+                        'hardware',
+                        'after',
+                    ].includes(key)
             ) ||
             ![1, 7, 30, 90].includes(Number(parameters.days || 7)) ||
             ['installation', 'session'].some(key => parameters[key] && !uuid.test(parameters[key]))
         )
             return json({ error: 'Invalid filters' }, 400)
+        if (parameters.hardware && !/^camera-v1:[a-f0-9]{64}$/.test(parameters.hardware))
+            return json({ error: 'Invalid hardware fingerprint' }, 400)
         let after: EventFilters['after']
         if (parameters.after) {
             try {

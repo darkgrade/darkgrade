@@ -248,9 +248,13 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     count: (quota?.count ?? 0) + 1,
                     expiresAt: new Date(+date + 2 * DAY),
                 })
+                const ingestionSequence = ((await transaction.get('maintenance/ingestion-sequence'))?.value ?? 0) + 1
+                if (!Number.isSafeInteger(ingestionSequence)) fail(503, 'Ingestion sequence unavailable')
+                transaction.set('maintenance/ingestion-sequence', { value: ingestionSequence })
                 transaction.set(recordPath, {
                     installId,
                     noticeVersion: install.noticeVersion,
+                    ingestionSequence,
                     schema: BATCH_SCHEMA,
                     payload,
                     sha256,

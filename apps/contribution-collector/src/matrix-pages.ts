@@ -1,8 +1,10 @@
 import type { Database } from '#collector/database'
+import { diagnosticPattern } from '#collector/review'
 import { createHash } from 'node:crypto'
 
 interface Cursor {
     generation: string
+    watermark: number
     generatedAt: string
     after: string
     index: number
@@ -12,18 +14,23 @@ export class InvalidMatrixCursor extends Error {}
 const generation = async (database: Database) =>
     (await database.get('maintenance/matrix-generation'))?.value ?? 'initial'
 
-/** Bounded pages; a generation change forces a fresh export, never a mixed snapshot. */
+/** Import all validated diagnostics. A committed ingestion watermark excludes later uploads without starving sync;
+ * review/withdrawal/credit changes still invalidate the export. No automatic human-review claim. */
 export async function exportMatrixPage(database: Database, cursor?: string, now = new Date()) {
     const current = await generation(database)
-    let state: Cursor = { generation: current, generatedAt: now.toISOString(), after: '', index: 0 }
+    const watermark = (await database.get('maintenance/ingestion-sequence'))?.value ?? 0
+    let state: Cursor = { generation: current, watermark, generatedAt: now.toISOString(), after: '', index: 0 }
     if (cursor) {
         try {
             if (cursor.length > 800 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error()
             state = JSON.parse(Buffer.from(cursor, 'base64url').toString())
             if (
-                Object.keys(state).sort().join(',') !== 'after,generatedAt,generation,index' ||
+                Object.keys(state).sort().join(',') !== 'after,generatedAt,generation,index,watermark' ||
                 !/^(initial|[a-f0-9-]{36})$/.test(state.generation) ||
-                !/^reviewedPatterns\/[a-f0-9-]{36}_[a-f0-9-]{36}$/.test(state.after) ||
+                !/^diagnostics\/[a-f0-9-]{36}_[a-f0-9-]{36}$/.test(state.after) ||
+                !Number.isSafeInteger(state.watermark) ||
+                state.watermark < 0 ||
+                state.watermark > watermark ||
                 !Number.isSafeInteger(state.index) ||
                 state.index < 1 ||
                 new Date(state.generatedAt).toISOString() !== state.generatedAt
@@ -36,32 +43,36 @@ export async function exportMatrixPage(database: Database, cursor?: string, now 
     const started = Date.parse(state.generatedAt)
     if (state.generation !== current || started > +now || +now - started > 20 * 60_000)
         throw new MatrixExportChanged('Matrix export changed or expired; restart synchronization')
-    const rows = await database.list('reviewedPatterns', undefined, undefined, state.after || undefined)
+    const rows = await database.list('diagnostics', undefined, undefined, state.after || undefined)
     const records: Record<string, any>[] = []
     let expiresAt = started + 86_400_000
     for (const row of rows) {
         const result = await database.transaction(async transaction => {
-            const pattern = await transaction.get(row.path)
-            if (!pattern) return
-            const [installation, original, contact] = await Promise.all([
-                transaction.get(`installations/${pattern.installId}`),
-                transaction.get(`diagnostics/${pattern.sourceRecord}`),
-                transaction.get(`contacts/${pattern.installId}`),
+            const original = await transaction.get(row.path)
+            if (!original || (original.ingestionSequence ?? 0) > state.watermark || +original.receivedAt > started)
+                return
+            const sourceRecord = row.path.slice('diagnostics/'.length)
+            const [installation, reviewed, contact] = await Promise.all([
+                transaction.get(`installations/${original.installId}`),
+                transaction.get(`reviewedPatterns/${sourceRecord}`),
+                transaction.get(`contacts/${original.installId}`),
             ])
             if (
                 !installation ||
                 installation.revoked ||
-                !original ||
                 !(original.expiresAt instanceof Date) ||
                 +original.expiresAt <= +now
             )
                 return
-            const { expiresAt: _expiry, ...value } = pattern
             return {
-                value: {
-                    ...value,
-                    credit: contact?.confirmedAt && contact.credit?.publish === true ? contact.credit : null,
-                },
+                value: diagnosticPattern(
+                    sourceRecord,
+                    original,
+                    reviewed && reviewed.sourceHash === original.sha256 && reviewed.reviewedAt instanceof Date
+                        ? reviewed.reviewedAt
+                        : null,
+                    contact?.confirmedAt && contact.credit?.publish === true ? contact.credit : null
+                ),
                 expiresAt: +original.expiresAt,
             }
         })
@@ -76,7 +87,7 @@ export async function exportMatrixPage(database: Database, cursor?: string, now 
     return {
         schema: 'darkgrade.matrix-diagnostics-page/v1',
         id: createHash('sha256')
-            .update(state.generation + '/' + state.generatedAt)
+            .update(state.generation + '/' + state.watermark + '/' + state.generatedAt)
             .digest('hex'),
         generatedAt: state.generatedAt,
         expiresAt: new Date(expiresAt).toISOString(),

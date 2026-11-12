@@ -56,3 +56,39 @@ test('removing contributor credit invalidates an in-progress export without dele
     assert.equal(replacement.records.length, 100)
     assert.equal(replacement.records[0].credit, null)
 })
+
+test('all validated batches export without review and an ingestion watermark excludes concurrent uploads', async () => {
+    const fixture = memoryDatabase()
+    const now = new Date()
+    const handle = createTelemetry(fixture.database, { publicUrl: 'https://telemetry.example', now: () => now })
+    const user = await enroll(handle),
+        originals = new Set<string>()
+    for (let i = 0; i < 101; i++) {
+        const payload = batch()
+        originals.add(`${user.installId}_${payload.id}`)
+        assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, payload))).status, 202)
+    }
+    const first = await exportMatrixPage(fixture.database, undefined, now)
+    assert.equal(first.records.length, 100)
+    assert.ok(
+        first.records.every(
+            r => r.schema === 'darkgrade.diagnostic-pattern/v1' && r.reviewedAt === null && r.hardwarePass === false
+        )
+    )
+    for (let i = 0; i < 10; i++)
+        assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, batch()))).status, 202)
+    let page = first
+    const exported = [...first.records]
+    while (page.next) {
+        page = await exportMatrixPage(fixture.database, page.next, now)
+        assert.equal(page.id, first.id)
+        exported.push(...page.records)
+    }
+    assert.equal(exported.length, 101)
+    assert.ok(exported.every(r => originals.has(r.sourceRecord)))
+    await reviewDiagnostic(fixture.database, exported[0].sourceRecord, now)
+    await assert.rejects(exportMatrixPage(fixture.database, first.next!, now), MatrixExportChanged)
+    const refreshed = await exportMatrixPage(fixture.database, undefined, now)
+    assert.equal(refreshed.records[0].schema, 'darkgrade.reviewed-pattern/v1')
+    assert.ok(refreshed.records[0].reviewedAt)
+})

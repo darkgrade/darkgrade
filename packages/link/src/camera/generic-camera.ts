@@ -245,7 +245,12 @@ export class GenericCamera {
         const response = await result
         if (operation.code === 0x1001 && response.code === OK.code && 'data' in response && response.data) {
             await this.telemetry.identify(
-                response.data as unknown as { manufacturer: string; model: string; deviceVersion: string }
+                response.data as unknown as {
+                    manufacturer: string
+                    model: string
+                    deviceVersion: string
+                    serialNumber?: string
+                }
             )
         }
         return response

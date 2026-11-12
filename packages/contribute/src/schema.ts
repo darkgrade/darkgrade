@@ -17,6 +17,8 @@ export interface DiagnosticEntry {
 }
 
 export interface CameraContext {
+    /** Versioned hash of the camera's manufacturer/model/serial. Never the installation identity or raw serial. */
+    hardwareFingerprint?: string
     manufacturer: string
     model: string
     firmware: string
@@ -58,7 +60,20 @@ export function validateContribution(value: unknown): asserts value is Contribut
         throw new Error('Invalid contribution envelope')
     const camera = value.camera
     if (
-        !keys(camera, ['manufacturer', 'model', 'firmware', 'revision', 'dirty', 'transport', 'evidence']) ||
+        !keys(camera, [
+            'manufacturer',
+            'model',
+            'firmware',
+            'revision',
+            'dirty',
+            'transport',
+            'evidence',
+            'hardwareFingerprint',
+        ]) ||
+        (camera.hardwareFingerprint !== undefined &&
+            (typeof camera.hardwareFingerprint !== 'string' ||
+                !/^camera-v1:[a-f0-9]{64}$/.test(camera.hardwareFingerprint) ||
+                camera.evidence !== 'hardware')) ||
         !label(camera.manufacturer, 32) ||
         !label(camera.model, 80) ||
         !label(camera.firmware, 40) ||
@@ -108,4 +123,21 @@ export function validateContribution(value: unknown): asserts value is Contribut
         )
             throw new Error('Invalid diagnostic entry')
     }
+}
+
+/** Stable across reconnects, firmware updates and installations; absent when no reliable body serial exists. */
+export async function cameraHardwareFingerprint(info: {
+    manufacturer: string
+    model: string
+    serialNumber?: string
+}): Promise<string | undefined> {
+    const serial = info.serialNumber?.replace(/\0+$/, '').trim()
+    if (!serial || serial.length > 256 || /[\x00-\x1f\x7f]/.test(serial) || /^(unknown|none|n\/a|0+|f+)$/i.test(serial))
+        return
+    const manufacturer = info.manufacturer.trim().toLowerCase().replace(/\s+/g, ' ')
+    const model = info.model.trim().toLowerCase().replace(/\s+/g, ' ')
+    if (!manufacturer || !model || manufacturer === 'unknown' || model === 'unknown') return
+    const bytes = new TextEncoder().encode(JSON.stringify(['darkgrade.camera/v1', manufacturer, model, serial]))
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+    return 'camera-v1:' + Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('')
 }

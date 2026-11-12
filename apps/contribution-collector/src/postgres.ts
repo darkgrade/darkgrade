@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
     properties jsonb NOT NULL,
     PRIMARY KEY (batch_path, sequence)
 );
+ALTER TABLE telemetry_events ADD COLUMN IF NOT EXISTS hardware_fingerprint text;
+CREATE INDEX IF NOT EXISTS telemetry_events_hardware_time ON telemetry_events (hardware_fingerprint,received_at) WHERE hardware_fingerprint IS NOT NULL;
 CREATE INDEX IF NOT EXISTS telemetry_events_install_time ON telemetry_events (installation_id, received_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_session ON telemetry_events (session_id, occurred_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_model ON telemetry_events (manufacturer, model, transport);
@@ -94,6 +96,7 @@ export async function postgresDatabase(connectionString: string) {
                 revision: contribution.camera.revision,
                 transport: contribution.camera.transport,
                 evidence: contribution.camera.evidence,
+                hardware_fingerprint: contribution.camera.hardwareFingerprint ?? null,
                 kind: event.kind,
                 code: event.code ?? null,
                 failed: event.failed,
@@ -104,12 +107,12 @@ export async function postgresDatabase(connectionString: string) {
         await connection.query(
             `INSERT INTO telemetry_events
             (batch_path,sequence,installation_id,session_id,occurred_at,received_at,manufacturer,model,
-             firmware,revision,transport,evidence,kind,code,failed,properties)
+             firmware,revision,transport,evidence,kind,code,failed,properties,hardware_fingerprint)
             SELECT * FROM jsonb_to_recordset($1::jsonb) AS events(
                 batch_path text, sequence integer, installation_id uuid, session_id uuid,
                 occurred_at timestamptz, received_at timestamptz, manufacturer text, model text,
                 firmware text, revision text, transport text, evidence text, kind text, code integer,
-                failed boolean, properties jsonb)`,
+                failed boolean, properties jsonb, hardware_fingerprint text)`,
             [JSON.stringify(events)]
         )
     }
@@ -185,7 +188,7 @@ export async function postgresDatabase(connectionString: string) {
         async timeline(filters) {
             const result = await pool.query(
                 `SELECT batch_path, sequence, installation_id, session_id, occurred_at, received_at, manufacturer, model,
-                    firmware, revision, transport, evidence, kind, code, failed, properties
+                    firmware, revision, transport, evidence, kind, code, failed, properties, hardware_fingerprint
                  FROM telemetry_events
                  WHERE ($1::text IS NULL OR installation_id::text=$1)
                    AND ($2::text IS NULL OR model=$2)

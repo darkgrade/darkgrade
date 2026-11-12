@@ -166,3 +166,79 @@ test('a short-lived process delivers queued metadata on normal exit and retains 
         await rm(directory, { recursive: true, force: true })
     }
 })
+
+test('Node defaults to the hosted collector, but opt-out still stops uploads and keeps local diagnostics', async () => {
+    const { nodeDiagnostics, closeNodeDiagnostics, DEFAULT_TELEMETRY_URL } = await import('#contribute/settings')
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-default-sharing-'))
+    const previous = {
+        home: process.env.DARKGRADE_HOME,
+        url: process.env.DARKGRADE_TELEMETRY_URL,
+        fetch: globalThis.fetch,
+    }
+    const calls: string[] = []
+    process.env.DARKGRADE_HOME = directory
+    delete process.env.DARKGRADE_TELEMETRY_URL
+    globalThis.fetch = async (url, init) => {
+        calls.push(String(url))
+        const body = JSON.parse(String(init?.body))
+        return Response.json(
+            new URL(String(url)).pathname === '/v2/installations'
+                ? { installKey: body.installKey, noticeVersion: body.noticeVersion }
+                : { accepted: true }
+        )
+    }
+    try {
+        const client = (await nodeDiagnostics())!
+        const camera = {
+            manufacturer: 'Nikon',
+            model: 'Z5II',
+            firmware: '1',
+            revision: 'abcdef0',
+            dirty: false,
+            transport: 'usb' as const,
+            evidence: 'synthetic' as const,
+        }
+        const entry = {
+            kind: 'command' as const,
+            direction: 'out' as const,
+            bytes: 12,
+            failed: false,
+            durationMilliseconds: 1,
+        }
+        client.record(camera, entry)
+        await client.flush()
+        assert.ok(calls.some(url => url === DEFAULT_TELEMETRY_URL + '/v2/batches'))
+        const count = calls.length,
+            store = sharedSettings(directory)
+        await store.write({ ...(await store.read())!, enabled: false })
+        client.record(camera, entry)
+        assert.equal(await client.flush(), 'disabled')
+        assert.equal(calls.length, count)
+        await closeNodeDiagnostics()
+        assert.ok((await readFile(join(directory, 'diagnostics', `${process.pid}.jsonl`), 'utf8')).includes('Z5II'))
+    } finally {
+        await closeNodeDiagnostics()
+        globalThis.fetch = previous.fetch
+        if (previous.home === undefined) delete process.env.DARKGRADE_HOME
+        else process.env.DARKGRADE_HOME = previous.home
+        if (previous.url === undefined) delete process.env.DARKGRADE_TELEMETRY_URL
+        else process.env.DARKGRADE_TELEMETRY_URL = previous.url
+        await rm(directory, { recursive: true, force: true })
+    }
+})
+
+test('camera fingerprints are stable across installation/firmware changes and absent for missing or placeholder serials', async () => {
+    const { cameraHardwareFingerprint } = await import('#contribute/schema')
+    const first = await cameraHardwareFingerprint({ manufacturer: 'Nikon', model: ' Z5_2 ', serialNumber: 'ABC123\0' })
+    assert.match(first!, /^camera-v1:[a-f0-9]{64}$/)
+    assert.equal(
+        first,
+        await cameraHardwareFingerprint({ manufacturer: ' NIKON ', model: 'z5_2', serialNumber: 'ABC123' })
+    )
+    assert.notEqual(
+        first,
+        await cameraHardwareFingerprint({ manufacturer: 'Nikon', model: 'Z5_2', serialNumber: 'abc123' })
+    )
+    for (const serialNumber of [undefined, '', '000000', 'FFFFFFFF', 'Unknown', 'NONE', 'n/a', 'bad\nserial'])
+        assert.equal(await cameraHardwareFingerprint({ manufacturer: 'Nikon', model: 'Z5_2', serialNumber }), undefined)
+})

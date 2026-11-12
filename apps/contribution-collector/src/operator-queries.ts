@@ -7,9 +7,10 @@ export interface EventFilters {
     session?: string
     revision?: string
     transport?: string
+    hardware?: string
     after?: { time: string; installation: string; session: string }
 }
-export type SuggestionField = 'model' | 'installation' | 'session' | 'revision'
+export type SuggestionField = 'model' | 'installation' | 'session' | 'revision' | 'hardware'
 
 /** Parameterized, bounded operator queries; never return installation credentials or contact data. */
 export function operatorQueries(pool: Pool) {
@@ -18,7 +19,8 @@ export function operatorQueries(pool: Pool) {
         AND ($3::text IS NULL OR model=$3)
         AND ($4::uuid IS NULL OR session_id=$4)
         AND ($5::text IS NULL OR revision=$5)
-        AND ($6::text IS NULL OR transport=$6)`
+        AND ($6::text IS NULL OR transport=$6)
+        AND ($7::text IS NULL OR hardware_fingerprint=$7)`
     const errors = `(failed OR (kind='response' AND code IS NOT NULL AND code<>8193))`
     const values = (filters: EventFilters) => [
         filters.days,
@@ -27,6 +29,7 @@ export function operatorQueries(pool: Pool) {
         filters.session || null,
         filters.revision || null,
         filters.transport || null,
+        filters.hardware || null,
     ]
     return {
         async suggestions(field: SuggestionField, query: string, filters: EventFilters) {
@@ -35,6 +38,7 @@ export function operatorQueries(pool: Pool) {
                 installation: 'installation_id',
                 session: 'session_id',
                 revision: 'revision',
+                hardware: 'hardware_fingerprint',
             }[field]
             if (!column) throw new Error('Invalid suggestion field')
             const result = await pool.query(
@@ -44,9 +48,9 @@ export function operatorQueries(pool: Pool) {
                 FROM telemetry_events WHERE ${where} AND ${column} IS NOT NULL
                 AND ${
                     field === 'model'
-                        ? `NOT EXISTS (SELECT 1 FROM unnest(string_to_array(lower($7::text),' ')) term
+                        ? `NOT EXISTS (SELECT 1 FROM unnest(string_to_array(lower($8::text),' ')) term
                         WHERE strpos(lower(manufacturer||' '||model),term)=0)`
-                        : `strpos(lower(${column}::text),lower($7::text))>0`
+                        : `strpos(lower(${column}::text),lower($8::text))>0`
                 }
                 GROUP BY ${column} ORDER BY max(received_at) DESC,${column} LIMIT 21`,
                 [...values({ ...filters, [field]: undefined }), query]
@@ -88,17 +92,17 @@ export function operatorQueries(pool: Pool) {
                     parameters
                 ),
                 pool.query(
-                    `SELECT manufacturer,model,firmware,revision,transport,evidence,kind,code,
+                    `SELECT manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,
                     properties->>'operation' AS operation,count(*)::int AS occurrences,
                     count(DISTINCT installation_id)::int AS installations,max(received_at) AS latest
                     FROM telemetry_events WHERE ${where} AND ${errors}
-                    GROUP BY manufacturer,model,firmware,revision,transport,evidence,kind,code,properties->>'operation'
+                    GROUP BY manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,properties->>'operation'
                     ORDER BY max(received_at) DESC LIMIT 100`,
                     parameters
                 ),
                 pool.query(
                     `SELECT batch_path,sequence,installation_id,session_id,occurred_at,received_at,
-                    manufacturer,model,firmware,revision,transport,evidence,kind,code,failed,properties
+                    manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,failed,properties
                     FROM telemetry_events WHERE ${where}
                     ORDER BY received_at DESC,batch_path,sequence LIMIT 500`,
                     parameters
@@ -111,12 +115,13 @@ export function operatorQueries(pool: Pool) {
                     (array_agg(model ORDER BY (model='Unknown'),received_at DESC))[1] AS model,
                     (array_agg(manufacturer ORDER BY (model='Unknown'),received_at DESC))[1] AS manufacturer,
                     array_agg(DISTINCT transport) AS transports,array_agg(DISTINCT evidence) AS evidence,
-                    array_agg(DISTINCT revision) AS revisions
+                    array_agg(DISTINCT revision) AS revisions,
+                    array_remove(array_agg(DISTINCT hardware_fingerprint),NULL) AS hardware_fingerprints
                     ,bool_or(coalesce((properties->>'droppedEntries')::int,0)>0) AS truncated
                     ,to_char(max(received_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
                     FROM telemetry_events WHERE ${where} AND session_id IS NOT NULL
                     GROUP BY installation_id,session_id
-                    HAVING ($7::timestamptz IS NULL OR (max(received_at),installation_id,session_id)<($7::timestamptz,$8::uuid,$9::uuid))
+                    HAVING ($8::timestamptz IS NULL OR (max(received_at),installation_id,session_id)<($8::timestamptz,$9::uuid,$10::uuid))
                     ORDER BY max(received_at) DESC,installation_id DESC,session_id DESC LIMIT 101`,
                     [
                         ...parameters,
@@ -157,7 +162,7 @@ export function operatorQueries(pool: Pool) {
         ) {
             const result = await pool.query(
                 `SELECT batch_path,sequence,installation_id,session_id,occurred_at,received_at,
-                manufacturer,model,firmware,revision,transport,evidence,kind,code,failed,properties,
+                manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,failed,properties,
                 to_char(coalesce(occurred_at,received_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
                 FROM telemetry_events WHERE installation_id=$1::uuid AND session_id=$2::uuid
                 AND ($3::timestamptz IS NULL OR (coalesce(occurred_at,received_at),batch_path,sequence)>($3::timestamptz,$4::text,$5::int))

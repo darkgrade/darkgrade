@@ -24,6 +24,10 @@ import {
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+export const DEFAULT_TELEMETRY_URL = 'https://darkgrade-telemetry-4ba4fvhf5a-uc.a.run.app'
+/** An override changes the destination; opting out uses the saved preference or opt-out environment flags. */
+export const telemetryEndpoint = () => process.env.DARKGRADE_TELEMETRY_URL?.trim() || DEFAULT_TELEMETRY_URL
+
 export const settingsDirectory = () => process.env.DARKGRADE_HOME || join(homedir(), '.darkgrade')
 export function sharedSettings(directory = settingsDirectory()): InstallationStore {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
@@ -186,9 +190,7 @@ export function nodeDiagnostics() {
         }
         log = localDiagnostics()
         return createApplicationDiagnostics({
-            // No upload is possible until the real deployment origin is configured.
-            endpoint: process.env.DARKGRADE_TELEMETRY_URL || 'https://telemetry.invalid',
-            disabled: () => !process.env.DARKGRADE_TELEMETRY_URL,
+            endpoint: telemetryEndpoint(),
             store: sharedSettings(),
             localRecord: log.record,
         })

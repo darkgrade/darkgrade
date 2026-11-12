@@ -235,3 +235,70 @@ test('video workflow markers retain the wire session and SDK USB model without s
         client.close()
     }
 })
+
+test('hardware fingerprints track a body without raw serials and are cleared before a failed reconnect', async () => {
+    vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
+    vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)
+    const saved: any[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        localRecord: (camera, entry) => saved.push({ camera, entry }),
+    })
+    configureLinkTelemetry(client)
+    const source = {
+        telemetryEvidence: 'hardware',
+        getType: () => 'usb',
+        on: () => {},
+        off: () => {},
+        isConnected: () => false,
+        connect: async () => {
+            throw Error('Unplugged')
+        },
+        isLittleEndian: () => true,
+    } as any
+    const wrapped = linkTelemetry(source)
+    try {
+        const camera = { manufacturer: 'Nikon', model: 'Z5_2', deviceVersion: '1', serialNumber: 'PRIVATE-SERIAL-123' }
+        await wrapped.identify(camera)
+        await wrapped.operation('record_start', async () => 42)
+        const fingerprint = saved.at(-1).camera.hardwareFingerprint
+        expect(fingerprint).toMatch(/^camera-v1:[a-f0-9]{64}$/)
+        await wrapped.identify({ ...camera, deviceVersion: '2' })
+        await wrapped.operation('record_stop', async () => 42)
+        expect(saved.at(-1).camera.hardwareFingerprint).toBe(fingerprint)
+        await expect(wrapped.transport.connect()).rejects.toThrow('Unplugged')
+        expect(saved.at(-1).camera).toMatchObject({ model: 'Unknown' })
+        expect(saved.at(-1).camera.hardwareFingerprint).toBeUndefined()
+        await wrapped.identify({ ...camera, serialNumber: 'PRIVATE-SERIAL-456' })
+        await wrapped.operation('record_start', async () => 42)
+        expect(saved.at(-1).camera.hardwareFingerprint).not.toBe(fingerprint)
+        expect(JSON.stringify(saved)).not.toContain('PRIVATE-SERIAL')
+    } finally {
+        client.close()
+    }
+})
+
+test('Sony USB SDK fingerprints require an acknowledged serial selection, and wireless reconnect clears them', async () => {
+    vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
+    vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)
+    const saved: any[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        localRecord: (camera, entry) => saved.push({ camera, entry }),
+    })
+    configureLinkTelemetry(client)
+    try {
+        const sdk = sdkTelemetry('hardware')
+        await sdk.operation({ cmd: 'connect', serial: 'PRIVATE-123' }, async () => ({ ok: true, model: 'ILME-FX2' }))
+        expect(saved.at(-1).camera.hardwareFingerprint).toMatch(/^camera-v1:[a-f0-9]{64}$/)
+        await sdk.operation({ cmd: 'properties' }, async () => ({ ok: true }))
+        expect(saved.at(-1).camera.hardwareFingerprint).toBe(saved[0].camera.hardwareFingerprint)
+        await sdk.operation({ cmd: 'connect_wifi', model: 'ILME-FX2' }, async () => ({ ok: true }))
+        expect(saved.at(-1).camera.hardwareFingerprint).toBeUndefined()
+        expect(JSON.stringify(saved)).not.toContain('PRIVATE-123')
+    } finally {
+        client.close()
+    }
+})

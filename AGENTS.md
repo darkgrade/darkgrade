@@ -1,3 +1,5 @@
+Matrix imports all validated batches as diagnostic evidence automatically, with optional human review separately labeled. Committed ingestion watermarks prevent live uploads starving pagination; review, withdrawal and credit changes invalidate exports. Camera fingerprints are absent when reliable serial identity is unavailable, and reconnect must clear stale body identity.
+
 Telemetry autocomplete uses bounded authenticated database suggestions scoped by other filters,
 including old sessions. Preserve hardware/synthetic provenance and hide credentials/contact details.
 Inspection modals keep summaries readable and raw evidence collapsed; test keyboard selection, stale
@@ -114,7 +116,7 @@ transports need explicit telemetry configuration, and loopback IP defaults to sy
 Do not mistake a real socket for proof of physical hardware. Sony SDK bridge calls have separate named-operation telemetry; no SDK arguments or payloads
 are collected. USB SDK model/firmware remain Unknown when the bridge cannot supply them. Model/firmware/revision/transport,
 source hashes and contributor attribution stay attached; metadata never becomes a hardware
-pass. Reviewed Matrix snapshots still replace fully and expire within 24 hours.
+pass. All validated Matrix diagnostic snapshots replace fully and expire within 24 hours.
 
 Direct-source bench execution resolves revision/dirty state from the Link source checkout when
 build constants are absent. Normal Node/Bun process exit attempts a bounded final flush; forced
@@ -122,9 +124,8 @@ exit preserves buffered local metadata but cannot promise cloud delivery. Keep t
 checks alongside transport attribution tests.
 
 Node applications and packages/cli share packages/contribute/settings: one random installation
-ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Never derive identity from a
-serial. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI
-retention-age blurb. Missing endpoint prevents uploads, not local diagnostics. Opt-out stops
+ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Installation identity stays random; camera-body fingerprints are separate versioned hashes of manufacturer/model/serial. Never retain the raw serial in telemetry. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI
+retention-age blurb. The built-in hosted collector is used when no endpoint override is supplied. Opt-out stops
 cloud uploads but keeps bounded sanitized local logs. Delete disables sharing first and
 preserves retry state. Respect environment overrides and saved/corrupt preferences. Native
 Studio migrates the earlier encrypted preference before initializing the shared file.

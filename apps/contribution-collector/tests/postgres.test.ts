@@ -357,3 +357,62 @@ test(
         }
     }
 )
+
+test(
+    'real Postgres indexes a body across installations, sessions and Matrix without leaking its serial',
+    { skip: !process.env.DATABASE_URL },
+    async () => {
+        const { exportMatrixPage } = await import('#collector/matrix-pages')
+        const { cameraHardwareFingerprint } = await import('@darkgrade/contribute/schema')
+        const database = await postgresDatabase(process.env.DATABASE_URL!)
+        const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
+        const users = await Promise.all([enroll(handle), enroll(handle)])
+        const fingerprint = await cameraHardwareFingerprint({
+            manufacturer: 'Nikon',
+            model: 'Z5_2',
+            serialNumber: 'PRIVATE-123',
+        })
+        try {
+            await Promise.all(
+                users.map(async user => {
+                    const payload = batch()
+                    Object.assign(payload.contributions[0].camera, {
+                        evidence: 'hardware',
+                        hardwareFingerprint: fingerprint,
+                    })
+                    Object.assign(payload.contributions[0].entries[0], { sessionId: randomUUID(), failed: true })
+                    assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, payload))).status, 202)
+                })
+            )
+            const report = await database.operator.report({ days: 1, hardware: fingerprint })
+            assert.equal(report.summary.events, 2)
+            assert.equal(report.summary.installations, 2)
+            assert.equal(report.sessions.length, 2)
+            assert.ok(report.sessions.every(s => s.hardware_fingerprints[0] === fingerprint))
+            assert.equal(report.issues[0].hardware_fingerprint, fingerprint)
+            const choices = await database.operator.suggestions('hardware', fingerprint!.slice(0, 20), { days: 1 })
+            assert.equal(choices.items[0].value, fingerprint)
+            assert.equal(choices.items[0].installations, 2)
+            const session = await database.operator.session(
+                report.sessions[0].installation_id,
+                report.sessions[0].session_id
+            )
+            assert.equal(session.events[0].hardware_fingerprint, fingerprint)
+            let page = await exportMatrixPage(database)
+            const records = [...page.records]
+            while (page.next) {
+                page = await exportMatrixPage(database, page.next)
+                records.push(...page.records)
+            }
+            const own = records.filter(r => users.some(u => u.installId === r.installId))
+            assert.equal(own.length, 2)
+            assert.ok(own.every(r => r.reviewedAt === null && r.patterns[0].camera.hardwareFingerprint === fingerprint))
+            assert.doesNotMatch(JSON.stringify({ report, choices, own }), /PRIVATE-123/)
+            await handle(request('/v2/installation', 'DELETE', users[0].installKey))
+            assert.equal((await database.operator.report({ days: 1, hardware: fingerprint })).summary.events, 1)
+        } finally {
+            for (const user of users) await handle(request('/v2/installation', 'DELETE', user.installKey))
+            await database.close()
+        }
+    }
+)

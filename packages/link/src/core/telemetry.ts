@@ -1,5 +1,5 @@
 import type { createApplicationDiagnostics } from '@darkgrade/contribute/application'
-import type { CameraContext } from '@darkgrade/contribute/schema'
+import { cameraHardwareFingerprint, type CameraContext } from '@darkgrade/contribute/schema'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 declare const __LINK_TELEMETRY_REVISION__: string
@@ -61,32 +61,44 @@ export function linkTelemetry(source: TransportInterface) {
                 return (handler: (event: PTPEvent) => void) => {
                     if (listener === handler) listener = undefined
                 }
+            if (key === 'connect')
+                return async (...args: Parameters<TransportInterface['connect']>) => {
+                    await resetIdentity()
+                    return (observed?.transport ?? source).connect(...args)
+                }
             const current = observed?.transport as unknown as TransportInterface | undefined
             const owner = current && key in current ? current : target
             const value = Reflect.get(owner, key, owner)
             return typeof value === 'function' ? value.bind(owner) : value
         },
     })
-    return {
+    const resetIdentity = async () => {
+        identity = undefined
+        await observer.identify({ manufacturer: 'Unknown', model: 'Unknown', deviceVersion: 'unknown' })
+    }
+    const observer = {
         transport,
         operation<Result>(name: string, work: () => Promise<Result>): Promise<Result> {
             return observed ? observed.operation(name, work) : work()
         },
         async prepare() {
-            if (!identity) await this.identify({ manufacturer: 'Unknown', model: 'Unknown', deviceVersion: 'unknown' })
+            if (!identity || !source.isConnected())
+                await this.identify({ manufacturer: 'Unknown', model: 'Unknown', deviceVersion: 'unknown' })
         },
-        async identify(info: { manufacturer: string; model: string; deviceVersion: string }) {
+        async identify(info: { manufacturer: string; model: string; deviceVersion: string; serialNumber?: string }) {
             // Custom/simulated transports require explicit configuration; never label them physical hardware.
             const hardware =
                 (source as TransportInterface & { telemetryEvidence?: string }).telemetryEvidence === 'hardware'
             if (!hardware && !configured) return
-            const next = JSON.stringify([info.manufacturer, info.model, info.deviceVersion])
+            const next = JSON.stringify([info.manufacturer, info.model, info.deviceVersion, info.serialNumber])
             if (next === identity) return
             try {
                 const client = await diagnosticsClient()
                 const build = client && (await buildMetadata())
                 if (!client || !build) return
+                const hardwareFingerprint = hardware ? await cameraHardwareFingerprint(info) : undefined
                 const context: CameraContext = {
+                    ...(hardwareFingerprint && { hardwareFingerprint }),
                     manufacturer: info.manufacturer,
                     model: info.model,
                     firmware: info.deviceVersion || 'unknown',
@@ -108,11 +120,13 @@ export function linkTelemetry(source: TransportInterface) {
             }
         },
     }
+    return observer
 }
 
 /** SDK calls are named operations, not invented PTP packets. Arguments/results never enter records. */
 export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
     let model = 'Unknown'
+    let hardwareFingerprint: string | undefined
     let sessionId = globalThis.crypto?.randomUUID?.()
     let transport: 'usb' | 'sony-sdk' = 'sony-sdk'
     return {
@@ -121,6 +135,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
             if (['connect', 'connect_wifi', 'connect_bluetooth_direct'].includes(command.cmd)) {
                 sessionId = globalThis.crypto?.randomUUID?.()
                 model = 'Unknown'
+                hardwareFingerprint = undefined
                 transport = command.cmd === 'connect' ? 'usb' : 'sony-sdk'
             }
             let failed = false
@@ -132,6 +147,18 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                     /^(?:ILCE|ILME|DSC|NEX)-[A-Za-z0-9-]{1,40}$/.test(result.model)
                 )
                     model = result.model
+                if (command.cmd === 'connect' && result.ok === true && evidence === 'hardware' && model !== 'Unknown') {
+                    // The SDK bridge selects a device by this exact USB serial before acknowledging connection.
+                    try {
+                        hardwareFingerprint = await cameraHardwareFingerprint({
+                            manufacturer: 'Sony',
+                            model,
+                            serialNumber: command.serial,
+                        })
+                    } catch {
+                        hardwareFingerprint = undefined
+                    }
+                }
                 if (
                     ['connect_wifi', 'connect_bluetooth_direct'].includes(command.cmd) &&
                     ['ILCE-6700', 'ILME-FX2'].includes(command.model)
@@ -149,6 +176,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                         if (build)
                             client?.record(
                                 {
+                                    ...(hardwareFingerprint && { hardwareFingerprint }),
                                     manufacturer: 'Sony',
                                     model,
                                     firmware: 'unknown',
@@ -179,7 +207,10 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                 } catch {
                     /* SDK behavior must not depend on telemetry or settings availability. */
                 }
-                if (command.cmd === 'disconnect') model = 'Unknown'
+                if (command.cmd === 'disconnect') {
+                    model = 'Unknown'
+                    hardwareFingerprint = undefined
+                }
             }
         },
     }
