@@ -9,6 +9,7 @@ export interface EventFilters {
     transport?: string
     after?: { time: string; installation: string; session: string }
 }
+export type SuggestionField = 'model' | 'installation' | 'session' | 'revision'
 
 /** Parameterized, bounded operator queries; never return installation credentials or contact data. */
 export function operatorQueries(pool: Pool) {
@@ -28,6 +29,25 @@ export function operatorQueries(pool: Pool) {
         filters.transport || null,
     ]
     return {
+        async suggestions(field: SuggestionField, query: string, filters: EventFilters) {
+            const column = {
+                model: 'model',
+                installation: 'installation_id',
+                session: 'session_id',
+                revision: 'revision',
+            }[field]
+            if (!column) throw new Error('Invalid suggestion field')
+            const result = await pool.query(
+                `SELECT ${column}::text AS value, min(model) AS model, count(DISTINCT model)::int AS models,
+                min(installation_id::text) AS installation, count(DISTINCT installation_id)::int AS installations,
+                array_agg(DISTINCT evidence) AS evidence, count(*)::int AS events, max(received_at) AS latest
+                FROM telemetry_events WHERE ${where} AND ${column} IS NOT NULL
+                AND strpos(lower(${column}::text),lower($7::text))>0
+                GROUP BY ${column} ORDER BY max(received_at) DESC,${column} LIMIT 21`,
+                [...values({ ...filters, [field]: undefined }), query]
+            )
+            return { field, items: result.rows.slice(0, 20), more: result.rows.length > 20 }
+        },
         async reviewQueue(after?: string) {
             const condition = `split_part(d.path,'/',1)='diagnostics'
                 AND d.data->>'expiresAt' > to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')

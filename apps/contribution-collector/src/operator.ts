@@ -1,6 +1,6 @@
 import { operatorAuthorized } from '#collector/investigate'
 import { exportMatrixPage, InvalidMatrixCursor, MatrixExportChanged } from '#collector/matrix-pages'
-import type { EventFilters } from '#collector/operator-queries'
+import type { EventFilters, SuggestionField } from '#collector/operator-queries'
 import type { postgresDatabase } from '#collector/postgres'
 import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
 import { withdrawInstallation } from '#collector/telemetry'
@@ -51,6 +51,28 @@ export async function operatorApi(
         (request.headers.has('origin') || request.headers.get('x-darkgrade-operator') !== '1')
     )
         return json({ error: 'Server operator request required' }, 403)
+    if (path === '/internal/api/suggestions' && request.method === 'GET') {
+        if (
+            Object.keys(parameters).some(
+                key =>
+                    !['field', 'q', 'days', 'installation', 'model', 'session', 'revision', 'transport'].includes(key)
+            ) ||
+            !['model', 'installation', 'session', 'revision'].includes(parameters.field) ||
+            (parameters.q?.length ?? 0) > 100 ||
+            ![1, 7, 30, 90].includes(Number(parameters.days || 7)) ||
+            ['installation', 'session'].some(key => parameters[key] && !uuid.test(parameters[key])) ||
+            (parameters.model?.length ?? 0) > 100 ||
+            (parameters.revision && !/^[a-f0-9]{7,40}$/.test(parameters.revision)) ||
+            (parameters.transport && !['usb', 'ptp-ip', 'sony-sdk'].includes(parameters.transport))
+        )
+            return json({ error: 'Invalid suggestion filters' }, 400)
+        return json(
+            await database.operator.suggestions(parameters.field as SuggestionField, parameters.q || '', {
+                ...parameters,
+                days: Number(parameters.days || 7),
+            } as EventFilters)
+        )
+    }
     if (path === '/internal/api/matrix/page' && request.method === 'GET') {
         if (Object.keys(parameters).some(key => key !== 'cursor')) return json({ error: 'Invalid cursor' }, 400)
         try {

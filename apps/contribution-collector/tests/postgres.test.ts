@@ -33,6 +33,30 @@ test(
             assert.equal(last.sessions.length, 11)
             assert.equal(last.sessionsNext, null)
             assert.equal(new Set([...first.sessions, ...last.sessions].map(row => row.session_id)).size, 111)
+            const suggestions = await database.operator.suggestions('session', '', {
+                days: 1,
+                installation: user.installId,
+            })
+            assert.equal(suggestions.items.length, 20)
+            assert.equal(suggestions.more, true)
+            const olderId = last.sessions[0].session_id
+            const older = await database.operator.suggestions('session', olderId, {
+                days: 1,
+                installation: user.installId,
+            })
+            assert.equal(older.items[0].value, olderId, 'typeahead searches beyond the first report page')
+            assert.equal(older.items[0].installation, user.installId)
+            assert.deepEqual(older.items[0].evidence, ['synthetic'])
+            assert.equal(
+                (await database.operator.suggestions('session', olderId, { days: 1, installation: randomUUID() })).items
+                    .length,
+                0
+            )
+            assert.equal(
+                (await database.operator.suggestions('model', '%', { days: 1, installation: user.installId })).items
+                    .length,
+                0
+            )
             const path = `diagnostics/${user.installId}_${payload.id}`
             let queue = await database.operator.reviewQueue()
             for (let count = 0; !queue.items.some(row => row.path === path) && queue.next && count < 10; count++)
@@ -77,6 +101,19 @@ test(
             assert.equal(results.summary.errors, 1)
             assert.equal(results.issues.length, 1)
             assert.equal(results.events[0].installation_id, user.installId)
+            const suggestions = await (
+                await operatorApi(admin('/suggestions?field=model&installation=' + user.installId), key, database)
+            ).json()
+            assert.equal(suggestions.items[0].value, payload.contributions[0].camera.model)
+            assert.doesNotMatch(JSON.stringify(suggestions), /keyHash|installKey|email|credential/)
+            for (const query of [
+                'field=keyHash',
+                'field=session&installation=bad',
+                'field=model&q=' + 'x'.repeat(101),
+                'field=revision&transport=bad',
+            ]) {
+                assert.equal((await operatorApi(admin('/suggestions?' + query), key, database)).status, 400)
+            }
             const installations = await (
                 await operatorApi(admin('/installations?installation=' + user.installId), key, database)
             ).json()
@@ -130,6 +167,10 @@ test(
                 'an exact lookup still verifies revocation'
             )
             assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, batch()))).status, 410)
+            assert.equal(
+                (await database.operator.suggestions('installation', user.installId, { days: 90 })).items.length,
+                0
+            )
             const refreshed = await (await operatorApi(admin('/matrix'), key, database)).json()
             assert.ok(!refreshed.records.some((item: any) => item.sourceRecord === sourceRecord))
         } finally {

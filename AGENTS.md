@@ -1,3 +1,8 @@
+Telemetry autocomplete uses bounded authenticated database suggestions scoped by other filters,
+including old sessions. Preserve hardware/synthetic provenance and hide credentials/contact details.
+Inspection modals keep summaries readable and raw evidence collapsed; test keyboard selection, stale
+responses, Escape/focus return, friendly installation labels, and narrow screens.
+
 # Project Cheat Sheet
 
 ## Tech Stack:
