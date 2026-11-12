@@ -157,6 +157,9 @@ export function operatorQueries(pool: Pool) {
                 WHERE split_part(path,'/',1)='installations'
                   AND ($1::text IS NULL OR split_part(path,'/',2)>$1)
                   AND ($2::text IS NULL OR split_part(path,'/',2)=$2)
+                  AND ($2::text IS NOT NULL OR NOT coalesce((data->>'revoked')::boolean,false)
+                    OR coalesce((data->>'pendingDeletion')::boolean,false)
+                    OR EXISTS(SELECT 1 FROM telemetry_events e WHERE e.installation_id=split_part(path,'/',2)::uuid))
                 ORDER BY path COLLATE "C" LIMIT 101
             ) SELECT id, data->>'createdAt' AS created_at,
                 coalesce((data->>'revoked')::boolean,false) AS revoked,

@@ -58,6 +58,8 @@ the unreviewed batch queue use cursors so older evidence remains reachable. Muta
 require JSON, a server operator header and no browser Origin; an ID deletion also confirms
 the exact ID. Credentials and optional contact details are never returned. Internal
 installation labels live in Outpost and are not contributor attribution.
+Fully deleted installation tombstones are omitted from the normal list; an exact ID lookup
+still verifies revocation. Their minimal key hashes remain to reject delayed or replayed uploads.
 
 Operators use database credentials with these scripts:
 

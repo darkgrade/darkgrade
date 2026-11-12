@@ -120,6 +120,15 @@ test(
             )
             assert.equal(removed.status, 200)
             assert.equal((await removed.json()).deletionPending, false)
+            assert.ok(
+                !(await database.operator.installations()).items.some(item => item.id === user.installId),
+                'fully deleted installations do not clutter the live list'
+            )
+            assert.equal(
+                (await database.operator.installations(undefined, user.installId)).items[0].revoked,
+                true,
+                'an exact lookup still verifies revocation'
+            )
             assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, batch()))).status, 410)
             const refreshed = await (await operatorApi(admin('/matrix'), key, database)).json()
             assert.ok(!refreshed.records.some((item: any) => item.sourceRecord === sourceRecord))
