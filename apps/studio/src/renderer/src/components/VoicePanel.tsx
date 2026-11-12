@@ -12,9 +12,10 @@ import {
     TooltipTrigger,
 } from '@kevinschaich/components'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
+import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
 import { microphoneLevel, transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
-import { ChevronDown, Download, Eraser, Mic, Square } from 'lucide-react'
+import { AudioLines, ChevronDown, Download, Eraser, Mic, Square } from 'lucide-react'
 
 interface VoicePanelProps {
     voice: LiveTranscription
@@ -56,7 +57,11 @@ function MicrophonePicker({ voice }: { voice: LiveTranscription }): React.JSX.El
             .map(microphone => ({ value: microphone.deviceId, label: microphone.label })),
     ]
     return (
-        <Select items={items} value={voice.microphoneId} onValueChange={value => void voice.chooseMicrophone(String(value))}>
+        <Select
+            items={items}
+            value={voice.microphoneId}
+            onValueChange={value => void voice.chooseMicrophone(String(value))}
+        >
             <SelectTrigger size="sm" aria-label="Microphone" className="h-7 max-w-56 min-w-0 gap-1.5 text-xs">
                 <Mic className="text-muted-foreground" />
                 <SelectValue className="truncate" />
@@ -65,6 +70,34 @@ function MicrophonePicker({ voice }: { voice: LiveTranscription }): React.JSX.El
                 {items.map(item => (
                     <SelectItem key={item.value} value={item.value}>
                         {item.label}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    )
+}
+
+function SpeechModelPicker({ voice }: { voice: LiveTranscription }): React.JSX.Element {
+    const items = SPEECH_MODELS.map(model => ({ value: model.id, label: model.name }))
+    const busy = voice.listening === 'preparing' || voice.listening === 'stopping'
+    return (
+        <Select
+            items={items}
+            value={voice.speechModelId}
+            disabled={busy}
+            onValueChange={value => void voice.chooseSpeechModel(value as SpeechModelId)}
+        >
+            <SelectTrigger size="sm" aria-label="Speech model" className="h-7 min-w-0 gap-1.5 text-xs">
+                <AudioLines className="text-muted-foreground" />
+                <SelectValue className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+                {SPEECH_MODELS.map(model => (
+                    <SelectItem key={model.id} value={model.id}>
+                        <span className="flex flex-col">
+                            <span>{model.name}</span>
+                            <span className="text-xs text-muted-foreground">{model.description}</span>
+                        </span>
                     </SelectItem>
                 ))}
             </SelectContent>
@@ -81,7 +114,9 @@ function EngineMessage({ voice }: { voice: LiveTranscription }): React.JSX.Eleme
         const fraction = engine.totalBytes ? engine.receivedBytes / engine.totalBytes : 0
         return (
             <div className="w-72 space-y-2 text-center">
-                <p className="text-sm text-muted-foreground">Downloading the speech model…</p>
+                <p className="text-sm text-muted-foreground">
+                    Downloading {SPEECH_MODELS.find(model => model.id === voice.speechModelId)?.name}…
+                </p>
                 <Progress value={fraction * 100} />
                 <p className="text-xs text-muted-foreground tabular-nums">
                     {formatGigabytes(engine.receivedBytes)} of {formatGigabytes(engine.totalBytes)}
@@ -150,6 +185,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                     <LevelMeter active={listening} />
                 </span>
                 <span className="flex-1" />
+                <SpeechModelPicker voice={voice} />
                 <MicrophonePicker voice={voice} />
                 <Tooltip>
                     <TooltipTrigger

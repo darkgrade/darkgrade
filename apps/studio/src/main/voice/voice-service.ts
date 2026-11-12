@@ -1,6 +1,8 @@
+import { ModelCache, SPEECH_MODEL_FILES, SPEECH_MODEL_REVISIONS, totalModelBytes } from '@main/models/model-cache'
+import { preferences } from '@main/preferences'
 import { BarkSidecarProcess } from '@main/voice/bark-sidecar-process'
-import { BARK_PLUS, ModelCache, totalModelBytes } from '@main/models/model-cache'
 import { IPC_EVENTS, type LogEntry, type VoiceEngineStatus } from '@shared/ipc'
+import { speechModel, type SpeechModelId } from '@shared/speech-models'
 import { wavFile } from '@shared/wav'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, readdirSync, rmSync, writeFileSync, type WriteStream } from 'node:fs'
@@ -20,15 +22,28 @@ class VoiceService {
     private preparing: Promise<number> | null = null
     private engineLog: WriteStream | null = null
     private status: VoiceEngineStatus = { phase: 'idle', receivedBytes: 0, totalBytes: 0, port: null, message: null }
+    /** The model the running engine loaded, so a change of choice unloads it. */
+    private loadedModel: SpeechModelId | null = null
+
+    constructor() {
+        preferences.onChange(({ speechModel: chosen }) => {
+            if (this.loadedModel && this.loadedModel !== chosen) void this.release()
+            else this.setStatus({})
+        })
+    }
+
+    private get chosenModel(): SpeechModelId {
+        return preferences.get().speechModel
+    }
 
     setBroadcast(broadcast: Broadcast): void {
         this.broadcast = broadcast
     }
 
     getStatus(): VoiceEngineStatus {
-        const cached = this.cache.isCached(BARK_PLUS)
-        if (this.status.phase === 'idle' && !cached) {
-            return { ...this.status, totalBytes: totalModelBytes(BARK_PLUS), phase: 'not-downloaded' }
+        const files = SPEECH_MODEL_FILES[this.chosenModel]
+        if (this.status.phase === 'idle' && !this.cache.isCached(files)) {
+            return { ...this.status, totalBytes: totalModelBytes(files), phase: 'not-downloaded' }
         }
         return this.status
     }
@@ -44,17 +59,25 @@ class VoiceService {
 
     /** Stops the engine to give its memory back; the model stays cached. */
     async release(): Promise<void> {
+        await this.preparing?.catch(() => undefined)
         await this.server?.stop()
         this.server = null
+        this.loadedModel = null
         this.setStatus({ phase: 'idle', port: null, message: null })
     }
 
     private async startEngine(): Promise<number> {
         try {
-            await this.downloadModel()
+            const model = this.chosenModel
+            const files = SPEECH_MODEL_FILES[model]
+            await this.downloadModel(model)
             this.setStatus({ phase: 'starting', message: null })
+            this.writeEngineLog(
+                `[studio] loading ${speechModel(model).name} (revision ${SPEECH_MODEL_REVISIONS[model]})`
+            )
             const server = new BarkSidecarProcess({
-                modelDirectory: this.cache.modelDirectory(BARK_PLUS),
+                modelDirectory: this.cache.modelDirectory(files),
+                runner: speechModel(model).runner,
                 environmentDirectory: join(app.getPath('userData'), 'bark-sidecar-environment'),
                 onLog: line => this.writeEngineLog(line),
                 onUnexpectedExit: description => {
@@ -65,8 +88,9 @@ class VoiceService {
             })
             const port = await server.start()
             this.server = server
+            this.loadedModel = model
             this.setStatus({ phase: 'ready', port })
-            this.log('Speech engine ready')
+            this.log(`Speech engine ready (${speechModel(model).name})`)
             return port
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
@@ -76,10 +100,11 @@ class VoiceService {
         }
     }
 
-    private async downloadModel(): Promise<string[]> {
-        if (!this.cache.isCached(BARK_PLUS)) this.log('Downloading the speech model (one time)')
+    private async downloadModel(model: SpeechModelId): Promise<string[]> {
+        const files = SPEECH_MODEL_FILES[model]
+        if (!this.cache.isCached(files)) this.log(`Downloading ${speechModel(model).name} (one time)`)
         let lastReportMs = 0
-        return this.cache.ensure(BARK_PLUS, progress => {
+        return this.cache.ensure(files, progress => {
             const now = Date.now()
             const done = progress.receivedBytes === progress.totalBytes
             if (!done && now - lastReportMs < PROGRESS_INTERVAL_MS) return

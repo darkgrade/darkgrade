@@ -1,3 +1,4 @@
+import type { SpeechModelId } from '@shared/speech-models'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
  * Every camera capability exposed by @darkgrade/link has a channel here.
@@ -317,6 +318,8 @@ export interface Preferences {
     /** Serve Studio's camera tools to MCP clients on this Mac. Off by default. */
     mcpServerEnabled: boolean
     mcpServerPort: number
+    /** Which Bark model voice uses; switching unloads the old one and loads the new one. */
+    speechModel: SpeechModelId
 }
 
 export interface McpServerStatus {
