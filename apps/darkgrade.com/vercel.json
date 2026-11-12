@@ -7,22 +7,6 @@
         {
             "source": "/docs/:match*",
             "destination": "https://darkgrade.mintlify.dev/docs/:match*"
-        },
-        {
-            "source": "/toolbench",
-            "destination": "https://toolbench-gilt.vercel.app/toolbench/"
-        },
-        {
-            "source": "/toolbench/:match*",
-            "destination": "https://toolbench-gilt.vercel.app/toolbench/:match*"
-        },
-        {
-            "source": "/voicebench",
-            "destination": "https://voicebench-six.vercel.app/voicebench/"
-        },
-        {
-            "source": "/voicebench/:match*",
-            "destination": "https://voicebench-six.vercel.app/voicebench/:match*"
         }
     ]
 }
