@@ -1,6 +1,0 @@
-Source: https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus
-Revision: 28a7d4234146b0f01c11e0c6b72dfa29028a4758
-Files copied unchanged:
-  bark_mlx.py     sha256 79b976c8711a0a16a6d013d7ff365db73af05edabe0c8fb297e39ad7a54b92a1
-  bark_loader.py  sha256 e86b7f130bec1a8fa14dd315cfce95785b890dbd30000f6ceb2597fdd4312b02
-  LICENSE, NOTICE (CC BY-NC 4.0; commercial use: license@conway.tech)

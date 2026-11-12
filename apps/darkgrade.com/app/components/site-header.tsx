@@ -36,7 +36,7 @@ export function SiteHeader() {
                     <Wordmark className="mark-glow block h-[15px] w-auto max-[400px]:h-[13px]" />
                 </Link>
 
-                <nav className="flex gap-[32px] max-[900px]:hidden">
+                <nav className="flex items-center gap-[32px] max-[900px]:hidden">
                     {/* site pages move client-side, inside the (site) layout */}
                     {NAV.map(({ label, href, external }) =>
                         external ? (
@@ -49,8 +49,8 @@ export function SiteHeader() {
                             </Link>
                         )
                     )}
-                    <div className="group relative">
-                        <button type="button" aria-haspopup="true" className={NAV_LINK}>
+                    <div className="group relative flex items-center">
+                        <button type="button" aria-haspopup="true" className={`${NAV_LINK} cursor-default p-0 leading-[inherit]`}>
                             Experiments
                         </button>
                         <div className="invisible absolute left-1/2 top-full -translate-x-1/2 pt-4 opacity-0 transition-[opacity,visibility] duration-300 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
