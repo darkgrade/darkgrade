@@ -1,6 +1,7 @@
 import { ModelCache, SPEECH_MODEL_FILES, SPEECH_MODEL_REVISIONS, totalModelBytes } from '@main/models/model-cache'
 import { preferences } from '@main/preferences'
 import { BarkSidecarProcess } from '@main/voice/bark-sidecar-process'
+import { PythonRuntime } from '@main/voice/python-runtime'
 import { IPC_EVENTS, type LogEntry, type VoiceEngineStatus } from '@shared/ipc'
 import { speechModel, type SpeechModelId } from '@shared/speech-models'
 import { wavFile } from '@shared/wav'
@@ -21,7 +22,14 @@ class VoiceService {
     private server: BarkSidecarProcess | null = null
     private preparing: Promise<number> | null = null
     private engineLog: WriteStream | null = null
-    private status: VoiceEngineStatus = { phase: 'idle', receivedBytes: 0, totalBytes: 0, port: null, message: null }
+    private status: VoiceEngineStatus = {
+        phase: 'idle',
+        receivedBytes: 0,
+        totalBytes: 0,
+        port: null,
+        message: null,
+        setupStep: null,
+    }
     /** The model the running engine loaded, so a change of choice unloads it. */
     private loadedModel: SpeechModelId | null = null
 
@@ -75,39 +83,53 @@ class VoiceService {
         await this.server?.stop()
         this.server = null
         this.loadedModel = null
-        this.setStatus({ phase: 'idle', port: null, message: null })
+        this.setStatus({ phase: 'idle', port: null, message: null, setupStep: null })
     }
 
     private async startEngine(): Promise<number> {
         try {
             const model = this.chosenModel
             const files = SPEECH_MODEL_FILES[model]
-            await this.downloadModel(model)
-            this.setStatus({ phase: 'starting', message: null })
-            this.writeEngineLog(
-                `[studio] loading ${speechModel(model).name} (revision ${SPEECH_MODEL_REVISIONS[model]})`
-            )
             const server = new BarkSidecarProcess({
                 modelDirectory: this.cache.modelDirectory(files),
                 runner: speechModel(model).runner,
                 environmentDirectory: join(app.getPath('userData'), 'bark-sidecar-environment'),
+                pythonRuntime: new PythonRuntime({ directory: join(app.getPath('userData'), 'python-runtime') }),
+                onSetupProgress: ({ step, receivedBytes, totalBytes }) =>
+                    this.setStatus({
+                        phase: step === 'python' ? 'downloading' : 'starting',
+                        setupStep: step,
+                        receivedBytes,
+                        totalBytes,
+                    }),
                 onLog: line => this.writeEngineLog(line),
                 onUnexpectedExit: description => {
                     this.server = null
                     this.log(`The speech engine stopped (${description})`, 'error')
-                    this.setStatus({ phase: 'error', port: null, message: 'The speech engine stopped unexpectedly' })
+                    this.setStatus({
+                        phase: 'error',
+                        port: null,
+                        setupStep: null,
+                        message: 'The speech engine stopped unexpectedly',
+                    })
                 },
             })
+            await server.ensureEnvironment()
+            await this.downloadModel(model)
+            this.setStatus({ phase: 'starting', setupStep: 'loading', message: null })
+            this.writeEngineLog(
+                `[studio] loading ${speechModel(model).name} (revision ${SPEECH_MODEL_REVISIONS[model]})`
+            )
             const port = await server.start()
             this.server = server
             this.loadedModel = model
-            this.setStatus({ phase: 'ready', port })
+            this.setStatus({ phase: 'ready', port, setupStep: null })
             this.log(`Speech engine ready (${speechModel(model).name})`)
             return port
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
             this.log(message, 'error')
-            this.setStatus({ phase: 'error', port: null, message })
+            this.setStatus({ phase: 'error', port: null, message, setupStep: null })
             throw error
         }
     }
@@ -121,7 +143,7 @@ class VoiceService {
             const done = progress.receivedBytes === progress.totalBytes
             if (!done && now - lastReportMs < PROGRESS_INTERVAL_MS) return
             lastReportMs = now
-            this.setStatus({ phase: 'downloading', ...progress })
+            this.setStatus({ phase: 'downloading', setupStep: 'speech-model', ...progress })
         })
     }
 
@@ -149,7 +171,7 @@ class VoiceService {
 
     private setStatus(change: Partial<VoiceEngineStatus>): void {
         this.status = { ...this.status, ...change }
-        this.broadcast(IPC_EVENTS.VoiceStatus, this.status)
+        this.broadcast(IPC_EVENTS.VoiceStatus, this.getStatus())
     }
 
     private log(message: string, level: LogEntry['level'] = 'info'): void {

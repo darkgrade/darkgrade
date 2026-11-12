@@ -1,6 +1,5 @@
 import {
     Button,
-    Progress,
     Select,
     SelectContent,
     SelectItem,
@@ -12,6 +11,14 @@ import {
     TooltipTrigger,
 } from '@kevinschaich/components'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
+import {
+    AssistantSetupNotice,
+    formatDownloadSize,
+    ModelLicenseNotice,
+    VoiceSetupProgress,
+} from '@renderer/components/VoiceSetupProgress'
+import type { VoiceEngineStatus } from '@shared/ipc'
+import { summarizeSetup, type SetupSummary } from '@shared/setup-progress'
 import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
 import { microphoneLevel, transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
@@ -23,11 +30,16 @@ interface VoicePanelProps {
     onCollapse: () => void
 }
 
-function formatGigabytes(bytes: number): string {
-    return `${(bytes / 1e9).toFixed(1)} GB`
-}
-
 const LEVEL_BARS = 5
+
+const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
+    phase: 'idle',
+    receivedBytes: 0,
+    totalBytes: 0,
+    port: null,
+    message: null,
+    setupStep: null,
+}
 
 /** A small meter that shows the microphone is hearing you. */
 function LevelMeter({ active }: { active: boolean }): React.JSX.Element {
@@ -105,44 +117,42 @@ function SpeechModelPicker({ voice }: { voice: LiveTranscription }): React.JSX.E
     )
 }
 
-function EngineMessage({ voice }: { voice: LiveTranscription }): React.JSX.Element | null {
+function EngineMessage({
+    voice,
+    summary,
+}: {
+    voice: LiveTranscription
+    summary: SetupSummary
+}): React.JSX.Element | null {
     const engine = voice.engine
     if (voice.error) {
         return <p className="text-sm text-destructive">{voice.error}</p>
     }
-    if (engine?.phase === 'downloading') {
-        const fraction = engine.totalBytes ? engine.receivedBytes / engine.totalBytes : 0
+    const settingUp = engine?.phase === 'downloading' || engine?.phase === 'starting' || voice.listening === 'preparing'
+    if (settingUp) {
         return (
-            <div className="w-72 space-y-2 text-center">
-                <p className="text-sm text-muted-foreground">
-                    Downloading {SPEECH_MODELS.find(model => model.id === voice.speechModelId)?.name}…
-                </p>
-                <Progress value={fraction * 100} />
-                <p className="text-xs text-muted-foreground tabular-nums">
-                    {formatGigabytes(engine.receivedBytes)} of {formatGigabytes(engine.totalBytes)}
-                </p>
+            <div className="flex flex-col items-center gap-6">
+                <VoiceSetupProgress summary={summary} />
+                <ModelLicenseNotice speechModelId={voice.speechModelId} />
             </div>
-        )
-    }
-    if (engine?.phase === 'starting' || voice.listening === 'preparing') {
-        return (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner /> Loading the speech model…
-            </p>
         )
     }
     if (voice.listening === 'listening') {
         return <p className="text-sm text-muted-foreground">Listening — start speaking</p>
     }
     if (engine?.phase === 'not-downloaded') {
+        const assistantBytes = voice.assistant?.phase === 'not-downloaded' ? voice.assistant.totalBytes : 0
         return (
-            <div className="max-w-sm space-y-3 text-center">
-                <p className="text-sm text-muted-foreground">
-                    Live transcription runs entirely on this Mac. The speech model is a one-time{' '}
-                    {formatGigabytes(engine.totalBytes)} download.
-                </p>
+            <div className="flex flex-col items-center gap-5 text-center">
+                <div className="flex flex-col items-center gap-2.5">
+                    <p className="text-sm text-pretty">
+                        Enabling local voice features requires a one-time download of about{' '}
+                        {formatDownloadSize(engine.totalBytes + assistantBytes)}.
+                    </p>
+                    <ModelLicenseNotice speechModelId={voice.speechModelId} />
+                </div>
                 <Button size="sm" onClick={() => void voice.start()}>
-                    <Download /> Download and start
+                    <Download /> Set up and start
                 </Button>
             </div>
         )
@@ -171,6 +181,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     const listening = voice.listening === 'listening'
     const paragraphs = transcriptParagraphs.use()
     const hasText = paragraphs.some(paragraph => paragraph.trim())
+    const summary = summarizeSetup(voice.engine ?? IDLE_VOICE_ENGINE, voice.assistant)
     return (
         <section
             id="voice-panel"
@@ -217,10 +228,11 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                 <LiveTranscript paragraphs={paragraphs} listening={listening} />
             ) : (
                 <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
-                    <EngineMessage voice={voice} />
+                    <EngineMessage voice={voice} summary={summary} />
                 </div>
             )}
             {hasText && voice.error && <p className="shrink-0 px-5 pb-2 text-xs text-destructive">{voice.error}</p>}
+            {listening && <AssistantSetupNotice summary={summary} />}
         </section>
     )
 }

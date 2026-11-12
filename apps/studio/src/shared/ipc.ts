@@ -273,7 +273,12 @@ export interface LocalModelStatus {
     message: string | null
 }
 
-export type VoiceEngineStatus = LocalModelStatus
+/** The part of voice setup under way: Python, its packages, the speech model's download, then loading it. */
+export type VoiceSetupStep = 'python' | 'tools' | 'speech-model' | 'loading'
+
+export interface VoiceEngineStatus extends LocalModelStatus {
+    setupStep: VoiceSetupStep | null
+}
 
 /** A stretch of live transcript handed to the assistant. Times are milliseconds since the epoch, for the timing log. */
 export interface TranscriptSegment {
