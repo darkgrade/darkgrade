@@ -152,8 +152,13 @@ export function useLiveTranscription() {
             if (message.type === 'delta') {
                 transcriptPartial.set('')
                 appendText(message.text)
+                // Each delta is a whole utterance that ended in a pause, so there is nothing to wait for.
+                followerRef.current?.flush()
             }
-            if (message.type === 'partial') transcriptPartial.set(message.text)
+            if (message.type === 'partial') {
+                transcriptPartial.set(message.text)
+                followerRef.current?.warmUpPartial(message.text)
+            }
             if (message.type === 'paragraph') paragraphPendingRef.current = true
             if (message.type === 'error') setError(message.message)
             if (message.type === 'diagnostic') void api.voiceDiagnostic(message.message)

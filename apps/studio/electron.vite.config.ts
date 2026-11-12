@@ -35,6 +35,10 @@ export default defineConfig({
                 '@onnxruntime-web-distribution': onnxRuntimeDistribution,
             },
         },
+        // onnxruntime-web loads its own WebAssembly files by URL; Vite's dev pre-bundling breaks those imports.
+        optimizeDeps: {
+            exclude: ['onnxruntime-web', '@onnxruntime-web-distribution'],
+        },
         worker: {
             format: 'es',
         },

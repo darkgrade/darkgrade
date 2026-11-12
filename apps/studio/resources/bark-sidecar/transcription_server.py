@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import numpy as np
 import soundfile
 
-from importlib.resources import files
+import importlib.util
 
 
 def load_bark_plus(path):
@@ -63,7 +63,10 @@ def main():
 
         def do_GET(self):
             if self.path == "/silero-vad.onnx":
-                data = files("silero_vad").joinpath("data", "silero_vad.onnx").read_bytes()
+                # Located without importing silero_vad, whose __init__ needs torch (not installed).
+                package_directory = importlib.util.find_spec("silero_vad").submodule_search_locations[0]
+                with open(os.path.join(package_directory, "data", "silero_vad.onnx"), "rb") as model_file:
+                    data = model_file.read()
                 self.send_response(200)
                 self.send_header("access-control-allow-origin", "*")
                 self.send_header("content-type", "application/octet-stream")

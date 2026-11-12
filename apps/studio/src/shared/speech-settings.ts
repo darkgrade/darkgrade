@@ -23,8 +23,11 @@ export const SPEECH_SETTINGS = {
         negativeThreshold: 0.35,
         minimumSpeechSeconds: 0.25,
         windowSamples: 512,
-        /** As Voicebench (min_silence_duration_ms=500); Silero's 0.1 s default splits at every breath. */
-        endOfUtteranceSeconds: 0.5,
+        /**
+         * Shorter than Voicebench's 0.5 s (min_silence_duration_ms=500) so commands act sooner; Silero's
+         * 0.1 s default splits at every breath.
+         */
+        endOfUtteranceSeconds: 0.3,
     },
     /** Studio only: Voicebench has whole recordings and needs none of these. */
     live: {
