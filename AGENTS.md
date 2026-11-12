@@ -88,6 +88,14 @@ serves an operator-authenticated /internal timeline. Firestore/GCS/grant collect
 code and the separate cleanup job were removed. Terraform provisions Cloud Run + Cloud SQL
 with restricted configuration secrets; validation is not a live deployment.
 
+The Outpost Telemetry app uses `/internal/api` for bounded issues/session reports,
+installation lookup, batch review, full Matrix exports and authenticated revocation.
+Never expose credential hashes/contact details. Operator mutations require JSON, the
+operator header, no browser Origin and an exact ID confirmation for deletion. Keep
+deletion shared with the installation API so pending cleanup and revocation stay consistent.
+`bootstrap_principal` in Terraform grants scoped actAs on the collector service account;
+it does not grant organization or billing-account access.
+
 Link instruments existing USB/PTP-IP sessions, with Unknown identity until GetDeviceInfo. Custom
 transports need explicit telemetry configuration, and loopback IP defaults to synthetic.
 Do not mistake a real socket for proof of physical hardware. Sony SDK bridge calls have separate named-operation telemetry; no SDK arguments or payloads

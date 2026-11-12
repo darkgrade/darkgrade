@@ -1,4 +1,5 @@
 import { investigate } from '#collector/investigate'
+import { operatorApi } from '#collector/operator'
 import { postgresDatabase } from '#collector/postgres'
 import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
 import { createTelemetry } from '#collector/telemetry'
@@ -7,6 +8,89 @@ import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 import { batch, enroll, request } from './telemetry-fixture.ts'
+
+test(
+    'operator API scopes issues, guards mutations, preserves provenance and revokes uploads',
+    { skip: !process.env.DATABASE_URL },
+    async () => {
+        const database = await postgresDatabase(process.env.DATABASE_URL!)
+        const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
+        const user = await enroll(handle)
+        const key = 'operator-key-'.padEnd(40, 'x')
+        const admin = (path: string, method = 'GET', body?: unknown, extra: Record<string, string> = {}) =>
+            new Request('https://telemetry.example/internal/api' + path, {
+                method,
+                headers: {
+                    authorization: `Basic ${Buffer.from(`outpost:${key}`).toString('base64')}`,
+                    'content-type': 'application/json',
+                    'x-darkgrade-operator': '1',
+                    ...extra,
+                },
+                ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+            })
+        try {
+            const payload = batch()
+            payload.contributions[0].entries[0].failed = true
+            await handle(request('/v2/batches', 'POST', user.installKey, payload))
+            const report = await operatorApi(admin('/report?installation=' + user.installId), key, database)
+            assert.equal(report.status, 200)
+            const results = await report.json()
+            assert.equal(results.summary.events, 1)
+            assert.equal(results.summary.errors, 1)
+            assert.equal(results.issues.length, 1)
+            assert.equal(results.events[0].installation_id, user.installId)
+            const installations = await (
+                await operatorApi(admin('/installations?installation=' + user.installId), key, database)
+            ).json()
+            assert.equal(installations.items.length, 1)
+            assert.doesNotMatch(JSON.stringify(installations), /keyHash|installKey|email|credential/)
+            assert.equal((await operatorApi(admin('/report?days=0'), key, database)).status, 400)
+            assert.equal((await operatorApi(admin('/report?session=invalid'), key, database)).status, 400)
+            assert.equal((await operatorApi(admin('/report?days=1&days=7'), key, database)).status, 400)
+            assert.equal(
+                (await operatorApi(admin('/report', 'GET', undefined, { authorization: '' }), key, database)).status,
+                401
+            )
+            const sourceRecord = `${user.installId}_${payload.id}`
+            assert.equal(
+                (
+                    await operatorApi(
+                        admin('/review', 'POST', { sourceRecord }, { origin: 'https://evil.example' }),
+                        key,
+                        database
+                    )
+                ).status,
+                403
+            )
+            assert.equal((await operatorApi(admin('/review', 'POST', { sourceRecord }), key, database)).status, 200)
+            const exported = await (await operatorApi(admin('/matrix'), key, database)).json()
+            assert.ok(exported.records.some((item: any) => item.sourceRecord === sourceRecord && item.sourceHash))
+            assert.equal(
+                (
+                    await operatorApi(
+                        admin('/installations/' + user.installId, 'DELETE', { confirm: randomUUID() }),
+                        key,
+                        database
+                    )
+                ).status,
+                400
+            )
+            const removed = await operatorApi(
+                admin('/installations/' + user.installId, 'DELETE', { confirm: user.installId }),
+                key,
+                database
+            )
+            assert.equal(removed.status, 200)
+            assert.equal((await removed.json()).deletionPending, false)
+            assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, batch()))).status, 410)
+            const refreshed = await (await operatorApi(admin('/matrix'), key, database)).json()
+            assert.ok(!refreshed.records.some((item: any) => item.sourceRecord === sourceRecord))
+        } finally {
+            await handle(request('/v2/installation', 'DELETE', user.installKey))
+            await database.close()
+        }
+    }
+)
 
 test(
     'real Postgres: atomic retries, timeline, review, withdrawal race and expiry',

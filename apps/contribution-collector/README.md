@@ -48,6 +48,13 @@ model or session and displays at most 500 observations. Full payloads and databa
 are never sent to this view. It is an operator tool, not a customer-facing recording page.
 The page reports observations and camera responses; it does not infer a proven root cause.
 
+Outpost's Telemetry app uses the same operator credential through `/internal/api`.
+It reads bounded issue/event reports and anonymous installation IDs, reviews original
+batches, exports full Matrix snapshots and revokes/deletes an installation. Mutations
+require JSON, a server operator header and no browser Origin; an ID deletion also confirms
+the exact ID. Credentials and optional contact details are never returned. Internal
+installation labels live in Outpost and are not contributor attribution.
+
 Operators use database credentials with these scripts:
 
 ```
@@ -78,6 +85,9 @@ Postgres instance is single-zone, with backups and point-in-time recovery, not H
    `database_password` and a separate random `admin_key`. Inject secrets through the
    deployment environment; do not commit tfvars or print a plan/state containing secrets.
    Sensitive values still exist in Terraform state: restrict access to that bucket.
+   If the bootstrap identity lacks permission to act as the new runtime identity, set
+   `bootstrap_principal` to its `serviceAccount:EMAIL` (or `user:EMAIL`). Terraform grants
+   Service Account User on the collector identity only, before deploying Cloud Run.
 3. For a new registry, provision just `google_artifact_registry_repository.telemetry`, build
    and push a **linux/amd64** image, then apply the full reviewed plan with its real digest.
    For the first default Cloud Run hostname, use `https://pending.invalid`, read the

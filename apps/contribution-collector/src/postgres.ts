@@ -1,4 +1,5 @@
 import type { Database, Transaction } from '#collector/database'
+import { operatorQueries } from '#collector/operator-queries'
 import { Pool, type PoolClient } from 'pg'
 
 const schema = `
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
 CREATE INDEX IF NOT EXISTS telemetry_events_install_time ON telemetry_events (installation_id, received_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_session ON telemetry_events (session_id, occurred_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_model ON telemetry_events (manufacturer, model, transport);
+CREATE INDEX IF NOT EXISTS telemetry_events_received ON telemetry_events (received_at);
 `
 
 function checkedPath(path: string) {
@@ -109,6 +111,7 @@ export async function postgresDatabase(connectionString: string) {
         )
     }
     const database: Database & {
+        operator: ReturnType<typeof operatorQueries>
         close(): Promise<void>
         expire(): Promise<void>
         health(): Promise<void>
@@ -118,6 +121,7 @@ export async function postgresDatabase(connectionString: string) {
             session?: string
         }): Promise<Record<string, unknown>[]>
     } = {
+        operator: operatorQueries(pool),
         get: path => read(pool, path),
         async transaction<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
             for (let attempt = 0; attempt < 6; attempt++) {

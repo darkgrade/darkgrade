@@ -41,6 +41,13 @@ const initial=new URLSearchParams(location.search);for(const input of form.query
 form.addEventListener('submit',event=>{event.preventDefault();load()});load();
 </script></html>`
 
+export function operatorAuthorized(request: Request, key: string | undefined) {
+    if (!key || key.length < 32) return false
+    const expected = `Basic ${Buffer.from(`outpost:${key}`).toString('base64')}`
+    const hash = (value: string) => createHash('sha256').update(value).digest()
+    return timingSafeEqual(hash(request.headers.get('authorization') ?? ''), hash(expected))
+}
+
 /** Optional operator-only view; browsers never receive the database or ingestion credential. */
 export async function investigate(
     request: Request,
@@ -52,9 +59,7 @@ export async function investigate(
     }) => Promise<Record<string, unknown>[]>
 ) {
     if (!key || key.length < 32) return new Response('Not configured', { status: 404 })
-    const expected = `Basic ${Buffer.from(`outpost:${key}`).toString('base64')}`
-    const hash = (value: string) => createHash('sha256').update(value).digest()
-    if (!timingSafeEqual(hash(request.headers.get('authorization') ?? ''), hash(expected)))
+    if (!operatorAuthorized(request, key))
         return new Response('Operator sign-in required', {
             status: 401,
             headers: { 'www-authenticate': 'Basic realm="Darkgrade telemetry", charset="UTF-8"' },

@@ -217,20 +217,8 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
             })
         }
         if (path === '/v2/installation' && method === 'DELETE') {
-            await database.transaction(async transaction => {
-                const install = await transaction.get(`installations/${installId}`)
-                if (!install || install.keyHash !== keyHash) fail(401, 'Invalid install key')
-                transaction.set(`installations/${installId}`, {
-                    ...install,
-                    revoked: true,
-                    pendingDeletion: true,
-                    revokedAt: install!.revokedAt ?? now(),
-                    emailGeneration: install!.emailGeneration + 1,
-                })
-            })
-            // The daily worker is responsible for retries. Returning 202 never claims deletion finished.
-            const complete = await cleanupInstallation(database, installId).catch(() => false)
-            return Response.json({ revoked: true, deletionPending: !complete }, { status: complete ? 200 : 202 })
+            const result = await withdrawInstallation(database, installId, keyHash, now())
+            return Response.json(result, { status: result.deletionPending ? 202 : 200 })
         }
         if (path === '/v2/batches' && method === 'POST') {
             const body = await readJson(request)
@@ -380,6 +368,22 @@ async function removeRows(database: Database, collection: string, installId: str
         })
     }
     return false
+}
+/** The operator route must authenticate separately before omitting the installation key hash. */
+export async function withdrawInstallation(database: Database, installId: string, keyHash?: string, date = new Date()) {
+    await database.transaction(async transaction => {
+        const install = await transaction.get(`installations/${installId}`)
+        if (!install || (keyHash !== undefined && install.keyHash !== keyHash)) fail(401, 'Invalid installation')
+        transaction.set(`installations/${installId}`, {
+            ...install,
+            revoked: true,
+            pendingDeletion: true,
+            revokedAt: install!.revokedAt ?? date,
+            emailGeneration: install!.emailGeneration + 1,
+        })
+    })
+    const complete = await cleanupInstallation(database, installId).catch(() => false)
+    return { revoked: true, deletionPending: !complete }
 }
 export async function cleanupInstallation(database: Database, installId: string, maximumPages = 5) {
     const install = await database.get(`installations/${installId}`)

@@ -1,4 +1,5 @@
 import { investigate } from '#collector/investigate'
+import { operatorApi } from '#collector/operator'
 import { postgresDatabase } from '#collector/postgres'
 import { cleanupWithdrawals, createTelemetry, resendContactSender } from '#collector/telemetry'
 import { createServer } from 'node:http'
@@ -24,12 +25,13 @@ const server = createServer(async (incoming, outgoing) => {
                 }),
         })
         const pathname = new URL(request.url).pathname
-        const result =
-            pathname === '/internal' || pathname.startsWith('/internal/')
-                ? await investigate(request, process.env.TELEMETRY_ADMIN_KEY, database.timeline)
-                : pathname === '/healthz'
-                  ? await database.health().then(() => Response.json({ ok: true }))
-                  : await handle(request)
+        const result = pathname.startsWith('/internal/api/')
+            ? await operatorApi(request, process.env.TELEMETRY_ADMIN_KEY, database)
+            : pathname === '/internal' || pathname.startsWith('/internal/')
+              ? await investigate(request, process.env.TELEMETRY_ADMIN_KEY, database.timeline)
+              : pathname === '/healthz'
+                ? await database.health().then(() => Response.json({ ok: true }))
+                : await handle(request)
         console.log(
             JSON.stringify({
                 component: 'contribution-collector',

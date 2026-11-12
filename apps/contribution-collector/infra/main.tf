@@ -48,6 +48,14 @@ variable "deploy_ref" {
   type    = string
   default = "refs/heads/main"
 }
+variable "bootstrap_principal" {
+  type    = string
+  default = ""
+  validation {
+    condition     = var.bootstrap_principal == "" || can(regex("^(user|serviceAccount):[^ ]+@[^ ]+$", var.bootstrap_principal))
+    error_message = "Use a user or serviceAccount IAM principal, or leave empty."
+  }
+}
 provider "google" {
   project = var.project_id
   region  = var.region
@@ -96,6 +104,12 @@ resource "google_sql_user" "collector" {
 resource "google_service_account" "collector" {
   account_id = "darkgrade-telemetry"
   depends_on = [google_project_service.api]
+}
+resource "google_service_account_iam_member" "bootstrap_act_as" {
+  count              = var.bootstrap_principal == "" ? 0 : 1
+  service_account_id = google_service_account.collector.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = var.bootstrap_principal
 }
 resource "google_project_iam_member" "sql" {
   project = var.project_id
@@ -185,7 +199,7 @@ resource "google_cloud_run_v2_service" "collector" {
       }
     }
   }
-  depends_on = [google_project_service.api, google_secret_manager_secret_iam_member.configuration, google_project_iam_member.sql, google_sql_database.telemetry, google_sql_user.collector]
+  depends_on = [google_project_service.api, google_secret_manager_secret_iam_member.configuration, google_project_iam_member.sql, google_service_account_iam_member.bootstrap_act_as, google_sql_database.telemetry, google_sql_user.collector]
 }
 resource "google_cloud_run_v2_service_iam_member" "public" {
   project  = var.project_id
