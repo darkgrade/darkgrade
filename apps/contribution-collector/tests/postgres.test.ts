@@ -105,6 +105,22 @@ test(
                 await operatorApi(admin('/suggestions?field=model&installation=' + user.installId), key, database)
             ).json()
             assert.equal(suggestions.items[0].value, payload.contributions[0].camera.model)
+            const manufacturer = payload.contributions[0].camera.manufacturer
+            assert.equal(
+                (await database.operator.suggestions('model', manufacturer, { days: 1, installation: user.installId }))
+                    .items.length,
+                1
+            )
+            assert.equal(
+                (
+                    await database.operator.suggestions(
+                        'model',
+                        manufacturer + ' ' + payload.contributions[0].camera.model,
+                        { days: 1, installation: user.installId }
+                    )
+                ).items.length,
+                1
+            )
             assert.doesNotMatch(JSON.stringify(suggestions), /keyHash|installKey|email|credential/)
             for (const query of [
                 'field=keyHash',

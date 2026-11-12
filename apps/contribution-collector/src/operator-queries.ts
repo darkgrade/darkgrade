@@ -38,11 +38,16 @@ export function operatorQueries(pool: Pool) {
             }[field]
             if (!column) throw new Error('Invalid suggestion field')
             const result = await pool.query(
-                `SELECT ${column}::text AS value, min(model) AS model, count(DISTINCT model)::int AS models,
+                `SELECT ${column}::text AS value, min(manufacturer) AS manufacturer, min(model) AS model, count(DISTINCT model)::int AS models,
                 min(installation_id::text) AS installation, count(DISTINCT installation_id)::int AS installations,
                 array_agg(DISTINCT evidence) AS evidence, count(*)::int AS events, max(received_at) AS latest
                 FROM telemetry_events WHERE ${where} AND ${column} IS NOT NULL
-                AND strpos(lower(${column}::text),lower($7::text))>0
+                AND ${
+                    field === 'model'
+                        ? `NOT EXISTS (SELECT 1 FROM unnest(string_to_array(lower($7::text),' ')) term
+                        WHERE strpos(lower(manufacturer||' '||model),term)=0)`
+                        : `strpos(lower(${column}::text),lower($7::text))>0`
+                }
                 GROUP BY ${column} ORDER BY max(received_at) DESC,${column} LIMIT 21`,
                 [...values({ ...filters, [field]: undefined }), query]
             )
