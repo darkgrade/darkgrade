@@ -2,6 +2,7 @@
 const EXPERIMENTS = [
     { path: 'toolbench', origin: 'https://toolbench-gilt.vercel.app' },
     { path: 'voicebench', origin: 'https://voicebench-six.vercel.app' },
+    { path: 'cambench', origin: 'https://cambench.vercel.app' },
 ]
 
 /** @type {import('next').NextConfig} */
