@@ -1,3 +1,4 @@
+import type { PythonDownloadProgress, PythonRuntime } from '@main/voice/python-runtime'
 import type { SpeechModelChoice } from '@shared/speech-models'
 import { app } from 'electron'
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
@@ -9,11 +10,7 @@ import { promisify } from 'node:util'
 
 const runFile = promisify(execFile)
 
-/**
- * Bark ships only Python code, so it runs in a Python sidecar (an approved exception to Studio's
- * TypeScript-only rule). These Pythons are tried in order; the first that exists builds the environment.
- */
-const PYTHON_CANDIDATES = ['/opt/homebrew/bin/python3.11', '/usr/local/bin/python3.11', 'python3.11']
+/** Bark ships only Python code, so it runs in a Python sidecar (an approved exception to Studio's TypeScript-only rule). */
 const HEALTH_POLL_INTERVAL_MS = 250
 /** The first start unpacks model.bark into an MLX folder, which takes about a minute. */
 const STARTUP_TIMEOUT_MS = 300_000
@@ -25,6 +22,10 @@ export interface BarkSidecarOptions {
     runner: SpeechModelChoice['runner']
     /** Where the sidecar's Python environment is created and kept. */
     environmentDirectory: string
+    /** Studio's own Python 3.11; environments are built on it and rebuilt if it changes. */
+    pythonRuntime: Pick<PythonRuntime, 'ensure' | 'identity'>
+    /** Which environment step is under way: getting Python, then installing its packages. */
+    onSetupProgress: (progress: { step: 'python' | 'tools' } & PythonDownloadProgress) => void
     onLog: (line: string) => void
     /** The process stopped without being asked to. */
     onUnexpectedExit: (description: string) => void
@@ -57,20 +58,8 @@ async function isHealthy(port: number): Promise<boolean> {
     }
 }
 
-async function findPython(): Promise<string> {
-    for (const candidate of PYTHON_CANDIDATES) {
-        try {
-            await runFile(candidate, ['--version'])
-            return candidate
-        } catch {
-            continue
-        }
-    }
-    throw new Error('Voice needs Python 3.11 (brew install python@3.11)')
-}
-
-function requirementsStamp(paths: string[]): string {
-    const hash = createHash('sha256')
+function requirementsStamp(paths: string[], pythonIdentity: string): string {
+    const hash = createHash('sha256').update(pythonIdentity)
     for (const path of paths) hash.update(readFileSync(path))
     return hash.digest('hex')
 }
@@ -96,13 +85,18 @@ export class BarkSidecarProcess {
         const directory = this.options.environmentDirectory
         const sidecar = barkSidecarDirectory()
         const pythonPath = join(directory, 'bin', 'python')
-        const baseStamp = requirementsStamp([
-            join(sidecar, 'requirements.txt'),
-            join(sidecar, 'requirements-without-dependencies.txt'),
-        ])
+        const pythonIdentity = this.options.pythonRuntime.identity
+        const baseStamp = requirementsStamp(
+            [join(sidecar, 'requirements.txt'), join(sidecar, 'requirements-without-dependencies.txt')],
+            pythonIdentity
+        )
         if (!existsSync(pythonPath) || readStamp(directory, 'requirements.sha256') !== baseStamp) {
             this.options.onLog(`[studio] creating the speech environment in ${directory}`)
-            await runFile(await findPython(), ['-m', 'venv', '--clear', directory])
+            const pythonForEnvironment = await this.options.pythonRuntime.ensure(progress =>
+                this.options.onSetupProgress({ step: 'python', ...progress })
+            )
+            this.options.onSetupProgress({ step: 'tools', receivedBytes: 0, totalBytes: 0 })
+            await runFile(pythonForEnvironment, ['-m', 'venv', '--clear', directory])
             await this.pipInstall(['--requirement', join(sidecar, 'requirements.txt')])
             await this.pipInstall([
                 '--no-deps',
@@ -113,8 +107,9 @@ export class BarkSidecarProcess {
         }
         if (this.options.runner !== 'transformers') return pythonPath
         const transformersRequirements = join(sidecar, 'requirements-transformers.txt')
-        const transformersStamp = requirementsStamp([transformersRequirements])
+        const transformersStamp = requirementsStamp([transformersRequirements], pythonIdentity)
         if (readStamp(directory, 'requirements-transformers.sha256') !== transformersStamp) {
+            this.options.onSetupProgress({ step: 'tools', receivedBytes: 0, totalBytes: 0 })
             this.options.onLog('[studio] adding PyTorch and transformers for Bark 3.0 Pro (one time)')
             await this.pipInstall(['--requirement', transformersRequirements])
             writeFileSync(join(directory, 'requirements-transformers.sha256'), transformersStamp)

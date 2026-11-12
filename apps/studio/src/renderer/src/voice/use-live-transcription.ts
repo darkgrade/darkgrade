@@ -1,4 +1,4 @@
-import type { VoiceEngineStatus } from '@shared/ipc'
+import type { LocalModelStatus, VoiceEngineStatus } from '@shared/ipc'
 import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
 import { IntentFollower } from '@voice/intent-follower'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
@@ -67,6 +67,7 @@ interface Capture {
 export function useLiveTranscription() {
     const api = window.studio
     const [engine, setEngine] = useState<VoiceEngineStatus | null>(null)
+    const [assistant, setAssistant] = useState<LocalModelStatus | null>(null)
     const [listening, setListening] = useState<ListeningState>('off')
     const [error, setError] = useState<string | null>(null)
     const [microphones, setMicrophones] = useState<Microphone[]>([])
@@ -88,6 +89,11 @@ export function useLiveTranscription() {
     useEffect(() => {
         void api.voiceGetStatus().then(result => result.ok && setEngine(result.data))
         return api.onVoiceStatus(setEngine)
+    }, [api])
+
+    useEffect(() => {
+        void api.assistantGetStatus().then(result => result.ok && setAssistant(result.data))
+        return api.onAssistantStatus(setAssistant)
     }, [api])
 
     useEffect(() => {
@@ -290,6 +296,7 @@ export function useLiveTranscription() {
 
     return {
         engine,
+        assistant,
         listening,
         error,
         microphones,
