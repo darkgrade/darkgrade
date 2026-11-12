@@ -32,8 +32,8 @@ Everything `@darkgrade/link` exposes:
 
 ## Voice control
 
-- **Fully local.** Whisper runs in-process via transformers.js (WebGPU, WASM fallback). Speech recognition, intent parsing, and TTS replies never touch the network.
-- **Pick your recognition model** in the Voice panel: Fast (base, ~80 MB), Accurate (small, ~250 MB, default), or Best (large-v3-turbo, ~1.2 GB, GPU only). Each downloads once with a progress bar and works offline thereafter.
+- **Fully local.** Speech recognition is Conway Research's Underdog Bark 3.0 Plus (Voicebench's leader; CC BY-NC 4.0, commercial use needs a licence from license@conway.tech). It runs in a Python MLX sidecar (`resources/bark-sidecar`, an approved exception to the TypeScript-only rule) that the main process starts; its model code is vendored and pinned there. The model (~180 MB) downloads once. Voice needs Python 3.11 on the Mac (`brew install python@3.11`); the sidecar's environment is created on first use.
+- **Utterances, live.** Silero VAD 6.2.1 (onnxruntime-web, in the transcription worker) cuts speech at 0.5 s pauses, as Voicebench does. Partial words are re-transcribed every 0.7 s while you speak and are shown only; each utterance's final words go to the assistant. All settings are in `src/shared/speech-settings.ts`.
 - **Push-to-talk:** hold **Space** (or the mic button), speak, release.
 - **Always listening:** toggle on, then prefix commands with the wake word — *"hey darkgrade, take a photo"*. The wake-word requirement can be disabled.
 - Spoken numbers work: *"ISO sixty four hundred"*, *"shutter to one two-hundred-and-fiftieth of a second"*, *"aperture two point eight"*.
@@ -58,7 +58,7 @@ src/main/       Electron main — owns the camera (node-usb via @darkgrade/link)
 src/preload/    typed contextBridge → window.studio
 src/shared/     IPC contract (channels + types)
 src/renderer/   React UI
-  voice/        whisper-worker (transformers.js) · VAD · intent-parser · TTS
+  voice/        transcription worker (Silero VAD → Bark sidecar) · intent follower
 ```
 
 Live view frames stream main → renderer as JPEG buffers over IPC. All camera I/O stays in the main process; the renderer is sandbox-friendly (contextIsolation on).

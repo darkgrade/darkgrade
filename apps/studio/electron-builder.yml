@@ -6,9 +6,12 @@ files:
     - out/**
     - package.json
 extraResources:
-    # llama.cpp's server runs the local speech model; fetched by scripts/download-llama-server.ts
+    # llama.cpp's server runs the assistant model; fetched by scripts/download-llama-server.ts
     - from: resources/llama-server
       to: llama-server
+    # The Bark speech sidecar: server script, pinned requirements and vendored model code
+    - from: resources/bark-sidecar
+      to: bark-sidecar
 asarUnpack:
     # node-usb ships native prebuilds that must live outside the asar
     - '**/node_modules/usb/**'

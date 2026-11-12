@@ -1,5 +1,5 @@
 import { Button } from '@kevinschaich/components'
-import { intentHighlights, type IntentHighlight } from '@voice/transcript-store'
+import { intentHighlights, transcriptPartial, type IntentHighlight } from '@voice/transcript-store'
 import { ArrowDown, Check, Loader, X } from 'lucide-react'
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
@@ -123,6 +123,7 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
     const scrollRef = useRef<HTMLDivElement>(null)
     const [following, setFollowing] = useState(true)
     const highlights = intentHighlights.use()
+    const partial = transcriptPartial.use()
     const offsets: number[] = []
     paragraphs.reduce((start, text) => {
         offsets.push(start)
@@ -143,7 +144,7 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
 
     useLayoutEffect(() => {
         if (following) scrollToLatest('auto')
-    }, [paragraphs, highlights, following, scrollToLatest])
+    }, [paragraphs, partial, highlights, following, scrollToLatest])
 
     useEffect(() => {
         const element = scrollRef.current
@@ -176,6 +177,7 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
                         />
                     )
                 })}
+                {partial && <span className="text-muted-foreground">{partial} </span>}
                 {listening && <span className="transcript-caret" aria-hidden />}
             </div>
             {!following && (

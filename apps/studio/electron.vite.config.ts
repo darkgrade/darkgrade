@@ -1,7 +1,11 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import { resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
+
+/** onnxruntime-web's dist folder, whose WebAssembly files its package exports don't list. */
+const onnxRuntimeDistribution = dirname(createRequire(import.meta.url).resolve('onnxruntime-web'))
 
 export default defineConfig({
     main: {
@@ -28,6 +32,7 @@ export default defineConfig({
                 '@shared': resolve(__dirname, 'src/shared'),
                 '@renderer': resolve(__dirname, 'src/renderer/src'),
                 '@voice': resolve(__dirname, 'src/renderer/src/voice'),
+                '@onnxruntime-web-distribution': onnxRuntimeDistribution,
             },
         },
         worker: {

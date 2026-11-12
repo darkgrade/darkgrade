@@ -25,6 +25,7 @@
         "@modelcontextprotocol/node": "2.1.2",
         "@modelcontextprotocol/server": "2.4.0",
         "lucide-react": "^1.71.0",
+        "onnxruntime-web": "1.31.1",
         "react": "^19",
         "react-dom": "^19",
         "usb": "^2.11.0",
