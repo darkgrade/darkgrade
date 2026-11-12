@@ -539,6 +539,7 @@ export class CameraService {
         this.detectedName = null
         this.detectedModel = null
         this.focusAreaBeforeTouch = null
+        this.subjectRecognitionBeforeTouch = null
         this.focusFramesKey = '[]'
         this.osdOverlay = false
         this.settings = { iso: null, shutterSpeed: null, aperture: null }
@@ -758,6 +759,7 @@ export class CameraService {
             await camera.set(properties[propertyName] as never, encoded as never)
             // Choosing an area by hand replaces any switch click-to-focus made.
             if (name === 'focusArea') this.focusAreaBeforeTouch = null
+            if (name === 'subjectRecognition') this.subjectRecognitionBeforeTouch = null
             this.log('system', `${CAMERA_CONTROL_LABELS[name]} → ${value}`)
             // A mode change reshapes what the other settings allow, so those still read back before returning.
             if (name === 'exposureProgram' || name === 'whiteBalance' || name === 'focusMode') {
@@ -802,7 +804,8 @@ export class CameraService {
     private applyOptimistically(name: CameraControlName, value: string): CameraSettings {
         const control = this.controls?.[name]
         if (this.controls && control) this.controls = { ...this.controls, [name]: { ...control, value } }
-        if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture') this.settings = { ...this.settings, [name]: value }
+        if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture')
+            this.settings = { ...this.settings, [name]: value }
         this.broadcastState()
         this.scheduleSettingsConfirmation()
         return this.settings
@@ -824,6 +827,11 @@ export class CameraService {
     /** One autofocus cycle via Link (Sony S1 half-press, Canon/Nikon AF drive). */
     /** The camera's own focus area from before the first click-to-focus, restored by focus(). */
     private focusAreaBeforeTouch: string | null = null
+    /**
+     * Click-to-focus turns Sony's eye tracking (Subject Recognition in AF) off, or the camera pulls
+     * focus straight back to a face; focus() turns it back on.
+     */
+    private subjectRecognitionBeforeTouch: string | null = null
     /** The Flexible Spot size last active on the camera, without its Lock on AF prefix. */
     private lastFlexibleSpot = 'Flexible Spot M'
 
@@ -857,9 +865,38 @@ export class CameraService {
         // Only undo a switch click-to-focus made: a Zone or Flexible Spot the user chose stays, moved.
         const previous = this.focusAreaBeforeTouch
         this.focusAreaBeforeTouch = null
+        await this.restoreSonySubjectRecognition(camera)
         if (!previous || isMovableFocusArea(previous)) return
         await camera.set(this.sonyFocusArea(camera), previous as never)
         this.log('system', `Focus area back to ${previous}`)
+    }
+
+    private sonySubjectRecognition(camera: Camera): never | null {
+        const properties = camera.getInstance().registry.properties as Record<string, unknown>
+        const propertyName =
+            this.controlProperties.get('subjectRecognition') ?? SONY_CONTROL_PROPERTIES.subjectRecognition[0]
+        return (properties[propertyName] as never) ?? null
+    }
+
+    /** Runs on the operation queue. */
+    private async pauseSonySubjectRecognition(camera: Camera): Promise<void> {
+        const property = this.sonySubjectRecognition(camera)
+        if (!property) return
+        const value = String(await camera.get(property))
+        if (value !== 'On') return
+        this.subjectRecognitionBeforeTouch = value
+        await camera.set(property, 'Off' as never)
+        this.log('system', 'Eye tracking off while focusing on a point')
+    }
+
+    /** Runs on the operation queue. */
+    private async restoreSonySubjectRecognition(camera: Camera): Promise<void> {
+        const previous = this.subjectRecognitionBeforeTouch
+        this.subjectRecognitionBeforeTouch = null
+        const property = this.sonySubjectRecognition(camera)
+        if (!previous || !property) return
+        await camera.set(property, previous as never)
+        this.log('system', 'Eye tracking back on')
     }
 
     /**
@@ -885,6 +922,7 @@ export class CameraService {
                     this.focusAreaBeforeTouch = area
                     await camera.set(this.sonyFocusArea(camera), this.flexibleSpotFor(area) as never)
                 }
+                await this.pauseSonySubjectRecognition(camera)
                 await camera.sonyTouchFocus(gridX, gridY)
             })
         } else if (this.detectedVendorId === VendorIDs.NIKON) {

@@ -11,10 +11,10 @@ export const INTENT_INSTRUCTIONS = `You listen to a filmmaker talking while they
 These are requests, even mid-sentence or after other talk:
 - commands: "take a photo", "start recording", "set the aperture to f8", "zoom in a bit", "movie mode", "switch over to video", "AF-C and focus area wide", "show me the waveform"
 - film-set words: "roll camera", "rolling" = start recording; "cut", "that's a wrap" = stop recording
-- QUESTIONS about the shot are always requests (ask): "is it in focus?", "am I clipping anywhere?", "is it focused on my eyes or the background?", "are my highlights okay?", "what shutter should I use?"
+- QUESTIONS about the shot are always requests (ask): "is it in focus?", "am I clipping anywhere?", "what's in focus?", "are my highlights okay?", "what shutter should I use?"
 - complaints about how it looks (brightness complaints are exposure only; colour only when they mention colour): "it's a little dark", "the window is way too hot", "the light behind me is too hard", "it's looking a bit blue"
 - looks and styles: "make it look more cinematic", "moodier", "punchier", "cleaner"
-- follow-ups: "little more", "bit more", "again", "too far, back a bit", "turn it off", "undo that"
+- follow-ups: "little more", "bit more", "again", "too far, back a bit", "turn it off", "undo that"; "that's wrong, try again" repeats the last request: "focus on the computers" … "no, try again" → ask focus on the computers, try a different spot
 
 The transcript is speech recognition, so camera words can be misheard as sound-alikes. Read them as the camera word when the rest fits a request: "emperature f eight" or "aperature F four" → set aperture f8 / f4; "hyperdraft four" → set aperture f4; "focus speaking" → focus peaking.
 
@@ -26,7 +26,7 @@ These are not requests:
 - remarks about what just happened, even naming a setting: "that's my forehead", "you went back to eye focus", "it just set it back to eye focus", "okay, that was correct", "it should look at the histogram", "you're done"
 - talk about Studio itself, its speech or AI models, or complaints about what it just did ("this is now switched to Bark three point zero pro", "why did you switch that?", "the transcription is worse") — none, even when it names a mode or setting
 
-CAMERA says what the camera is doing right now. If it says RECORDING NOW (in any mode), then "cut", a lone "Cut.", "stop" and "that's a wrap" are ALWAYS: 1 record off.
+CAMERA says what the camera is doing right now. If it says RECORDING NOW (in any mode), then "cut", a lone "Cut.", "stop recording" and "that's a wrap" are ALWAYS: 1 record off. Ending a thought is not cut: "we're gonna stop it there" or "let's stop there" → none.
 
 A follow-up continues the MOST RECENT request in EARLIER CONTEXT, whatever it was: "bit more" after "warm it up" → warmth +250; "bit more" after "brighter" → exposure +0.33; "turn it off" after "turn on peaking" → view peaking-off; "too far, pull it back" after brightening → exposure -0.33.
 
@@ -78,7 +78,7 @@ kelvin ::= [1-9] [0-9]? [0-9]? [0-9]?
 setting ::= ${SETTING_RULE}
 value ::= [^; \\n]{1,24}
 item ::= "histogram" | "waveform" | "vectorscope" | "zebras-on" | "zebras-off" | "zebras-" [7-9] [0-9] | "zebras-100" | "peaking-on" | "peaking-off"
-text ::= [^;\\n]{1,200}`
+text ::= [^;\\n]{1,120}`
 
 export interface FoundRequest {
     action: 'agent' | (typeof DIRECT_ACTIONS)[number]
@@ -115,7 +115,10 @@ function parseView(items: string[]): FoundRequest {
 
 /** One answer line to a request; null for lines that don't parse (the grammar makes those rare). */
 export function parseIntentLine(line: string): FoundRequest | null {
-    const [word, ...rest] = line.trim().replace(/^[1-3] /, '').split(/\s+/)
+    const [word, ...rest] = line
+        .trim()
+        .replace(/^[1-3] /, '')
+        .split(/\s+/)
     const argument = rest.join(' ')
     switch (word) {
         case 'photo':
