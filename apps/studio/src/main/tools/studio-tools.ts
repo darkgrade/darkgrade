@@ -405,7 +405,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
         name: 'focus_at',
         title: 'Focus on a point',
         description:
-            'Move the focus point to a spot in the picture and focus there. x and y are fractions of the frame from the top left (0.5, 0.5 is the centre).',
+            'Move the focus point to a spot in the picture and focus there. x and y are fractions of the frame from the top left (0.5, 0.5 is the centre; 0.1 is near the left or top edge, 0.9 near the right or bottom). To focus on a named thing, call get_frame first and take its position from the picture; never guess the centre.',
         inputSchema: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
         changesSomething: true,
         run: async input => {

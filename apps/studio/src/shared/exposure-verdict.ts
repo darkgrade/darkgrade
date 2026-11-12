@@ -9,6 +9,8 @@ const CRUSHED_SHADOWS_LIMIT_PERCENT = 3
 /** Room left below clipping after brightening, as exposing to the right recommends. */
 const KEPT_HEADROOM_STOPS = 0.3
 const LARGEST_STEP_STOPS = 2
+/** Highlights covering less of the frame than this are a light source in shot, not the subject. */
+const SMALL_LIGHT_SOURCE_PERCENT = 3
 
 export interface ExposureVerdict {
     verdict: 'too dark' | 'too bright' | 'good' | 'both ends clipped'
@@ -37,6 +39,10 @@ export function exposureVerdict(histogram: FrameAnalysis['histogram']): Exposure
     }
     if (!crushed && histogram.meanPercent >= DARK_MEAN_PERCENT) return { verdict: 'good', suggestedStops: 0 }
     const wanted = Math.log2(TARGET_MEAN_PERCENT / Math.max(1, histogram.meanPercent))
-    const allowed = Math.max(1 / 3, histogram.highlightHeadroomStops - KEPT_HEADROOM_STOPS)
+    // A lamp or sign is a small bright area; letting it clip is normal. Only real highlights limit brightening.
+    const smallLightSource = histogram.zones.highlightsPercent < SMALL_LIGHT_SOURCE_PERCENT
+    const allowed = smallLightSource
+        ? LARGEST_STEP_STOPS
+        : Math.max(1 / 3, histogram.highlightHeadroomStops - KEPT_HEADROOM_STOPS)
     return { verdict: 'too dark', suggestedStops: toThirds(Math.min(LARGEST_STEP_STOPS, wanted, allowed)) }
 }
