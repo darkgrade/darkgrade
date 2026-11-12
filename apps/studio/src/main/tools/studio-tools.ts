@@ -362,7 +362,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
         name: 'analyze_frame',
         title: 'Measure the picture',
         description:
-            'Measure the current live-view picture like the scopes: histogram (mean brightness, percentiles, clipped highlights, crushed shadows, highlight headroom in stops for exposing to the right), waveform by thirds of the frame, vectorscope (colour cast, saturation) and a sharpness reading. Use it to judge exposure, colour and focus before recommending or making changes. exposure.verdict and exposure.suggestedStops say whether the picture is too dark or too bright and the adjust_exposure step that fixes it; follow them.',
+            'Measure the current live-view picture like the scopes: histogram (mean brightness, percentiles, clipped highlights, crushed shadows, highlight headroom in stops for exposing to the right), waveform by thirds of the frame, vectorscope (colour cast, saturation) and a sharpness reading. Use it to judge exposure, colour and focus before recommending or making changes. exposure.verdict and exposure.suggestedStops say whether the picture is too dark or too bright and the adjust_exposure step that fixes it: apply that step only when asked to fix or change the exposure; for a question, just report the verdict.',
         inputSchema: z.object({}),
         changesSomething: false,
         run: async () => {

@@ -25,6 +25,9 @@ class VoiceService {
     /** The model the running engine loaded, so a change of choice unloads it. */
     private loadedModel: SpeechModelId | null = null
 
+    /** A release in progress, so a prepare that races it waits instead of returning the dying engine's port. */
+    private releasing: Promise<void> | null = null
+
     constructor() {
         preferences.onChange(({ speechModel: chosen }) => {
             if (this.loadedModel && this.loadedModel !== chosen) void this.release()
@@ -49,8 +52,10 @@ class VoiceService {
     }
 
     /** Downloads the model if needed and starts the engine; resolves with its local port. */
-    prepare(): Promise<number> {
-        if (this.server?.port) return Promise.resolve(this.server.port)
+    async prepare(): Promise<number> {
+        await this.releasing
+        if (this.loadedModel && this.loadedModel !== this.chosenModel) await this.release()
+        if (this.server?.port) return this.server.port
         this.preparing ??= this.startEngine().finally(() => {
             this.preparing = null
         })
@@ -58,7 +63,14 @@ class VoiceService {
     }
 
     /** Stops the engine to give its memory back; the model stays cached. */
-    async release(): Promise<void> {
+    release(): Promise<void> {
+        this.releasing ??= this.stopEngine().finally(() => {
+            this.releasing = null
+        })
+        return this.releasing
+    }
+
+    private async stopEngine(): Promise<void> {
         await this.preparing?.catch(() => undefined)
         await this.server?.stop()
         this.server = null

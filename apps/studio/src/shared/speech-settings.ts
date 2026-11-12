@@ -5,12 +5,9 @@
  */
 export const SPEECH_SETTINGS = {
     recognizer: {
-        model: 'Underdog Bark 3.0 Plus',
-        source: 'https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus',
-        revision: '28a7d4234146b0f01c11e0c6b72dfa29028a4758',
-        licence: 'CC-BY-NC-4.0',
-        runtime: 'MLX (bark_mlx.py from the pinned model download), fp16',
-        /** Added by bark_mlx.transcribe before every clip, as the model's own runtime does. */
+        /** The Bark model and its pinned revision are logged by the voice service when it loads one. */
+        family: 'Underdog Bark 3.0 (CC-BY-NC-4.0)',
+        /** Added before every clip, as each model's own runtime does. */
         leadingSilenceSeconds: 0.25,
     },
     detector: {
