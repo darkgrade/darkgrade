@@ -1,4 +1,5 @@
 import type { LocalModelStatus, VoiceEngineStatus } from '@shared/ipc'
+import { describeMicrophoneError } from '@shared/microphone-errors'
 import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
 import { IntentFollower } from '@voice/intent-follower'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
@@ -70,6 +71,7 @@ export function useLiveTranscription() {
     const [assistant, setAssistant] = useState<LocalModelStatus | null>(null)
     const [listening, setListening] = useState<ListeningState>('off')
     const [error, setError] = useState<string | null>(null)
+    const [microphoneBlocked, setMicrophoneBlocked] = useState(false)
     const [microphones, setMicrophones] = useState<Microphone[]>([])
     const [microphoneId, setMicrophoneId] = useState(readStoredMicrophone)
     const [speechModelId, setSpeechModelId] = useState<SpeechModelId>(DEFAULT_SPEECH_MODEL)
@@ -195,6 +197,7 @@ export function useLiveTranscription() {
     const start = useCallback(async () => {
         if (workerRef.current) return
         setError(null)
+        setMicrophoneBlocked(false)
         setListening('preparing')
         try {
             // The assistant loads alongside, so the first request doesn't wait for it.
@@ -211,7 +214,12 @@ export function useLiveTranscription() {
         } catch (caught) {
             await stopCapture()
             setListening('off')
-            setError(caught instanceof Error ? caught.message : String(caught))
+            const problem = describeMicrophoneError(caught)
+            void api.voiceDiagnostic(
+                `start failed: ${caught instanceof Error ? `${caught.name}: ${caught.message}` : String(caught)}`
+            )
+            setMicrophoneBlocked(problem?.blockedByMacos ?? false)
+            setError(problem?.message ?? (caught instanceof Error ? caught.message : String(caught)))
         }
     }, [api, handleWorkerEvent, microphoneId, startCapture, stopCapture])
 
@@ -299,6 +307,7 @@ export function useLiveTranscription() {
         assistant,
         listening,
         error,
+        microphoneBlocked,
         microphones,
         microphoneId: selectedMicrophone,
         start,

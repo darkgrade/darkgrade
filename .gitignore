@@ -33,3 +33,6 @@ electron.vite.config.*.mjs
 # Studio's app icon lives in build/, which electron-builder reads
 !apps/studio/build/
 apps/studio/resources/llama-server/
+
+# packaged Studio apps
+release/

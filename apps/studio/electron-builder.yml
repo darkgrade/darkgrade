@@ -18,6 +18,10 @@ asarUnpack:
 mac:
     category: public.app-category.photography
     icon: build/icon.icns
+    # Without the audio-input entitlement the hardened runtime silently refuses the microphone
+    hardenedRuntime: true
+    entitlements: entitlements.mac.plist
+    entitlementsInherit: entitlements.mac.plist
     target:
         - dmg
         - zip

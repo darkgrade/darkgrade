@@ -18,6 +18,7 @@ import {
     VoiceSetupProgress,
 } from '@renderer/components/VoiceSetupProgress'
 import type { VoiceEngineStatus } from '@shared/ipc'
+import { MICROPHONE_SETTINGS_URL } from '@shared/microphone-errors'
 import { summarizeSetup, type SetupSummary } from '@shared/setup-progress'
 import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
 import { microphoneLevel, transcriptParagraphs } from '@voice/transcript-store'
@@ -126,7 +127,16 @@ function EngineMessage({
 }): React.JSX.Element | null {
     const engine = voice.engine
     if (voice.error) {
-        return <p className="text-sm text-destructive">{voice.error}</p>
+        return (
+            <div className="flex max-w-xl flex-col items-center gap-3 text-center">
+                <p className="text-sm text-pretty text-destructive">{voice.error}</p>
+                {voice.microphoneBlocked && (
+                    <Button size="sm" variant="secondary" onClick={() => window.open(MICROPHONE_SETTINGS_URL)}>
+                        Open Microphone Settings
+                    </Button>
+                )}
+            </div>
+        )
     }
     const settingUp = engine?.phase === 'downloading' || engine?.phase === 'starting' || voice.listening === 'preparing'
     if (settingUp) {
