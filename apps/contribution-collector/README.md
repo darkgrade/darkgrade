@@ -22,7 +22,8 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
 
 - `telemetry_events` is the flat investigation table: installation/session IDs, client/server
   timestamps, model, firmware, Link revision, transport, operation code and flexible JSONB
-  properties. No image bytes, serials, command parameters or arbitrary error messages.
+  properties, and optional versioned camera-body fingerprints. Fingerprints hash manufacturer, model
+  and reliable serial identity; raw serials, images, command parameters and free-form errors are excluded.
 - `telemetry_state` holds installation credential hashes, immutable original batches, quotas,
   review records and deletion state. Original batch hashes retain provenance for Matrix.
 - Serializability keeps uploads, revocation and review consistent. Retrying an identical
@@ -74,7 +75,10 @@ Non-OK response codes count as error observations, including retries; they do no
 a failed final workflow. Matrix's existing `import_diagnostics` tool replaces the complete
 snapshot. The scalable path uses `/internal/api/matrix/page` and Matrix's
 `import_diagnostics_page`: 100 source records per page, staged in SQLite and published
-only after the final page. Review, withdrawal and contributor changes invalidate a
+only after the final page. All validated originals are eligible without human review;
+review remains a separate nullable label. Outpost runs this immediately at server startup
+and every five minutes, with bounded retries. A committed ingestion watermark excludes
+later uploads without restarting an export. Review, withdrawal and contributor changes invalidate a
 running export; the client restarts with a fresh generation. Records expire within
 24 hours or at the source expiry, whichever comes first. A replacement removes withdrawn
 evidence. Neither
@@ -112,8 +116,10 @@ permissions. Optional `email_api_key` and `email_from` inject the sender through
 4. Test `/health` (public Cloud Run frontends reserve `/healthz`, which remains an internal probe alias), enrollment, duplicates, opt-out, withdrawal and `/internal`. Verify
    database/network permissions and backup restoration before accepting customer diagnostics.
    Configure project-level billing notifications; instance counts are not hard spending caps.
-5. Set `DARKGRADE_TELEMETRY_URL` in products to the deployed HTTPS origin. No production
-   endpoint is baked into the unpublished packages yet. No existing customer collection is enabled.
+5. Node Link, CLI and Studio use the built-in hosted collector by default.
+   `DARKGRADE_TELEMETRY_URL` overrides it for self-hosting. Saved opt-outs and environment
+   overrides still disable uploads; automatic clients also stay local under `NODE_ENV=test`.
+   Publishing packages is a separate release step.
 
 The manual GitHub deployment workflow uses OIDC, restricted to this repository and
 `deploy_ref` (main by default; explicitly choose the open PR's branch for staging). Set the

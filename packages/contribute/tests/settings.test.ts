@@ -242,3 +242,43 @@ test('camera fingerprints are stable across installation/firmware changes and ab
     for (const serialNumber of [undefined, '', '000000', 'FFFFFFFF', 'Unknown', 'NONE', 'n/a', 'bad\nserial'])
         assert.equal(await cameraHardwareFingerprint({ manufacturer: 'Nikon', model: 'Z5_2', serialNumber }), undefined)
 })
+
+test('automatic Node clients never upload test-runner fixtures to the default collector', async () => {
+    const { nodeDiagnostics, closeNodeDiagnostics } = await import('#contribute/settings')
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-test-runner-'))
+    const oldHome = process.env.DARKGRADE_HOME,
+        oldMode = process.env.NODE_ENV,
+        oldFetch = globalThis.fetch
+    process.env.DARKGRADE_HOME = directory
+    process.env.NODE_ENV = 'test'
+    let calls = 0
+    globalThis.fetch = async () => {
+        calls++
+        throw Error('Unexpected network')
+    }
+    try {
+        const client = (await nodeDiagnostics())!
+        client.record(
+            {
+                manufacturer: 'Nikon',
+                model: 'Z5II',
+                firmware: '1',
+                revision: 'abcdef0',
+                dirty: false,
+                transport: 'usb',
+                evidence: 'synthetic',
+            },
+            { kind: 'command', direction: 'out', bytes: 12, failed: false, durationMilliseconds: 1 }
+        )
+        assert.equal(await client.flush(), 'disabled')
+        assert.equal(calls, 0)
+    } finally {
+        await closeNodeDiagnostics()
+        globalThis.fetch = oldFetch
+        if (oldHome === undefined) delete process.env.DARKGRADE_HOME
+        else process.env.DARKGRADE_HOME = oldHome
+        if (oldMode === undefined) delete process.env.NODE_ENV
+        else process.env.NODE_ENV = oldMode
+        await rm(directory, { recursive: true, force: true })
+    }
+})

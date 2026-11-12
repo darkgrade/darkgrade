@@ -27,6 +27,8 @@ beforeEach(async () => {
     vi.resetModules()
     fixture.directory = await mkdtemp(join(tmpdir(), 'studio-diagnostics-'))
     fixture.notices = 0
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('No network expected in settings tests') }))
     vi.stubEnv('DARKGRADE_HOME', fixture.directory)
     vi.stubEnv('DARKGRADE_TELEMETRY_URL', 'https://telemetry.example')
     current = await import('@main/diagnostics')
@@ -35,6 +37,7 @@ afterEach(async () => {
     current.closeDiagnostics()
     await closeNodeDiagnostics()
     vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
     await rm(fixture.directory, { recursive: true, force: true })
 })
 test('Studio uses the default collector without endpoint configuration', async () => {

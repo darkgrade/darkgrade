@@ -191,6 +191,8 @@ export function nodeDiagnostics() {
         log = localDiagnostics()
         return createApplicationDiagnostics({
             endpoint: telemetryEndpoint(),
+            // Automatic clients in test runners must not upload fixtures to the hosted collector.
+            disabled: () => process.env.NODE_ENV === 'test',
             store: sharedSettings(),
             localRecord: log.record,
         })
