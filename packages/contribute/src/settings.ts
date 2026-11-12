@@ -169,9 +169,21 @@ export function localDiagnostics(directory = settingsDirectory()) {
 
 let shared: Promise<Awaited<ReturnType<typeof createApplicationDiagnostics>>> | undefined
 let log: ReturnType<typeof localDiagnostics> | undefined
+let shutdownHooks = false
 /** One queue and identity shared by all Link cameras in this process; CLI and Studio use the same file. */
 export function nodeDiagnostics() {
     return (shared ??= (async () => {
+        if (!shutdownHooks) {
+            shutdownHooks = true
+            // Short-lived CLI/bench tools must not discard their queue merely because the
+            // periodic uploader is unref'd. Forced exits still retain buffered local metadata.
+            process.once('exit', () => log?.close())
+            process.once('beforeExit', () => {
+                void flushNodeDiagnostics()
+                    .finally(closeNodeDiagnostics)
+                    .catch(() => {})
+            })
+        }
         log = localDiagnostics()
         return createApplicationDiagnostics({
             // No upload is possible until the real deployment origin is configured.
@@ -185,6 +197,21 @@ export function nodeDiagnostics() {
         log?.close()
         throw error
     }))
+}
+/** Bounded final delivery for process owners; never used on the camera-operation path. */
+export async function flushNodeDiagnostics() {
+    if (!shared) return 'empty'
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+        return await Promise.race([
+            shared.then(client => client.flush()),
+            new Promise<'timeout'>(resolve => {
+                timer = setTimeout(() => resolve('timeout'), 3000)
+            }),
+        ])
+    } finally {
+        if (timer) clearTimeout(timer)
+    }
 }
 export async function closeNodeDiagnostics() {
     if (shared) (await shared).close()

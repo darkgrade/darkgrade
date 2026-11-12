@@ -103,6 +103,11 @@ are collected. USB SDK model/firmware remain Unknown when the bridge cannot supp
 source hashes and contributor attribution stay attached; metadata never becomes a hardware
 pass. Reviewed Matrix snapshots still replace fully and expire within 24 hours.
 
+Direct-source bench execution resolves revision/dirty state from the Link source checkout when
+build constants are absent. Normal Node/Bun process exit attempts a bounded final flush; forced
+exit preserves buffered local metadata but cannot promise cloud delivery. Keep these lifecycle
+checks alongside transport attribution tests.
+
 Node applications and packages/cli share packages/contribute/settings: one random installation
 ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Never derive identity from a
 serial. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI

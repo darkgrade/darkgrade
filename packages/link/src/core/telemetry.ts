@@ -6,6 +6,33 @@ declare const __LINK_TELEMETRY_REVISION__: string
 declare const __LINK_TELEMETRY_DIRTY__: boolean
 type Diagnostics = Awaited<ReturnType<typeof createApplicationDiagnostics>>
 let configured: Diagnostics | undefined
+let sourceBuild: Promise<{ revision: string; dirty: boolean } | undefined> | undefined
+async function buildMetadata() {
+    if (typeof __LINK_TELEMETRY_REVISION__ !== 'undefined')
+        return { revision: __LINK_TELEMETRY_REVISION__, dirty: __LINK_TELEMETRY_DIRTY__ }
+    // Bench tools execute this source directly. Resolve its own checkout, never the caller's cwd.
+    if (typeof process === 'undefined' || !process.versions?.node) return
+    return (sourceBuild ??= (async () => {
+        try {
+            const { execFileSync } = await import('node:child_process')
+            const { fileURLToPath } = await import('node:url')
+            const cwd = fileURLToPath(new URL('../../../../', import.meta.url))
+            const git = (args: string[]) =>
+                execFileSync('git', args, {
+                    cwd,
+                    timeout: 1000,
+                    encoding: 'utf8',
+                    stdio: ['ignore', 'pipe', 'ignore'],
+                }).trim()
+            const revision = git(['rev-parse', 'HEAD'])
+            if (!/^[a-f0-9]{40}$/.test(revision)) return
+            return { revision, dirty: git(['status', '--porcelain', '--untracked-files=no']).length > 0 }
+        } catch {
+            // Unattributed source must not masquerade as a published build.
+            return
+        }
+    })())
+}
 async function diagnosticsClient() {
     const node = typeof process !== 'undefined' && !!process.versions?.node
     return configured ?? (node ? await (await import('@darkgrade/contribute/settings')).nodeDiagnostics() : undefined)
@@ -54,13 +81,14 @@ export function linkTelemetry(source: TransportInterface) {
             if (next === identity) return
             try {
                 const client = await diagnosticsClient()
-                if (!client || typeof __LINK_TELEMETRY_REVISION__ === 'undefined') return
+                const build = client && (await buildMetadata())
+                if (!client || !build) return
                 const context: CameraContext = {
                     manufacturer: info.manufacturer,
                     model: info.model,
                     firmware: info.deviceVersion || 'unknown',
-                    revision: __LINK_TELEMETRY_REVISION__,
-                    dirty: __LINK_TELEMETRY_DIRTY__,
+                    revision: build.revision,
+                    dirty: build.dirty,
                     transport: source.getType() === 'usb' ? 'usb' : 'ptp-ip',
                     evidence: hardware ? 'hardware' : 'synthetic',
                 }
@@ -106,29 +134,31 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                 throw error
             } finally {
                 try {
-                    if (typeof __LINK_TELEMETRY_REVISION__ !== 'undefined' && /^[a-z_]{1,40}$/.test(command.cmd)) {
+                    if (/^[a-z_]{1,40}$/.test(command.cmd)) {
                         const client = await diagnosticsClient()
-                        client?.record(
-                            {
-                                manufacturer: 'Sony',
-                                model,
-                                firmware: 'unknown',
-                                revision: __LINK_TELEMETRY_REVISION__,
-                                dirty: __LINK_TELEMETRY_DIRTY__,
-                                transport,
-                                evidence,
-                            },
-                            {
-                                kind: 'command',
-                                operation: command.cmd,
-                                direction: 'out',
-                                bytes: 0,
-                                failed,
-                                durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
-                                occurredAt: new Date().toISOString(),
-                                sessionId,
-                            }
-                        )
+                        const build = client && (await buildMetadata())
+                        if (build)
+                            client?.record(
+                                {
+                                    manufacturer: 'Sony',
+                                    model,
+                                    firmware: 'unknown',
+                                    revision: build.revision,
+                                    dirty: build.dirty,
+                                    transport,
+                                    evidence,
+                                },
+                                {
+                                    kind: 'command',
+                                    operation: command.cmd,
+                                    direction: 'out',
+                                    bytes: 0,
+                                    failed,
+                                    durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
+                                    occurredAt: new Date().toISOString(),
+                                    sessionId,
+                                }
+                            )
                     }
                 } catch {
                     /* SDK behavior must not depend on telemetry or settings availability. */

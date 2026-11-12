@@ -156,3 +156,32 @@ test('connection failures are recorded as unknown identity rather than losing th
         client.close()
     }
 })
+
+test('direct source execution attributes SDK observations to its checkout without changing success or failure', async () => {
+    const { execFileSync } = await import('node:child_process')
+    const expectedRevision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    const contexts: any[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        localRecord: camera => contexts.push(camera),
+    })
+    configureLinkTelemetry(client)
+    try {
+        const observer = sdkTelemetry('synthetic')
+        await expect(observer.operation({ cmd: 'properties' }, async () => ({ value: 42 }))).resolves.toEqual({
+            value: 42,
+        })
+        await expect(
+            observer.operation({ cmd: 'capture' }, async () => {
+                throw new Error('camera failure')
+            })
+        ).rejects.toThrow('camera failure')
+        expect(contexts).toHaveLength(2)
+        expect(contexts.every(camera => camera.revision === expectedRevision && camera.evidence === 'synthetic')).toBe(
+            true
+        )
+    } finally {
+        client.close()
+    }
+})
