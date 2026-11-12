@@ -185,3 +185,50 @@ test('direct source execution attributes SDK observations to its checkout withou
         client.close()
     }
 })
+
+test('video workflow markers retain the wire session and SDK USB model without storing command parameters', async () => {
+    vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
+    vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)
+    const saved: any[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        localRecord: (camera, entry) => saved.push({ camera, entry }),
+    })
+    configureLinkTelemetry(client)
+    try {
+        const source = { on: () => {}, off: () => {}, getType: () => 'usb', isLittleEndian: () => true } as any
+        const wrapped = linkTelemetry(source)
+        await wrapped.identify({ manufacturer: 'Nikon', model: 'Z5_2', deviceVersion: 'V1.00' })
+        await wrapped.operation('record_start', async () => 42)
+        await expect(
+            wrapped.operation('record_stop', async () => {
+                throw new Error('Original stop error')
+            })
+        ).rejects.toThrow('Original stop error')
+        expect(saved[0].entry).toMatchObject({ operation: 'record_start', failed: false })
+        expect(saved[1].entry).toMatchObject({
+            operation: 'record_stop',
+            failed: true,
+            sessionId: saved[0].entry.sessionId,
+        })
+        const sdk = sdkTelemetry('synthetic')
+        await sdk.operation({ cmd: 'connect', serial: 'PRIVATE' }, async () => ({
+            ok: true,
+            model: 'ILCE-6700',
+            handle: 'PRIVATE',
+        }))
+        await sdk.operation({ cmd: 'command', id: '1', param: '1' }, async () => ({ ok: true }))
+        expect(saved.at(-1)).toMatchObject({
+            camera: { model: 'ILCE-6700', transport: 'usb' },
+            entry: { operation: 'record_start' },
+        })
+        await sdk.operation({ cmd: 'command', id: '1', param: '0' }, async () => ({ ok: true }))
+        expect(saved.at(-1).entry.operation).toBe('record_stop')
+        await sdk.operation({ cmd: 'connect', serial: 'PRIVATE' }, async () => ({ ok: true, model: 'private/path' }))
+        expect(saved.at(-1).camera.model).toBe('Unknown')
+        expect(JSON.stringify(saved)).not.toMatch(/PRIVATE|private\/path|handle|param/)
+    } finally {
+        client.close()
+    }
+})

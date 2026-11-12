@@ -57,7 +57,8 @@ export function observeTransport<Device, Kind extends string>(
         direction: DiagnosticEntry['direction'],
         kind: DiagnosticEntry['kind'],
         run: () => Promise<Result>,
-        bytes?: Uint8Array
+        bytes?: Uint8Array,
+        name?: string
     ): Promise<Result> => {
         const started = performance.now()
         const epoch = generation()
@@ -68,6 +69,7 @@ export function observeTransport<Device, Kind extends string>(
             if (collecting && epoch === generation())
                 save({
                     ...fields,
+                    ...(name ? { operation: name } : {}),
                     ...(result instanceof Uint8Array && header(result)),
                     direction,
                     bytes: bytes?.byteLength ?? (result instanceof Uint8Array ? result.byteLength : 0),
@@ -79,6 +81,7 @@ export function observeTransport<Device, Kind extends string>(
             if (collecting && epoch === generation())
                 save({
                     ...fields,
+                    ...(name ? { operation: name } : {}),
                     direction,
                     bytes: bytes?.byteLength ?? 0,
                     durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
@@ -125,6 +128,8 @@ export function observeTransport<Device, Kind extends string>(
     }
     return {
         transport,
+        operation: <Result>(name: string, work: () => Promise<Result>) =>
+            /^[a-z_]{1,40}$/.test(name) ? operation('lifecycle', 'command', work, undefined, name) : work(),
         detach: () => {
             detached = true
             source.off?.(onEvent)

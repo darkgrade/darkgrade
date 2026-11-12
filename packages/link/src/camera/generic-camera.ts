@@ -1,4 +1,3 @@
-import { linkTelemetry } from '@core/telemetry'
 import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@camera/transaction-channel'
 import { Logger } from '@core/logger'
 import {
@@ -10,6 +9,7 @@ import {
     PTPTimeoutError,
     type PTPErrorContext,
 } from '@core/ptp-errors'
+import { linkTelemetry } from '@core/telemetry'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
@@ -97,6 +97,14 @@ export class GenericCamera {
         logger.setRegistry(this.registry)
 
         this.transport.on?.(event => this.handleEvent(event))
+        // Record the public workflow outcome alongside its existing wire session.
+        for (const [method, operation] of [
+            ['startRecording', 'record_start'],
+            ['stopRecording', 'record_stop'],
+        ] as const) {
+            const work = this[method].bind(this)
+            this[method] = () => this.telemetry.operation(operation, work)
+        }
     }
 
     protected async connectTransport(device?: DeviceDescriptor): Promise<void> {
@@ -236,7 +244,9 @@ export class GenericCamera {
 
         const response = await result
         if (operation.code === 0x1001 && response.code === OK.code && 'data' in response && response.data) {
-            await this.telemetry.identify(response.data as unknown as { manufacturer: string; model: string; deviceVersion: string })
+            await this.telemetry.identify(
+                response.data as unknown as { manufacturer: string; model: string; deviceVersion: string }
+            )
         }
         return response
     }
@@ -752,9 +762,8 @@ export class GenericCamera {
 
         return {
             code: responseContainer.code,
-            parameters: responseContainer.type === 3
-                ? this.decodeResponseParameters(responseContainer.payload)
-                : undefined,
+            parameters:
+                responseContainer.type === 3 ? this.decodeResponseParameters(responseContainer.payload) : undefined,
             data: returnData,
         } as OperationResponse<Op>
     }
@@ -1016,19 +1025,21 @@ export class GenericCamera {
         const result: { [storageId: number]: StorageEntry } = {}
 
         const storageIdsResponse = await this.send(this.registry.operations.GetStorageIDs, {})
-        if(storageIdsResponse.code!==0x2001)throw new PTPResponseError(storageIdsResponse.code,undefined,{operation:'GetStorageIDs'})
+        if (storageIdsResponse.code !== 0x2001)
+            throw new PTPResponseError(storageIdsResponse.code, undefined, { operation: 'GetStorageIDs' })
         const storageIds = storageIdsResponse.data
-        if(!Array.isArray(storageIds))throw new Error('GetStorageIDs returned no storage dataset')
+        if (!Array.isArray(storageIds)) throw new Error('GetStorageIDs returned no storage dataset')
 
         for (const storageId of storageIds) {
-            if((storageId&0xffff)===0)continue
+            if ((storageId & 0xffff) === 0) continue
             // Get info for this storage
             const storageInfoResponse = await this.send(this.registry.operations.GetStorageInfo, {
                 StorageID: storageId,
             })
-            if(storageInfoResponse.code!==0x2001)throw new PTPResponseError(storageInfoResponse.code,undefined,{operation:'GetStorageInfo'})
+            if (storageInfoResponse.code !== 0x2001)
+                throw new PTPResponseError(storageInfoResponse.code, undefined, { operation: 'GetStorageInfo' })
             const storageInfo = storageInfoResponse.data
-            if(!storageInfo)throw new Error('GetStorageInfo returned no card dataset')
+            if (!storageInfo) throw new Error('GetStorageInfo returned no card dataset')
 
             // Prepare container for objects in this storage
             const storageObjects: { [objectHandle: number]: ObjectInfo } = {}
@@ -1037,17 +1048,19 @@ export class GenericCamera {
             const objectIdsResponse = await this.send(this.registry.operations.GetObjectHandles, {
                 StorageID: storageId,
             })
-            if(objectIdsResponse.code!==0x2001)throw new PTPResponseError(objectIdsResponse.code,undefined,{operation:'GetObjectHandles'})
+            if (objectIdsResponse.code !== 0x2001)
+                throw new PTPResponseError(objectIdsResponse.code, undefined, { operation: 'GetObjectHandles' })
             const objectHandles = objectIdsResponse.data
-            if(!Array.isArray(objectHandles))throw new Error('GetObjectHandles returned no object dataset')
+            if (!Array.isArray(objectHandles)) throw new Error('GetObjectHandles returned no object dataset')
 
             // Get detailed info for each object handle
             for (const objectHandle of objectHandles) {
                 const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                     ObjectHandle: objectHandle,
                 })
-                if(objectInfoResponse.code!==0x2001)throw new PTPResponseError(objectInfoResponse.code,undefined,{operation:'GetObjectInfo'})
-                if(!objectInfoResponse.data)throw new Error('GetObjectInfo returned no object metadata')
+                if (objectInfoResponse.code !== 0x2001)
+                    throw new PTPResponseError(objectInfoResponse.code, undefined, { operation: 'GetObjectInfo' })
+                if (!objectInfoResponse.data) throw new Error('GetObjectInfo returned no object metadata')
                 storageObjects[objectHandle] = objectInfoResponse.data
             }
 

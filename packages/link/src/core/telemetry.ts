@@ -69,6 +69,9 @@ export function linkTelemetry(source: TransportInterface) {
     })
     return {
         transport,
+        operation<Result>(name: string, work: () => Promise<Result>): Promise<Result> {
+            return observed ? observed.operation(name, work) : work()
+        },
         async prepare() {
             if (!identity) await this.identify({ manufacturer: 'Unknown', model: 'Unknown', deviceVersion: 'unknown' })
         },
@@ -124,6 +127,12 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
             try {
                 const result = await work()
                 if (
+                    command.cmd === 'connect' &&
+                    typeof result.model === 'string' &&
+                    /^(?:ILCE|ILME|DSC|NEX)-[A-Za-z0-9-]{1,40}$/.test(result.model)
+                )
+                    model = result.model
+                if (
                     ['connect_wifi', 'connect_bluetooth_direct'].includes(command.cmd) &&
                     ['ILCE-6700', 'ILME-FX2'].includes(command.model)
                 )
@@ -150,7 +159,14 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                                 },
                                 {
                                     kind: 'command',
-                                    operation: command.cmd,
+                                    operation:
+                                        command.cmd === 'command' &&
+                                        command.id === '1' &&
+                                        ['0', '1'].includes(command.param)
+                                            ? command.param === '1'
+                                                ? 'record_start'
+                                                : 'record_stop'
+                                            : command.cmd,
                                     direction: 'out',
                                     bytes: 0,
                                     failed,

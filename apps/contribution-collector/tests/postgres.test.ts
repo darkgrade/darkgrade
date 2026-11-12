@@ -196,3 +196,60 @@ test(
         }
     }
 )
+
+test(
+    'session replay pages retain chronological ties and enforce installation scope',
+    { skip: !process.env.DATABASE_URL },
+    async () => {
+        const database = await postgresDatabase(process.env.DATABASE_URL!),
+            handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' }),
+            user = await enroll(handle),
+            session = randomUUID(),
+            key = 'replay-operator-'.padEnd(40, 'x')
+        const admin = (query: string) =>
+            new Request('https://telemetry.example/internal/api' + query, {
+                headers: { authorization: 'Basic ' + Buffer.from('outpost:' + key).toString('base64') },
+            })
+        try {
+            const payload = batch(),
+                entry = payload.contributions[0].entries[0]
+            payload.contributions[0].entries = Array.from({ length: 502 }, (_, index) => ({
+                ...entry,
+                sessionId: session,
+                transactionId: index,
+                occurredAt: new Date().toISOString(),
+                operation: index === 0 ? 'record_start' : index === 501 ? 'record_stop' : 'properties',
+            }))
+            assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, payload))).status, 202)
+            const report = await (
+                await operatorApi(admin('/report?installation=' + user.installId), key, database)
+            ).json()
+            assert.equal(report.sessions.length, 1)
+            assert.equal(report.sessions[0].events, 502)
+            const path = '/session?installation=' + user.installId + '&session=' + session
+            const first = await (await operatorApi(admin(path), key, database)).json()
+            assert.equal(first.events.length, 500)
+            assert.ok(first.next)
+            const second = await (await operatorApi(admin(path + '&after=' + first.next), key, database)).json()
+            assert.equal(second.events.length, 2)
+            assert.equal(second.next, null)
+            assert.equal(
+                new Set([...first.events, ...second.events].map(event => event.batch_path + ':' + event.sequence)).size,
+                502
+            )
+            assert.equal(first.events[0].properties.operation, 'record_start')
+            assert.equal(second.events.at(-1).properties.operation, 'record_stop')
+            assert.equal((await operatorApi(admin(path + '&after=not-a-cursor'), key, database)).status, 400)
+            assert.equal((await operatorApi(admin('/session?session=' + session), key, database)).status, 400)
+            const empty = await (
+                await operatorApi(admin('/session?installation=' + randomUUID() + '&session=' + session), key, database)
+            ).json()
+            assert.equal(empty.events.length, 0)
+            await handle(request('/v2/installation', 'DELETE', user.installKey))
+            assert.equal((await (await operatorApi(admin(path), key, database)).json()).events.length, 0)
+        } finally {
+            await handle(request('/v2/installation', 'DELETE', user.installKey))
+            await database.close()
+        }
+    }
+)

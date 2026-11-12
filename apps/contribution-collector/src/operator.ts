@@ -42,7 +42,7 @@ export async function operatorApi(
     const parameters = Object.fromEntries(url.searchParams)
     if (
         new Set(url.searchParams.keys()).size !== [...url.searchParams].length ||
-        Object.values(parameters).some(value => value.length > 100)
+        Object.values(parameters).some(value => value.length > (path === '/internal/api/session' ? 600 : 100))
     )
         return json({ error: 'Invalid filters' }, 400)
     if (
@@ -62,6 +62,43 @@ export async function operatorApi(
         return json(
             await database.operator.report({ ...parameters, days: Number(parameters.days || 7) } as EventFilters)
         )
+    }
+    if (path === '/internal/api/session' && request.method === 'GET') {
+        if (
+            Object.keys(parameters).some(key => !['installation', 'session', 'after'].includes(key)) ||
+            !uuid.test(parameters.installation || '') ||
+            !uuid.test(parameters.session || '')
+        )
+            return json({ error: 'Invalid session scope' }, 400)
+        let after: { time: string; batch: string; sequence: number } | undefined
+        if (parameters.after) {
+            try {
+                if (!/^[A-Za-z0-9_-]+$/.test(parameters.after)) throw new Error('Invalid cursor')
+                const value = JSON.parse(Buffer.from(parameters.after, 'base64url').toString())
+                if (
+                    !value ||
+                    Object.keys(value).sort().join(',') !== 'batch,sequence,time' ||
+                    typeof value.time !== 'string' ||
+                    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(value.time) ||
+                    !Number.isFinite(Date.parse(value.time)) ||
+                    typeof value.batch !== 'string' ||
+                    !value.batch.startsWith('diagnostics/') ||
+                    value.batch.slice(12).split('_').length !== 2 ||
+                    !value.batch
+                        .slice(12)
+                        .split('_')
+                        .every((part: string) => uuid.test(part)) ||
+                    !Number.isInteger(value.sequence) ||
+                    value.sequence < 0 ||
+                    value.sequence > 1000
+                )
+                    throw new Error('Invalid cursor')
+                after = value
+            } catch {
+                return json({ error: 'Invalid session cursor' }, 400)
+            }
+        }
+        return json(await database.operator.session(parameters.installation, parameters.session, after))
     }
     if (path === '/internal/api/installations' && request.method === 'GET') {
         if (
