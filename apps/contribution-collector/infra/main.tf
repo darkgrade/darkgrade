@@ -158,7 +158,7 @@ resource "google_cloud_run_v2_service" "collector" {
     containers {
       image = var.collector_image
       resources {
-        limits   = { cpu = "1", memory = "256Mi" }
+        limits   = { cpu = "1", memory = "512Mi" }
         cpu_idle = false
       }
       volume_mounts {
