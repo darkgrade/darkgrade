@@ -12,8 +12,6 @@ const nextConfig = {
         return EXPERIMENTS.flatMap(({ path, origin }) => [
             { source: `/${path}`, destination: `${origin}/${path}/` },
             { source: `/${path}/`, destination: `${origin}/${path}/` },
-            // Keep a trailing slash through the proxy: the experiments redirect to add one.
-            { source: `/${path}/:rest*/`, destination: `${origin}/${path}/:rest*/` },
             { source: `/${path}/:rest*`, destination: `${origin}/${path}/:rest*` },
         ])
     },
