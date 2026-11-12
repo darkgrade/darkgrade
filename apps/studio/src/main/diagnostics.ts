@@ -1,50 +1,49 @@
 import { createApplicationDiagnostics } from '@darkgrade/contribute/application'
 import { installationFileStore } from '@darkgrade/contribute/installation-store'
-import type { CameraContext } from '@darkgrade/contribute/schema'
-import { TransportFactory } from '@darkgrade/link'
+import {
+    closeNodeDiagnostics,
+    nodeDiagnostics,
+    settingsDirectory,
+    sharedSettings,
+} from '@darkgrade/contribute/settings'
 import type { DiagnosticsStatus } from '@shared/ipc'
-import { app, dialog, safeStorage } from 'electron'
+import { app, safeStorage } from 'electron'
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-declare const __LINK_REVISION__: string
-declare const __LINK_DIRTY__: boolean
 let client: Awaited<ReturnType<typeof createApplicationDiagnostics>> | undefined
 let initializationError: string | null = null
 
 export async function initializeDiagnostics() {
-    const endpoint = process.env.DARKGRADE_TELEMETRY_URL
-    if (!endpoint) return
     try {
-        if (
-            !safeStorage.isEncryptionAvailable() ||
-            (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
-        )
-            throw new Error('Secure storage unavailable')
-        // Credentials cannot migrate to another configured collector origin.
-        const identity = createHash('sha256').update(new URL(endpoint).origin).digest('hex').slice(0, 20)
-        client = await createApplicationDiagnostics({
-            endpoint,
-            store: installationFileStore(join(app.getPath('userData'), `diagnostics-${identity}.bin`), {
-                encrypt: value => safeStorage.encryptString(value),
-                decrypt: value => safeStorage.decryptString(Buffer.from(value)),
-            }),
-            presentNotice: async notice => {
-                const choice = await dialog.showMessageBox({
-                    type: 'info',
-                    title: 'Camera diagnostics',
-                    message: 'Help improve Darkgrade Link and Matrix',
-                    detail: notice.text,
-                    buttons: ['Continue with sharing', 'Turn off sharing'],
-                    defaultId: 0,
-                    cancelId: 1,
-                    noLink: true,
-                })
-                return choice.response === 0
-            },
-        })
+        // Preserve the unpublished previous Studio opt-out when moving to the shared CLI file.
+        const endpoint = process.env.DARKGRADE_TELEMETRY_URL
+        if (endpoint && !existsSync(join(settingsDirectory(), 'settings.json'))) {
+            const identity = createHash('sha256').update(new URL(endpoint).origin).digest('hex').slice(0, 20)
+            const legacy = join(app.getPath('userData'), `diagnostics-${identity}.bin`)
+            if (existsSync(legacy)) {
+                if (!safeStorage.isEncryptionAvailable()) throw new Error('Legacy settings cannot be read')
+                const saved = await installationFileStore(legacy, {
+                    encrypt: value => safeStorage.encryptString(value),
+                    decrypt: value => safeStorage.decryptString(Buffer.from(value)),
+                }).read()
+                if (saved) {
+                    const store = sharedSettings()
+                    const initial = await store.read()
+                    await store.write({
+                        ...initial!,
+                        ...saved,
+                        installationId:
+                            saved.installationId ?? saved.installKey?.slice(4, 40) ?? initial!.installationId,
+                        ...(saved.installKey && { enrollmentKey: undefined }),
+                    })
+                }
+            }
+        }
+        client = await nodeDiagnostics()
     } catch {
-        initializationError = 'Diagnostics are off. Secure settings could not be loaded.'
+        initializationError = 'Telemetry settings could not be loaded.'
     }
 }
 
@@ -82,27 +81,7 @@ export async function diagnosticsContact(action: string, email?: string, name?: 
     throw new Error('Invalid contact action')
 }
 
-/** The app's single queue shares the existing camera transport; no additional camera connection. */
-export async function diagnosticUsbTransport(
-    manufacturer: string,
-    model: string
-): Promise<Awaited<ReturnType<TransportFactory['createUSBTransport']>> | undefined> {
-    if (!client || !/^[a-f0-9]{7,40}$/.test(__LINK_REVISION__)) return undefined
-    const context: CameraContext = {
-        manufacturer,
-        model,
-        firmware: 'unknown',
-        revision: __LINK_REVISION__,
-        dirty: __LINK_DIRTY__,
-        transport: 'usb',
-        evidence: 'hardware',
-    }
-    try {
-        return client.observe(await new TransportFactory().createUSBTransport(), context).transport
-    } catch {
-        return undefined
-    } // Invalid identity cannot interrupt normal camera control.
-}
 export function closeDiagnostics() {
-    client?.close()
+    client = undefined
+    void closeNodeDiagnostics().catch(() => {})
 }

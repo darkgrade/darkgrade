@@ -79,39 +79,35 @@ These synthetic parser checks neither contact hardware nor certify model support
 independent copies of the wire seeds in its fixed candidate harness so driver changes cannot
 silently weaken their own regression gate.
 
-## Default-on camera diagnostics
+## Shared telemetry — November 12, 2026
 
-`packages/contribute` is a separately packaged, preference-controlled diagnostics observer.
-Importing Link or the contribution package has no side effects. Initializing the client
-enables metadata diagnostics when its saved preference is absent; preserve saved opt-outs.
-Corrupt preferences fail closed. A visible setting calls setConsent(enabled);
-`setConsent(false)` stops collection and clears buffered diagnostics, while `optOut()` also
-revokes the contributor grant and requests cloud deletion. Honor environment overrides.
-Full recordings and image payloads stay in the existing explicit private recording workflow.
-Do not route those blobs through the metadata-only collector or automatically promote uploads.
+The user replaced project 18 with one HTTPS service and Postgres. Keep this on PR #58,
+`feat/runtime-browser-core`; do not merge. `apps/contribution-collector/src/postgres.ts`
+stores flat telemetry_events plus operational state; main.ts performs its own cleanup and
+serves an operator-authenticated /internal timeline. Firestore/GCS/grant collector deployment
+code and the separate cleanup job were removed. Terraform provisions Cloud Run + Cloud SQL
+with restricted configuration secrets; validation is not a live deployment.
 
-The current pipeline follows Explainer Studio project 18: `createApplicationDiagnostics`
-from `@darkgrade/contribute/application` owns one bounded queue across cameras, visible
-notice, lazy installation-key enrollment, saved preferences and withdrawal retries.
-`apps/contribution-collector/src/telemetry.ts` is the v2 service: Firestore diagnostics
-expire after 90 days; contact confirmation is separate; revocation is atomic with upload,
-quota and review guards. The daily cleanup job runs `dist/operations.js cleanup`.
-Permanent tombstones remain after data deletion. Legacy signed-grant/GCS code is not
-served by main.ts or scheduled by the current Terraform.
+Link instruments existing USB/PTP-IP sessions, with Unknown identity until GetDeviceInfo. Custom
+transports need explicit telemetry configuration, and loopback IP defaults to synthetic.
+Do not mistake a real socket for proof of physical hardware. Sony SDK bridge calls have separate named-operation telemetry; no SDK arguments or payloads
+are collected. USB SDK model/firmware remain Unknown when the bridge cannot supply them. Model/firmware/revision/transport,
+source hashes and contributor attribution stay attached; metadata never becomes a hardware
+pass. Reviewed Matrix snapshots still replace fully and expire within 24 hours.
 
-Operator-reviewed exports retain source hashes, transport, firmware, revision and install
-linkage. Matrix must replace full snapshots, reject rollback, and stop using expired data
-within 24 hours; metadata never becomes a physical pass. Credit requires current verified
-email plus an explicit public-credit choice. Do not copy evidence into untracked artifacts.
+Node applications and packages/cli share packages/contribute/settings: one random installation
+ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Never derive identity from a
+serial. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI
+retention-age blurb. Missing endpoint prevents uploads, not local diagnostics. Opt-out stops
+cloud uploads but keeps bounded sanitized local logs. Delete disables sharing first and
+preserves retry state. Respect environment overrides and saved/corrupt preferences. Native
+Studio migrates the earlier encrypted preference before initializing the shared file.
 
-Studio stores installation state through OS safeStorage, exposes sharing/withdrawal settings,
-and remains unconfigured without DARKGRADE_TELEMETRY_URL. Corrupt settings fail closed.
-No cloud project, deployment, npm publication or customer enrollment is implied by builds.
-Read the collector README for the lean GCP bootstrap, manual OIDC workflow and limitations.
-Keep all Darkgrade changes on `feat/runtime-browser-core`, PR #58, until the user requests
-merging. Build/test the SDK and collector, run the real Firestore emulator and container
-smoke, and validate Terraform before pushing. SDK camera diagnostics never need hardware
-power operations just to validate enrollment or withdrawal.
+Run SDK, real Postgres collector, CLI, Studio and Link tests; validate Terraform and the
+actual HTTP container. Test the event listener before/after observer replacement: telemetry
+must not steal a camera's event handler. Run the Matrix export/import contract without
+promoting metadata or mutating the installed Matrix app. No hardware operations are needed
+for ordinary telemetry validation. Keep unrelated dependency symlinks intact.
 
 **Core Philosophy**: Prioritize readability and maintainability over premature optimization. Code is written for humans to understand.
 

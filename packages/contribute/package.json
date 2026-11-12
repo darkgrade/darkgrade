@@ -32,6 +32,10 @@
         "./installation-store": {
             "types": "./dist/installation-store.d.ts",
             "import": "./dist/installation-store.js"
+        },
+        "./settings": {
+            "types": "./dist/settings.d.ts",
+            "import": "./dist/settings.js"
         }
     },
     "imports": {

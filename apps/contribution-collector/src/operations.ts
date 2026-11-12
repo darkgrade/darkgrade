@@ -1,35 +1,10 @@
-import { firestoreDatabase } from '#collector/database'
+import { postgresDatabase } from '#collector/postgres'
 import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
 import { cleanupWithdrawals } from '#collector/telemetry'
-import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { rename, unlink, writeFile } from 'node:fs/promises'
-import { promisify } from 'node:util'
 
-let credential: Promise<string> | undefined,
-    credentialExpires = 0
-const database = firestoreDatabase(process.env.GOOGLE_CLOUD_PROJECT ?? '', {
-    ...(process.env.FIRESTORE_EMULATOR_HOST && { emulator: process.env.FIRESTORE_EMULATOR_HOST }),
-    ...(process.env.TELEMETRY_OPERATOR_AUTH === 'gcloud' && {
-        accessToken: async (refresh = false) => {
-            if (refresh || Date.now() >= credentialExpires) credential = undefined
-            credentialExpires = Date.now() + 60_000
-            return (credential ??= promisify(execFile)('gcloud', ['auth', 'print-access-token'], {
-                timeout: 10_000,
-                maxBuffer: 16_384,
-            })
-                .then(result => {
-                    const token = result.stdout.trim()
-                    if (!token) throw new Error('Operator credentials unavailable')
-                    return token
-                })
-                .catch(error => {
-                    credential = undefined
-                    throw error
-                }))
-        },
-    }),
-})
+const database = await postgresDatabase(process.env.DATABASE_URL ?? '')
 const [operation, argument] = process.argv.slice(2)
 try {
     if (operation === 'cleanup') {
@@ -63,3 +38,5 @@ try {
     console.error(JSON.stringify({ component: 'contribution-operations', operation, failed: true }))
     process.exitCode = 1
 }
+
+await database.close()

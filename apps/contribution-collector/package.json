@@ -7,21 +7,22 @@
         "#collector/*": "./dist/*.js"
     },
     "scripts": {
-        "build": "tsc -p tsconfig.json",
+        "build": "rm -rf dist && tsc -p tsconfig.json",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "npm run build && node --test tests/*.test.ts",
         "start": "node dist/main.js",
-        "token": "node dist/mint-token.js",
         "cleanup": "node dist/operations.js cleanup",
         "review": "node dist/operations.js review",
         "export:matrix": "node dist/operations.js export",
-        "test:emulator": "npm run build && node --test tests/emulator.test.ts",
-        "smoke": "node dist/smoke.js"
+        "smoke": "node dist/smoke.js",
+        "test:postgres": "npm run build && node --test tests/postgres.test.ts"
     },
     "dependencies": {
-        "@darkgrade/contribute": "workspace:*"
+        "@darkgrade/contribute": "workspace:*",
+        "pg": "8.16.3"
     },
     "devDependencies": {
-        "@types/node": "20.19.43"
+        "@types/node": "20.19.43",
+        "@types/pg": "8.15.6"
     }
 }

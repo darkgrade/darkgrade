@@ -69,7 +69,7 @@ test('explicit opt-out means no collection, token retrieval or network requests'
     assert.equal(await client.flush(), 'disabled')
 })
 
-test('protocol diagnostics exclude payloads, parameters, serials, transaction IDs and error text', async () => {
+test('protocol diagnostics exclude payloads, parameters, serials and error text while retaining anonymous timeline correlation', async () => {
     const bodies: string[] = []
     const client = await createContributions(
         setup(true, async (_url, init) => {
@@ -88,12 +88,12 @@ test('protocol diagnostics exclude payloads, parameters, serials, transaction ID
     assert.equal(await client.flush(), 'sent')
     validateContribution(JSON.parse(bodies[0]))
     assert.equal(JSON.parse(bodies[0]).entries.length, 3)
-    assert.doesNotMatch(bodies[0], /PRIVATE|serial-secret|parameters|sessionId|transactionId/)
+    assert.doesNotMatch(bodies[0], /PRIVATE|serial-secret|parameters/)
     // Random UUIDs can contain the digits of a session ID; inspect the actual entry schema.
     for (const entry of JSON.parse(bodies[0]).entries)
         assert.ok(
             Object.keys(entry).every(key =>
-                ['kind', 'code', 'direction', 'bytes', 'durationMilliseconds', 'failed'].includes(key)
+                ['kind', 'code', 'direction', 'bytes', 'durationMilliseconds', 'failed', 'occurredAt', 'sessionId', 'transactionId'].includes(key)
             )
         )
     assert.deepEqual(

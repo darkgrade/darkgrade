@@ -3,6 +3,8 @@ on:
     pull_request:
         paths:
             - 'packages/contribute/**'
+            - 'packages/link/**'
+            - 'packages/cli/**'
             - 'apps/contribution-collector/**'
             - 'apps/studio/**'
             - 'bun.lock'
@@ -14,6 +16,17 @@ jobs:
     test:
         runs-on: ubuntu-24.04
         timeout-minutes: 20
+        services:
+            postgres:
+                image: postgres:17-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
+                env:
+                    POSTGRES_PASSWORD: local-test-only
+                    POSTGRES_DB: telemetry
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd "pg_isready -U postgres"
+                    --health-interval 5s --health-timeout 5s --health-retries 10
         steps:
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
@@ -25,34 +38,25 @@ jobs:
             - run: bun install --frozen-lockfile --ignore-scripts
             - run: npm run test --prefix packages/contribute
             - run: npm run test --prefix apps/contribution-collector
-            - run: npm run build --prefix packages/link && npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
-            - name: Start Firestore emulator
-              run: |
-                  docker run -d --name telemetry-firestore -p 127.0.0.1:8788:8080 \
-                    gcr.io/google.com/cloudsdktool/google-cloud-cli@sha256:3989a42372d3b984bade6db02213d456d94a0ba3765e8b744b95c4188b6fcc89 \
-                    gcloud beta emulators firestore start --host-port=0.0.0.0:8080 --project=demo-darkgrade
-                  for attempt in $(seq 1 60); do
-                    if curl --silent --fail http://127.0.0.1:8788/ >/dev/null; then exit 0; fi
-                    sleep 1
-                  done
-                  exit 1
-            - run: npm run test:emulator --prefix apps/contribution-collector
               env:
-                  FIRESTORE_EMULATOR_HOST: 127.0.0.1:8788
+                  DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry
+            - run: npm run build --prefix packages/link && npm run test --prefix packages/link -- tests/telemetry.test.ts tests/ptp-input-fuzz.test.ts
+            - run: npm run test --prefix packages/cli
+            - run: npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
             - run: docker build -f apps/contribution-collector/Dockerfile -t telemetry-check .
-            - name: Test actual collector HTTP container
+            - name: Test actual HTTP service
               run: |
-                  docker run -d --name telemetry-service --network container:telemetry-firestore \
-                    -e GOOGLE_CLOUD_PROJECT=demo-darkgrade -e FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+                  docker run -d --name telemetry-service --network host \
+                    -e DATABASE_URL=postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry \
                     -e TELEMETRY_PUBLIC_URL=https://telemetry.example -e PORT=8081 telemetry-check
                   for attempt in $(seq 1 30); do
-                    if docker exec telemetry-service node -e "fetch('http://127.0.0.1:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then break; fi
+                    if curl --silent --fail http://127.0.0.1:8081/healthz >/dev/null; then break; fi
                     sleep 1
                   done
-                  docker exec -e TELEMETRY_SMOKE_URL=http://127.0.0.1:8081 telemetry-service node dist/smoke.js
+                  TELEMETRY_SMOKE_URL=http://127.0.0.1:8081 npm run smoke --prefix apps/contribution-collector
             - name: Validate infrastructure
               run: |
                   docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 init -backend=false
                   docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 validate
             - if: always()
-              run: docker rm -f telemetry-service telemetry-firestore || true
+              run: docker rm -f telemetry-service || true

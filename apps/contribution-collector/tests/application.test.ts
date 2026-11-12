@@ -31,6 +31,85 @@ function settings(initial: InstallationState | null = null) {
 }
 const bytes = new Uint8Array([12, 0, 0, 0, 1, 0, 1, 16, 0, 0, 0, 0])
 
+test('resuming deletion and repeating delete share the existing request instead of aborting it', async () => {
+    const fixture = memoryDatabase()
+    const handle = createTelemetry(fixture.database, { publicUrl: 'https://telemetry.example' })
+    const saved = settings()
+    const first = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: saved.store,
+        fetch: (url, init) => handle(new Request(url, init)),
+    })
+    await first.observe(transport(), camera).transport.send(bytes, 1, 1)
+    assert.equal(await first.flush(), 'sent')
+    first.close()
+    await saved.store.write({ ...saved.read()!, enabled: false, withdrawalPending: true })
+    let calls = 0
+    const resumed = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: saved.store,
+        fetch: async (url, init) => {
+            calls++
+            return handle(new Request(url, init))
+        },
+    })
+    try {
+        await Promise.all([resumed.retryWithdrawal(), resumed.withdraw()])
+        assert.equal(calls, 1)
+        assert.equal(resumed.status().withdrawalPending, false)
+        assert.equal(saved.read()!.enabled, false)
+    } finally {
+        resumed.close()
+    }
+})
+
+test('a saved collector URL without registration does not require network deletion', async () => {
+    const saved = settings({
+        enabled: false,
+        noticeVersion: NOTICE_VERSION,
+        withdrawalPending: false,
+        collectorOrigin: 'https://telemetry.example',
+        installationId: '00000000-0000-4000-8000-000000000001',
+        enrollmentKey: 'dgi_00000000-0000-4000-8000-000000000001.' + 'A'.repeat(43),
+    })
+    let calls = 0
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: saved.store,
+        fetch: async () => {
+            calls++
+            throw new Error('No registration exists')
+        },
+    })
+    try {
+        await client.withdraw()
+        assert.equal(calls, 0)
+        assert.equal(client.status().withdrawalPending, false)
+        assert.equal(saved.read()!.enabled, false)
+    } finally {
+        client.close()
+    }
+})
+
+test('a pending enrollment cannot send its persisted secret to a different collector', async () => {
+    const saved = settings({
+        enabled: true,
+        noticeVersion: NOTICE_VERSION,
+        withdrawalPending: false,
+        collectorOrigin: 'https://original.example',
+        registrationPending: true,
+        installationId: '00000000-0000-4000-8000-000000000001',
+        enrollmentKey: 'dgi_00000000-0000-4000-8000-000000000001.' + 'A'.repeat(43),
+    })
+    await assert.rejects(
+        createApplicationDiagnostics({
+            endpoint: 'https://different.example',
+            store: saved.store,
+        }),
+        /another collector/
+    )
+})
+
 test('one application queues multiple cameras, enrolls once and uploads one metadata-only batch', async () => {
     const { database, records } = memoryDatabase()
     const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
@@ -63,7 +142,8 @@ test('one application queues multiple cameras, enrolls once and uploads one meta
         assert.equal(JSON.parse(row.payload).contributions.length, 2)
         assert.ok(saved.read()?.installKey)
         assert.equal(client.status().queuedEntries, 0)
-        assert.ok(!row.payload.includes('transactionId'))
+        assert.ok(row.payload.includes('transactionId'))
+        assert.ok(!row.payload.includes('parameters'))
         first.detach()
         second.detach()
     } finally {

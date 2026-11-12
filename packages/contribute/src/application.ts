@@ -24,24 +24,30 @@ export interface InstallationState {
     installKey?: string
     collectorOrigin?: string
     withdrawalPending: boolean
+    /** Generated locally before any network request. Never derived from hardware. */
+    installationId?: string
+    enrollmentKey?: string
+    registrationPending?: boolean
 }
 /** The application must store credentials securely and serialize access across its own processes. */
 export interface InstallationStore {
     read(): Promise<InstallationState | null>
     write(state: InstallationState): Promise<void>
+    current?(): InstallationState | null
 }
 export interface ApplicationDiagnosticsOptions {
     endpoint: string
     store: InstallationStore
-    /** Display the notice before the first observation; a visible setting must remain available. */
-    presentNotice(notice: { text: string; version: string }): Promise<void | boolean>
+    /** Optional embedding-product hook. Link, CLI and Studio do not require a first-run prompt. */
+    presentNotice?(notice: { text: string; version: string }): Promise<void | boolean>
+    localRecord?(camera: CameraContext, entry: DiagnosticEntry): void
     disabled?: () => boolean
     fetch?: typeof fetch
     flushIntervalMilliseconds?: number
     requestTimeoutMilliseconds?: number
 }
 type FlushResult = 'sent' | 'empty' | 'disabled' | 'retry' | 'rejected'
-const keyPattern = /^dgi_[a-f0-9-]{36}\.[A-Za-z0-9_-]{43}$/
+const keyPattern = /^dgi_[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.[A-Za-z0-9_-]{43}$/
 export function validateInstallationState(state: unknown): asserts state is InstallationState {
     const value = state as InstallationState
     if (
@@ -49,12 +55,26 @@ export function validateInstallationState(state: unknown): asserts state is Inst
         typeof value !== 'object' ||
         Array.isArray(value) ||
         Object.keys(value).some(
-            key => !['enabled', 'noticeVersion', 'installKey', 'collectorOrigin', 'withdrawalPending'].includes(key)
+            key =>
+                ![
+                    'enabled',
+                    'noticeVersion',
+                    'installKey',
+                    'collectorOrigin',
+                    'withdrawalPending',
+                    'installationId',
+                    'enrollmentKey',
+                    'registrationPending',
+                ].includes(key)
         ) ||
         typeof value.enabled !== 'boolean' ||
         typeof value.noticeVersion !== 'string' ||
         typeof value.withdrawalPending !== 'boolean' ||
         (value.installKey !== undefined && !keyPattern.test(value.installKey)) ||
+        (value.registrationPending !== undefined && typeof value.registrationPending !== 'boolean') ||
+        (value.enrollmentKey !== undefined && !keyPattern.test(value.enrollmentKey)) ||
+        (value.installationId !== undefined &&
+            !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.installationId)) ||
         (value.collectorOrigin !== undefined && typeof value.collectorOrigin !== 'string')
     )
         throw new Error('Invalid diagnostics settings; restore preferences before enabling collection')
@@ -69,7 +89,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     const url = new URL(options.endpoint)
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/')
         throw new Error('A credential-free HTTPS collector origin is required')
-    const interval = options.flushIntervalMilliseconds ?? 300_000
+    const interval = options.flushIntervalMilliseconds ?? 30_000
     const timeout = options.requestTimeoutMilliseconds ?? 10_000
     if (
         !Number.isSafeInteger(interval) ||
@@ -86,11 +106,11 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     let state: InstallationState = saved
         ? structuredClone(saved)
         : { enabled: true, noticeVersion: '', withdrawalPending: false }
-    if (state.installKey && state.collectorOrigin !== url.origin)
+    if ((state.installKey || state.registrationPending) && state.collectorOrigin !== url.origin)
         throw new Error('Installation credential belongs to another collector')
     state.collectorOrigin = url.origin
     if (state.noticeVersion !== NOTICE_VERSION) {
-        const choice = await options.presentNotice({ text: DIAGNOSTICS_NOTICE, version: NOTICE_VERSION })
+        const choice = await options.presentNotice?.({ text: DIAGNOSTICS_NOTICE, version: NOTICE_VERSION })
         if (choice === false) state.enabled = false
         state.noticeVersion = NOTICE_VERSION
         await options.store.write(structuredClone(state))
@@ -127,6 +147,8 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 state.enabled &&
                 !state.withdrawalPending &&
                 !environmentDisabled() &&
+                (options.store.current?.()?.enabled ?? true) &&
+                !(options.store.current?.()?.withdrawalPending ?? false) &&
                 !(options.disabled?.() ?? false)
             )
         } catch {
@@ -196,16 +218,58 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     }
     const enroll = async (generation: number) => {
         if (state.installKey) return state.installKey
-        const { response, data } = await call('/v2/installations', 'POST', { noticeVersion: NOTICE_VERSION })
-        if (!response.ok || !keyPattern.test(data.installKey) || data.noticeVersion !== NOTICE_VERSION)
+        if (!state.enrollmentKey) {
+            state.installationId ??= crypto.randomUUID()
+            const bytes = crypto.getRandomValues(new Uint8Array(32))
+            const secret = btoa(String.fromCharCode(...bytes))
+                .replaceAll('+', '-')
+                .replaceAll('/', '_')
+                .replace(/=+$/, '')
+            state.enrollmentKey = `dgi_${state.installationId}.${secret}`
+            await persist()
+        }
+        state.registrationPending = true
+        await persist()
+        const { response, data } = await call('/v2/installations', 'POST', {
+            noticeVersion: NOTICE_VERSION,
+            installKey: state.enrollmentKey,
+        })
+        if (
+            !response.ok ||
+            !keyPattern.test(data.installKey) ||
+            data.installKey !== state.enrollmentKey ||
+            data.noticeVersion !== NOTICE_VERSION
+        )
             throw new Error('Diagnostics enrollment unavailable')
         if (generation !== epoch || !enabled()) return undefined
         state.installKey = data.installKey
+        state.installationId = data.installKey.slice(4, 40)
+        delete state.enrollmentKey
+        state.registrationPending = false
         await persist() // Never upload with an identity the application cannot retain for withdrawal.
         if (generation !== epoch || !enabled()) return undefined
         return state.installKey
     }
     const send = async (): Promise<FlushResult> => {
+        if (options.store.current) {
+            try {
+                const latest = await options.store.read()
+                if (latest) {
+                    validateInstallationState(latest)
+                    if ((latest.installKey || latest.registrationPending) && latest.collectorOrigin !== url.origin)
+                        throw new Error('Collector changed')
+                    if (latest.installationId !== state.installationId) {
+                        epoch++
+                        clear()
+                    }
+                    state = { ...latest, collectorOrigin: url.origin }
+                }
+            } catch {
+                storageError = true
+                state.enabled = false
+                lastError = 'Telemetry settings could not be reloaded'
+            }
+        }
         if (!enabled()) {
             clear()
             return 'disabled'
@@ -268,7 +332,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         (withdrawal ??= (async () => {
             if (!state.withdrawalPending || closed) return
             await writes.catch(() => {})
-            const key = state.installKey
+            const key = state.installKey ?? (state.registrationPending ? state.enrollmentKey : undefined)
             if (!key) {
                 const next = { ...state, withdrawalPending: false }
                 await persist(next)
@@ -279,7 +343,11 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             const { response, data } = await call('/v2/installation', 'DELETE', undefined, key)
             if (!response.ok || data.revoked !== true) throw new Error('Withdrawal must be retried')
             const next = { ...state, withdrawalPending: data.deletionPending !== false }
-            if (!next.withdrawalPending) delete next.installKey
+            if (!next.withdrawalPending) {
+                delete next.installKey
+                delete next.enrollmentKey
+                next.registrationPending = false
+            }
             await persist(next)
             state = next
             lastError = state.withdrawalPending ? 'Deletion pending; the service will retry' : null
@@ -304,10 +372,41 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         if (!response.ok) throw new Error('Contact request failed; retry in the diagnostics settings')
         return data
     }
+    const append = (camera: CameraContext, entry: DiagnosticEntry) => {
+        const group = JSON.stringify(camera)
+        try {
+            options.localRecord?.(camera, entry)
+        } catch {
+            /* Local diagnostics cannot break camera control. */
+        }
+        if (!enabled()) return
+        if (count >= MAXIMUM_ENTRIES || (!queue.has(group) && queue.size >= MAXIMUM_BATCH_CAMERAS)) {
+            dropped = Math.min(Number.MAX_SAFE_INTEGER, dropped + 1)
+            const previous = queue.get(group)
+            if (previous) previous.droppedEntries = Math.min(Number.MAX_SAFE_INTEGER, previous.droppedEntries + 1)
+            return
+        }
+        let contribution = queue.get(group)
+        if (!contribution) {
+            contribution = {
+                schema: SCHEMA,
+                disclosure: DISCLOSURE,
+                id: crypto.randomUUID(),
+                camera,
+                entries: [],
+                droppedEntries: 0,
+            }
+            queue.set(group, contribution)
+        }
+        contribution.entries.push(entry)
+        count++
+    }
     return {
         enabled,
         status: () => ({
             enabled: enabled(),
+            sharingEnabled: options.store.current?.()?.enabled ?? state.enabled,
+            installationId: state.installationId ?? state.installKey?.slice(4, 40) ?? null,
             enrolled: !!state.installKey,
             withdrawalPending: state.withdrawalPending,
             queuedEntries:
@@ -315,6 +414,18 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             droppedEntries: dropped,
             error: lastError,
         }),
+        record(camera: CameraContext, entry: DiagnosticEntry) {
+            if (closed || storageError) return
+            validateContribution({
+                schema: SCHEMA,
+                disclosure: DISCLOSURE,
+                id: crypto.randomUUID(),
+                camera,
+                entries: [entry],
+                droppedEntries: 0,
+            })
+            append(structuredClone(camera), structuredClone(entry))
+        },
         observe<Device, Kind extends string>(source: CameraTransport<Device, Kind>, context: CameraContext) {
             const camera = structuredClone(context)
             validateContribution({
@@ -325,44 +436,31 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 entries: [],
                 droppedEntries: 0,
             })
-            const group = JSON.stringify(camera)
             return observeTransport(
                 source,
-                enabled,
-                (entry: DiagnosticEntry) => {
-                    if (count >= MAXIMUM_ENTRIES || (!queue.has(group) && queue.size >= MAXIMUM_BATCH_CAMERAS)) {
-                        dropped = Math.min(Number.MAX_SAFE_INTEGER, dropped + 1)
-                        const previous = queue.get(group)
-                        if (previous)
-                            previous.droppedEntries = Math.min(Number.MAX_SAFE_INTEGER, previous.droppedEntries + 1)
-                        return
-                    }
-                    let contribution = queue.get(group)
-                    if (!contribution) {
-                        contribution = {
-                            schema: SCHEMA,
-                            disclosure: DISCLOSURE,
-                            id: crypto.randomUUID(),
-                            camera,
-                            entries: [],
-                            droppedEntries: 0,
-                        }
-                        queue.set(group, contribution)
-                    }
-                    contribution.entries.push(entry)
-                    count++
-                },
+                () => !closed && !storageError,
+                (entry: DiagnosticEntry) => append(camera, entry),
                 () => epoch
             )
         },
         flush,
         async setConsent(value: boolean) {
             if (typeof value !== 'boolean') throw new Error('Diagnostics preference must be boolean')
+            if (options.store.current) {
+                await writes.catch(() => {})
+                const latest = await options.store.read()
+                if (latest) {
+                    if ((latest.installKey || latest.registrationPending) && latest.collectorOrigin !== url.origin)
+                        throw new Error('Collector changed')
+                    state = { ...latest, collectorOrigin: url.origin }
+                }
+            }
             if (value && state.withdrawalPending) throw new Error('Finish withdrawal before enrolling again')
             const generation = ++epoch
             state.enabled = false
             cancel()
             const next = { ...state, enabled: value }
+            if (value && !next.installKey && !next.enrollmentKey) next.installationId = crypto.randomUUID()
             await persist(next)
             if (generation !== epoch || closed) return
             state = next
@@ -370,10 +468,25 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             lastError = null
         },
         async withdraw() {
+            if (state.withdrawalPending) return retryWithdrawal()
             epoch++
             state.enabled = false
             state.withdrawalPending = true
             cancel()
+            if (options.store.current) {
+                await writes.catch(() => {})
+                let latest: InstallationState | null = null
+                try {
+                    latest = await options.store.read()
+                } catch {
+                    /* Keep the in-memory key if disk state is damaged. */
+                }
+                if (latest) {
+                    if ((latest.installKey || latest.registrationPending) && latest.collectorOrigin !== url.origin)
+                        throw new Error('Collector changed')
+                    state = { ...latest, collectorOrigin: url.origin, enabled: false, withdrawalPending: true }
+                }
+            }
             // A local storage failure must not prevent revoking the server-side credential.
             let failure: unknown
             try {

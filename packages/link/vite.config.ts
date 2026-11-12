@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { resolve } from 'path'
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
@@ -5,6 +6,8 @@ import dts from 'vite-plugin-dts'
 export default defineConfig({
     define: {
         global: 'globalThis',
+        __LINK_TELEMETRY_REVISION__: JSON.stringify(process.env.LINK_REVISION || execFileSync('git', ['rev-parse', 'HEAD']).toString().trim()),
+        __LINK_TELEMETRY_DIRTY__: JSON.stringify(execFileSync('git', ['status', '--porcelain', '--untracked-files=no']).toString().trim().length > 0),
     },
     plugins: [
         // Emits dist/index.d.ts (+ tree) with @camera/@core/... aliases
@@ -33,6 +36,7 @@ export default defineConfig({
         },
         rollupOptions: {
             external: [
+                /^@darkgrade\/contribute(?:\/|$)/,
                 'fs',
                 'path',
                 'usb',

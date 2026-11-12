@@ -5,6 +5,7 @@
 
 export const IPC = {
     DiagnosticsStatus: 'diagnostics:status',
+    DiagnosticsBenchmark: 'diagnostics:benchmark',
     DiagnosticsChange: 'diagnostics:change',
     DiagnosticsContact: 'diagnostics:contact',
     Connect: 'camera:connect',
@@ -382,6 +383,7 @@ export interface StudioApi {
     /** Adds a line to the speech engine's log file. */
     voiceDiagnostic(message: string): Promise<IpcResult<void>>
     onVoiceStatus(callback: (status: VoiceEngineStatus) => void): () => void
+    diagnosticsBenchmark(): Promise<IpcResult<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }>>
     getDiagnosticsStatus(): Promise<IpcResult<DiagnosticsStatus>>
     changeDiagnostics(action: 'sharing' | 'withdraw' | 'retry', value?: boolean): Promise<IpcResult<DiagnosticsStatus>>
     diagnosticsContact(
@@ -411,6 +413,8 @@ export interface StudioApi {
 }
 
 export interface DiagnosticsStatus {
+    installationId?: string | null
+    sharingEnabled?: boolean
     configured: boolean
     enabled: boolean
     enrolled: boolean

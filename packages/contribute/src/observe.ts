@@ -27,12 +27,12 @@ const containerKinds: Partial<Record<number, DiagnosticEntry['kind']>> = {
     3: 'response',
     4: 'event',
 }
-function header(bytes: Uint8Array): Pick<DiagnosticEntry, 'kind' | 'code'> {
+function header(bytes: Uint8Array): Pick<DiagnosticEntry, 'kind' | 'code' | 'transactionId'> {
     if (bytes.byteLength < 12) return { kind: 'unknown' }
     const view = new DataView(bytes.buffer, bytes.byteOffset, 12)
     if (view.getUint32(0, true) !== bytes.byteLength) return { kind: 'unknown' }
     const kind = containerKinds[view.getUint16(4, true)]
-    return kind ? { kind, code: view.getUint16(6, true) } : { kind: 'unknown' }
+    return kind ? { kind, code: view.getUint16(6, true), transactionId: view.getUint32(8, true) } : { kind: 'unknown' }
 }
 
 export function observeTransport<Device, Kind extends string>(
@@ -42,11 +42,12 @@ export function observeTransport<Device, Kind extends string>(
     generation: () => number
 ) {
     let detached = false
+    let sessionId = crypto.randomUUID()
     const listeners = new Set<(event: CameraEvent) => void>()
     const save = (entry: DiagnosticEntry) => {
         if (!detached && enabled()) {
             try {
-                record(entry)
+                record({ ...entry, occurredAt: new Date().toISOString(), sessionId })
             } catch {
                 /* Diagnostics must not break camera cleanup. */
             }
@@ -94,6 +95,7 @@ export function observeTransport<Device, Kind extends string>(
     const transport: CameraTransport<Device, Kind> = {
         connect: device =>
             operation('lifecycle', 'connect', () => {
+                sessionId = crypto.randomUUID()
                 source.on?.(onEvent)
                 return source.connect(device)
             }),

@@ -1,3 +1,4 @@
+import { linkTelemetry } from '@core/telemetry'
 import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@camera/transaction-channel'
 import { Logger } from '@core/logger'
 import {
@@ -69,6 +70,7 @@ export class GenericCamera {
     private lastFailure?: PTPErrorContext
     private recovery?: RecoveryAttempt
     private readonly channel: TransactionChannel
+    private readonly telemetry: ReturnType<typeof linkTelemetry>
     public transport: TransportInterface
     protected logger: Logger
     public registry: Registry
@@ -79,6 +81,8 @@ export class GenericCamera {
     protected defaultChunkSize = 10 * 1024 * 1024 // 10MB
 
     constructor(transport: TransportInterface, logger: Logger) {
+        this.telemetry = linkTelemetry(transport)
+        transport = this.telemetry.transport
         this.transport = transport
         this.logger = logger
         this.channel = new TransactionChannel(transport, ({ container, reason }) =>
@@ -96,6 +100,7 @@ export class GenericCamera {
     }
 
     protected async connectTransport(device?: DeviceDescriptor): Promise<void> {
+        await this.telemetry.prepare()
         if (this.recovery?.status === 'pending')
             throw new PTPRecoveryRequiredError('Transport recovery is still running', this.lastFailure)
         if (!this.transport.isConnected()) {
@@ -229,7 +234,11 @@ export class GenericCamera {
             () => undefined
         )
 
-        return result
+        const response = await result
+        if (operation.code === 0x1001 && response.code === OK.code && 'data' in response && response.data) {
+            await this.telemetry.identify(response.data as unknown as { manufacturer: string; model: string; deviceVersion: string })
+        }
+        return response
     }
 
     private async sendTransaction<Op extends OperationDefinition>(

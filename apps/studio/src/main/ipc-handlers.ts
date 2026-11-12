@@ -49,6 +49,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     })
     studioMcpServer.onStatus(status => broadcastToAll(IPC_EVENTS.McpServerStatus, status))
     handle(IPC.DiagnosticsStatus, diagnosticsStatus)
+    handle(IPC.DiagnosticsBenchmark, () => cameraService.benchmarkDiagnostics())
     handle(IPC.DiagnosticsChange, changeDiagnostics)
     handle(IPC.DiagnosticsContact, diagnosticsContact)
     handle(IPC.PreferencesGet, () => preferences.get())

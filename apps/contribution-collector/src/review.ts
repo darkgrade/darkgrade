@@ -2,7 +2,7 @@ import type { Database } from '#collector/database'
 import { validateBatch } from '@darkgrade/contribute/batch'
 import { createHash } from 'node:crypto'
 
-/** Operator review runs with Firestore IAM, not through the public install-key API. */
+/** Operator review uses database credentials, never the public installation-key API. */
 export async function reviewDiagnostic(database: Database, recordId: string, now = new Date()) {
     if (!/^[a-f0-9-]{36}_[a-f0-9-]{36}$/.test(recordId)) throw new Error('Invalid diagnostic record ID')
     return database.transaction(async transaction => {
@@ -21,6 +21,7 @@ export async function reviewDiagnostic(database: Database, recordId: string, now
                 string,
                 {
                     kind: string
+                    operation?: string
                     direction: string
                     code: number | null
                     count: number
@@ -30,9 +31,10 @@ export async function reviewDiagnostic(database: Database, recordId: string, now
                 }
             >()
             for (const entry of contribution.entries) {
-                const key = `${entry.kind}/${entry.direction}/${entry.code ?? 'none'}`
+                const key = `${entry.kind}/${entry.direction}/${entry.operation ?? 'ptp'}/${entry.code ?? 'none'}`
                 const summary = observed.get(key) ?? {
                     kind: entry.kind,
+                    ...(entry.operation && { operation: entry.operation }),
                     direction: entry.direction,
                     code: entry.code ?? null,
                     count: 0,
@@ -41,7 +43,9 @@ export async function reviewDiagnostic(database: Database, recordId: string, now
                     totalMilliseconds: 0,
                 }
                 summary.count++
-                summary.errors += Number(entry.failed)
+                summary.errors += Number(
+                    entry.failed || (entry.kind === 'response' && entry.code !== undefined && entry.code !== 0x2001)
+                )
                 summary.bytes += entry.bytes
                 summary.totalMilliseconds += entry.durationMilliseconds
                 observed.set(key, summary)

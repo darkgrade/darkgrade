@@ -1,5 +1,6 @@
 import {
     Camera,
+    runCameraBenchmark,
     identifyCamera,
     isMovableFocusArea,
     PTPDisconnectedError,
@@ -14,7 +15,6 @@ import {
     type SonyFocalFrame,
     type TransactionPolicy,
 } from '@darkgrade/link'
-import { diagnosticUsbTransport } from '@main/diagnostics'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import type {
     CameraBattery,
@@ -336,6 +336,18 @@ export class CameraService {
      * can never interleave on the wire. NOTE: never call enqueue() from
      * inside an enqueued operation — that deadlocks.
      */
+    private benchmarkRunning = false
+    async benchmarkDiagnostics(): Promise<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }> {
+        if (!this.camera || this.recording || this.benchmarkRunning) throw new Error('Connect an idle camera before benchmarking')
+        this.benchmarkRunning = true
+        return this.withLiveViewPaused(() => this.enqueue(async () => {
+            if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
+            const result = await runCameraBenchmark(this.camera)
+            await (await import('@darkgrade/contribute/settings')).nodeDiagnostics().then(client => client.flush())
+            return result
+        })).finally(() => { this.benchmarkRunning = false })
+    }
+
     private operationQueue: Promise<unknown> = Promise.resolve()
 
     private enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -427,12 +439,7 @@ export class CameraService {
             ? { usb: { filters: [{ vendorId: discovered.vendorId, productId: discovered.productId }] } }
             : undefined
 
-        const transport =
-            discovered?.model && !discovered.model.endsWith('(or similar)')
-                ? await diagnosticUsbTransport(VENDOR_NAMES[discovered.vendorId] ?? 'Unknown', discovered.model)
-                : undefined
         const camera = new Camera({
-            transport,
             logger: { expanded: false, renderInTerminal: false, captureConsole: false },
             device,
             transactionPolicy: TRANSACTION_POLICY,

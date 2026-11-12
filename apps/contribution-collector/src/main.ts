@@ -1,11 +1,10 @@
-import { firestoreDatabase } from '#collector/database'
-import { createTelemetry, resendContactSender } from '#collector/telemetry'
+import { investigate } from '#collector/investigate'
+import { postgresDatabase } from '#collector/postgres'
+import { cleanupWithdrawals, createTelemetry, resendContactSender } from '#collector/telemetry'
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 
-const database = firestoreDatabase(process.env.GOOGLE_CLOUD_PROJECT ?? '', {
-    ...(process.env.FIRESTORE_EMULATOR_HOST && { emulator: process.env.FIRESTORE_EMULATOR_HOST }),
-})
+const database = await postgresDatabase(process.env.DATABASE_URL ?? '')
 const handle = createTelemetry(database, {
     publicUrl: process.env.TELEMETRY_PUBLIC_URL ?? '',
     allowedOrigins: JSON.parse(process.env.TELEMETRY_ALLOWED_ORIGINS ?? '[]'),
@@ -24,7 +23,13 @@ const server = createServer(async (incoming, outgoing) => {
                     duplex: 'half',
                 }),
         })
-        const result = await handle(request)
+        const pathname = new URL(request.url).pathname
+        const result =
+            pathname === '/internal' || pathname.startsWith('/internal/')
+                ? await investigate(request, process.env.TELEMETRY_ADMIN_KEY, database.timeline)
+                : pathname === '/healthz'
+                  ? await database.health().then(() => Response.json({ ok: true }))
+                  : await handle(request)
         console.log(
             JSON.stringify({
                 component: 'contribution-collector',
@@ -50,3 +55,28 @@ const server = createServer(async (incoming, outgoing) => {
 server.requestTimeout = 20_000
 server.headersTimeout = 10_000
 server.listen(Number(process.env.PORT ?? 8080), '0.0.0.0')
+
+let maintaining = false
+const maintain = async () => {
+    if (maintaining) return
+    maintaining = true
+    try {
+        await database.expire()
+        await cleanupWithdrawals(database)
+    } catch {
+        console.error('Telemetry maintenance will retry')
+    } finally {
+        maintaining = false
+    }
+}
+const maintenance = setInterval(() => void maintain(), 60_000)
+maintenance.unref()
+void maintain()
+for (const signal of ['SIGTERM', 'SIGINT'])
+    process.once(signal, () => {
+        clearInterval(maintenance)
+        server.close(() => {
+            void database.close().then(() => process.exit(0))
+        })
+        setTimeout(() => process.exit(1), 20_000).unref()
+    })

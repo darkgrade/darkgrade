@@ -44,14 +44,12 @@ jobs:
                   DIGEST=$(gcloud artifacts docker images describe "$IMAGE" --format='value(image_summary.digest)')
                   test -n "$DIGEST"
                   echo "TELEMETRY_IMAGE=$REGISTRY/collector@$DIGEST" >> "$GITHUB_ENV"
-            - name: Update service and withdrawal worker
+            - name: Update telemetry service
               run: |
                   set -euo pipefail
                   gcloud run services update darkgrade-telemetry --project="$PROJECT" --region="$REGION" --image="$TELEMETRY_IMAGE" --quiet
-                  gcloud run jobs update darkgrade-telemetry-cleanup --project="$PROJECT" --region="$REGION" --image="$TELEMETRY_IMAGE" --quiet
-            - name: Verify public service and cleanup job
+            - name: Verify public service
               run: |
                   set -euo pipefail
                   TELEMETRY_SMOKE_URL="$PUBLIC_URL" npm run smoke --prefix apps/contribution-collector
-                  gcloud run jobs execute darkgrade-telemetry-cleanup --project="$PROJECT" --region="$REGION" --wait --quiet
                   echo "Verified image: $TELEMETRY_IMAGE" >> "$GITHUB_STEP_SUMMARY"

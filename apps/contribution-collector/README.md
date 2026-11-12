@@ -1,159 +1,100 @@
-# Camera diagnostics pipeline
+# Darkgrade telemetry
 
-This is the lean pipeline in Explainer Studio project 18: one Cloud Run HTTP service,
-Firestore, and a daily withdrawal job using the same image. The default service is
-`src/telemetry.ts`, started by `src/main.ts`. It has **not been deployed** by this change.
+One HTTPS service and one Postgres database. The service validates and batches camera
+metadata, serves a private investigation timeline, and performs its own cleanup. No
+Firestore, GCS recording store, email provider, separate cleanup worker or scheduler is
+required. This replaces the undeployed project 18 infrastructure.
 
-Applications use `@darkgrade/contribute/application` once for all their cameras. A visible
-first-run notice explains collection before observation begins. Sharing starts on, saved
-opt-outs remain off, and corrupt settings fail closed. A random installation credential
-is created lazily, saved securely before uploading, and bound to the collector origin.
-The application sends one bounded batch every five minutes; importing Link alone does
-not collect anything. Photos, serials, command parameters, paths, and free-form error
-messages are excluded. Full encrypted recordings remain a separate, explicit workflow.
+## Local development
 
-## Identity, storage, and deletion
+Build `packages/contribute` and this app, then run a local Postgres 17 database. Set
+`DATABASE_URL` to its connection string and `TELEMETRY_PUBLIC_URL` to the intended HTTPS
+origin. `npm start` starts the service on port 8080. `npm test` includes real Postgres
+integration tests when `DATABASE_URL` is set. `npm run smoke` uses `TELEMETRY_SMOKE_URL`
+(HTTPS, or explicit loopback HTTP for local checks). It creates and deletes only its own
+synthetic installation; it does not operate a camera.
 
-- `POST /v2/installations`: enroll with the current notice version. Returns a random
-  install ID and secret; only its SHA-256 is stored. This credential authorizes uploads
-  and withdrawal. There is no shared signing secret, issuer service, or token-refresh job.
-- `POST /v2/batches`: authenticated, strict v2 envelope; up to 16 camera contexts,
-  1,000 entries, 256 KiB, and 512 distinct batches per installation per UTC day.
-  Exact retries are idempotent; conflicting reuse of a batch ID is rejected.
-- `GET /v2/installation`: this installation's withdrawal/contact status.
-- `DELETE /v2/installation`: revoke first, then delete. A `202` response explicitly means
-  deletion is pending. Repeated deletion uses the retained key; it never re-enrolls.
-- `POST /v2/contact`: optional email and separately chosen public credit. Confirmation
-  links use a fragment, not a query string. Challenges expire in 15 minutes, are single
-  use, and cannot revive a withdrawn installation or replaced email request.
-- `DELETE /v2/contact`: removes contact information and invalidates pending links.
-  Exports resolve current verified credit rather than retaining old names in patterns.
+The Dockerfile is built from the repository root after both packages are built. Production
+connects through Cloud SQL's authenticated Unix socket; direct remote Postgres connections
+must use certificate-verified TLS. Do not expose a plaintext Postgres port publicly.
 
-Firestore collections are `installations`, `diagnostics`, `contacts`, `contactChallenges`,
-`uploadQuotas`, `enrollmentQuotas`, `reviewedPatterns`, and `maintenance`. Email is stored
-only in the contact/challenge collections. Only confirmed email hashes group installs;
-this grouping does not grant cross-install upload or deletion access. Diagnostic documents
-expire after 90 days. Firestore TTL deletion is asynchronous; review rejects expired data
-immediately. Quotas expire after two days; permanent revocation tombstones do not expire.
+## Data and behavior
 
-Uploads, quota changes, contact confirmations and reviews atomically verify the installation
-version when committing. A revoked installation cannot gain a late upload or reviewed
-pattern. The REST adapter uses atomic version preconditions, including read-only guards,
-with bounded conflict retries. It does not hold read locks across separate HTTP requests.
+- `telemetry_events` is the flat investigation table: installation/session IDs, client/server
+  timestamps, model, firmware, Link revision, transport, operation code and flexible JSONB
+  properties. No image bytes, serials, command parameters or arbitrary error messages.
+- `telemetry_state` holds installation credential hashes, immutable original batches, quotas,
+  review records and deletion state. Original batch hashes retain provenance for Matrix.
+- Serializability keeps uploads, revocation and review consistent. Retrying an identical
+  batch is idempotent; changing an existing batch's contents is rejected. No plaintext
+  installation secrets enter the database.
+- Registration accepts a locally generated random identity and secret so network retries
+  cannot create multiple identities. Revocation also tombstones pending registration;
+  delayed requests cannot recreate withdrawn records.
+- Batches expire after 90 days. The resident service removes expired batches and their flat
+  events, and retries interrupted withdrawals every minute. It catches up after downtime.
+  Reviewed patterns remain withdrawal-linked; minimal credential tombstones prevent replay.
+- Admission limits: 1,000 registrations/day across the service and 4,096 batches/day per
+  installation. Bodies are capped at 256 KiB, 1,000 entries and 16 camera contexts. These
+  bounds do not prevent the cost of arbitrary rejected HTTP traffic.
+- Existing optional contact endpoints remain compatibility-only and disabled without an
+  explicit mail sender. CLI/Studio use `whoami` / Copy diagnostic ID, not email login.
 
-The daily worker drains pending withdrawals in bounded pages, including reviewed patterns.
-It keeps its pagination cursor, reports failures, and can safely restart after interruption.
-An application remembers pending withdrawal across restarts, clears queued diagnostics,
-and retries without creating a new identity. A lost credential has no anonymous recovery
-path; applications must use durable OS-backed storage, not reset their identity on errors.
+## Investigation and Matrix
 
-## Reviewed evidence and Matrix
+Set a random `TELEMETRY_ADMIN_KEY` (at least 32 characters) to enable `/internal`. Sign in
+as `outpost` with that key over HTTPS. The compact timeline filters by installation, camera
+model or session and displays at most 500 observations. Full payloads and database secrets
+are never sent to this view. It is an operator tool, not a customer-facing recording page.
+The page reports observations and camera responses; it does not infer a proven root cause.
 
-Operator commands use Firestore IAM; install keys cannot review or export diagnostics.
-On a workstation with an authorized gcloud login, set `TELEMETRY_OPERATOR_AUTH=gcloud`
-and `GOOGLE_CLOUD_PROJECT`. Inside Cloud Run, omit the operator option to use workload
-identity. No token is printed or written to disk by these commands:
+Operators use database credentials with these scripts:
 
-```sh
-npm run review --prefix apps/contribution-collector -- INSTALL_ID_BATCH_ID
-npm run export:matrix --prefix apps/contribution-collector -- /private/path/matrix-diagnostics.json
-npm run cleanup --prefix apps/contribution-collector
+```
+npm run review -- INSTALLATION_ID_BATCH_ID
+npm run export:matrix -- /private/path/reviewed-patterns.json
+npm run cleanup
 ```
 
-Review retains the source record, digest, installation, notice version, camera model,
-firmware, driver revision, transport and synthetic/hardware origin. It summarizes command
-codes, outcome counts and timings; it does not invent image validation or replay payloads.
-An operator must inspect a candidate before invoking review. This is not an automatic
-training or camera-definition promotion job.
+Review retains model, firmware, transport, revision, synthetic/hardware origin and hashes.
+Non-OK response codes count as error observations, including retries; they do not establish
+a failed final workflow. Matrix's existing `import_diagnostics` tool replaces the complete
+snapshot; records expire within 24 hours and disappear after withdrawal/re-export. Neither
+an observation nor a reviewed pattern automatically becomes a hardware pass. Automated
+agent diagnosis/PR creation and exact byte replay remain future work, not this timeline.
 
-Matrix's companion `import_diagnostics` MCP tool accepts the entire JSON export, replacing
-the prior snapshot. `get_diagnostics` returns scoped evidence; each camera has a collapsed
-summary. Snapshots expire after at most 24 hours and older/conflicting snapshots cannot
-restore withdrawn rows. Regenerate and import daily. Withdrawal blocks review/export
-immediately; existing downstream copies converge on refresh or expiry, not instantly.
-Do not copy patterns into untracked permanent definitions. Any future training artifact
-must retain these source IDs and participate in the same withdrawal lifecycle. No full
-recordings are exported. Monthly BigQuery analysis remains a later extension.
+## GCP deployment
 
-## Local validation
+Terraform provisions Cloud Run and Cloud SQL for Postgres, plus the registry, restricted
+service identities and configuration secrets needed to run those two services. Cloud Run
+supplies HTTPS; Cloud SQL supplies encrypted storage/backups. No custom load balancer is
+needed. One resident, CPU-allocated Cloud Run instance runs cleanup and scales to at most
+two. This has an idle cost; it is a simplicity choice, not a scale-to-zero claim. The small
+Postgres instance is single-zone, with backups and point-in-time recovery, not HA.
 
-Build both workspaces before tests or Docker packaging:
+1. Select the billing-enabled project and region. Create a private versioned Terraform
+   state bucket; run `terraform init -backend-config=bucket=BUCKET -backend-config=prefix=telemetry`.
+2. Supply `project_id`, `region`, `collector_image` pinned by digest, `public_url`, a random
+   `database_password` and a separate random `admin_key`. Inject secrets through the
+   deployment environment; do not commit tfvars or print a plan/state containing secrets.
+   Sensitive values still exist in Terraform state: restrict access to that bucket.
+3. For a new registry, provision just `google_artifact_registry_repository.telemetry`, build
+   and push a **linux/amd64** image, then apply the full reviewed plan with its real digest.
+   For the first default Cloud Run hostname, use `https://pending.invalid`, read the
+   `collector_url` output and apply again with the actual URL before configuring any client.
+   A custom hostname needs separately configured DNS/TLS.
+4. Test `/healthz`, enrollment, duplicates, opt-out, withdrawal and `/internal`. Verify
+   database/network permissions and backup restoration before accepting customer diagnostics.
+   Configure project-level billing notifications; instance counts are not hard spending caps.
+5. Set `DARKGRADE_TELEMETRY_URL` in products to the deployed HTTPS origin. No production
+   endpoint is baked into the unpublished packages yet. No existing customer collection is enabled.
 
-```sh
-npm run test --prefix packages/contribute
-npm run test --prefix apps/contribution-collector
-docker build -f apps/contribution-collector/Dockerfile -t darkgrade-telemetry .
-```
+The manual GitHub deployment workflow uses OIDC, restricted to this repository and
+`deploy_ref` (main by default; explicitly choose the open PR's branch for staging). Set the
+`telemetry` environment variables `TELEMETRY_PROJECT`, `TELEMETRY_REGION`,
+`TELEMETRY_PUBLIC_URL`, `TELEMETRY_WIF_PROVIDER`, `TELEMETRY_DEPLOY_ACCOUNT` from Terraform.
+It updates only the web service and smoke-tests it. Record its image digest in Terraform
+inputs so a later apply does not roll it back. Database destruction is protected.
 
-`test:emulator` uses the production Firestore REST adapter. It requires
-`FIRESTORE_EMULATOR_HOST=127.0.0.1:PORT`; otherwise that test is explicitly skipped.
-The CI workflow starts the official Firestore emulator, checks concurrency, scoped
-paginated deletion, review/export and revocation races, then runs the real HTTP container.
-`npm run smoke --prefix apps/contribution-collector` requires `TELEMETRY_SMOKE_URL`
-(HTTPS, or loopback HTTP for tests). It creates and withdraws its own synthetic fixture,
-checks duplicates/invalid credentials/revocation, and never contacts a camera.
-
-## GCP bootstrap and deployment
-
-Required operator inputs: a billing-enabled project, region, private Terraform state bucket,
-billing account, alert channels, and a deployment identity permitted to create these
-resources. Optional email requires a verified Resend sender and an API secret in Secret
-Manager; only its secret ID and numeric version enter Terraform. A different email provider
-can implement the existing `sendContact` interface. No credentials belong in repository
-files, npm clients, Terraform variables, or workflow output.
-
-1. Create a dedicated private, versioned GCS bucket for Terraform state. Initialize with
-   `terraform -chdir=apps/contribution-collector/infra init -backend-config=bucket=STATE_BUCKET`
-   and a dedicated `-backend-config=prefix=darkgrade-telemetry`. Import an existing default
-   Firestore database if the chosen project already has one; never replace it.
-2. Supply `project_id`, `region`, `billing_account`, `notification_channels`, `public_url`
-   and an image digest through a local untracked tfvars file. Budget defaults to USD 50.
-   For a new registry, target only `google_artifact_registry_repository.telemetry` first;
-   an initial syntactically valid placeholder digest is acceptable for this registry-only
-   step, never for a service deployment.
-3. Build and push a **linux/amd64** image to
-   `REGION-docker.pkg.dev/PROJECT/darkgrade-telemetry/collector`, then set `collector_image`
-   to the returned immutable digest. Review a full Terraform plan before applying it.
-4. If using the standard Cloud Run URL, bootstrap with `public_url=https://pending.invalid`
-   and email unconfigured. Read the `collector_url` output, set `public_url` to that origin,
-   and apply again **before distributing an application configuration**. A custom hostname
-   instead needs verified DNS/TLS mapping; this configuration does not create DNS records.
-5. Run the public smoke command, execute the cleanup job and inspect Monitoring. Test a
-   confirmation email if configured. Deliver a test alert and verify billing recipients.
-   An infrastructure validation or a container test is not verification of live IAM,
-   email delivery, DNS/TLS, or alert delivery.
-6. Set GitHub environment `telemetry` variables: `TELEMETRY_PROJECT`, `TELEMETRY_REGION`,
-   `TELEMETRY_PUBLIC_URL`, `TELEMETRY_WIF_PROVIDER`, and `TELEMETRY_DEPLOY_ACCOUNT` from the
-   Terraform outputs. The manual deployment workflow builds/tests an image, authenticates
-   with GitHub OIDC, updates the service and cleanup job, and runs smoke/cleanup checks.
-   Federation permits only `darkgrade/darkgrade` at `deploy_ref` (main by default). For a
-   deliberate pre-merge trial, configure the exact review branch and deploy with an
-   authorized operator identity; do not broaden the trust condition to all forks/refs.
-7. Record the deployed digest in Terraform inputs after each workflow run so a later
-   apply cannot inadvertently roll back the image. Roll back both the service and cleanup
-   job together using the last verified digest; do not delete the database or tombstones.
-
-The service uses its own workload identity and Firestore permissions. The scheduler can
-invoke only the cleanup job. The deployment identity can publish images/update Run and
-act as the service identity, but cannot administer the database. Private service state
-uses a deletion-protected Firestore database. The HTTP endpoint is public by design;
-explicit CORS origins are configurable, and install authentication applies independently.
-
-This lean design bounds enrollment at 1,000 installations/day across instances and limits
-accepted per-install uploads. Three instances and a budget **are not a hard spend cap** or
-a comprehensive DDoS defense: invalid requests still consume resources. Monitor traffic
-before widening rollout; add an edge rate limiter if abuse warrants it. Cloud Run request
-logs can include network metadata even though application logs contain only aggregate
-status/method/outcome. Set log retention in the deployment project accordingly.
-
-Terraform adds a 5xx-rate alert, failed-cleanup alert, and billing budget thresholds.
-Monitoring channels must be supplied for notifications; an empty list only creates
-incidents in the console. Budget recipients follow the billing account configuration.
-
-## Legacy code
-
-`collector.ts`, the signed-grant issuer, GCS adapter and old withdrawal worker remain for
-compatibility tests and explicit migration work. They are **not** routed by the v2 service
-or scheduled by this Terraform. The earlier 30-day/GCS/Ed25519/load-balancer design is
-superseded for this new, undeployed pipeline. Do not point old v1 clients at v2 without
-upgrading their application enrollment/settings integration.
+Nothing has been deployed by building or validating these files. No live Firestore data
+needs migration in this workspace; do not point this plan at an unrelated existing database.

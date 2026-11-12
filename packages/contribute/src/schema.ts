@@ -4,6 +4,10 @@ export const MAXIMUM_ENTRIES = 1000
 export const MAXIMUM_BODY_BYTES = 256 * 1024
 
 export interface DiagnosticEntry {
+    operation?: string
+    occurredAt?: string
+    sessionId?: string
+    transactionId?: number
     kind: 'connect' | 'disconnect' | 'reset' | 'command' | 'response' | 'data' | 'event' | 'unknown'
     direction: 'out' | 'in' | 'lifecycle'
     code?: number
@@ -73,7 +77,18 @@ export function validateContribution(value: unknown): asserts value is Contribut
         throw new Error('Invalid diagnostic count')
     for (const entry of value.entries) {
         if (
-            !keys(entry, ['kind', 'direction', 'code', 'bytes', 'durationMilliseconds', 'failed']) ||
+            !keys(entry, [
+                'kind',
+                'direction',
+                'code',
+                'bytes',
+                'durationMilliseconds',
+                'failed',
+                'occurredAt',
+                'sessionId',
+                'transactionId',
+                'operation',
+            ]) ||
             !['connect', 'disconnect', 'reset', 'command', 'response', 'data', 'event', 'unknown'].includes(
                 String(entry.kind)
             ) ||
@@ -81,7 +96,15 @@ export function validateContribution(value: unknown): asserts value is Contribut
             (entry.code !== undefined && !integer(entry.code, 65535)) ||
             !integer(entry.bytes, 2 ** 32 - 1) ||
             !integer(entry.durationMilliseconds, 3_600_000) ||
-            typeof entry.failed !== 'boolean'
+            typeof entry.failed !== 'boolean' ||
+            (entry.operation !== undefined &&
+                (typeof entry.operation !== 'string' || !/^[a-z_]{1,40}$/.test(entry.operation))) ||
+            (entry.sessionId !== undefined && !isContributionId(entry.sessionId)) ||
+            (entry.transactionId !== undefined && !integer(entry.transactionId, 2 ** 32 - 1)) ||
+            (entry.occurredAt !== undefined &&
+                (typeof entry.occurredAt !== 'string' ||
+                    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(entry.occurredAt) ||
+                    !Number.isFinite(Date.parse(entry.occurredAt))))
         )
             throw new Error('Invalid diagnostic entry')
     }

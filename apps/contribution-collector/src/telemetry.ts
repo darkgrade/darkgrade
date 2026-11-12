@@ -4,7 +4,7 @@ import { MAXIMUM_BODY_BYTES } from '@darkgrade/contribute/schema'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 export const RETENTION_DAYS = 90
-export const DAILY_BATCH_LIMIT = 512
+export const DAILY_BATCH_LIMIT = 4096
 const DAY = 86_400_000
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const dateKey = (date: Date) => date.toISOString().slice(0, 10)
@@ -23,7 +23,7 @@ const exact = (body: any, keys: string[]) => {
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !keys.includes(key)))
         fail(400, 'Invalid request')
 }
-const tokenPattern = /^dgi_([a-f0-9-]{36})\.([A-Za-z0-9_-]{43})$/
+const tokenPattern = /^dgi_([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.([A-Za-z0-9_-]{43})$/
 const credentialHash = (secret: string) => digest(secret)
 async function authenticate(database: Database, authorization: string) {
     const match = tokenPattern.exec(authorization.replace(/^Bearer /, ''))
@@ -86,7 +86,7 @@ async function readJson(request: Request) {
     }
 }
 
-/** A single service stores diagnostics and consent state in Firestore. No bearer keys enter records. */
+/** A single service stores diagnostics and consent state in Postgres. No bearer keys enter records. */
 export function createTelemetry(database: Database, options: TelemetryOptions) {
     const publicUrl = new URL(options.publicUrl)
     if (
@@ -118,12 +118,20 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
         if (path === '/confirm' && method === 'GET') return confirmationPage()
         if (path === '/v2/installations' && method === 'POST') {
             const body = await readJson(request)
-            exact(body, ['noticeVersion'])
-            if (body.noticeVersion !== NOTICE_VERSION) fail(422, 'Read the current diagnostics notice first')
-            const installId = randomUUID(),
-                secret = randomBytes(32).toString('base64url'),
+            exact(body, ['noticeVersion', 'installKey'])
+            if (body.noticeVersion !== NOTICE_VERSION) fail(422, 'Unsupported telemetry protocol version')
+            const supplied = body.installKey === undefined ? undefined : tokenPattern.exec(String(body.installKey))
+            if (body.installKey !== undefined && !supplied) fail(400, 'Invalid installation credential')
+            const installId = supplied?.[1] ?? randomUUID(),
+                secret = supplied?.[2] ?? randomBytes(32).toString('base64url'),
                 date = now()
             await database.transaction(async transaction => {
+                const previous = await transaction.get(`installations/${installId}`)
+                if (previous) {
+                    if (previous.keyHash !== credentialHash(secret)) fail(409, 'Installation identity already exists')
+                    if (previous.revoked) fail(410, 'Installation withdrawn')
+                    return
+                }
                 const quotaPath = `enrollmentQuotas/${dateKey(date)}`
                 const quota = await transaction.get(quotaPath)
                 if ((quota?.count ?? 0) >= enrollmentLimit) fail(429, 'Enrollment limit reached; retry tomorrow')
@@ -167,6 +175,36 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
         }
         const routes = new Set(['/v2/installation', '/v2/batches', '/v2/contact'])
         if (!routes.has(path)) fail(404, 'Not found')
+        if (path === '/v2/installation' && method === 'DELETE') {
+            // A persisted enrollment can outlive a lost registration response. Tombstone it first,
+            // so a delayed registration/upload cannot recreate data after deletion.
+            const match =
+                /^Bearer dgi_([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.([A-Za-z0-9_-]{43})$/.exec(
+                    request.headers.get('authorization') ?? ''
+                )
+            if (match)
+                await database.transaction(async transaction => {
+                    const record = `installations/${match[1]}`
+                    if (!(await transaction.get(record))) {
+                        const quotaPath = `enrollmentQuotas/${dateKey(now())}`
+                        const quota = await transaction.get(quotaPath)
+                        if ((quota?.count ?? 0) >= enrollmentLimit)
+                            fail(429, 'Enrollment limit reached; retry tomorrow')
+                        transaction.set(quotaPath, {
+                            count: (quota?.count ?? 0) + 1,
+                            expiresAt: new Date(+now() + 2 * DAY),
+                        })
+                        transaction.set(record, {
+                            keyHash: credentialHash(match[2]),
+                            noticeVersion: NOTICE_VERSION,
+                            createdAt: now(),
+                            revoked: true,
+                            pendingDeletion: false,
+                            emailGeneration: 0,
+                        })
+                    }
+                })
+        }
         const { installId, keyHash } = await authenticate(database, request.headers.get('authorization') ?? '')
         if (path === '/v2/installation' && method === 'GET') {
             const install = await database.get(`installations/${installId}`)

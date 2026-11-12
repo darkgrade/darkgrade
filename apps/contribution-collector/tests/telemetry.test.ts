@@ -1,5 +1,5 @@
 import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
-import { cleanupWithdrawals, createTelemetry, type ContactMessage } from '#collector/telemetry'
+import { cleanupWithdrawals, createTelemetry, DAILY_BATCH_LIMIT, type ContactMessage } from '#collector/telemetry'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { batch, enroll, memoryDatabase, request } from './telemetry-fixture.ts'
@@ -144,6 +144,17 @@ test('quotas, malformed bodies, email injection and untrusted origins are reject
     })
     const { installId, installKey } = await enroll(handle)
     await assert.rejects(enroll(handle))
+    assert.equal(
+        (
+            await handle(
+                request('/v2/installations', 'POST', undefined, {
+                    noticeVersion: 'camera-diagnostics-90d/v1',
+                    installKey: 'dgi_' + '-'.repeat(36) + '.' + 'A'.repeat(43),
+                })
+            )
+        ).status,
+        400
+    )
     const invalid = batch() as any
     invalid.contributions[0].camera.serial = 'private'
     assert.equal((await handle(request('/v2/batches', 'POST', installKey, invalid))).status, 400)
@@ -151,7 +162,7 @@ test('quotas, malformed bodies, email injection and untrusted origins are reject
         (await handle(request('/v2/contact', 'POST', installKey, { email: 'a@b.com\r\nBCC:target@b.com' }))).status,
         400
     )
-    records.set(`uploadQuotas/${installId}_${new Date().toISOString().slice(0, 10)}`, { count: 512 })
+    records.set(`uploadQuotas/${installId}_${new Date().toISOString().slice(0, 10)}`, { count: DAILY_BATCH_LIMIT })
     assert.equal((await handle(request('/v2/batches', 'POST', installKey, batch()))).status, 429)
     assert.equal((await handle(request('/v2/installation', 'GET', 'dgi_bad.invalid'))).status, 401)
     assert.equal(

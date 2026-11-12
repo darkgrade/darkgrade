@@ -1,3 +1,5 @@
+export { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+export { configureLinkTelemetry } from '@core/telemetry'
 export { identifyCamera } from '@camera/identification/camera-identification'
 export { observeCameraEvents } from '@workflows/camera-event-observation'
 export { compareSonyModels, sonyModelContracts } from '@vendors/sony/model-contracts'

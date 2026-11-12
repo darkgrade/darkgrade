@@ -50,6 +50,7 @@ const studioApi: StudioApi = {
     onVoiceStatus: subscribe(IPC_EVENTS.VoiceStatus),
     getDiagnosticsStatus: () => ipcRenderer.invoke(IPC.DiagnosticsStatus),
     changeDiagnostics: (action, value) => ipcRenderer.invoke(IPC.DiagnosticsChange, action, value),
+    diagnosticsBenchmark: () => ipcRenderer.invoke(IPC.DiagnosticsBenchmark),
     diagnosticsContact: (action, email, name) => ipcRenderer.invoke(IPC.DiagnosticsContact, action, email, name),
     getPreferences: () => ipcRenderer.invoke(IPC.PreferencesGet),
     setPreferences: change => ipcRenderer.invoke(IPC.PreferencesSet, change),
