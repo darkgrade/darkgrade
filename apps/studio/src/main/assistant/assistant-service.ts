@@ -1,13 +1,21 @@
-import { LlamaServerProcess, llamaServerBinary } from '@main/models/llama-server-process'
-import { ModelCache, NEMOTRON_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
-import { cameraService } from '@main/camera-service'
-import { beginChangeGroup, cameraStatus, endChangeGroup, findTool, STUDIO_TOOLS } from '@main/tools/studio-tools'
 import { describeDone, resolveFollowUp } from '@main/assistant/follow-ups'
 import { INTENT_GRAMMAR, INTENT_INSTRUCTIONS, parseIntentLine, type FoundRequest } from '@main/assistant/intent-schema'
-import { CAMERA_CONTROL_LABELS, IPC_EVENTS, type LocalModelStatus, type LogEntry, type TranscriptSegment, type VoiceIntent } from '@shared/ipc'
+import { toolCallsWrittenAsText } from '@main/assistant/text-tool-calls'
+import { cameraService } from '@main/camera-service'
+import { llamaServerBinary, LlamaServerProcess } from '@main/models/llama-server-process'
+import { ModelCache, NEMOTRON_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
+import { beginChangeGroup, cameraStatus, endChangeGroup, findTool, STUDIO_TOOLS } from '@main/tools/studio-tools'
+import {
+    CAMERA_CONTROL_LABELS,
+    IPC_EVENTS,
+    type LocalModelStatus,
+    type LogEntry,
+    type TranscriptSegment,
+    type VoiceIntent,
+} from '@shared/ipc'
 import { SHOOTING_GUIDANCE } from '@shared/shooting-guidance'
 import { app } from 'electron'
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
 
@@ -29,6 +37,8 @@ const PROGRESS_INTERVAL_MS = 150
 const REQUEST_TIMEOUT_MS = 30_000
 /** One tool (a camera command) gets this long before it counts as failed. */
 const TOOL_TIMEOUT_MS = 12_000
+/** Frames shown to the assistant kept for checking its choices; older ones are deleted. */
+const KEPT_ASSISTANT_FRAMES = 200
 
 /** Rejects with `message` if `promise` hasn't settled within `milliseconds`. */
 function withTimeout<Value>(promise: Promise<Value>, milliseconds: number, message: string): Promise<Value> {
@@ -65,7 +75,7 @@ const AGENT_INSTRUCTIONS = `You are the assistant inside Darkgrade Studio, a cam
 
 ${SHOOTING_GUIDANCE}`
 
-
+const TOOL_NAMES = new Set(STUDIO_TOOLS.map(tool => tool.name))
 
 /** The tool input for a direct action, from the fields the finding step filled in. */
 function directInput(request: FoundRequest): Record<string, unknown> {
@@ -120,7 +130,9 @@ function describeResult(action: string, data: Record<string, unknown>): string {
             return data.liveView ? 'Live view on' : 'Live view off'
         case 'undo_last_change': {
             const restored = (data.restored as { setting: string; to: string }[]) ?? []
-            return restored.length ? `Put back ${restored.map(change => `${change.setting} ${change.to}`).join(', ')}` : 'Nothing to undo'
+            return restored.length
+                ? `Put back ${restored.map(change => `${change.setting} ${change.to}`).join(', ')}`
+                : 'Nothing to undo'
         }
         case 'set_studio_view':
             return 'View updated'
@@ -155,10 +167,26 @@ function cameraSummary(): string {
     if (!state.connected) return 'not connected'
     const mode = /movie|s&q/i.test(state.controls?.exposureProgram?.value ?? '') ? 'movie mode' : 'photo mode'
     const controls = state.controls
-    const values = (['exposureProgram', 'iso', 'shutterSpeed', 'aperture', 'focusMode', 'focusArea', 'whiteBalance', 'colorTemperature'] as const)
+    const values = (
+        [
+            'exposureProgram',
+            'iso',
+            'shutterSpeed',
+            'aperture',
+            'focusMode',
+            'focusArea',
+            'whiteBalance',
+            'colorTemperature',
+        ] as const
+    )
         .map(name => (controls?.[name]?.value ? `${name} ${controls[name]!.value}` : null))
         .filter(Boolean)
-    return [mode, state.recording ? 'RECORDING NOW' : 'not recording', state.liveView ? 'live view on' : 'live view off', ...values].join(', ')
+    return [
+        mode,
+        state.recording ? 'RECORDING NOW' : 'not recording',
+        state.liveView ? 'live view on' : 'live view off',
+        ...values,
+    ].join(', ')
 }
 
 export interface AgentProgress {
@@ -231,9 +259,16 @@ class AssistantService {
                 progress.signal,
                 `${progress.label ?? 'agent'} step ${step + 1}`
             )
-            conversation.push({ role: 'assistant', content: message.content ?? null, tool_calls: message.tool_calls })
-            if (!message.tool_calls?.length) return { reply: (message.content ?? '').trim(), failed }
-            for (const call of message.tool_calls) {
+            const toolCalls = message.tool_calls?.length
+                ? message.tool_calls
+                : toolCallsWrittenAsText(message.content, TOOL_NAMES, step)
+            conversation.push({
+                role: 'assistant',
+                content: toolCalls.length ? null : (message.content ?? null),
+                tool_calls: toolCalls,
+            })
+            if (!toolCalls.length) return { reply: (message.content ?? '').trim(), failed }
+            for (const call of toolCalls) {
                 const outcome = await this.runToolCall(call, progress)
                 failed = !outcome.ok
                 conversation.push({ role: 'tool', tool_call_id: call.id, content: outcome.text })
@@ -242,7 +277,10 @@ class AssistantService {
                         role: 'user',
                         content: [
                             { type: 'text', text: `The picture from ${call.function.name}:` },
-                            { type: 'image_url', image_url: { url: `data:${outcome.image.mimeType};base64,${outcome.image.base64}` } },
+                            {
+                                type: 'image_url',
+                                image_url: { url: `data:${outcome.image.mimeType};base64,${outcome.image.base64}` },
+                            },
                         ],
                     })
                 }
@@ -301,21 +339,29 @@ class AssistantService {
         // Handled here, without the model, and taken out of what the model sees so it isn't done twice.
         const sentences = quote.match(/[^.!?]+[.!?]*/g) ?? [quote]
         // Any short sentence that's just "cut" with a word or two around it: "Cut.", "Ah, cut.", "Okay, cut it."
-        const isCut = (sentence: string): boolean => /\bcut\b/i.test(sentence) && sentence.trim().split(/\s+/).length <= 3
+        const isCut = (sentence: string): boolean =>
+            /\bcut\b/i.test(sentence) && sentence.trim().split(/\s+/).length <= 3
         const stopWhileRecording = (sentence: string): boolean =>
-            cameraService.getState().recording && /^\s*(okay,?\s*)?(that's a wrap|stop recording|stop)[.!]*\s*$/i.test(sentence)
+            cameraService.getState().recording &&
+            /^\s*(okay,?\s*)?(that's a wrap|stop recording|stop)[.!]*\s*$/i.test(sentence)
         if (sentences.some(sentence => isCut(sentence) || stopWhileRecording(sentence))) {
             this.trace(`segment ${segment.segmentId} "${quote}" holds a lone cut → record off (no model needed)`)
             this.startRequest(segment, quote, { action: 'set_recording', on: false })
-            const rest = sentences.filter(sentence => !isCut(sentence) && !stopWhileRecording(sentence)).join('').trim()
+            const rest = sentences
+                .filter(sentence => !isCut(sentence) && !stopWhileRecording(sentence))
+                .join('')
+                .trim()
             if (!/[\p{L}\p{N}]/u.test(rest)) return
             segment = { ...segment, text: ` ${rest}` }
         }
         // Follow-ups ("little more", "too far", "undo that", "turn it off") resolve against what was just done.
         const remaining = segment.text.trim()
-        const followUp = (remaining.match(/[^.!?]+[.!?]*/g) ?? []).length <= 1 ? resolveFollowUp(remaining, this.done) : null
+        const followUp =
+            (remaining.match(/[^.!?]+[.!?]*/g) ?? []).length <= 1 ? resolveFollowUp(remaining, this.done) : null
         if (followUp) {
-            this.trace(`segment ${segment.segmentId} "${remaining}" follows up on ${this.doneSummary() || 'nothing'} → ${describeDone(followUp)} (no model needed)`)
+            this.trace(
+                `segment ${segment.segmentId} "${remaining}" follows up on ${this.doneSummary() || 'nothing'} → ${describeDone(followUp)} (no model needed)`
+            )
             this.startRequest(segment, quote, followUp)
             return
         }
@@ -357,7 +403,9 @@ class AssistantService {
             this.trace(`segment ${segment.segmentId} line after ${Date.now() - findingStartedMs} ms: ${line}`)
             this.startRequest(segment, quote, request)
         })
-        this.trace(`segment ${segment.segmentId} (${Date.now() - findingStartedMs} ms) ${JSON.stringify(segment.text)} → ${JSON.stringify(lines)}`)
+        this.trace(
+            `segment ${segment.segmentId} (${Date.now() - findingStartedMs} ms) ${JSON.stringify(segment.text)} → ${JSON.stringify(lines)}`
+        )
     }
 
     /**
@@ -369,7 +417,10 @@ class AssistantService {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-                messages: [{ role: 'system', content: AGENT_INSTRUCTIONS }, { role: 'user', content: 'ready' }],
+                messages: [
+                    { role: 'system', content: AGENT_INSTRUCTIONS },
+                    { role: 'user', content: 'ready' },
+                ],
                 tools: OPENAI_TOOLS,
                 max_tokens: 1,
                 id_slot: AGENT_SLOT,
@@ -390,7 +441,9 @@ class AssistantService {
         }
         this.recognizedAtMs.set(intent.id, { recognizedMs: Date.now(), lastWordMs: segment.lastWordAtMs })
         this.broadcast(IPC_EVENTS.VoiceIntent, intent)
-        this.intentQueue = this.intentQueue.then(() => (request.action === 'agent' ? this.carryOut(intent) : this.carryOutDirectly(intent, request)))
+        this.intentQueue = this.intentQueue.then(() =>
+            request.action === 'agent' ? this.carryOut(intent) : this.carryOutDirectly(intent, request)
+        )
     }
 
     /** The chat template split around the user's text, read from the server once it starts. */
@@ -428,7 +481,10 @@ class AssistantService {
             headers: { 'content-type': 'application/json' },
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             body: JSON.stringify({
-                prompt: template.before + findingUserText(segment.text, segment.context, this.doneSummary()) + template.after,
+                prompt:
+                    template.before +
+                    findingUserText(segment.text, segment.context, this.doneSummary()) +
+                    template.after,
                 grammar: INTENT_GRAMMAR,
                 n_predict: 80,
                 temperature: 0,
@@ -442,7 +498,13 @@ class AssistantService {
         const decoder = new TextDecoder()
         let buffered = ''
         let answer = ''
-        let timings: { prompt_n?: number; prompt_ms?: number; cache_n?: number; predicted_n?: number; predicted_ms?: number } = {}
+        let timings: {
+            prompt_n?: number
+            prompt_ms?: number
+            cache_n?: number
+            predicted_n?: number
+            predicted_ms?: number
+        } = {}
         for (;;) {
             const { done, value } = await reader.read()
             if (done) break
@@ -466,7 +528,8 @@ class AssistantService {
             }
         }
         if (answer.trim() && answer.trim() !== 'none') onLine(answer.trim())
-        const perSecond = (tokens = 0, milliseconds = 0): string => (milliseconds > 0 ? `${Math.round((tokens / milliseconds) * 1000)} tok/s` : '–')
+        const perSecond = (tokens = 0, milliseconds = 0): string =>
+            milliseconds > 0 ? `${Math.round((tokens / milliseconds) * 1000)} tok/s` : '–'
         this.trace(
             `segment ${segment.segmentId} finding model ${Date.now() - startedMs} ms: ` +
                 `input ${timings.prompt_n ?? '?'} new tokens in ${Math.round(timings.prompt_ms ?? 0)} ms (${perSecond(timings.prompt_n, timings.prompt_ms)}), ${timings.cache_n ?? '?'} reused from cache; ` +
@@ -482,7 +545,9 @@ class AssistantService {
         const tool = findTool(request.action)
         const parsed = tool?.inputSchema.safeParse(directInput(request))
         if (!tool || !parsed?.success) {
-            this.trace(`intent ${intent.id} direct ${request.action} didn't fit (${parsed?.error?.message ?? 'no tool'}); asking the agent`)
+            this.trace(
+                `intent ${intent.id} direct ${request.action} didn't fit (${parsed?.error?.message ?? 'no tool'}); asking the agent`
+            )
             return this.carryOut(intent)
         }
         this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'running' } satisfies VoiceIntent)
@@ -491,11 +556,17 @@ class AssistantService {
         this.recognizedAtMs.delete(intent.id)
         beginChangeGroup()
         try {
-            const result = await withTimeout(tool.run(parsed.data as Record<string, unknown>), TOOL_TIMEOUT_MS, `${tool.title} didn't answer in time`)
+            const result = await withTimeout(
+                tool.run(parsed.data as Record<string, unknown>),
+                TOOL_TIMEOUT_MS,
+                `${tool.title} didn't answer in time`
+            )
             const reply = describeResult(tool.name, (result.data ?? {}) as Record<string, unknown>)
             if (request.action === 'undo_last_change') this.done.pop()
             else this.done = [...this.done, request].slice(-5)
-            this.trace(`intent ${intent.id} direct ${tool.name} ${JSON.stringify(parsed.data)} (${Date.now() - startedMs} ms): ${reply}`)
+            this.trace(
+                `intent ${intent.id} direct ${tool.name} ${JSON.stringify(parsed.data)} (${Date.now() - startedMs} ms): ${reply}`
+            )
             this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'done', reply } satisfies VoiceIntent)
         } catch (error) {
             const reply = error instanceof Error ? error.message : String(error)
@@ -518,18 +589,30 @@ class AssistantService {
             const startedMs = Date.now()
             beginChangeGroup()
             const recognized = this.recognizedAtMs.get(intent.id)
-            if (recognized) this.trace(`intent ${intent.id} waited ${startedMs - recognized.recognizedMs} ms in the queue`)
-            this.trace(`intent ${intent.id} start: ${JSON.stringify(intent.instruction)} (heard ${JSON.stringify(intent.quote)})`)
+            if (recognized)
+                this.trace(`intent ${intent.id} waited ${startedMs - recognized.recognizedMs} ms in the queue`)
+            this.trace(
+                `intent ${intent.id} start: ${JSON.stringify(intent.instruction)} (heard ${JSON.stringify(intent.quote)})`
+            )
             const controller = new AbortController()
-            const timer = setTimeout(() => controller.abort(new Error('That took too long, so I stopped')), REQUEST_TIMEOUT_MS)
+            const timer = setTimeout(
+                () => controller.abort(new Error('That took too long, so I stopped')),
+                REQUEST_TIMEOUT_MS
+            )
             const state = `Camera state now: ${JSON.stringify(cameraStatus())}`
-            const { reply, failed } = await this.runAgent([{ role: 'user', content: `${intent.instruction}\n\n${state}` }], {
-                signal: controller.signal,
-                label: `intent ${intent.id}`,
-                onToolCall: (name, input) => this.trace(`intent ${intent.id} call ${name} ${JSON.stringify(input)}`),
-                onToolResult: (name, ok, data, durationMs) =>
-                    this.trace(`intent ${intent.id} ${ok ? 'result' : 'error'} ${name} (${durationMs} ms) ${JSON.stringify(data).slice(0, 400)}`),
-            }).finally(() => {
+            const { reply, failed } = await this.runAgent(
+                [{ role: 'user', content: `${intent.instruction}\n\n${state}` }],
+                {
+                    signal: controller.signal,
+                    label: `intent ${intent.id}`,
+                    onToolCall: (name, input) =>
+                        this.trace(`intent ${intent.id} call ${name} ${JSON.stringify(input)}`),
+                    onToolResult: (name, ok, data, durationMs) =>
+                        this.trace(
+                            `intent ${intent.id} ${ok ? 'result' : 'error'} ${name} (${durationMs} ms) ${JSON.stringify(data).slice(0, 400)}`
+                        ),
+                }
+            ).finally(() => {
                 clearTimeout(timer)
                 endChangeGroup()
             })
@@ -541,7 +624,11 @@ class AssistantService {
                 this.recognizedAtMs.delete(intent.id)
             }
             this.log(`“${intent.quote}” → ${reply}`, failed ? 'error' : 'info')
-            this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: failed ? 'failed' : 'done', reply } satisfies VoiceIntent)
+            this.broadcast(IPC_EVENTS.VoiceIntent, {
+                ...intent,
+                state: failed ? 'failed' : 'done',
+                reply,
+            } satisfies VoiceIntent)
         } catch (error) {
             const reply = error instanceof Error ? error.message : String(error)
             this.log(`“${intent.quote}” failed: ${reply}`, 'error')
@@ -556,14 +643,22 @@ class AssistantService {
         try {
             input = tool.inputSchema.parse(JSON.parse(call.function.arguments || '{}')) as Record<string, unknown>
         } catch (error) {
-            return { ok: false, text: `Invalid arguments for ${tool.name}: ${error instanceof Error ? error.message : String(error)}` }
+            return {
+                ok: false,
+                text: `Invalid arguments for ${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+            }
         }
         progress.onToolCall?.(tool.name, input)
         const toolStartedMs = Date.now()
         try {
             const result = await withTimeout(tool.run(input), TOOL_TIMEOUT_MS, `${tool.title} didn't answer in time`)
             progress.onToolResult?.(tool.name, true, result.data, Date.now() - toolStartedMs)
-            return { ok: true, text: typeof result.data === 'string' ? result.data : JSON.stringify(result.data), image: result.image }
+            if (result.image) this.keepFrame(result.image.base64, progress.label)
+            return {
+                ok: true,
+                text: typeof result.data === 'string' ? result.data : JSON.stringify(result.data),
+                image: result.image,
+            }
         } catch (error) {
             const text = error instanceof Error ? error.message : String(error)
             progress.onToolResult?.(tool.name, false, text, Date.now() - toolStartedMs)
@@ -590,14 +685,24 @@ class AssistantService {
             // Thinking out loud costs seconds; tool calls and short answers don't need it.
             body: JSON.stringify({ ...body, chat_template_kwargs: { enable_thinking: false } }),
         })
-        if (!response.ok) throw new Error(`The assistant model failed (HTTP ${response.status}): ${(await response.text()).slice(0, 200)}`)
+        if (!response.ok)
+            throw new Error(
+                `The assistant model failed (HTTP ${response.status}): ${(await response.text()).slice(0, 200)}`
+            )
         const json = (await response.json()) as {
             choices: { message: { content?: string; tool_calls?: ToolCall[] } }[]
-            timings?: { prompt_n?: number; prompt_ms?: number; cache_n?: number; predicted_n?: number; predicted_ms?: number }
+            timings?: {
+                prompt_n?: number
+                prompt_ms?: number
+                cache_n?: number
+                predicted_n?: number
+                predicted_ms?: number
+            }
         }
         const timings = json.timings ?? {}
         if (label === null) return json.choices[0].message
-        const perSecond = (tokens = 0, milliseconds = 0): string => (milliseconds > 0 ? `${Math.round((tokens / milliseconds) * 1000)} tok/s` : '–')
+        const perSecond = (tokens = 0, milliseconds = 0): string =>
+            milliseconds > 0 ? `${Math.round((tokens / milliseconds) * 1000)} tok/s` : '–'
         const totalMs = Date.now() - startedMs
         const modelMs = (timings.prompt_ms ?? 0) + (timings.predicted_ms ?? 0)
         this.trace(
@@ -630,7 +735,12 @@ class AssistantService {
                 extraArguments: ['--jinja', '--reasoning', 'off'],
                 // The server's own timings show where seconds go: prompt tokens read vs reused, and generation.
                 onLog: line => {
-                    if (/prompt eval time|eval time|total time|cache_n|n_past|restored context checkpoint|erased invalidated/i.test(line)) this.trace(`server ${line}`)
+                    if (
+                        /prompt eval time|eval time|total time|cache_n|n_past|restored context checkpoint|erased invalidated/i.test(
+                            line
+                        )
+                    )
+                        this.trace(`server ${line}`)
                 },
                 onUnexpectedExit: description => {
                     this.server = null
@@ -650,6 +760,26 @@ class AssistantService {
             this.log(message, 'error')
             this.setStatus({ phase: 'error', port: null, message })
             throw error
+        }
+    }
+
+    /**
+     * Keeps each picture the assistant was shown, named after its run, so its choices (focus_at in
+     * the log) can be checked against what was really in the frame. Private: stays on this Mac.
+     */
+    private keepFrame(base64: string, label = 'agent'): void {
+        try {
+            const directory = join(app.getPath('userData'), 'assistant-frames')
+            mkdirSync(directory, { recursive: true })
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+            const path = join(directory, `${stamp} ${label.replace(/[^\w -]/g, '')}.jpg`)
+            writeFileSync(path, Buffer.from(base64, 'base64'))
+            this.trace(`${label} saved frame ${path}`)
+            for (const old of readdirSync(directory).sort().slice(0, -KEPT_ASSISTANT_FRAMES)) {
+                rmSync(join(directory, old), { force: true })
+            }
+        } catch {
+            // Diagnostics only.
         }
     }
 
