@@ -1,0 +1,3 @@
+# Installed with --no-deps: only Silero VAD's ONNX model is used (by the transcription worker),
+# so its torch dependency is not needed. Version matches Voicebench's utterance cutting.
+silero-vad==6.2.1

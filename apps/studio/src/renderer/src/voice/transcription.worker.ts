@@ -161,7 +161,7 @@ async function start(command: Extract<TranscriptionCommand, { type: 'start' }>):
     try {
         const response = await fetch(`http://127.0.0.1:${enginePort}/health`)
         if (!response.ok) throw new Error(`speech engine answered HTTP ${response.status}`)
-        detector ??= await SileroVoiceDetector.create()
+        detector ??= await SileroVoiceDetector.create(enginePort)
         detector.reset()
     } catch (error) {
         emit({ type: 'error', message: `Couldn't start listening: ${error instanceof Error ? error.message : String(error)}` })

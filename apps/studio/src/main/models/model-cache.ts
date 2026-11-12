@@ -1,4 +1,5 @@
-import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -8,6 +9,8 @@ export interface ModelFile {
     url: string
     /** Exact size on Hugging Face; a cached file of any other size is downloaded again. */
     bytes: number
+    /** For code and small files: the sha256 a download must match before it is used. */
+    sha256?: string
 }
 
 export interface CachedModel {
@@ -16,17 +19,23 @@ export interface CachedModel {
 }
 
 
-const QWEN_REPOSITORY = 'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main'
+const NEMOTRON_REPOSITORY =
+    'https://huggingface.co/unsloth/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF/resolve/b738967d6da3441a7d1c71fcec15e49e32e16ecd'
 
 /**
- * The assistant: Qwen3.5 4B (Apache 2.0), a general model with tool calling that also reads images,
- * with its vision encoder. Sized for a 16 GB Mac alongside the speech model; larger Macs can use the 9B later.
+ * The assistant: NVIDIA Nemotron 3.5 Bolt E4B (NVIDIA Open Model License), Toolbench's best tool
+ * caller for its size, with its vision projector so tool results can show it camera frames.
+ * The same quantisation Toolbench scored; pinned to a revision.
  */
-export const QWEN_ASSISTANT: CachedModel = {
-    id: 'qwen3.5-4b',
+export const NEMOTRON_ASSISTANT: CachedModel = {
+    id: 'nemotron-3.5-bolt-e4b',
     files: [
-        { name: 'Qwen3.5-4B-Q4_K_M.gguf', url: `${QWEN_REPOSITORY}/Qwen3.5-4B-Q4_K_M.gguf`, bytes: 2_740_937_888 },
-        { name: 'mmproj-F16.gguf', url: `${QWEN_REPOSITORY}/mmproj-F16.gguf`, bytes: 672_423_616 },
+        {
+            name: 'NVIDIA-Nemotron-3.5-Bolt-E4B-UD-Q4_K_XL.gguf',
+            url: `${NEMOTRON_REPOSITORY}/NVIDIA-Nemotron-3.5-Bolt-E4B-UD-Q4_K_XL.gguf`,
+            bytes: 5_060_482_240,
+        },
+        { name: 'mmproj-F16.gguf', url: `${NEMOTRON_REPOSITORY}/mmproj-F16.gguf`, bytes: 990_373_568 },
     ],
 }
 
@@ -35,7 +44,8 @@ const BARK_PLUS_REPOSITORY =
 
 /**
  * Conway Research's Underdog Bark 3.0 Plus (CC BY-NC 4.0), Voicebench's most accurate and fastest
- * model. Pinned to the revision whose code is vendored in resources/bark-sidecar.
+ * model. Downloaded by the user from Hugging Face at a pinned revision, with the model's own loading
+ * code; that code is checked against known hashes before the speech sidecar imports it.
  */
 export const BARK_PLUS: CachedModel = {
     id: 'underdog-bark-3.0-plus',
@@ -45,6 +55,20 @@ export const BARK_PLUS: CachedModel = {
         { name: 'mlx/tokenizer.model', url: `${BARK_PLUS_REPOSITORY}/mlx/tokenizer.model`, bytes: 360_621 },
         { name: 'mlx/tokenizer.vocab', url: `${BARK_PLUS_REPOSITORY}/mlx/tokenizer.vocab`, bytes: 101_024 },
         { name: 'mlx/vocab.txt', url: `${BARK_PLUS_REPOSITORY}/mlx/vocab.txt`, bytes: 46_772 },
+        {
+            name: 'bark_mlx.py',
+            url: `${BARK_PLUS_REPOSITORY}/bark_mlx.py`,
+            bytes: 5_011,
+            sha256: '79b976c8711a0a16a6d013d7ff365db73af05edabe0c8fb297e39ad7a54b92a1',
+        },
+        {
+            name: 'bark_loader.py',
+            url: `${BARK_PLUS_REPOSITORY}/bark_loader.py`,
+            bytes: 5_820,
+            sha256: 'e86b7f130bec1a8fa14dd315cfce95785b890dbd30000f6ceb2597fdd4312b02',
+        },
+        { name: 'LICENSE', url: `${BARK_PLUS_REPOSITORY}/LICENSE`, bytes: 19_347 },
+        { name: 'NOTICE', url: `${BARK_PLUS_REPOSITORY}/NOTICE`, bytes: 757 },
     ],
 }
 
@@ -55,6 +79,12 @@ export interface ModelDownloadProgress {
 
 function fileSize(path: string): number {
     return existsSync(path) ? statSync(path).size : 0
+}
+
+function isComplete(path: string, file: ModelFile): boolean {
+    if (fileSize(path) !== file.bytes) return false
+    if (!file.sha256) return true
+    return createHash('sha256').update(readFileSync(path)).digest('hex') === file.sha256
 }
 
 export function totalModelBytes(model: CachedModel): number {
@@ -74,7 +104,7 @@ export class ModelCache {
     }
 
     isCached(model: CachedModel): boolean {
-        return model.files.every(file => fileSize(this.filePath(model, file)) === file.bytes)
+        return model.files.every(file => isComplete(this.filePath(model, file), file))
     }
 
     async ensure(
@@ -112,7 +142,7 @@ export class ModelCache {
         signal?: AbortSignal
     ): Promise<void> {
         const finalPath = this.filePath(model, file)
-        if (fileSize(finalPath) === file.bytes) {
+        if (isComplete(finalPath, file)) {
             onBytes(file.bytes)
             return
         }
@@ -137,7 +167,7 @@ export class ModelCache {
         })
         await pipeline(body, createWriteStream(partialPath, { flags: resumed ? 'a' : 'w' }), { signal })
 
-        if (fileSize(partialPath) !== file.bytes) throw new Error(`${file.name} downloaded incompletely; try again`)
+        if (!isComplete(partialPath, file)) throw new Error(`${file.name} downloaded incompletely or changed; try again`)
         renameSync(partialPath, finalPath)
     }
 }

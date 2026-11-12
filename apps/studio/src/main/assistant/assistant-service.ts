@@ -1,5 +1,5 @@
 import { LlamaServerProcess, llamaServerBinary } from '@main/models/llama-server-process'
-import { ModelCache, QWEN_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
+import { ModelCache, NEMOTRON_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
 import { cameraService } from '@main/camera-service'
 import { beginChangeGroup, cameraStatus, endChangeGroup, findTool, STUDIO_TOOLS } from '@main/tools/studio-tools'
 import { describeDone, resolveFollowUp } from '@main/assistant/follow-ups'
@@ -170,7 +170,7 @@ export interface AgentProgress {
 }
 
 /**
- * Studio's local assistant: Qwen3.5 in a private llama-server, the agent loop over Studio's tools,
+ * Studio's local assistant: Nemotron 3.5 Bolt E4B in a private llama-server, the agent loop over Studio's tools,
  * and the step that finds camera requests in live speech. Voice uses it now; a chat window can call
  * runAgent the same way.
  */
@@ -197,8 +197,8 @@ class AssistantService {
     }
 
     getStatus(): LocalModelStatus {
-        if (this.status.phase === 'idle' && !this.cache.isCached(QWEN_ASSISTANT)) {
-            return { ...this.status, totalBytes: totalModelBytes(QWEN_ASSISTANT), phase: 'not-downloaded' }
+        if (this.status.phase === 'idle' && !this.cache.isCached(NEMOTRON_ASSISTANT)) {
+            return { ...this.status, totalBytes: totalModelBytes(NEMOTRON_ASSISTANT), phase: 'not-downloaded' }
         }
         return this.status
     }
@@ -610,9 +610,9 @@ class AssistantService {
 
     private async startEngine(): Promise<number> {
         try {
-            if (!this.cache.isCached(QWEN_ASSISTANT)) this.log('Downloading the assistant model (one time)')
+            if (!this.cache.isCached(NEMOTRON_ASSISTANT)) this.log('Downloading the assistant model (one time)')
             let lastReportMs = 0
-            const [modelPath, projectorPath] = await this.cache.ensure(QWEN_ASSISTANT, progress => {
+            const [modelPath, projectorPath] = await this.cache.ensure(NEMOTRON_ASSISTANT, progress => {
                 const now = Date.now()
                 if (progress.receivedBytes !== progress.totalBytes && now - lastReportMs < PROGRESS_INTERVAL_MS) return
                 lastReportMs = now
@@ -625,7 +625,8 @@ class AssistantService {
                 projectorPath,
                 contextTokens: CONTEXT_TOKENS,
                 parallel: PARALLEL_REQUESTS,
-                extraArguments: ['--jinja'],
+                // As Toolbench scored it: thinking off, so a spoken command is acted on at once.
+                extraArguments: ['--jinja', '--reasoning', 'off'],
                 // The server's own timings show where seconds go: prompt tokens read vs reused, and generation.
                 onLog: line => {
                     if (/prompt eval time|eval time|total time|cache_n|n_past|restored context checkpoint|erased invalidated/i.test(line)) this.trace(`server ${line}`)

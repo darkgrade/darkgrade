@@ -4,8 +4,9 @@ POST /v1/audio/transcriptions with multipart "file" = 16 kHz mono WAV, answered 
 GET /health answers once the model is loaded.
 
 Copied from Voicebench's bench/runners/transcription_server.py (the bark-plus loader only), so Studio
-runs the model exactly as it was scored. The model's own code is vendored and pinned in
-vendor/underdog_bark; nothing is imported from the downloaded model folder.
+runs the model exactly as it was scored. The model's own loading code (bark_mlx.py) comes with the
+model download, pinned to a revision and checked against known hashes by Studio before this starts.
+Silero VAD's model is served from the pinned silero-vad package for the transcription worker.
 
     python transcription_server.py --path MODEL_DIRECTORY --port N
 """
@@ -21,13 +22,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import numpy as np
 import soundfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", "underdog_bark"))
-import bark_mlx  # noqa: E402
+from importlib.resources import files
 
 
 def load_bark_plus(path):
-    # bark_mlx copies its tokenizer and config from HERE/mlx; those come with the downloaded model.
-    bark_mlx.HERE = path
+    sys.path.insert(0, path)
+    import bark_mlx
+
     model = bark_mlx.load_model(f"{path}/model.bark", bits=16, cache_dir=f"{path}/mlx-converted")
     return lambda wave: bark_mlx.transcribe(model, wave, 16000)
 
@@ -61,6 +62,15 @@ def main():
             self.end_headers()
 
         def do_GET(self):
+            if self.path == "/silero-vad.onnx":
+                data = files("silero_vad").joinpath("data", "silero_vad.onnx").read_bytes()
+                self.send_response(200)
+                self.send_header("access-control-allow-origin", "*")
+                self.send_header("content-type", "application/octet-stream")
+                self.send_header("content-length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             self.reply(200, {"status": "ok"})
 
         def do_POST(self):

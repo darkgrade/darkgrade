@@ -9,13 +9,13 @@ export const SPEECH_SETTINGS = {
         source: 'https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus',
         revision: '28a7d4234146b0f01c11e0c6b72dfa29028a4758',
         licence: 'CC-BY-NC-4.0',
-        runtime: 'MLX (bark_mlx.py, vendored), fp16',
+        runtime: 'MLX (bark_mlx.py from the pinned model download), fp16',
         /** Added by bark_mlx.transcribe before every clip, as the model's own runtime does. */
         leadingSilenceSeconds: 0.25,
     },
     detector: {
         model: 'silero-vad 6.2.1',
-        /** sha256 of the vendored silero_vad.onnx, identical to the one in the silero-vad 6.2.1 wheel. */
+        /** sha256 of silero_vad.onnx in the silero-vad 6.2.1 package the speech engine installs. */
         modelSha256: '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
         runtime: 'onnxruntime-web 1.31.1 (WebAssembly)',
         /** Silero's defaults. */
