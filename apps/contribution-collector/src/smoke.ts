@@ -30,7 +30,7 @@ async function expect(response: Response, status: number) {
     return response.json() as Promise<Record<string, any>>
 }
 try {
-    await expect(await call('/healthz'), 200)
+    await expect(await call('/health'), 200)
     const notice = await expect(await call('/v2/notice'), 200)
     if (notice.version !== NOTICE_VERSION) throw new Error('Notice version mismatch')
     const enrollment = await expect(await call('/v2/installations', 'POST', { noticeVersion: NOTICE_VERSION }), 201)

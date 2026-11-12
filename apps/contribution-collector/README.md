@@ -93,7 +93,7 @@ Postgres instance is single-zone, with backups and point-in-time recovery, not H
    For the first default Cloud Run hostname, use `https://pending.invalid`, read the
    `collector_url` output and apply again with the actual URL before configuring any client.
    A custom hostname needs separately configured DNS/TLS.
-4. Test `/healthz`, enrollment, duplicates, opt-out, withdrawal and `/internal`. Verify
+4. Test `/health` (public Cloud Run frontends reserve `/healthz`, which remains an internal probe alias), enrollment, duplicates, opt-out, withdrawal and `/internal`. Verify
    database/network permissions and backup restoration before accepting customer diagnostics.
    Configure project-level billing notifications; instance counts are not hard spending caps.
 5. Set `DARKGRADE_TELEMETRY_URL` in products to the deployed HTTPS origin. No production

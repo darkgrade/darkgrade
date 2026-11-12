@@ -29,7 +29,7 @@ const server = createServer(async (incoming, outgoing) => {
             ? await operatorApi(request, process.env.TELEMETRY_ADMIN_KEY, database)
             : pathname === '/internal' || pathname.startsWith('/internal/')
               ? await investigate(request, process.env.TELEMETRY_ADMIN_KEY, database.timeline)
-              : pathname === '/healthz'
+              : pathname === '/health' || pathname === '/healthz'
                 ? await database.health().then(() => Response.json({ ok: true }))
                 : await handle(request)
         console.log(
