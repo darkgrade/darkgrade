@@ -9,7 +9,7 @@ extraResources:
     # llama.cpp's server runs the assistant model; fetched by scripts/download-llama-server.ts
     - from: resources/llama-server
       to: llama-server
-    # The Bark speech sidecar: server script, pinned requirements and vendored model code
+    # The Bark speech sidecar: server script and pinned requirements (the model and its code are downloaded)
     - from: resources/bark-sidecar
       to: bark-sidecar
 asarUnpack:

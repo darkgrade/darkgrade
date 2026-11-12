@@ -1,9 +1,8 @@
-import * as onnxRuntime from 'onnxruntime-web/wasm'
 import runtimeModuleUrl from '@onnxruntime-web-distribution/ort-wasm-simd-threaded.mjs?url'
 import runtimeBinaryUrl from '@onnxruntime-web-distribution/ort-wasm-simd-threaded.wasm?url'
-import sileroModelUrl from '@voice/models/silero-vad-6.2.1.onnx?url'
 import { SPEECH_SETTINGS } from '@shared/speech-settings'
 import { SPEECH_SAMPLE_RATE } from '@shared/wav'
+import * as onnxRuntime from 'onnxruntime-web/wasm'
 
 /** Silero (v5 and later) looks at the last 64 samples of the previous window along with each new one. */
 const CONTEXT_SAMPLES = 64
@@ -17,11 +16,14 @@ export class SileroVoiceDetector {
 
     private constructor(private readonly session: onnxRuntime.InferenceSession) {}
 
-    static async create(): Promise<SileroVoiceDetector> {
+    /** Loads Silero's model from the speech engine, which serves it from its pinned silero-vad package. */
+    static async create(enginePort: number): Promise<SileroVoiceDetector> {
         onnxRuntime.env.wasm.wasmPaths = { mjs: runtimeModuleUrl, wasm: runtimeBinaryUrl }
         // Threads need cross-origin isolation, which the renderer doesn't have; one is plenty for Silero.
         onnxRuntime.env.wasm.numThreads = 1
-        const session = await onnxRuntime.InferenceSession.create(sileroModelUrl, { executionProviders: ['wasm'] })
+        const session = await onnxRuntime.InferenceSession.create(`http://127.0.0.1:${enginePort}/silero-vad.onnx`, {
+            executionProviders: ['wasm'],
+        })
         return new SileroVoiceDetector(session)
     }
 

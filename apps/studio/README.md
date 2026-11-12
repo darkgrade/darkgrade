@@ -32,7 +32,7 @@ Everything `@darkgrade/link` exposes:
 
 ## Voice control
 
-- **Fully local.** Speech recognition is Conway Research's Underdog Bark 3.0 Plus (Voicebench's leader; CC BY-NC 4.0, commercial use needs a licence from license@conway.tech). It runs in a Python MLX sidecar (`resources/bark-sidecar`, an approved exception to the TypeScript-only rule) that the main process starts; its model code is vendored and pinned there. The model (~180 MB) downloads once. Voice needs Python 3.11 on the Mac (`brew install python@3.11`); the sidecar's environment is created on first use.
+- **Fully local.** Speech recognition is Conway Research's Underdog Bark 3.0 Plus (Voicebench's leader; CC BY-NC 4.0, commercial use needs a licence from license@conway.tech). It runs in a Python MLX sidecar (`resources/bark-sidecar`, an approved exception to the TypeScript-only rule) that the main process starts. The model and its own loading code (~180 MB) download once from Hugging Face at a pinned revision, and the code is checked against known hashes before it runs. Silero VAD comes from the pinned `silero-vad` package. Voice needs Python 3.11 on the Mac (`brew install python@3.11`); the sidecar's environment is created on first use.
 - **Utterances, live.** Silero VAD 6.2.1 (onnxruntime-web, in the transcription worker) cuts speech at 0.5 s pauses, as Voicebench does. Partial words are re-transcribed every 0.7 s while you speak and are shown only; each utterance's final words go to the assistant. All settings are in `src/shared/speech-settings.ts`.
 - **Push-to-talk:** hold **Space** (or the mic button), speak, release.
 - **Always listening:** toggle on, then prefix commands with the wake word — *"hey darkgrade, take a photo"*. The wake-word requirement can be disabled.

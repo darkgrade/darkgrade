@@ -28,7 +28,7 @@ export interface BarkSidecarOptions {
     onUnexpectedExit: (description: string) => void
 }
 
-/** resources/bark-sidecar: the server script, its pinned requirements and the vendored model code. */
+/** resources/bark-sidecar: the server script and its pinned requirements. The model and its code are downloaded. */
 export function barkSidecarDirectory(): string {
     const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources')
     return join(base, 'bark-sidecar')
@@ -79,7 +79,11 @@ export class BarkSidecarProcess {
     async ensureEnvironment(): Promise<string> {
         const directory = this.options.environmentDirectory
         const requirementsPath = join(barkSidecarDirectory(), 'requirements.txt')
-        const requirementsHash = createHash('sha256').update(readFileSync(requirementsPath)).digest('hex')
+        const packagesWithoutDependenciesPath = join(barkSidecarDirectory(), 'requirements-without-dependencies.txt')
+        const requirementsHash = createHash('sha256')
+            .update(readFileSync(requirementsPath))
+            .update(readFileSync(packagesWithoutDependenciesPath))
+            .digest('hex')
         const stampPath = join(directory, 'requirements.sha256')
         const pythonPath = join(directory, 'bin', 'python')
         if (existsSync(pythonPath) && existsSync(stampPath) && readFileSync(stampPath, 'utf8') === requirementsHash) {
@@ -90,6 +94,11 @@ export class BarkSidecarProcess {
         await runFile(join(directory, 'bin', 'pip'), ['install', '--quiet', '--requirement', requirementsPath], {
             maxBuffer: 16 * 1024 * 1024,
         })
+        await runFile(
+            join(directory, 'bin', 'pip'),
+            ['install', '--quiet', '--no-deps', '--requirement', packagesWithoutDependenciesPath],
+            { maxBuffer: 16 * 1024 * 1024 }
+        )
         writeFileSync(stampPath, requirementsHash)
         return pythonPath
     }
