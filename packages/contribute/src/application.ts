@@ -427,21 +427,31 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             append(structuredClone(camera), structuredClone(entry))
         },
         observe<Device, Kind extends string>(source: CameraTransport<Device, Kind>, context: CameraContext) {
-            const camera = structuredClone(context)
-            validateContribution({
-                schema: SCHEMA,
-                disclosure: DISCLOSURE,
-                id: crypto.randomUUID(),
-                camera,
-                entries: [],
-                droppedEntries: 0,
-            })
-            return observeTransport(
+            const checked = (value: CameraContext) => {
+                const camera = structuredClone(value)
+                validateContribution({
+                    schema: SCHEMA,
+                    disclosure: DISCLOSURE,
+                    id: crypto.randomUUID(),
+                    camera,
+                    entries: [],
+                    droppedEntries: 0,
+                })
+                return camera
+            }
+            let camera = checked(context)
+            const observer = observeTransport(
                 source,
                 () => !closed && !storageError,
                 (entry: DiagnosticEntry) => append(camera, entry),
                 () => epoch
             )
+            return {
+                ...observer,
+                identify: (context: CameraContext) => {
+                    camera = checked(context)
+                },
+            }
         },
         flush,
         async setConsent(value: boolean) {

@@ -95,8 +95,8 @@ export function linkTelemetry(source: TransportInterface) {
                     transport: source.getType() === 'usb' ? 'usb' : 'ptp-ip',
                     evidence: hardware ? 'hardware' : 'synthetic',
                 }
-                observed?.detach()
-                observed = client.observe(source, context)
+                if (observed) observed.identify(context)
+                else observed = client.observe(source, context)
                 observed.transport.on?.(relay)
                 identity = next
             } catch {
