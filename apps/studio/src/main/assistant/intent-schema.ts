@@ -16,6 +16,8 @@ These are requests, even mid-sentence or after other talk:
 - looks and styles: "make it look more cinematic", "moodier", "punchier", "cleaner"
 - follow-ups: "little more", "bit more", "again", "too far, back a bit", "turn it off", "undo that"
 
+The transcript is speech recognition, so camera words can be misheard as sound-alikes. Read them as the camera word when the rest fits a request: "emperature f eight" or "aperature F four" → set aperture f8 / f4; "hyperdraft four" → set aperture f4; "focus speaking" → focus peaking.
+
 These are not requests:
 - stories and facts, including quoted commands inside a story ("I'd tell the second shooter 'stop down to f8'")
 - habits and teaching ("I always shoot at ISO 100", "it's clean up to 6400")
@@ -37,8 +39,9 @@ Requests:
 - warmth <signed kelvin> — warmer is +: "a touch warmer" → warmth +250; "a bit blue" → warmth +300; "cooler" → warmth -300
 - record on | record off — start/roll or stop/cut
 - photo ("take a still", "grab a still for the thumbnail", "snap one") | focus | undo | zoom in | zoom out | liveview on | liveview off
-- view <changes> — Studio's own view, only what was asked: histogram, waveform, vectorscope, zebras-on, zebras-off, zebras-<level 70–100>, peaking-on, peaking-off. "Waveform and zebras at ninety" → view waveform zebras-on zebras-90
-- ask <their request> — anything else, for the full assistant, with THEIR words (only this request, references resolved): "am I clipping?" → ask am I clipping anywhere?. For: questions ("is it in focus?"), judgments and styles that need a look ("make it look more cinematic", "moodier"), files, anything unclear. Write the instruction standalone, with references resolved from the context and amounts kept.
+- focus — autofocus now: "focus on me", "focus on my face", "grab focus", "refocus". Focusing on something else is ask, in their words: "focus on the background" → ask focus on the background. A QUESTION about focus ("am I in focus?") is ask, not focus.
+- view <changes> — Studio's own view, only what was asked, with only the scope they named: histogram, waveform, vectorscope, zebras-on, zebras-off, zebras-<level 70–100>, peaking-on, peaking-off. "Waveform and zebras at ninety" → view waveform zebras-on zebras-90; "show the histogram" → view histogram. A zebra level outside 70–100 can't be set: "zebras to thirty" → ask set zebras to 30 percent. Never add zebras-off or peaking-off to a scope change: "show the histogram" → view histogram. Focus peaking has no level and is not zebras: "focus peaking to seventy" → ask set focus peaking to 70
+- ask <their request> — anything else, for the full assistant, with THEIR words (never words copied from an example here) (only this request, references resolved): "am I clipping?" → ask am I clipping anywhere?. For: questions ("is it in focus?"), judgments and styles that need a look ("make it look more cinematic", "moodier"), files, anything unclear. Write the instruction standalone, with references resolved from the context and amounts kept.
 
 Counting:
 - Two ways of saying the same change are ONE request ("make it a touch warmer, it's looking a bit blue" → warmth +250).

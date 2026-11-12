@@ -1,3 +1,4 @@
+import type { SpeechModelId } from '@shared/speech-models'
 import { createHash } from 'node:crypto'
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -17,7 +18,6 @@ export interface CachedModel {
     id: string
     files: ModelFile[]
 }
-
 
 const NEMOTRON_REPOSITORY =
     'https://huggingface.co/unsloth/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF/resolve/b738967d6da3441a7d1c71fcec15e49e32e16ecd'
@@ -39,37 +39,87 @@ export const NEMOTRON_ASSISTANT: CachedModel = {
     ],
 }
 
-const BARK_PLUS_REPOSITORY =
-    'https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus/resolve/28a7d4234146b0f01c11e0c6b72dfa29028a4758'
+const BARK_LOADING_CODE_SHA256 = {
+    barkMlx: '79b976c8711a0a16a6d013d7ff365db73af05edabe0c8fb297e39ad7a54b92a1',
+    barkLoader: 'e86b7f130bec1a8fa14dd315cfce95785b890dbd30000f6ceb2597fdd4312b02',
+}
 
 /**
- * Conway Research's Underdog Bark 3.0 Plus (CC BY-NC 4.0), Voicebench's most accurate and fastest
- * model. Downloaded by the user from Hugging Face at a pinned revision, with the model's own loading
- * code; that code is checked against known hashes before the speech sidecar imports it.
+ * An MLX Bark model: weights, tokenizer and the model's own loading code, which is checked against
+ * known hashes before the speech sidecar imports it.
  */
-export const BARK_PLUS: CachedModel = {
-    id: 'underdog-bark-3.0-plus',
-    files: [
-        { name: 'model.bark', url: `${BARK_PLUS_REPOSITORY}/model.bark`, bytes: 179_524_845 },
-        { name: 'mlx/config.json', url: `${BARK_PLUS_REPOSITORY}/mlx/config.json`, bytes: 237_042 },
-        { name: 'mlx/tokenizer.model', url: `${BARK_PLUS_REPOSITORY}/mlx/tokenizer.model`, bytes: 360_621 },
-        { name: 'mlx/tokenizer.vocab', url: `${BARK_PLUS_REPOSITORY}/mlx/tokenizer.vocab`, bytes: 101_024 },
-        { name: 'mlx/vocab.txt', url: `${BARK_PLUS_REPOSITORY}/mlx/vocab.txt`, bytes: 46_772 },
-        {
-            name: 'bark_mlx.py',
-            url: `${BARK_PLUS_REPOSITORY}/bark_mlx.py`,
-            bytes: 5_011,
-            sha256: '79b976c8711a0a16a6d013d7ff365db73af05edabe0c8fb297e39ad7a54b92a1',
-        },
-        {
-            name: 'bark_loader.py',
-            url: `${BARK_PLUS_REPOSITORY}/bark_loader.py`,
-            bytes: 5_820,
-            sha256: 'e86b7f130bec1a8fa14dd315cfce95785b890dbd30000f6ceb2597fdd4312b02',
-        },
-        { name: 'LICENSE', url: `${BARK_PLUS_REPOSITORY}/LICENSE`, bytes: 19_347 },
-        { name: 'NOTICE', url: `${BARK_PLUS_REPOSITORY}/NOTICE`, bytes: 757 },
-    ],
+function mlxBarkModel(
+    id: string,
+    repository: string,
+    revision: string,
+    modelBytes: number,
+    noticeBytes: number
+): CachedModel {
+    const base = `https://huggingface.co/ConwayResearch/${repository}/resolve/${revision}`
+    return {
+        id: `underdog-${id}`,
+        files: [
+            { name: 'model.bark', url: `${base}/model.bark`, bytes: modelBytes },
+            { name: 'mlx/config.json', url: `${base}/mlx/config.json`, bytes: 237_042 },
+            { name: 'mlx/tokenizer.model', url: `${base}/mlx/tokenizer.model`, bytes: 360_621 },
+            { name: 'mlx/tokenizer.vocab', url: `${base}/mlx/tokenizer.vocab`, bytes: 101_024 },
+            { name: 'mlx/vocab.txt', url: `${base}/mlx/vocab.txt`, bytes: 46_772 },
+            { name: 'bark_mlx.py', url: `${base}/bark_mlx.py`, bytes: 5_011, sha256: BARK_LOADING_CODE_SHA256.barkMlx },
+            {
+                name: 'bark_loader.py',
+                url: `${base}/bark_loader.py`,
+                bytes: 5_820,
+                sha256: BARK_LOADING_CODE_SHA256.barkLoader,
+            },
+            { name: 'LICENSE', url: `${base}/LICENSE`, bytes: 19_347 },
+            { name: 'NOTICE', url: `${base}/NOTICE`, bytes: noticeBytes },
+        ],
+    }
+}
+
+const BARK_PRO_REPOSITORY =
+    'https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Pro/resolve/d87f288a9a0b0cdb92228057e168ce575b300a6b'
+
+/**
+ * Conway Research's Underdog Bark 3.0 family (CC BY-NC 4.0), downloaded by the user from Hugging Face
+ * at pinned revisions. Plus is Voicebench's most accurate and fastest. Pro runs through transformers
+ * (no code from the model folder is executed).
+ */
+export const SPEECH_MODEL_FILES: Record<SpeechModelId, CachedModel> = {
+    'bark-3.0': mlxBarkModel(
+        'bark-3.0',
+        'Underdog-Bark-3.0',
+        'e7a641c0fdd4cdf1818dde62a98c26e11d65c061',
+        163_398_645,
+        747
+    ),
+    'bark-3.0-plus': mlxBarkModel(
+        'bark-3.0-plus',
+        'Underdog-Bark-3.0-Plus',
+        '28a7d4234146b0f01c11e0c6b72dfa29028a4758',
+        179_524_845,
+        757
+    ),
+    'bark-3.0-pro': {
+        id: 'underdog-bark-3.0-pro',
+        files: [
+            { name: 'model.safetensors', url: `${BARK_PRO_REPOSITORY}/model.safetensors`, bytes: 1_254_196_636 },
+            { name: 'config.json', url: `${BARK_PRO_REPOSITORY}/config.json`, bytes: 1_174 },
+            { name: 'generation_config.json', url: `${BARK_PRO_REPOSITORY}/generation_config.json`, bytes: 285 },
+            { name: 'processor_config.json', url: `${BARK_PRO_REPOSITORY}/processor_config.json`, bytes: 392 },
+            { name: 'tokenizer.json', url: `${BARK_PRO_REPOSITORY}/tokenizer.json`, bytes: 1_159_960 },
+            { name: 'tokenizer_config.json', url: `${BARK_PRO_REPOSITORY}/tokenizer_config.json`, bytes: 290 },
+            { name: 'LICENSE', url: `${BARK_PRO_REPOSITORY}/LICENSE`, bytes: 19_347 },
+            { name: 'NOTICE', url: `${BARK_PRO_REPOSITORY}/NOTICE`, bytes: 755 },
+        ],
+    },
+}
+
+/** Pinned Hugging Face revision per model, for the engine log. */
+export const SPEECH_MODEL_REVISIONS: Record<SpeechModelId, string> = {
+    'bark-3.0': 'e7a641c0fdd4cdf1818dde62a98c26e11d65c061',
+    'bark-3.0-plus': '28a7d4234146b0f01c11e0c6b72dfa29028a4758',
+    'bark-3.0-pro': 'd87f288a9a0b0cdb92228057e168ce575b300a6b',
 }
 
 export interface ModelDownloadProgress {
@@ -167,7 +217,8 @@ export class ModelCache {
         })
         await pipeline(body, createWriteStream(partialPath, { flags: resumed ? 'a' : 'w' }), { signal })
 
-        if (!isComplete(partialPath, file)) throw new Error(`${file.name} downloaded incompletely or changed; try again`)
+        if (!isComplete(partialPath, file))
+            throw new Error(`${file.name} downloaded incompletely or changed; try again`)
         renameSync(partialPath, finalPath)
     }
 }

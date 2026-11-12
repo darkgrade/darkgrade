@@ -1,9 +1,16 @@
 import { cameraService } from '@main/camera-service'
 import { studioView } from '@main/studio-view'
-import { analyseFrame } from '@shared/frame-analysis'
 import { apertureToNumber, isoToNumber, shutterToNumber } from '@shared/exposure-stops'
+import { exposureVerdict } from '@shared/exposure-verdict'
+import { analyseFrame } from '@shared/frame-analysis'
+import {
+    CAMERA_CONTROL_LABELS,
+    CAMERA_CONTROL_NAMES,
+    SCOPE_IDS,
+    type CameraControl,
+    type CameraControlName,
+} from '@shared/ipc'
 import { matchOption } from '@shared/setting-values'
-import { CAMERA_CONTROL_LABELS, CAMERA_CONTROL_NAMES, SCOPE_IDS, type CameraControl, type CameraControlName } from '@shared/ipc'
 import { SHOOTING_GUIDANCE } from '@shared/shooting-guidance'
 import { nativeImage } from 'electron'
 import * as z from 'zod/v4'
@@ -105,11 +112,14 @@ function counterpartMode(requested: string, current: string | null, options: str
 async function applySetting(name: SettingName, value: string): Promise<string> {
     const control = availableSettings()[name]
     if (!control) throw new Error(`${CAMERA_CONTROL_LABELS[name]} isn't available on this camera right now`)
-    if (!control.enabled) throw new Error(`${CAMERA_CONTROL_LABELS[name]} can't be changed in the camera's current mode`)
+    if (!control.enabled)
+        throw new Error(`${CAMERA_CONTROL_LABELS[name]} can't be changed in the camera's current mode`)
     const modeSwitch = name === 'exposureProgram' ? counterpartMode(value, control.value, control.options) : null
     const chosen = modeSwitch ?? (control.options.length ? matchOption(name, value, control.options) : value)
     if (!chosen) {
-        throw new Error(`${CAMERA_CONTROL_LABELS[name]} has no value "${value}". Choices: ${control.options.join(', ')}`)
+        throw new Error(
+            `${CAMERA_CONTROL_LABELS[name]} has no value "${value}". Choices: ${control.options.join(', ')}`
+        )
     }
     if (cameraService.getState().controls?.[name]) await cameraService.setControl(name, chosen)
     else if (name === 'iso') await cameraService.setIso(chosen)
@@ -157,7 +167,11 @@ async function adjustColorTemperature(kelvin: number): Promise<unknown> {
 }
 
 /** Brighter is positive. ISO and aperture-number scale differently from light: this maps each to stops. */
-const EXPOSURE_SETTINGS: { name: 'iso' | 'shutterSpeed' | 'aperture'; read: (value: string) => number | null; stopsPerDoubling: number }[] = [
+const EXPOSURE_SETTINGS: {
+    name: 'iso' | 'shutterSpeed' | 'aperture'
+    read: (value: string) => number | null
+    stopsPerDoubling: number
+}[] = [
     { name: 'iso', read: isoToNumber, stopsPerDoubling: 1 },
     { name: 'shutterSpeed', read: shutterToNumber, stopsPerDoubling: 1 },
     // f-numbers scale with the square root of light: f/2.8 → f/4 is one stop darker.
@@ -165,7 +179,12 @@ const EXPOSURE_SETTINGS: { name: 'iso' | 'shutterSpeed' | 'aperture'; read: (val
 ]
 
 /** The option closest to `stops` brighter than the current value, or null when it can't move. */
-function stepByStops(control: CameraControl, read: (value: string) => number | null, stops: number, stopsPerDoubling: number): string | null {
+function stepByStops(
+    control: CameraControl,
+    read: (value: string) => number | null,
+    stops: number,
+    stopsPerDoubling: number
+): string | null {
     const current = control.value ? read(control.value) : null
     if (!current) return null
     const target = current * 2 ** (stops / stopsPerDoubling)
@@ -221,7 +240,8 @@ async function adjustExposure(stops: number, using: string): Promise<unknown> {
 
 function decodedFrame(width: number) {
     const jpeg = cameraService.latestLiveViewFrame
-    if (!jpeg || !cameraService.getState().liveView) throw new Error('Live view is off, so there is no picture to look at')
+    if (!jpeg || !cameraService.getState().liveView)
+        throw new Error('Live view is off, so there is no picture to look at')
     const image = nativeImage.createFromBuffer(Buffer.from(jpeg))
     const size = image.getSize()
     return size.width > width ? image.resize({ width, quality: 'good' }) : image
@@ -257,7 +277,10 @@ export function cameraStatus(): unknown {
         mode: isMovieMode() ? 'movie' : 'photo',
         lens: state.lens,
         batteryPercent: state.battery?.percent ?? null,
-        card: { photosLeft: state.card?.remainingPhotos ?? null, videoSecondsLeft: state.card?.remainingVideoSeconds ?? null },
+        card: {
+            photosLeft: state.card?.remainingPhotos ?? null,
+            videoSecondsLeft: state.card?.remainingVideoSeconds ?? null,
+        },
         settings,
         studioView: studioView.getState(),
     }
@@ -280,7 +303,10 @@ export const STUDIO_TOOLS: StudioTool[] = [
         name: 'set_setting',
         title: 'Change a setting',
         description: `Set one camera setting to a value it accepts (see get_camera_status for choices). Values are matched loosely: "f/8", "1/50", "800" and "auto" all work. Settings: ${CAMERA_CONTROL_NAMES.map(name => `${name} (${CAMERA_CONTROL_LABELS[name]})`).join(', ')}.`,
-        inputSchema: z.object({ setting: SETTING_NAMES, value: z.string().describe('The new value, e.g. "F8.0", "1/50", "ISO 800", "5600"') }),
+        inputSchema: z.object({
+            setting: SETTING_NAMES,
+            value: z.string().describe('The new value, e.g. "F8.0", "1/50", "ISO 800", "5600"'),
+        }),
         changesSomething: true,
         run: async input => {
             requireConnected()
@@ -297,7 +323,10 @@ export const STUDIO_TOOLS: StudioTool[] = [
             'Make the picture brighter (positive stops) or darker (negative stops) by changing the right setting: in movie mode ISO then aperture, keeping the shutter at its 180° value; in photo mode ISO, then shutter, then aperture. "A bit" is about 0.3–0.7 stops. Use analyze_frame first when the user describes how it looks.',
         inputSchema: z.object({
             stops: z.number().min(-5).max(5).describe('Positive is brighter, negative darker; thirds like 0.33 work'),
-            using: z.enum(['auto', 'iso', 'shutterSpeed', 'aperture']).default('auto').describe('Which setting to move; auto picks by the rules above'),
+            using: z
+                .enum(['auto', 'iso', 'shutterSpeed', 'aperture'])
+                .default('auto')
+                .describe('Which setting to move; auto picks by the rules above'),
         }),
         changesSomething: true,
         run: async input => {
@@ -320,7 +349,8 @@ export const STUDIO_TOOLS: StudioTool[] = [
     {
         name: 'undo_last_change',
         title: 'Undo',
-        description: 'Put back the settings changed by the most recent request (every setting it changed), e.g. for "undo that" or "go back to how it was".',
+        description:
+            'Put back the settings changed by the most recent request (every setting it changed), e.g. for "undo that" or "go back to how it was".',
         inputSchema: z.object({}),
         changesSomething: true,
         run: async () => {
@@ -332,7 +362,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
         name: 'analyze_frame',
         title: 'Measure the picture',
         description:
-            'Measure the current live-view picture like the scopes: histogram (mean brightness, percentiles, clipped highlights, crushed shadows, highlight headroom in stops for exposing to the right), waveform by thirds of the frame, vectorscope (colour cast, saturation) and a sharpness reading. Use it to judge exposure, colour and focus before recommending or making changes.',
+            'Measure the current live-view picture like the scopes: histogram (mean brightness, percentiles, clipped highlights, crushed shadows, highlight headroom in stops for exposing to the right), waveform by thirds of the frame, vectorscope (colour cast, saturation) and a sharpness reading. Use it to judge exposure, colour and focus before recommending or making changes. exposure.verdict and exposure.suggestedStops say whether the picture is too dark or too bright and the adjust_exposure step that fixes it; follow them.',
         inputSchema: z.object({}),
         changesSomething: false,
         run: async () => {
@@ -341,13 +371,14 @@ export const STUDIO_TOOLS: StudioTool[] = [
             const analysis = analyseFrame(image.toBitmap(), size.width, size.height, true)
             // The 64 bins are for drawing; a model reads the summary numbers.
             const { bins: _bins, ...histogram } = analysis.histogram
-            return { data: { ...analysis, histogram } }
+            return { data: { exposure: exposureVerdict(analysis.histogram), ...analysis, histogram } }
         },
     },
     {
         name: 'get_frame',
         title: 'See the picture',
-        description: 'The current live-view picture as an image, for a model that can see. Use for questions about framing, the subject, light or what is in the shot.',
+        description:
+            'The current live-view picture as an image, for a model that can see. Use for questions about framing, the subject, light or what is in the shot.',
         inputSchema: z.object({}),
         changesSomething: false,
         run: async () => {
@@ -373,7 +404,8 @@ export const STUDIO_TOOLS: StudioTool[] = [
     {
         name: 'focus_at',
         title: 'Focus on a point',
-        description: 'Move the focus point to a spot in the picture and focus there. x and y are fractions of the frame from the top left (0.5, 0.5 is the centre).',
+        description:
+            'Move the focus point to a spot in the picture and focus there. x and y are fractions of the frame from the top left (0.5, 0.5 is the centre).',
         inputSchema: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
         changesSomething: true,
         run: async input => {
@@ -420,7 +452,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
     {
         name: 'zoom',
         title: 'Zoom',
-        description: 'Zoom the lens (power zoom or the camera\'s digital zoom) wider or tighter for a moment.',
+        description: "Zoom the lens (power zoom or the camera's digital zoom) wider or tighter for a moment.",
         inputSchema: z.object({
             direction: z.enum(['wide', 'tele']).describe('wide zooms out, tele zooms in'),
             milliseconds: z.number().min(50).max(ZOOM_MAXIMUM_MS).default(500),
@@ -442,7 +474,12 @@ export const STUDIO_TOOLS: StudioTool[] = [
         inputSchema: z.object({
             scope: z.enum(SCOPE_IDS).optional(),
             zebras: z.boolean().optional(),
-            zebraLevelPercent: z.number().min(70).max(100).optional().describe('Stripes appear at or above this brightness'),
+            zebraLevelPercent: z
+                .number()
+                .min(70)
+                .max(100)
+                .optional()
+                .describe('Stripes appear at or above this brightness'),
             focusPeaking: z.boolean().optional(),
             peakingSensitivity: z.number().min(1).max(100).optional().describe('Higher marks softer edges too'),
         }),
@@ -485,7 +522,8 @@ export const STUDIO_TOOLS: StudioTool[] = [
     {
         name: 'download_files',
         title: 'Download files',
-        description: 'Copy files from the card to the download folder: by filename, or all of them. Only when the user asks.',
+        description:
+            'Copy files from the card to the download folder: by filename, or all of them. Only when the user asks.',
         inputSchema: z.object({ filenames: z.array(z.string()).optional(), all: z.boolean().default(false) }),
         changesSomething: true,
         run: async input => {
@@ -496,13 +534,16 @@ export const STUDIO_TOOLS: StudioTool[] = [
             const files = (await cameraService.listFiles()).filter(file => wanted.has(file.filename))
             const saved: string[] = []
             for (const file of files) saved.push(await cameraService.downloadFile(file))
-            return { data: { saved, notFound: [...wanted].filter(name => !files.some(file => file.filename === name)) } }
+            return {
+                data: { saved, notFound: [...wanted].filter(name => !files.some(file => file.filename === name)) },
+            }
         },
     },
     {
         name: 'get_shooting_guidance',
         title: 'Shooting guidance',
-        description: 'Rules of thumb for exposure, shutter speed, aperture, ISO, white balance and focus, and how to read the scopes.',
+        description:
+            'Rules of thumb for exposure, shutter speed, aperture, ISO, white balance and focus, and how to read the scopes.',
         inputSchema: z.object({}),
         changesSomething: false,
         run: async () => ({ data: SHOOTING_GUIDANCE }),

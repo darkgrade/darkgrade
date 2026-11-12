@@ -1,14 +1,14 @@
 """
-Serves Underdog Bark 3.0 Plus (MLX) over the OpenAI transcription API for Darkgrade Studio:
+Serves an Underdog Bark 3.0 model (3.0 or Plus on MLX, Pro on transformers) over the OpenAI transcription API for Darkgrade Studio:
 POST /v1/audio/transcriptions with multipart "file" = 16 kHz mono WAV, answered with {"text": ...}.
 GET /health answers once the model is loaded.
 
-Copied from Voicebench's bench/runners/transcription_server.py (the bark-plus loader only), so Studio
+Copied from Voicebench's bench/runners/transcription_server.py (the Bark loaders only), so Studio
 runs the model exactly as it was scored. The model's own loading code (bark_mlx.py) comes with the
 model download, pinned to a revision and checked against known hashes by Studio before this starts.
 Silero VAD's model is served from the pinned silero-vad package for the transcription worker.
 
-    python transcription_server.py --path MODEL_DIRECTORY --port N
+    python transcription_server.py --runner mlx|transformers --path MODEL_DIRECTORY --port N
 """
 import argparse
 import io
@@ -22,10 +22,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import numpy as np
 import soundfile
 
-from importlib.resources import files
+import importlib.util
 
 
-def load_bark_plus(path):
+def load_mlx(path):
+    """Bark 3.0 and 3.0 Plus, through the model's own bark_mlx.py (hash-checked by Studio)."""
     sys.path.insert(0, path)
     import bark_mlx
 
@@ -33,12 +34,35 @@ def load_bark_plus(path):
     return lambda wave: bark_mlx.transcribe(model, wave, 16000)
 
 
+def load_transformers(path):
+    """Bark 3.0 Pro, as Voicebench and the model's own runtime/transcribe_bark_pro.py run it."""
+    import torch
+    from transformers import AutoProcessor, ParakeetForTDT
+
+    processor = AutoProcessor.from_pretrained(path, local_files_only=True)
+    model = ParakeetForTDT.from_pretrained(path, dtype=torch.bfloat16, local_files_only=True).to("mps").eval()
+
+    def transcribe(wave):
+        padded = np.concatenate([np.zeros(4000, np.float32), wave])
+        inputs = processor(padded, sampling_rate=16000, return_tensors="pt").to("mps", torch.bfloat16)
+        with torch.inference_mode():
+            output = model.generate(**inputs)
+        ids = output.sequences if hasattr(output, "sequences") else output
+        return processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+
+    return transcribe
+
+
+LOADERS = {"mlx": load_mlx, "transformers": load_transformers}
+
+
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--runner", choices=sorted(LOADERS), default="mlx")
     parser.add_argument("--path", required=True)
     parser.add_argument("--port", type=int, required=True)
     arguments = parser.parse_args()
-    transcribe = load_bark_plus(arguments.path)
+    transcribe = LOADERS[arguments.runner](arguments.path)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -63,7 +87,10 @@ def main():
 
         def do_GET(self):
             if self.path == "/silero-vad.onnx":
-                data = files("silero_vad").joinpath("data", "silero_vad.onnx").read_bytes()
+                # Located without importing silero_vad, whose __init__ needs torch (not installed).
+                package_directory = importlib.util.find_spec("silero_vad").submodule_search_locations[0]
+                with open(os.path.join(package_directory, "data", "silero_vad.onnx"), "rb") as model_file:
+                    data = model_file.read()
                 self.send_response(200)
                 self.send_header("access-control-allow-origin", "*")
                 self.send_header("content-type", "application/octet-stream")

@@ -1,6 +1,7 @@
 import type { VoiceEngineStatus } from '@shared/ipc'
-import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
+import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
 import { IntentFollower } from '@voice/intent-follower'
+import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
 import { microphoneLevel, transcriptParagraphs, transcriptPartial } from '@voice/transcript-store'
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import TranscriptionWorker from '@voice/transcription.worker?worker'
@@ -70,6 +71,9 @@ export function useLiveTranscription() {
     const [error, setError] = useState<string | null>(null)
     const [microphones, setMicrophones] = useState<Microphone[]>([])
     const [microphoneId, setMicrophoneId] = useState(readStoredMicrophone)
+    const [speechModelId, setSpeechModelId] = useState<SpeechModelId>(DEFAULT_SPEECH_MODEL)
+    /** A model chosen mid-session: saved once the session stops, then listening resumes on it. */
+    const pendingSpeechModelRef = useRef<SpeechModelId | null>(null)
 
     const workerRef = useRef<Worker | null>(null)
     const captureRef = useRef<Capture | null>(null)
@@ -84,6 +88,11 @@ export function useLiveTranscription() {
     useEffect(() => {
         void api.voiceGetStatus().then(result => result.ok && setEngine(result.data))
         return api.onVoiceStatus(setEngine)
+    }, [api])
+
+    useEffect(() => {
+        void api.getPreferences().then(result => result.ok && setSpeechModelId(result.data.speechModel))
+        return api.onPreferences(saved => setSpeechModelId(saved.speechModel))
     }, [api])
 
     const refreshMicrophones = useCallback(async () => setMicrophones(await listMicrophones()), [])
@@ -111,7 +120,10 @@ export function useLiveTranscription() {
             transcriptParagraphs.set([...previous, text.trimStart()])
         } else {
             const last = previous.at(-1)! + text
-            transcriptParagraphs.set([...previous.slice(0, -1), previous.length === 1 || last.trim() ? last : last.trimStart()])
+            transcriptParagraphs.set([
+                ...previous.slice(0, -1),
+                previous.length === 1 || last.trim() ? last : last.trimStart(),
+            ])
         }
         followerRef.current?.notify()
     }, [])
@@ -152,8 +164,13 @@ export function useLiveTranscription() {
             if (message.type === 'delta') {
                 transcriptPartial.set('')
                 appendText(message.text)
+                // Each delta is a whole utterance that ended in a pause, so there is nothing to wait for.
+                followerRef.current?.flush()
             }
-            if (message.type === 'partial') transcriptPartial.set(message.text)
+            if (message.type === 'partial') {
+                transcriptPartial.set(message.text)
+                followerRef.current?.warmUpPartial(message.text)
+            }
             if (message.type === 'paragraph') paragraphPendingRef.current = true
             if (message.type === 'error') setError(message.message)
             if (message.type === 'diagnostic') void api.voiceDiagnostic(message.message)
@@ -202,25 +219,57 @@ export function useLiveTranscription() {
     }, [stopCapture])
 
     /** Switches the input; while listening, audio keeps flowing into the same session. */
-    const chooseMicrophone = useCallback(
-        async (deviceId: string) => {
-            setMicrophoneId(deviceId)
-            storeMicrophone(deviceId)
-            const capture = captureRef.current
-            if (!capture) return
-            try {
-                const stream = await openMicrophone(deviceId)
-                const source = capture.context.createMediaStreamSource(stream)
-                capture.source.disconnect()
-                capture.stream.getTracks().forEach(track => track.stop())
-                source.connect(capture.node)
-                captureRef.current = { ...capture, source, stream }
-            } catch (caught) {
-                setError(caught instanceof Error ? caught.message : String(caught))
-            }
+    const chooseMicrophone = useCallback(async (deviceId: string) => {
+        setMicrophoneId(deviceId)
+        storeMicrophone(deviceId)
+        const capture = captureRef.current
+        if (!capture) return
+        try {
+            const stream = await openMicrophone(deviceId)
+            const source = capture.context.createMediaStreamSource(stream)
+            capture.source.disconnect()
+            capture.stream.getTracks().forEach(track => track.stop())
+            source.connect(capture.node)
+            captureRef.current = { ...capture, source, stream }
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught))
+        }
+    }, [])
+
+    const saveSpeechModel = useCallback(
+        async (id: SpeechModelId) => {
+            const saved = await api.setPreferences({ speechModel: id })
+            if (!saved.ok) setError(saved.error)
+            const status = await api.voiceGetStatus()
+            if (status.ok) setEngine(status.data)
         },
-        []
+        [api]
     )
+
+    /**
+     * Switches the Bark model. While listening, the session stops first (so its last words reach the
+     * old model), then the main process unloads the old model and listening resumes on the new one.
+     */
+    const chooseSpeechModel = useCallback(
+        async (id: SpeechModelId) => {
+            if (id === speechModelId) return
+            setSpeechModelId(id)
+            if (!workerRef.current) {
+                await saveSpeechModel(id)
+                return
+            }
+            pendingSpeechModelRef.current = id
+            await stop()
+        },
+        [saveSpeechModel, speechModelId, stop]
+    )
+
+    useEffect(() => {
+        const pending = pendingSpeechModelRef.current
+        if (listening !== 'off' || !pending) return
+        pendingSpeechModelRef.current = null
+        void saveSpeechModel(pending).then(start)
+    }, [listening, saveSpeechModel, start])
 
     const clear = useCallback(() => {
         transcriptParagraphs.set([])
@@ -248,6 +297,8 @@ export function useLiveTranscription() {
         start,
         stop,
         chooseMicrophone,
+        speechModelId,
+        chooseSpeechModel,
         clear,
     }
 }

@@ -46,7 +46,6 @@ export class IntentFollower {
     notify(): void {
         if (this.timer) clearTimeout(this.timer)
         this.lastWordAtMs = Date.now()
-        this.warmUp()
         const endsSentence = /[.?!]["'”’)]?\s*$/.test(transcriptText())
         this.timer = setTimeout(() => this.flush(), endsSentence ? SETTLE_AFTER_SENTENCE_MS : SETTLE_WITHOUT_PUNCTUATION_MS)
     }
@@ -72,12 +71,22 @@ export class IntentFollower {
         })
     }
 
+    /**
+     * The utterance still being spoken, re-transcribed as it grows: read into the assistant's cache
+     * only, never acted on, so the final words have little left to read.
+     */
+    warmUpPartial(partialText: string): void {
+        if (!partialText.trim()) return
+        this.warmUp(partialText)
+    }
+
     /** Lets the assistant read the words so far while the sentence is still going. */
-    private warmUp(): void {
+    private warmUp(partialText = ''): void {
         const text = transcriptText()
-        if (text.length <= this.processedLength) return
+        const unprocessed = text.slice(this.processedLength) + partialText
+        if (!unprocessed) return
         const context = text.slice(Math.max(0, this.processedLength - CONTEXT_CHARACTERS), this.processedLength)
-        void this.api.assistantWarmUp({ text: text.slice(this.processedLength), context })
+        void this.api.assistantWarmUp({ text: unprocessed, context })
     }
 
     /** The transcript was cleared: forget positions, keep listening. */
