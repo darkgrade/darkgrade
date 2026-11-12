@@ -15,6 +15,7 @@ import io
 import json
 import os
 import sys
+import warnings
 from email.parser import BytesParser
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -38,6 +39,10 @@ def load_transformers(path):
     """Bark 3.0 Pro, as Voicebench and the model's own runtime/transcribe_bark_pro.py run it."""
     import torch
     from transformers import AutoProcessor, ParakeetForTDT
+
+    # generate() warns on every clip that it falls back to a default max_length; that default is
+    # what Voicebench scored, so the warning is only noise in the engine log.
+    warnings.filterwarnings("ignore", message=".*max_length.*")
 
     processor = AutoProcessor.from_pretrained(path, local_files_only=True)
     model = ParakeetForTDT.from_pretrained(path, dtype=torch.bfloat16, local_files_only=True).to("mps").eval()

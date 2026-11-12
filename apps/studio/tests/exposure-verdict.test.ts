@@ -13,15 +13,17 @@ const DARK_ROOM_WITH_LAMP = {
 }
 
 describe('exposureVerdict', () => {
-    it('calls the dark session frame too dark and brightens it', () => {
+    it('brightens the dark session frame fully, letting the small lamp clip', () => {
         const result = exposureVerdict(DARK_ROOM_WITH_LAMP)
-        expect(result.verdict).toBe('too dark')
-        expect(result.suggestedStops).toBeGreaterThan(0)
+        expect(result).toEqual({ verdict: 'too dark', suggestedStops: 2 })
     })
 
-    it('limits brightening to the highlight headroom', () => {
-        const roomy = exposureVerdict({ ...DARK_ROOM_WITH_LAMP, highlightHeadroomStops: 3 })
-        expect(roomy.suggestedStops).toBe(2)
+    it('limits brightening to the headroom when highlights are a real part of the picture', () => {
+        const brightWindow = {
+            ...DARK_ROOM_WITH_LAMP,
+            zones: { shadowsPercent: 80, midtonesPercent: 10, highlightsPercent: 10 },
+        }
+        expect(exposureVerdict(brightWindow).suggestedStops).toBeCloseTo(1 / 3)
     })
 
     it('darkens when highlights clip', () => {

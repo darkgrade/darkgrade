@@ -362,7 +362,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
         name: 'analyze_frame',
         title: 'Measure the picture',
         description:
-            'Measure the current live-view picture like the scopes: histogram (mean brightness, percentiles, clipped highlights, crushed shadows, highlight headroom in stops for exposing to the right), waveform by thirds of the frame, vectorscope (colour cast, saturation) and a sharpness reading. Use it to judge exposure, colour and focus before recommending or making changes. exposure.verdict and exposure.suggestedStops say whether the picture is too dark or too bright and the adjust_exposure step that fixes it; follow them.',
+            'Measure the current live-view picture like the scopes: histogram (mean brightness, percentiles, clipped highlights, crushed shadows, highlight headroom in stops for exposing to the right), waveform by thirds of the frame, vectorscope (colour cast, saturation) and a sharpness reading. Use it to judge exposure, colour and focus before recommending or making changes. exposure.verdict and exposure.suggestedStops say whether the picture is too dark or too bright and the adjust_exposure step that fixes it: apply that step only when asked to fix or change the exposure; for a question, just report the verdict.',
         inputSchema: z.object({}),
         changesSomething: false,
         run: async () => {
@@ -405,7 +405,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
         name: 'focus_at',
         title: 'Focus on a point',
         description:
-            'Move the focus point to a spot in the picture and focus there. x and y are fractions of the frame from the top left (0.5, 0.5 is the centre).',
+            'Move the focus point to a spot in the picture and focus there. x and y are fractions of the frame from the top left (0.5, 0.5 is the centre; 0.1 is near the left or top edge, 0.9 near the right or bottom). To focus on a named thing, call get_frame first and take its position from the picture; never guess the centre.',
         inputSchema: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
         changesSomething: true,
         run: async input => {
