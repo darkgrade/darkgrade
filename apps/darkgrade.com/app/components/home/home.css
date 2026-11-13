@@ -2,7 +2,7 @@
 .home {
     --cut: 0;
     --rolling: 0;
-    --timeline-h: 104px;
+    --timeline-h: 90px;
     /* the three stages of the first cut: gaps close, then titles are laid in, then the music runs under it */
     --close: clamp(0, calc((var(--cut) - 0.3) / 0.4), 1);
     --titles: clamp(0, calc((var(--cut) - 0.68) / 0.2), 1);
@@ -10,7 +10,7 @@
 }
 @media (max-width: 900px) {
     .home {
-        --timeline-h: 86px;
+        --timeline-h: 70px;
     }
 }
 
@@ -84,10 +84,10 @@
 }
 @keyframes desk-flash {
     from {
-        background-color: rgba(246, 221, 168, 0.22);
+        background-color: color-mix(in srgb, var(--color-gold) 22%, transparent);
     }
     to {
-        background-color: rgba(246, 221, 168, 0.06);
+        background-color: color-mix(in srgb, var(--color-gold) 6%, transparent);
     }
 }
 @keyframes desk-dot {
@@ -113,6 +113,32 @@
     }
 }
 
+/* a request leaves the box it was typed in and rises to its place in the chat */
+@keyframes desk-send {
+    from {
+        opacity: 0;
+        transform: translateY(96px) scale(0.92);
+    }
+    60% {
+        opacity: 1;
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+@keyframes desk-caret {
+    50% {
+        opacity: 0;
+    }
+}
+.desk-send {
+    transform-origin: bottom right;
+    animation: desk-send 0.46s cubic-bezier(0.19, 1, 0.22, 1) both;
+}
+.desk-caret {
+    animation: desk-caret 0.7s steps(2, jump-none) infinite;
+}
 .desk-arrive {
     animation: desk-arrive 0.42s cubic-bezier(0.19, 1, 0.22, 1) both;
 }
@@ -157,6 +183,8 @@
         animation: none;
     }
     .desk-arrive,
+    .desk-send,
+    .desk-caret,
     .desk-type,
     .desk-flash,
     .desk-dot,

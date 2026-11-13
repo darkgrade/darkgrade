@@ -1,12 +1,12 @@
 import Link from 'next/link'
 
 import { EXPERIMENTS, LINKS } from '@/app/components/home/content'
-import { Wordmark } from '@/app/components/wordmark'
+import { Lockup } from '@/app/components/wordmark'
 
 const TEXT = {
     strong: 'text-[#eae6dc]',
     soft: 'text-[#eae6dc]/55',
-    hover: 'hover:text-[#f6dda8]',
+    hover: 'hover:text-gold',
     rule: 'border-[#eae6dc]/15',
 } as const
 
@@ -20,7 +20,7 @@ const NAV = [
 /** The home page's header: the wordmark, the four links, GitHub. Fixed to the top of the window. */
 export function HomeHeader({ className = '' }: { className?: string }) {
     const text = TEXT
-    const link = `text-[13px] tracking-[.06em] uppercase transition-colors duration-300 ${text.soft} ${text.hover}`
+    const link = `text-[14px] transition-colors duration-300 ${text.soft} ${text.hover}`
     return (
         <header className={`pointer-events-none fixed inset-x-0 top-0 z-[80] ${className}`}>
             {/* the page fades out under the header, so words scrolling up never run into it */}
@@ -28,9 +28,9 @@ export function HomeHeader({ className = '' }: { className?: string }) {
                 aria-hidden="true"
                 className={`absolute inset-x-0 top-0 h-[120px] bg-gradient-to-b from-[#0a0a0b] via-[#0a0a0b]/80 to-transparent`}
             />
-            <div className="shell relative flex h-[64px] items-center justify-between">
+            <div className="shell relative flex h-[76px] items-center justify-between">
                 <Link href="#top" aria-label="Darkgrade" className={`pointer-events-auto block ${text.strong}`}>
-                    <Wordmark className="block h-[15px] w-auto max-[400px]:h-[13px]" />
+                    <Lockup className="text-[21px] max-[400px]:text-[18px]" />
                 </Link>
                 <nav className="pointer-events-auto flex items-center gap-[32px] max-[900px]:hidden">
                     {NAV.map(item => (
@@ -75,7 +75,9 @@ export function HomeFooter({ className = '' }: { className?: string }) {
         <footer className={`relative border-t ${text.rule} ${className}`}>
             <div className="shell flex flex-wrap justify-between gap-10 py-[clamp(48px,8vh,72px)] max-[700px]:flex-col">
                 <div className={`max-w-[30ch] text-[14px] leading-[1.7] ${text.soft}`}>
-                    <Wordmark className={`mb-[18px] block h-[19px] w-auto ${text.strong}`} />
+                    <div className="mb-[18px]">
+                        <Lockup className={`text-[25px] ${text.strong}`} />
+                    </div>
                     Local-first AI for creative professionals.
                 </div>
                 {COLUMNS.map(column => (

@@ -1,6 +1,6 @@
 import { BACKED_BY, TESTED_ON } from '@/app/components/home/content'
 import { RollBoard } from '@/app/components/roll-board'
-import { Wordmark } from '@/app/components/wordmark'
+import { Lockup } from '@/app/components/wordmark'
 
 const CELL = 'flex min-w-0 flex-col justify-between gap-[6px] border-l border-hair px-[18px] py-[13px] first:border-l-0'
 const CELL_NAME = 'text-ink-52'
@@ -44,7 +44,7 @@ export function TitleBlock({ document, sheet, sheets }: { document: string; shee
             <span className={`${CROP} bottom-[-7px] left-[-7px] border-b border-l`} />
             <span className={`${CROP} right-[-7px] bottom-[-7px] border-r border-b`} />
             <div className={CELL}>
-                <Wordmark className="block h-[11px] w-auto self-start text-ink" />
+                <Lockup className="self-start text-[16px] text-ink" />
                 <span className="inline-flex items-center gap-2 text-ink-66">
                     <i className="size-[6px] rounded-full bg-rec shadow-[0_0_8px_rgba(224,72,62,.6)]" />
                     Currently in alpha

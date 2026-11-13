@@ -6,6 +6,7 @@ import {
     DoubleSide,
     Float32BufferAttribute,
     Group,
+    LineSegments,
     MathUtils,
     Matrix4,
     Mesh,
@@ -26,6 +27,7 @@ import {
     ZeroFactor,
 } from 'three'
 
+import { makeBackdrop } from '@/app/components/home/cut-backdrop'
 import {
     DUST_SPRITE_PIXELS,
     type DustSurface,
@@ -33,6 +35,8 @@ import {
     makeSettlingDust,
     makeStreamDust,
 } from '@/app/components/home/cut-dust'
+import { createGlow } from '@/app/components/home/cut-glow'
+import { type LaptopDeck, deckMarkings } from '@/app/components/home/laptop-deck'
 import { PALETTE, inkMaterials } from '@/app/components/home/looks'
 import { approach, between, mix, smooth } from '@/app/components/home/motion'
 import type { Frame, ViewportScene } from '@/app/components/home/viewport'
@@ -47,6 +51,7 @@ import {
 } from '@/app/components/scenes/camera-rig'
 import { ANATOMY, isometricLayers } from '@/app/components/scenes/isometric-look'
 import { type Model, type ModelPiece, loadModel } from '@/app/components/scenes/load-model'
+import { lineMaterial } from '@/app/components/scenes/materials'
 import { placeCamera } from '@/app/components/scenes/staging'
 import { type Arrangement, type StandingItem, buildStudioSet, onArc } from '@/app/components/scenes/studio-set'
 
@@ -79,6 +84,8 @@ export interface CutPage {
     logCall(request: string, call: string): void
     /** The camera has done what the last request asked. */
     answerCall(): void
+    /** The next request has begun to be typed: it will be logged as a call when it is sent. */
+    typeCall?(request: string): void
     /** Each 0..1, every frame: how far the first cut on the laptop has assembled, whether the camera is recording, and how much the words on the left lie over the picture and need it dimmed behind them. */
     showState(state: { cut: number; rolling: number; wordsOverPicture: number }): void
     /** Which chapter the picture is on, every frame: 2.5 is half way through the change from the third to the fourth. */
@@ -97,7 +104,7 @@ export interface CutPage {
  * Everything a shot fixes. Angles are degrees, lengths millimetres, shifts shares of the window,
  * the rest 0..1. Every one of them glides from a shot to the next.
  */
-interface Shot {
+export interface Shot {
     azimuth: number
     elevation: number
     distance: number
@@ -274,7 +281,7 @@ const SHOTS: Record<Chapter, Shot> = {
         elevation: 17,
         distance: 1000,
         shiftRight: -0.31,
-        shiftDown: -0.085,
+        shiftDown: -0.1,
         lookDown: 20,
         driven: 1,
         laptop: 1,
@@ -380,6 +387,8 @@ const LAPTOP_BY_CAMERA = { position: new Vector3(352, -160, 236), turnRadians: -
 const LAPTOP_ENTERS_FROM = new Vector3(850, 0, 530)
 /** A call's particles take this share of the time between calls to reach the camera, which answers as they land. */
 const STREAM_SHARE = 0.3
+/** How far through the time between calls the next request starts being typed. */
+const TYPING_FROM = 0.56
 const STREAM_POINTS = 1600
 /** How much of the window the laptop's screen fills when the viewer is square on to it. */
 const SCREEN_SHARE_OF_WINDOW = 0.72
@@ -390,12 +399,12 @@ const CUT_ASSEMBLES = { from: 0.08, by: 0.5 }
 /** The lights whose head turns on its stand; the floor lamp turns bodily. */
 const PANNING_ITEMS = ['softbox', 'spotlight', 'parabolicLamp']
 const MOST_TIP_RADIANS = 0.32
+const POOL_OPACITY = 0.1
+const BEAM_OPACITY = 0.055
 /** How far the pointer can pull the lights' aim off the chair. */
 const AIM_REACH_MILLIMETRES = 650
 const POOL_RADIUS_MILLIMETRES = 760
-const POOL_OPACITY = 0.1
 const BEAM_STEPS = 40
-const BEAM_OPACITY = 0.055
 /** The lights come on one after another once the studio has formed, this long apart. */
 const LIGHT_UP_SECONDS = 0.32
 
@@ -498,31 +507,31 @@ const DRIVEN_CALLS = [
         callout: 'aperture',
         values: ['f/2.8', 'f/4', 'f/5.6', 'f/8'],
         request: (value: string) => `Set the aperture to ${value}`,
-        call: (value: string) => `await camera.setAperture('${value}')`,
+        call: (value: string) => `camera.setAperture('${value}')`,
     },
     {
         callout: 'shutter',
         values: ['1/60', '1/125', '1/250', '1/500'],
         request: (value: string) => `Shutter speed ${value}`,
-        call: (value: string) => `await camera.setShutterSpeed('${value}')`,
+        call: (value: string) => `camera.setShutterSpeed('${value}')`,
     },
     {
         callout: 'iso',
         values: ['100', '200', '400', '800'],
         request: (value: string) => `ISO ${value}`,
-        call: (value: string) => `await camera.setIso('${value}')`,
+        call: (value: string) => `camera.setIso('${value}')`,
     },
     {
         callout: 'focus',
         values: ['AF-S', 'AF-S', 'AF-S', 'AF-S'],
         request: () => 'Focus',
-        call: () => 'await camera.autofocus()',
+        call: () => 'camera.autofocus()',
     },
     {
         callout: 'capture',
         values: ['', '', '', ''],
         request: () => 'Take the shot',
-        call: () => 'const { data } = await camera.captureImage()',
+        call: () => 'camera.captureImage()',
     },
 ] as const
 
@@ -603,7 +612,7 @@ function lensRimRadius(model: Model): number {
     return radius
 }
 
-/** The inside of the laptop's lid, in the laptop's own millimetres: its middle, the way it faces, its corners, and its shape. */
+/** The laptop's display, in the laptop's own millimetres: its middle, the way it faces, its corners, and its shape. */
 interface LaptopScreen {
     centre: Vector3
     normal: Vector3
@@ -611,9 +620,19 @@ interface LaptopScreen {
     corners: Vector3[]
     height: number
     widthOverHeight: number
+    /** The top of the laptop's base, for what is drawn on it. */
+    deck: LaptopDeck
 }
 
-/** Finds the screen on the laptop: the flat part drawn as lit, which is the whole inner face of its lid. */
+/** How far in from the lid's edges the display's own edge is, and how far above the keyboard its foot is, in the laptop's millimetres. */
+const DISPLAY = { inset: 3, aboveDeck: 2.6 }
+/** A point of the laptop's body this far in front of its lid is part of the deck, not of the lid. */
+const CLEAR_OF_THE_LID_MILLIMETRES = 40
+
+/**
+ * Finds the display on the laptop. The flat part drawn as lit is the whole inner face of its
+ * lid; the display is that face set in a little from the lid's edges and ending above the deck.
+ */
 function screenOf(model: Model): LaptopScreen {
     const lid = model.pieces.find(piece => piece.surface === 'element')
     if (!lid) throw new Error('The laptop has no screen')
@@ -635,6 +654,27 @@ function screenOf(model: Model): LaptopScreen {
         bottom = Math.min(bottom, vertex.dot(up))
         top = Math.max(top, vertex.dot(up))
     }
+    // The lid's face runs on down behind the keyboard: the display ends a little above where the deck's top meets it.
+    const body = model.pieces.find(piece => piece.surface !== 'element')
+    if (!body) throw new Error('The laptop has no body')
+    const bodyPositions = body.solid.getAttribute('position')
+    let deckTop = -Infinity
+    for (let index = 0; index < bodyPositions.count; index++) {
+        vertex.fromBufferAttribute(bodyPositions, index)
+        if (vertex.clone().sub(lid.centre).dot(normal) > CLEAR_OF_THE_LID_MILLIMETRES)
+            deckTop = Math.max(deckTop, vertex.y)
+    }
+    left += DISPLAY.inset
+    rightmost -= DISPLAY.inset
+    top -= DISPLAY.inset
+    const lidMeetsDeck = (deckTop - lid.centre.y) / up.y
+    bottom = lidMeetsDeck + DISPLAY.aboveDeck
+    const deck: LaptopDeck = {
+        halfWidth: body.bounds.max.x,
+        hingeZ: lid.centre.z + up.z * lidMeetsDeck,
+        frontZ: body.bounds.max.z,
+        topY: deckTop,
+    }
     const at = (across: number, upwards: number) =>
         lid.centre.clone().addScaledVector(right, across).addScaledVector(up, upwards)
     return {
@@ -643,6 +683,7 @@ function screenOf(model: Model): LaptopScreen {
         corners: [at(left, top), at(rightmost, top), at(rightmost, bottom), at(left, bottom)],
         height: top - bottom,
         widthOverHeight: (rightmost - left) / (top - bottom),
+        deck,
     }
 }
 
@@ -665,6 +706,8 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     const shot: Shot = { ...BASE_SHOT }
     const restingGlassLight = (ink.glassFill.uniforms.uLight.value as Color).clone()
     const glowingGlassLight = new Color('#2f2614')
+    const backdrop = makeBackdrop()
+    const glow = createGlow()
     const rimRadius = lensRimRadius(cameraModel)
     const cameraDepth = cameraModel.pieces.reduce(
         (depth, piece) => ({
@@ -761,6 +804,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     for (const piece of laptopModel.pieces)
         laptop.add(...(piece.surface === 'element' ? layers.gold(piece) : layers.plain(piece)))
     const screen = screenOf(laptopModel)
+    laptop.add(new LineSegments(deckMarkings(screen.deck), lineMaterial(ANATOMY.crease, 0.85)))
     // Where the laptop stands on the set: on top of the crate. The gear's frame is turned to the world's, so its turn is the same in both.
     const laptopOnCrate = set.gear.localToWorld(new Vector3(crate.home.x, crate.rig.size.y, crate.home.z))
     const pools = lights.map(() => floorPool())
@@ -804,6 +848,8 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     /** Every surface of the gear as it stands on the set, tripod included, for its dust to gather on. */
     function gearSurfaces(): DustSurface[] {
         set.rest()
+        // The lights are aimed at the chair, as they are while the gear gathers: dust laid on a light at rest would hang beside it.
+        for (const light of lights) faceThePoint(light, chair.home.x, chair.home.z)
         set.update()
         gearScene.updateMatrixWorld(true)
         const surfaces: DustSurface[] = [surfaceOf(tripodPiece!, stand.matrixWorld, 1, 0)]
@@ -846,6 +892,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     let chapter = chapterAt(page.sections)
     let lastCall = -1
     let lastAnswer = -1
+    let lastTyped = -1
     let streamTo: Callout | 'capture' = 'aperture'
     let flash = 0
     let studioSeconds = 0
@@ -854,6 +901,13 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
      * Makes the next of Link's calls when its turn comes. The request and its call are printed at
      * once and a burst of particles leaves the laptop; the camera answers as they land.
      */
+    /** The words of the request made at a step of the round of calls. */
+    function wordingOf(step: number): string {
+        const made = DRIVEN_CALLS[step % DRIVEN_CALLS.length]
+        const value = made.values[Math.floor(step / DRIVEN_CALLS.length) % made.values.length]
+        return made.request(value)
+    }
+
     function driveTheCamera(frame: Frame) {
         const { pose } = rig
         if (shot.driven > 0.5 && !frame.still) turned.callSeconds += frame.deltaSeconds
@@ -874,7 +928,11 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         if (step !== lastCall) {
             lastCall = step
             streamTo = made.callout
-            page.logCall(made.request(value), made.call(value))
+            page.logCall(wordingOf(step), made.call(value))
+        }
+        if (within >= TYPING_FROM && step !== lastTyped) {
+            lastTyped = step
+            page.typeCall?.(wordingOf(step + 1))
         }
         if (answering < 0 || step === lastAnswer) return
         lastAnswer = step
@@ -926,10 +984,13 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
             raycaster.setFromCamera(pointerInView.set(frame.pointer.x, -frame.pointer.y), viewer)
             if (raycaster.ray.intersectPlane(floor, pointerOnFloor)) {
                 set.gear.worldToLocal(pointerOnFloor)
-                const pull = Math.min(
-                    1,
-                    AIM_REACH_MILLIMETRES / Math.max(1, Math.hypot(pointerOnFloor.x - across, pointerOnFloor.z - back))
-                )
+                // The pointer has no pull until the gear has gathered: until then the lights stay where their dust is settling.
+                const pull =
+                    Math.min(
+                        1,
+                        AIM_REACH_MILLIMETRES /
+                            Math.max(1, Math.hypot(pointerOnFloor.x - across, pointerOnFloor.z - back))
+                    ) * between(shot.gear, 0.92, 1)
                 across += (pointerOnFloor.x - across) * pull
                 back += (pointerOnFloor.z - back) * pull
             }
@@ -1085,6 +1146,9 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
             .copy(restingGlassLight)
             .lerp(glowingGlassLight, Math.min(1, shot.glassGlow + flash))
         ink.fill.uniforms.uRimStrength.value = 0.1 + flash * 0.5
+        backdrop.update(frame, shot)
+        // The shutter firing throws more light for a moment.
+        glow.strengthen(1 + flash * 1.5)
     }
 
     const pieceOf = (group: string) => rig.pieces.find(rigPiece => rigPiece.piece.group === group)!
@@ -1225,6 +1289,13 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
             }
             if (gearDust.points.visible || ringDust.points.visible || stream.points.visible)
                 renderer.render(dustScene, viewer)
+            // The backdrop goes under everything drawn so far, and the light that spills from the gold over all of it.
+            renderer.render(backdrop.scene, backdrop.camera)
+            glow.over(renderer, frame)
+        },
+        dispose() {
+            backdrop.dispose()
+            glow.dispose()
         },
     }
 

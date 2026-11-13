@@ -1,6 +1,6 @@
 'use client'
 
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { type PointerEvent, type RefObject, useEffect, useRef, useState } from 'react'
 
 import { watch } from '@/app/components/home/motion'
 
@@ -96,13 +96,43 @@ function readingLine(): number {
     return (scroller.scrollTop + innerHeight * through) / scroller.scrollHeight
 }
 
-const TRACK_NAME = 'flex items-center font-mono text-[9px] tracking-[.14em] text-ink-52 uppercase'
+/** How far the page can be scrolled, in pixels. */
+function furthestScroll(): number {
+    const scroller = document.scrollingElement
+    return scroller ? Math.max(0, scroller.scrollHeight - innerHeight) : 0
+}
+
+/** Puts the reading line a share of the way down the page, at once: the line is as far down the page as the page is scrolled through. */
+function putReadingLineAt(line: number) {
+    scrollTo({ top: Math.min(1, Math.max(0, line)) * furthestScroll(), behavior: 'instant' })
+}
+
+/** A clip narrower than this share of the page has no room for its timecode on the ruler. */
+const NARROWEST_SHARE_WITH_A_TIMECODE = 0.075
+/** How far the pointer has to move over a clip before it is scrubbing the timeline and not choosing the clip, in pixels. */
+const DRAG_STARTS_AFTER_PIXELS = 4
+/** The keys that scroll a page: any of them takes over from the playback. */
+const SCROLLING_KEYS = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']
+/** How far the page may sit from where the playback put it before something else is taken to have moved it, in pixels. */
+const MOVED_BY_SOMETHING_ELSE_PIXELS = 2
+/** The longest step the playback takes in one frame, in seconds: a window left and come back to carries on, it does not jump. */
+const LONGEST_FRAME_SECONDS = 0.1
+
+function TransportIcon({ playing }: { playing: boolean }) {
+    return (
+        <svg viewBox="0 0 12 12" aria-hidden="true" className="size-[9px]" fill="currentColor">
+            {playing ? <path d="M2 1.5h3v9H2zM7 1.5h3v9H7z" /> : <path d="M2.5 1.2v9.6L11 6z" />}
+        </svg>
+    )
+}
 
 /**
- * The strip docked to the bottom of the window: the page as an editor's timeline, after The
- * Set's. Each clip is a chapter with its audio drawn under it, the playhead and timecode follow
- * the scroll, and a click on a clip goes to it. It starts below the first fold and comes up as
- * the page is scrolled (`--drop`), and rides up on the footer at the end (`--lift`).
+ * The strip docked to the bottom of the window: the page as an editor's timeline. Each clip is a
+ * chapter with its sound drawn through it, the playhead and timecode follow the scroll, the
+ * clips already played stay lit a little, and a click on a clip goes to it. Dragging along the
+ * ruler or the clips scrubs the page, and the play button runs it through at the timecode's own
+ * pace, from where it is to the end. It starts below the first fold and comes up as the page is
+ * scrolled (`--drop`), and rides up on the footer at the end (`--lift`).
  */
 export function PageTimeline({ clips, sections }: PageTimelineProps) {
     const playhead = useRef<HTMLDivElement>(null)
@@ -111,6 +141,14 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
     const [active, setActive] = useState(0)
     const sharesNow = useRef(shares)
     sharesNow.current = shares
+    const track = useRef<HTMLDivElement>(null)
+    const [playing, setPlaying] = useState(false)
+    const playingNow = useRef(playing)
+    playingNow.current = playing
+    const [scrubbing, setScrubbing] = useState(false)
+    /** The press under way on the track: where it began, and whether it has become a drag. */
+    const press = useRef<{ startX: number; dragging: boolean } | null>(null)
+    const draggedSincePress = useRef(false)
 
     useEffect(() => {
         const scroller = document.scrollingElement
@@ -143,6 +181,45 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
         []
     )
 
+    useEffect(() => {
+        const scroller = document.scrollingElement
+        if (!playing || !scroller) return
+        // Played from the end, it starts again from the top.
+        let line = readingLine() >= 0.999 ? 0 : readingLine()
+        let putAt = line * furthestScroll()
+        putReadingLineAt(line)
+        let before = performance.now()
+        let animationFrame = requestAnimationFrame(function advance(now) {
+            const furthest = furthestScroll()
+            // Scrubbing, or choosing a clip, moves the page under the playback: it carries on from there.
+            if (Math.abs(scroller.scrollTop - putAt) > MOVED_BY_SOMETHING_ELSE_PIXELS)
+                line = furthest > 0 ? scroller.scrollTop / furthest : 1
+            line = Math.min(1, line + Math.min(LONGEST_FRAME_SECONDS, (now - before) / 1000) / RUNTIME_SECONDS)
+            before = now
+            putAt = line * furthest
+            putReadingLineAt(line)
+            if (line >= 1) setPlaying(false)
+            else animationFrame = requestAnimationFrame(advance)
+        })
+        // Whoever scrolls the page themselves has taken over.
+        const pause = () => setPlaying(false)
+        const pauseUnlessOnTheTrack = (event: TouchEvent) => {
+            if (!(event.target instanceof Node && track.current?.contains(event.target))) pause()
+        }
+        const pauseOnAScrollingKey = (event: KeyboardEvent) => {
+            if (SCROLLING_KEYS.includes(event.key) && !(event.target instanceof HTMLButtonElement)) pause()
+        }
+        addEventListener('wheel', pause, { passive: true })
+        addEventListener('touchmove', pauseUnlessOnTheTrack, { passive: true })
+        addEventListener('keydown', pauseOnAScrollingKey)
+        return () => {
+            cancelAnimationFrame(animationFrame)
+            removeEventListener('wheel', pause)
+            removeEventListener('touchmove', pauseUnlessOnTheTrack)
+            removeEventListener('keydown', pauseOnAScrollingKey)
+        }
+    }, [playing])
+
     function goTo(clip: TimelineClip) {
         const section = sections.current.get(clip.sections[0])
         if (!section) return
@@ -150,104 +227,155 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
         scrollTo({
             top: scrollY + bounds.top + Math.max(0, (bounds.height - innerHeight) / 2),
-            behavior: reduced ? 'instant' : 'smooth',
+            // While it plays the page is being put somewhere every frame, and a glide would be cut short.
+            behavior: reduced || playingNow.current ? 'instant' : 'smooth',
         })
+    }
+
+    function scrubTo(clientX: number) {
+        const bounds = track.current?.getBoundingClientRect()
+        if (bounds) putReadingLineAt((clientX - bounds.left) / bounds.width)
+    }
+
+    function startDragging(event: PointerEvent<HTMLDivElement>) {
+        if (!press.current) return
+        press.current.dragging = true
+        draggedSincePress.current = true
+        event.currentTarget.setPointerCapture(event.pointerId)
+        setScrubbing(true)
+    }
+
+    /** A press on the ruler scrubs at once; a press on a clip scrubs only once it is dragged, so a click still chooses the clip. */
+    function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+        if (event.button !== 0) return
+        press.current = { startX: event.clientX, dragging: false }
+        draggedSincePress.current = false
+        if (event.target instanceof Element && event.target.closest('button')) return
+        startDragging(event)
+        scrubTo(event.clientX)
+    }
+
+    function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+        const pressed = press.current
+        if (!pressed) return
+        if (!pressed.dragging && Math.abs(event.clientX - pressed.startX) < DRAG_STARTS_AFTER_PIXELS) return
+        if (!pressed.dragging) startDragging(event)
+        scrubTo(event.clientX)
+    }
+
+    function onPointerEnd() {
+        press.current = null
+        setScrubbing(false)
     }
 
     let startsAt = 0
     return (
-        <div className="fixed inset-x-0 bottom-0 z-[70] [translate:0_calc(var(--drop,var(--timeline-h))-var(--lift,0px))] border-t border-hair bg-[rgba(9,9,10,.9)] backdrop-blur-[14px]">
+        <div className="fixed inset-x-0 bottom-0 z-[70] [translate:0_calc(var(--drop,var(--timeline-h))-var(--lift,0px))] border-t border-hair bg-[rgba(9,9,10,.82)] backdrop-blur-[18px]">
             <nav
                 aria-label="Chapters"
-                className="grid h-[var(--timeline-h)] grid-cols-[clamp(132px,13vw,188px)_minmax(0,1fr)] max-[900px]:grid-cols-[112px_minmax(0,1fr)]"
+                className="shell grid h-[var(--timeline-h)] grid-cols-[auto_minmax(0,1fr)] items-stretch gap-x-[clamp(14px,2vw,28px)] select-none"
             >
-                {/* top-aligned: the bottom left corner of the window is where a dev build's badge sits */}
-                <div className="flex flex-col gap-[7px] border-r border-hair px-[clamp(12px,1.4vw,20px)] pt-[14px]">
+                <div className="flex flex-col gap-[5px] pt-[10px] max-[900px]:w-[92px] max-[900px]:pt-[7px]">
                     <span
                         ref={clock}
-                        className="glow-sm font-mono text-[clamp(.875rem,1.25vw,1.125rem)] leading-none tracking-[.06em] tabular-nums"
+                        className="glow-sm font-mono text-[15px] leading-none tracking-[.02em] tabular-nums"
                     >
                         {timecode(0)}
                     </span>
-                    <span className="flex items-center gap-2 font-mono text-[9px] tracking-[.2em] text-ink-52 uppercase">
-                        <i className="size-[6px] rounded-full bg-rec opacity-[calc(.25_+_.75_*_var(--rolling))] shadow-[0_0_8px_rgba(224,72,62,.7)]" />
-                        <span className="max-[900px]:hidden">Seq 01 · 24 fps</span>
-                        <span className="hidden truncate text-gold max-[900px]:inline">{clips[active]?.label}</span>
+                    <span className="flex items-center gap-[7px] font-mono text-[10px] leading-none tracking-[.08em] text-ink-52 uppercase">
+                        <i className="size-[6px] shrink-0 rounded-full bg-rec opacity-[calc(.3_+_.7_*_var(--rolling))] shadow-[0_0_8px_rgba(224,72,62,.7)]" />
+                        <span className="truncate">{clips[active]?.label}</span>
                     </span>
+                    <button
+                        type="button"
+                        onClick={() => setPlaying(now => !now)}
+                        aria-pressed={playing}
+                        className={`mt-[6px] inline-flex h-[24px] cursor-pointer items-center gap-[7px] self-start rounded-full border pr-[11px] pl-[9px] font-mono text-[10px] leading-none tracking-[.08em] uppercase transition-[background,border-color,color] duration-300 max-[900px]:mt-[2px] max-[900px]:h-[20px] ${playing ? 'border-gold/70 bg-gold/[.14] text-gold' : 'border-ink/20 text-ink-62 hover:border-ink/45 hover:text-ink'}`}
+                    >
+                        <TransportIcon playing={playing} />
+                        {playing ? 'Pause' : 'Play'}
+                    </button>
                 </div>
 
-                <div className="relative grid grid-cols-[20px_minmax(0,1fr)] grid-rows-[16px_minmax(0,1fr)_30px] gap-x-[6px] gap-y-[4px] px-3 py-[8px] max-[900px]:px-2">
-                    <span />
-                    <div className="relative flex border-b border-hair">
+                <div
+                    ref={track}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerEnd}
+                    onPointerCancel={onPointerEnd}
+                    onClickCapture={event => {
+                        // The click that ends a drag across a clip does not choose that clip.
+                        if (draggedSincePress.current) event.stopPropagation()
+                    }}
+                    className={`relative grid touch-pan-y grid-rows-[13px_minmax(0,1fr)] gap-y-[5px] py-[10px] ${scrubbing ? 'cursor-ew-resize [&_button]:cursor-ew-resize' : 'cursor-ew-resize'}`}
+                >
+                    <div className="relative flex" aria-hidden="true">
                         {clips.map((clip, index) => {
-                            const label = timecode(startsAt * RUNTIME_SECONDS).slice(3)
+                            const label = timecode(startsAt * RUNTIME_SECONDS).slice(3, 8)
                             startsAt += shares[index]
                             return (
                                 <span
                                     key={clip.id}
-                                    className="relative overflow-hidden border-l border-ink/30 pl-[5px] font-mono text-[9px] leading-[12px] tracking-[.08em] text-ink-52 tabular-nums"
+                                    className="relative border-l border-ink/25 pl-[5px] font-mono text-[9px] leading-[10px] text-ink-52 tabular-nums"
                                     style={{ width: `${shares[index] * 100}%` }}
                                 >
-                                    <span className="max-[900px]:hidden">{label}</span>
+                                    {shares[index] >= NARROWEST_SHARE_WITH_A_TIMECODE && (
+                                        <span className="max-[900px]:hidden">{label}</span>
+                                    )}
                                 </span>
                             )
                         })}
-                        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-[4px] bg-[repeating-linear-gradient(to_right,rgba(234,230,220,.28)_0_1px,transparent_1px_1.25%)]" />
+                        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-[repeating-linear-gradient(to_right,rgba(234,230,220,.22)_0_1px,transparent_1px_1.25%)]" />
                     </div>
 
-                    <span className={TRACK_NAME}>V1</span>
                     <div className="flex min-h-0 gap-[3px]">
-                        {clips.map((clip, index) => (
-                            <button
-                                key={clip.id}
-                                type="button"
-                                onClick={() => goTo(clip)}
-                                aria-current={index === active ? 'step' : undefined}
-                                aria-label={clip.label}
-                                className={`relative min-w-0 cursor-pointer overflow-hidden rounded-[4px] border px-[7px] text-left transition-[background,border-color,color] duration-300 ${
-                                    index === active
-                                        ? 'border-gold/70 bg-[linear-gradient(rgba(246,221,168,.22),rgba(246,221,168,.08))] text-gold'
-                                        : 'border-ink/15 bg-ink/[.045] text-ink-55 hover:border-ink/40 hover:text-ink'
-                                }`}
-                                style={{ width: `${shares[index] * 100}%` }}
-                            >
-                                <span className="block truncate font-mono text-[10px] leading-[1.5] tracking-[.1em] uppercase max-[1200px]:text-[9px] max-[1200px]:tracking-[.04em] max-[900px]:hidden">
-                                    {clip.label}
-                                </span>
-                            </button>
-                        ))}
+                        {clips.map((clip, index) => {
+                            const state = index === active ? 'now' : index < active ? 'played' : 'ahead'
+                            return (
+                                <button
+                                    key={clip.id}
+                                    type="button"
+                                    onClick={() => goTo(clip)}
+                                    aria-current={index === active ? 'step' : undefined}
+                                    aria-label={clip.label}
+                                    className={`group relative min-w-0 cursor-pointer overflow-hidden rounded-[5px] border text-left transition-[background,border-color,color] duration-300 ${CLIP[state]}`}
+                                    style={{ width: `${shares[index] * 100}%` }}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={`absolute inset-x-0 bottom-[3px] h-[38%] transition-opacity duration-300 ${state === 'now' ? 'opacity-70' : 'opacity-35 group-hover:opacity-60'}`}
+                                    >
+                                        <Waveform
+                                            bars={Math.max(12, Math.round(shares[index] * BARS_ACROSS))}
+                                            seed={index * 2.3 + 0.4}
+                                            sound={clip.sound}
+                                        />
+                                    </span>
+                                    <span className="absolute top-[8px] right-[8px] left-[8px] truncate font-mono text-[10px] leading-none tracking-[.06em] uppercase max-[900px]:hidden">
+                                        {clip.label}
+                                    </span>
+                                </button>
+                            )
+                        })}
                     </div>
 
-                    <span className={TRACK_NAME}>A1</span>
-                    <div className="flex min-h-0 gap-[3px]" aria-hidden="true">
-                        {clips.map((clip, index) => (
-                            <span
-                                key={clip.id}
-                                className={`min-w-0 overflow-hidden rounded-[4px] border transition-colors duration-300 ${index === active ? 'border-gold/35 bg-gold/[.06] text-gold/75' : 'border-ink/12 bg-ink/[.035] text-ink/45'}`}
-                                style={{ width: `${shares[index] * 100}%` }}
-                            >
-                                <Waveform
-                                    bars={Math.max(12, Math.round(shares[index] * BARS_ACROSS))}
-                                    seed={index * 2.3 + 0.4}
-                                    sound={clip.sound}
-                                />
-                            </span>
-                        ))}
-                    </div>
-
-                    <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-y-0 right-3 left-[38px] max-[900px]:right-2 max-[900px]:left-[34px]"
-                    >
+                    <div aria-hidden="true" className="pointer-events-none absolute inset-0">
                         <div
                             ref={playhead}
-                            className="absolute inset-y-0 w-px bg-gold shadow-[0_0_10px_rgba(244,198,110,.9)]"
+                            className="absolute inset-y-[6px] w-px bg-gold shadow-[0_0_8px_var(--glow),0_0_22px_rgba(255,110,48,.55)]"
                         >
-                            <span className="absolute top-0 left-1/2 h-[9px] w-[11px] -translate-x-1/2 bg-gold [clip-path:polygon(0_0,100%_0,100%_45%,50%_100%,0_45%)]" />
+                            <span className="absolute top-0 left-1/2 h-[8px] w-[9px] -translate-x-1/2 bg-gold [clip-path:polygon(0_0,100%_0,100%_45%,50%_100%,0_45%)]" />
                         </div>
                     </div>
                 </div>
             </nav>
         </div>
     )
+}
+
+/** How a clip is drawn: the one being read, those already read, and those to come. */
+const CLIP = {
+    now: 'border-gold/70 bg-[linear-gradient(color-mix(in_srgb,var(--color-gold)_24%,transparent),color-mix(in_srgb,var(--color-gold)_8%,transparent))] text-gold',
+    played: 'border-gold/20 bg-gold/[.045] text-ink-62 hover:border-gold/45 hover:text-ink',
+    ahead: 'border-ink/12 bg-ink/[.035] text-ink-52 hover:border-ink/35 hover:text-ink',
 }

@@ -3,25 +3,25 @@
 import {
     applyDevFonts,
     CATEGORY_DEFINITIONS,
-    DEV_FONT_API_PATH,
     FONT_CATEGORIES,
+    FONTS_BY_CATEGORY,
+    HEADING_WEIGHT_VARIABLE,
+    HEADING_WEIGHTS,
     LOOPBACK_HOSTNAMES,
     STORAGE_KEY,
     STYLE_ELEMENT_ID,
+    WEIGHTS_BY_CATEGORY,
     type FontCategory,
     type SelectedFonts,
 } from '@/app/components/dev-font-chooser/dev-fonts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-interface InstalledFont {
-    file: string
-    label: string
-}
-
 interface ChooserState {
     open: boolean
     category: FontCategory
     selected: SelectedFonts
+    /** The weight headings are tried at, or null for the site's own. */
+    headingWeight: number | null
     favorites: Record<FontCategory, string[]>
     /** When on (and the category has favorites), the arrow keys cycle only through them. */
     shortlistOnly: Record<FontCategory, boolean>
@@ -35,6 +35,7 @@ const PANEL_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, monospace'
 const KEY_HINTS: ReadonlyArray<[string, string]> = [
     ['← →', 'cycle'],
     ['↑ ↓ 1 2 3', 'category'],
+    ['W', 'heading weight'],
     ['F', 'favorite'],
     ['S', 'shortlist'],
     ['R', 'reset'],
@@ -47,6 +48,7 @@ function createEmptyState(): ChooserState {
         open: true,
         category: 'heading',
         selected: { heading: null, body: null, mono: null },
+        headingWeight: null,
         favorites: { heading: [], body: [], mono: [] },
         shortlistOnly: { heading: false, body: false, mono: false },
     }
@@ -61,6 +63,7 @@ function readStoredState(): ChooserState {
         if (!stored) return state
         if (typeof stored.open === 'boolean') state.open = stored.open
         if (FONT_CATEGORIES.includes(stored.category)) state.category = stored.category
+        if (HEADING_WEIGHTS.includes(stored.headingWeight)) state.headingWeight = stored.headingWeight
         for (const category of FONT_CATEGORIES) {
             state.selected[category] = stored.selected?.[category] ?? null
             state.favorites[category] = Array.isArray(stored.favorites?.[category]) ? stored.favorites[category] : []
@@ -77,8 +80,8 @@ function isTypingTarget(target: EventTarget | null): boolean {
     return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
-function getCyclePool(state: ChooserState, fonts: InstalledFont[]): string[] {
-    const files = fonts.map(font => font.file)
+function getCyclePool(state: ChooserState): string[] {
+    const files = FONTS_BY_CATEGORY[state.category].map(font => font.family)
     if (!state.shortlistOnly[state.category]) return files
     const shortlist = files.filter(file => state.favorites[state.category].includes(file))
     return shortlist.length > 0 ? shortlist : files
@@ -96,6 +99,12 @@ function toggleShortlistOnly(state: ChooserState): ChooserState {
     return { ...state, shortlistOnly: { ...state.shortlistOnly, [state.category]: enabled } }
 }
 
+/** The next heading weight up, coming round to the lightest after the heaviest. */
+function stepHeadingWeight(state: ChooserState): ChooserState {
+    const current = state.headingWeight === null ? -1 : HEADING_WEIGHTS.indexOf(state.headingWeight)
+    return { ...state, headingWeight: HEADING_WEIGHTS[(current + 1) % HEADING_WEIGHTS.length] }
+}
+
 function stepThroughPool(pool: string[], current: string | null, direction: 1 | -1): string | null {
     if (pool.length === 0) return current
     const currentIndex = current === null ? -1 : pool.indexOf(current)
@@ -104,17 +113,16 @@ function stepThroughPool(pool: string[], current: string | null, direction: 1 | 
 }
 
 /**
- * Dev-only font picker. Lists the TAY* fonts installed in ~/Library/Fonts (via
- * /api/dev-fonts) and lets you audition them live as the heading, body and mono
- * fonts, keep a shortlist of favorites per category, and copy the result once
- * you have decided. Renders nothing unless the page is served from localhost.
+ * Dev-only font picker. Lists a set of Google Fonts families (see dev-fonts.ts)
+ * and lets you audition them live as the heading, body and mono fonts, keep a
+ * shortlist of favorites per category, and copy the result once you have
+ * decided. A family is fetched from Google Fonts only when it is chosen.
+ * Renders nothing unless the page is served from localhost.
  */
 export function DevFontChooser() {
     const [isLoopback, setIsLoopback] = useState(false)
     const [hasLoadedStorage, setHasLoadedStorage] = useState(false)
     const [state, setState] = useState<ChooserState>(createEmptyState)
-    const [fonts, setFonts] = useState<InstalledFont[]>([])
-    const [loadError, setLoadError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
     const activeRowRef = useRef<HTMLDivElement | null>(null)
 
@@ -123,11 +131,6 @@ export function DevFontChooser() {
         setIsLoopback(true)
         setState(readStoredState())
         setHasLoadedStorage(true)
-
-        fetch(DEV_FONT_API_PATH)
-            .then(response => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
-            .then((payload: { fonts: InstalledFont[] }) => setFonts(payload.fonts))
-            .catch(error => setLoadError(String(error.message ?? error)))
     }, [])
 
     useEffect(() => {
@@ -136,30 +139,40 @@ export function DevFontChooser() {
 
     useEffect(() => {
         if (!hasLoadedStorage) return
-        applyDevFonts(state.selected, CATEGORY_DEFINITIONS, DEV_FONT_API_PATH, STYLE_ELEMENT_ID)
+        applyDevFonts(
+            state.selected,
+            state.headingWeight,
+            CATEGORY_DEFINITIONS,
+            WEIGHTS_BY_CATEGORY,
+            HEADING_WEIGHT_VARIABLE,
+            STYLE_ELEMENT_ID
+        )
 
         // Layout (scroll height, marquee width) was measured with the old font,
         // so once the new faces are in, ask whatever listens to re-measure.
         const loads = FONT_CATEGORIES.flatMap(category => {
             const file = state.selected[category]
-            return file ? [document.fonts.load(`1em ${JSON.stringify('dev:' + file)}`)] : []
+            return file ? [document.fonts.load(`1em ${JSON.stringify(file)}`)] : []
         })
         void Promise.all(loads)
             .catch(() => undefined)
             .then(() => window.dispatchEvent(new Event('resize')))
-    }, [hasLoadedStorage, state.selected])
+    }, [hasLoadedStorage, state.selected, state.headingWeight])
 
     useEffect(() => {
         activeRowRef.current?.scrollIntoView({ block: 'nearest' })
     }, [state.category, state.selected, state.open])
 
     const copyLockIn = useCallback(() => {
-        const lockIn = Object.fromEntries(
-            FONT_CATEGORIES.map(category => [
-                category,
-                { selected: state.selected[category], favorites: state.favorites[category] },
-            ])
-        )
+        const lockIn = {
+            ...Object.fromEntries(
+                FONT_CATEGORIES.map(category => [
+                    category,
+                    { selected: state.selected[category], favorites: state.favorites[category] },
+                ])
+            ),
+            headingWeight: state.headingWeight,
+        }
         void navigator.clipboard
             .writeText(JSON.stringify(lockIn, null, 2))
             .then(() => {
@@ -167,7 +180,7 @@ export function DevFontChooser() {
                 window.setTimeout(() => setCopied(false), COPIED_MESSAGE_MILLISECONDS)
             })
             .catch(() => undefined) // clipboard can be denied; there is nothing useful to do
-    }, [state.favorites, state.selected])
+    }, [state.favorites, state.selected, state.headingWeight])
 
     useEffect(() => {
         if (!isLoopback) return
@@ -181,7 +194,7 @@ export function DevFontChooser() {
 
         const cycleFont = (direction: 1 | -1) =>
             setState(previous => {
-                const pool = getCyclePool(previous, fonts)
+                const pool = getCyclePool(previous)
                 const next = stepThroughPool(pool, previous.selected[previous.category], direction)
                 return { ...previous, selected: { ...previous.selected, [previous.category]: next } }
             })
@@ -210,6 +223,7 @@ export function DevFontChooser() {
                 '1': () => setState(previous => ({ ...previous, category: 'heading' })),
                 '2': () => setState(previous => ({ ...previous, category: 'body' })),
                 '3': () => setState(previous => ({ ...previous, category: 'mono' })),
+                w: () => setState(stepHeadingWeight),
                 f: () => setState(previous => toggleFavoriteFile(previous, previous.selected[previous.category])),
                 s: () => setState(toggleShortlistOnly),
                 r: resetCategory,
@@ -224,17 +238,17 @@ export function DevFontChooser() {
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [isLoopback, state.open, fonts, copyLockIn])
+    }, [isLoopback, state.open, copyLockIn])
 
     if (!isLoopback) return null
 
     const category = state.category
     const selectedFile = state.selected[category]
     const favorites = state.favorites[category]
-    const pool = getCyclePool(state, fonts)
+    const fonts = FONTS_BY_CATEGORY[category]
+    const pool = getCyclePool(state)
     const shortlistActive = state.shortlistOnly[category] && favorites.length > 0
     const positionLabel = selectedFile && pool.includes(selectedFile) ? pool.indexOf(selectedFile) + 1 : '–'
-    const selectedLabel = fonts.find(font => font.file === selectedFile)?.label ?? selectedFile
 
     if (!state.open) {
         return (
@@ -288,10 +302,11 @@ export function DevFontChooser() {
 
             <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                    <div className="truncate text-[13px] text-ink">{selectedLabel ?? 'Site default'}</div>
+                    <div className="truncate text-[13px] text-ink">{selectedFile ?? 'Site default'}</div>
                     <div className="text-[10px] text-ink-52">
                         {positionLabel} / {pool.length}
                         {shortlistActive ? ' · shortlist' : ''}
+                        {category === 'heading' ? ` · weight ${state.headingWeight ?? 'site'}` : ''}
                     </div>
                 </div>
                 <div className="flex shrink-0 gap-1">
@@ -317,15 +332,11 @@ export function DevFontChooser() {
             </div>
 
             <div data-lenis-prevent className="mb-2 max-h-[168px] overflow-y-auto rounded-[6px] border border-hair">
-                {loadError && <div className="p-2 text-rec">Could not list fonts ({loadError}).</div>}
-                {!loadError && fonts.length === 0 && (
-                    <div className="p-2 text-ink-52">No TAY* fonts found in ~/Library/Fonts.</div>
-                )}
                 {fonts.map(font => {
-                    const isSelected = font.file === selectedFile
+                    const isSelected = font.family === selectedFile
                     return (
                         <div
-                            key={font.file}
+                            key={font.family}
                             ref={isSelected ? activeRowRef : undefined}
                             className={`flex items-center justify-between gap-2 px-2 py-[3px] ${isSelected ? 'bg-gold-dim text-gold' : 'hover:bg-[rgba(234,230,220,.05)]'}`}
                         >
@@ -334,20 +345,23 @@ export function DevFontChooser() {
                                 onClick={() =>
                                     setState(previous => ({
                                         ...previous,
-                                        selected: { ...previous.selected, [previous.category]: font.file },
+                                        selected: { ...previous.selected, [previous.category]: font.family },
                                     }))
                                 }
                                 className="min-w-0 flex-1 cursor-pointer truncate text-left"
                             >
-                                {font.label}
+                                {font.family}
+                                {category === 'heading' && font.heaviest && (
+                                    <span className="ml-2 opacity-50">{font.heaviest}</span>
+                                )}
                             </button>
                             <button
                                 type="button"
-                                aria-label={`Toggle favorite for ${font.label}`}
-                                onClick={() => setState(previous => toggleFavoriteFile(previous, font.file))}
+                                aria-label={`Toggle favorite for ${font.family}`}
+                                onClick={() => setState(previous => toggleFavoriteFile(previous, font.family))}
                                 className="cursor-pointer opacity-70 hover:opacity-100"
                             >
-                                {favorites.includes(font.file) ? '★' : '☆'}
+                                {favorites.includes(font.family) ? '★' : '☆'}
                             </button>
                         </div>
                     )

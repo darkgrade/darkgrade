@@ -13,8 +13,8 @@ interface LaptopScreenProps {
 const LAYER = 'absolute inset-0 opacity-0'
 
 /**
- * The laptop's screen as a flat box: the whole inner face of its lid, rounded as the lid is, with
- * a black bezel round a window. The page fits it to the lid in the picture with a transform
+ * The laptop's display as a flat box: a black bezel round a window, its corners rounded to sit
+ * inside the lid's own (11 mm on the model, less the 3 mm the display is set in by). The page fits it to the lid in the picture with a transform
  * (`transformOnto`), so it tilts and grows with the laptop.
  */
 export function LaptopScreen({ frame, link, cut }: LaptopScreenProps) {
@@ -22,10 +22,10 @@ export function LaptopScreen({ frame, link, cut }: LaptopScreenProps) {
         <div
             ref={frame}
             aria-hidden="true"
-            className="absolute top-0 left-0 origin-top-left rounded-[40px] bg-black p-[15px] pb-[22px] opacity-0 will-change-transform"
+            className="absolute top-0 left-0 origin-top-left rounded-[33px] bg-[var(--screen-bezel)] p-[12px] opacity-0 will-change-transform"
             style={{ width: SCREEN_WIDTH_PIXELS }}
         >
-            <div className="relative h-full overflow-hidden rounded-[27px] bg-[#0b0b0c]">
+            <div className="relative h-full overflow-hidden rounded-[21px] bg-[var(--screen-bg)] shadow-[inset_0_0_0_1.5px_rgba(234,230,220,.14)]">
                 <div ref={link.layer} className={LAYER}>
                     {link.children}
                 </div>

@@ -18,14 +18,15 @@
     --color-ink-62: rgba(234, 230, 220, 0.62);
     --color-ink-52: rgba(234, 230, 220, 0.52); /* 4.78:1 on --color-bg: the floor for 12px text */
     --color-hair: rgba(234, 230, 220, 0.13);
-    --color-gold: #f6dda8;
-    --color-gold-dim: rgba(246, 221, 168, 0.13);
+    --color-gold: #f5cd8a;
+    --color-gold-dim: rgba(245, 205, 138, 0.13);
     --color-obsidian: #0b0b0c; /* type sitting on a lit surface */
     --color-rec: #e0483e;
 
-    --font-serif: var(--font-tay-flapjack), Georgia, serif;
-    --font-sans: var(--font-tay-road-runner), system-ui, sans-serif;
-    --font-mono: var(--font-tay-tommy-tokyo), ui-monospace, monospace;
+    /* `font-serif` is the heading role, kept by name: headings are set in the same sans as running text, heavier */
+    --font-serif: var(--font-site-sans), system-ui, sans-serif;
+    --font-sans: var(--font-site-sans), system-ui, sans-serif;
+    --font-mono: var(--font-site-mono), ui-monospace, monospace;
 
     --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
 
@@ -137,7 +138,17 @@
 @layer base {
     :root {
         --mq-h: 54px; /* marquee height - the hero subtracts it so both fit one screen */
-        --gI: 1; /* lamp intensity - one knob for every gold glow on the page */
+        --gI: 1.1; /* lamp intensity - one knob for every gold glow on the page */
+        --heading-weight: 600; /* every heading takes its weight from here */
+        --halo-a: 255 230 188; /* the four layers of the halo round a lit word, nearest the letters first */
+        --halo-b: 246 185 97;
+        --halo-c: 239 141 64;
+        --halo-d: 229 91 33;
+        --glow: rgba(246, 185, 97, 0.86); /* the halo round a lit dot on the screens in the picture */
+        --screen-bezel: #000; /* the laptop's screen and the camera's monitor, behind what is laid over them */
+        --screen-bg: #0b0b0c;
+        --monitor-bg: #070708;
+        --monitor-card: #151517;
     }
 
     html,
@@ -232,11 +243,11 @@
 @utility glow-hot {
     color: var(--color-gold);
     text-shadow:
-        0 0 1px rgba(255, 247, 230, calc(0.85 * var(--gI))),
-        0 0 5px rgba(255, 238, 205, calc(0.7 * var(--gI))),
-        0 0 14px rgba(244, 198, 110, calc(0.55 * var(--gI))),
-        0 0 34px rgba(216, 150, 60, calc(0.34 * var(--gI))),
-        0 1px 76px rgba(190, 105, 30, calc(0.2 * var(--gI)));
+        0 0 1px rgb(255 244 224 / calc(0.86 * var(--gI))),
+        0 0 5px rgb(var(--halo-a) / calc(0.72 * var(--gI))),
+        0 0 14px rgb(var(--halo-b) / calc(0.57 * var(--gI))),
+        0 0 37px rgb(var(--halo-c) / calc(0.42 * var(--gI))),
+        0 1px 86px rgb(var(--halo-d) / calc(0.31 * var(--gI)));
 }
 
 /* the same light, at a size where the wide layers would only smear. the 76px
@@ -245,10 +256,15 @@
 @utility glow-sm {
     color: var(--color-gold);
     text-shadow:
-        0 0 1px rgba(255, 247, 230, calc(0.85 * var(--gI))),
-        0 0 3px rgba(255, 238, 205, calc(0.7 * var(--gI))),
-        0 0 8px rgba(244, 198, 110, calc(0.55 * var(--gI))),
-        0 0 18px rgba(216, 150, 60, calc(0.34 * var(--gI)));
+        0 0 1px rgb(255 244 224 / calc(0.86 * var(--gI))),
+        0 0 3px rgb(var(--halo-a) / calc(0.72 * var(--gI))),
+        0 0 8px rgb(var(--halo-b) / calc(0.57 * var(--gI))),
+        0 0 21px rgb(var(--halo-c) / calc(0.42 * var(--gI)));
+}
+
+/* the weight of a heading: one knob, so trying a heavier face is one change */
+@utility heading-weight {
+    font-weight: var(--heading-weight);
 }
 
 /* the wordmark, catching the lamp */
