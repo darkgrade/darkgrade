@@ -9,6 +9,57 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 import { batch, enroll, request } from './telemetry-fixture.ts'
 
+test('Matrix pages use a bounded database snapshot and preserve watermark, review, credit and withdrawal', {skip:!process.env.DATABASE_URL},async()=>{
+    const {exportMatrixPage,MatrixExportChanged}=await import('#collector/matrix-pages')
+    const database=await postgresDatabase(process.env.DATABASE_URL!)
+    const handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+    const user=await enroll(handle)
+    const sourceIds:string[]=[]
+    try{
+        for(let i=0;i<105;i++){
+            const payload=batch()
+            assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
+            sourceIds.push(`${user.installId}_${payload.id}`)
+        }
+        await reviewDiagnostic(database,sourceIds[0])
+        await database.transaction(async tx=>tx.set(`contacts/${user.installId}`,{
+            confirmedAt:new Date(),email:'private@example.com',credit:{name:'Source contributor',publish:true},
+        }))
+        const now=new Date()
+        // Match the transactional implementation exactly, including dates and source references.
+        const first=await exportMatrixPage(database,undefined,now)
+        const fallback={...database,matrixSources:undefined}
+        assert.deepEqual(first,await exportMatrixPage(fallback,undefined,now))
+        const originalTransaction=database.transaction
+        database.transaction=async()=>{throw Error('Page export must not open per-record transactions')}
+        let page
+        try{page=await exportMatrixPage(database,undefined,now)}
+        finally{database.transaction=originalTransaction}
+        const later=batch()
+        assert.equal((await handle(request('/v2/batches','POST',user.installKey,later))).status,202)
+        const records=[...page.records]
+        while(page.next){page=await exportMatrixPage(database,page.next,now);records.push(...page.records)}
+        const own=records.filter(r=>r.installId===user.installId)
+        assert.equal(own.length,105)
+        assert.ok(own.every(r=>r.hardwarePass===false&&r.credit.name==='Source contributor'))
+        assert.equal(own.filter(r=>r.reviewedAt!==null).length,1)
+        assert.doesNotMatch(JSON.stringify(own),/private@example|keyHash|installKey/)
+        assert.ok(first.next)
+        assert.equal((await handle(request('/v2/contact','DELETE',user.installKey))).status,200)
+        await assert.rejects(exportMatrixPage(database,first.next!),MatrixExportChanged)
+        await handle(request('/v2/installation','DELETE',user.installKey))
+        let removed=await exportMatrixPage(database)
+        do{
+            assert.ok(!removed.records.some(r=>r.installId===user.installId))
+            if(!removed.next)break
+            removed=await exportMatrixPage(database,removed.next)
+        }while(true)
+    }finally{
+        await handle(request('/v2/installation','DELETE',user.installKey))
+        await database.close()
+    }
+})
+
 test(
     'session lists page across tied timestamps and review queues omit reviewed and withdrawn sources',
     { skip: !process.env.DATABASE_URL },

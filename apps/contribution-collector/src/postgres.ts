@@ -178,6 +178,32 @@ export async function postgresDatabase(connectionString: string) {
             )
             return result.rows.map(row => ({ path: row.path, data: restoreDates(row.data) }))
         },
+        async matrixSources(after) {
+            // One statement supplies a consistent snapshot without hundreds of serializable
+            // transactions competing with camera uploads. Bound the source page before joins.
+            const result = await pool.query(
+                `WITH sources AS MATERIALIZED (
+                    SELECT path,data FROM telemetry_state
+                    WHERE split_part(path,'/',1)='diagnostics'
+                    AND ($1::text IS NULL OR path COLLATE "C" > $1 COLLATE "C")
+                    ORDER BY path COLLATE "C" LIMIT 100
+                )
+                SELECT s.path,s.data AS original,i.data AS installation,r.data AS reviewed,
+                    c.data AS contact,f.data AS research
+                FROM sources s
+                LEFT JOIN telemetry_state i ON i.path='installations/'||(s.data->>'installId')
+                LEFT JOIN telemetry_state r ON r.path='reviewedPatterns/'||substring(s.path from 13)
+                LEFT JOIN telemetry_state c ON c.path='contacts/'||(s.data->>'installId')
+                LEFT JOIN telemetry_state f ON f.path='protocolFindings/'||substring(s.path from 13)
+                ORDER BY s.path COLLATE "C"`,
+                [after ?? null]
+            )
+            return result.rows.map(row => ({
+                path: row.path,
+                ...Object.fromEntries(['original', 'installation', 'reviewed', 'contact', 'research']
+                    .map(key => [key, row[key] ? restoreDates(row[key]) : undefined])),
+            }))
+        },
         async expire() {
             // FK cascade removes the associated flat events in the same transaction.
             await pool.query(`DELETE FROM telemetry_state WHERE path IN (

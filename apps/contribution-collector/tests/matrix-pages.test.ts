@@ -89,6 +89,8 @@ test('all validated batches export without review and an ingestion watermark exc
     await reviewDiagnostic(fixture.database, exported[0].sourceRecord, now)
     await assert.rejects(exportMatrixPage(fixture.database, first.next!, now), MatrixExportChanged)
     const refreshed = await exportMatrixPage(fixture.database, undefined, now)
-    assert.equal(refreshed.records[0].schema, 'darkgrade.reviewed-pattern/v1')
-    assert.ok(refreshed.records[0].reviewedAt)
+    // Later uploads have random IDs and may sort before the original first source.
+    const reviewed = refreshed.records.find(record => record.sourceRecord === exported[0].sourceRecord)!
+    assert.equal(reviewed.schema, 'darkgrade.reviewed-pattern/v1')
+    assert.ok(reviewed.reviewedAt)
 })

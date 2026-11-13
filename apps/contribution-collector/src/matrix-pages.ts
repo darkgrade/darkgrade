@@ -1,4 +1,4 @@
-import type { Database } from '#collector/database'
+import type { Database, MatrixSource } from '#collector/database'
 import { diagnosticPattern } from '#collector/review'
 import { createHash } from 'node:crypto'
 
@@ -43,21 +43,29 @@ export async function exportMatrixPage(database: Database, cursor?: string, now 
     const started = Date.parse(state.generatedAt)
     if (state.generation !== current || started > +now || +now - started > 20 * 60_000)
         throw new MatrixExportChanged('Matrix export changed or expired; restart synchronization')
-    const rows = await database.list('diagnostics', undefined, undefined, state.after || undefined)
+    const rows: MatrixSource[] = database.matrixSources
+        ? await database.matrixSources(state.after || undefined)
+        : await Promise.all((await database.list('diagnostics', undefined, undefined, state.after || undefined))
+            .map(row => database.transaction(async transaction => {
+                const original = await transaction.get(row.path)
+                if (!original) return { path: row.path }
+                const sourceRecord = row.path.slice('diagnostics/'.length)
+                const [installation, reviewed, contact, research] = await Promise.all([
+                    transaction.get(`installations/${original.installId}`),
+                    transaction.get(`reviewedPatterns/${sourceRecord}`),
+                    transaction.get(`contacts/${original.installId}`),
+                    transaction.get(`protocolFindings/${sourceRecord}`),
+                ])
+                return { path: row.path, original, installation, reviewed, contact, research }
+            })))
     const records: Record<string, any>[] = []
     let expiresAt = started + 86_400_000
     for (const row of rows) {
-        const result = await database.transaction(async transaction => {
-            const original = await transaction.get(row.path)
+        const result = (() => {
+            const { original, installation, reviewed, contact, research } = row
             if (!original || (original.ingestionSequence ?? 0) > state.watermark || +original.receivedAt > started)
                 return
             const sourceRecord = row.path.slice('diagnostics/'.length)
-            const [installation, reviewed, contact, research] = await Promise.all([
-                transaction.get(`installations/${original.installId}`),
-                transaction.get(`reviewedPatterns/${sourceRecord}`),
-                transaction.get(`contacts/${original.installId}`),
-                transaction.get(`protocolFindings/${sourceRecord}`),
-            ])
             if (
                 !installation ||
                 installation.revoked ||
@@ -77,7 +85,7 @@ export async function exportMatrixPage(database: Database, cursor?: string, now 
                 ),
                 expiresAt: +original.expiresAt,
             }
-        })
+        })()
         if (result) {
             records.push(result.value)
             expiresAt = Math.min(expiresAt, result.expiresAt)
