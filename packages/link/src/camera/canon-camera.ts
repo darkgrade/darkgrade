@@ -645,6 +645,36 @@ export class CanonCamera extends GenericCamera {
         await this.set(this.registry.properties.CanonRecordingDestination, 'CARD')
     }
 
+    /**
+     * EDSDK 13.20.21 MultiCamCui CameraModel::RecStart prepares SaveTo_Camera.
+     * PTP card IDs are body-specific (libgphoto2 camera_canon_eos_update_capture_target).
+     * Only replace host routing with an advertised card value, and restore after recording.
+     */
+    async prepareRecordingDestination(): Promise<() => Promise<void>> {
+        const property = this.registry.properties.CanonCaptureDestination
+        const original = this.propertyCache.get(property)?.current
+        if (original === undefined) return async () => {}
+        if (original !== 4) return async () => {}
+        const card = this.getPropertyAllowedValues(property)?.find(value => value > 0 && value !== 4)
+        if (card === undefined)
+            throw new Error('Canon is routing captures to host memory and did not advertise a card destination')
+        let restored = false
+        const restore = async () => {
+            if (restored) return
+            await this.set(property, original)
+            restored = true
+        }
+        try {
+            await this.set(property, card)
+        } catch (error) {
+            try { await restore() } catch (cleanup) {
+                throw new AggregateError([error, cleanup], 'Canon card preparation failed and its destination could not be restored')
+            }
+            throw error
+        }
+        return restore
+    }
+
     /** Enables host EVF output, preserving the body's existing output for stop/disconnect. */
     async startLiveView(): Promise<void> {
         this.assertOperationSupported(this.registry.operations.CanonGetViewfinderData.code)

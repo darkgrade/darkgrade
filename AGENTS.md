@@ -1,3 +1,10 @@
+Canon movie workflows prepare a camera-advertised card destination before movie selection,
+restoring prior host routing after safe cleanup. This follows the Canon EDSDK sample and
+libgphoto2 card-target enumeration; it is not proof of the R8 Mark II failure's root cause.
+Numeric Canon property-write telemetry retains intent, transaction and response separately
+from observed state. Deploy the matching collector and Matrix contract before rolling out
+this Link candidate. Keep PR #58 open and preserve real versus simulated evidence.
+
 Telemetry benchmark now exports a deep sanitized camera profile through Link's existing
 camera session. Keep inventories and allowlisted numeric descriptors separate from media,
 opaque payloads and private settings. Partial/cancelled exports retain evidence without

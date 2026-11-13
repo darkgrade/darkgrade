@@ -423,13 +423,19 @@ test('deep profiles and unknown-code queues retain scopes and source references 
  Object.assign(entry,{protocol:{type:'unknown',benchmarkId:benchmark,vendorId:0x04b0,category:'property',code:0xdfff,advertised:true}})
  const other=structuredClone(entry);Object.assign(other,{protocol:{type:'inventory',benchmarkId:benchmark,vendorId:0x04b0,category:'operation',codes:[0x1001,0x9fff]}})
  payload.contributions[0].entries.push(other)
+ const write=structuredClone(entry)
+ Object.assign(write,{kind:'command',direction:'out',failed:true,transactionId:23,
+  protocol:{type:'property-write',benchmarkId:benchmark,vendorId:0x04a9,property:0xd1b8,
+   dataType:6,requested:4,transactionId:23,outcome:'response',response:0x2019}})
+ payload.contributions[0].entries.push(write)
  try {
   assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
   const queue=await database.operator.protocol({days:1,installation:user.installId})
   assert.equal(queue.items.length,1);assert.equal(Number(queue.items[0].code),0xdfff);assert.equal(queue.items[0].evidence,'synthetic')
   assert.equal(queue.items[0].source,'diagnostics/'+user.installId+'_'+payload.id)
   assert.equal((await database.operator.protocol({days:1,installation:user.installId},queue.items[0].key)).items.length,0)
-  const profile=await database.operator.profile(user.installId,benchmark);assert.equal(profile.items.length,2);assert.equal(profile.hardwarePass,false)
+  const profile=await database.operator.profile(user.installId,benchmark);assert.equal(profile.items.length,3);assert.equal(profile.hardwarePass,false)
+  assert.deepEqual(profile.items.find(item=>item.protocol.type==='property-write')?.protocol,write.protocol)
   assert.equal((await database.operator.profile(randomUUID(),benchmark)).items.length,0)
   const lossy=batch(),lossyBenchmark=randomUUID()
   lossy.contributions[0].droppedEntries=1

@@ -23,6 +23,7 @@ export async function withCanonRecordingMode<T>(camera:any,record:(settings:Cano
  const before=await snapshot(camera)
  const movie=(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
  let entered=false
+ const restoreDestination=await camera.prepareCanonRecordingDestination?.()
  try{
   if(!movie){await camera.enterMovieMode();entered=true;await new Promise(resolve=>setTimeout(resolve,700))}
   await copySettings(camera,before)
@@ -32,9 +33,12 @@ export async function withCanonRecordingMode<T>(camera:any,record:(settings:Cano
   return await record(actual)
  }finally{
   // Do not change modes while a failed stop leaves recording uncertain.
-  if(entered&&idle()){
-   await camera.leaveMovieMode()
-   await copySettings(camera,before)
+  if(idle()){
+   if(entered){
+    await camera.leaveMovieMode()
+    await copySettings(camera,before)
+   }
+   await restoreDestination?.()
   }
  }
 }
@@ -96,10 +100,20 @@ export async function openCanonRecordingMode(camera:any){
  const before=await snapshot(camera)
  const alreadyMovie=(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
  let entered=false
+ const restoreDestination=await camera.prepareCanonRecordingDestination?.()
  try{
   if(!alreadyMovie){await camera.enterMovieMode();entered=true;await new Promise(resolve=>setTimeout(resolve,700))}
   await copySettings(camera,before)
   await camera.ensureCanonMovieSoundRecording?.()
- }catch(error){if(entered){await camera.leaveMovieMode();await copySettings(camera,before)}throw error}
- return {restore:async()=>{if(entered){await camera.leaveMovieMode();await copySettings(camera,before);entered=false}}}
+ }catch(error){
+  try{
+   if(entered){await camera.leaveMovieMode();await copySettings(camera,before)}
+   await restoreDestination?.()
+  }catch(cleanup){throw new AggregateError([error,cleanup],'Canon recording preparation and restoration failed')}
+  throw error
+ }
+ return {restore:async()=>{
+  if(entered){await camera.leaveMovieMode();await copySettings(camera,before);entered=false}
+  await restoreDestination?.()
+ }}
 }

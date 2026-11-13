@@ -10,7 +10,7 @@ import {
     type PTPErrorContext,
 } from '@core/ptp-errors'
 import { linkTelemetry } from '@core/telemetry'
-import { protocolEvidence } from '@vendors/protocol-evidence'
+import { protocolEvidence, propertyWriteEvidence } from '@vendors/protocol-evidence'
 import type { ProtocolEvidence } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -83,6 +83,11 @@ export class GenericCamera {
     }
     recordProtocol(evidence: ProtocolEvidence, operation: number) {
         const scoped = this.profileObserver ? { ...evidence, benchmarkId: this.profileObserver.id } : evidence
+        if (scoped.type === 'property-write') {
+            this.telemetry.protocol(scoped, operation)
+            this.profileObserver?.observe(scoped)
+            return
+        }
         const key = [scoped.benchmarkId ?? '', scoped.type,
             'property' in scoped ? scoped.property : 'category' in scoped ? scoped.category : '',
             'code' in scoped ? scoped.code : 'status' in scoped ? scoped.status : ''].join(':')
@@ -528,7 +533,7 @@ export class GenericCamera {
         const transactionId = this.getNextTransactionId()
         const sessionId = this.sessionId ?? 0
         try {
-            return await this.exchange(
+            const response = await this.exchange(
                 operation,
                 paramsRecord,
                 encodedParams,
@@ -537,7 +542,10 @@ export class GenericCamera {
                 data,
                 maxDataLength
             )
+            this.recordPropertyWrite(operation.code, data, transactionId, response.code)
+            return response
         } catch (error) {
+            this.recordPropertyWrite(operation.code, data, transactionId)
             if (error instanceof PTPTimeoutError || error instanceof PTPProtocolError) {
                 this.needsResynchronization = true
                 this.lastFailure = { operation: operation.name, transactionId, cause: error }
@@ -546,6 +554,13 @@ export class GenericCamera {
             if (!this.transport.isConnected()) this.sessionId = null
             throw error
         }
+    }
+
+    private recordPropertyWrite(operation: number, data: Uint8Array | undefined, transactionId: number, response?: number) {
+        try {
+            const evidence = propertyWriteEvidence(this.vendorId ?? 0, operation, data, transactionId, response)
+            if (evidence) this.recordProtocol(evidence, operation)
+        } catch { /* Optional diagnostics cannot change the result of a camera transaction. */ }
     }
 
     private async exchange<Op extends OperationDefinition>(

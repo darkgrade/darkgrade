@@ -13,6 +13,26 @@ const definitionsByVendor = new Map<number, Registry>([
     [0x054c, createSonyRegistry(true)],
 ])
 
+/** Decode only Canon's single numeric property-write envelope, never generic USB payloads.
+ * A response acknowledges the request; it is not a property readback or a hardware pass.
+ */
+export function propertyWriteEvidence(
+    vendorId: number, operation: number, data: Uint8Array | undefined,
+    transactionId: number, response?: number
+): ProtocolEvidence | undefined {
+    if (vendorId !== 0x04a9 || operation !== 0x9110 || data?.byteLength !== 12) return
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    if (view.getUint32(0, true) !== data.byteLength) return
+    const property = view.getUint32(4, true)
+    const evidence: ProtocolEvidence = {
+        type: 'property-write', vendorId, property, dataType: 6,
+        requested: view.getUint32(8, true), transactionId,
+        outcome: response === undefined ? 'error' : 'response',
+        ...(response !== undefined && { response }),
+    }
+    try { validateProtocol(evidence); return evidence } catch { return }
+}
+
 /** Retain decoded numeric protocol datasets only; unknown payloads are never copied. */
 export function protocolEvidence(
     vendorId: number,

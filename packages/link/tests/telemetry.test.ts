@@ -7,6 +7,33 @@ afterEach(() => {
     vi.unstubAllGlobals()
 })
 
+test('property-write diagnostics preserve each transaction and distinguish a rejected request from readback', async () => {
+    vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
+    vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)
+    const entries: any[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        localRecord: (_camera, entry) => entries.push(entry),
+    })
+    configureLinkTelemetry(client)
+    const observer = linkTelemetry({ getType: () => 'usb', on: () => {} } as any)
+    try {
+        await observer.identify({ manufacturer: 'Canon', model: 'Test', deviceVersion: '1' })
+        for (const [transactionId, response] of [[23, 0x2019], [24, 0x2001]]) {
+            observer.protocol({
+                type: 'property-write', vendorId: 0x04a9, property: 0xd1b8,
+                dataType: 6, requested: 4, transactionId, outcome: 'response', response,
+            }, 0x9110)
+        }
+        expect(entries).toHaveLength(2)
+        expect(entries[0]).toMatchObject({ failed: true, kind: 'command', direction: 'out', transactionId: 23 })
+        expect(entries[1]).toMatchObject({ failed: false, transactionId: 24 })
+        expect(entries[0].protocol).not.toHaveProperty('current')
+        expect(entries.every(entry => entry.sessionId === entries[0].sessionId)).toBe(true)
+    } finally { client.close() }
+})
+
 test('telemetry retains the native single event handler across attachment, reconnect and identity changes', async () => {
     vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
     vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)

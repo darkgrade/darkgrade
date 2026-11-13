@@ -4,6 +4,16 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { randomUUID } from 'node:crypto'
 const descriptor = { type:'descriptor',vendorId:0,property:0x5001,dataType:4,writable:false,current:75,default:100,values:[0,25,50,75,100] }
+test('property requests retain outcomes and correlation without accepting private payloads or claiming observed values',()=>{
+ const write={type:'property-write',vendorId:0x04a9,property:0xd1b8,dataType:6,requested:4,transactionId:23,outcome:'response',response:0x2019}
+ validateProtocol(write)
+ validateProtocol({...write,outcome:'error',response:undefined})
+ for(const invalid of [
+  {...write,property:0xd115}, {...write,requested:'SECRET'}, {...write,requested:0x100000000},
+  {...write,transactionId:-1}, {...write,response:undefined}, {...write,outcome:'error'},
+  {...write,response:0x10000}, {...write,current:4}, {...write,payload:'SECRET'},
+ ])assert.throws(()=>validateProtocol(invalid))
+})
 test('numeric evidence accepts exact integers and rejects media, identity, unknown values and malformed inventories',()=>{
  validateProtocol(descriptor)
  validateProtocol({...descriptor,dataType:10,current:'18446744073709551615',values:undefined})

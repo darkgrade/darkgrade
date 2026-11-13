@@ -538,6 +538,10 @@ export class Camera {
         return this.canonCamera().ensureMovieSoundRecording()
     }
 
+    async prepareCanonRecordingDestination(): Promise<() => Promise<void>> {
+        return this.canonCamera().prepareRecordingDestination()
+    }
+
     async getMovieServoAutofocus(): Promise<string> {
         if (!(this.instance instanceof CanonCamera)) {
             throw new Error('Canon movie servo autofocus is only available for Canon EOS cameras')

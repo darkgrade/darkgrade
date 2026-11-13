@@ -1,7 +1,7 @@
 import { Camera } from '@camera/index'
 import { SonyCamera } from '@camera/sony-camera'
 import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
-import { protocolEvidence } from '@vendors/protocol-evidence'
+import { protocolEvidence, propertyWriteEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
@@ -16,6 +16,28 @@ import { describe, expect, it } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 
 const codecs = createPTPRegistry(true).codecs
+it('retains numeric Canon write intent and rejection without inventing a readback or retaining opaque bytes', () => {
+    const backing = new Uint8Array(32)
+    const data = backing.subarray(5, 17)
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    view.setUint32(0, 12, true)
+    view.setUint32(4, 0xd1b8, true)
+    view.setUint32(8, 4, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2019)).toEqual({
+        type: 'property-write', vendorId: 0x04a9, property: 0xd1b8, dataType: 6,
+        requested: 4, transactionId: 23, outcome: 'response', response: 0x2019,
+    })
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 24)).toMatchObject({ outcome: 'error' })
+    expect(propertyWriteEvidence(0x054c, 0x9110, data, 23, 0x2001)).toBeUndefined()
+    expect(propertyWriteEvidence(0x04a9, 0x100d, data, 23, 0x2001)).toBeUndefined()
+    expect(propertyWriteEvidence(0x04a9, 0x9110, backing, 23, 0x2001)).toBeUndefined()
+    view.setUint32(4, 0xd115, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2001)).toBeUndefined()
+    view.setUint32(4, 0xd11c, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2001)).toMatchObject({ property: 0xd11c })
+    view.setUint32(0, 16, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2001)).toBeUndefined()
+})
 it('initial generic discovery recognizes vendor definitions without borrowing another vendor’s codes', () => {
     const data={operationsSupportedRaw:[0x9209,0x9fff],eventsSupportedRaw:[],devicePropertiesSupported:[]}
     const sony=protocolEvidence(0x054c,createPTPRegistry(true),0x1001,data)

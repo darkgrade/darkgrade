@@ -81,8 +81,11 @@ export function linkTelemetry(source: TransportInterface) {
         transport,
         protocol(protocol: ProtocolEvidence, operation: number) {
             try {
-                observed?.record({ protocol, kind: 'data', direction: 'in', code: operation,
-                    bytes: 0, durationMilliseconds: 0, failed: false })
+                const write = protocol.type === 'property-write'
+                observed?.record({ protocol, kind: write ? 'command' : 'data', direction: write ? 'out' : 'in', code: operation,
+                    ...(write && { transactionId: protocol.transactionId }),
+                    bytes: 0, durationMilliseconds: 0,
+                    failed: write && (protocol.outcome === 'error' || protocol.response !== 0x2001) })
             } catch { /* Optional evidence never changes camera behavior. */ }
         },
         operation<Result>(name: string, work: () => Promise<Result>): Promise<Result> {

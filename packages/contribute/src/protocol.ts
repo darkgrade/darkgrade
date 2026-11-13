@@ -9,6 +9,15 @@ export type ProtocolEvidence = {
     | { type: 'inventory'; category: ProtocolCategory; codes: number[] }
     | { type: 'unknown'; category: ProtocolCategory; code: number; advertised: boolean }
     | {
+          type: 'property-write'
+          property: number
+          dataType: number
+          requested: ProtocolNumber
+          transactionId: number
+          outcome: 'response' | 'error'
+          response?: number
+      }
+    | {
           type: 'descriptor'
           property: number
           dataType: number
@@ -79,6 +88,17 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
             if (!integer(item.code, maximum) || typeof item.advertised !== 'boolean')
                 throw new Error('Invalid unknown code')
         }
+    } else if (item.type === 'property-write') {
+        fields = ['property', 'dataType', 'requested', 'transactionId', 'outcome', 'response']
+        if (
+            !integer(item.property) ||
+            !isSafeProtocolProperty(item.vendorId, item.property) ||
+            !integer(item.dataType, 10) || item.dataType < 1 ||
+            !fits(item.requested, item.dataType) ||
+            !integer(item.transactionId) ||
+            !['response', 'error'].includes(item.outcome) ||
+            (item.outcome === 'response' ? !integer(item.response, 0xffff) : item.response !== undefined)
+        ) throw new Error('Invalid property write evidence')
     } else if (item.type === 'descriptor' || item.type === 'property-value') {
         fields =
             item.type === 'descriptor'
