@@ -10,8 +10,7 @@ import dynamic from 'next/dynamic'
 const DevFontChooser =
     process.env.NODE_ENV === 'development'
         ? dynamic(
-              () =>
-                  import('@/app/components/dev-font-chooser/dev-font-chooser').then(module => module.DevFontChooser),
+              () => import('@/app/components/dev-font-chooser/dev-font-chooser').then(module => module.DevFontChooser),
               { ssr: false }
           )
         : null

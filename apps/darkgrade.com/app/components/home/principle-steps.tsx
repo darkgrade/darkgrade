@@ -35,7 +35,7 @@ export function PrincipleSteps({ principles, active, onChoose }: PrincipleStepsP
                                 {principle.index}
                             </span>
                             <span
-                                className={`font-serif text-[clamp(1.375rem,min(2.4vw,3.8vh),2.25rem)] leading-none transition-colors duration-300 ${isActive ? 'text-ink' : 'text-ink/40'}`}
+                                className={`font-serif text-[clamp(1.375rem,min(2.4vw,3.8vh),2.25rem)] leading-none heading-weight tracking-[-.04em] transition-colors duration-300 ${isActive ? 'text-ink' : 'text-ink/40'}`}
                             >
                                 {principle.title}
                             </span>

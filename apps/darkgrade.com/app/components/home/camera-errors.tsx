@@ -1,31 +1,46 @@
 import type { Ref } from 'react'
 
 /** How wide the errors are laid out, in CSS pixels, before they are fitted to the camera's monitor. */
-export const MONITOR_WIDTH_PIXELS = 600
+export const MONITOR_WIDTH_PIXELS = 380
 
 /**
  * The kind of thing a camera stops a shoot to say. Each is placed by its left and top as shares
  * of the monitor, and waits its turn to pop up.
  */
 const ERRORS = [
-    { title: 'Card error', detail: 'Cannot access memory card', left: 6, top: 8 },
-    { title: 'Overheating', detail: 'Camera will shut down', left: 44, top: 4 },
-    { title: 'Recording stopped', detail: 'Card write speed too slow', left: 20, top: 30 },
-    { title: 'Battery exhausted', detail: 'Change the battery', left: 52, top: 40 },
-    { title: 'Not available', detail: 'This function is disabled in this mode', left: 3, top: 54 },
-    { title: 'USB connection failed', detail: 'Check the cable', left: 36, top: 62 },
-    { title: 'Card full', detail: 'Cannot record', left: 60, top: 18 },
-    { title: 'Clock not set', detail: 'Set date and time', left: 14, top: 74 },
+    { title: 'Card error', detail: 'Cannot access memory card' },
+    { title: 'Overheating', detail: 'Camera will shut down' },
+    { title: 'Recording stopped', detail: 'Card write speed too slow' },
+    { title: 'Battery exhausted', detail: 'Change the battery' },
+    { title: 'Not available', detail: 'This function is disabled in this mode' },
+    { title: 'USB connection failed', detail: 'Check the cable' },
+    { title: 'Card full', detail: 'Cannot record' },
+    { title: 'Clock not set', detail: 'Set date and time' },
 ]
+/** Where each error pops up, by its left and top as shares of the monitor. */
+const PLACES = [
+    { left: 4, top: 5 },
+    { left: 33, top: 17 },
+    { left: 8, top: 31 },
+    { left: 35, top: 45 },
+    { left: 5, top: 59 },
+    { left: 31, top: 72 },
+]
+
+/** One thing a camera stops a shoot to say. */
+export interface CameraError {
+    title: string
+    detail: string
+}
 /** How long one error waits after the one before it, in seconds. */
-const STAGGER_SECONDS = 0.55
+const STAGGER_SECONDS = 0.7
 
 function Warning() {
     return (
         <svg
             viewBox="0 0 24 24"
             aria-hidden="true"
-            className="size-[26px] shrink-0 text-rec"
+            className="mt-[1px] size-[20px] shrink-0 text-rec"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
@@ -48,28 +63,28 @@ export function CameraErrors({ frame }: { frame: Ref<HTMLDivElement> }) {
         <div
             ref={frame}
             aria-hidden="true"
-            className="absolute top-0 left-0 origin-top-left overflow-hidden bg-[#070708] opacity-0 will-change-transform"
+            className="absolute top-0 left-0 origin-top-left overflow-hidden bg-[var(--monitor-bg)] opacity-0 shadow-[inset_0_0_0_1.5px_rgba(234,230,220,.3)] will-change-transform"
             style={{ width: MONITOR_WIDTH_PIXELS }}
         >
-            {ERRORS.map((error, index) => (
+            {ERRORS.slice(0, PLACES.length).map((error, index) => (
                 <div
                     key={error.title}
-                    className="monitor-error absolute flex w-[46%] items-start gap-3 rounded-[6px] border border-ink/45 bg-[#151517] px-4 py-3 shadow-[0_8px_30px_rgba(0,0,0,.7)]"
+                    className="monitor-error absolute flex w-[61%] items-start gap-[9px] rounded-[5px] border border-ink/45 bg-[var(--monitor-card)] px-[11px] py-[8px] shadow-[0_6px_22px_rgba(0,0,0,.7)]"
                     style={{
-                        left: `${error.left}%`,
-                        top: `${error.top}%`,
+                        left: `${PLACES[index].left}%`,
+                        top: `${PLACES[index].top}%`,
                         animationDelay: `${(index * STAGGER_SECONDS).toFixed(2)}s`,
                     }}
                 >
                     <Warning />
-                    <span className="flex min-w-0 flex-col gap-[3px]">
-                        <span className="font-mono text-[17px] leading-[1.15] tracking-[.08em] text-ink uppercase">
+                    <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                        <span className="font-mono text-[14px] leading-[1.15] tracking-[.03em] text-ink uppercase">
                             {error.title}
                         </span>
-                        <span className="text-[15px] leading-[1.25] text-ink-66">{error.detail}</span>
-                        <span className="mt-[6px] self-end rounded-[3px] border border-ink/40 px-3 py-[2px] font-mono text-[13px] tracking-[.14em] text-ink-66 uppercase">
-                            OK
-                        </span>
+                        <span className="text-[12px] leading-[1.25] text-ink-66">{error.detail}</span>
+                    </span>
+                    <span className="self-center rounded-[3px] border border-ink/40 px-[7px] py-[1px] font-mono text-[10px] tracking-[.08em] text-ink-66 uppercase">
+                        OK
                     </span>
                 </div>
             ))}

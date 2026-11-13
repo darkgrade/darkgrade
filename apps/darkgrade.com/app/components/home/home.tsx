@@ -23,7 +23,7 @@ import '@/app/components/home/home.css'
 const CALLOUT_NAMES: Record<Callout, string> = { aperture: 'Aperture', focus: 'Focus', shutter: 'Shutter', iso: 'ISO' }
 const FIRST_READINGS: Record<Callout, string> = { aperture: 'f/2.8', focus: 'AF-S', shutter: '1/60', iso: '100' }
 /** How tall each callout's leader is, in pixels, so the four labels never share a line. */
-const LEADER_PIXELS: Record<Callout, number> = { aperture: 66, focus: 40, shutter: 50, iso: 22 }
+const LEADER_PIXELS: Record<Callout, number> = { aperture: 50, focus: 26, shutter: 38, iso: 14 }
 const DOCUMENT_NUMBER = 'DG-HP-006'
 const FIRST_CUT = STUDIO.features.find(feature => !feature.on)
 
@@ -83,8 +83,11 @@ const LIFTED = '[translate:0_calc(var(--lift,0px)*-1)]'
 const STAGE = `pointer-events-none fixed inset-x-0 top-0 ${LIFTED} ${STAGE_HEIGHT}`
 /** The side of the window the words take: opposite the camera. */
 const LEFT = 'max-w-[min(560px,46%)] max-[900px]:max-w-none'
-const THESIS = 'font-serif text-[clamp(2.125rem,4.4vw,4.5rem)] leading-[1.1] font-normal tracking-[-.01em]'
-const ACT_TITLE = 'font-serif text-[clamp(2.5rem,5vw,4.75rem)] leading-none font-normal tracking-[-.01em]'
+const THESIS = 'font-serif text-[clamp(2.125rem,4.4vw,4.5rem)] leading-[1.04] heading-weight tracking-[-.045em]'
+const ACT_TITLE = 'font-serif leading-[1.02] heading-weight tracking-[-.045em] text-balance'
+/** The name of a product and what kind of thing it is, over its tagline. */
+const KICKER = 'flex items-baseline gap-3 text-[15px] font-medium'
+const KIND = 'font-mono text-[11px] font-normal tracking-[.06em] text-ink-52 uppercase'
 const SLATE = 'font-mono text-[11px] leading-[22px] tracking-[.18em] uppercase'
 /** One row of a rolling slate: the window shows exactly one, and the column of them slides behind it. */
 const SLATE_ROW = 'flex h-[22px] items-center whitespace-nowrap'
@@ -137,7 +140,7 @@ function Slates({ head, foot }: { head: RefObject<HTMLDivElement | null>; foot: 
                     <RegistrationMark />
                 </div>
             </div>
-            <div className="shell absolute inset-x-0 bottom-[16px] max-[900px]:hidden">
+            <div className="shell absolute inset-x-0 bottom-[16px] max-[900px]:hidden [@media(max-height:760px)]:hidden">
                 <div className={`h-[22px] overflow-hidden ${SLATE}`}>
                     <div ref={foot} className="will-change-transform">
                         {SHEETS.map((sheet, index) => (
@@ -228,6 +231,8 @@ export function Home() {
     const principlesWords = useRef<HTMLDivElement>(null)
     const dreamWords = useRef<HTMLDivElement>(null)
     const [exchanges, setExchanges] = useState<Exchange[]>([])
+    const [typing, setTyping] = useState<string | null>(null)
+    const exchangeCount = useRef(0)
     const [principle, setPrinciple] = useState(0)
     const [ready, setReady] = useState(false)
     useRise(page)
@@ -237,7 +242,6 @@ export function Home() {
         if (!target || !host) return
         let stop: (() => void) | undefined
         let unmounted = false
-        let exchangeCount = 0
         void Promise.all([import('@/app/components/home/viewport'), import('@/app/components/home/cut-scene')]).then(
             ([{ runViewport }, { buildCutScene }]) => {
                 if (unmounted) return
@@ -256,8 +260,10 @@ export function Home() {
                                 const element = readings.current.get(callout)
                                 if (element) element.textContent = text
                             },
+                            typeCall: setTyping,
                             logCall(request, call) {
-                                const id = exchangeCount++
+                                const id = exchangeCount.current++
+                                setTyping(null)
                                 setExchanges(previous => [
                                     ...previous.slice(-(EXCHANGES_KEPT - 1)),
                                     { id, request, call, answered: false },
@@ -393,11 +399,6 @@ export function Home() {
                 aria-hidden="true"
                 className={`fixed inset-x-0 top-0 z-0 w-full transition-opacity duration-[900ms] ${LIFTED} ${STAGE_HEIGHT} ${ready ? 'opacity-100' : 'opacity-0'}`}
             />
-            {/* the lamp: one warm pool of light behind the camera, so the page is never flat black */}
-            <div
-                aria-hidden="true"
-                className={`${STAGE} z-0 bg-[radial-gradient(60%_55%_at_60%_48%,rgba(244,198,110,.07),transparent_70%)]`}
-            />
             {/* on a phone the words run under the camera: the page darkens below it so they stay readable */}
             <div
                 aria-hidden="true"
@@ -428,14 +429,14 @@ export function Home() {
                             className="absolute left-[-1px] flex -translate-y-full flex-col border-l border-gold/60 pb-[2px] pl-[10px] whitespace-nowrap"
                             style={{ top: -LEADER_PIXELS[callout] }}
                         >
-                            <span className="font-mono text-[10px] tracking-[.22em] text-ink-55 uppercase">
+                            <span className="font-mono text-[10px] tracking-[.1em] text-ink-55 uppercase">
                                 {CALLOUT_NAMES[callout]}
                             </span>
                             <span
                                 ref={element => {
                                     if (element) readings.current.set(callout, element)
                                 }}
-                                className="font-serif text-[1.375rem] leading-[1.1] text-gold"
+                                className="glow-sm font-serif text-[1.375rem] leading-[1.1] font-medium tracking-[-.03em] tabular-nums"
                             >
                                 {FIRST_READINGS[callout]}
                             </span>
@@ -449,7 +450,7 @@ export function Home() {
                 <CameraErrors frame={monitor} />
                 <LaptopScreen
                     frame={laptopScreen}
-                    link={{ layer: linkLayer, children: <LinkDesk exchanges={exchanges} /> }}
+                    link={{ layer: linkLayer, children: <LinkDesk exchanges={exchanges} typing={typing} /> }}
                     cut={{ layer: cutLayer, children: <FirstCutApp feature={FIRST_CUT?.text ?? ''} /> }}
                 />
             </div>
@@ -460,10 +461,10 @@ export function Home() {
             <div ref={dreamWords} className={`${STAGE} z-[11] flex items-center opacity-0`}>
                 {/* the words sit inside the ring of light, so they are held to its width */}
                 <div className="mx-auto w-[min(86vw,calc((100dvh-var(--timeline-h))*.62),52vw)] text-center max-[900px]:w-[78vw]">
-                    <h2 className="font-serif text-[clamp(1.25rem,2.3vw,2.25rem)] leading-[1.25] font-normal tracking-[-.01em]">
+                    <h2 className="font-serif text-[clamp(1.25rem,2.3vw,2.25rem)] leading-[1.2] heading-weight tracking-[-.04em]">
                         {DREAM.line} <span className="text-ink-52">{DREAM.turn}</span>
                     </h2>
-                    <p className="glow-hot mx-auto mt-[clamp(14px,3vh,30px)] max-w-[20ch] font-serif text-[clamp(1.375rem,2.5vw,2.5rem)] leading-[1.12] tracking-[-.01em] italic">
+                    <p className="glow-hot mx-auto mt-[clamp(14px,3vh,30px)] max-w-[20ch] font-serif text-[clamp(1.375rem,2.5vw,2.5rem)] leading-[1.1] heading-weight tracking-[-.04em] italic">
                         {DREAM.punch}
                     </p>
                     <div className="mt-[clamp(20px,4vh,40px)] flex flex-wrap justify-center gap-[14px]">
@@ -499,7 +500,7 @@ export function Home() {
                         <div className="shell">
                             <div className={LEFT}>
                                 <h1
-                                    className="ml-[-.04em] font-serif text-[clamp(2.5rem,min(8.2vw,12.5svh),8.5rem)] leading-[.94] font-normal tracking-[-.015em]"
+                                    className="ml-[-.04em] font-serif text-[clamp(2.5rem,min(8.2vw,12.5svh),8.5rem)] leading-[.94] heading-weight tracking-[-.05em]"
                                     data-rise
                                     style={order(1)}
                                 >
@@ -562,22 +563,52 @@ export function Home() {
                 <div id="product" />
                 {/* the camera is up and to the left with what Link is under it; the laptop it is driven from is on the right */}
                 <Sheet id="link" register={register} align="bottom">
-                    <div id="link" className="max-w-[min(520px,40%)] max-[900px]:max-w-none">
-                        <h2 className={`${ACT_TITLE} text-gold`} data-rise>
-                            {LINK.name}
+                    <div id="link" className="max-w-[min(460px,36%)] max-[900px]:max-w-none">
+                        <p className={KICKER} data-rise>
+                            <span className="text-gold">{LINK.name}</span>
+                            <span className={KIND}>{LINK.kind}</span>
+                        </p>
+                        <h2
+                            className={`${ACT_TITLE} mt-[10px] text-[clamp(1.75rem,min(3vw,5.2vh),2.875rem)]`}
+                            data-rise
+                            style={order(1)}
+                        >
+                            {LINK.tagline}
                         </h2>
-                        <div className="mt-[clamp(10px,1.6vh,20px)]" data-rise style={order(1)}>
+                        <p
+                            className="mt-[clamp(8px,1.4vh,14px)] max-w-[44ch] text-body leading-[1.5] text-ink-66 [@media(max-height:960px)]:hidden"
+                            data-rise
+                            style={order(2)}
+                        >
+                            {LINK.does}
+                        </p>
+                        <div className="mt-[clamp(12px,2vh,22px)]" data-rise style={order(3)}>
                             <FeatureList features={LINK.features} />
                         </div>
                     </div>
                 </Sheet>
 
                 <Sheet id="studio" register={register}>
-                    <div id="studio" className={LEFT}>
-                        <h2 className={`${ACT_TITLE} text-ink`} data-rise>
-                            {STUDIO.name}
+                    <div id="studio" className="max-w-[min(520px,42%)] max-[900px]:max-w-none">
+                        <p className={KICKER} data-rise>
+                            <span className="text-gold">{STUDIO.name}</span>
+                            <span className={KIND}>{STUDIO.kind}</span>
+                        </p>
+                        <h2
+                            className={`${ACT_TITLE} mt-[12px] text-[clamp(2.25rem,min(4.2vw,7vh),4rem)]`}
+                            data-rise
+                            style={order(1)}
+                        >
+                            {STUDIO.tagline}
                         </h2>
-                        <div className="mt-[clamp(16px,2vw,24px)]" data-rise style={order(1)}>
+                        <p
+                            className="mt-[clamp(10px,1.8vh,18px)] max-w-[44ch] text-body leading-[1.5] text-ink-66"
+                            data-rise
+                            style={order(2)}
+                        >
+                            {STUDIO.does}
+                        </p>
+                        <div className="mt-[clamp(14px,2.4vh,26px)]" data-rise style={order(3)}>
                             <FeatureList features={STUDIO.features} />
                         </div>
                     </div>
@@ -596,7 +627,7 @@ export function Home() {
                 >
                     <div ref={principlesWords} id="principles" className={LEFT}>
                         <h2
-                            className="font-serif text-[clamp(2rem,min(4vw,5.6vh),3.75rem)] leading-[1.06] font-normal tracking-[-.01em]"
+                            className="font-serif text-[clamp(2rem,min(4vw,5.6vh),3.75rem)] leading-[1.04] heading-weight tracking-[-.045em]"
                             data-rise
                         >
                             You stay <em className="glow-hot italic">the director.</em>

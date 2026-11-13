@@ -9,9 +9,9 @@ export const ANATOMY = {
     shadeLight: '#221e18',
     edge: '#e6dfcf',
     crease: '#857c6f',
-    lit: '#f6dda8',
-    litShade: '#2b261d',
-    litTop: '#3b3427',
+    lit: '#f5cd8a',
+    litShade: '#2c2418',
+    litTop: '#3e3120',
     dot: '#4a443b',
 } as const
 

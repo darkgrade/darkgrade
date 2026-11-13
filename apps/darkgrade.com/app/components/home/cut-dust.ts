@@ -25,6 +25,12 @@ export interface Dust {
     material: ShaderMaterial
 }
 
+/** The two colours of the dust, as red, green and blue from 0 to 1. The gold is a little deeper than the gold of lines and words, as light is at its edge. */
+export const DUST_COLOURS = {
+    cream: [0.918, 0.902, 0.863],
+    gold: [0.962, 0.773, 0.477],
+} as const
+
 /** How much wider than its core a dot's sprite is, to hold its halo. */
 const HALO = 3.2
 /** How wide a dot's sprite is, in CSS pixels. */
@@ -143,8 +149,8 @@ function dustOf(geometry: BufferGeometry, vertexShader: string, uniforms: Record
         fragmentShader: FRAGMENT,
         // Written straight to the screen, so these are the colours as seen, not as three.js would convert them.
         uniforms: {
-            uCream: { value: new Vector3(0.918, 0.902, 0.863) },
-            uGold: { value: new Vector3(0.965, 0.8, 0.5) },
+            uCream: { value: new Vector3(...DUST_COLOURS.cream) },
+            uGold: { value: new Vector3(...DUST_COLOURS.gold) },
             uTime: { value: 0 },
             uSize: { value: 6 },
             uOpacity: { value: 0 },
