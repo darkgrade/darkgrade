@@ -46,6 +46,7 @@ import {
     LENS_FRONT_Z,
     MODEL_CENTRE,
     type RigPiece,
+    SHUTTER_BUTTON_GROUP,
     createCameraRig,
     isLensPiece,
 } from '@/app/components/scenes/camera-rig'
@@ -121,6 +122,8 @@ export interface Shot {
     onScreen: number
     /** 1 aims the view at the director's chair instead of the camera. */
     onChair: number
+    /** 1 aims the view at the controls on top of the grip, the shutter button among them, instead of the middle of the camera. */
+    onControls: number
     /** How far the laptop has come in from beyond the right of the window, and how far it has gone from beside the camera to the crate on the set. */
     laptop: number
     laptopOnSet: number
@@ -162,6 +165,7 @@ const SHOT_KEYS: (keyof Shot)[] = [
     'onLens',
     'onScreen',
     'onChair',
+    'onControls',
     'laptop',
     'laptopOnSet',
     'sway',
@@ -199,6 +203,7 @@ const BASE_SHOT: Shot = {
     onLens: 0,
     onScreen: 0,
     onChair: 0,
+    onControls: 0,
     laptop: 0,
     laptopOnSet: 0,
     sway: 1,
@@ -272,7 +277,16 @@ const SHOTS: Record<Chapter, Shot> = {
         lookDown: 12,
         sway: 0.5,
     },
-    fun: { ...BASE_SHOT, azimuth: 196, elevation: 12, distance: 660, shiftRight: 0.25, screenOut: 1.9, sway: 0.4 },
+    // From over the photographer's shoulder, close on the top of the grip: the shutter button and the dials round it.
+    fun: {
+        ...BASE_SHOT,
+        azimuth: 186,
+        elevation: 56,
+        distance: 215,
+        shiftRight: 0.24,
+        onControls: 1,
+        sway: 0.2,
+    },
     menus: { ...BASE_SHOT, azimuth: 204, elevation: 20, distance: 470, shiftRight: 0.2, busy: 1, sway: 0.3 },
     delete: { ...BASE_SHOT, azimuth: 216, elevation: 16, distance: 600, shiftRight: 0.2, deleted: 1, sway: 0.3 },
     link: {
@@ -339,13 +353,12 @@ function chapterAt(sections: HTMLElement[]): number {
     return sections.length - 1
 }
 
-/** The parts the manifesto deletes: everything a hand would press or turn, and the monitor. */
+/** The parts the manifesto deletes: everything a hand would press or turn, and the monitor. It keeps the shutter button, which is part of the body, and the collar round it. */
 const CONTROL_GROUPS = new Set([
     'keys',
     'reg1',
     'reg2',
     'reg3',
-    'reg4',
     'reg5',
     'reg6',
     'reg_iso',
@@ -354,6 +367,8 @@ const CONTROL_GROUPS = new Set([
     'screen_mount',
     'screen_mount2',
 ])
+/** The middle of the controls on top of the grip, in the camera's own millimetres: between the shutter button at the front and the dials behind it. */
+const TOP_CONTROLS = new Vector3(-40, 78, 12)
 /** How far a deleted control travels before it is gone. */
 const FLY_OFF_MILLIMETRES = 190
 
@@ -383,8 +398,19 @@ const LIGHTS = ['softbox', 'parabolicLamp', 'spotlight', 'floorLamp']
 const LAPTOP = { scale: 2.6, turnRadians: 0.73 + Math.PI }
 /** Beside the camera in the Link chapter the laptop is nearer life size, to the viewer's right of it, turned to face the viewer. */
 const LAPTOP_BY_CAMERA = { position: new Vector3(352, -160, 236), turnRadians: -0.5, scale: 1.08 }
-/** It comes in from this far further to the right. */
-const LAPTOP_ENTERS_FROM = new Vector3(850, 0, 530)
+/** The laptop gathers out of dust where it will stand, then its drawing comes up through the dust: shares of its arrival. */
+const LAPTOP_ARRIVES = {
+    dustFrom: 0.04,
+    dustBy: 0.28,
+    settlesFrom: 0.08,
+    settlesBy: 0.74,
+    drawnFrom: 0.64,
+    drawnBy: 0.96,
+    dustGoneFrom: 0.8,
+}
+const LAPTOP_POINTS = { wide: 16000, narrow: 9000 }
+/** How far out into the dark the laptop's dust is thrown before it gathers, in the laptop's own millimetres. */
+const LAPTOP_THROW_MILLIMETRES = 620
 /** A call's particles take this share of the time between calls to reach the camera, which answers as they land. */
 const STREAM_SHARE = 0.3
 /** How far through the time between calls the next request starts being typed. */
@@ -488,6 +514,31 @@ function detents(seconds: number, stepSeconds: number, stepRadians: number): num
     const step = Math.floor(seconds / stepSeconds)
     const within = (seconds / stepSeconds - step) / 0.35
     return (step + easeOutBack(within)) * stepRadians
+}
+
+/** The shutter button in the close-up of the controls: the drawing's own dark fill and pale line, turned a little to red. */
+const RECORD_RED = {
+    shadow: new Color('#1c0a09'),
+    light: new Color('#55201a'),
+    line: new Color('#ee7f72'),
+    lineOpacity: 0.85,
+}
+
+/** How often the shutter button is pressed in the close-up of the controls, and how long one press takes to go down and come back, in seconds. */
+const SHUTTER_PRESSED_EVERY_SECONDS = 1
+const SHUTTER_PRESS_SECONDS = 0.34
+
+/** How far down a press is, 0..1, this many seconds after it began. */
+function pressAt(seconds: number): number {
+    return seconds < SHUTTER_PRESS_SECONDS ? Math.sin((seconds / SHUTTER_PRESS_SECONDS) * Math.PI) : 0
+}
+
+/** A ring with stops at both ends: it clicks `clicks` detents one way, one every `stepSeconds`, and then back again. */
+function detentsThereAndBack(seconds: number, stepSeconds: number, stepRadians: number, clicks: number): number {
+    const step = Math.floor(seconds / stepSeconds)
+    const within = (seconds / stepSeconds - step) / 0.35
+    const clicksAt = (count: number) => clicks - Math.abs((count % (clicks * 2)) - clicks)
+    return mix(clicksAt(step), clicksAt(step + 1), easeOutBack(within)) * stepRadians
 }
 
 /** A surface's corners moved by a matrix, as a surface the dust can stand on. */
@@ -702,7 +753,16 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     const gearScene = new Scene()
     const viewer = new PerspectiveCamera(24, 1, 10, 9000)
     const ink = inkMaterials({ rim: PALETTE.gold, rimStrength: 0.1 })
-    const rig = createCameraRig(cameraModel, ink.look)
+    // The shutter button is drawn in materials of its own, the same as the rest until the close-up of the controls turns them red.
+    const record = inkMaterials({ rim: PALETTE.gold, rimStrength: 0.1 })
+    const recordAtRest = {
+        shadow: (record.fill.uniforms.uShadow.value as Color).clone(),
+        light: (record.fill.uniforms.uLight.value as Color).clone(),
+        line: record.ink.color.clone(),
+    }
+    const rig = createCameraRig(cameraModel, piece =>
+        piece.group === SHUTTER_BUTTON_GROUP ? record.look(piece) : ink.look(piece)
+    )
     const shot: Shot = { ...BASE_SHOT }
     const restingGlassLight = (ink.glassFill.uniforms.uLight.value as Color).clone()
     const glowingGlassLight = new Color('#2f2614')
@@ -838,8 +898,22 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         )
     )
     const stream = makeStreamDust(STREAM_POINTS)
+    // The laptop's dust is laid on the laptop as it is modelled, and is then stood wherever the laptop stands.
+    const laptopDust = makeSettlingDust(
+        narrowWindow ? LAPTOP_POINTS.narrow : LAPTOP_POINTS.wide,
+        laptopModel.pieces.map(piece =>
+            surfaceOf(
+                piece,
+                scratchMatrix.identity(),
+                piece.surface === 'element' ? 2 : 1,
+                piece.surface === 'element' ? 1 : 0
+            )
+        ),
+        LAPTOP_THROW_MILLIMETRES
+    )
+    const laptopScene = new Scene()
     const dustScene = new Scene()
-    dustScene.add(gearDust.points, ringDust.points, stream.points)
+    dustScene.add(gearDust.points, ringDust.points, stream.points, laptopDust.points)
     const fade = fadeSheet()
     const ringPlane = new Plane()
     const stirAt = new Vector3()
@@ -874,6 +948,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     const screenCentre = new Vector3()
     const chairSeat = new Vector3()
     const lensFrontInView = new Vector3()
+    const controlsInView = new Vector3()
     /** How far the view's aim has swung from where the shot looks to the front of the lens: ahead of `shot.onLens`, which brings the viewer in. */
     let aimedAtLens = 0
     const screenOutwards = new Vector3()
@@ -917,10 +992,10 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         const made = DRIVEN_CALLS[turn]
         const value = made.values[Math.floor(step / DRIVEN_CALLS.length) % made.values.length]
         const answering = within - STREAM_SHARE
-        pose.focusRing =
+        pose.focusRing +=
             (turn === 3 ? Math.sin(MathUtils.clamp(answering / 0.5, 0, 1) * Math.PI) : 0) * 0.9 * shot.driven
-        pose.keysPress = Math.max(
-            pose.keysPress,
+        pose.shutterPress = Math.max(
+            pose.shutterPress,
             (turn === 4 ? Math.sin(MathUtils.clamp(answering / 0.2, 0, 1) * Math.PI) : 0) * shot.driven
         )
         stream.material.uniforms.uProgress.value = within / STREAM_SHARE
@@ -962,10 +1037,18 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         pose.controlWheel = turned.busySeconds * 3.2
         pose.rearDial = turned.rear - detents(turned.busySeconds + 0.2, 0.35, 0.5)
         pose.exposureDial = turned.exposure + detents(turned.busySeconds + 0.1, 0.42, 0.5)
-        pose.apertureRing = turned.aperture
-        pose.zoomRing = Math.sin(seconds * 0.5) * 0.3 * shot.driven
-        pose.zoomExtension = (0.5 + 0.5 * Math.sin(seconds * 0.5)) * shot.driven * 0.6
-        pose.keysPress = Math.max(0, Math.sin(turned.busySeconds * 9)) * shot.busy
+        // While every control is being worked the rings are too: the focus hunts, the zoom runs out and back, the aperture clicks to one end and then the other. Each stops where it is when the chapter ends, but the barrel draws back in.
+        const zoomed = Math.sin(turned.busySeconds * 1.15 + 0.7)
+        pose.focusRing = Math.sin(turned.busySeconds * 2.7) * 0.5 + Math.sin(turned.busySeconds * 6.1 + 1) * 0.16
+        pose.apertureRing = turned.aperture + detentsThereAndBack(turned.busySeconds + 0.3, 0.38, 0.17, 5)
+        pose.zoomRing = Math.sin(seconds * 0.5) * 0.3 * shot.driven + zoomed * 0.5
+        pose.zoomExtension =
+            (0.5 + 0.5 * Math.sin(seconds * 0.5)) * shot.driven * 0.6 + (0.5 + 0.5 * zoomed) * 0.7 * shot.busy
+        pose.keysPress = 0
+        // Close on the controls, the shutter button is pressed once a second.
+        pose.shutterPress = shot.onControls * pressAt(seconds % SHUTTER_PRESSED_EVERY_SECONDS)
+        pose.keysBusy = shot.busy
+        pose.keysBusySeconds = turned.busySeconds
         driveTheCamera(frame)
         rig.update()
         cameraMount.scale.setScalar(shot.cameraScale)
@@ -1028,6 +1111,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         target.copy(MODEL_CENTRE)
         target.z += shot.lookAhead
         target.y -= shot.lookDown
+        target.lerp(cameraMount.localToWorld(controlsInView.copy(TOP_CONTROLS)), shot.onControls)
         target.lerp(chair.rig.root.getWorldPosition(chairSeat).setY(floorY + chair.rig.size.y * 0.52), shot.onChair)
         target.lerp(cameraMount.localToWorld(lensFrontInView.copy(lensFront)), aimedAtLens)
         // Square on to the lens, the viewer stands where the rim spans the same share of the window on any screen.
@@ -1062,20 +1146,17 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     }
 
     /**
-     * Stands the laptop where the shot has it: coming in beside the camera, beside it, on its way
-     * to the crate, or on it. On the crate it is one of the set's things and comes and goes with
-     * them; until then it is drawn with the camera.
+     * Stands the laptop where the shot has it: beside the camera, on its way to the crate, or on
+     * it. On the crate it is one of the set's things and comes and goes with them; until then it
+     * is drawn on its own, so it can come up through its dust while the camera stays as it is.
      */
     function poseTheLaptop() {
         const settled = smooth(shot.laptopOnSet)
         laptop.visible = shot.laptop > 0.01
-        laptop.position
-            .copy(LAPTOP_BY_CAMERA.position)
-            .addScaledVector(LAPTOP_ENTERS_FROM, 1 - smooth(shot.laptop))
-            .lerp(laptopOnCrate, settled)
+        laptop.position.copy(LAPTOP_BY_CAMERA.position).lerp(laptopOnCrate, settled)
         laptop.rotation.y = mix(LAPTOP_BY_CAMERA.turnRadians, LAPTOP.turnRadians - Math.PI * 2, settled)
         laptop.scale.setScalar(Math.exp(mix(Math.log(LAPTOP_BY_CAMERA.scale), Math.log(LAPTOP.scale), settled)))
-        const home = shot.laptopOnSet > 0.999 ? gearScene : cameraScene
+        const home = shot.laptopOnSet > 0.999 ? gearScene : laptopScene
         if (laptop.parent !== home) home.add(laptop)
         laptop.updateMatrixWorld(true)
     }
@@ -1134,7 +1215,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
             projected.copy(corner).applyMatrix4(laptop.matrixWorld).project(viewer)
             return [((projected.x + 1) / 2) * frame.cssWidth, ((1 - projected.y) / 2) * frame.cssHeight]
         })
-        const link = between(shot.laptop, 0.75, 1) * (1 - between(shot.laptopOnSet, 0, 0.2))
+        const link = between(shot.laptop, LAPTOP_ARRIVES.drawnFrom, 1) * (1 - between(shot.laptopOnSet, 0, 0.2))
         page.placeScreen(corners, screen.widthOverHeight, { link, cut: between(shot.onScreen, 0.25, 0.7) * drawn })
     }
 
@@ -1146,6 +1227,13 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
             .copy(restingGlassLight)
             .lerp(glowingGlassLight, Math.min(1, shot.glassGlow + flash))
         ink.fill.uniforms.uRimStrength.value = 0.1 + flash * 0.5
+        record.fill.uniforms.uRimStrength.value = ink.fill.uniforms.uRimStrength.value
+        const red = shot.onControls
+        ;(record.fill.uniforms.uShadow.value as Color).copy(recordAtRest.shadow).lerp(RECORD_RED.shadow, red)
+        ;(record.fill.uniforms.uLight.value as Color).copy(recordAtRest.light).lerp(RECORD_RED.light, red)
+        ;(record.hull.uniforms.uColour.value as Color).copy(recordAtRest.line).lerp(RECORD_RED.line, red)
+        record.ink.color.copy(recordAtRest.line).lerp(RECORD_RED.line, red)
+        record.ink.opacity = mix(shot.lines, RECORD_RED.lineOpacity, red)
         backdrop.update(frame, shot)
         // The shutter firing throws more light for a moment.
         glow.strengthen(1 + flash * 1.5)
@@ -1211,6 +1299,19 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         gear.uSize.value = size
         gearDust.points.visible = (gear.uOpacity.value as number) > 0.004
 
+        const arriving = laptopDust.material.uniforms
+        arriving.uOpacity.value =
+            between(shot.laptop, LAPTOP_ARRIVES.dustFrom, LAPTOP_ARRIVES.dustBy) *
+            (1 - between(shot.laptop, LAPTOP_ARRIVES.dustGoneFrom, 1)) *
+            shot.ink
+        arriving.uScatter.value = 1 - between(shot.laptop, LAPTOP_ARRIVES.settlesFrom, LAPTOP_ARRIVES.settlesBy)
+        arriving.uTime.value = frame.seconds
+        arriving.uSize.value = size
+        laptopDust.points.position.copy(laptop.position)
+        laptopDust.points.rotation.copy(laptop.rotation)
+        laptopDust.points.scale.copy(laptop.scale)
+        laptopDust.points.visible = (arriving.uOpacity.value as number) > 0.004
+
         const ring = ringDust.material.uniforms
         const wave = MathUtils.clamp((shot.swept - DISSOLVE.waveFrom) / (DISSOLVE.waveBy - DISSOLVE.waveFrom), 0, 1)
         ring.uOpacity.value = between(shot.swept, 0, DISSOLVE.dustBy)
@@ -1257,6 +1358,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
             page.showChapter(chapter)
             const cameraDrawn = shot.ink * (1 - between(shot.swept, DISSOLVE.drawingGoneFrom, DISSOLVE.drawingGoneBy))
             const gearDrawn = shot.ink * between(shot.gear, GEAR.drawnFrom, GEAR.drawnBy)
+            const laptopDrawn = between(shot.laptop, LAPTOP_ARRIVES.drawnFrom, LAPTOP_ARRIVES.drawnBy)
             poseTheLaptop()
             poseTheCamera(frame)
             placeTheViewer(frame)
@@ -1273,7 +1375,8 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
             page.showState({
                 cut: between(through, CUT_ASSEMBLES.from, CUT_ASSEMBLES.by),
                 rolling: shot.rolling * between(shot.gear, GEAR.drawnFrom, GEAR.drawnBy),
-                wordsOverPicture: shot.onChair,
+                // The chair and the close-up of the controls both fill the window, words and all.
+                wordsOverPicture: Math.max(shot.onChair, shot.onControls),
             })
 
             // The gear is drawn first and veiled to its share of the camera's strength; the camera goes over it, and one veil then dims the two together.
@@ -1283,11 +1386,21 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
                 renderer.render(gearScene, viewer)
                 veil(renderer, Math.min(1, gearDrawn / cameraDrawn))
             }
+            // Until it is on the set the laptop is drawn on its own and veiled to how far it has arrived. That veil falls on the gear too, which is never drawn while the laptop is still arriving.
+            if (laptop.parent === laptopScene && laptopDrawn > 0.004 && cameraDrawn > 0.004) {
+                renderer.render(laptopScene, viewer)
+                veil(renderer, laptopDrawn)
+            }
             if (cameraDrawn > 0.004) {
                 renderer.render(cameraScene, viewer)
                 veil(renderer, cameraDrawn)
             }
-            if (gearDust.points.visible || ringDust.points.visible || stream.points.visible)
+            if (
+                gearDust.points.visible ||
+                ringDust.points.visible ||
+                stream.points.visible ||
+                laptopDust.points.visible
+            )
                 renderer.render(dustScene, viewer)
             // The backdrop goes under everything drawn so far, and the light that spills from the gold over all of it.
             renderer.render(backdrop.scene, backdrop.camera)

@@ -14,18 +14,36 @@
     }
 }
 
-/* Text that rises into place as it enters the window. */
+/* The words of a sheet are held where they stand in the window; the scroll does not carry them
+   through it. They rise into place when their sheet arrives and go up and out when it leaves,
+   in their own time (rise.ts says which). Without JavaScript they scroll with their sheet. */
+.js .home [data-words] {
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    translate: 0 calc(var(--lift, 0px) * -1);
+    pointer-events: none;
+}
+.js .home [data-words='here'] .shell > * {
+    pointer-events: auto;
+}
 .js .home [data-rise] {
     opacity: 0;
-    transform: translateY(22px);
+    transform: translateY(28px);
+    transition:
+        opacity 0.45s ease,
+        transform 0.45s cubic-bezier(0.4, 0, 1, 1);
+}
+.js .home [data-words='passed'] [data-rise] {
+    transform: translateY(-20px);
+}
+.js .home [data-words='here'] [data-rise] {
+    opacity: 1;
+    transform: none;
     transition:
         opacity 0.9s cubic-bezier(0.19, 1, 0.22, 1),
         transform 0.9s cubic-bezier(0.19, 1, 0.22, 1);
     transition-delay: calc(var(--rise-order, 0) * 90ms);
-}
-.js .home [data-rise].is-risen {
-    opacity: 1;
-    transform: none;
 }
 
 /* a take slides from where it was shot to where the cut puts it, losing its dead ends on the way */
@@ -53,10 +71,12 @@
     opacity: var(--music);
 }
 @media (prefers-reduced-motion: reduce) {
-    .js .home [data-rise] {
-        opacity: 1;
+    /* the words still come and go with their sheet, but they do not move */
+    .js .home [data-rise],
+    .js .home [data-words] [data-rise] {
         transform: none;
-        transition: none;
+        transition: opacity 0.2s linear;
+        transition-delay: 0s;
     }
     .home .cut-playhead {
         animation: none;
@@ -174,7 +194,7 @@
 }
 .monitor-error {
     opacity: 0;
-    animation: monitor-error 6.5s cubic-bezier(0.19, 1, 0.22, 1) infinite both;
+    animation: monitor-error 8s cubic-bezier(0.19, 1, 0.22, 1) infinite both;
 }
 
 @media (prefers-reduced-motion: reduce) {

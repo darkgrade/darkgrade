@@ -1,6 +1,5 @@
 import { BACKED_BY, TESTED_ON } from '@/app/components/home/content'
 import { RollBoard } from '@/app/components/roll-board'
-import { Lockup } from '@/app/components/wordmark'
 
 const CELL = 'flex min-w-0 flex-col justify-between gap-[6px] border-l border-hair px-[18px] py-[13px] first:border-l-0'
 const CELL_NAME = 'text-ink-52'
@@ -32,24 +31,23 @@ function RollingCell({ name, names, direction }: { name: string; names: readonly
 }
 
 /**
- * The title block of a drawing sheet: the mark, the
+ * The title block of a drawing sheet: the product's status, the
  * document and edition, who the product is tested on and backed by (each rolling through its
  * list), and the sheet number. Not shown on a phone.
  */
 export function TitleBlock({ document, sheet, sheets }: { document: string; sheet: number; sheets: number }) {
     return (
-        <div className="panel relative grid grid-cols-[1.15fr_.7fr_.8fr_1.25fr_1.25fr_.6fr] border border-hair font-mono text-[11px] leading-[1.5] tracking-[.18em] uppercase max-[900px]:hidden">
+        <div className="panel relative grid grid-cols-[1.35fr_.7fr_.8fr_1.2fr_1.2fr_.6fr] border border-hair font-mono text-[11px] leading-[1.5] tracking-[.18em] uppercase max-[900px]:hidden">
             <span className={`${CROP} top-[-7px] left-[-7px] border-t border-l`} />
             <span className={`${CROP} top-[-7px] right-[-7px] border-t border-r`} />
             <span className={`${CROP} bottom-[-7px] left-[-7px] border-b border-l`} />
             <span className={`${CROP} right-[-7px] bottom-[-7px] border-r border-b`} />
-            <div className={CELL}>
-                <Lockup className="self-start text-[16px] text-ink" />
-                <span className="inline-flex items-center gap-2 text-ink-66">
+            <Cell name="Status">
+                <span className="inline-flex items-center gap-2">
                     <i className="size-[6px] rounded-full bg-rec shadow-[0_0_8px_rgba(224,72,62,.6)]" />
                     Currently in alpha
                 </span>
-            </div>
+            </Cell>
             <Cell name="Document">{document}</Cell>
             <Cell name="Edition">MMXXVI</Cell>
             <RollingCell name="Tested on" names={TESTED_ON} direction="up" />

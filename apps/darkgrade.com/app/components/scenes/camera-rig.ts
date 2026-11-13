@@ -1,6 +1,7 @@
-import { Group, Matrix4, type Object3D, Vector3 } from 'three'
+import { Box3, BufferGeometry, Group, Matrix4, type Object3D, Vector3 } from 'three'
 
 import type { Model, ModelPiece } from '@/app/components/scenes/load-model'
+import { islandsOf } from '@/app/components/scenes/mesh-islands'
 
 /** Everything on the camera that can move. Angles are radians, lengths millimetres, the rest 0 to 1. */
 export interface CameraPose {
@@ -19,7 +20,13 @@ export interface CameraPose {
     rearDial: number
     exposureDial: number
     controlWheel: number
+    /** 0..1: every key pressed at once. */
     keysPress: number
+    /** 0..1: how hard the keys are pressed one at a time, each to a beat of its own, and the clock those beats are counted on, in seconds. */
+    keysBusy: number
+    keysBusySeconds: number
+    /** 0..1: how far down the shutter button is. */
+    shutterPress: number
 }
 
 export interface RigPiece {
@@ -28,6 +35,8 @@ export interface RigPiece {
     explodeOffset: Vector3
     /** Where this piece sits along the lens axis, 0 at the mount and 1 at the front; -1 off the lens. */
     lensFraction: number
+    /** The way a button comes back up from a press: only the shutter button has one. */
+    pressedAgainst?: Vector3
 }
 
 export interface CameraRig {
@@ -88,6 +97,9 @@ export function restPose(): CameraPose {
         exposureDial: 0,
         controlWheel: 0,
         keysPress: 0,
+        keysBusy: 0,
+        keysBusySeconds: 0,
+        shutterPress: 0,
     }
 }
 
@@ -122,6 +134,122 @@ function rotationAbout(point: Vector3, axis: Vector3, angle: number, target: Mat
 
 const scratch = new Matrix4()
 
+/**
+ * The shutter button. It is modelled inside the top of the body, in the collar of the power
+ * switch, as a shape of its own that touches nothing. The rig cuts it out of the body and makes
+ * it a part, so it can be pressed and drawn in its own way. It stands on this axis, in the
+ * model's millimetres, and leans forward.
+ */
+const SHUTTER_BUTTON = { x: -42.5, z: 25.3, widestMillimetres: 12, travelMillimetres: 1.7 }
+/** A shape is on the button's axis when its middle is this near it. */
+const ON_THE_AXIS_WITHIN_MILLIMETRES = 1.5
+/** The group the shutter button is given, once it is a part of its own. */
+export const SHUTTER_BUTTON_GROUP = 'shutter_button'
+
+const scratchPoint = new Vector3()
+
+/** The points of the shutter button in a part of the body: of the shapes standing on its axis and no wider than a button, the one that reaches highest. */
+function shutterButtonIn(piece: ModelPiece): { points: Set<number>; bounds: Box3 } | undefined {
+    const positions = piece.solid.getAttribute('position')
+    let found: { points: number[]; bounds: Box3 } | undefined
+    for (const points of islandsOf(piece.solid)) {
+        const bounds = new Box3()
+        for (const point of points) bounds.expandByPoint(scratchPoint.fromBufferAttribute(positions, point))
+        const middle = bounds.getCenter(scratchPoint)
+        const onTheAxis = Math.hypot(middle.x - SHUTTER_BUTTON.x, middle.z - SHUTTER_BUTTON.z) < ON_THE_AXIS_WITHIN_MILLIMETRES
+        const narrow = Math.max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z) < SHUTTER_BUTTON.widestMillimetres
+        if (onTheAxis && narrow && (!found || bounds.max.y > found.bounds.max.y)) found = { points, bounds }
+    }
+    return found && { points: new Set(found.points), bounds: found.bounds }
+}
+
+/** A drawing of the same points as `whole`, keeping only the triangles or lines (`perShape` corners each) whose first corner `keep` accepts. */
+function partOf(whole: BufferGeometry, perShape: number, keep: (point: number) => boolean): BufferGeometry {
+    const corners = whole.getIndex()
+    const kept: number[] = []
+    for (let corner = 0; corners && corner < corners.count; corner += perShape) {
+        if (!keep(corners.getX(corner))) continue
+        for (let offset = 0; offset < perShape; offset++) kept.push(corners.getX(corner + offset))
+    }
+    const part = new BufferGeometry()
+    for (const [name, attribute] of Object.entries(whole.attributes)) part.setAttribute(name, attribute)
+    part.setIndex(kept)
+    part.boundingSphere = whole.boundingSphere
+    return part
+}
+
+/** The camera's parts with the shutter button cut out of the body as a part of its own; which part it came from; and the way it faces, which is the way back up from a press. */
+interface WithShutterButton {
+    pieces: ModelPiece[]
+    button?: { piece: ModelPiece; from: ModelPiece; facing: Vector3 }
+}
+
+/** Geometry is shared with every other rig of the model, so nothing is changed in place: the body it is cut from and the button are new drawings of the same points. */
+function withShutterButton(pieces: ModelPiece[]): WithShutterButton {
+    const overTheAxis = (piece: ModelPiece) =>
+        piece.group === 'body' &&
+        piece.bounds.min.x < SHUTTER_BUTTON.x &&
+        piece.bounds.max.x > SHUTTER_BUTTON.x &&
+        piece.bounds.min.z < SHUTTER_BUTTON.z &&
+        piece.bounds.max.z > SHUTTER_BUTTON.z
+    const found = pieces
+        .filter(overTheAxis)
+        .flatMap(from => {
+            const button = shutterButtonIn(from)
+            return button ? [{ from, ...button }] : []
+        })
+        .sort((first, second) => second.bounds.max.y - first.bounds.max.y)
+        .at(0)
+    if (!found) return { pieces }
+    const { from, points, bounds } = found
+    // The button faces the way its top does: the mean of its normals that point more up than sideways.
+    const normals = from.solid.getAttribute('normal')
+    const facing = new Vector3()
+    for (const point of points) {
+        if (normals.getY(point) > 0.7) facing.add(scratchPoint.fromBufferAttribute(normals, point))
+    }
+    if (facing.lengthSq() === 0) facing.set(0, 1, 0)
+    const piece: ModelPiece = {
+        ...from,
+        index: pieces.length,
+        name: 'shutter button',
+        group: SHUTTER_BUTTON_GROUP,
+        solid: partOf(from.solid, 3, point => points.has(point)),
+        crease: partOf(from.crease, 2, point => points.has(point)),
+        bounds,
+        centre: bounds.getCenter(new Vector3()),
+    }
+    const rest: ModelPiece = {
+        ...from,
+        solid: partOf(from.solid, 3, point => !points.has(point)),
+        crease: partOf(from.crease, 2, point => !points.has(point)),
+    }
+    return {
+        pieces: [...pieces.map(each => (each === from ? rest : each)), piece],
+        button: { piece, from, facing: facing.normalize() },
+    }
+}
+
+/** How long one press of a key lasts, in seconds, and on what share of its beats a key is pressed at all. */
+const KEY_PRESS_SECONDS = 0.24
+const KEY_PRESSED_SHARE_OF_BEATS = 0.6
+
+/** A number from 0 to 1 that is the same for the same two numbers. */
+function scattered(first: number, second: number): number {
+    const mixed = Math.sin(first * 127.1 + second * 311.7) * 43758.5453
+    return mixed - Math.floor(mixed)
+}
+
+/** How far one key is pressed at a moment, 0..1, while the keys are pressed one at a time: each keeps a beat of its own length, starts it at its own moment, and is pressed on some of its beats and not others. */
+function ownPress(key: number, seconds: number): number {
+    const beatSeconds = 0.4 + scattered(key, 1) * 0.75
+    const beats = seconds / beatSeconds + scattered(key, 2)
+    const beat = Math.floor(beats)
+    if (scattered(key, beat + 3) > KEY_PRESSED_SHARE_OF_BEATS) return 0
+    const through = ((beats - beat) * beatSeconds) / KEY_PRESS_SECONDS
+    return through >= 1 ? 0 : Math.sin(through * Math.PI)
+}
+
 function applyLensMotion(rigPiece: RigPiece, pose: CameraPose, matrix: Matrix4) {
     const { piece } = rigPiece
     matrix.multiply(scratch.makeTranslation(0, 0, pose.lensDetach * LENS_DETACH_MILLIMETRES))
@@ -145,21 +273,31 @@ function applyBodyMotion(rigPiece: RigPiece, pose: CameraPose, matrix: Matrix4) 
     if (piece.group === 'reg2') matrix.multiply(rotationAbout(piece.centre, AXIS_Y, pose.rearDial, scratch))
     if (piece.group === 'reg3') matrix.multiply(rotationAbout(piece.centre, AXIS_Y, pose.exposureDial, scratch))
     if (piece.group === 'reg_iso') matrix.multiply(rotationAbout(piece.centre, AXIS_Z, pose.controlWheel, scratch))
-    if (piece.group !== 'keys' || pose.keysPress === 0) return
-    const press = dominantAxisOffset(piece.centre, -0.9 * pose.keysPress)
+    if (rigPiece.pressedAgainst && pose.shutterPress !== 0) {
+        const travel = -SHUTTER_BUTTON.travelMillimetres * pose.shutterPress
+        matrix.multiply(scratch.makeTranslation(rigPiece.pressedAgainst.x * travel, rigPiece.pressedAgainst.y * travel, rigPiece.pressedAgainst.z * travel))
+    }
+    if (piece.group !== 'keys') return
+    const pressed = Math.max(pose.keysPress, pose.keysBusy > 0 ? pose.keysBusy * ownPress(piece.index, pose.keysBusySeconds) : 0)
+    if (pressed === 0) return
+    const press = dominantAxisOffset(piece.centre, -0.9 * pressed)
     matrix.multiply(scratch.makeTranslation(press.x, press.y, press.z))
 }
 
 /** One camera, drawn with the layers `layersOf` gives each piece. Geometry is shared between rigs. */
 export function createCameraRig(model: Model, layersOf: (piece: ModelPiece) => Object3D[]): CameraRig {
     const root = new Group()
-    const pieces: RigPiece[] = model.pieces.map(piece => {
+    const { pieces: parts, button } = withShutterButton(model.pieces)
+    const pieces: RigPiece[] = parts.map(piece => {
         const group = new Group()
         group.matrixAutoUpdate = false
         group.add(...layersOf(piece))
         root.add(group)
         const lensFraction = isLensPiece(piece) ? (piece.centre.z - LENS_MOUNT_Z) / (LENS_FRONT_Z - LENS_MOUNT_Z) : -1
-        return { piece, group, explodeOffset: explodeOffsetOf(piece), lensFraction }
+        // The button goes wherever the part it was cut from goes when the camera is drawn apart.
+        const isTheButton = piece === button?.piece
+        const explodeOffset = explodeOffsetOf(isTheButton ? button.from : piece)
+        return { piece, group, explodeOffset, lensFraction, pressedAgainst: isTheButton ? button.facing : undefined }
     })
 
     const rig: CameraRig = {

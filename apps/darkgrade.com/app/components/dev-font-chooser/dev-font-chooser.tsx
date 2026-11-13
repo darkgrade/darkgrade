@@ -257,7 +257,7 @@ export function DevFontChooser() {
                 title="Open the font chooser (`)"
                 onClick={() => setState(previous => ({ ...previous, open: true }))}
                 style={{ fontFamily: PANEL_FONT_FAMILY }}
-                className="fixed bottom-4 left-4 z-[300] cursor-pointer rounded-full border border-hair bg-[rgba(10,10,11,.92)] px-3 py-[6px] text-[11px] text-ink-55 backdrop-blur-[10px] hover:border-gold hover:text-gold"
+                className="fixed bottom-[104px] left-4 z-[300] cursor-pointer rounded-full border border-hair bg-[rgba(10,10,11,.92)] px-3 py-[6px] text-[11px] text-ink-55 backdrop-blur-[10px] hover:border-gold hover:text-gold"
             >
                 Aa
             </button>
@@ -267,7 +267,7 @@ export function DevFontChooser() {
     return (
         <aside
             style={{ fontFamily: PANEL_FONT_FAMILY }}
-            className="fixed bottom-4 left-4 z-[300] w-[330px] rounded-[10px] border border-hair bg-[rgba(10,10,11,.94)] p-3 text-[11px] leading-[1.4] text-ink-55 shadow-[0_10px_40px_rgba(0,0,0,.6)] backdrop-blur-[14px] select-none"
+            className="fixed bottom-[104px] left-4 z-[300] w-[330px] rounded-[10px] border border-hair bg-[rgba(10,10,11,.94)] p-3 text-[11px] leading-[1.4] text-ink-55 shadow-[0_10px_40px_rgba(0,0,0,.6)] backdrop-blur-[14px] select-none"
         >
             <div className="mb-2 flex items-center justify-between text-[10px] tracking-[.18em] text-ink-52 uppercase">
                 <span>Font chooser · dev</span>

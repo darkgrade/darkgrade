@@ -1,5 +1,3 @@
-import { MARK_NEXT } from '@/app/components/site-links'
-
 /** Bar heights for a drawn waveform, 0..1: the same every render, so the server and the browser agree. */
 function waveform(bars: number, seed: number, loudness: number): number[] {
     return Array.from({ length: bars }, (_, index) => {
@@ -60,6 +58,10 @@ const COPY = {
     sequence: 'Seq 01 · 24 fps',
     status: 'On the way',
     title: 'First cut',
+    tagline: 'Your footage edits itself.',
+    does: 'A first cut is waiting the moment you stop recording, made on your own machine. You take it from there.',
+    /** What Studio does to the takes, in the order the picture shows it. */
+    steps: ['Silences trimmed', 'Titles and captions added', 'Music mixed in'],
     take: 'Take',
     titles: ['Title', 'Lower third', 'Captions'],
 }
@@ -79,7 +81,7 @@ function takeStyle(index: number): React.CSSProperties {
 }
 
 /** What runs on the laptop in the studio: the first cut assembling itself, laid out for the laptop's screen. */
-export function FirstCutApp({ feature }: { feature: string }) {
+export function FirstCutApp() {
     return (
         <div className="flex h-full flex-col">
             <div className="flex items-center justify-between border-b border-hair px-7 py-[14px] font-mono text-[13px] tracking-[.08em] text-ink-52 uppercase">
@@ -93,16 +95,32 @@ export function FirstCutApp({ feature }: { feature: string }) {
                 </span>
                 <span>{COPY.sequence}</span>
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)]">
-                <div className="flex flex-col justify-center gap-5 border-r border-hair px-8">
-                    <span className="inline-flex items-center gap-[11px] font-mono text-[13px] tracking-[.08em] text-ink-66 uppercase">
-                        <i className={MARK_NEXT} />
-                        {COPY.status}
+            <div className="grid min-h-0 flex-1 grid-cols-[390px_minmax(0,1fr)]">
+                {/* laid out as the page's own product sections are: its name and kind, a tagline, what it does, and its features as ruled rows */}
+                <div className="flex flex-col justify-center border-r border-hair px-9">
+                    <span className="flex items-baseline gap-[14px] text-[20px] font-medium">
+                        <span className="text-gold">{COPY.title}</span>
+                        <span className="font-mono text-[13px] font-normal tracking-[.06em] text-ink-52 uppercase">
+                            {COPY.status}
+                        </span>
                     </span>
-                    <span className="font-serif text-[3.5rem] leading-none heading-weight tracking-[-.045em] text-ink">
-                        {COPY.title}
+                    <span className="mt-[14px] font-serif text-[3rem] leading-[1.02] heading-weight tracking-[-.045em] text-balance text-ink">
+                        {COPY.tagline}
                     </span>
-                    <span className="max-w-[22ch] text-[17px] leading-[1.5] text-ink-66">{feature}</span>
+                    <span className="mt-[18px] text-[19px] leading-[1.5] text-ink-66">{COPY.does}</span>
+                    <span className="mt-[28px] flex flex-col border-b border-hair">
+                        {COPY.steps.map(step => (
+                            <span
+                                key={step}
+                                className="flex items-baseline justify-between gap-4 border-t border-hair py-[14px] text-[18px] text-ink-66"
+                            >
+                                {step}
+                                <span className="font-mono text-[12px] tracking-[.08em] text-ink-52 uppercase">
+                                    Next
+                                </span>
+                            </span>
+                        ))}
+                    </span>
                 </div>
                 <div className="relative grid min-h-0 grid-cols-[44px_minmax(0,1fr)] grid-rows-[26px_0.7fr_1.3fr_1fr_0.7fr] gap-x-3 gap-y-[9px] px-6 py-6">
                     <span />
