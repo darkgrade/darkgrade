@@ -1,5 +1,12 @@
 import { ResponseDefinition } from '@ptp/types/response'
 
+/** Nikon USB/MTP response; the same vendor-range number means something else on Canon. */
+export const HardwareError = {
+    code: 0xa001,
+    name: 'HardwareError',
+    description: 'The camera reports a hardware error; inspect WarningStatus before recovery.',
+} as const satisfies ResponseDefinition
+
 export const InvalidStatus = {
     code: 0xa004,
     name: 'InvalidStatus',
@@ -37,6 +44,7 @@ export const MfDriveStepInsufficiency = {
 } as const satisfies ResponseDefinition
 
 export const nikonResponseRegistry = {
+    HardwareError,
     OutOfFocus,
     MfDriveStepEnd,
     MfDriveStepInsufficiency,

@@ -11,7 +11,7 @@ import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { ISOAutoControl } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
-import { NotLiveView, OutOfFocus } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
+import { HardwareError, NotLiveView, OutOfFocus } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { createNikonRegistry, type NikonRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
@@ -821,7 +821,10 @@ export class NikonCamera extends GenericCamera {
             return
         }
 
-        const response = await this.send(this.registry.operations.StartLiveView, {})
+        let response = await this.send(this.registry.operations.StartLiveView, {})
+        if (response.code === HardwareError.code && await this.recoverSequenceError()) {
+            response = await this.send(this.registry.operations.StartLiveView, {})
+        }
         if (response.code !== OK.code && response.code !== DeviceBusy.code) {
             throw new PTPResponseError(
                 response.code,
@@ -832,6 +835,34 @@ export class NikonCamera extends GenericCamera {
         await this.waitForDeviceReady()
         this.liveViewStatus = 'ON'
         this.liveViewStartPending = false
+    }
+
+    /**
+     * Nikon Z5_2 USB/MTP §11.7.5: a release command clears a recoverable sequence
+     * error without starting an exposure. Never use it for an unspecified hardware
+     * error, other warning bits, an active movie/buffer, or an unadvertised command.
+     * A physical user may clear the warning concurrently, so a caller requesting
+     * this recovery must allow a shutter release. No command is retried.
+     */
+    async recoverSequenceError(): Promise<boolean> {
+        if (this.transport.getType() !== TransportType.USB) return false
+        const information = await this.send(this.registry.operations.GetDeviceInfo, {})
+        this.assertNikonResponse(information.code, 'GetDeviceInfo for shutter recovery')
+        if (!information.data?.operationsSupportedRaw.includes(0x9207) ||
+            !information.data?.devicePropertiesSupportedRaw.includes(0xd102)) return false
+        const warning = this.registry.properties.NikonWarningStatus
+        if (await this.get(warning) !== 1) return false
+        const movie = await this.get(this.registry.properties.MovieRecProhibitionCondition)
+        if (movie.includes('alreadyRecording') || movie.includes('imagesInBuffer')) return false
+        // Refresh immediately before the release: an old cache or another fault cannot authorize it.
+        if (await this.get(warning) !== 1) return false
+        const released = await this.send(this.registry.operations.InitiateCaptureRecInMedia,
+            { AfMode: 0xffffffff, Target: 0 })
+        this.assertNikonResponse(released.code, 'sequence-error shutter release')
+        await this.waitForDeviceReady()
+        const observed = await this.get(warning)
+        if (observed !== 0) throw new Error(`Nikon sequence-error recovery did not clear WarningStatus (0x${observed.toString(16)})`)
+        return true
     }
 
     private async getLiveViewStatus(): Promise<void> {

@@ -98,6 +98,9 @@ export class CanonCamera extends GenericCamera {
     private resumePolling = false
     private pollingPause?: Promise<void>
     private polling = false
+    private keepAliveEnabled = true
+    private lastKeepAliveAttempt?: number
+    private keepAliveUnavailable = false
     private rawEventListeners = new Set<(event: CanonRawEvent) => void>()
     private pollingLoop?: Promise<void>
     private liveViewEnabled = false
@@ -192,6 +195,8 @@ export class CanonCamera extends GenericCamera {
         this.supportedOperations = undefined
         this.liveViewEnabled = false
         this.liveViewOriginalOutput = undefined
+        this.lastKeepAliveAttempt = undefined
+        this.keepAliveUnavailable = false
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -563,9 +568,30 @@ export class CanonCamera extends GenericCamera {
     }
 
     async keepDeviceOn(): Promise<void> {
+        this.assertOperationSupported(this.registry.operations.CanonKeepDeviceOn.code)
         await this.withoutPolling(async () => {
-            await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+            const response = await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+            this.assertResponseOk(response.code, 'keep device on')
+            this.lastKeepAliveAttempt = performance.now()
         })
+    }
+
+    /** Controls the session heartbeat without changing the body's saved power settings. */
+    setKeepAliveEnabled(enabled: boolean): void {
+        this.keepAliveEnabled = enabled
+    }
+
+    private async maintainKeepAlive(): Promise<void> {
+        if (!this.keepAliveEnabled || this.keepAliveUnavailable ||
+            !this.supportedOperations?.has(this.registry.operations.CanonKeepDeviceOn.code)) return
+        const now = performance.now()
+        // libgphoto2 camlibs/ptp2/config.c camera_keep_device_on: EOS R8 needs
+        // KeepDeviceOn about every 10 s; GetEvent polling alone is insufficient.
+        if (this.lastKeepAliveAttempt !== undefined && now - this.lastKeepAliveAttempt < 10_000) return
+        this.lastKeepAliveAttempt = now
+        const response = await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+        if (response.code === 0x2005) this.keepAliveUnavailable = true
+        this.assertResponseOk(response.code, 'automatic keep device on')
     }
 
     /** Explicit capability audit; some bodies require model-specific initialization before 0x9108. */
@@ -1084,6 +1110,8 @@ export class CanonCamera extends GenericCamera {
     private async runPollingLoop(intervalMs: number): Promise<void> {
         while (this.polling) {
             try {
+                await this.maintainKeepAlive()
+                if (!this.polling) return
                 const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
                 if (this.polling && response.data && Array.isArray(response.data) && response.data.length > 0) {
                     this.processEvents(response.data, true)

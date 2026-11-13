@@ -1,3 +1,15 @@
+Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
+existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
+no saved body power setting is rewritten. Explicit KeepDeviceOn rejects non-OK responses.
+Nikon USB reference Z5_2UsbMtpE_01 §2.2 says PC connection disables meter auto-off already.
+Its §11.7.5 documents one release command to clear a recoverable WarningStatus bit-0
+sequence error. Link retries live-view startup once only after that exact warning,
+idle movie/buffer state, advertised operations and fresh clearing readback. Other
+hardware errors remain errors. SDK documents stay private; attribution in the workspace
+camera-keepalive-2026-11-13 report must remain. Physical user actions can race warning
+reads; recovery may release a shutter if someone clears the warning first.
+Keep all changes on PR #58; no merge.
+
 Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
 failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
 writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,

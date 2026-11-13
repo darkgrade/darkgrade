@@ -50,6 +50,8 @@ export interface CameraOptions {
     transport?: TransportInterface
     /** Timeouts and DeviceBusy retries for every transaction (see DEFAULT_TRANSACTION_POLICY). */
     transactionPolicy?: Partial<TransactionPolicy>
+    /** Default true: send the advertised Canon session heartbeat without changing saved body settings. */
+    keepAlive?: boolean
     vendorId?: number
 }
 
@@ -88,6 +90,7 @@ export class Camera {
                 break
         }
         if (options?.transactionPolicy) this.instance.configureTransactions(options.transactionPolicy)
+        if (this.instance instanceof CanonCamera) this.instance.setKeepAliveEnabled(options?.keepAlive ?? true)
     }
 
     private vendorExtensionCamera(vendorId: number): VendorExtensionCamera {
