@@ -6,7 +6,7 @@ const DOCUMENT_NUMBER = 'DG-CL-001'
 /* The words of the Changelog page, until there is a changelog on it. */
 const CHANGELOG = {
     headline: { first: 'Changelog', second: 'coming', lit: 'soon.' },
-    lede: 'A dated record of what ships in Link and Studio will live on this page. Until it does, every change is public in the repository, the day it is made.',
+    lede: 'A dated record of what ships in Link and Studio will live on this page. Until it does, every change is public in the repository, the day it’s made.',
     facts: [
         { name: 'Status', value: 'Coming soon' },
         { name: 'Stage', value: 'In alpha' },
@@ -15,7 +15,7 @@ const CHANGELOG = {
     ],
     closing: {
         line: 'Want to see what changed today?',
-        detail: 'The repository is the changelog for now. Discord is where we say what is coming next.',
+        detail: 'The repository is the changelog for now. Discord is where we say what’s coming next.',
     },
 } as const
 

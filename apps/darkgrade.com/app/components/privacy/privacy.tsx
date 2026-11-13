@@ -15,7 +15,7 @@ const PRIVACY = {
     ],
     closing: {
         line: 'A question about your data?',
-        detail: 'Ask us directly. We would rather answer one now than have you wait for the policy.',
+        detail: 'Ask us directly. We’d rather answer one now than have you wait for the policy.',
     },
 } as const
 

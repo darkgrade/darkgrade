@@ -7,7 +7,7 @@ const DOCUMENT_NUMBER = 'DG-CR-001'
 /* The words of the Careers page. */
 const CAREERS = {
     headline: { first: 'No open roles', second: 'right', lit: 'now.' },
-    lede: 'We are a small team and we add people rarely. There is nothing to apply for at the moment, but if you want to build with us, we would like to hear from you anyway.',
+    lede: 'We’re a small team and we add people rarely. There’s nothing to apply for at the moment, but if you want to build with us, we’d like to hear from you anyway.',
     facts: [
         { name: 'Open roles', value: 'None at this time' },
         { name: 'Headquarters', value: 'Denver, Colorado' },
@@ -16,7 +16,7 @@ const CAREERS = {
     ],
     closing: {
         line: 'Want to build with us?',
-        detail: 'Send a note with something you have made and what you would want to work on. A person reads every one.',
+        detail: 'Send a note with something you’ve made and what you’d want to work on. A person reads every one.',
     },
 } as const
 
