@@ -110,6 +110,7 @@ export type {VideoTakeState,TakeCamera,TakeCameraState,TakeMedia} from '@workflo
 export {UsbVideoRecording} from '@camera/video-recording'
 export {SonyVideoRecording} from '@vendors/sony/video-recording'
 export {SonyPtpVideoRecording} from '@vendors/sony/ptp-video-recording'
+export {sonyPtpMovieCard} from '@vendors/sony/ptp-recording-card'
 export {openCanonRecordingMode,withCanonRecordingMode,probeCanonRecordingControls,restrictToRecordingChoices} from '@vendors/canon/recording-mode'
 export {sonyMovieCard,sonyMovieSlots} from '@vendors/sony/recording-slots'
 export {parseSonyContentInfoList} from '@vendors/sony/content-info-list'
