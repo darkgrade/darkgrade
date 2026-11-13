@@ -14,6 +14,8 @@ import {
 } from '@vendors/profile-capture'
 import { describe, expect, it } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
+import { configureLinkTelemetry } from '@core/telemetry'
+import { createApplicationDiagnostics } from '@darkgrade/contribute/application'
 
 const codecs = createPTPRegistry(true).codecs
 it('retains numeric Canon write intent and rejection without inventing a readback or retaining opaque bytes', () => {
@@ -520,4 +522,25 @@ it('benchmark includes preexisting observations with age and never substitutes a
    settings:expect.arrayContaining([expect.objectContaining({property:0x5001,current:75})])})
   expect(next.profile.id).not.toBe(result.profile.id)
  } finally {await camera.disconnect()}
+})
+
+it('initial benchmark settings share the discovered camera identity without adding an identity read',async()=>{
+ const retained:{context:any;entry:any}[]=[]
+ const client=await createApplicationDiagnostics({
+  endpoint:'https://telemetry.example',store:{read:async()=>null,write:async()=>{}},
+  localRecord:(context,entry)=>{retained.push({context,entry})},
+ })
+ configureLinkTelemetry(client)
+ const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
+ try{
+  await camera.connect()
+  const start=source.commands.length
+  const result=await runCameraBenchmark(camera)
+  const initial=retained.filter(item=>item.entry.protocol?.benchmarkId===result.profile.id&&
+   (item.entry.protocol.type==='state-snapshot'||item.entry.protocol.status==='started'))
+  expect(initial).toHaveLength(2)
+  expect(initial.every(item=>item.context.model===result.profile.identity?.model&&item.context.firmware===result.profile.identity?.firmware)).toBe(true)
+  expect(initial.every(item=>item.context.model!=='Unknown')).toBe(true)
+  expect(source.commands.slice(start).filter(command=>command===0x1001)).toHaveLength(1)
+ }finally{await camera.disconnect();configureLinkTelemetry(undefined);client.close()}
 })

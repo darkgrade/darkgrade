@@ -57,13 +57,6 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
     })
     const flush = async () => { try { await options.flushEvidence?.() } catch { /* Local export remains available. */ } }
     await flush()
-    instance.recordProtocol(
-        { type: 'benchmark', vendorId, benchmarkId: id, status: 'started', checks: 0, failures: 0 },
-        0x1001
-    )
-    // Connection-time events may never repeat during this benchmark. Preserve their
-    // observed values with age, without pretending they are fresh property reads.
-    instance.recordStateSnapshot('benchmark', 'before-prepare')
     const stopped = () => (options.signal?.aborted ? 'cancelled' : Date.now() >= deadline ? 'deadline' : undefined)
     const check = async <Result>(name: string, work: () => Promise<Result>): Promise<Result | undefined> => {
         const beginning = performance.now(),
@@ -96,6 +89,15 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
             if (result.code !== 0x2001 || !result.data?.model) throw new Error('Missing camera identity')
             return result.data
         })
+        // Use the benchmark's existing identity read before emitting model-scoped evidence.
+        // Sony/Nikon connection caches can predate identity discovery. Snapshotting before
+        // this read stranded the initial mode/settings under "Unknown" in model filters.
+        // GetDeviceInfo does not prepare settings; their original observation ages remain.
+        instance.recordProtocol(
+            { type: 'benchmark', vendorId, benchmarkId: id, status: 'started', checks: 0, failures: 0 },
+            0x1001
+        )
+        instance.recordStateSnapshot('benchmark', 'before-prepare')
         if (response) {
             identity = { manufacturer: response.manufacturer, model: response.model, firmware: response.deviceVersion }
             const supported = new Set(response.operationsSupportedRaw)
