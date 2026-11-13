@@ -26,7 +26,8 @@ export interface CameraContext {
     firmware: string
     revision: string
     dirty: boolean
-    transport: 'usb' | 'ptp-ip' | 'sony-sdk'
+    transport: 'usb' | 'ptp-ip' | 'wifi' | 'unknown' | 'sony-sdk'
+    backend?: 'ptp' | 'vendor-api' | 'unknown'
     evidence: 'hardware' | 'synthetic'
 }
 
@@ -71,6 +72,7 @@ export function validateContribution(value: unknown): asserts value is Contribut
             'transport',
             'evidence',
             'hardwareFingerprint',
+            'backend',
         ]) ||
         (camera.hardwareFingerprint !== undefined &&
             (typeof camera.hardwareFingerprint !== 'string' ||
@@ -82,7 +84,8 @@ export function validateContribution(value: unknown): asserts value is Contribut
         typeof camera.revision !== 'string' ||
         !/^[a-f0-9]{7,40}$/.test(camera.revision) ||
         typeof camera.dirty !== 'boolean' ||
-        !['usb', 'ptp-ip', 'sony-sdk'].includes(String(camera.transport)) ||
+        !['usb', 'ptp-ip', 'wifi', 'unknown', 'sony-sdk'].includes(String(camera.transport)) ||
+        (camera.backend !== undefined && !['ptp', 'vendor-api', 'unknown'].includes(String(camera.backend))) ||
         !['hardware', 'synthetic'].includes(String(camera.evidence))
     )
         throw new Error('Invalid camera context')

@@ -9,9 +9,24 @@ export interface EventFilters {
     revision?: string
     transport?: string
     hardware?: string
-    after?: { time: string; installation: string; session: string }
+    signal?: string
+    sort?: 'recent' | 'signals' | 'events' | 'duration' | 'camera'
+    direction?: 'asc' | 'desc'
+    after?: { time: string; installation: string; session: string; sort?: string; direction?: string; value?: string }
 }
-export type SuggestionField = 'model' | 'installation' | 'session' | 'revision' | 'hardware'
+export type SuggestionField = 'model' | 'installation' | 'session' | 'revision' | 'hardware' | 'signal'
+
+const eventSignal=`CASE WHEN failed THEN 'failed'
+    WHEN coalesce((properties->>'droppedEntries')::int,0)>0 THEN 'dropped-events'
+    WHEN properties ? 'operation' THEN 'operation:'||(properties->>'operation')
+    WHEN kind='response' AND code=8193 THEN 'ok'
+    WHEN code IS NOT NULL THEN kind||':0x'||lpad(to_hex(code),4,'0')
+    ELSE kind END`
+const signalName=`CASE WHEN signal='failed' THEN 'Failed'
+    WHEN signal='dropped-events' THEN 'Dropped events'
+    WHEN signal='response:0x2019' THEN 'Device busy · 0x2019'
+    WHEN signal='ok' THEN 'OK'
+    ELSE replace(signal,'operation:','') END`
 
 /** Parameterized, bounded operator queries; never return installation credentials or contact data. */
 export function operatorQueries(pool: Pool) {
@@ -25,8 +40,10 @@ export function operatorQueries(pool: Pool) {
         AND ($4::uuid IS NULL OR session_id=$4)
         AND ($5::text IS NULL OR revision=$5)
         AND ($6::text IS NULL OR transport=$6)
-        AND ($7::text IS NULL OR hardware_fingerprint=$7)`
+        AND ($7::text IS NULL OR hardware_fingerprint=$7)
+        AND ($8::text IS NULL OR ${eventSignal}=$8)`
     const errors = `(failed OR (kind='response' AND code IS NOT NULL AND code<>8193))`
+    const signals = `(${errors} OR coalesce((properties->>'droppedEntries')::int,0)>0)`
     const values = (filters: EventFilters) => [
         filters.days,
         filters.installation || null,
@@ -35,6 +52,7 @@ export function operatorQueries(pool: Pool) {
         filters.revision || null,
         filters.transport || null,
         filters.hardware || null,
+        filters.signal || null,
     ]
     return {
         async protocol(filters: EventFilters, after?: string) {
@@ -52,7 +70,7 @@ export function operatorQueries(pool: Pool) {
                     properties->'protocol'->>'category',properties->'protocol'->>'code')
                 SELECT g.*, r.data->'findings' AS findings FROM grouped g
                 LEFT JOIN telemetry_state r ON r.path='protocolFindings/'||substring(g.source from 13)
-                WHERE ($8::text IS NULL OR key COLLATE "C" > $8 COLLATE "C")
+                WHERE ($9::text IS NULL OR key COLLATE "C" > $9 COLLATE "C")
                 ORDER BY key COLLATE "C" LIMIT 51`,
                 [...values(filters), after || null]
             )
@@ -70,6 +88,15 @@ export function operatorQueries(pool: Pool) {
                 truncated: result.rows.length > 8192 || result.rows.some(row => row.dropped_entries > 0) }
         },
         async suggestions(field: SuggestionField, query: string, filters: EventFilters) {
+            if(field==='signal'){
+                const result=await pool.query(`WITH grouped AS (
+                    SELECT ${eventSignal} AS signal,count(*)::int AS events,max(received_at) AS latest
+                    FROM telemetry_events WHERE ${where} GROUP BY ${eventSignal})
+                    SELECT signal AS value,${signalName} AS label,events,latest FROM grouped
+                    WHERE strpos(lower(signal||' '||(${signalName})),lower($9::text))>0
+                    ORDER BY events DESC,signal LIMIT 21`,[...values({...filters,signal:undefined}),query])
+                return {field,items:result.rows.slice(0,20),more:result.rows.length>20}
+            }
             const column = {
                 model: 'model',
                 installation: 'installation_id',
@@ -85,9 +112,9 @@ export function operatorQueries(pool: Pool) {
                 FROM telemetry_events WHERE ${where} AND ${column} IS NOT NULL
                 AND ${
                     field === 'model'
-                        ? `NOT EXISTS (SELECT 1 FROM unnest(string_to_array(lower($8::text),' ')) term
+                        ? `NOT EXISTS (SELECT 1 FROM unnest(string_to_array(lower($9::text),' ')) term
                         WHERE strpos(lower(manufacturer||' '||model),term)=0)`
-                        : `strpos(lower(${column}::text),lower($8::text))>0`
+                        : `strpos(lower(${column}::text),lower($9::text))>0`
                 }
                 GROUP BY ${column} ORDER BY max(received_at) DESC,${column} LIMIT 21`,
                 [...values({ ...filters, [field]: undefined }), query]
@@ -120,6 +147,19 @@ export function operatorQueries(pool: Pool) {
         },
         async report(filters: EventFilters) {
             const parameters = values(filters)
+            const sort=filters.sort||'recent',direction=filters.direction||'desc'
+            const order={
+                recent:'max(received_at)',
+                signals:`count(*) FILTER (WHERE ${signals})`,
+                events:'count(*)',
+                duration:'extract(epoch from (max(coalesce(occurred_at,received_at))-min(coalesce(occurred_at,received_at))))',
+                camera:`(array_agg(model ORDER BY (model='Unknown'),received_at DESC))[1] COLLATE "C"`,
+            }[sort]
+            if(!order||!['asc','desc'].includes(direction))throw new Error('Invalid session sorting')
+            const cursorType=sort==='recent'?'timestamptz':sort==='camera'?'text':'numeric'
+            const comparison=direction==='asc'?'>':'<'
+            if(filters.after&&((filters.after.sort||'recent')!==sort||(filters.after.direction||'desc')!==direction))
+                throw new Error('Session cursor belongs to a different sort')
             const [summary, issues, events, sessions] = await Promise.all([
                 pool.query(
                     `SELECT count(*)::int AS events, count(*) FILTER (WHERE ${errors})::int AS errors,
@@ -139,7 +179,7 @@ export function operatorQueries(pool: Pool) {
                 ),
                 filters.includeEvents === false ? Promise.resolve({rows: []}) : pool.query(
                     `SELECT batch_path,sequence,installation_id,session_id,occurred_at,received_at,
-                    manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,failed,properties
+                    manufacturer,model,firmware,revision,transport,backend,evidence,hardware_fingerprint,kind,code,failed,properties
                     FROM telemetry_events WHERE ${where}
                     ORDER BY received_at DESC,batch_path,sequence LIMIT 500`,
                     parameters
@@ -147,22 +187,25 @@ export function operatorQueries(pool: Pool) {
                 pool.query(
                     `SELECT installation_id,session_id,count(*)::int AS events,
                     count(*) FILTER (WHERE ${errors})::int AS errors,
+                    count(*) FILTER (WHERE ${signals})::int AS signals,
                     min(coalesce(occurred_at,received_at)) AS started_at,
                     max(coalesce(occurred_at,received_at)) AS ended_at,
                     (array_agg(model ORDER BY (model='Unknown'),received_at DESC))[1] AS model,
                     (array_agg(manufacturer ORDER BY (model='Unknown'),received_at DESC))[1] AS manufacturer,
                     array_agg(DISTINCT transport) AS transports,array_agg(DISTINCT evidence) AS evidence,
+                    array_agg(DISTINCT backend) AS backends,
                     array_agg(DISTINCT revision) AS revisions,
                     array_remove(array_agg(DISTINCT hardware_fingerprint),NULL) AS hardware_fingerprints
                     ,bool_or(coalesce((properties->>'droppedEntries')::int,0)>0) AS truncated
                     ,to_char(max(received_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+                    ,(${order})::text AS cursor_value
                     FROM telemetry_events WHERE ${where} AND session_id IS NOT NULL
                     GROUP BY installation_id,session_id
-                    HAVING ($8::timestamptz IS NULL OR (max(received_at),installation_id,session_id)<($8::timestamptz,$9::uuid,$10::uuid))
-                    ORDER BY max(received_at) DESC,installation_id DESC,session_id DESC LIMIT 101`,
+                    HAVING ($9::${cursorType} IS NULL OR (${order},installation_id,session_id)${comparison}($9::${cursorType},$10::uuid,$11::uuid))
+                    ORDER BY ${order} ${direction},installation_id ${direction},session_id ${direction} LIMIT 101`,
                     [
                         ...parameters,
-                        filters.after?.time || null,
+                        filters.after?.value || filters.after?.time || null,
                         filters.after?.installation || null,
                         filters.after?.session || null,
                     ]
@@ -177,10 +220,11 @@ export function operatorQueries(pool: Pool) {
                               time: last.cursor_time,
                               installation: last.installation_id,
                               session: last.session_id,
+                              sort,direction,value:sort==='recent'?last.cursor_time:last.cursor_value,
                           })
                       ).toString('base64url')
                     : null
-            for (const row of selected) delete row.cursor_time
+            for (const row of selected) {delete row.cursor_time;delete row.cursor_value}
             return {
                 summary: summary.rows[0],
                 sessions: selected,
@@ -199,7 +243,7 @@ export function operatorQueries(pool: Pool) {
         ) {
             const result = await pool.query(
                 `SELECT batch_path,sequence,installation_id,session_id,occurred_at,received_at,
-                manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,failed,properties,
+                manufacturer,model,firmware,revision,transport,backend,evidence,hardware_fingerprint,kind,code,failed,properties,
                 to_char(coalesce(occurred_at,received_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
                 FROM telemetry_events WHERE installation_id=$1::uuid AND session_id=$2::uuid
                 AND ($3::timestamptz IS NULL OR (coalesce(occurred_at,received_at),batch_path,sequence)>($3::timestamptz,$4::text,$5::int))

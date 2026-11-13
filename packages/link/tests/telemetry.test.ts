@@ -138,7 +138,7 @@ test('SDK telemetry preserves outcomes and profile scoping without passwords, pa
         expect(saved[0].camera).toMatchObject({
             model: 'ILME-FX2',
             firmware: 'unknown',
-            transport: 'sony-sdk',
+            transport: 'wifi', backend: 'vendor-api',
             evidence: 'synthetic',
         })
         expect(saved[1].entry).toMatchObject({ operation: 'download_content', failed: true })
@@ -151,7 +151,7 @@ test('SDK telemetry preserves outcomes and profile scoping without passwords, pa
                 throw new Error('Connection failed')
             })
         ).rejects.toThrow('Connection failed')
-        expect(saved.at(-1).camera).toMatchObject({ model: 'Unknown', transport: 'sony-sdk' })
+        expect(saved.at(-1).camera).toMatchObject({ model: 'Unknown', transport: 'wifi', backend: 'vendor-api' })
         expect(saved.at(-1).entry.failed).toBe(true)
     } finally {
         client.close()

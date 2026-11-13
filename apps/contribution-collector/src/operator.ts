@@ -60,7 +60,7 @@ export async function operatorApi(
             (parameters.revision && !/^[a-f0-9]{7,40}$/.test(parameters.revision)) ||
             (parameters.model?.length ?? 0) > 100 ||
             (parameters.hardware && !/^camera-v1:[a-f0-9]{64}$/.test(parameters.hardware)) ||
-            (parameters.transport && !['usb','ptp-ip','sony-sdk'].includes(parameters.transport)))
+            (parameters.transport && !['usb','ptp-ip','wifi','unknown','sony-sdk'].includes(parameters.transport)))
             return json({ error: 'Invalid protocol filters' },400)
         return json(await database.operator.protocol({ ...parameters, days: Number(parameters.days || 7), after: undefined }, parameters.after))
     }
@@ -92,16 +92,18 @@ export async function operatorApi(
                         'revision',
                         'transport',
                         'hardware',
+                        'signal',
                     ].includes(key)
             ) ||
-            !['model', 'installation', 'session', 'revision', 'hardware'].includes(parameters.field) ||
+            !['model', 'installation', 'session', 'revision', 'hardware', 'signal'].includes(parameters.field) ||
             (parameters.q?.length ?? 0) > 100 ||
+            (parameters.signal?.length ?? 0) > 160 ||
             (parameters.hardware && !/^camera-v1:[a-f0-9]{64}$/.test(parameters.hardware)) ||
             ![1, 7, 30, 90].includes(Number(parameters.days || 7)) ||
             ['installation', 'session'].some(key => parameters[key] && !uuid.test(parameters[key])) ||
             (parameters.model?.length ?? 0) > 100 ||
             (parameters.revision && !/^[a-f0-9]{7,40}$/.test(parameters.revision)) ||
-            (parameters.transport && !['usb', 'ptp-ip', 'sony-sdk'].includes(parameters.transport))
+            (parameters.transport && !['usb', 'ptp-ip', 'wifi', 'unknown', 'sony-sdk'].includes(parameters.transport))
         )
             return json({ error: 'Invalid suggestion filters' }, 400)
         return json(
@@ -143,12 +145,20 @@ export async function operatorApi(
                         'hardware',
                         'after',
                         'includeEvents',
+                        'signal', 'sort', 'direction',
                     ].includes(key)
             ) ||
             ![1, 7, 30, 90].includes(Number(parameters.days || 7)) ||
             ['installation', 'session'].some(key => parameters[key] && !uuid.test(parameters[key]))
         )
             return json({ error: 'Invalid filters' }, 400)
+        if ((parameters.signal?.length ?? 0) > 160 ||
+            (parameters.model?.length ?? 0) > 100 ||
+            (parameters.transport && !['usb','ptp-ip','wifi','unknown','sony-sdk'].includes(parameters.transport)) ||
+            (parameters.revision && !/^[a-f0-9]{7,40}$/.test(parameters.revision)) ||
+            (parameters.sort && !['recent','signals','events','duration','camera'].includes(parameters.sort)) ||
+            (parameters.direction && !['asc','desc'].includes(parameters.direction)))
+            return json({ error: 'Invalid report filters' },400)
         if (parameters.includeEvents && !['true', 'false'].includes(parameters.includeEvents))
             return json({ error: 'Invalid event inclusion' }, 400)
         if (parameters.hardware && !/^camera-v1:[a-f0-9]{64}$/.test(parameters.hardware))
@@ -156,11 +166,17 @@ export async function operatorApi(
         let after: EventFilters['after']
         if (parameters.after) {
             try {
-                if (!/^[A-Za-z0-9_-]+$/.test(parameters.after)) throw Error()
+                if (parameters.after.length>800 || !/^[A-Za-z0-9_-]+$/.test(parameters.after)) throw Error()
                 const value = JSON.parse(Buffer.from(parameters.after, 'base64url').toString())
                 if (
                     !value ||
-                    Object.keys(value).sort().join(',') !== 'installation,session,time' ||
+                    !['installation,session,time','direction,installation,session,sort,time,value'].includes(Object.keys(value).sort().join(',')) ||
+                    (value.sort && value.sort !== (parameters.sort || 'recent')) ||
+                    (value.direction && value.direction !== (parameters.direction || 'desc')) ||
+                    (!value.sort && ((parameters.sort || 'recent') !== 'recent' || (parameters.direction || 'desc') !== 'desc')) ||
+                    (value.sort && (typeof value.value !== 'string' || value.value.length > 160 ||
+                      (['events','signals','duration'].includes(value.sort) && !/^\d+(\.\d+)?$/.test(value.value)) ||
+                      (value.sort==='recent' && value.value!==value.time))) ||
                     !uuid.test(value.installation) ||
                     !uuid.test(value.session) ||
                     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(value.time) ||
@@ -186,7 +202,7 @@ export async function operatorApi(
         let after: { time: string; batch: string; sequence: number } | undefined
         if (parameters.after) {
             try {
-                if (!/^[A-Za-z0-9_-]+$/.test(parameters.after)) throw new Error('Invalid cursor')
+                if (parameters.after.length>800 || !/^[A-Za-z0-9_-]+$/.test(parameters.after)) throw new Error('Invalid cursor')
                 const value = JSON.parse(Buffer.from(parameters.after, 'base64url').toString())
                 if (
                     !value ||

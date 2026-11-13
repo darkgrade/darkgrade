@@ -46,7 +46,7 @@ export function validateFinding(value: unknown): asserts value is ProtocolFindin
         Object.keys(item.scope).sort().join(',') !== 'evidence,firmware,manufacturer,model,revision,transport' ||
         Object.values(item.scope).some(value => !text(value, 100)) ||
         !['hardware', 'synthetic'].includes(item.scope.evidence) ||
-        !['usb', 'ptp-ip', 'sony-sdk'].includes(item.scope.transport) ||
+        !['usb', 'ptp-ip', 'wifi', 'unknown', 'sony-sdk'].includes(item.scope.transport) ||
         !/^[a-f0-9]{7,40}$/.test(item.scope.revision)
     )
         throw new Error('Invalid finding scope')

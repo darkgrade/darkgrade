@@ -3,6 +3,7 @@ import { changeMatrixGeneration } from '#collector/matrix-generation'
 import { validateBatch } from '@darkgrade/contribute/batch'
 import { createHash } from 'node:crypto'
 import type { ProtocolFinding } from '#collector/protocol-research'
+import {cameraConnection} from '#collector/transport'
 
 /** Deterministic validated diagnostics; a review label is independent of import eligibility. */
 export function diagnosticPattern(
@@ -52,7 +53,7 @@ export function diagnosticPattern(
             observed.set(key, summary)
         }
         return {
-            camera: contribution.camera,
+            camera: cameraConnection(contribution.camera,contribution.entries),
             droppedEntries: contribution.droppedEntries,
             observed: [...observed.values()],
             ...(contribution.entries.some(entry => entry.protocol) &&

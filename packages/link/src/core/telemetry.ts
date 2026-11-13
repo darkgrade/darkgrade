@@ -115,6 +115,7 @@ export function linkTelemetry(source: TransportInterface) {
                     revision: build.revision,
                     dirty: build.dirty,
                     transport: source.getType() === 'usb' ? 'usb' : 'ptp-ip',
+                    backend: 'ptp',
                     evidence: hardware ? 'hardware' : 'synthetic',
                 }
                 if (observed) observed.identify(context)
@@ -138,7 +139,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
     let model = 'Unknown'
     let hardwareFingerprint: string | undefined
     let sessionId = globalThis.crypto?.randomUUID?.()
-    let transport: 'usb' | 'sony-sdk' = 'sony-sdk'
+    let transport: 'usb' | 'wifi' | 'unknown' = 'unknown'
     return {
         async operation(command: Record<string, string>, work: () => Promise<Record<string, unknown>>) {
             const started = performance.now()
@@ -146,7 +147,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                 sessionId = globalThis.crypto?.randomUUID?.()
                 model = 'Unknown'
                 hardwareFingerprint = undefined
-                transport = command.cmd === 'connect' ? 'usb' : 'sony-sdk'
+                transport = command.cmd === 'connect' ? 'usb' : 'wifi'
             }
             let failed = false
             try {
@@ -193,6 +194,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                                     revision: build.revision,
                                     dirty: build.dirty,
                                     transport,
+                                    backend: 'vendor-api',
                                     evidence,
                                 },
                                 {

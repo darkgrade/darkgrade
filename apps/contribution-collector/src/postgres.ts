@@ -1,6 +1,7 @@
 import type { Database, Transaction } from '#collector/database'
 import { operatorQueries } from '#collector/operator-queries'
 import { Pool, type PoolClient } from 'pg'
+import {cameraConnection} from '#collector/transport'
 
 const schema = `
 CREATE TABLE IF NOT EXISTS telemetry_state (
@@ -30,6 +31,16 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
     PRIMARY KEY (batch_path, sequence)
 );
 ALTER TABLE telemetry_events ADD COLUMN IF NOT EXISTS hardware_fingerprint text;
+ALTER TABLE telemetry_events ADD COLUMN IF NOT EXISTS backend text NOT NULL DEFAULT 'unknown';
+UPDATE telemetry_events SET backend=CASE WHEN properties ? 'operation' OR transport='sony-sdk' THEN 'vendor-api' ELSE 'ptp' END
+    WHERE backend='unknown' AND NOT EXISTS(SELECT 1 FROM telemetry_state WHERE path='schema/connection-backend-v1');
+WITH wifi_batches AS (
+    SELECT DISTINCT batch_path FROM telemetry_events WHERE transport='sony-sdk'
+      AND properties->>'operation' IN ('connect_wifi','connect_bluetooth_direct')
+)
+UPDATE telemetry_events SET transport=CASE WHEN batch_path IN (SELECT batch_path FROM wifi_batches) THEN 'wifi' ELSE 'unknown' END
+    WHERE transport='sony-sdk' AND NOT EXISTS(SELECT 1 FROM telemetry_state WHERE path='schema/connection-backend-v1');
+INSERT INTO telemetry_state(path,data) VALUES('schema/connection-backend-v1','{}') ON CONFLICT DO NOTHING;
 CREATE INDEX IF NOT EXISTS telemetry_events_hardware_time ON telemetry_events (hardware_fingerprint,received_at) WHERE hardware_fingerprint IS NOT NULL;
 CREATE INDEX IF NOT EXISTS telemetry_events_install_time ON telemetry_events (installation_id, received_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_session ON telemetry_events (session_id, occurred_at);
@@ -86,8 +97,9 @@ export async function postgresDatabase(connectionString: string) {
         const batch = JSON.parse(data.payload)
         let sequence = 0
         await connection.query('DELETE FROM telemetry_events WHERE batch_path=$1', [path])
-        const events = batch.contributions.flatMap((contribution: any) =>
-            contribution.entries.map((event: any) => ({
+        const events = batch.contributions.flatMap((contribution: any) => {
+            const camera = cameraConnection(contribution.camera,contribution.entries)
+            return contribution.entries.map((event: any) => ({
                 batch_path: path,
                 sequence: sequence++,
                 installation_id: data.installId,
@@ -98,7 +110,8 @@ export async function postgresDatabase(connectionString: string) {
                 model: contribution.camera.model,
                 firmware: contribution.camera.firmware,
                 revision: contribution.camera.revision,
-                transport: contribution.camera.transport,
+                transport: camera.transport,
+                backend: camera.backend,
                 evidence: contribution.camera.evidence,
                 hardware_fingerprint: contribution.camera.hardwareFingerprint ?? null,
                 kind: event.kind,
@@ -106,17 +119,17 @@ export async function postgresDatabase(connectionString: string) {
                 failed: event.failed,
                 properties: { ...event, dirty: contribution.camera.dirty, droppedEntries: contribution.droppedEntries },
             }))
-        )
+        })
         // One database round trip for a whole batch, not one per camera message.
         await connection.query(
             `INSERT INTO telemetry_events
             (batch_path,sequence,installation_id,session_id,occurred_at,received_at,manufacturer,model,
-             firmware,revision,transport,evidence,kind,code,failed,properties,hardware_fingerprint)
+             firmware,revision,transport,evidence,kind,code,failed,properties,hardware_fingerprint,backend)
             SELECT * FROM jsonb_to_recordset($1::jsonb) AS events(
                 batch_path text, sequence integer, installation_id uuid, session_id uuid,
                 occurred_at timestamptz, received_at timestamptz, manufacturer text, model text,
                 firmware text, revision text, transport text, evidence text, kind text, code integer,
-                failed boolean, properties jsonb, hardware_fingerprint text)`,
+                failed boolean, properties jsonb, hardware_fingerprint text, backend text)`,
             [JSON.stringify(events)]
         )
     }

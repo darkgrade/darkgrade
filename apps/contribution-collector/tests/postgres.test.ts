@@ -8,6 +8,34 @@ import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 import { batch, enroll, request } from './telemetry-fixture.ts'
+import { Pool } from 'pg'
+
+test('legacy transport migration keeps query labels and Matrix projections consistent without rewriting signed source data', {skip:!process.env.DATABASE_URL}, async()=>{
+    let database=await postgresDatabase(process.env.DATABASE_URL!)
+    const handle=createTelemetry(database,{publicUrl:'https://telemetry.example'}),user=await enroll(handle)
+    const pool=new Pool({connectionString:process.env.DATABASE_URL!})
+    try{
+        const payload=batch(),contribution=payload.contributions[0],entry=contribution.entries[0]
+        Object.assign(contribution.camera,{manufacturer:'Sony',model:'ILCE-6700',transport:'sony-sdk'})
+        contribution.entries=[{...entry,kind:'command',code:undefined,operation:'connect_wifi'},{...entry,kind:'command',code:undefined,operation:'properties'}] as any
+        const uploaded=await handle(request('/v2/batches','POST',user.installKey,payload))
+        assert.equal(uploaded.status,202,await uploaded.text())
+        const source=await database.get(`diagnostics/${user.installId}_${payload.id}`)
+        await pool.query(`UPDATE telemetry_events SET transport='sony-sdk',backend='unknown' WHERE installation_id=$1`,[user.installId])
+        await pool.query(`DELETE FROM telemetry_state WHERE path='schema/connection-backend-v1'`)
+        await database.close();database=await postgresDatabase(process.env.DATABASE_URL!)
+        const report=await database.operator.report({days:1,installation:user.installId})
+        assert.equal(report.events.length,2)
+        assert.ok(report.events.every(event=>event.transport==='wifi'&&event.backend==='vendor-api'))
+        assert.equal((await database.get(`diagnostics/${user.installId}_${payload.id}`))?.payload,source?.payload)
+        const {exportMatrixPage}=await import('#collector/matrix-pages')
+        const page=await exportMatrixPage(database)
+        assert.ok(page.records.find(row=>row.installId===user.installId)?.patterns.every(pattern=>pattern.camera.transport==='wifi'))
+    }finally{
+        await createTelemetry(database,{publicUrl:'https://telemetry.example'})(request('/v2/installation','DELETE',user.installKey))
+        await database.close();await pool.end()
+    }
+})
 
 test('Matrix pages use a bounded database snapshot and preserve watermark, review, credit and withdrawal', {skip:!process.env.DATABASE_URL},async()=>{
     const {exportMatrixPage,MatrixExportChanged}=await import('#collector/matrix-pages')
@@ -544,4 +572,31 @@ test('observed camera snapshots survive Postgres replay and Matrix independently
   const profile=await database.operator.profile(user.installId,benchmarkId)
   assert.deepEqual(profile.items[0].protocol,initial)
  }finally{await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
+})
+
+test('signal search and every session sort paginate tied values without losing sessions', {skip:!process.env.DATABASE_URL}, async()=>{
+    const database=await postgresDatabase(process.env.DATABASE_URL!),handle=createTelemetry(database,{publicUrl:'https://telemetry.example'}),user=await enroll(handle)
+    try{
+        const payload=batch(),entry=payload.contributions[0].entries[0]
+        payload.contributions[0].entries=Array.from({length:111},(_,index)=>{
+            const sessionId=randomUUID()
+            return Array.from({length:1+index%3},(_,ordinal)=>({...entry,sessionId,kind:'response',direction:'in',code:index%2?0x2001:0x2019,failed:false,occurredAt:new Date(Date.now()-10000+ordinal*100).toISOString()}))
+        }).flat()
+        assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
+        for(const sort of ['recent','signals','events','duration','camera'] as const)for(const direction of ['asc','desc'] as const){
+            const filters={days:1,installation:user.installId,includeEvents:false,sort,direction}
+            const first=await database.operator.report(filters)
+            assert.equal(first.sessions.length,100)
+            const after=JSON.parse(Buffer.from(first.sessionsNext!,'base64url').toString())
+            const last=await database.operator.report({...filters,after})
+            assert.equal(last.sessions.length,11,sort+' '+direction)
+            assert.equal(new Set([...first.sessions,...last.sessions].map(s=>s.session_id)).size,111)
+            await assert.rejects(database.operator.report({...filters,direction:direction==='asc'?'desc':'asc',after}),/different sort/)
+        }
+        const suggested=await database.operator.suggestions('signal','busy',{days:1,installation:user.installId})
+        assert.equal(suggested.items[0].value,'response:0x2019');assert.match(suggested.items[0].label,/Device busy/)
+        const filtered=await database.operator.report({days:1,installation:user.installId,signal:'response:0x2019'})
+        assert.equal(filtered.sessions.length,56)
+        assert.ok(filtered.events.every(e=>e.code===0x2019))
+    }finally{await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
 })
