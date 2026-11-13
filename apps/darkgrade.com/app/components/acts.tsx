@@ -79,7 +79,8 @@ function InstallLine() {
 /** The products a creator touches, told in order, with the same bullets as the roadmap. */
 export function Acts() {
     return (
-        <section id="product" className="pb-[clamp(100px,14vh,180px)]">
+        // overflow-x-clip: the live scenes draw past their frames, which on a phone would otherwise widen the page
+        <section id="product" className="overflow-x-clip pb-[clamp(100px,14vh,180px)]">
             <div className="shell">
                 <div className="mb-[26px] flex items-baseline justify-between">
                     <span className={`${LABEL} text-ink-55`} data-fade>
@@ -115,7 +116,8 @@ export function Acts() {
                             )}
                         </div>
 
-                        <div>
+                        {/* relative: the text stays above a scene that spills out of its frame */}
+                        <div className="relative">
                             <span className="font-serif text-[1.125rem] text-ink-55 italic">{number}</span>
                             <h2
                                 className={`mt-[10px] font-serif text-[clamp(2.25rem,4vw,3.75rem)] leading-none font-normal tracking-[-.01em] ${product.lit ? 'text-gold' : 'text-ink'}`}

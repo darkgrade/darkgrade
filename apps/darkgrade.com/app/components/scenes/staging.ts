@@ -4,6 +4,8 @@ import { type Group, MathUtils, PerspectiveCamera, Scene, Vector3 } from 'three'
 export interface Stage {
     scene: Scene
     camera: PerspectiveCamera
+    /** The point the camera looks at, which a drag turns the view about. */
+    target: Vector3
     update(seconds: number): void
 }
 
