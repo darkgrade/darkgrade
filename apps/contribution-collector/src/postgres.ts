@@ -226,7 +226,8 @@ export async function postgresDatabase(connectionString: string) {
             // Old collector instances can still insert during a rolling update: their default
             // false marker keeps those late arrivals eligible on the next maintenance pass.
             let updated = 0
-            for (let page = 0; page < 10; page++) {
+            const started = performance.now()
+            for (let page = 0; page < 100 && performance.now() - started < 5000; page++) {
                 const result = await pool.query(`
                     WITH candidates AS MATERIALIZED (
                         SELECT DISTINCT batch_path FROM (
