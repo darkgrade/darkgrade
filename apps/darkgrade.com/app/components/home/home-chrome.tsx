@@ -10,9 +10,10 @@ const TEXT = {
     rule: 'border-[#eae6dc]/15',
 } as const
 
+/* The sections are written with the home page's path, so the same header and footer work from the About page. */
 const NAV = [
-    { label: 'Product', href: '#product' },
-    { label: 'Principles', href: '#principles' },
+    { label: 'Product', href: '/#product' },
+    { label: 'Principles', href: '/#principles' },
     { label: 'Docs', href: LINKS.docs },
 ]
 
@@ -53,8 +54,14 @@ function ExperimentsMenu({ wordClassName }: { wordClassName: string }) {
     )
 }
 
-/** The home page's header: the wordmark, three links and the Experiments menu, GitHub. Fixed to the top of the window, and half as tall on a phone or an upright tablet, where the picture sits right under it. */
-export function HomeHeader({ className = '' }: { className?: string }) {
+interface HomeHeaderProps {
+    className?: string
+    /** On a page whose words scroll up under the header, it stands on a band of the page's own colour, so they never show through its links. */
+    overScrollingWords?: boolean
+}
+
+/** The site's header: the wordmark, three links and the Experiments menu, GitHub. Fixed to the top of the window, and half as tall on a phone or an upright tablet, where the picture sits right under it. */
+export function HomeHeader({ className = '', overScrollingWords = false }: HomeHeaderProps) {
     const text = TEXT
     const link = `text-[14px] transition-colors duration-300 ${text.soft} ${text.hover}`
     return (
@@ -64,8 +71,14 @@ export function HomeHeader({ className = '' }: { className?: string }) {
                 aria-hidden="true"
                 className={`absolute inset-x-0 top-0 h-[120px] bg-gradient-to-b from-[#0a0a0b] via-[#0a0a0b]/80 to-transparent max-[900px]:h-[60px]`}
             />
+            {overScrollingWords && (
+                <div
+                    aria-hidden="true"
+                    className="absolute inset-x-0 top-0 h-[76px] bg-[#0a0a0b]/90 backdrop-blur-[14px] max-[900px]:h-[38px]"
+                />
+            )}
             <div className="shell relative flex h-[76px] items-center justify-between max-[900px]:h-[38px]">
-                <Link href="#top" aria-label="Darkgrade" className={`pointer-events-auto block ${text.strong}`}>
+                <Link href="/#top" aria-label="Darkgrade" className={`pointer-events-auto block ${text.strong}`}>
                     <Lockup className="text-[21px] max-[900px]:text-[18px]" />
                 </Link>
                 <nav className="pointer-events-auto flex items-center gap-[32px] max-[900px]:hidden">
@@ -88,9 +101,10 @@ const COLUMNS = [
     {
         head: 'Product',
         links: [
-            { label: 'Link', href: '#link' },
-            { label: 'Studio', href: '#studio' },
+            { label: 'Link', href: '/#link' },
+            { label: 'Studio', href: '/#studio' },
             { label: 'Docs', href: LINKS.docs },
+            { label: 'Changelog', href: LINKS.changelog },
         ],
     },
     { head: 'Experiments', links: EXPERIMENTS.map(experiment => ({ label: experiment.name, href: experiment.href })) },
@@ -100,12 +114,22 @@ const COLUMNS = [
             { label: 'GitHub', href: LINKS.github },
             { label: 'Discord', href: LINKS.discord },
             { label: 'YouTube', href: LINKS.youtube },
+            { label: 'X', href: LINKS.x },
+            { label: 'LinkedIn', href: LINKS.linkedin },
         ],
     },
-    { head: 'Company', links: [{ label: 'Careers', href: LINKS.careers }] },
+    {
+        head: 'Company',
+        links: [
+            { label: 'About', href: '/about' },
+            { label: 'Careers', href: LINKS.careers },
+            { label: 'Contact', href: `mailto:${LINKS.contactEmail}` },
+            { label: 'Privacy', href: LINKS.privacy },
+        ],
+    },
 ]
 
-/** The home page's footer. */
+/** The site's footer. */
 export function HomeFooter({ className = '' }: { className?: string }) {
     const text = TEXT
     return (
@@ -135,7 +159,7 @@ export function HomeFooter({ className = '' }: { className?: string }) {
             <div
                 className={`shell flex flex-wrap justify-between gap-5 border-t ${text.rule} py-[26px] font-mono text-[13px] tracking-[.06em] ${text.soft}`}
             >
-                <span>© 2026 DARKGRADE</span>
+                <span>© 2026 DARKGRADE, INC.</span>
                 <span className="inline-flex items-center gap-2">
                     <i className="size-[7px] rounded-full bg-[#e0483e] shadow-[0_0_10px_rgba(224,72,62,.6)]" />
                     CURRENTLY IN ALPHA
