@@ -27,10 +27,10 @@ const NAV_LINK =
 
 export function SiteHeader() {
     return (
-        <header
-            id="hdr"
-            className="fixed inset-x-0 top-0 z-[80] transition-[background,backdrop-filter] duration-500 [&.scrolled]:panel"
-        >
+        <header id="hdr" className="fixed inset-x-0 top-0 z-[80]">
+            {/* The scrolled header's frosted panel is its own layer, not the header itself: a blur nested inside
+                a blurred parent only sees that parent, so the Experiments menu could not blur the page. */}
+            <div aria-hidden className="panel pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-500 [.scrolled_&]:opacity-100" />
             <div className="shell flex h-[64px] items-center justify-between transition-[height] duration-500 ease-lamp [.scrolled_&]:h-[56px]">
                 <Link href="/" aria-label="Darkgrade" className="block text-ink">
                     <Wordmark className="mark-glow block h-[15px] w-auto max-[400px]:h-[13px]" />
@@ -53,8 +53,9 @@ export function SiteHeader() {
                         <button type="button" aria-haspopup="true" className={`${NAV_LINK} cursor-default p-0 leading-[inherit]`}>
                             Experiments
                         </button>
-                        <div className="invisible absolute left-1/2 top-full -translate-x-1/2 pt-4 opacity-0 transition-[opacity,visibility] duration-300 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
-                            <ul className="panel flex w-[260px] flex-col gap-1 rounded-xl border border-hair p-2">
+                        {/* The fade is on the panel itself: fading a wrapper would switch its blur off until the fade ends. */}
+                        <div className="invisible absolute left-1/2 top-full -translate-x-1/2 pt-4 transition-[visibility] duration-300 group-focus-within:visible group-hover:visible">
+                            <ul className="panel flex w-[260px] flex-col gap-1 rounded-xl border border-hair p-2 opacity-0 transition-opacity duration-300 group-focus-within:opacity-100 group-hover:opacity-100">
                                 {EXPERIMENTS.map(({ label, description, href }) => (
                                     <li key={label}>
                                         <a href={href} className="block rounded-lg px-3 py-2 text-ink transition-colors duration-300 hover:text-gold focus-visible:text-gold">
