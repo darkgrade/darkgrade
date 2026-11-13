@@ -587,9 +587,24 @@ const DRIVEN_CALLS = [
 ] as const
 
 const NARROW_WINDOW_PIXELS = 900
-/** On a phone the camera sits in the top third of the window, above the words, and further off so it fits. */
+/** On a phone or an upright tablet the camera sits in the top third of the window, above the words, and further off so it fits. */
 const NARROW_SHIFT_DOWN = -0.3
-const NARROW_DISTANCE_FACTOR = 2.7
+/** How many times further off: this over the window's width-to-height, and never more than the most. An upright tablet's window is squarer than a phone's, and its camera would be small at a phone's distance. */
+const NARROW_DISTANCE = { overAspect: 1.72, most: 2.7 }
+/** Beside the camera in a narrow window the laptop stands below it and only a little to the right, so the two fit one above the other. */
+const LAPTOP_BY_CAMERA_WHEN_NARROW = new Vector3(150, -262, 210)
+/** The laptop's screen fills this much of a narrow window's width, and sits this far above its middle, with the first cut's words below it. */
+const SCREEN_WHEN_NARROW = { shareOfWindow: 0.9, shiftDown: -0.14 }
+/**
+ * What a narrow window changes of each shot. In every one the subject is in the middle across
+ * and up by `NARROW_SHIFT_DOWN`; where a shot says more, it is because what it shows would not
+ * otherwise fit, or would leave the window half empty: Link's camera and laptop, one above the
+ * other, and the studio, nearer and lower so its gear fills the room above the words.
+ */
+const NARROW_SHOTS: Partial<Record<Chapter, Partial<Shot>>> = {
+    link: { distance: 900, lookDown: 150, shiftRight: -0.22, shiftDown: -0.115 },
+    studio: { distance: 27500, shiftDown: -0.24 },
+}
 /** How far through the move to the lens the viewer starts for the middle of the window and up close. */
 const CLOSING_IN_FROM = 0.45
 const ARRIVING_LATE: (keyof Shot)[] = ['onLens', 'shiftRight', 'distance', 'fieldOfView']
@@ -778,6 +793,14 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     )
     const lensFront = new Vector3(LENS_AXIS.x, LENS_AXIS.y, LENS_FRONT_Z)
     const narrowWindow = innerWidth < NARROW_WINDOW_PIXELS
+    /** Whether the window is narrow now: it can become so, or stop being so, when a tablet is turned. */
+    let narrow = narrowWindow
+    const shotsWhenNarrow = Object.fromEntries(
+        CHAPTERS.map(name => [
+            name,
+            { ...SHOTS[name], shiftRight: 0, shiftDown: NARROW_SHIFT_DOWN, ...NARROW_SHOTS[name] },
+        ])
+    ) as Record<Chapter, Shot>
 
     // Each control leaves a little after the one before it, straight out from the body, and shrinks to nothing once clear.
     const flyOffOrder = new Map(
@@ -1101,7 +1124,6 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     }
 
     function placeTheViewer(frame: Frame) {
-        const narrow = frame.cssWidth < NARROW_WINDOW_PIXELS
         const pointerTurn = frame.pointerSeen ? frame.pointer.x * 7 : 0
         const pointerTip = frame.pointerSeen ? -frame.pointer.y * 4 : 0
         const azimuth = shot.azimuth + (Math.sin(frame.seconds * 0.32) * 7 + pointerTurn) * shot.sway
@@ -1121,18 +1143,20 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         )
         const squareOn =
             (rimRadius * shot.cameraScale) / (Math.tan(MathUtils.degToRad(shot.fieldOfView / 2)) * rimShare)
-        const roaming = shot.distance * (narrow ? NARROW_DISTANCE_FACTOR : Math.max(1, 1.5 / viewer.aspect))
+        const roaming =
+            shot.distance *
+            (narrow
+                ? Math.min(NARROW_DISTANCE.most, NARROW_DISTANCE.overAspect / viewer.aspect)
+                : Math.max(1, 1.5 / viewer.aspect))
         const distance = mix(roaming, squareOn, shot.onLens)
         viewer.near = Math.max(10, distance * 0.08)
         viewer.far = distance * 2.5 + 30000
         placeCamera(viewer, target, distance, azimuth, elevation)
         if (shot.onScreen > 0) faceTheScreen(distance)
-        const shiftRight = (narrow ? 0 : shot.shiftRight) * (1 - shot.onScreen)
-        const shiftDown = mix(
-            mix(narrow ? NARROW_SHIFT_DOWN : shot.shiftDown, SCREEN_SHIFT_DOWN, shot.onScreen),
-            0,
-            shot.onLens
-        )
+        // A narrow window's shots already say where their subject sits in it.
+        const shiftRight = shot.shiftRight * (1 - shot.onScreen)
+        const screenShiftDown = narrow ? SCREEN_WHEN_NARROW.shiftDown : SCREEN_SHIFT_DOWN
+        const shiftDown = mix(mix(shot.shiftDown, screenShiftDown, shot.onScreen), 0, shot.onLens)
         viewer.setViewOffset(
             frame.width,
             frame.height,
@@ -1153,7 +1177,9 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     function poseTheLaptop() {
         const settled = smooth(shot.laptopOnSet)
         laptop.visible = shot.laptop > 0.01
-        laptop.position.copy(LAPTOP_BY_CAMERA.position).lerp(laptopOnCrate, settled)
+        laptop.position
+            .copy(narrow ? LAPTOP_BY_CAMERA_WHEN_NARROW : LAPTOP_BY_CAMERA.position)
+            .lerp(laptopOnCrate, settled)
         laptop.rotation.y = mix(LAPTOP_BY_CAMERA.turnRadians, LAPTOP.turnRadians - Math.PI * 2, settled)
         laptop.scale.setScalar(Math.exp(mix(Math.log(LAPTOP_BY_CAMERA.scale), Math.log(LAPTOP.scale), settled)))
         const home = shot.laptopOnSet > 0.999 ? gearScene : laptopScene
@@ -1181,7 +1207,8 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         const centre = screenCentre.copy(screen.centre).applyMatrix4(laptop.matrixWorld)
         const outwards = screenOutwards.copy(screen.normal).transformDirection(laptop.matrixWorld)
         const halfHeight = (screen.height * laptop.scale.x) / 2
-        const halfWindow = Math.tan(MathUtils.degToRad(viewer.fov / 2)) * SCREEN_SHARE_OF_WINDOW
+        const share = narrow ? SCREEN_WHEN_NARROW.shareOfWindow : SCREEN_SHARE_OF_WINDOW
+        const halfWindow = Math.tan(MathUtils.degToRad(viewer.fov / 2)) * share
         const squareOn = Math.max(
             halfHeight / halfWindow,
             (halfHeight * screen.widthOverHeight) / (halfWindow * viewer.aspect)
@@ -1275,8 +1302,9 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     /** Blends the two shots either side of `chapter` into `shot`. */
     function takeTheShot() {
         const index = Math.min(CHAPTERS.length - 1, Math.floor(chapter))
-        const from = SHOTS[CHAPTERS[index]]
-        const to = SHOTS[CHAPTERS[Math.min(CHAPTERS.length - 1, index + 1)]]
+        const shots = narrow ? shotsWhenNarrow : SHOTS
+        const from = shots[CHAPTERS[index]]
+        const to = shots[CHAPTERS[Math.min(CHAPTERS.length - 1, index + 1)]]
         const amount = chapter - index
         for (const key of SHOT_KEYS) shot[key] = mix(from[key], to[key], amount)
         // A dolly covers the same share of its distance each moment, so pulling back to the studio does not rush its start.
@@ -1349,6 +1377,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
 
     return {
         draw(frame, renderer) {
+            narrow = frame.cssWidth < NARROW_WINDOW_PIXELS
             chapter = MathUtils.clamp(
                 approach(chapter, chapterAt(page.sections), frame.still ? 60 : 4.5, frame.deltaSeconds),
                 0,

@@ -52,8 +52,8 @@ const TITLES = [
     { label: 'Captions', from: 21, to: CUT_SECONDS - 1.5 },
 ]
 
-/** The words on the first cut's screen. */
-const COPY = {
+/** The words on the first cut's screen, and beside it on the page where the screen is too small to hold them. */
+export const FIRST_CUT_COPY = {
     app: 'Darkgrade Studio',
     sequence: 'Seq 01 · 24 fps',
     status: 'On the way',
@@ -91,25 +91,26 @@ export function FirstCutApp() {
                         <i className="size-[10px] rounded-full bg-ink/25" />
                         <i className="size-[10px] rounded-full bg-ink/25" />
                     </span>
-                    <span className="ml-3 text-ink-66">{COPY.app}</span>
+                    <span className="ml-3 text-ink-66">{FIRST_CUT_COPY.app}</span>
                 </span>
-                <span>{COPY.sequence}</span>
+                <span>{FIRST_CUT_COPY.sequence}</span>
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-[390px_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 grid-cols-[390px_minmax(0,1fr)] max-[900px]:grid-cols-1">
                 {/* laid out as the page's own product sections are: its name and kind, a tagline, what it does, and its features as ruled rows */}
-                <div className="flex flex-col justify-center border-r border-hair px-9">
+                {/* in a narrow window the screen is too small to read these: the page says them below it, and the lanes take the whole screen */}
+                <div className="flex flex-col justify-center border-r border-hair px-9 max-[900px]:hidden">
                     <span className="flex items-baseline gap-[14px] text-[20px] font-medium">
-                        <span className="text-gold">{COPY.title}</span>
+                        <span className="text-gold">{FIRST_CUT_COPY.title}</span>
                         <span className="font-mono text-[13px] font-normal tracking-[.06em] text-ink-52 uppercase">
-                            {COPY.status}
+                            {FIRST_CUT_COPY.status}
                         </span>
                     </span>
                     <span className="mt-[14px] font-serif text-[3rem] leading-[1.02] heading-weight tracking-[-.045em] text-balance text-ink">
-                        {COPY.tagline}
+                        {FIRST_CUT_COPY.tagline}
                     </span>
-                    <span className="mt-[18px] text-[19px] leading-[1.5] text-ink-66">{COPY.does}</span>
+                    <span className="mt-[18px] text-[19px] leading-[1.5] text-ink-66">{FIRST_CUT_COPY.does}</span>
                     <span className="mt-[28px] flex flex-col border-b border-hair">
-                        {COPY.steps.map(step => (
+                        {FIRST_CUT_COPY.steps.map(step => (
                             <span
                                 key={step}
                                 className="flex items-baseline justify-between gap-4 border-t border-hair py-[14px] text-[18px] text-ink-66"
@@ -141,7 +142,7 @@ export function FirstCutApp() {
                                 className="cut-title absolute inset-y-0 flex items-center overflow-hidden rounded-[5px] border border-ink/25 bg-ink/[.08] px-[7px] font-mono text-[11px] tracking-[.04em] whitespace-nowrap text-ink-66 uppercase"
                                 style={{ left: percent(title.from), width: percent(title.to - title.from) }}
                             >
-                                {COPY.titles[index]}
+                                {FIRST_CUT_COPY.titles[index]}
                             </span>
                         ))}
                     </div>
@@ -154,7 +155,7 @@ export function FirstCutApp() {
                                 className="cut-take absolute inset-y-0 flex items-start overflow-hidden rounded-[5px] border border-gold/55 bg-[linear-gradient(color-mix(in_srgb,var(--color-gold)_20%,transparent),color-mix(in_srgb,var(--color-gold)_7%,transparent))] px-[7px] pt-[7px] font-mono text-[11px] tracking-[.04em] whitespace-nowrap text-gold uppercase"
                                 style={takeStyle(index)}
                             >
-                                {COPY.take} {index + 1}
+                                {FIRST_CUT_COPY.take} {index + 1}
                             </span>
                         ))}
                     </div>
