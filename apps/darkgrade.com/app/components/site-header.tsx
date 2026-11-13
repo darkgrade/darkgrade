@@ -9,7 +9,6 @@ import { Wordmark } from './wordmark'
 /* Home-page sections are written "/#id" so the same header works on /roadmap. */
 const NAV = [
     { label: 'Product', href: '/#product' },
-    { label: 'Roadmap', href: '/roadmap' },
     { label: 'Principles', href: '/#principles' },
     { label: 'Docs', href: LINKS.docs, external: true },
 ]
