@@ -11,6 +11,9 @@ export const LINKS = {
     contactEmail: 'hello@darkgrade.com',
     privacy: '/privacy',
     changelog: '/changelog',
+    blog: '/blog',
+    pressKit: '/press-kit',
+    yCombinator: 'https://www.ycombinator.com/companies/darkgrade',
 } as const
 
 export const NPM_INSTALL = 'npm i @darkgrade/link'

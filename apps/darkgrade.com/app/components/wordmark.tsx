@@ -26,8 +26,8 @@ export function Wordmark({ className }: { className?: string }) {
 }
 
 /**
- * The mark beside the name set in the heading face, in place of the drawn wordmark. It is sized
- * by its font size: the mark stands a little taller than the capitals.
+ * The mark beside the name set in the heading face, one weight lighter than a heading, in place of
+ * the drawn wordmark. It is sized by its font size: the mark stands a little taller than the capitals.
  */
 export function Lockup({ className = '' }: { className?: string }) {
     return (
@@ -46,7 +46,7 @@ export function Lockup({ className = '' }: { className?: string }) {
                     <path key={pathData} d={pathData} />
                 ))}
             </svg>
-            <span aria-hidden="true" className="heading-weight font-serif tracking-[-.035em] normal-case">
+            <span aria-hidden="true" className="lockup-weight font-serif tracking-[-.035em] normal-case">
                 Darkgrade
             </span>
         </span>

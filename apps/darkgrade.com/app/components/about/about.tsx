@@ -103,7 +103,18 @@ export function About() {
                             key={backer}
                             className={`border-b border-hair py-[12px] ${backer === ACCELERATOR ? 'text-gold' : 'text-ink'}`}
                         >
-                            {backer}
+                            {backer === ACCELERATOR ? (
+                                <a
+                                    href={LINKS.yCombinator}
+                                    target="_blank"
+                                    rel="noopener"
+                                    className="underline decoration-gold/30 underline-offset-[5px] transition-colors duration-300 hover:decoration-gold"
+                                >
+                                    {backer}
+                                </a>
+                            ) : (
+                                backer
+                            )}
                         </li>
                     ))}
                 </ul>

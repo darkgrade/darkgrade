@@ -6,7 +6,7 @@ import { viewportSize } from '@/app/components/scenes/materials'
 export interface Frame {
     /** Seconds the scene has been on screen, which stand still for visitors who ask for reduced motion. */
     seconds: number
-    /** Seconds since the last frame, never more than a tenth. */
+    /** Seconds since the last frame: never less than none, never more than a tenth. */
     deltaSeconds: number
     /** The canvas, in device pixels. */
     width: number
@@ -92,7 +92,8 @@ export function runViewport(
         const height = Math.round(bounds.height * pixelRatio)
         if (width > 0 && height > 0) {
             if (canvas.width !== width || canvas.height !== height) renderer.setSize(width, height, false)
-            frame.deltaSeconds = Math.min((milliseconds - lastMilliseconds) / 1000, LONGEST_FRAME_SECONDS)
+            // A frame's own time can be a hair earlier than the moment the viewport was started, which would make the first step run backwards.
+            frame.deltaSeconds = Math.max(0, Math.min((milliseconds - lastMilliseconds) / 1000, LONGEST_FRAME_SECONDS))
             if (!still) frame.seconds += frame.deltaSeconds
             frame.width = width
             frame.height = height

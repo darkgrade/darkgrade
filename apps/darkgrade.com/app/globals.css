@@ -140,6 +140,7 @@
         --mq-h: 54px; /* marquee height - the hero subtracts it so both fit one screen */
         --gI: 1.1; /* lamp intensity - one knob for every gold glow on the page */
         --heading-weight: 600; /* every heading takes its weight from here */
+        --lockup-weight: 500; /* the name beside the mark: one weight lighter than a heading */
         --halo-a: 255 230 188; /* the four layers of the halo round a lit word, nearest the letters first */
         --halo-b: 246 185 97;
         --halo-c: 239 141 64;
@@ -265,6 +266,11 @@
 /* the weight of a heading: one knob, so trying a heavier face is one change */
 @utility heading-weight {
     font-weight: var(--heading-weight);
+}
+
+/* the weight of the name in the lockup, wherever it is set */
+@utility lockup-weight {
+    font-weight: var(--lockup-weight);
 }
 
 /* the wordmark, catching the lamp */
