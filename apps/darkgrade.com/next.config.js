@@ -9,6 +9,14 @@ const EXPERIMENTS = [
 const nextConfig = {
     // The experiments' canonical URLs end in a slash; Next's default slash-stripping redirect would bounce them.
     skipTrailingSlashRedirect: true,
+    // Link's docs moved under /docs/link/ when Studio's docs arrived; old addresses are still indexed.
+    async redirects() {
+        return ['getting_started', 'ptp-reference'].map((section) => ({
+            source: `/docs/${section}/:page*`,
+            destination: `/docs/link/${section}/:page*`,
+            permanent: true,
+        }))
+    },
     async rewrites() {
         return EXPERIMENTS.flatMap(({ path, origin }) => [
             { source: `/${path}`, destination: `${origin}/${path}/` },
