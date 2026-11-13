@@ -22,7 +22,7 @@ export interface Person {
 export const ABOUT = {
     /** The headline's two lines; the last word of the second is the one that is lit. */
     headline: { first: 'We’re betting', second: 'on', lit: 'people.' },
-    lede: 'Darkgrade is a small team headquartered in Denver, Colorado, building local-first AI for creative pros. We believe good taste can’t be automated, and authentic human connection cannot be engineered. Our mission is to build better tools, so creators can tell better stories.',
+    lede: 'Darkgrade is a small team headquartered in Denver, Colorado, building local-first AI for creative pros. We believe good taste can’t be automated, and authentic human connection can’t be engineered. Our mission is to build better tools, so creators can tell better stories.',
     company: [
         { name: 'Headquarters', value: 'Denver, Colorado' },
         { name: 'Y Combinator', value: 'F24 batch', href: LINKS.yCombinator },
