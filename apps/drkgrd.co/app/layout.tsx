@@ -10,7 +10,6 @@ const siteMono = Fragment_Mono({ subsets: ['latin'], weight: '400', variable: '-
 
 const TITLE = 'Darkgrade — Shoot more. Edit less.'
 const DESCRIPTION = 'Local-first AI for creative professionals.'
-const OG_IMAGE = 'https://drkgrd.co/darkgrade_opengraph_dark.png'
 
 export const metadata: Metadata = {
     metadataBase: new URL('https://drkgrd.co'),
@@ -25,7 +24,6 @@ export const metadata: Metadata = {
         title: TITLE,
         siteName: TITLE,
         description: DESCRIPTION,
-        images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: 'Darkgrade' }],
         type: 'website',
         url: 'https://drkgrd.co',
     },
@@ -33,7 +31,6 @@ export const metadata: Metadata = {
         card: 'summary_large_image',
         title: TITLE,
         description: DESCRIPTION,
-        images: [OG_IMAGE],
     },
 }
 
