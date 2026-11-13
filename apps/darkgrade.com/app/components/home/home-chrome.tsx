@@ -14,10 +14,46 @@ const NAV = [
     { label: 'Product', href: '#product' },
     { label: 'Principles', href: '#principles' },
     { label: 'Docs', href: LINKS.docs },
-    { label: 'Experiments', href: '/toolbench/' },
 ]
 
-/** The home page's header: the wordmark, the four links, GitHub. Fixed to the top of the window, and half as tall on a phone or an upright tablet, where the picture sits right under it. */
+/**
+ * The header's Experiments item: a word that opens a list of the benches under it, each with a
+ * line on what it is, when it is hovered or focused. The benches are sites of their own served
+ * under darkgrade.com, so they are plain links and full page loads.
+ */
+function ExperimentsMenu({ wordClassName }: { wordClassName: string }) {
+    return (
+        <div className="group relative flex items-center">
+            <button type="button" aria-haspopup="true" className={`${wordClassName} cursor-default`}>
+                Experiments
+            </button>
+            {/* the gap between the word and the list is part of what is hovered, so the pointer can cross it; the fade is on the list itself, since fading a wrapper would switch its blur off until the fade ends */}
+            <div className="invisible absolute top-full left-1/2 -translate-x-1/2 pt-[18px] transition-[visibility] duration-300 group-focus-within:visible group-hover:visible">
+                <ul className="w-[316px] translate-y-[6px] rounded-[10px] border border-hair bg-[rgba(9,9,10,.86)] px-[18px] py-[5px] opacity-0 shadow-[0_18px_50px_rgba(0,0,0,.55)] backdrop-blur-[18px] transition-[opacity,translate] duration-300 ease-[cubic-bezier(.19,1,.22,1)] group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100">
+                    {EXPERIMENTS.map((experiment, index) => (
+                        <li key={experiment.name} className="border-t border-hair first:border-t-0">
+                            <a href={experiment.href} className="group/row flex items-baseline gap-[14px] py-[13px]">
+                                <span className="font-mono text-[10.5px] tracking-[.06em] text-ink-52 transition-colors duration-300 group-hover/row:text-gold group-focus-visible/row:text-gold">
+                                    /{String(index + 1).padStart(2, '0')}
+                                </span>
+                                <span className="flex min-w-0 flex-col gap-[3px]">
+                                    <span className="text-[15px] leading-[1.2] font-medium text-ink transition-colors duration-300 group-hover/row:text-gold group-focus-visible/row:text-gold">
+                                        {experiment.name}
+                                    </span>
+                                    <span className="text-[13px] leading-[1.4] text-ink-55">
+                                        {experiment.description}
+                                    </span>
+                                </span>
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    )
+}
+
+/** The home page's header: the wordmark, three links and the Experiments menu, GitHub. Fixed to the top of the window, and half as tall on a phone or an upright tablet, where the picture sits right under it. */
 export function HomeHeader({ className = '' }: { className?: string }) {
     const text = TEXT
     const link = `text-[14px] transition-colors duration-300 ${text.soft} ${text.hover}`
@@ -38,6 +74,7 @@ export function HomeHeader({ className = '' }: { className?: string }) {
                             {item.label}
                         </a>
                     ))}
+                    <ExperimentsMenu wordClassName={link} />
                 </nav>
                 <a href={LINKS.github} target="_blank" rel="noopener" className={`pointer-events-auto ${link}`}>
                     GitHub
