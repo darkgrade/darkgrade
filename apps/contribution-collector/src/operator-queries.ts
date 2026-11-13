@@ -2,6 +2,7 @@ import type { Pool } from 'pg'
 
 export interface EventFilters {
     days: number
+    includeEvents?: boolean
     installation?: string
     model?: string
     session?: string
@@ -136,7 +137,7 @@ export function operatorQueries(pool: Pool) {
                     ORDER BY max(received_at) DESC LIMIT 100`,
                     parameters
                 ),
-                pool.query(
+                filters.includeEvents === false ? Promise.resolve({rows: []}) : pool.query(
                     `SELECT batch_path,sequence,installation_id,session_id,occurred_at,received_at,
                     manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,failed,properties
                     FROM telemetry_events WHERE ${where}
@@ -187,7 +188,7 @@ export function operatorQueries(pool: Pool) {
                 sessionLimit: 100,
                 issues: issues.rows,
                 events: events.rows,
-                eventLimit: 500,
+                eventLimit: filters.includeEvents === false ? 0 : 500,
                 issueLimit: 100,
             }
         },

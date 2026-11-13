@@ -171,3 +171,19 @@ it('optional contributions preserve the real Link transfer while omitting its im
         expect(uploaded).not.toContain('8675309')
     } finally { observation.detach(); diagnostics.close() }
 })
+it('state snapshots never issue USB work or replace observed mode with a requested write',()=>{
+ const {camera,sent}=cameraWithResponses([]);camera.vendorId=0x04a9
+ const evidence:any[]=[];camera.observeProfile(crypto.randomUUID(),value=>evidence.push(value))
+ camera.recordProtocol({type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:0},0x9116)
+ camera.recordProtocol({type:'property-write',vendorId:0x04a9,property:0xd1c2,dataType:6,requested:1,transactionId:1,outcome:'response',response:0x2001},0x9110)
+ camera.recordStateSnapshot('recording','before-prepare')
+ camera.recordProtocol({type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:1},0x9116)
+ camera.recordStateSnapshot('recording','after-prepare')
+ camera.recordStateSnapshot('recording','failure')
+ camera.recordProtocol({type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:0},0x9116)
+ camera.recordStateSnapshot('recording','after-cleanup')
+ const snapshots=evidence.filter(item=>item.type==='state-snapshot')
+ expect(snapshots.map(item=>item.settings[0].current)).toEqual([0,1,1,0])
+ expect(snapshots.every(item=>item.settings[0].ageMilliseconds>=0&&item.basis==='observed-cache')).toBe(true)
+ expect(sent).toEqual([])
+})

@@ -1,7 +1,7 @@
 import { Camera } from '@camera/index'
 import { SonyCamera } from '@camera/sony-camera'
 import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
-import { protocolEvidence, propertyWriteEvidence } from '@vendors/protocol-evidence'
+import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
@@ -489,4 +489,16 @@ it('repeated protocol refreshes retain changed values and each new benchmark has
     next()
     expect(seen).toHaveLength(4)
     await camera.disconnect()
+})
+it('retains reviewed FixedMovie numeric events while excluding private property values',()=>{
+ const events=[0xd1c2,0xd115].map(property=>({code:0xc189,parameters:[property,1],valueData:new Uint8Array([1,0,0,0])}))
+ const observed=protocolEvidence(0x04a9,createPTPRegistry(true),0x9116,events)
+ expect(observed.filter(item=>item.type==='property-value')).toEqual([{type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:1}])
+})
+
+it('snapshot age is explicit, excludes future/stale cache entries and preserves empty observations',()=>{
+ const sample={property:0xd1c2,dataType:6,current:1,observedAt:100}
+ expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',450)).toMatchObject({settings:[{property:0xd1c2,current:1,ageMilliseconds:350}]})
+ expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',99)).toMatchObject({settings:[]})
+ expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',0x100000100)).toMatchObject({settings:[]})
 })

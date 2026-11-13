@@ -79,7 +79,7 @@ export function linkTelemetry(source: TransportInterface) {
     }
     const observer = {
         transport,
-        protocol(protocol: ProtocolEvidence, operation: number) {
+        protocol(protocol: ProtocolEvidence, operation?: number) {
             try {
                 const write = protocol.type === 'property-write'
                 observed?.record({ protocol, kind: write ? 'command' : 'data', direction: write ? 'out' : 'in', code: operation,

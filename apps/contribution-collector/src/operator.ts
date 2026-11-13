@@ -142,12 +142,15 @@ export async function operatorApi(
                         'transport',
                         'hardware',
                         'after',
+                        'includeEvents',
                     ].includes(key)
             ) ||
             ![1, 7, 30, 90].includes(Number(parameters.days || 7)) ||
             ['installation', 'session'].some(key => parameters[key] && !uuid.test(parameters[key]))
         )
             return json({ error: 'Invalid filters' }, 400)
+        if (parameters.includeEvents && !['true', 'false'].includes(parameters.includeEvents))
+            return json({ error: 'Invalid event inclusion' }, 400)
         if (parameters.hardware && !/^camera-v1:[a-f0-9]{64}$/.test(parameters.hardware))
             return json({ error: 'Invalid hardware fingerprint' }, 400)
         let after: EventFilters['after']
@@ -170,7 +173,7 @@ export async function operatorApi(
             }
         }
         return json(
-            await database.operator.report({ ...parameters, after, days: Number(parameters.days || 7) } as EventFilters)
+            await database.operator.report({ ...parameters, after, days: Number(parameters.days || 7), includeEvents: parameters.includeEvents !== 'false' } as EventFilters)
         )
     }
     if (path === '/internal/api/session' && request.method === 'GET') {

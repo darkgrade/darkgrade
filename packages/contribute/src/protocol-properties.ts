@@ -1,4 +1,6 @@
 /** Numeric control allowlist from Link capturePropertyCodes (ae8fa41).
+ * Canon FixedMovie (0xd1c2 / 53698): libgphoto2 ptp.h and config.c eosmovieswitch,
+ * read-only UINT32. Canon EDSDK 13.20.21 calls this FixedMovie (SDK ID differs).
  * Unknown, text, network, clock and identity values are deliberately excluded. */
 export const protocolProperties: Record<number, readonly number[]> = {
     '0': [
@@ -11,7 +13,7 @@ export const protocolProperties: Record<number, readonly number[]> = {
         20500, 20501, 20502, 20503, 20504, 20505, 20506, 20507, 20508, 20512, 20513, 20514, 20516, 20517, 20518, 20519,
         20520, 20521, 20522, 20523, 20524, 53505, 53506, 53507, 53508, 53509, 53510, 53511, 53512, 53513, 53514, 53515,
         53516, 53517, 53518, 53519, 53520, 53524, 53526, 53531, 53532, 53536, 53538, 53560, 53591, 53625, 53653, 53667, 53680,
-        53687, 53688, 53690, 53691, 53692, 53696, 53697, 53699, 53705, 53709, 53717, 53721,
+        53687, 53688, 53690, 53691, 53692, 53696, 53697, 53698, 53699, 53705, 53709, 53717, 53721,
     ],
     '1200': [
         20481, 20482, 20484, 20485, 20487, 20488, 20489, 20490, 20491, 20492, 20493, 20494, 20495, 20496, 20498, 20499,

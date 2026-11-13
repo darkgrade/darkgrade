@@ -1,3 +1,11 @@
+Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
+failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
+writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,
+waits or cloud calls. Canon FixedMovie is allowlisted as a numeric readback using the supplied
+EDSDK/libgphoto2 references; SDK and PTP property IDs are different. Deploy collector and Matrix
+schema support before candidate Link clients upload snapshots. Missing settings stay unknown;
+no snapshot implies that recording or independent media validation passed. Keep PR #58 open.
+
 Canon movie workflows prepare a camera-advertised card destination before movie selection,
 restoring prior host routing after safe cleanup. This follows the Canon EDSDK sample and
 libgphoto2 card-target enumeration; it is not proof of the R8 Mark II failure's root cause.

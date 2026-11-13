@@ -65,3 +65,10 @@ and Studio use a diagnostic ID instead. Full encrypted transport recordings are 
 The package root retains the previous single-camera observer API for compatibility. New
 integrations should use the shared application/settings entry points. The old signed-grant
 collector is not part of the current deployment.
+
+Recording state snapshots contain at most 32 reviewed numeric settings from Link's existing
+readback cache. Each value includes its observation age and workflow phase. Requested writes
+are separate evidence and cannot update observed state. Missing or old values remain explicit;
+snapshotting performs no camera reads, sleeps or synchronous uploads. Canon FixedMovie uses
+PTP property `0xd1c2` (libgphoto2 `ptp.h` / `config.c`, `eosmovieswitch`); Canon EDSDK
+13.20.21 names the same feature `kEdsPropID_FixedMovie` with a different SDK identifier.

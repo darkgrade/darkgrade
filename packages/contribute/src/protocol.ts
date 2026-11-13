@@ -2,12 +2,21 @@ import { protocolProperties } from '#contribute/protocol-properties'
 
 export type ProtocolCategory = 'operation' | 'event' | 'property' | 'response'
 export type ProtocolNumber = number | string
+export type StatePhase = 'before-prepare' | 'after-prepare' | 'before-start' | 'after-start' | 'before-stop' | 'after-stop' | 'failure' | 'after-cleanup'
+export interface ObservedSetting { property: number; dataType: number; current: ProtocolNumber; ageMilliseconds: number }
 export type ProtocolEvidence = {
     vendorId: number
     benchmarkId?: string
 } & (
     | { type: 'inventory'; category: ProtocolCategory; codes: number[] }
     | { type: 'unknown'; category: ProtocolCategory; code: number; advertised: boolean }
+    | {
+          type: 'state-snapshot'
+          workflow: 'recording' | 'photo'
+          phase: StatePhase
+          basis: 'observed-cache'
+          settings: ObservedSetting[]
+      }
     | {
           type: 'property-write'
           property: number
@@ -88,6 +97,20 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
             if (!integer(item.code, maximum) || typeof item.advertised !== 'boolean')
                 throw new Error('Invalid unknown code')
         }
+    } else if (item.type === 'state-snapshot') {
+        fields = ['workflow', 'phase', 'basis', 'settings']
+        if (
+            !['recording', 'photo'].includes(item.workflow) ||
+            !['before-prepare', 'after-prepare', 'before-start', 'after-start', 'before-stop', 'after-stop', 'failure', 'after-cleanup'].includes(item.phase) ||
+            item.basis !== 'observed-cache' ||
+            !Array.isArray(item.settings) || item.settings.length > 32 ||
+            new Set(item.settings.map(setting => setting?.property)).size !== item.settings.length ||
+            item.settings.some(setting => !setting || typeof setting !== 'object' ||
+                Object.keys(setting).some(key => !['property', 'dataType', 'current', 'ageMilliseconds'].includes(key)) ||
+                !integer(setting.property) || !isSafeProtocolProperty(item.vendorId, setting.property) ||
+                !integer(setting.dataType, 10) || setting.dataType < 1 || !fits(setting.current, setting.dataType) ||
+                !integer(setting.ageMilliseconds))
+        ) throw new Error('Invalid observed state snapshot')
     } else if (item.type === 'property-write') {
         fields = ['property', 'dataType', 'requested', 'transactionId', 'outcome', 'response']
         if (

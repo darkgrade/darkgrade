@@ -10,8 +10,8 @@ import {
     type PTPErrorContext,
 } from '@core/ptp-errors'
 import { linkTelemetry } from '@core/telemetry'
-import { protocolEvidence, propertyWriteEvidence } from '@vendors/protocol-evidence'
-import type { ProtocolEvidence } from '@darkgrade/contribute/protocol'
+import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
+import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
@@ -75,15 +75,29 @@ export class GenericCamera {
     private readonly telemetry: ReturnType<typeof linkTelemetry>
     private profileObserver?: { id: string; observe: (evidence: ProtocolEvidence) => void }
     private protocolSeen = new Map<string, string>()
+    private diagnosticSettings = new Map<number, CachedDiagnosticSetting>()
+    /** Synchronous, bounded and entirely cache-based. Diagnostic failures cannot change a camera workflow. */
+    recordStateSnapshot(workflow: 'recording' | 'photo', phase: StatePhase) {
+        try {
+            this.recordProtocol(stateSnapshotEvidence(this.vendorId ?? 0, this.diagnosticSettings.values(), workflow, phase, performance.now()))
+        } catch { /* Optional diagnostics must never interfere with capture or recovery. */ }
+    }
     /** A benchmark subscribes to this session's sanitized datasets, never to another connection. */
     observeProfile(id: string, observe: (evidence: ProtocolEvidence) => void) {
         if (this.profileObserver) throw new Error('A profile benchmark already owns this camera')
         this.profileObserver = { id, observe }
         return () => { if (this.profileObserver?.id === id) this.profileObserver = undefined }
     }
-    recordProtocol(evidence: ProtocolEvidence, operation: number) {
+    recordProtocol(evidence: ProtocolEvidence, operation?: number) {
+        try {
+            validateProtocol(evidence)
+            if ((evidence.type === 'descriptor' || evidence.type === 'property-value') && evidence.current !== undefined) {
+                if (this.diagnosticSettings.size >= 256 && !this.diagnosticSettings.has(evidence.property)) this.diagnosticSettings.clear()
+                this.diagnosticSettings.set(evidence.property, { property: evidence.property, dataType: evidence.dataType, current: evidence.current, observedAt: performance.now() })
+            }
+        } catch { return }
         const scoped = this.profileObserver ? { ...evidence, benchmarkId: this.profileObserver.id } : evidence
-        if (scoped.type === 'property-write') {
+        if (scoped.type === 'property-write' || scoped.type === 'state-snapshot') {
             this.telemetry.protocol(scoped, operation)
             this.profileObserver?.observe(scoped)
             return
@@ -130,7 +144,16 @@ export class GenericCamera {
             ['stopRecording', 'record_stop'],
         ] as const) {
             const work = this[method].bind(this)
-            this[method] = () => this.telemetry.operation(operation, work)
+            this[method] = () => this.telemetry.operation(operation, async () => {
+                this.recordStateSnapshot('recording', method === 'startRecording' ? 'before-start' : 'before-stop')
+                try {
+                    await work()
+                    this.recordStateSnapshot('recording', method === 'startRecording' ? 'after-start' : 'after-stop')
+                } catch (error) {
+                    this.recordStateSnapshot('recording', 'failure')
+                    throw error
+                }
+            })
         }
     }
 
@@ -144,6 +167,7 @@ export class GenericCamera {
             this.transport.on?.(event => this.handleEvent(event))
             this.channel.newConnection()
             this.protocolSeen.clear()
+            this.diagnosticSettings.clear()
             this.needsResynchronization = false
             this.lastFailure = undefined
             this.recovery = undefined
@@ -201,7 +225,7 @@ export class GenericCamera {
                 this.lastFailure
             )
         this.emitter.removeAllListeners()
-        await this.closeSessionAndTransport()
+        try { await this.closeSessionAndTransport() } finally { this.diagnosticSettings.clear() }
     }
 
     /**

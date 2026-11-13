@@ -1,3 +1,8 @@
+import type { StatePhase } from '@darkgrade/contribute/protocol'
+/** The existing event cache is the only input; no extra USB commands, waits or cloud calls. */
+function diagnosticState(camera:any,phase:StatePhase){
+ try{camera.getInstance?.().recordStateSnapshot?.('recording',phase)}catch{}
+}
 export interface CanonRecordingSettings {mode:number;iso?:string;aperture?:string;shutterSpeed?:string;whiteBalance?:string;settingsMatched:boolean}
 const properties={iso:['CanonIso','setIso'],aperture:['CanonAperture','setAperture'],shutterSpeed:['CanonShutterSpeed','setShutterSpeed'],whiteBalance:['CanonWhiteBalance','setWhiteBalance']} as const
 async function snapshot(camera:any):Promise<CanonRecordingSettings>{
@@ -20,25 +25,28 @@ async function copySettings(camera:any,before:CanonRecordingSettings){
 }
 /** Movie-select On/Off can reset AE to the physical dial. Copy and verify manual settings both ways. */
 export async function withCanonRecordingMode<T>(camera:any,record:(settings:CanonRecordingSettings)=>Promise<T>,idle:()=>boolean=()=>true):Promise<T>{
- const before=await snapshot(camera)
- const movie=(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
- let entered=false
- const restoreDestination=await camera.prepareCanonRecordingDestination?.()
+ diagnosticState(camera,'before-prepare')
+ let before:CanonRecordingSettings|undefined,entered=false,restoreDestination:(()=>Promise<void>)|undefined,failure:unknown
  try{
+  before=await snapshot(camera)
+  const movie=(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
+  restoreDestination=await camera.prepareCanonRecordingDestination?.()
   if(!movie){await camera.enterMovieMode();entered=true;await new Promise(resolve=>setTimeout(resolve,700))}
   await copySettings(camera,before)
   await camera.ensureCanonMovieSoundRecording?.()
   const actual=await snapshot(camera)
-  actual.settingsMatched=before.mode===3&&actual.mode===3&&Object.keys(properties).every(key=>before[key as keyof typeof properties]===actual[key as keyof typeof properties])
+  actual.settingsMatched=before.mode===3&&actual.mode===3&&Object.keys(properties).every(key=>before![key as keyof typeof properties]===actual[key as keyof typeof properties])
+  diagnosticState(camera,'after-prepare')
   return await record(actual)
- }finally{
+ }catch(error){failure=error;diagnosticState(camera,'failure');throw error}
+ finally{
   // Do not change modes while a failed stop leaves recording uncertain.
   if(idle()){
-   if(entered){
-    await camera.leaveMovieMode()
-    await copySettings(camera,before)
-   }
-   await restoreDestination?.()
+   try{
+    if(entered&&before){await camera.leaveMovieMode();await copySettings(camera,before)}
+    await restoreDestination?.()
+   }catch(cleanup){diagnosticState(camera,'failure');if(failure)throw new AggregateError([failure,cleanup],'Canon recording and restoration failed');throw cleanup}
+   finally{diagnosticState(camera,'after-cleanup')}
   }
  }
 }
@@ -97,23 +105,27 @@ export function restrictToRecordingChoices<T extends Record<string,any>>(control
 
 /** Hold movie-select mode across operator-controlled start/stop without changing a running recorder. */
 export async function openCanonRecordingMode(camera:any){
- const before=await snapshot(camera)
- const alreadyMovie=(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
- let entered=false
- const restoreDestination=await camera.prepareCanonRecordingDestination?.()
+ diagnosticState(camera,'before-prepare')
+ let before:CanonRecordingSettings|undefined,entered=false,restoreDestination:(()=>Promise<void>)|undefined
+ const restore=async()=>{
+  try{
+   if(entered&&before){await camera.leaveMovieMode();await copySettings(camera,before);entered=false}
+   await restoreDestination?.()
+  }catch(error){diagnosticState(camera,'failure');throw error}
+  finally{diagnosticState(camera,'after-cleanup')}
+ }
  try{
+  before=await snapshot(camera)
+  const alreadyMovie=(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
+  restoreDestination=await camera.prepareCanonRecordingDestination?.()
   if(!alreadyMovie){await camera.enterMovieMode();entered=true;await new Promise(resolve=>setTimeout(resolve,700))}
   await copySettings(camera,before)
   await camera.ensureCanonMovieSoundRecording?.()
+  diagnosticState(camera,'after-prepare')
  }catch(error){
-  try{
-   if(entered){await camera.leaveMovieMode();await copySettings(camera,before)}
-   await restoreDestination?.()
-  }catch(cleanup){throw new AggregateError([error,cleanup],'Canon recording preparation and restoration failed')}
+  diagnosticState(camera,'failure')
+  try{await restore()}catch(cleanup){throw new AggregateError([error,cleanup],'Canon recording preparation and restoration failed')}
   throw error
  }
- return {restore:async()=>{
-  if(entered){await camera.leaveMovieMode();await copySettings(camera,before);entered=false}
-  await restoreDestination?.()
- }}
+ return {restore}
 }

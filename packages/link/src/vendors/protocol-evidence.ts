@@ -3,6 +3,7 @@ import {
     validateProtocol,
     type ProtocolCategory,
     type ProtocolEvidence,
+    type StatePhase,
 } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { createCanonRegistry, createNikonRegistry, createSonyRegistry, type Registry } from '@ptp/registry'
@@ -12,6 +13,24 @@ const definitionsByVendor = new Map<number, Registry>([
     [0x04b0, createNikonRegistry(true)],
     [0x054c, createSonyRegistry(true)],
 ])
+
+export interface CachedDiagnosticSetting { property: number; dataType: number; current: number | string; observedAt: number }
+/** Bounded cache-only evidence: never query a camera or infer state from acknowledged writes. */
+export function stateSnapshotEvidence(
+    vendorId: number, cache: Iterable<CachedDiagnosticSetting>,
+    workflow: 'recording' | 'photo', phase: StatePhase, now: number
+): ProtocolEvidence {
+    // Prioritize mode/destination/recording, then exposure controls, before other reviewed values.
+    const priority = vendorId === 0x04a9 ? [0xd1c2, 0xd105, 0xd11c, 0xd1b8, 0xd1b0, 0xd101, 0xd102, 0xd103, 0xd109]
+        : [0x500e, 0x500f, 0x5007, 0x500d, 0x5005, 0x5001]
+    const rank = (property: number) => priority.includes(property) ? priority.indexOf(property) : priority.length + property
+    const settings = [...cache].filter(item => now >= item.observedAt && now - item.observedAt <= 0xffffffff)
+        .sort((a, b) => rank(a.property) - rank(b.property)).slice(0, 32)
+        .map(({ observedAt, ...setting }) => ({ ...setting, ageMilliseconds: Math.floor(now - observedAt) }))
+    const evidence: ProtocolEvidence = { type: 'state-snapshot', vendorId, workflow, phase, basis: 'observed-cache', settings }
+    validateProtocol(evidence)
+    return evidence
+}
 
 /** Decode only Canon's single numeric property-write envelope, never generic USB payloads.
  * A response acknowledges the request; it is not a property readback or a hardware pass.

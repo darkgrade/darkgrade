@@ -25,3 +25,16 @@ test('numeric evidence accepts exact integers and rejects media, identity, unkno
  validateContribution(contribution)
  assert.throws(()=>validateContribution({...contribution,entries:[{...contribution.entries[0],protocol:{...descriptor,privateKey:'secret'}}]}))
 })
+test('observed snapshots keep numeric mode, age and phase while rejecting requests, private data and unbounded dumps',()=>{
+ const setting={property:0xd1c2,dataType:6,current:1,ageMilliseconds:12}
+ const snapshot={type:'state-snapshot',vendorId:0x04a9,workflow:'recording',phase:'after-prepare',basis:'observed-cache',settings:[setting]}
+ validateProtocol(snapshot)
+ validateProtocol({...snapshot,settings:[]})
+ for(const invalid of [
+  {...snapshot,basis:'requested'}, {...snapshot,phase:'verified'}, {...snapshot,settings:Array(33).fill(setting)},
+  {...snapshot,settings:[setting,setting]}, {...snapshot,settings:[{...setting,property:0xd115}]},
+  {...snapshot,settings:[{...setting,current:'private'}]}, {...snapshot,settings:[{...setting,current:0x100000000}]},
+  {...snapshot,settings:[{...setting,ageMilliseconds:-1}]}, {...snapshot,settings:[{...setting,requested:1}]},
+  {...snapshot,settings:[{...setting,serial:'private'}]}, {...snapshot,settings:[null]},
+ ])assert.throws(()=>validateProtocol(invalid))
+})
