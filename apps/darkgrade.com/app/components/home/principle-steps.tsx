@@ -2,6 +2,8 @@ interface Principle {
     index: string
     title: string
     body: string
+    /** A line of its own under the body, all of it a link. */
+    link?: { label: string; href: string }
 }
 
 interface PrincipleStepsProps {
@@ -46,6 +48,17 @@ export function PrincipleSteps({ principles, active, onChoose }: PrincipleStepsP
                             <div className="overflow-hidden">
                                 <p className="max-w-[42ch] pb-[clamp(12px,2.2vh,22px)] pl-[54px] text-[15px] leading-[1.6] text-ink-66 max-[900px]:pl-0">
                                     {principle.body}
+                                    {principle.link && (
+                                        <a
+                                            href={principle.link.href}
+                                            target="_blank"
+                                            rel="noopener"
+                                            tabIndex={isActive ? undefined : -1}
+                                            className="mt-[8px] block text-ink underline decoration-ink/30 underline-offset-[5px] transition-colors duration-300 hover:text-gold hover:decoration-gold"
+                                        >
+                                            {principle.link.label}
+                                        </a>
+                                    )}
                                 </p>
                             </div>
                         </div>
