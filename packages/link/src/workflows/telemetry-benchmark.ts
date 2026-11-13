@@ -147,8 +147,13 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
             }
             if (properties.length > maximum) truncated = true
             await check('storage', async () => {
-                const result = await camera.send(instance.registry.operations.GetStorageIDs, {})
-                if (result.code !== 0x2001 || !result.data) throw new Error('Missing storage result')
+                try {
+                    if (instance instanceof SonyCamera) await instance.prepareStorageRead()
+                    const result = await camera.send(instance.registry.operations.GetStorageIDs, {})
+                    if (result.code !== 0x2001 || !result.data) throw new Error('Missing storage result')
+                } finally {
+                    if (instance instanceof SonyCamera) await instance.resumeShooting()
+                }
             })
             if (options.capture)
                 await check('photo-transfer', async () => {

@@ -5,7 +5,13 @@ import {
     type ProtocolEvidence,
 } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
-import type { Registry } from '@ptp/registry'
+import { createCanonRegistry, createNikonRegistry, createSonyRegistry, type Registry } from '@ptp/registry'
+
+const definitionsByVendor = new Map<number, Registry>([
+    [0x04a9, createCanonRegistry(true)],
+    [0x04b0, createNikonRegistry(true)],
+    [0x054c, createSonyRegistry(true)],
+])
 
 /** Retain decoded numeric protocol datasets only; unknown payloads are never copied. */
 export function protocolEvidence(
@@ -14,6 +20,9 @@ export function protocolEvidence(
     operation: number,
     data: unknown
 ): ProtocolEvidence[] {
+    // Discovery starts through GenericCamera before it creates the vendor camera.
+    // Judge known codes against the vendor definitions, not that temporary registry.
+    registry = definitionsByVendor.get(vendorId) ?? registry
     const result: ProtocolEvidence[] = []
     const add = (item: ProtocolEvidence) => {
         try {

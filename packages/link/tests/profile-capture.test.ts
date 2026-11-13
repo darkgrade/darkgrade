@@ -1,5 +1,7 @@
 import { Camera } from '@camera/index'
+import { SonyCamera } from '@camera/sony-camera'
 import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import { protocolEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
@@ -14,6 +16,31 @@ import { describe, expect, it } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 
 const codecs = createPTPRegistry(true).codecs
+it('initial generic discovery recognizes vendor definitions without borrowing another vendor’s codes', () => {
+    const data={operationsSupportedRaw:[0x9209,0x9fff],eventsSupportedRaw:[],devicePropertiesSupported:[]}
+    const sony=protocolEvidence(0x054c,createPTPRegistry(true),0x1001,data)
+    expect(sony.filter(item=>item.type==='unknown').map(item=>(item as any).code)).toEqual([0x9fff])
+    const generic=protocolEvidence(0,createPTPRegistry(true),0x1001,data)
+    expect(generic.filter(item=>item.type==='unknown').map(item=>(item as any).code)).toEqual([0x9209,0x9fff])
+})
+it('Sony profile storage reads enter transfer mode and restore shooting after a failed read', async () => {
+    const calls:string[]=[]
+    const instance=Object.assign(Object.create(SonyCamera.prototype),{
+        vendorId:0x054c,registry:createPTPRegistry(true),
+        observeProfile:()=>()=>{},recordProtocol:()=>{},
+        transport:{getType:()=>TransportType.USB},
+        prepareStorageRead:async()=>{calls.push('prepare')},
+        resumeShooting:async()=>{calls.push('restore')},
+    })
+    const camera={getInstance:()=>instance,send:async(operation:any)=>{
+        if(operation.code===0x1001)return {code:0x2001,data:identity}
+        calls.push('storage')
+        throw new Error('Read refused')
+    }} as unknown as Camera
+    const result=await runCameraBenchmark(camera)
+    expect(result.profile.status).toBe('partial')
+    expect(calls).toEqual(['prepare','storage','restore'])
+})
 it('rejects invalid or unintended media recording requests before connecting', async () => {
     for (const extra of [
         { repetitions: 2 },
