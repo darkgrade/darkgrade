@@ -135,6 +135,12 @@ export class Camera {
         await this.instance.connect(device || this.deviceDescriptor, { mode: 'menus' })
     }
 
+    /** Opens native Sony remote observation without changing priority or saved image routing. */
+    async connectSonyObservationSession(device?: DeviceDescriptor): Promise<void> {
+        if (!(this.instance instanceof SonyCamera)) throw new Error('Sony observation sessions require a Sony camera')
+        await this.instance.connect(device || this.deviceDescriptor, { configure: false })
+    }
+
     async disconnect(): Promise<void> {
         return this.instance.disconnect()
     }

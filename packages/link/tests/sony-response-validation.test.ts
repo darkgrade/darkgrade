@@ -1,4 +1,5 @@
 import { SonyCamera } from '@camera/sony-camera'
+import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
@@ -51,6 +52,24 @@ describe('Sony incremental property boundaries', () => {
 })
 
 describe('Sony session response validation', () => {
+    it('opens facade observation through the native session without rewriting camera settings', async () => {
+        const descriptor = { usb: { filters: [{ vendorId: 0x054c, productId: 0x0e78, serialNumber: 'test-body' }] } }
+        const transport = { isLittleEndian: () => true, isConnected: () => true } as unknown as TransportInterface
+        const facade = new Camera({ device: descriptor, transport, logger: { captureConsole: false, renderInTerminal: false } })
+        const camera = facade.getInstance() as SonyCamera
+        const sent: string[] = []
+        camera.send = (async operation => { sent.push(operation.name); return { code: 0x2001 } }) as typeof camera.send
+        camera.refreshPropertyStates = async () => []
+        camera.set = vi.fn(async () => undefined)
+        const connect = vi.spyOn(camera, 'connect')
+        await facade.connectSonyObservationSession()
+        expect(connect).toHaveBeenCalledWith(descriptor, { configure: false })
+        expect(sent).toEqual(['SDIO_OpenSession', 'SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo', 'SDIO_Connect'])
+        expect(camera.set).not.toHaveBeenCalled()
+        const other = new Camera({ vendorId: 0x04a9, transport, logger: { captureConsole: false, renderInTerminal: false } })
+        await expect(other.connectSonyObservationSession()).rejects.toThrow('require a Sony camera')
+    })
+
     it('allows an inventory session without changing host priority or save destination', async () => {
         const { camera, sent } = cameraFixture()
         camera.refreshPropertyStates = async () => []
