@@ -15,7 +15,7 @@ export const STUDIO: Product = {
     features: [
         today('Set up your lights and camera in one tap'),
         today('Works with the gear you already own'),
-        next('Voice control for your whole studio'),
+        today('Voice control for your whole studio'),
         next('A first cut ready when you stop recording'),
     ],
 }
@@ -33,8 +33,8 @@ export const LINK: Product = {
     features: [
         today('Control your camera from any app'),
         today('Works with Sony / Nikon / Canon'),
+        today('Let local models control your camera with MCP'),
         next('More camera brands'),
-        next('Let local models control your camera with MCP'),
     ],
 }
 
