@@ -643,81 +643,6 @@ function drawCard(context: CanvasRenderingContext2D, area: PixelRectangle, typef
     drawAddress(context, typefaces, left, taglineBaseline + (CARD_ADDRESS_GAP + ADDRESS_SIZE) * scale, scale)
 }
 
-/**
- * A bench card: the lockup, the bench's name with its last syllable lit as the site lights a
- * headline, what it does, and its address. It stands on the same dust as the banners, with
- * nothing in front of it.
- */
-function drawBenchCard(
-    context: CanvasRenderingContext2D,
-    area: PixelRectangle,
-    typefaces: Typefaces,
-    words: NonNullable<AssetFormat['words']>
-): void {
-    const measure = (scale: number) => {
-        const fontSize = HEADLINE_SIZE * scale
-        setLetterSpacing(context, HEADLINE_TRACKING_EM * fontSize)
-        context.font = `${typefaces.headingWeight} ${fontSize}px ${typefaces.heading}`
-        const before = context.measureText(words.before)
-        context.font = `italic ${typefaces.headingWeight} ${fontSize}px ${typefaces.heading}`
-        const lit = context.measureText(words.lit)
-        setLetterSpacing(context, 0)
-        context.font = `400 ${TAGLINE_SIZE * scale}px ${typefaces.body}`
-        return {
-            beforeWidth: before.width,
-            litWidth: lit.width,
-            ascent: before.actualBoundingBoxAscent,
-            descent: lit.actualBoundingBoxDescent,
-            descriptionWidth: context.measureText(words.description).width,
-        }
-    }
-
-    const design = measure(1)
-    const naturalWidth = Math.max(
-        measureLockup(context, typefaces, 1),
-        design.beforeWidth + design.litWidth,
-        design.descriptionWidth
-    )
-    const naturalHeight =
-        LOCKUP_SIZE +
-        CARD_GAP +
-        design.ascent +
-        design.descent +
-        CARD_GAP +
-        TAGLINE_SIZE +
-        CARD_ADDRESS_GAP +
-        ADDRESS_SIZE
-    const scale = Math.min(area.width / naturalWidth, area.height / naturalHeight, CARD_MAXIMUM_SCALE)
-    const name = measure(scale)
-    const left = area.x
-    const top = area.y + (area.height - naturalHeight * scale) / 2
-    const fontSize = HEADLINE_SIZE * scale
-
-    drawLockup(context, typefaces, left, top, scale)
-
-    const baseline = top + (LOCKUP_SIZE + CARD_GAP) * scale + name.ascent
-    context.textBaseline = 'alphabetic'
-    context.textAlign = 'left'
-    context.fillStyle = BONE
-    setLetterSpacing(context, HEADLINE_TRACKING_EM * fontSize)
-    context.font = `${typefaces.headingWeight} ${fontSize}px ${typefaces.heading}`
-    context.fillText(words.before, left, baseline)
-    context.font = `italic ${typefaces.headingWeight} ${fontSize}px ${typefaces.heading}`
-    drawGlowingText(context, words.lit, left + name.beforeWidth, baseline, fontSize)
-    setLetterSpacing(context, 0)
-
-    const descriptionBaseline = baseline + name.descent + (CARD_GAP + TAGLINE_SIZE * 0.8) * scale
-    context.fillStyle = BONE_MUTED
-    context.font = `400 ${TAGLINE_SIZE * scale}px ${typefaces.body}`
-    context.fillText(words.description, left, descriptionBaseline)
-
-    context.fillStyle = GOLD
-    context.font = `400 ${ADDRESS_SIZE * scale}px ${typefaces.mono}`
-    setLetterSpacing(context, ADDRESS_TRACKING_EM * ADDRESS_SIZE * scale)
-    context.fillText(words.address.toUpperCase(), left, descriptionBaseline + (CARD_ADDRESS_GAP + ADDRESS_SIZE) * scale)
-    setLetterSpacing(context, 0)
-}
-
 function drawCenteredIcon(context: CanvasRenderingContext2D, format: AssetFormat, glow: boolean, color: string): void {
     const iconWidth = format.width * SQUARE_MARK_WIDTH_RATIO
     const scale = iconWidth / ICON_VIEWBOX.width
@@ -741,7 +666,7 @@ export async function renderAssetCanvas(format: AssetFormat, options: RenderOpti
     const context = output.getContext('2d')
     if (!context) throw new Error('2D canvas is unavailable')
 
-    const hasBackdrop = format.look === 'banner' || format.look === 'bench' || format.look === 'mark-on-backdrop'
+    const hasBackdrop = format.look === 'banner' || format.look === 'backdrop' || format.look === 'mark-on-backdrop'
     if (hasBackdrop) drawBackdrop(context, format.width, format.height, options)
     if (format.look === 'card') {
         drawPicture(context, format.width, format.height, options.picture)
@@ -753,8 +678,6 @@ export async function renderAssetCanvas(format: AssetFormat, options: RenderOpti
     }
 
     if (format.look === 'banner') drawBanner(context, format, options.typefaces)
-    if (format.look === 'bench' && format.words)
-        drawBenchCard(context, format.contentArea, options.typefaces, format.words)
     if (format.look === 'card') drawCard(context, format.contentArea, options.typefaces)
     if (format.look === 'mark-on-white') drawCenteredIcon(context, format, false, '#000000')
     if (format.look === 'mark-on-black') drawCenteredIcon(context, format, false, '#ffffff')
