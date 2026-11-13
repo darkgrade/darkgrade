@@ -136,7 +136,8 @@ function RegistrationMark() {
 function Slates({ head, foot }: { head: RefObject<HTMLDivElement | null>; foot: RefObject<HTMLDivElement | null> }) {
     return (
         <div aria-hidden="true" className={`${STAGE} z-[7]`}>
-            <div className="shell pt-[76px]">
+            {/* the slate hangs from the foot of the header, which is half as tall in a narrow window */}
+            <div className="shell pt-[76px] max-[900px]:pt-[38px]">
                 <div className={`flex items-center justify-between gap-4 border-t border-hair pt-[10px] ${SLATE}`}>
                     <div className="h-[22px] min-w-0 flex-1 overflow-hidden">
                         <div ref={head} className="will-change-transform">
