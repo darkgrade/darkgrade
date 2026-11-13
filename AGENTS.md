@@ -45,12 +45,19 @@ is the single knob for every gold glow.
 | `apps/darkgrade.com/app/press-kit` | draws every social image live | regenerate here, never hand-edit a PNG |
 | `apps/drkgrd.co/public` | copies of the same ten filenames | its own type stack (`tay-*` local fonts) |
 | `apps/docs/assets` | copies, plus `ks_*` for kevinschaich.com | `docs.json` carries `fonts` and `colors` of its own |
-| `toolbench`, `voicebench`, `cambench` (separate repos) | their own `index.html` | each needs its own card |
+| `toolbench`, `voicebench`, `cambench` (separate repos) | `scripts/prerender.ts` | draws a card per route with satori; the tokens live in that template |
 | `kevinschaich.com` (separate repo) | `ks_*` cards, `public/kit/v1/brand.css` | its home page mirrors drkgrd.co; a projects page besides |
 
 The social images are rendered by `/press-kit`, which draws the home page's own scene: open it,
 pick the size, download the PNG. A card that was edited by hand will drift from the site the next
 time the scene changes.
+
+The benches are the exception, and not a card each: every one of them draws a card per route in
+`scripts/prerender.ts` with satori, hundreds in a build, so there is nothing to hand over. What
+changes there is the template — its colours, its weights and its type — and the next build
+regenerates every card from it. The same goes for anything else that generates cards
+programmatically, kevinschaich.com's `opengraph-image.tsx` among them: change the template, not
+the output.
 
 A change that lands in another repository is a pull request there, not a file copied across.
 Say in the darkgrade pull request which other repositories still need the same change, so the
