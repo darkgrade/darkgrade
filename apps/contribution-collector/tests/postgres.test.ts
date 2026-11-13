@@ -431,6 +431,11 @@ test('deep profiles and unknown-code queues retain scopes and source references 
   assert.equal((await database.operator.protocol({days:1,installation:user.installId},queue.items[0].key)).items.length,0)
   const profile=await database.operator.profile(user.installId,benchmark);assert.equal(profile.items.length,2);assert.equal(profile.hardwarePass,false)
   assert.equal((await database.operator.profile(randomUUID(),benchmark)).items.length,0)
+  const lossy=batch(),lossyBenchmark=randomUUID()
+  lossy.contributions[0].droppedEntries=1
+  Object.assign(lossy.contributions[0].entries[0],{protocol:{type:'benchmark',benchmarkId:lossyBenchmark,vendorId:0x04b0,status:'complete',checks:1,failures:0}})
+  await handle(request('/v2/batches','POST',user.installKey,lossy))
+  assert.equal((await database.operator.profile(user.installId,lossyBenchmark)).truncated,true)
   const sourcePath='diagnostics/'+user.installId+'_'+payload.id
   let original: any
   await database.transaction(async transaction=>{

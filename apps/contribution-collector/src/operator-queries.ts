@@ -60,12 +60,13 @@ export function operatorQueries(pool: Pool) {
         async profile(installation: string, benchmark: string) {
             const result = await pool.query(
                 `SELECT batch_path,sequence,session_id,manufacturer,model,firmware,revision,transport,evidence,
-                    hardware_fingerprint, properties->'protocol' AS protocol
+                    hardware_fingerprint, properties->'protocol' AS protocol,
+                    coalesce((properties->>'droppedEntries')::int,0) AS dropped_entries
                 FROM telemetry_events WHERE installation_id=$1 AND ${activeSource} AND properties->'protocol'->>'benchmarkId'=$2
                 ORDER BY received_at,batch_path,sequence LIMIT 8193`, [installation, benchmark]
             )
             return { schema: 'darkgrade.camera-profile-evidence/v1', installation, benchmark, hardwarePass: false, items: result.rows.slice(0,8192),
-                truncated: result.rows.length > 8192 }
+                truncated: result.rows.length > 8192 || result.rows.some(row => row.dropped_entries > 0) }
         },
         async suggestions(field: SuggestionField, query: string, filters: EventFilters) {
             const column = {
