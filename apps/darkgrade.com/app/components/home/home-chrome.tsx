@@ -17,7 +17,7 @@ const NAV = [
     { label: 'Experiments', href: '/toolbench/' },
 ]
 
-/** The home page's header: the wordmark, the four links, GitHub. Fixed to the top of the window. */
+/** The home page's header: the wordmark, the four links, GitHub. Fixed to the top of the window, and half as tall on a phone or an upright tablet, where the picture sits right under it. */
 export function HomeHeader({ className = '' }: { className?: string }) {
     const text = TEXT
     const link = `text-[14px] transition-colors duration-300 ${text.soft} ${text.hover}`
@@ -26,11 +26,11 @@ export function HomeHeader({ className = '' }: { className?: string }) {
             {/* the page fades out under the header, so words scrolling up never run into it */}
             <div
                 aria-hidden="true"
-                className={`absolute inset-x-0 top-0 h-[120px] bg-gradient-to-b from-[#0a0a0b] via-[#0a0a0b]/80 to-transparent`}
+                className={`absolute inset-x-0 top-0 h-[120px] bg-gradient-to-b from-[#0a0a0b] via-[#0a0a0b]/80 to-transparent max-[900px]:h-[60px]`}
             />
-            <div className="shell relative flex h-[76px] items-center justify-between">
+            <div className="shell relative flex h-[76px] items-center justify-between max-[900px]:h-[38px]">
                 <Link href="#top" aria-label="Darkgrade" className={`pointer-events-auto block ${text.strong}`}>
-                    <Lockup className="text-[21px] max-[400px]:text-[18px]" />
+                    <Lockup className="text-[21px] max-[900px]:text-[18px]" />
                 </Link>
                 <nav className="pointer-events-auto flex items-center gap-[32px] max-[900px]:hidden">
                     {NAV.map(item => (
