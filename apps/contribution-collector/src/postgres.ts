@@ -34,6 +34,7 @@ ALTER TABLE telemetry_events ADD COLUMN IF NOT EXISTS hardware_fingerprint text;
 ALTER TABLE telemetry_events ADD COLUMN IF NOT EXISTS backend text NOT NULL DEFAULT 'unknown';
 ALTER TABLE telemetry_events ADD COLUMN IF NOT EXISTS connection_normalized boolean NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS telemetry_events_pending_connection ON telemetry_events(batch_path) WHERE NOT connection_normalized;
+CREATE INDEX IF NOT EXISTS telemetry_events_legacy_connection ON telemetry_events(batch_path) WHERE NOT connection_normalized AND transport='sony-sdk';
 CREATE INDEX IF NOT EXISTS telemetry_events_hardware_time ON telemetry_events (hardware_fingerprint,received_at) WHERE hardware_fingerprint IS NOT NULL;
 CREATE INDEX IF NOT EXISTS telemetry_events_install_time ON telemetry_events (installation_id, received_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_session ON telemetry_events (session_id, occurred_at);
@@ -231,8 +232,11 @@ export async function postgresDatabase(connectionString: string) {
                 const result = await pool.query(`
                     WITH candidates AS MATERIALIZED (
                         SELECT DISTINCT batch_path FROM (
-                            SELECT batch_path FROM telemetry_events
-                            WHERE NOT connection_normalized ORDER BY batch_path LIMIT 1000
+                            (SELECT batch_path FROM telemetry_events
+                             WHERE NOT connection_normalized AND transport='sony-sdk' LIMIT 1000)
+                            UNION ALL
+                            (SELECT batch_path FROM telemetry_events
+                             WHERE NOT connection_normalized ORDER BY batch_path LIMIT 1000)
                         ) pending
                     ), wifi_batches AS MATERIALIZED (
                         SELECT DISTINCT e.batch_path FROM telemetry_events e JOIN candidates c USING(batch_path)
