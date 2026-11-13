@@ -10,9 +10,9 @@ import { HomeFooter, HomeHeader } from '@/app/components/home/home-chrome'
 import { LaptopScreen, SCREEN_WIDTH_PIXELS, transformOnto } from '@/app/components/home/laptop-screen'
 import { EXCHANGES_KEPT, type Exchange, LinkDesk } from '@/app/components/home/link-desk'
 import { between, watch } from '@/app/components/home/motion'
-import { PageTimeline, type TimelineClip } from '@/app/components/home/page-timeline'
+import { PageTimeline, type TimelineClip, type TimelineControls } from '@/app/components/home/page-timeline'
 import { PrincipleSteps } from '@/app/components/home/principle-steps'
-import { useRise } from '@/app/components/home/rise'
+import { useHeldWords } from '@/app/components/home/rise'
 import { TitleBlock } from '@/app/components/home/title-block'
 import { FeatureList } from '@/app/components/products'
 import { BTN_GHOST, BTN_SOLID } from '@/app/components/site-links'
@@ -26,13 +26,16 @@ const FIRST_READINGS: Record<Callout, string> = { aperture: 'f/2.8', focus: 'AF-
 const LEADER_PIXELS: Record<Callout, number> = { aperture: 50, focus: 26, shutter: 38, iso: 14 }
 const DOCUMENT_NUMBER = 'DG-HP-006'
 const FIRST_CUT = STUDIO.features.find(feature => !feature.on)
+/** The first line of the thesis opens with the word for the one button it is about, which is set in the red of a recording light. */
+const [RECORD_WORD, ...WORDS_AFTER_RECORD] = MANIFESTO[0].split(' ')
+const AFTER_RECORD = WORDS_AFTER_RECORD.join(' ')
 
 /** The slate and caption of each sheet of the page, in order. The first has no caption: its title block is there instead. */
 const SHEETS = [
     { scene: 'Scene 01', title: HERO.eyebrow, caption: '' },
-    { scene: 'Scene 02', title: 'Our thesis', caption: 'Coming together.' },
+    { scene: 'Scene 02', title: 'Our thesis', caption: 'The shutter button.' },
     { scene: 'Scene 03', title: 'Our thesis', caption: 'Every control it has, all at once.' },
-    { scene: 'Scene 04', title: 'Our thesis', caption: 'Controls removed.' },
+    { scene: 'Scene 04', title: 'Our thesis', caption: 'Every control but one, removed.' },
     { scene: 'Act I', title: LINK.kind, caption: 'Ask on the laptop; Link makes the call; the camera answers.' },
     { scene: 'Act II', title: STUDIO.kind, caption: 'The studio, lit. Move your pointer: the lights lean after it.' },
     {
@@ -46,6 +49,8 @@ const SHEETS = [
 /** Which sheet each of the scene's chapters is on: the last two share one. */
 const SHEET_OF_CHAPTER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 8]
 
+/** How tall each sheet of the thesis is, in windows: half the usual, so the three of them pass as quickly as one line follows another. */
+const THESIS_WINDOWS_TALL = 0.875
 /** The sheet the principles are stepped through on. The chair's shot is a mark near its end, not its middle. */
 const PRINCIPLES_SHEET = 'principles-sheet'
 /** How tall that sheet is, in windows: room to scroll through the principles one at a time. */
@@ -158,6 +163,8 @@ function Slates({ head, foot }: { head: RefObject<HTMLDivElement | null>; foot: 
 
 interface SheetProps {
     id: string
+    /** The name links on the page reach this sheet by, when it has one. */
+    anchor?: string
     register: (id: string, element: HTMLElement | null) => void
     /** Where the words sit in the window while the sheet passes. */
     align?: 'middle' | 'bottom' | 'centre'
@@ -180,10 +187,11 @@ const WORDS_AT = {
 }
 
 /** One chapter: taller than the window, with its words held in place while the picture makes its move. */
-function Sheet({ id, register, align = 'middle', marks = [], windowsTall, children }: SheetProps) {
+function Sheet({ id, anchor, register, align = 'middle', marks = [], windowsTall, children }: SheetProps) {
     return (
         <section
             ref={element => register(id, element)}
+            id={anchor}
             data-chapter={id}
             className={`relative ${marks.length > 0 ? 'min-h-[215vh]' : 'min-h-[175vh]'}`}
             style={windowsTall ? { minHeight: `${windowsTall * 100}vh` } : undefined}
@@ -197,7 +205,7 @@ function Sheet({ id, register, align = 'middle', marks = [], windowsTall, childr
                     style={{ top: `${mark.windowsDown * 100}vh` }}
                 />
             ))}
-            <div className={`sticky top-0 flex ${STAGE_HEIGHT} ${WORDS_AT[align]}`}>
+            <div data-words="ahead" className={`sticky top-0 flex ${STAGE_HEIGHT} ${WORDS_AT[align]}`}>
                 <div className="shell">{children}</div>
             </div>
         </section>
@@ -235,7 +243,9 @@ export function Home() {
     const exchangeCount = useRef(0)
     const [principle, setPrinciple] = useState(0)
     const [ready, setReady] = useState(false)
-    useRise(page)
+    useHeldWords(page)
+    const timeline = useRef<TimelineControls>(null)
+    const watchItInAction = () => timeline.current?.playFromStart()
 
     useEffect(() => {
         const [target, host] = [canvas.current, page.current]
@@ -451,7 +461,7 @@ export function Home() {
                 <LaptopScreen
                     frame={laptopScreen}
                     link={{ layer: linkLayer, children: <LinkDesk exchanges={exchanges} typing={typing} /> }}
-                    cut={{ layer: cutLayer, children: <FirstCutApp feature={FIRST_CUT?.text ?? ''} /> }}
+                    cut={{ layer: cutLayer, children: <FirstCutApp /> }}
                 />
             </div>
 
@@ -468,9 +478,9 @@ export function Home() {
                         {DREAM.punch}
                     </p>
                     <div className="mt-[clamp(20px,4vh,40px)] flex flex-wrap justify-center gap-[14px]">
-                        <a className={BTN_SOLID} href={LINKS.youtube} target="_blank" rel="noopener">
-                            <span>Watch it in action</span>
-                        </a>
+                        <button type="button" className={`${BTN_SOLID} cursor-pointer`} onClick={watchItInAction}>
+                            <span>{HERO.watch}</span>
+                        </button>
                         <a className={BTN_GHOST} href={LINKS.github} target="_blank" rel="noopener">
                             <span>Star on GitHub</span>
                             <StarIcon className="size-[.85em] text-gold" />
@@ -496,7 +506,10 @@ export function Home() {
                     data-chapter="hero"
                     className="relative flex h-dvh min-h-[620px] flex-col"
                 >
-                    <div className="flex min-h-0 flex-1 items-center pt-[124px] max-[900px]:items-end">
+                    <div
+                        data-words="ahead"
+                        className="flex h-dvh min-h-0 flex-1 items-center pt-[124px] max-[900px]:items-end"
+                    >
                         <div className="shell">
                             <div className={LEFT}>
                                 <h1
@@ -521,8 +534,12 @@ export function Home() {
                                     data-rise
                                     style={order(3)}
                                 >
-                                    <a className={BTN_SOLID} href={HERO.primary.href} target="_blank" rel="noopener">
-                                        <span>{HERO.primary.label}</span>
+                                    <button
+                                        type="button"
+                                        className={`${BTN_SOLID} cursor-pointer`}
+                                        onClick={watchItInAction}
+                                    >
+                                        <span>{HERO.watch}</span>
                                         <svg
                                             width="14"
                                             height="14"
@@ -532,7 +549,7 @@ export function Home() {
                                         >
                                             <path d="M5 3l14 9-14 9V3z" />
                                         </svg>
-                                    </a>
+                                    </button>
                                     <a className={BTN_GHOST} href={HERO.secondary.href} target="_blank" rel="noopener">
                                         <span>{HERO.secondary.label}</span>
                                     </a>
@@ -542,19 +559,19 @@ export function Home() {
                     </div>
                 </section>
 
-                <Sheet id="fun" register={register}>
-                    <p className={`${THESIS} ${LEFT} text-[rgba(234,230,220,.5)]`} data-rise>
-                        {MANIFESTO[0]}
+                <Sheet id="fun" register={register} windowsTall={THESIS_WINDOWS_TALL}>
+                    <p className={`${THESIS} ${LEFT}`} data-rise>
+                        <span className="text-rec">{RECORD_WORD}</span> {AFTER_RECORD}
                     </p>
                 </Sheet>
 
-                <Sheet id="menus" register={register}>
-                    <p className={`${THESIS} ${LEFT} text-[rgba(234,230,220,.5)]`} data-rise>
+                <Sheet id="menus" register={register} windowsTall={THESIS_WINDOWS_TALL}>
+                    <p className={`${THESIS} ${LEFT}`} data-rise>
                         {MANIFESTO[1]}
                     </p>
                 </Sheet>
 
-                <Sheet id="delete" register={register}>
+                <Sheet id="delete" register={register} windowsTall={THESIS_WINDOWS_TALL}>
                     <p className={`${THESIS} ${LEFT}`} data-rise>
                         We’re deleting <em className="glow-hot italic">the rest.</em>
                     </p>
@@ -562,8 +579,8 @@ export function Home() {
 
                 <div id="product" />
                 {/* the camera is up and to the left with what Link is under it; the laptop it is driven from is on the right */}
-                <Sheet id="link" register={register} align="bottom">
-                    <div id="link" className="max-w-[min(460px,36%)] max-[900px]:max-w-none">
+                <Sheet id="link" anchor="link" register={register} align="bottom">
+                    <div className="max-w-[min(460px,36%)] max-[900px]:max-w-none">
                         <p className={KICKER} data-rise>
                             <span className="text-gold">{LINK.name}</span>
                             <span className={KIND}>{LINK.kind}</span>
@@ -588,8 +605,8 @@ export function Home() {
                     </div>
                 </Sheet>
 
-                <Sheet id="studio" register={register}>
-                    <div id="studio" className="max-w-[min(520px,42%)] max-[900px]:max-w-none">
+                <Sheet id="studio" anchor="studio" register={register}>
+                    <div className="max-w-[min(520px,42%)] max-[900px]:max-w-none">
                         <p className={KICKER} data-rise>
                             <span className="text-gold">{STUDIO.name}</span>
                             <span className={KIND}>{STUDIO.kind}</span>
@@ -621,11 +638,12 @@ export function Home() {
                 {/* these words do not scroll away: they go out where they stand as the view leaves the chair, before their sheet lets go of them */}
                 <Sheet
                     id={PRINCIPLES_SHEET}
+                    anchor="principles"
                     register={register}
                     windowsTall={PRINCIPLES_WINDOWS_TALL}
                     marks={[{ shot: 'principles', windowsDown: PRINCIPLES_WINDOWS_TALL - CHAIR_WINDOWS_FROM_END }]}
                 >
-                    <div ref={principlesWords} id="principles" className={LEFT}>
+                    <div ref={principlesWords} className={LEFT}>
                         <h2
                             className="font-serif text-[clamp(2rem,min(4vw,5.6vh),3.75rem)] leading-[1.04] heading-weight tracking-[-.045em]"
                             data-rise
@@ -656,7 +674,7 @@ export function Home() {
                 </div>
             </main>
 
-            <PageTimeline clips={CLIPS} sections={sections} />
+            <PageTimeline clips={CLIPS} sections={sections} after={footer} controls={timeline} />
         </div>
     )
 }

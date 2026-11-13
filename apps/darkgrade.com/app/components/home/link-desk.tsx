@@ -31,7 +31,7 @@ const COPY = {
 /* The desk is laid out 1280 pixels wide and then fitted to a laptop's screen a quarter of that across, so everything on it is set large. */
 const PANE_HEAD =
     'flex h-[92px] shrink-0 items-center justify-between border-b border-hair px-10 font-mono text-[21px] tracking-[.08em] text-ink-52 uppercase'
-const CODE_ROW = 'grid h-[70px] grid-cols-[minmax(0,1fr)_46px] items-center pr-7 pl-10 font-mono text-[29px]'
+const CODE_ROW = 'flex h-[70px] items-center pr-7 pl-10 font-mono text-[29px]'
 
 /** A line of code with its keywords dimmed and its strings in gold. */
 function CodeLine({ line }: { line: string }) {
@@ -205,7 +205,7 @@ export function LinkDesk({ exchanges, typing = null }: LinkDeskProps) {
                 <ol className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden pb-7">
                     {OPENING_LINES.map((line, index) => (
                         <li key={`opening-${index}`} className={`${CODE_ROW} text-ink-66`}>
-                            <span className="truncate">
+                            <span className="min-w-0 truncate">
                                 <CodeLine line={line} />
                             </span>
                         </li>
@@ -215,10 +215,9 @@ export function LinkDesk({ exchanges, typing = null }: LinkDeskProps) {
                             key={exchange.id}
                             className={`${CODE_ROW} ${exchange === newest ? 'desk-flash text-ink' : 'text-ink-66'}`}
                         >
-                            <span className={`truncate ${exchange === newest ? 'desk-type' : ''}`}>
+                            <span className={`min-w-0 truncate ${exchange === newest ? 'desk-type' : ''}`}>
                                 <CodeLine line={exchange.call} />
                             </span>
-                            {exchange.answered && <Tick />}
                         </li>
                     ))}
                 </ol>

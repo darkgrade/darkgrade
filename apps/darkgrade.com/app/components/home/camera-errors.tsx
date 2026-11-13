@@ -16,24 +16,24 @@ const ERRORS = [
     { title: 'USB connection failed', detail: 'Check the cable' },
     { title: 'Card full', detail: 'Cannot record' },
     { title: 'Clock not set', detail: 'Set date and time' },
+    { title: 'Lens not recognised', detail: 'Reattach the lens' },
+    { title: 'Update required', detail: 'Lens firmware does not match' },
 ]
-/** Where each error pops up, by its left and top as shares of the monitor. */
+/** Where each error pops up, by its left and top as shares of the monitor: one for each error, each over the ones before it. */
 const PLACES = [
-    { left: 4, top: 5 },
-    { left: 33, top: 17 },
-    { left: 8, top: 31 },
-    { left: 35, top: 45 },
-    { left: 5, top: 59 },
-    { left: 31, top: 72 },
+    { left: 4, top: 4 },
+    { left: 30, top: 13 },
+    { left: 11, top: 23 },
+    { left: 36, top: 31 },
+    { left: 2, top: 40 },
+    { left: 24, top: 48 },
+    { left: 37, top: 57 },
+    { left: 7, top: 64 },
+    { left: 29, top: 72 },
+    { left: 16, top: 80 },
 ]
-
-/** One thing a camera stops a shoot to say. */
-export interface CameraError {
-    title: string
-    detail: string
-}
 /** How long one error waits after the one before it, in seconds. */
-const STAGGER_SECONDS = 0.7
+const STAGGER_SECONDS = 0.5
 
 function Warning() {
     return (
@@ -66,7 +66,7 @@ export function CameraErrors({ frame }: { frame: Ref<HTMLDivElement> }) {
             className="absolute top-0 left-0 origin-top-left overflow-hidden bg-[var(--monitor-bg)] opacity-0 shadow-[inset_0_0_0_1.5px_rgba(234,230,220,.3)] will-change-transform"
             style={{ width: MONITOR_WIDTH_PIXELS }}
         >
-            {ERRORS.slice(0, PLACES.length).map((error, index) => (
+            {ERRORS.map((error, index) => (
                 <div
                     key={error.title}
                     className="monitor-error absolute flex w-[61%] items-start gap-[9px] rounded-[5px] border border-ink/45 bg-[var(--monitor-card)] px-[11px] py-[8px] shadow-[0_6px_22px_rgba(0,0,0,.7)]"

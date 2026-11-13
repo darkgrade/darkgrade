@@ -1,6 +1,6 @@
 'use client'
 
-import { type PointerEvent, type RefObject, useEffect, useRef, useState } from 'react'
+import { type PointerEvent, type RefObject, useEffect, useImperativeHandle, useRef, useState } from 'react'
 
 import { watch } from '@/app/components/home/motion'
 
@@ -14,15 +14,24 @@ export interface TimelineClip {
     sound: 'speech' | 'room' | 'quiet'
 }
 
+/** What the page around the timeline may ask of it. */
+export interface TimelineControls {
+    /** Goes to the top of the page and plays it through from there. */
+    playFromStart(): void
+}
+
 interface PageTimelineProps {
     clips: TimelineClip[]
     /** The page's sections by id, filled in by the page as they mount. */
     sections: RefObject<Map<string, HTMLElement>>
+    /** What comes after the page the timeline covers: the footer. The timeline ends as it reaches the window, so playing never runs on into it. */
+    after: RefObject<HTMLElement | null>
+    controls?: RefObject<TimelineControls | null>
 }
 
 const FRAMES_PER_SECOND = 24
 /** How long the page's timeline pretends the footage runs, end to end: illustrative, as the takes on the first cut are. */
-const RUNTIME_SECONDS = 150
+const RUNTIME_SECONDS = 75
 /** How many bars of waveform the whole timeline is drawn with; a clip gets its share. */
 const BARS_ACROSS = 560
 const TWO_DIGITS = (value: number) => String(Math.floor(value)).padStart(2, '0')
@@ -86,25 +95,31 @@ function Waveform({ bars, seed, sound }: { bars: number; seed: number; sound: Ti
     )
 }
 
-/** How far down the page the reading line is, 0..1: it runs from the top of the window to its bottom as the page scrolls through. */
-function readingLine(): number {
+/** How far down the document the timeline's page ends, in pixels: where `after` begins, or the end of the document. */
+function pageEnd(after: HTMLElement | null): number {
     const scroller = document.scrollingElement
     if (!scroller) return 0
-    const furthest = scroller.scrollHeight - innerHeight
-    if (furthest <= 0) return 0
-    const through = Math.min(1, Math.max(0, scroller.scrollTop / furthest))
-    return (scroller.scrollTop + innerHeight * through) / scroller.scrollHeight
+    return after ? after.getBoundingClientRect().top + scroller.scrollTop : scroller.scrollHeight
 }
 
-/** How far the page can be scrolled, in pixels. */
-function furthestScroll(): number {
-    const scroller = document.scrollingElement
-    return scroller ? Math.max(0, scroller.scrollHeight - innerHeight) : 0
+/** How far the page scrolls before what comes after it reaches the window, in pixels: the timeline ends there. */
+function furthestScroll(after: HTMLElement | null): number {
+    return Math.max(0, pageEnd(after) - innerHeight)
 }
 
-/** Puts the reading line a share of the way down the page, at once: the line is as far down the page as the page is scrolled through. */
-function putReadingLineAt(line: number) {
-    scrollTo({ top: Math.min(1, Math.max(0, line)) * furthestScroll(), behavior: 'instant' })
+/**
+ * How far down the timeline's page the reading line is, 0..1: it runs from the top of the window
+ * to its bottom as the page scrolls through, which makes it as far down the page as the page is
+ * scrolled through. It stays at the end while what comes after the page is scrolled.
+ */
+function readingLine(after: HTMLElement | null): number {
+    const furthest = furthestScroll(after)
+    return furthest > 0 ? Math.min(1, Math.max(0, scrollY / furthest)) : 0
+}
+
+/** Puts the reading line a share of the way down the page, at once. */
+function putReadingLineAt(line: number, after: HTMLElement | null) {
+    scrollTo({ top: Math.min(1, Math.max(0, line)) * furthestScroll(after), behavior: 'instant' })
 }
 
 /** A clip narrower than this share of the page has no room for its timecode on the ruler. */
@@ -118,10 +133,17 @@ const MOVED_BY_SOMETHING_ELSE_PIXELS = 2
 /** The longest step the playback takes in one frame, in seconds: a window left and come back to carries on, it does not jump. */
 const LONGEST_FRAME_SECONDS = 0.1
 
-function TransportIcon({ playing }: { playing: boolean }) {
+/** The drawings on the transport's buttons, each on a 16 by 16 square. The play triangle sits a little right of the middle, where it looks centred. */
+const TRANSPORT_ICONS = {
+    play: 'M5.4 3v10l8-5z',
+    pause: 'M4 3h2.9v10H4zM9.1 3H12v10H9.1z',
+    toStart: 'M3.4 3.2h1.9v9.6H3.4zM13 3.2v9.6L6.2 8z',
+}
+
+function TransportIcon({ icon, className }: { icon: keyof typeof TRANSPORT_ICONS; className: string }) {
     return (
-        <svg viewBox="0 0 12 12" aria-hidden="true" className="size-[9px]" fill="currentColor">
-            {playing ? <path d="M2 1.5h3v9H2zM7 1.5h3v9H7z" /> : <path d="M2.5 1.2v9.6L11 6z" />}
+        <svg viewBox="0 0 16 16" aria-hidden="true" className={className} fill="currentColor">
+            <path d={TRANSPORT_ICONS[icon]} />
         </svg>
     )
 }
@@ -134,7 +156,7 @@ function TransportIcon({ playing }: { playing: boolean }) {
  * pace, from where it is to the end. It starts below the first fold and comes up as the page is
  * scrolled (`--drop`), and rides up on the footer at the end (`--lift`).
  */
-export function PageTimeline({ clips, sections }: PageTimelineProps) {
+export function PageTimeline({ clips, sections, after, controls }: PageTimelineProps) {
     const playhead = useRef<HTMLDivElement>(null)
     const clock = useRef<HTMLSpanElement>(null)
     const [shares, setShares] = useState<number[]>(() => clips.map(() => 1 / clips.length))
@@ -154,12 +176,12 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
         const scroller = document.scrollingElement
         if (!scroller) return
         function measure() {
-            const total = scroller!.scrollHeight
+            const total = pageEnd(after.current)
             const ends = clips.map(clip => {
                 const last = sections.current.get(clip.sections[clip.sections.length - 1])
                 return last ? last.getBoundingClientRect().bottom + scroller!.scrollTop : 0
             })
-            // The last clip also takes whatever follows the last section, so the clips add up to the whole page.
+            // The last clip also takes whatever lies between the last section and the end, so the clips add up to the whole page.
             ends[ends.length - 1] = total
             setShares(ends.map((end, index) => (end - (index === 0 ? 0 : ends[index - 1])) / total))
         }
@@ -167,17 +189,20 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
         const resized = new ResizeObserver(measure)
         resized.observe(document.body)
         return () => resized.disconnect()
-    }, [clips, sections])
+    }, [clips, sections, after])
 
     useEffect(
         () =>
-            watch(readingLine, line => {
-                if (playhead.current) playhead.current.style.left = `${(line * 100).toFixed(3)}%`
-                if (clock.current) clock.current.textContent = timecode(line * RUNTIME_SECONDS)
-                let passed = 0
-                const index = sharesNow.current.findIndex(share => (passed += share) >= line)
-                setActive(index === -1 ? sharesNow.current.length - 1 : index)
-            }),
+            watch(
+                () => readingLine(after.current),
+                line => {
+                    if (playhead.current) playhead.current.style.left = `${(line * 100).toFixed(3)}%`
+                    if (clock.current) clock.current.textContent = timecode(line * RUNTIME_SECONDS)
+                    let passed = 0
+                    const index = sharesNow.current.findIndex(share => (passed += share) >= line)
+                    setActive(index === -1 ? sharesNow.current.length - 1 : index)
+                }
+            ),
         []
     )
 
@@ -185,19 +210,19 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
         const scroller = document.scrollingElement
         if (!playing || !scroller) return
         // Played from the end, it starts again from the top.
-        let line = readingLine() >= 0.999 ? 0 : readingLine()
-        let putAt = line * furthestScroll()
-        putReadingLineAt(line)
+        let line = readingLine(after.current) >= 0.999 ? 0 : readingLine(after.current)
+        let putAt = line * furthestScroll(after.current)
+        putReadingLineAt(line, after.current)
         let before = performance.now()
         let animationFrame = requestAnimationFrame(function advance(now) {
-            const furthest = furthestScroll()
+            const furthest = furthestScroll(after.current)
             // Scrubbing, or choosing a clip, moves the page under the playback: it carries on from there.
             if (Math.abs(scroller.scrollTop - putAt) > MOVED_BY_SOMETHING_ELSE_PIXELS)
                 line = furthest > 0 ? scroller.scrollTop / furthest : 1
             line = Math.min(1, line + Math.min(LONGEST_FRAME_SECONDS, (now - before) / 1000) / RUNTIME_SECONDS)
             before = now
             putAt = line * furthest
-            putReadingLineAt(line)
+            putReadingLineAt(line, after.current)
             if (line >= 1) setPlaying(false)
             else animationFrame = requestAnimationFrame(advance)
         })
@@ -220,6 +245,13 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
         }
     }, [playing])
 
+    useImperativeHandle(controls, () => ({
+        playFromStart() {
+            putReadingLineAt(0, after.current)
+            setPlaying(true)
+        },
+    }))
+
     function goTo(clip: TimelineClip) {
         const section = sections.current.get(clip.sections[0])
         if (!section) return
@@ -234,7 +266,7 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
 
     function scrubTo(clientX: number) {
         const bounds = track.current?.getBoundingClientRect()
-        if (bounds) putReadingLineAt((clientX - bounds.left) / bounds.width)
+        if (bounds) putReadingLineAt((clientX - bounds.left) / bounds.width, after.current)
     }
 
     function startDragging(event: PointerEvent<HTMLDivElement>) {
@@ -286,15 +318,27 @@ export function PageTimeline({ clips, sections }: PageTimelineProps) {
                         <i className="size-[6px] shrink-0 rounded-full bg-rec opacity-[calc(.3_+_.7_*_var(--rolling))] shadow-[0_0_8px_rgba(224,72,62,.7)]" />
                         <span className="truncate">{clips[active]?.label}</span>
                     </span>
-                    <button
-                        type="button"
-                        onClick={() => setPlaying(now => !now)}
-                        aria-pressed={playing}
-                        className={`mt-[6px] inline-flex h-[24px] cursor-pointer items-center gap-[7px] self-start rounded-full border pr-[11px] pl-[9px] font-mono text-[10px] leading-none tracking-[.08em] uppercase transition-[background,border-color,color] duration-300 max-[900px]:mt-[2px] max-[900px]:h-[20px] ${playing ? 'border-gold/70 bg-gold/[.14] text-gold' : 'border-ink/20 text-ink-62 hover:border-ink/45 hover:text-ink'}`}
-                    >
-                        <TransportIcon playing={playing} />
-                        {playing ? 'Pause' : 'Play'}
-                    </button>
+                    <div className="mt-[5px] flex items-center gap-[7px] max-[900px]:mt-0">
+                        <button
+                            type="button"
+                            onClick={() => setPlaying(now => !now)}
+                            aria-label={playing ? 'Pause' : 'Play'}
+                            className={`grid size-[30px] cursor-pointer place-items-center rounded-full text-obsidian transition-[background,box-shadow,scale] duration-300 active:scale-95 max-[900px]:size-[24px] ${playing ? 'bg-gold shadow-[0_0_12px_var(--glow),0_0_30px_rgba(255,110,48,.4)]' : 'bg-ink hover:bg-gold hover:shadow-[0_0_14px_var(--glow)]'}`}
+                        >
+                            <TransportIcon
+                                icon={playing ? 'pause' : 'play'}
+                                className="size-[14px] max-[900px]:size-[12px]"
+                            />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => putReadingLineAt(0, after.current)}
+                            aria-label="Back to the start"
+                            className="grid size-[26px] cursor-pointer place-items-center rounded-full border border-ink/20 text-ink-62 transition-[border-color,color,scale] duration-300 hover:border-ink/50 hover:text-ink active:scale-95 max-[900px]:size-[22px]"
+                        >
+                            <TransportIcon icon="toStart" className="size-[12px]" />
+                        </button>
+                    </div>
                 </div>
 
                 <div

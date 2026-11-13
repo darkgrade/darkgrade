@@ -9,15 +9,12 @@ export const HERO = {
     eyebrow: 'Local-first AI for creative professionals',
     headline: ['Shoot more.', 'Edit less.'],
     lede: 'Darkgrade dials in your camera, captures the shot, and returns a finished first cut — on your own machine. You stay the director. Nothing leaves your computer unless you say so.',
-    primary: { label: 'Watch it in action', href: LINKS.youtube },
+    /** The button that plays the page through from its start. */
+    watch: 'Watch it in action',
     secondary: { label: 'Join the Discord', href: LINKS.discord },
 } as const
 
-export const MANIFESTO = [
-    'Making videos is ten percent fun.',
-    'The rest is menus and an edit that never ends.',
-    'We’re deleting the rest.',
-] as const
+export const MANIFESTO = ['Record is one button.', 'The rest are in your way.', 'We’re deleting the rest.'] as const
 
 export const PRINCIPLES = [
     {

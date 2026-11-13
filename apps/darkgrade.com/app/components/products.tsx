@@ -19,7 +19,7 @@ const next = (text: string): Feature => ({ text })
 export const STUDIO: Product = {
     name: 'Studio',
     kind: 'Desktop and mobile app',
-    tagline: 'One tap. The room is ready.',
+    tagline: 'One tap & we’re rolling.',
     does: 'An app that sets your lights and camera, takes orders by voice and, soon, hands you a first cut.',
     features: [
         today('Lights and camera, set in one tap'),
