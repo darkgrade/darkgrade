@@ -19,7 +19,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@kevinschaich/components": "^0.8.1",
+    "@kevinschaich/components": "^0.8.2",
     "@types/react": "^19.1.11",
     "@types/react-dom": "^19.1.8",
     "hls.js": "^1.7.3",
