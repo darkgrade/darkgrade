@@ -30,13 +30,15 @@ export const PRINCIPLES = [
     },
     {
         index: '/03',
-        title: 'Open & honest',
-        body: 'A fair core that stays free, fair pricing for the app, no bait-and-switch.',
+        title: 'Open & fair',
+        body: 'The core is free, and stays free. The app is priced fairly, with no bait-and-switch.',
+        /** A line of its own under the body, all of it a link. */
+        link: { label: 'Our code is on GitHub. Read it here.', href: LINKS.github },
     },
     {
         index: '/04',
-        title: 'Fast as your ideas',
-        body: 'Camera manufacturers move in decades. An open product moves at the speed of its community.',
+        title: 'Better tools, better stories',
+        body: 'We believe good taste can’t be automated, and authentic human connection cannot be engineered. Our mission is to build better tools, so creators can tell better stories.',
     },
 ] as const
 
