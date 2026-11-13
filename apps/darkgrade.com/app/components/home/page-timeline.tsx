@@ -128,10 +128,8 @@ const NARROWEST_SHARE_WITH_A_TIMECODE = 0.075
 const DRAG_STARTS_AFTER_PIXELS = 4
 /** The keys that scroll a page: any of them takes over from the playback. */
 const SCROLLING_KEYS = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']
-/** How far the page may sit from where the playback put it before something else is taken to have moved it, in pixels. */
-const MOVED_BY_SOMETHING_ELSE_PIXELS = 2
-/** The longest step the playback takes in one frame, in seconds: a window left and come back to carries on, it does not jump. */
-const LONGEST_FRAME_SECONDS = 0.1
+/** The longest step the playback takes in one frame, in seconds: slow frames still keep time, but a window left and come back to carries on from where it was. */
+const LONGEST_FRAME_SECONDS = 1
 
 /** The drawings on the transport's buttons, each on a 16 by 16 square. The play triangle sits a little right of the middle, where it looks centred. */
 const TRANSPORT_ICONS = {
@@ -171,6 +169,20 @@ export function PageTimeline({ clips, sections, after, controls }: PageTimelineP
     /** The press under way on the track: where it began, and whether it has become a drag. */
     const press = useRef<{ startX: number; dragging: boolean } | null>(null)
     const draggedSincePress = useRef(false)
+    /**
+     * Where the playback has got to, 0..1. It keeps its own place and puts the page there, and is
+     * told of every move made through the timeline. It never reads its place back from the page:
+     * what a page says of its scroll can run behind what it was just told (on an iPad it does),
+     * and a clock corrected by that loses time.
+     */
+    const playedTo = useRef(0)
+    /** Where the next playback is to start, when it is not to start from where the page is. */
+    const startFrom = useRef<number | null>(null)
+
+    function moveTo(line: number) {
+        playedTo.current = Math.min(1, Math.max(0, line))
+        putReadingLineAt(playedTo.current, after.current)
+    }
 
     useEffect(() => {
         const scroller = document.scrollingElement
@@ -207,23 +219,16 @@ export function PageTimeline({ clips, sections, after, controls }: PageTimelineP
     )
 
     useEffect(() => {
-        const scroller = document.scrollingElement
-        if (!playing || !scroller) return
-        // Played from the end, it starts again from the top.
-        let line = readingLine(after.current) >= 0.999 ? 0 : readingLine(after.current)
-        let putAt = line * furthestScroll(after.current)
-        putReadingLineAt(line, after.current)
+        if (!playing) return
+        // It starts from where the page is, or from the top when the page is at its end.
+        const pageIsAt = readingLine(after.current)
+        moveTo(startFrom.current ?? (pageIsAt >= 0.999 ? 0 : pageIsAt))
+        startFrom.current = null
         let before = performance.now()
         let animationFrame = requestAnimationFrame(function advance(now) {
-            const furthest = furthestScroll(after.current)
-            // Scrubbing, or choosing a clip, moves the page under the playback: it carries on from there.
-            if (Math.abs(scroller.scrollTop - putAt) > MOVED_BY_SOMETHING_ELSE_PIXELS)
-                line = furthest > 0 ? scroller.scrollTop / furthest : 1
-            line = Math.min(1, line + Math.min(LONGEST_FRAME_SECONDS, (now - before) / 1000) / RUNTIME_SECONDS)
+            moveTo(playedTo.current + Math.min(LONGEST_FRAME_SECONDS, (now - before) / 1000) / RUNTIME_SECONDS)
             before = now
-            putAt = line * furthest
-            putReadingLineAt(line, after.current)
-            if (line >= 1) setPlaying(false)
+            if (playedTo.current >= 1) setPlaying(false)
             else animationFrame = requestAnimationFrame(advance)
         })
         // Whoever scrolls the page themselves has taken over.
@@ -247,7 +252,8 @@ export function PageTimeline({ clips, sections, after, controls }: PageTimelineP
 
     useImperativeHandle(controls, () => ({
         playFromStart() {
-            putReadingLineAt(0, after.current)
+            startFrom.current = 0
+            moveTo(0)
             setPlaying(true)
         },
     }))
@@ -256,17 +262,17 @@ export function PageTimeline({ clips, sections, after, controls }: PageTimelineP
         const section = sections.current.get(clip.sections[0])
         if (!section) return
         const bounds = section.getBoundingClientRect()
+        const top = scrollY + bounds.top + Math.max(0, (bounds.height - innerHeight) / 2)
+        // While it plays the page is being put somewhere every frame, and a glide would be cut short: the playback is moved there.
+        const furthest = furthestScroll(after.current)
+        if (playingNow.current && furthest > 0) return moveTo(top / furthest)
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
-        scrollTo({
-            top: scrollY + bounds.top + Math.max(0, (bounds.height - innerHeight) / 2),
-            // While it plays the page is being put somewhere every frame, and a glide would be cut short.
-            behavior: reduced || playingNow.current ? 'instant' : 'smooth',
-        })
+        scrollTo({ top, behavior: reduced ? 'instant' : 'smooth' })
     }
 
     function scrubTo(clientX: number) {
         const bounds = track.current?.getBoundingClientRect()
-        if (bounds) putReadingLineAt((clientX - bounds.left) / bounds.width, after.current)
+        if (bounds) moveTo((clientX - bounds.left) / bounds.width)
     }
 
     function startDragging(event: PointerEvent<HTMLDivElement>) {
@@ -332,7 +338,7 @@ export function PageTimeline({ clips, sections, after, controls }: PageTimelineP
                         </button>
                         <button
                             type="button"
-                            onClick={() => putReadingLineAt(0, after.current)}
+                            onClick={() => moveTo(0)}
                             aria-label="Back to the start"
                             className="grid size-[26px] cursor-pointer place-items-center rounded-full border border-ink/20 text-ink-62 transition-[border-color,color,scale] duration-300 hover:border-ink/50 hover:text-ink active:scale-95 max-[900px]:size-[22px]"
                         >

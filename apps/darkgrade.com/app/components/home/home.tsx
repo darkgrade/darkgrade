@@ -5,7 +5,7 @@ import { type RefObject, useEffect, useRef, useState } from 'react'
 import { CameraErrors, MONITOR_WIDTH_PIXELS } from '@/app/components/home/camera-errors'
 import { DREAM, HERO, LINK, LINKS, MANIFESTO, PRINCIPLES, STUDIO } from '@/app/components/home/content'
 import { CALLOUTS, CHAPTERS, type Callout } from '@/app/components/home/cut-scene'
-import { FirstCutApp } from '@/app/components/home/cut-screen'
+import { FIRST_CUT_COPY, FirstCutApp } from '@/app/components/home/cut-screen'
 import { HomeFooter, HomeHeader } from '@/app/components/home/home-chrome'
 import { LaptopScreen, SCREEN_WIDTH_PIXELS, transformOnto } from '@/app/components/home/laptop-screen'
 import { EXCHANGES_KEPT, type Exchange, LinkDesk } from '@/app/components/home/link-desk'
@@ -25,7 +25,6 @@ const FIRST_READINGS: Record<Callout, string> = { aperture: 'f/2.8', focus: 'AF-
 /** How tall each callout's leader is, in pixels, so the four labels never share a line. */
 const LEADER_PIXELS: Record<Callout, number> = { aperture: 50, focus: 26, shutter: 38, iso: 14 }
 const DOCUMENT_NUMBER = 'DG-HP-006'
-const FIRST_CUT = STUDIO.features.find(feature => !feature.on)
 /** The first line of the thesis opens with the word for the one button it is about, which is set in the red of a recording light. */
 const [RECORD_WORD, ...WORDS_AFTER_RECORD] = MANIFESTO[0].split(' ')
 const AFTER_RECORD = WORDS_AFTER_RECORD.join(' ')
@@ -51,6 +50,21 @@ const SHEET_OF_CHAPTER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 8]
 
 /** How tall each sheet of the thesis is, in windows: half the usual, so the three of them pass as quickly as one line follows another. */
 const THESIS_WINDOWS_TALL = 0.875
+/** The picture is drawn at this many device pixels to a CSS pixel at most. */
+const MOST_PIXEL_RATIO = 1.75
+/**
+ * A window narrower than this is a phone's or an upright tablet's, and its picture has at most
+ * this many device pixels. An upright tablet's window is tall as well as dense, and at the full
+ * ratio it asks for more than twice the pixels a phone does.
+ */
+const NARROW_WINDOW_PIXELS = 900
+const MOST_PIXELS_WHEN_NARROW = 2_300_000
+
+function pixelRatioFor(cssWidth: number, cssHeight: number): number {
+    if (cssWidth >= NARROW_WINDOW_PIXELS) return MOST_PIXEL_RATIO
+    return Math.min(MOST_PIXEL_RATIO, Math.sqrt(MOST_PIXELS_WHEN_NARROW / (cssWidth * cssHeight)))
+}
+
 /** The sheet the principles are stepped through on. The chair's shot is a mark near its end, not its middle. */
 const PRINCIPLES_SHEET = 'principles-sheet'
 /** How tall that sheet is, in windows: room to scroll through the principles one at a time. */
@@ -340,7 +354,7 @@ export function Home() {
                                     cutLayer.current.style.opacity = showing.cut >= showing.link ? '1' : '0'
                             },
                         }),
-                    { maximumPixelRatio: 1.75, onReady: () => setReady(true) }
+                    { maximumPixelRatio: pixelRatioFor, onReady: () => setReady(true) }
                 )
             }
         )
@@ -470,14 +484,14 @@ export function Home() {
             {/* The closing words are not part of the page that scrolls: they are held at the middle of the stage, where the ring forms, and come up in place as it does. */}
             <div ref={dreamWords} className={`${STAGE} z-[11] flex items-center opacity-0`}>
                 {/* the words sit inside the ring of light, so they are held to its width */}
-                <div className="mx-auto w-[min(86vw,calc((100dvh-var(--timeline-h))*.62),52vw)] text-center max-[900px]:w-[78vw]">
-                    <h2 className="font-serif text-[clamp(1.25rem,2.3vw,2.25rem)] leading-[1.2] heading-weight tracking-[-.04em]">
+                <div className="mx-auto w-[min(86vw,calc((100dvh-var(--timeline-h))*.62),52vw)] text-center max-[900px]:w-[min(58vw,calc((100dvh-var(--timeline-h))*.4))]">
+                    <h2 className="font-serif text-[clamp(1.25rem,2.3vw,2.25rem)] leading-[1.2] heading-weight tracking-[-.04em] max-[900px]:text-[clamp(1rem,2.7vw,1.5rem)]">
                         {DREAM.line} <span className="text-ink-52">{DREAM.turn}</span>
                     </h2>
-                    <p className="glow-hot mx-auto mt-[clamp(14px,3vh,30px)] max-w-[20ch] font-serif text-[clamp(1.375rem,2.5vw,2.5rem)] leading-[1.1] heading-weight tracking-[-.04em] italic">
+                    <p className="glow-hot mx-auto mt-[clamp(14px,3vh,30px)] max-w-[20ch] font-serif text-[clamp(1.375rem,2.5vw,2.5rem)] leading-[1.1] heading-weight tracking-[-.04em] italic max-[900px]:mt-[12px] max-[900px]:text-[clamp(1.125rem,3vw,1.75rem)]">
                         {DREAM.punch}
                     </p>
-                    <div className="mt-[clamp(20px,4vh,40px)] flex flex-wrap justify-center gap-[14px]">
+                    <div className="mt-[clamp(20px,4vh,40px)] flex flex-wrap justify-center gap-[14px] max-[900px]:mt-[18px] max-[900px]:gap-[8px]">
                         <button type="button" className={`${BTN_SOLID} cursor-pointer`} onClick={watchItInAction}>
                             <span>{HERO.watch}</span>
                         </button>
@@ -508,7 +522,7 @@ export function Home() {
                 >
                     <div
                         data-words="ahead"
-                        className="flex h-dvh min-h-0 flex-1 items-center pt-[124px] max-[900px]:items-end"
+                        className="flex h-dvh min-h-0 flex-1 items-center pt-[124px] max-[900px]:items-end max-[900px]:pb-[26px]"
                     >
                         <div className="shell">
                             <div className={LEFT}>
@@ -631,8 +645,36 @@ export function Home() {
                     </div>
                 </Sheet>
 
-                <Sheet id="cut" register={register}>
-                    <span className="sr-only">{FIRST_CUT?.text}. On the way.</span>
+                {/* on a wide window the laptop's screen says all of this itself; a narrow one's screen is too small to read, so the words stand under it */}
+                <Sheet id="cut" register={register} align="bottom">
+                    <div className="min-[900px]:sr-only">
+                        <p className={KICKER} data-rise>
+                            <span className="text-gold">{FIRST_CUT_COPY.title}</span>
+                            <span className={KIND}>{FIRST_CUT_COPY.status}</span>
+                        </p>
+                        <h2
+                            className={`${ACT_TITLE} mt-[10px] text-[clamp(1.75rem,min(5vw,5.2vh),2.875rem)]`}
+                            data-rise
+                            style={order(1)}
+                        >
+                            {FIRST_CUT_COPY.tagline}
+                        </h2>
+                        <p
+                            className="mt-[clamp(8px,1.4vh,14px)] max-w-[44ch] text-body leading-[1.5] text-ink-66"
+                            data-rise
+                            style={order(2)}
+                        >
+                            {FIRST_CUT_COPY.does}
+                        </p>
+                        {/* a phone has no room for these under the screen; an upright tablet has */}
+                        <div
+                            className="mt-[clamp(12px,2vh,22px)] [@media(max-height:900px)]:hidden"
+                            data-rise
+                            style={order(3)}
+                        >
+                            <FeatureList features={FIRST_CUT_COPY.steps.map(text => ({ text, on: false }))} />
+                        </div>
+                    </div>
                 </Sheet>
 
                 {/* these words do not scroll away: they go out where they stand as the view leaves the chair, before their sheet lets go of them */}

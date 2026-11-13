@@ -29,8 +29,8 @@ export interface ViewportScene {
 }
 
 export interface ViewportOptions {
-    /** Device pixels a CSS pixel at most; 2 unless given. Full-window scenes are cheaper at 1.5. */
-    maximumPixelRatio?: number
+    /** Device pixels a CSS pixel at most; 2 unless given. Full-window scenes are cheaper at 1.5. Given the canvas's size in CSS pixels, it may answer differently for different windows. */
+    maximumPixelRatio?: number | ((cssWidth: number, cssHeight: number) => number)
     antialias?: boolean
     /** Keep the last frame readable, for scenes that are copied or sampled. */
     preserveDrawingBuffer?: boolean
@@ -84,8 +84,10 @@ export function runViewport(
     function tick(milliseconds: number) {
         animationFrame = 0
         if (stopped || !onScreen || !scene) return
-        const pixelRatio = Math.min(devicePixelRatio, maximumPixelRatio)
         const bounds = canvas.getBoundingClientRect()
+        const most =
+            typeof maximumPixelRatio === 'number' ? maximumPixelRatio : maximumPixelRatio(bounds.width, bounds.height)
+        const pixelRatio = Math.min(devicePixelRatio, most)
         const width = Math.round(bounds.width * pixelRatio)
         const height = Math.round(bounds.height * pixelRatio)
         if (width > 0 && height > 0) {
