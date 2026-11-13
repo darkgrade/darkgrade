@@ -86,7 +86,8 @@ resource "google_sql_database_instance" "telemetry" {
   region              = var.region
   deletion_protection = true
   settings {
-    tier            = "db-f1-micro"
+    # Concurrent bench uploads and Matrix export exhausted the shared micro instance.
+    tier            = "db-custom-1-3840"
     edition         = "ENTERPRISE"
     disk_size       = 10
     disk_autoresize = true
