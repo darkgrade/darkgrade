@@ -1,9 +1,7 @@
+import { DEV_FONT_BOOTSTRAP_SCRIPT } from '@/app/components/dev-font-chooser/dev-fonts'
+import { DevTools } from '@/app/components/dev-font-chooser/dev-tools'
 import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
-import { DevTools } from '@/app/components/dev-font-chooser/dev-tools'
-import { DEV_FONT_BOOTSTRAP_SCRIPT } from '@/app/components/dev-font-chooser/dev-fonts'
-import { VIDEO_BACKGROUND_ENABLED } from '@/app/components/backgrounds/field'
-import { MUX_STREAM_ORIGIN } from '@/app/components/backgrounds/mux'
 import './globals.css'
 
 /* The font chooser exists only under `next dev`; the component additionally
@@ -46,8 +44,7 @@ const tayTommyTokyo = localFont({
 })
 
 const TITLE = 'Darkgrade — Shoot more. Edit less.'
-const DESCRIPTION =
-    'Local-first AI for creative professionals.'
+const DESCRIPTION = 'Local-first AI for creative professionals.'
 const OG_IMAGE = 'https://darkgrade.com/darkgrade_opengraph_dark.png'
 
 export const metadata: Metadata = {
@@ -93,20 +90,12 @@ export const viewport: Viewport = {
     colorScheme: 'dark',
 }
 
-/* CSS hides [data-fade]/[data-reveal] content, and locks scrolling behind the
-   preloader, only under html.js / html.preload - so a visitor without
-   JavaScript still gets the whole page, unlocked. This has to land before
-   first paint, which means before hydration, which means <html>'s class
-   attribute is deliberately not what the server sent: hence
-   suppressHydrationWarning on it below. That opts out one element's own
-   attributes, nothing nested.
-
-   The preloader plays only when a visit lands on the home page: html.intro
-   shows it and html.preload locks scrolling behind it. Landing anywhere else,
-   or moving between pages afterwards (client-side, in the (site) layout), never
-   shows it. */
-const JS_FLAG =
-    "var c=document.documentElement.classList;c.add('js');if(location.pathname==='/')c.add('intro','preload')"
+/* CSS hides content that animates in ([data-rise]) only under html.js, so a visitor without JavaScript still gets the whole
+   page. This has to land before first paint, which means before hydration,
+   which means <html>'s class attribute is deliberately not what the server
+   sent: hence suppressHydrationWarning on it below. That opts out one
+   element's own attributes, nothing nested. */
+const JS_FLAG = "document.documentElement.classList.add('js')"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
@@ -117,15 +106,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
             <head>
                 <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
-                {VIDEO_BACKGROUND_ENABLED && (
-                    <>
-                        <link rel="preconnect" href={MUX_STREAM_ORIGIN} />
-                        <link rel="preconnect" href="https://image.mux.com" />
-                    </>
-                )}
                 {IS_DEVELOPMENT && <script dangerouslySetInnerHTML={{ __html: DEV_FONT_BOOTSTRAP_SCRIPT }} />}
             </head>
-            <body className="[html.preload_&]:h-dvh [html.preload_&]:overflow-hidden">
+            <body>
                 {children}
                 {IS_DEVELOPMENT && <DevTools />}
             </body>
