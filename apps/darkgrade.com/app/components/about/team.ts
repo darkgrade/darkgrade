@@ -25,7 +25,7 @@ export const ABOUT = {
     lede: 'Darkgrade is a small team headquartered in Denver, Colorado, building local-first AI for creative pros. We believe good taste can’t be automated, and authentic human connection cannot be engineered. Our mission is to build better tools, so creators can tell better stories.',
     company: [
         { name: 'Headquarters', value: 'Denver, Colorado' },
-        { name: 'Y Combinator', value: 'F24 batch' },
+        { name: 'Y Combinator', value: 'F24 batch', href: LINKS.yCombinator },
         { name: 'Source', value: 'Open on GitHub', href: LINKS.github },
         { name: 'Status', value: 'In alpha' },
     ],

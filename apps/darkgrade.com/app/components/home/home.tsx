@@ -2,6 +2,7 @@
 
 import { type RefObject, useEffect, useRef, useState } from 'react'
 
+import { CALLOUT_NAMES, CALLOUT_SIDE, FIRST_READINGS, leaderPixels } from '@/app/components/home/callouts'
 import { CameraErrors, MONITOR_WIDTH_PIXELS } from '@/app/components/home/camera-errors'
 import { DREAM, HERO, LINK, LINKS, MANIFESTO, PRINCIPLES, STUDIO } from '@/app/components/home/content'
 import { CALLOUTS, CHAPTERS, type Callout } from '@/app/components/home/cut-scene'
@@ -19,10 +20,6 @@ import { BTN_GHOST, BTN_SOLID } from '@/app/components/site-links'
 
 import '@/app/components/home/home.css'
 
-const CALLOUT_NAMES: Record<Callout, string> = { aperture: 'Aperture', focus: 'Focus', shutter: 'Shutter', iso: 'ISO' }
-const FIRST_READINGS: Record<Callout, string> = { aperture: 'f/2.8', focus: 'AF-S', shutter: '1/60', iso: '100' }
-/** How tall each callout's leader is, in pixels, so the four labels never share a line. */
-const LEADER_PIXELS: Record<Callout, number> = { aperture: 50, focus: 26, shutter: 38, iso: 14 }
 const DOCUMENT_NUMBER = 'DG-HP-006'
 /** The first line of the thesis opens with the word for the one button it is about, which is set in the red of a recording light. */
 const [RECORD_WORD, ...WORDS_AFTER_RECORD] = MANIFESTO[0].split(' ')
@@ -274,11 +271,15 @@ export function Home() {
                     () =>
                         buildCutScene({
                             sections: CHAPTERS.map(chapter => sections.current.get(chapter)!),
-                            placeCallout(callout, x, y, strength) {
+                            placeCallout(callout, x, y, strength, cameraTopAbove) {
                                 const element = callouts.current.get(callout)
                                 if (!element) return
                                 element.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`
                                 element.style.opacity = strength.toFixed(3)
+                                element.style.setProperty(
+                                    '--leader',
+                                    `${leaderPixels(callout, cameraTopAbove).toFixed(1)}px`
+                                )
                             },
                             setReading(callout, text) {
                                 const element = readings.current.get(callout)
@@ -443,15 +444,13 @@ export function Home() {
                             if (element) callouts.current.set(callout, element)
                         }}
                         className="absolute top-0 left-0 opacity-0 will-change-transform"
+                        style={{ '--leader': `${leaderPixels(callout, 0)}px` } as React.CSSProperties}
                     >
                         <span className="absolute top-[-3px] left-[-3px] size-[7px] rounded-full bg-gold shadow-[0_0_10px_rgba(244,198,110,.9)]" />
+                        {/* the leader runs up from the dot as far as the page says each frame (`--leader`): far enough that the words stand clear of the camera */}
+                        <span className="absolute bottom-0 left-0 h-[var(--leader)] w-px bg-gradient-to-t from-gold/80 to-gold/20" />
                         <span
-                            className="absolute bottom-0 left-0 w-px bg-gradient-to-t from-gold/80 to-gold/20"
-                            style={{ height: LEADER_PIXELS[callout] }}
-                        />
-                        <span
-                            className="absolute left-[-1px] flex -translate-y-full flex-col border-l border-gold/60 pb-[2px] pl-[10px] whitespace-nowrap"
-                            style={{ top: -LEADER_PIXELS[callout] }}
+                            className={`absolute top-[calc(var(--leader)*-1)] flex -translate-y-full flex-col border-gold/60 pb-[2px] whitespace-nowrap ${CALLOUT_SIDE[callout] === 'left' ? 'right-0 items-end border-r pr-[10px]' : 'left-[-1px] border-l pl-[10px]'}`}
                         >
                             <span className="font-mono text-[10px] tracking-[.1em] text-ink-55 uppercase">
                                 {CALLOUT_NAMES[callout]}

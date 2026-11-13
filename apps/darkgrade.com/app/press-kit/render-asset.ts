@@ -1,13 +1,14 @@
 import { ICON_PATHS, ICON_VIEWBOX } from '@/app/components/wordmark-paths'
-import type { AssetFormat, PixelRectangle } from '@/app/social/formats'
+import type { AssetFormat, PixelRectangle } from '@/app/press-kit/formats'
+import { PICTURE_SIZE, type PictureLabel } from '@/app/press-kit/site-picture'
 
 /**
  * Draws a social image at its exact pixel size.
  *
  * The preview on the page IS this canvas, scaled down by CSS, so what you see
- * is byte-for-byte what you download. A banner's backdrop is a frame of a
- * chosen video under the studio's uniform dim; a card's is the home page's own
- * picture. The type is whatever the font chooser currently has applied, at the
+ * is byte-for-byte what you download. Every backdrop is a frame of the home
+ * page's own picture: the dust on its own behind a banner, the camera in front
+ * of it behind a card. The type is whatever the font chooser currently has applied, at the
  * site's heading weight, and the glow on "less." is the site's text-shadow
  * stack re-expressed as canvas shadows.
  */
@@ -19,17 +20,21 @@ export interface Typefaces {
     readonly mono: string
     /** The weight every heading on the site is set in. */
     readonly headingWeight: number
+    /** The weight of the name in the lockup: lighter than a heading. */
+    readonly lockupWeight: number
 }
 
 export interface RenderOptions {
     readonly typefaces: Typefaces
-    /** The chosen video frame at its native size, or null to render on flat
-     *  obsidian (no video chosen yet). Cover-cropped to each format. */
+    /** A frame of the home page's dust with nothing in front of it, or null to
+     *  render on flat obsidian (not drawn yet). Cover-cropped to each format. */
     readonly backdrop: HTMLCanvasElement | null
     /** Vertical crop of the backdrop, 0 = top edge to 1 = bottom edge (CSS object-position-y). */
     readonly backdropPositionY: number
     /** A frame of the home page's picture, for the cards drawn over it, or null to draw them on flat obsidian. */
     readonly picture: HTMLCanvasElement | null
+    /** The readings pinned to the camera on that frame, drawn over it as the home page draws them. */
+    readonly pictureLabels: readonly PictureLabel[]
 }
 
 const BONE = '#eae6dc'
@@ -51,7 +56,7 @@ const HEADLINE_SIZE = 100
 const HEADLINE_TRACKING_EM = -0.05
 const TAGLINE_SIZE = 19
 const ADDRESS_SIZE = 14
-/** The lockup: the mark beside the name set in the heading face. The mark stands a little taller than the capitals. */
+/** The lockup: the mark beside the name set in the heading face, at its own lighter weight. The mark stands a little taller than the capitals. */
 const LOCKUP_SIZE = 25
 const LOCKUP_MARK_HEIGHT_EM = 0.82
 const LOCKUP_GAP_EM = 0.4
@@ -73,9 +78,6 @@ const WIDE_LAYOUT_ASPECT_RATIO = 5
 /** Share of the square the icon spans. */
 const SQUARE_MARK_WIDTH_RATIO = 0.62
 
-/** The studio's dim over the video: uniform black at this opacity. */
-const BACKDROP_DIM = 0.6
-
 /* The site's `glow-hot` text-shadow stack at its lamp intensity of 1.1 (see
    globals.css): [blur px, y offset px, colour]. The radii are absolute on the
    site (tuned for ~32-90px type), so they are scaled by type size here. */
@@ -96,6 +98,7 @@ export function readTypefaces(): Typefaces {
         body: read('--font-sans', 'system-ui, sans-serif'),
         mono: read('--font-mono', 'ui-monospace, monospace'),
         headingWeight: Number.parseInt(read('--heading-weight', '600'), 10) || 600,
+        lockupWeight: Number.parseInt(read('--lockup-weight', '500'), 10) || 500,
     }
 }
 
@@ -104,6 +107,7 @@ async function loadTypefaces(typefaces: Typefaces): Promise<void> {
     await Promise.all([
         document.fonts.load(`${typefaces.headingWeight} 100px ${typefaces.heading}`, sample),
         document.fonts.load(`italic ${typefaces.headingWeight} 100px ${typefaces.heading}`, sample),
+        document.fonts.load(`${typefaces.lockupWeight} 100px ${typefaces.heading}`, LOCKUP_NAME),
         document.fonts.load(`400 100px ${typefaces.body}`, sample),
         document.fonts.load(`400 100px ${typefaces.mono}`, sample),
     ]).catch(() => undefined)
@@ -118,9 +122,9 @@ function createCanvas(width: number, height: number): HTMLCanvasElement {
     return canvas
 }
 
-/** The video frame, scaled to cover the asset (CSS object-fit: cover), centred
- *  across and placed by `backdropPositionY` down, then the uniform dim. Without
- *  a frame, flat obsidian. */
+/** The frame of dust, scaled to cover the asset (CSS object-fit: cover), centred
+ *  across and placed by `backdropPositionY` down, on the site's own near-black.
+ *  Without a frame, flat obsidian. */
 function drawBackdrop(context: CanvasRenderingContext2D, width: number, height: number, options: RenderOptions): void {
     context.fillStyle = OBSIDIAN
     context.fillRect(0, 0, width, height)
@@ -133,8 +137,6 @@ function drawBackdrop(context: CanvasRenderingContext2D, width: number, height: 
     context.imageSmoothingQuality = 'high'
     const positionY = Math.min(1, Math.max(0, options.backdropPositionY))
     context.drawImage(source, (width - drawnWidth) / 2, (height - drawnHeight) * positionY, drawnWidth, drawnHeight)
-    context.fillStyle = `rgba(0, 0, 0, ${BACKDROP_DIM})`
-    context.fillRect(0, 0, width, height)
 }
 
 /** The home page's picture, scaled to cover the card and centred, on the site's own near-black. */
@@ -156,6 +158,87 @@ function drawPicture(
         picture.width * scale,
         picture.height * scale
     )
+}
+
+/* The site's `glow-sm` text-shadow stack at its lamp intensity of 1.1: [blur px, colour], in the picture's own CSS pixels. */
+const SMALL_GLOW_LAYERS: ReadonlyArray<readonly [number, string]> = [
+    [21, 'rgba(239, 141, 64, 0.46)'],
+    [8, 'rgba(246, 185, 97, 0.63)'],
+    [3, 'rgba(255, 230, 188, 0.79)'],
+    [1, 'rgba(255, 244, 224, 0.95)'],
+]
+/** A label, in the picture's own CSS pixels, as the home page sets one: its dot, how far right of its leader its words start, the sizes of its name and its reading, and how far each stands above the leader's top. */
+const LABEL = {
+    dotRadius: 3.5,
+    textInset: 10,
+    nameSize: 10,
+    readingSize: 22,
+    readingAboveLeader: 7,
+    nameAboveLeader: 32,
+}
+
+/**
+ * The readings pinned to the camera: a lit dot, a leader up from it, and a name over a glowing
+ * value beside the leader's top. Assumes the picture covers the card exactly, which it does at a
+ * card's own shape.
+ */
+function drawPictureLabels(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    labels: readonly PictureLabel[],
+    typefaces: Typefaces
+): void {
+    const scale = width / PICTURE_SIZE.width
+    context.textAlign = 'left'
+    context.textBaseline = 'alphabetic'
+    for (const label of labels) {
+        const [x, y] = [label.across * width, label.down * height]
+        const leaderTop = y - label.leader * height
+        const wordsTop = leaderTop - (LABEL.nameAboveLeader + LABEL.nameSize) * scale
+
+        const leader = context.createLinearGradient(0, y, 0, leaderTop)
+        leader.addColorStop(0, 'rgba(245, 205, 138, 0.8)')
+        leader.addColorStop(1, 'rgba(245, 205, 138, 0.2)')
+        context.fillStyle = leader
+        context.fillRect(x - scale / 2, leaderTop, scale, y - leaderTop)
+        // the words stand beside a rule that carries the leader on up
+        context.fillStyle = 'rgba(245, 205, 138, 0.6)'
+        context.fillRect(x - scale / 2, wordsTop, scale, leaderTop - wordsTop)
+
+        context.save()
+        context.shadowBlur = 10 * scale
+        context.shadowColor = 'rgba(246, 185, 97, 0.9)'
+        context.fillStyle = GOLD
+        context.beginPath()
+        context.arc(x, y, LABEL.dotRadius * scale, 0, Math.PI * 2)
+        context.fill()
+        context.restore()
+
+        // The words start a little way off the leader, on whichever side of it they are set.
+        const onTheLeft = label.side === 'left'
+        const wordsLeft = x + (onTheLeft ? -1 : 1) * LABEL.textInset * scale
+        context.textAlign = onTheLeft ? 'right' : 'left'
+        context.fillStyle = BONE_MUTED
+        context.font = `400 ${LABEL.nameSize * scale}px ${typefaces.mono}`
+        setLetterSpacing(context, 0.1 * LABEL.nameSize * scale)
+        context.fillText(label.name.toUpperCase(), wordsLeft, leaderTop - LABEL.nameAboveLeader * scale)
+
+        const readingBaseline = leaderTop - LABEL.readingAboveLeader * scale
+        context.font = `500 ${LABEL.readingSize * scale}px ${typefaces.heading}`
+        setLetterSpacing(context, -0.03 * LABEL.readingSize * scale)
+        context.fillStyle = GOLD
+        for (const [blur, colour] of SMALL_GLOW_LAYERS) {
+            context.save()
+            context.shadowBlur = blur * scale
+            context.shadowColor = colour
+            context.fillText(label.reading, wordsLeft, readingBaseline)
+            context.restore()
+        }
+        context.fillText(label.reading, wordsLeft, readingBaseline)
+        setLetterSpacing(context, 0)
+    }
+    context.textAlign = 'left'
 }
 
 /* ---------- marks ---------- */
@@ -286,7 +369,7 @@ function drawHeadline(
 const LOCKUP_MARK_WIDTH = (LOCKUP_SIZE * LOCKUP_MARK_HEIGHT_EM * ICON_VIEWBOX.width) / ICON_VIEWBOX.height
 
 function setLockupType(context: CanvasRenderingContext2D, typefaces: Typefaces, scale: number): void {
-    context.font = `${typefaces.headingWeight} ${LOCKUP_SIZE * scale}px ${typefaces.heading}`
+    context.font = `${typefaces.lockupWeight} ${LOCKUP_SIZE * scale}px ${typefaces.heading}`
     setLetterSpacing(context, LOCKUP_TRACKING_EM * LOCKUP_SIZE * scale)
 }
 
@@ -583,9 +666,12 @@ export async function renderAssetCanvas(format: AssetFormat, options: RenderOpti
     const context = output.getContext('2d')
     if (!context) throw new Error('2D canvas is unavailable')
 
-    const hasBackdrop = format.look === 'banner' || format.look === 'mark-on-video'
+    const hasBackdrop = format.look === 'banner' || format.look === 'mark-on-backdrop'
     if (hasBackdrop) drawBackdrop(context, format.width, format.height, options)
-    if (format.look === 'card') drawPicture(context, format.width, format.height, options.picture)
+    if (format.look === 'card') {
+        drawPicture(context, format.width, format.height, options.picture)
+        drawPictureLabels(context, format.width, format.height, options.pictureLabels, options.typefaces)
+    }
     if (format.look === 'mark-on-white' || format.look === 'mark-on-black') {
         context.fillStyle = format.look === 'mark-on-white' ? '#ffffff' : '#000000'
         context.fillRect(0, 0, format.width, format.height)
@@ -595,7 +681,7 @@ export async function renderAssetCanvas(format: AssetFormat, options: RenderOpti
     if (format.look === 'card') drawCard(context, format.contentArea, options.typefaces)
     if (format.look === 'mark-on-white') drawCenteredIcon(context, format, false, '#000000')
     if (format.look === 'mark-on-black') drawCenteredIcon(context, format, false, '#ffffff')
-    if (format.look === 'mark-on-video') drawCenteredIcon(context, format, true, BONE)
+    if (format.look === 'mark-on-backdrop') drawCenteredIcon(context, format, true, BONE)
     if (format.look === 'mark-light-mode') drawCenteredIcon(context, format, false, '#000000')
     if (format.look === 'mark-dark-mode') drawCenteredIcon(context, format, false, '#ffffff')
     return output

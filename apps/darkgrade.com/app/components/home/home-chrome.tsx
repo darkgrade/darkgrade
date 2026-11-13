@@ -122,7 +122,9 @@ const COLUMNS = [
         head: 'Company',
         links: [
             { label: 'About', href: '/about' },
+            { label: 'Blog', href: LINKS.blog },
             { label: 'Careers', href: LINKS.careers },
+            { label: 'Press kit', href: LINKS.pressKit },
             { label: 'Contact', href: `mailto:${LINKS.contactEmail}` },
             { label: 'Privacy', href: LINKS.privacy },
         ],

@@ -78,8 +78,12 @@ export type Callout = (typeof CALLOUTS)[number]
 export interface CutPage {
     /** The section of each chapter, in the order of CHAPTERS. */
     sections: HTMLElement[]
-    /** Puts a callout's dot at a point on the canvas, in CSS pixels from its top left, `strength` 0..1 visible. */
-    placeCallout(callout: Callout, x: number, y: number, strength: number): void
+    /**
+     * Puts a callout's dot at a point on the canvas, in CSS pixels from its top left, `strength`
+     * 0..1 visible. `cameraTopAbove` is how far above the dot the top of the camera is on the
+     * canvas, in CSS pixels: words set higher than that are clear of the camera.
+     */
+    placeCallout(callout: Callout, x: number, y: number, strength: number, cameraTopAbove: number): void
     setReading(callout: Callout, text: string): void
     /** A request someone has just typed, and the call Link makes for it, to print side by side. */
     logCall(request: string, call: string): void
@@ -99,6 +103,8 @@ export interface CutPage {
     placeScreen(corners: number[], widthOverHeight: number, showing: { link: number; cut: number }): void
     /** The same for the monitor on the back of the camera, and how much of the errors piling up on it shows. */
     placeMonitor(corners: number[], widthOverHeight: number, strength: number): void
+    /** Changes the shot about to be drawn, for a page that frames the picture its own way: a card that stands further back. */
+    adjustShot?(shot: Shot): void
 }
 
 /**
@@ -367,6 +373,8 @@ const CONTROL_GROUPS = new Set([
     'screen_mount',
     'screen_mount2',
 ])
+/** The highest point of the camera, in its own millimetres: the top of the hot shoe. */
+const CAMERA_TOP = new Vector3(13, 98, -8)
 /** The middle of the controls on top of the grip, in the camera's own millimetres: between the shutter button at the front and the dials behind it. */
 const TOP_CONTROLS = new Vector3(-40, 78, 12)
 /** How far a deleted control travels before it is gone. */
@@ -1287,14 +1295,18 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
 
     function placeTheCallouts(frame: Frame) {
         const strength = between(shot.driven, 0.75, 1)
+        cameraMount.localToWorld(projected.copy(CAMERA_TOP)).project(viewer)
+        const cameraTopY = ((1 - projected.y) / 2) * frame.cssHeight
         for (const callout of CALLOUTS) {
             projected.copy(anchors[callout]())
             cameraMount.localToWorld(projected).project(viewer)
+            const y = ((1 - projected.y) / 2) * frame.cssHeight
             page.placeCallout(
                 callout,
                 ((projected.x + 1) / 2) * frame.cssWidth,
-                ((1 - projected.y) / 2) * frame.cssHeight,
-                strength
+                y,
+                strength,
+                Math.max(0, y - cameraTopY)
             )
         }
     }
@@ -1311,10 +1323,11 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
         shot.distance = Math.exp(mix(Math.log(from.distance), Math.log(to.distance), amount))
         // Leaving for the lens, the view swings to it at once but only comes to the middle and up close once the words beside it have gone.
         aimedAtLens = shot.onLens
-        if (to.onLens <= from.onLens) return
+        if (to.onLens <= from.onLens) return page.adjustShot?.(shot)
         const closing = between(amount, CLOSING_IN_FROM, 1)
         for (const key of ARRIVING_LATE) shot[key] = mix(from[key], to[key], closing)
         shot.distance = Math.exp(mix(Math.log(from.distance), Math.log(to.distance), closing))
+        page.adjustShot?.(shot)
     }
 
     function poseTheDust(frame: Frame) {
