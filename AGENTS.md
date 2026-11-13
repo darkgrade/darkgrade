@@ -46,7 +46,7 @@ is the single knob for every gold glow.
 | `apps/drkgrd.co/public` | copies of the same ten filenames | its own type stack (`tay-*` local fonts) |
 | `apps/docs/assets` | copies, plus `ks_*` for kevinschaich.com | `docs.json` carries `fonts` and `colors` of its own |
 | `toolbench`, `voicebench`, `cambench` (separate repos) | their own `index.html` | each needs its own card |
-| `kevinschaich.com` (separate repo) | `ks_*` cards, `public/kit/v1/brand.css` | shares the `tay-*` fonts with drkgrd.co |
+| `kevinschaich.com` (separate repo) | `ks_*` cards, `public/kit/v1/brand.css` | its home page mirrors drkgrd.co; a projects page besides |
 
 The social images are rendered by `/press-kit`, which draws the home page's own scene: open it,
 pick the size, download the PNG. A card that was edited by hand will drift from the site the next
@@ -55,6 +55,24 @@ time the scene changes.
 A change that lands in another repository is a pull request there, not a file copied across.
 Say in the darkgrade pull request which other repositories still need the same change, so the
 batch can be finished rather than half-applied.
+
+## Metrics
+
+Everything we publish reports to the one PostHog project, through our own proxy at
+`ph.darkgrade.com` — never to a PostHog host directly, and never to a project of its own. That
+covers darkgrade.com, drkgrd.co, the docs, the three benches, kevinschaich.com, and every project
+linked from `kevinschaich.com/projects` that we host.
+
+A Next app reads `NEXT_PUBLIC_POSTHOG_KEY` and `NEXT_PUBLIC_POSTHOG_HOST` from the environment in
+`instrumentation-client`, with `defaults: '2025-11-30'`, autocapture on, and session recording,
+surveys and dead clicks off. Copy `apps/darkgrade.com/instrumentation-client.js` rather than
+writing another one. The values themselves live in Vercel, so a new property is not reporting
+until they are set there — adding the file is only half of it.
+
+A static page carries the same project key and `https://ph.darkgrade.com` inline, since it has no
+build to read an environment from. The key is a public write-only `phc_` key; it is already in
+`apps/docs/docs.json` and in shipped JavaScript, so committing it again is fine. Never put a
+personal or project *API* key (`phx_`) in a client.
 
 ## Physical Testbench
 
