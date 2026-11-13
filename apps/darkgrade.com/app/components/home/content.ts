@@ -38,7 +38,7 @@ export const PRINCIPLES = [
     {
         index: '/04',
         title: 'Better tools, better stories',
-        body: 'We believe good taste can’t be automated, and authentic human connection cannot be engineered. Our mission is to build better tools, so creators can tell better stories.',
+        body: 'We believe good taste can’t be automated, and authentic human connection can’t be engineered. Our mission is to build better tools, so creators can tell better stories.',
     },
 ] as const
 
