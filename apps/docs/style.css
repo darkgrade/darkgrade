@@ -1,3 +1,8 @@
+/* The wordmark. The combo file is the mark beside the name at 6.6:1, and Mintlify gives the image
+   `h-6` with `object-contain`, so the width is what sets how big it reads: 104px puts the name a
+   little above the nav labels rather than twice their size. The -4px pulls its left edge onto the
+   search box's, which sits 4px further out than the logo's own wrapper. */
 .nav-logo {
-    width: 200px;
+    width: 104px;
+    margin-left: -4px;
 }

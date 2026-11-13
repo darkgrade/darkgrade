@@ -22,10 +22,12 @@
     "@kevinschaich/components": "^0.8.2",
     "@types/react": "^19.1.11",
     "@types/react-dom": "^19.1.8",
+    "@types/three": "^0.187.0",
     "hls.js": "^1.7.3",
     "next": "^15.5.0",
     "posthog-js": "^1.334.1",
     "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react-dom": "19.1.1",
+    "three": "^0.187.0"
   }
 }

@@ -1,61 +1,72 @@
-import { BackgroundVideo } from '@/app/components/background-video'
+import { Dust } from '@/app/components/dust/dust'
 import { Lockup, WordmarkSprite } from '@/app/components/wordmark'
 
-const LINKS = [
-    { label: 'Visit darkgrade.com', href: 'https://darkgrade.com', primary: true },
-    { label: 'Watch it in action', href: 'https://www.youtube.com/watch?v=tsNWxj-pmU4' },
-    { label: 'Star on GitHub', href: 'https://github.com/darkgrade/darkgrade' },
-    { label: 'Join the Discord', href: 'https://discord.gg/fbDbdJv9dX' },
-    { label: 'Read the docs', href: 'https://darkgrade.com/docs/link' },
-]
+/** The short link's sheet number, in the same series as darkgrade.com's pages. */
+const DOCUMENT_NUMBER = 'DG-DK-001'
 
-const BUTTON =
-    'flex w-full items-center justify-center rounded-full px-8 py-[17px] text-label tracking-[.04em] transition-[background,border-color,color,box-shadow] duration-[350ms] hover:shadow-[0_0_26px_rgba(244,198,110,.16)]'
-const BUTTON_SOLID = `${BUTTON} bg-ink text-obsidian hover:bg-gold`
-const BUTTON_GHOST = `${BUTTON} panel border border-hair text-ink hover:border-gold hover:text-gold`
+/** The small capitals of a slate, as darkgrade.com sets them. */
+const SLATE = 'font-mono text-[11px] leading-[22px] tracking-[.18em] uppercase'
+
+/** Where the short link sends you: the label, and where it lands. */
+const LINKS = [
+    { label: 'The site', detail: 'darkgrade.com', href: 'https://darkgrade.com' },
+    { label: 'Watch it in action', detail: 'YouTube', href: 'https://www.youtube.com/watch?v=tsNWxj-pmU4' },
+    { label: 'Read the code', detail: 'GitHub', href: 'https://github.com/darkgrade/darkgrade' },
+    { label: 'Talk to us', detail: 'Discord', href: 'https://discord.gg/fbDbdJv9dX' },
+    { label: 'Read the docs', detail: 'darkgrade.com/docs', href: 'https://darkgrade.com/docs/link' },
+]
 
 export default function Home() {
     return (
         <>
             <WordmarkSprite />
-            <BackgroundVideo />
+
+            <Dust />
 
             <main className="relative z-[2] flex min-h-dvh flex-col">
-                <div className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center justify-center px-4 py-[clamp(40px,7vh,80px)]">
+                {/* The slate line every sheet on darkgrade.com opens with: it runs the width of the page. */}
+                <div
+                    className={`mx-auto flex w-[min(1560px,calc(100%-clamp(24px,6vw,128px)))] items-center justify-between gap-4 border-t border-hair pt-[10px] ${SLATE}`}
+                >
+                    <span className="text-gold">drkgrd.co</span>
+                    <span className="text-ink-52">{DOCUMENT_NUMBER}</span>
+                </div>
+
+                <div className="mx-auto flex w-full max-w-[440px] flex-1 flex-col justify-center px-5 pt-[clamp(24px,5vh,48px)] pb-[clamp(32px,6vh,64px)]">
                     <header className="flex flex-col items-center text-center">
                         <a href="https://darkgrade.com" aria-label="Darkgrade" className="block text-ink">
-                            <Lockup className="mark-glow text-[19px]" />
+                            <Lockup className="mark-glow text-[21px]" />
                         </a>
 
-                        <h1 className="mt-6 font-serif text-[clamp(2rem,8vw,2.75rem)] leading-[.94] font-semibold tracking-[-.045em]">
-                            Shoot more. Edit <span className="glow-hot tracking-normal italic">less.</span>
+                        <h1 className="mt-7 font-serif text-[clamp(2rem,8vw,2.75rem)] leading-[.96] heading-weight tracking-[-.045em]">
+                            Shoot more. Edit <span className="glow-hot italic">less.</span>
                         </h1>
-
-                        <p className="mt-3 text-label tracking-meta text-ink-55 uppercase">
-                            Local-first AI
-                            <br />
-                            for creative pros
-                        </p>
                     </header>
 
-                    <nav className="mt-9 flex w-full flex-col gap-[14px]">
-                        {LINKS.map(({ label, href, primary }) => (
-                            <a
-                                key={label}
-                                href={href}
-                                target="_blank"
-                                rel="noopener"
-                                className={primary ? BUTTON_SOLID : BUTTON_GHOST}
-                            >
-                                {label}
-                            </a>
-                        ))}
+                    <nav className="mt-[clamp(32px,6vh,56px)]">
+                        <ul className="border-t border-hair">
+                            {LINKS.map(link => (
+                                <li key={link.label}>
+                                    <a
+                                        href={link.href}
+                                        target="_blank"
+                                        rel="noopener"
+                                        className="group flex items-baseline justify-between gap-5 border-b border-hair py-[15px] text-[1.0625rem] transition-colors duration-300 hover:text-gold"
+                                    >
+                                        <span>{link.label}</span>
+                                        <span className="font-mono text-[11px] tracking-[.18em] text-ink-52 uppercase transition-colors duration-300 group-hover:text-gold">
+                                            {link.detail}
+                                        </span>
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
                     </nav>
                 </div>
 
                 {/* darkgrade.com's bottom strip: the blurred panel, edge to edge */}
-                <footer className="panel">
-                    <div className="mx-auto flex w-[min(1560px,calc(100%-clamp(40px,6vw,128px)))] items-center justify-between gap-5 py-[22px] font-mono text-xs tracking-[.06em] whitespace-nowrap text-ink-52">
+                <footer className="panel border-t border-hair">
+                    <div className="mx-auto flex w-[min(1560px,calc(100%-clamp(24px,6vw,128px)))] items-center justify-between gap-5 py-[20px] font-mono text-[11px] tracking-[.06em] whitespace-nowrap text-ink-52">
                         <span>© 2026 DARKGRADE</span>
                         <span className="inline-flex items-center gap-2">
                             <i className="size-[6px] animate-blink rounded-full bg-rec shadow-[0_0_10px_rgba(224,72,62,.6)]" />

@@ -43,7 +43,7 @@
 
 @layer base {
     :root {
-        --gI: 1;
+        --gI: 1.1;
     }
 
     html,
@@ -72,6 +72,17 @@
         background: var(--color-gold);
         color: var(--color-bg);
     }
+}
+
+/* the page's gutter, exactly darkgrade.com's: it grows quickly past tablet widths */
+@utility shell {
+    width: min(1560px, calc(100% - clamp(40px, calc(36vw - 280px), 264px)));
+    margin-inline: auto;
+}
+
+/* the weight of a heading, one knob, as on darkgrade.com */
+@utility heading-weight {
+    font-weight: var(--heading-weight);
 }
 
 /* the weight of the name in the lockup, one lighter than a heading, as on darkgrade.com */
