@@ -16,7 +16,7 @@ const NAV = [
 
 /* Separate Vercel apps served under darkgrade.com by the rewrites in vercel.json: full page loads, not Link. */
 const EXPERIMENTS = [
-    { label: 'Toolbench', description: 'Local models that control a camera', href: '/toolbench/' },
+    { label: 'Toolbench', description: 'Local models on real tool calls', href: '/toolbench/' },
     { label: 'Voicebench', description: 'Speech models on real voices', href: '/voicebench/' },
     { label: 'Cambench', description: 'Camera specs, verified across sources', href: '/cambench/' },
 ]
