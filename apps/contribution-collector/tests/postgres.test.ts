@@ -21,9 +21,15 @@ test('legacy transport migration keeps query labels and Matrix projections consi
         const uploaded=await handle(request('/v2/batches','POST',user.installKey,payload))
         assert.equal(uploaded.status,202,await uploaded.text())
         const source=await database.get(`diagnostics/${user.installId}_${payload.id}`)
-        await pool.query(`UPDATE telemetry_events SET transport='sony-sdk',backend='unknown' WHERE installation_id=$1`,[user.installId])
-        await pool.query(`DELETE FROM telemetry_state WHERE path='schema/connection-backend-v1'`)
+        await pool.query(`UPDATE telemetry_events SET transport='sony-sdk',backend='unknown',connection_normalized=false WHERE installation_id=$1`,[user.installId])
         await database.close();database=await postgresDatabase(process.env.DATABASE_URL!)
+        // Startup is independent of historical backfill. Maintenance resumes after a
+        // rollout and catches a late write from an old collector instance as well.
+        assert.equal((await database.operator.report({days:1,installation:user.installId})).events[0].transport,'sony-sdk')
+        assert.equal(await database.normalizeConnections(),2)
+        assert.equal(await database.normalizeConnections(),0)
+        await pool.query(`UPDATE telemetry_events SET transport='sony-sdk',backend='unknown',connection_normalized=false WHERE installation_id=$1`,[user.installId])
+        assert.equal(await database.normalizeConnections(),2)
         const report=await database.operator.report({days:1,installation:user.installId})
         assert.equal(report.events.length,2)
         assert.ok(report.events.every(event=>event.transport==='wifi'&&event.backend==='vendor-api'))

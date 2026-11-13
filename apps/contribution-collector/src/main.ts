@@ -76,6 +76,7 @@ const maintain = async () => {
     try {
         await database.expire()
         await cleanupWithdrawals(database)
+        await database.normalizeConnections()
     } catch {
         console.error('Telemetry maintenance will retry')
     } finally {
