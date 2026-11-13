@@ -12,7 +12,14 @@ export interface PixelRectangle {
 }
 
 export type AssetLook =
-    'banner' | 'card' | 'mark-on-backdrop' | 'mark-on-white' | 'mark-on-black' | 'mark-light-mode' | 'mark-dark-mode'
+    | 'banner'
+    | 'card'
+    | 'bench'
+    | 'mark-on-backdrop'
+    | 'mark-on-white'
+    | 'mark-on-black'
+    | 'mark-light-mode'
+    | 'mark-dark-mode'
 
 export interface AssetFormat {
     readonly id: string
@@ -25,6 +32,13 @@ export interface AssetFormat {
     readonly contentArea: PixelRectangle
     /** One line on what the image is for, shown under the preview. */
     readonly note: string
+    /** What a bench card says: its name split where the lamp picks it up, what it does, and where it lives. */
+    readonly words?: {
+        readonly before: string
+        readonly lit: string
+        readonly description: string
+        readonly address: string
+    }
 }
 
 const SQUARE_SIZE = 1000
@@ -135,6 +149,54 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
         look: 'mark-dark-mode',
         contentArea: { x: 0, y: 0, width: SQUARE_SIZE, height: SQUARE_SIZE },
         note: 'White on transparent. Use it on dark backgrounds.',
+    },
+    {
+        id: 'bench-toolbench',
+        tabLabel: 'Toolbench',
+        platform: 'Link preview card · darkgrade.com/toolbench',
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        look: 'bench',
+        contentArea: CARD_CONTENT_AREA,
+        note: 'The card that shows when the toolbench page is shared.',
+        words: {
+            before: 'Tool',
+            lit: 'bench.',
+            description: 'Local models that make tool calls',
+            address: 'darkgrade.com/toolbench',
+        },
+    },
+    {
+        id: 'bench-voicebench',
+        tabLabel: 'Voicebench',
+        platform: 'Link preview card · darkgrade.com/voicebench',
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        look: 'bench',
+        contentArea: CARD_CONTENT_AREA,
+        note: 'The card that shows when the voicebench page is shared.',
+        words: {
+            before: 'Voice',
+            lit: 'bench.',
+            description: 'Speech models on real voices',
+            address: 'darkgrade.com/voicebench',
+        },
+    },
+    {
+        id: 'bench-cambench',
+        tabLabel: 'Cambench',
+        platform: 'Link preview card · darkgrade.com/cambench',
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        look: 'bench',
+        contentArea: CARD_CONTENT_AREA,
+        note: 'The card that shows when the cambench page is shared.',
+        words: {
+            before: 'Cam',
+            lit: 'bench.',
+            description: 'Camera specs, verified across sources',
+            address: 'darkgrade.com/cambench',
+        },
     },
 ]
 

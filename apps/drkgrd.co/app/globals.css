@@ -17,6 +17,9 @@
     --font-sans: var(--font-site-sans), system-ui, sans-serif;
     --font-mono: var(--font-site-mono), ui-monospace, monospace;
 
+    --heading-weight: 600;
+    --lockup-weight: 500;
+
     --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
 
     --text-label: 0.875rem;
@@ -69,6 +72,11 @@
         background: var(--color-gold);
         color: var(--color-bg);
     }
+}
+
+/* the weight of the name in the lockup, one lighter than a heading, as on darkgrade.com */
+@utility lockup-weight {
+    font-weight: var(--lockup-weight);
 }
 
 @utility panel {

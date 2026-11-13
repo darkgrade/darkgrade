@@ -1,5 +1,5 @@
 import { BackgroundVideo } from '@/app/components/background-video'
-import { Wordmark, WordmarkSprite } from '@/app/components/wordmark'
+import { Lockup, WordmarkSprite } from '@/app/components/wordmark'
 
 const LINKS = [
     { label: 'Visit darkgrade.com', href: 'https://darkgrade.com', primary: true },
@@ -24,7 +24,7 @@ export default function Home() {
                 <div className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center justify-center px-4 py-[clamp(40px,7vh,80px)]">
                     <header className="flex flex-col items-center text-center">
                         <a href="https://darkgrade.com" aria-label="Darkgrade" className="block text-ink">
-                            <Wordmark className="mark-glow block h-[15px] w-auto" />
+                            <Lockup className="mark-glow text-[19px]" />
                         </a>
 
                         <h1 className="mt-6 font-serif text-[clamp(2rem,8vw,2.75rem)] leading-[.94] font-semibold tracking-[-.045em]">

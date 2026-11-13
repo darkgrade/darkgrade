@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
 import { createMuxBackdrop } from '@/app/components/mux'
+import { useEffect, useRef } from 'react'
 
 /** The Mux playback ID of darkgrade.com's backdrop. public/bg-poster.jpg is its still. */
 const BACKGROUND_VIDEO_ID = '5jSc3eg7Fh9OgGyz00kRt6gthd1KEWgwxqjmvLlJkp9M'
