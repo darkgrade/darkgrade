@@ -72,9 +72,13 @@ export class SonyPtpVideoRecording {
     }
     async transfer(file:TakeMedia,write:(bytes:Uint8Array)=>Promise<void>,progress:(bytes:number,total:number)=>void){
         if(await this.state()!==0)throw new Error('Stop Sony recording before transferring footage')
-        await this.camera.getInstance().prepareStorageRead()
         const handle=Number(file.id)
         if(!Number.isInteger(handle)||handle<=0||handle>0xffffffff)throw new Error('Invalid Sony original handle')
+        // Sony's object index is session-local. Querying a saved handle immediately
+        // after reconnect left the a6700 unresponsive at GetObjectInfo. Enumerate
+        // the current index before dereferencing any saved original identity.
+        const handles=await readCameraObjectHandles(this.camera)
+        if(!handles.has(handle))throw new Error('Sony original handle is no longer in the current card index; transfer refused')
         const fresh=await this.info(handle)
         if(fresh.filename!==file.filename||fresh.bytes!==file.bytes)throw new Error('Sony original identity changed; transfer refused')
         let offset=0

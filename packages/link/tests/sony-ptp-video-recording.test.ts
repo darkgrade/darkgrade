@@ -13,7 +13,7 @@ function fixture(){
   getSonyPropertyStates:async()=>[{code:0xd21d,rawValue:state}],
   startRecording:vi.fn(async()=>{state=1}),
   stopRecording:vi.fn(async()=>{state=0;handles=[1,2]})}
- return {camera,recording:new SonyPtpVideoRecording(camera),setState:(s:number)=>state=s,setBytes:(n:number)=>bytes=n,setName:(n:string)=>name=n}
+ return {camera,recording:new SonyPtpVideoRecording(camera),setState:(s:number)=>state=s,setBytes:(n:number)=>bytes=n,setName:(n:string)=>name=n,setHandles:(value:number[])=>handles=value}
 }
 it('native take confirms state, discovers only the new original and streams verified bytes',async()=>{
  const f=fixture();await f.recording.prepare();expect(await f.recording.start()).toMatchObject({recordingConfirmed:true})
@@ -35,12 +35,20 @@ it('a command acknowledgement without observed recording fails and cleanup still
 })
 it('transfers reject active recording, changed identity and empty chunks',async()=>{
  const f=fixture(),file={id:'2',filename:'new.MP4',bytes:3,verified:true},write=vi.fn()
+ f.setHandles([1,2])
  f.setState(1);await expect(f.recording.transfer(file,write,()=>{})).rejects.toThrow('Stop Sony')
  f.setState(0);f.setName('other.MP4');await expect(f.recording.transfer(file,write,()=>{})).rejects.toThrow('identity changed')
  f.setName('new.MP4');const original=f.camera.send.getMockImplementation()!
  f.camera.send.mockImplementation(async(op,args)=>op.name==='SDIO_GetPartialLargeObject'?{code:0x2001,data:new Uint8Array()}:original(op,args))
  await expect(f.recording.transfer(file,write,()=>{})).rejects.toThrow('incomplete')
  expect(write).not.toHaveBeenCalled()
+})
+it('a resumed transfer rebuilds the card index and refuses stale handles before requesting object metadata',async()=>{
+ const f=fixture(),write=vi.fn(),file={id:'2',filename:'new.MP4',bytes:3,verified:true}
+ await expect(f.recording.transfer(file,write,()=>{})).rejects.toThrow('current card index')
+ expect(f.camera.send.mock.calls.some(([op])=>op.name==='GetObjectInfo')).toBe(false)
+ f.setHandles([1,2]);await f.recording.transfer(file,write,()=>{})
+ expect(write).toHaveBeenCalledOnce()
 })
 it('native recovery retains exact handles but never treats SDK content IDs as PTP handles',async()=>{
  const f=fixture();await f.recording.prepare();await f.recording.start()
