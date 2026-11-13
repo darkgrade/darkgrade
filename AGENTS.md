@@ -27,6 +27,35 @@
 - Everything runnable via npm scripts
 - Easy setup and execution
 
+## Brand and site changes
+
+`apps/darkgrade.com` is the source of truth for the brand. Nothing syncs it to the places that
+copy it, so a change to the look, the wordmark, the type or the social images is not finished
+until every row below is updated in the same batch. Check this list on any rebrand, any change
+to the type or colour tokens, and any re-render of the social images.
+
+The look today: Public Sans for headings and running text, Fragment Mono for labels and readings;
+`--heading-weight: 600`, `--lockup-weight: 500` (the name beside the mark is one weight lighter
+than a heading); gold `#f5cd8a`, obsidian `#0A0A0B`, bone `#EAE6DC`, one red `#e0483e`; `--gI`
+is the single knob for every gold glow.
+
+| Where | Holds | Note |
+| --- | --- | --- |
+| `apps/darkgrade.com/public` | the ten brand files | source of truth |
+| `apps/darkgrade.com/app/press-kit` | draws every social image live | regenerate here, never hand-edit a PNG |
+| `apps/drkgrd.co/public` | copies of the same ten filenames | its own type stack (`tay-*` local fonts) |
+| `apps/docs/assets` | copies, plus `ks_*` for kevinschaich.com | `docs.json` carries `fonts` and `colors` of its own |
+| `toolbench`, `voicebench`, `cambench` (separate repos) | their own `index.html` | each needs its own card |
+| `kevinschaich.com` (separate repo) | `ks_*` cards, `public/kit/v1/brand.css` | shares the `tay-*` fonts with drkgrd.co |
+
+The social images are rendered by `/press-kit`, which draws the home page's own scene: open it,
+pick the size, download the PNG. A card that was edited by hand will drift from the site the next
+time the scene changes.
+
+A change that lands in another repository is a pull request there, not a file copied across.
+Say in the darkgrade pull request which other repositories still need the same change, so the
+batch can be finished rather than half-applied.
+
 ## Physical Testbench
 
 This checkout uses the project-scoped `darkgrade_testbench` MCP server from `.codex/config.toml`.
