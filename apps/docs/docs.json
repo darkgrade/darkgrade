@@ -12,7 +12,13 @@
         "dark": "#0969DA"
     },
     "fonts": {
-        "family": "Google Sans"
+        "heading": {
+            "family": "Public Sans",
+            "weight": 600
+        },
+        "body": {
+            "family": "Public Sans"
+        }
     },
     "favicon": "/assets/darkgrade_favicon_dark.svg",
     "integrations": {

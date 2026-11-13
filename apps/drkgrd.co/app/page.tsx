@@ -27,7 +27,7 @@ export default function Home() {
                             <Wordmark className="mark-glow block h-[15px] w-auto" />
                         </a>
 
-                        <h1 className="mt-6 font-serif text-[clamp(2rem,8vw,2.75rem)] leading-[.94] font-normal tracking-[-.015em]">
+                        <h1 className="mt-6 font-serif text-[clamp(2rem,8vw,2.75rem)] leading-[.94] font-semibold tracking-[-.045em]">
                             Shoot more. Edit <span className="glow-hot tracking-normal italic">less.</span>
                         </h1>
 

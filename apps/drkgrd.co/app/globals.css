@@ -9,13 +9,13 @@
     --color-ink-55: rgba(234, 230, 220, 0.55);
     --color-ink-52: rgba(234, 230, 220, 0.52);
     --color-hair: rgba(234, 230, 220, 0.13);
-    --color-gold: #f6dda8;
+    --color-gold: #f5cd8a;
     --color-obsidian: #0b0b0c;
     --color-rec: #e0483e;
 
-    --font-serif: var(--font-tay-flapjack), Georgia, serif;
-    --font-sans: var(--font-tay-road-runner), system-ui, sans-serif;
-    --font-mono: var(--font-tay-tommy-tokyo), ui-monospace, monospace;
+    --font-serif: var(--font-site-sans), system-ui, sans-serif;
+    --font-sans: var(--font-site-sans), system-ui, sans-serif;
+    --font-mono: var(--font-site-mono), ui-monospace, monospace;
 
     --ease-lamp: cubic-bezier(0.19, 1, 0.22, 1);
 
