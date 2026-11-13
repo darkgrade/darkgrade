@@ -63,19 +63,23 @@ export const TESTED_ON = [
     'Olympus E-PL5',
 ] as const
 
-export const BACKED_BY = [
-    'Y Combinator',
-    'Orange Collective',
-    'Forward Deployed VC',
-    'Coughdrop Capital',
-    'Tango.vc',
-    'DTX Ventures',
-    'Transpose Platform',
-    'Imagination Capital',
-    'Good AI Capital',
-    '5x5 Studio',
-    'NewAlpha VC',
+/** Everyone who has backed the company, the four who led first. `site` is the page where they say so. */
+export const BACKERS = [
+    { name: 'Y Combinator', site: LINKS.yCombinator },
+    { name: 'Orange Collective', site: 'https://www.orangecollective.vc/portfolio/darkgrade' },
+    { name: 'Forward Deployed VC', site: 'https://fdvc.com/#portfolio' },
+    { name: 'Transpose Platform', site: 'https://www.transposeplatform.vc/portfolio/darkgrade' },
+    { name: 'Coughdrop Capital' },
+    { name: 'Tango.vc' },
+    { name: 'DTX Ventures' },
+    { name: 'Imagination Capital' },
+    { name: 'Good AI Capital' },
+    { name: '5x5 Studio' },
+    { name: 'NewAlpha VC' },
 ] as const
+
+/** Their names alone, for the title block, which rolls through them. */
+export const BACKED_BY = BACKERS.map(backer => backer.name)
 
 export const EXPERIMENTS = [
     { name: 'Toolbench', description: 'Local models that make tool calls', href: '/toolbench/' },

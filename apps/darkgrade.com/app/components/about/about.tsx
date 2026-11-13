@@ -1,5 +1,5 @@
 import { ABOUT, type Person, TEAM } from '@/app/components/about/team'
-import { BACKED_BY, LINKS } from '@/app/components/home/content'
+import { BACKERS, LINKS } from '@/app/components/home/content'
 import {
     FactStrip,
     HEADING,
@@ -98,22 +98,26 @@ export function About() {
 
             <SheetSection name="Backed by" title="Our investors">
                 <ul className="grid grid-cols-4 gap-x-10 pt-[clamp(20px,3vh,32px)] text-body max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
-                    {BACKED_BY.map(backer => (
+                    {BACKERS.map(backer => (
                         <li
-                            key={backer}
-                            className={`border-b border-hair py-[12px] ${backer === ACCELERATOR ? 'text-gold' : 'text-ink'}`}
+                            key={backer.name}
+                            className={`border-b border-hair py-[12px] ${backer.name === ACCELERATOR ? 'text-gold' : 'text-ink'}`}
                         >
-                            {backer === ACCELERATOR ? (
+                            {'site' in backer ? (
                                 <a
-                                    href={LINKS.yCombinator}
+                                    href={backer.site}
                                     target="_blank"
                                     rel="noopener"
-                                    className="underline decoration-gold/30 underline-offset-[5px] transition-colors duration-300 hover:decoration-gold"
+                                    className={`underline underline-offset-[5px] transition-colors duration-300 ${
+                                        backer.name === ACCELERATOR
+                                            ? 'decoration-gold/30 hover:decoration-gold'
+                                            : 'decoration-ink/30 hover:text-gold hover:decoration-gold'
+                                    }`}
                                 >
-                                    {backer}
+                                    {backer.name}
                                 </a>
                             ) : (
-                                backer
+                                backer.name
                             )}
                         </li>
                     ))}
