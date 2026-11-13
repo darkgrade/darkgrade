@@ -52,7 +52,7 @@ const PRESS_KIT = {
     ],
     closing: {
         line: 'Writing something about us?',
-        detail: 'Tell us what you need and a person will send it: a quote, a photograph of the team, or an image at a size that is not on this page.',
+        detail: 'Tell us what you need and a person will send it: a quote, a photograph of the team, or an image at a size that isn’t on this page.',
     },
 } as const
 

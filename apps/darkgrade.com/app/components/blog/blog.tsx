@@ -6,7 +6,7 @@ const DOCUMENT_NUMBER = 'DG-BL-001'
 /* The words of the Blog page, until there is a blog on it. */
 const BLOG = {
     headline: { first: 'Blog', second: 'coming', lit: 'soon.' },
-    lede: 'What we are learning about cameras, local models and the cut will be written down on this page. Until it is, we say it out loud in Discord and in the open on GitHub.',
+    lede: 'What we’re learning about cameras, local models and the cut will be written down on this page. Until it is, we say it out loud in Discord and in the open on GitHub.',
     facts: [
         { name: 'Status', value: 'Coming soon' },
         { name: 'Writing about', value: 'Cameras and local AI' },
