@@ -74,6 +74,7 @@ export class GenericCamera {
     private readonly channel: TransactionChannel
     private readonly telemetry: ReturnType<typeof linkTelemetry>
     private profileObserver?: { id: string; observe: (evidence: ProtocolEvidence) => void }
+    private protocolSeen = new Map<string, string>()
     /** A benchmark subscribes to this session's sanitized datasets, never to another connection. */
     observeProfile(id: string, observe: (evidence: ProtocolEvidence) => void) {
         if (this.profileObserver) throw new Error('A profile benchmark already owns this camera')
@@ -82,6 +83,13 @@ export class GenericCamera {
     }
     recordProtocol(evidence: ProtocolEvidence, operation: number) {
         const scoped = this.profileObserver ? { ...evidence, benchmarkId: this.profileObserver.id } : evidence
+        const key = [scoped.benchmarkId ?? '', scoped.type,
+            'property' in scoped ? scoped.property : 'category' in scoped ? scoped.category : '',
+            'code' in scoped ? scoped.code : 'status' in scoped ? scoped.status : ''].join(':')
+        const encoded = JSON.stringify(scoped)
+        if (this.protocolSeen.get(key) === encoded) return
+        if (this.protocolSeen.size >= 8192) this.protocolSeen.clear()
+        this.protocolSeen.set(key, encoded)
         this.telemetry.protocol(scoped, operation)
         this.profileObserver?.observe(scoped)
     }
@@ -130,6 +138,7 @@ export class GenericCamera {
             // The transport drops its event handler on disconnect; subscribe again for this connection.
             this.transport.on?.(event => this.handleEvent(event))
             this.channel.newConnection()
+            this.protocolSeen.clear()
             this.needsResynchronization = false
             this.lastFailure = undefined
             this.recovery = undefined

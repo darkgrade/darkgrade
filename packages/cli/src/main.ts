@@ -108,6 +108,7 @@ try {
                 capture: args.includes('--capture'),
                 live: args.includes('--live'),
                 signal: cancellation.signal,
+                flushEvidence: async () => (await nodeDiagnostics()).flush(),
                 onProgress: (check: { passed: boolean; name: string }) =>
                     console.error(`${check.passed ? '✓' : '!'} ${check.name}`),
             })

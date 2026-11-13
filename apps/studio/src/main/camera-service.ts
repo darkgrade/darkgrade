@@ -342,8 +342,10 @@ export class CameraService {
         this.benchmarkRunning = true
         return this.withLiveViewPaused(() => this.enqueue(async () => {
             if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
-            const result = await runCameraBenchmark(this.camera)
             const diagnostics = await import('@darkgrade/contribute/settings')
+            const result = await runCameraBenchmark(this.camera, {
+                flushEvidence: async () => (await diagnostics.nodeDiagnostics()).flush(),
+            })
             diagnostics.saveDiagnosticProfile(result.profile)
             await diagnostics.nodeDiagnostics().then(client => client.flush())
             return result

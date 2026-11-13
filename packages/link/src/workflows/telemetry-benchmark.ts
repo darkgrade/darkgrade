@@ -19,6 +19,8 @@ export interface BenchmarkOptions {
     timeoutMilliseconds?: number
     maximumProperties?: number
     onProgress?: (check: BenchmarkCheck) => void
+    /** Hosts can drain their bounded telemetry queue between inventory phases. */
+    flushEvidence?: () => Promise<unknown>
 }
 
 /** Caller owns an idle, connected camera. Reads its full advertised inventory and bounded
@@ -53,6 +55,8 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
         datasets.push(structuredClone(item))
         retainedBytes += bytes
     })
+    const flush = async () => { try { await options.flushEvidence?.() } catch { /* Local export remains available. */ } }
+    await flush()
     instance.recordProtocol(
         { type: 'benchmark', vendorId, benchmarkId: id, status: 'started', checks: 0, failures: 0 },
         0x1001
@@ -79,6 +83,7 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
         } catch {
             /* Reporting does not change camera cleanup. */
         }
+        if (!name.startsWith('property-')) await flush()
         return value
     }
     let identity: { manufacturer: string; model: string; firmware: string } | undefined
