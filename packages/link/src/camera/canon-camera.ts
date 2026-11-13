@@ -143,6 +143,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
+        await this.stopPolling()
+        this.clearCachedState()
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
         this.sessionId = 1
@@ -163,8 +165,7 @@ export class CanonCamera extends GenericCamera {
     async disconnect(): Promise<void> {
         await this.stopPolling()
         if (!this.transport.isConnected()) {
-            this.liveViewEnabled = false
-            this.liveViewOriginalOutput = undefined
+            this.clearCachedState()
             return super.disconnect()
         }
         let failure: unknown
@@ -180,7 +181,17 @@ export class CanonCamera extends GenericCamera {
                 failure ??= error
             }
         }
+        this.clearCachedState()
         if (failure) throw failure
+    }
+
+    private clearCachedState(): void {
+        this.propertyCache.clear()
+        this.unknownPropertyCache.clear()
+        this.advertisedPropertyData.clear()
+        this.supportedOperations = undefined
+        this.liveViewEnabled = false
+        this.liveViewOriginalOutput = undefined
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -188,7 +199,19 @@ export class CanonCamera extends GenericCamera {
             throw new Error(`Property ${property.name} is not readable`)
         }
 
-        const cached = this.propertyCache.get(property)
+        let cached = this.propertyCache.get(property)
+        if (cached?.current === undefined && this.transport.isConnected?.()) {
+            // A fast reconnect may receive the initial property dump in a later poll.
+            // Refresh only a missing value, never invent it or repeat a state-changing command.
+            await this.withoutPolling(async () => {
+                for (let attempt = 0; attempt < 10; attempt++) {
+                    await this.refreshEventProperties()
+                    cached = this.propertyCache.get(property)
+                    if (cached?.current !== undefined) return
+                    if (attempt < 9) await new Promise(resolve => setTimeout(resolve, 50))
+                }
+            })
+        }
         if (!cached || cached.current === undefined) {
             throw new Error(
                 `Property ${property.name} (0x${property.code.toString(16)}) not found in cache. The camera may not support this property or event mode is not enabled.`
@@ -474,6 +497,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     async enterMovieMode(): Promise<void> {
+        if (this.supportedOperations)
+            this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOn.code)
         await this.withoutPolling(async () => {
             for (let attempt = 0; attempt < 4; attempt++) {
                 const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
@@ -491,6 +516,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     async leaveMovieMode(): Promise<void> {
+        if (this.supportedOperations)
+            this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOff.code)
         await this.withoutPolling(async () => {
             const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
             if (response.code !== OK.code) {
@@ -655,7 +682,10 @@ export class CanonCamera extends GenericCamera {
         const original = this.propertyCache.get(property)?.current
         if (original === undefined) return async () => {}
         if (original !== 4) return async () => {}
-        const card = this.getPropertyAllowedValues(property)?.find(value => value > 0 && value !== 4)
+        const choices = this.getPropertyAllowedValues(property)
+        // Prefer the card value physically verified on the R8/R6 when advertised.
+        // Other body-specific values retain libgphoto2's advertised-choice fallback.
+        const card = choices?.includes(2) ? 2 : choices?.find(value => value > 0 && value !== 4)
         if (card === undefined)
             throw new Error('Canon is routing captures to host memory and did not advertise a card destination')
         let restored = false
@@ -909,7 +939,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async enableRemoteMode(): Promise<void> {
-        await this.send(this.registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
+        const response = await this.send(this.registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
+        this.assertResponseOk(response.code, 'remote-mode initialization')
     }
 
     private async disableRemoteMode(): Promise<void> {
@@ -917,7 +948,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async enableEventMode(): Promise<void> {
-        await this.send(this.registry.operations.CanonSetEventMode, { EventMode: 'ENABLE' })
+        const response = await this.send(this.registry.operations.CanonSetEventMode, { EventMode: 'ENABLE' })
+        this.assertResponseOk(response.code, 'event-mode initialization')
     }
 
     private async disableEventMode(): Promise<void> {
@@ -1073,16 +1105,18 @@ export class CanonCamera extends GenericCamera {
 
     private async flushInitialEvents(): Promise<void> {
         // The initial dump takes a few rounds; a camera that never drains its queue must not stall connect().
+        let emptyRounds = 0
         for (let round = 0; round < MAXIMUM_INITIAL_EVENT_ROUNDS; round++) {
-            try {
-                const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-                if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
-                    break
+            const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+            this.assertResponseOk(response.code, 'initial event readback')
+            if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
+                if (this.propertyCache.size === 0 && ++emptyRounds < 6) {
+                    await new Promise(resolve => setTimeout(resolve, 100))
+                    continue
                 }
-                this.processEvents(response.data, false)
-            } catch (error) {
                 break
             }
+            this.processEvents(response.data, false)
         }
 
         const propertiesWithAllowedValues = Array.from(this.propertyCache.values()).filter(p => p.allowed).length

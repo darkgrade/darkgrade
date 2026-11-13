@@ -31,6 +31,13 @@ function testCamera() {
 }
 
 describe('Canon card recording destination', () => {
+    it('does not send movie selectors absent from an older body inventory', async () => {
+        const { camera, operations } = testCamera()
+        ;(camera as any).supportedOperations = new Set([0x9110, 0x9116])
+        await expect(camera.enterMovieMode()).rejects.toThrow('was not advertised')
+        await expect(camera.leaveMovieMode()).rejects.toThrow('was not advertised')
+        expect(operations).toHaveLength(0)
+    })
     it('uses the advertised card value and restores host routing after the recording', async () => {
         const { camera } = testCamera()
         const property = camera.registry.properties.CanonCaptureDestination
@@ -63,6 +70,17 @@ describe('Canon card recording destination', () => {
             await expect(camera.prepareRecordingDestination()).rejects.toThrow('did not advertise a card')
         }
         expect(camera.set).not.toHaveBeenCalled()
+    })
+
+    it('prefers the verified advertised card value regardless of enum ordering', async () => {
+        const { camera } = testCamera(),property=camera.registry.properties.CanonCaptureDestination
+        const cache=(camera as any).propertyCache,writes:number[]=[]
+        cache.set(property,{current:4,allowed:[4,6,2]})
+        camera.set=(async(_property,value)=>{writes.push(Number(value));cache.set(property,{current:value,allowed:[4,6,2]})}) as typeof camera.set
+        const restore=await camera.prepareRecordingDestination()
+        expect(writes).toEqual([2])
+        await restore()
+        expect(writes).toEqual([2,4])
     })
 
     it('restores the original destination when card preparation changes state then fails', async () => {

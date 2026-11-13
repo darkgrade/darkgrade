@@ -472,10 +472,12 @@ test('deep profiles and unknown-code queues retain scopes and source references 
 test('observed camera snapshots survive Postgres replay and Matrix independently of requested writes', {skip:!process.env.DATABASE_URL}, async()=>{
  const database=await postgresDatabase(process.env.DATABASE_URL!),handle=createTelemetry(database,{publicUrl:'https://telemetry.example'}),user=await enroll(handle),payload=batch(),session=randomUUID()
  const snapshot={type:'state-snapshot',vendorId:0x04a9,workflow:'recording',phase:'after-prepare',basis:'observed-cache',settings:[{property:0xd1c2,dataType:6,current:0,ageMilliseconds:450}]}
+ const benchmarkId=randomUUID(),initial={...snapshot,workflow:'benchmark',phase:'before-prepare',benchmarkId}
  payload.contributions[0].camera.manufacturer='Canon'
  payload.contributions[0].entries=[
   {...payload.contributions[0].entries[0],kind:'data',sessionId:session,protocol:snapshot},
   {...payload.contributions[0].entries[0],kind:'command',sessionId:session,protocol:{type:'property-write',vendorId:0x04a9,property:0xd11c,dataType:6,requested:2,transactionId:1,outcome:'response',response:0x2001}},
+  {...payload.contributions[0].entries[0],kind:'data',sessionId:session,protocol:initial},
  ] as any
  try{
   assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
@@ -487,5 +489,8 @@ test('observed camera snapshots survive Postgres replay and Matrix independently
   const evidence=row.patterns.flatMap((pattern:any)=>pattern.protocol||[])
   assert.deepEqual(evidence.find((entry:any)=>entry.type==='state-snapshot'),snapshot)
   assert.equal(evidence.find((entry:any)=>entry.type==='property-write').requested,2)
+  assert.deepEqual(evidence.find((entry:any)=>entry.workflow==='benchmark'),initial)
+  const profile=await database.operator.profile(user.installId,benchmarkId)
+  assert.deepEqual(profile.items[0].protocol,initial)
  }finally{await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
 })

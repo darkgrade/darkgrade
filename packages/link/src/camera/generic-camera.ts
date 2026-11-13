@@ -77,7 +77,7 @@ export class GenericCamera {
     private protocolSeen = new Map<string, string>()
     private diagnosticSettings = new Map<number, CachedDiagnosticSetting>()
     /** Synchronous, bounded and entirely cache-based. Diagnostic failures cannot change a camera workflow. */
-    recordStateSnapshot(workflow: 'recording' | 'photo', phase: StatePhase) {
+    recordStateSnapshot(workflow: 'recording' | 'photo' | 'benchmark', phase: StatePhase) {
         try {
             this.recordProtocol(stateSnapshotEvidence(this.vendorId ?? 0, this.diagnosticSettings.values(), workflow, phase, performance.now()))
         } catch { /* Optional diagnostics must never interfere with capture or recovery. */ }

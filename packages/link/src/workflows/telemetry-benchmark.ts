@@ -61,6 +61,9 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
         { type: 'benchmark', vendorId, benchmarkId: id, status: 'started', checks: 0, failures: 0 },
         0x1001
     )
+    // Connection-time events may never repeat during this benchmark. Preserve their
+    // observed values with age, without pretending they are fresh property reads.
+    instance.recordStateSnapshot('benchmark', 'before-prepare')
     const stopped = () => (options.signal?.aborted ? 'cancelled' : Date.now() >= deadline ? 'deadline' : undefined)
     const check = async <Result>(name: string, work: () => Promise<Result>): Promise<Result | undefined> => {
         const beginning = performance.now(),

@@ -502,3 +502,22 @@ it('snapshot age is explicit, excludes future/stale cache entries and preserves 
  expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',99)).toMatchObject({settings:[]})
  expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',0x100000100)).toMatchObject({settings:[]})
 })
+
+it('benchmark includes preexisting observations with age and never substitutes an acknowledged write',async()=>{
+ const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
+ await camera.connect()
+ try {
+  const instance=camera.getInstance()
+  instance.recordProtocol({type:'property-value',vendorId:0,property:0x5001,dataType:4,current:63},0x1015)
+  instance.recordProtocol({type:'property-write',vendorId:0,property:0x5001,dataType:4,requested:99,transactionId:8,outcome:'response',response:0x2001},0x1016)
+  const result=await runCameraBenchmark(camera)
+  const snapshot=result.profile.datasets.find(item=>item.type==='state-snapshot')
+  expect(snapshot).toMatchObject({workflow:'benchmark',phase:'before-prepare',basis:'observed-cache',benchmarkId:result.profile.id,
+   settings:expect.arrayContaining([expect.objectContaining({property:0x5001,current:63,ageMilliseconds:expect.any(Number)})])})
+  expect(result.profile.datasets.filter(item=>item.type==='state-snapshot')).toHaveLength(1)
+  const next=await runCameraBenchmark(camera)
+  expect(next.profile.datasets.find(item=>item.type==='state-snapshot')).toMatchObject({benchmarkId:next.profile.id,
+   settings:expect.arrayContaining([expect.objectContaining({property:0x5001,current:75})])})
+  expect(next.profile.id).not.toBe(result.profile.id)
+ } finally {await camera.disconnect()}
+})

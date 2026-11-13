@@ -16,6 +16,35 @@ const words = (...values: number[]) => {
 const concat = (...parts: Uint8Array[]) => Uint8Array.from(parts.flatMap(part => [...part]))
 
 describe('Canon polled event replay', () => {
+    it('waits past an empty initial event response and clears prior-session settings on reconnect', async () => {
+        vi.useFakeTimers()
+        let connected=false,session=0,reads=0
+        const transport={isLittleEndian:()=>true,isConnected:()=>connected,on:()=>{},
+            connect:async()=>{connected=true},disconnect:async()=>{connected=false}} as unknown as TransportInterface
+        const camera=new Camera({transport,vendorId:0x04a9,logger:{renderInTerminal:false,captureConsole:false}}).getInstance() as CanonCamera
+        camera.send=(async operation=>{
+            if(operation.code===0x1002){session++;reads=0}
+            if(operation.code===0x1001)return{code:0x2001,data:{operationsSupportedRaw:[]}}
+            if(operation.code===0x9116){
+                reads++
+                const property=session===1?0xd1b0:0xd103
+                return{code:0x2001,data:reads===3?codec.decode(words(16,0xc189,property,session===1?2:0x48)).value:[]}
+            }
+            return{code:0x2001}
+        }) as typeof camera.send
+        const connect=async()=>{const opening=camera.connect();await vi.advanceTimersByTimeAsync(500);await opening}
+        const disconnect=async()=>{const closing=camera.disconnect();await vi.advanceTimersByTimeAsync(500);await closing}
+        try{
+            await connect()
+            expect(await camera.get(camera.registry.properties.CanonLiveViewMode)).toBe('HOST')
+            await disconnect()
+            expect(camera.listPropertyStates()).toEqual([])
+            expect(camera.listUnknownPropertyStates()).toEqual([])
+            await connect()
+            expect(camera.listPropertyStates().some(state=>state.code===0xd1b0)).toBe(false)
+            expect(camera.listPropertyStates().find(state=>state.code===0xd103)?.value).toBe('100')
+        }finally{await disconnect();vi.useRealTimers()}
+    })
     it('retains opaque and header-only events without swallowing later properties', () => {
         const payload = concat(
             words(8, 0xc18b),

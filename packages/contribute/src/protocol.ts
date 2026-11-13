@@ -12,7 +12,7 @@ export type ProtocolEvidence = {
     | { type: 'unknown'; category: ProtocolCategory; code: number; advertised: boolean }
     | {
           type: 'state-snapshot'
-          workflow: 'recording' | 'photo'
+          workflow: 'recording' | 'photo' | 'benchmark'
           phase: StatePhase
           basis: 'observed-cache'
           settings: ObservedSetting[]
@@ -100,7 +100,7 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
     } else if (item.type === 'state-snapshot') {
         fields = ['workflow', 'phase', 'basis', 'settings']
         if (
-            !['recording', 'photo'].includes(item.workflow) ||
+            !['recording', 'photo', 'benchmark'].includes(item.workflow) ||
             !['before-prepare', 'after-prepare', 'before-start', 'after-start', 'before-stop', 'after-stop', 'failure', 'after-cleanup'].includes(item.phase) ||
             item.basis !== 'observed-cache' ||
             !Array.isArray(item.settings) || item.settings.length > 32 ||

@@ -18,7 +18,7 @@ export interface CachedDiagnosticSetting { property: number; dataType: number; c
 /** Bounded cache-only evidence: never query a camera or infer state from acknowledged writes. */
 export function stateSnapshotEvidence(
     vendorId: number, cache: Iterable<CachedDiagnosticSetting>,
-    workflow: 'recording' | 'photo', phase: StatePhase, now: number
+    workflow: 'recording' | 'photo' | 'benchmark', phase: StatePhase, now: number
 ): ProtocolEvidence {
     // Prioritize mode/destination/recording, then exposure controls, before other reviewed values.
     const priority = vendorId === 0x04a9 ? [0xd1c2, 0xd105, 0xd11c, 0xd1b8, 0xd1b0, 0xd101, 0xd102, 0xd103, 0xd109]
