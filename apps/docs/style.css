@@ -1,3 +1,6 @@
+/* The combo file is the mark beside the name at 6.6:1, so the width sets the height. Only the size
+   is ours: the sidebar's own left padding keeps the logo in line with the search box under it, and
+   the product selector beside it. */
 .nav-logo {
-    width: 200px;
+    width: 132px;
 }
