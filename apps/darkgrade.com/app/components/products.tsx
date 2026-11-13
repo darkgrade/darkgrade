@@ -1,6 +1,6 @@
-import { MARK_NEXT, MARK_ON } from './site-links'
+import { MARK_NEXT, MARK_ON } from '@/app/components/site-links'
 
-/* the one description of each product: the roadmap map and the home page's acts both read from here */
+/* the one description of each product */
 
 export type Feature = { text: string; on?: boolean }
 
@@ -20,12 +20,6 @@ export const STUDIO: Product = {
     ],
 }
 
-export const TEST_BENCH: Product = {
-    name: 'Test bench',
-    kind: 'Our in-house camera lab',
-    features: [today('Every release tested on real cameras'), today('Recover and debug cameras with MCP')],
-}
-
 export const LINK: Product = {
     name: 'Link',
     kind: 'Open-source library',
@@ -35,16 +29,6 @@ export const LINK: Product = {
         today('Works with Sony / Nikon / Canon'),
         today('Let local models control your camera with MCP'),
         next('More camera brands'),
-    ],
-}
-
-export const MATRIX: Product = {
-    name: 'Matrix',
-    kind: 'Camera compatibility list',
-    features: [
-        today('See what works with your camera'),
-        today('See why we know it works with your camera'),
-        next('Share what you know about your camera'),
     ],
 }
 

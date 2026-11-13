@@ -1,0 +1,166 @@
+/* The scene writes --cut and --rolling (each 0..1) on .home every frame. */
+.home {
+    --cut: 0;
+    --rolling: 0;
+    --timeline-h: 104px;
+    /* the three stages of the first cut: gaps close, then titles are laid in, then the music runs under it */
+    --close: clamp(0, calc((var(--cut) - 0.3) / 0.4), 1);
+    --titles: clamp(0, calc((var(--cut) - 0.68) / 0.2), 1);
+    --music: clamp(0, calc((var(--cut) - 0.8) / 0.2), 1);
+}
+@media (max-width: 900px) {
+    .home {
+        --timeline-h: 86px;
+    }
+}
+
+/* Text that rises into place as it enters the window. */
+.js .home [data-rise] {
+    opacity: 0;
+    transform: translateY(22px);
+    transition:
+        opacity 0.9s cubic-bezier(0.19, 1, 0.22, 1),
+        transform 0.9s cubic-bezier(0.19, 1, 0.22, 1);
+    transition-delay: calc(var(--rise-order, 0) * 90ms);
+}
+.js .home [data-rise].is-risen {
+    opacity: 1;
+    transform: none;
+}
+
+/* a take slides from where it was shot to where the cut puts it, losing its dead ends on the way */
+.home .cut-take {
+    left: calc(var(--raw-left) * (1 - var(--close)) + var(--cut-left) * var(--close));
+    width: calc(var(--raw-width) * (1 - var(--close)) + var(--cut-width) * var(--close));
+}
+.home .cut-title {
+    opacity: var(--titles);
+    transform: translateY(calc((1 - var(--titles)) * 8px));
+}
+.home .cut-music {
+    clip-path: inset(0 calc((1 - var(--music)) * 100%) 0 0);
+}
+@keyframes cut-play {
+    from {
+        left: 0%;
+    }
+    to {
+        left: var(--cut-length);
+    }
+}
+.home .cut-playhead {
+    animation: cut-play 9s linear infinite;
+    opacity: var(--music);
+}
+@media (prefers-reduced-motion: reduce) {
+    .js .home [data-rise] {
+        opacity: 1;
+        transform: none;
+        transition: none;
+    }
+    .home .cut-playhead {
+        animation: none;
+    }
+}
+
+/* What runs on the laptop in the Link chapter: each request, reply and call arrives with a small move of its own. */
+@keyframes desk-arrive {
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+@keyframes desk-type {
+    from {
+        clip-path: inset(0 100% 0 0);
+    }
+    to {
+        clip-path: inset(0 0 0 0);
+    }
+}
+@keyframes desk-flash {
+    from {
+        background-color: rgba(246, 221, 168, 0.22);
+    }
+    to {
+        background-color: rgba(246, 221, 168, 0.06);
+    }
+}
+@keyframes desk-dot {
+    0%,
+    60%,
+    100% {
+        opacity: 0.25;
+        transform: none;
+    }
+    30% {
+        opacity: 1;
+        transform: translateY(-4px);
+    }
+}
+@keyframes desk-tick {
+    from {
+        opacity: 0;
+        transform: scale(0.4);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.desk-arrive {
+    animation: desk-arrive 0.42s cubic-bezier(0.19, 1, 0.22, 1) both;
+}
+.desk-type {
+    animation: desk-type 0.5s steps(26, end) both;
+}
+.desk-flash {
+    animation: desk-flash 1.1s ease-out both;
+}
+.desk-dot {
+    animation: desk-dot 1s ease-in-out infinite;
+}
+.desk-tick {
+    animation: desk-tick 0.3s cubic-bezier(0.19, 1, 0.22, 1) both;
+}
+
+/* The errors on the camera's monitor: each pops up in its turn and stays, and the pile clears and starts again. */
+@keyframes monitor-error {
+    0% {
+        opacity: 0;
+        transform: scale(0.86);
+    }
+    3%,
+    82% {
+        opacity: 1;
+        transform: none;
+    }
+    88%,
+    100% {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+}
+.monitor-error {
+    opacity: 0;
+    animation: monitor-error 6.5s cubic-bezier(0.19, 1, 0.22, 1) infinite both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .monitor-error {
+        opacity: 1;
+        animation: none;
+    }
+    .desk-arrive,
+    .desk-type,
+    .desk-flash,
+    .desk-dot,
+    .desk-tick {
+        animation: none;
+    }
+}

@@ -41,8 +41,8 @@ export interface Model {
     joints: ModelJoint[]
 }
 
-/** The camera, or one each of the nine items of a photo studio. Both are in millimetres. */
-export type ModelName = 'camera' | 'studio'
+/** The camera, one each of the nine items of a photo studio, or an open laptop. All are in millimetres. */
+export type ModelName = 'camera' | 'studio' | 'laptop'
 
 /**
  * The description at the head of a model file. A file is

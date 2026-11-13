@@ -11,11 +11,15 @@ const nextConfig = {
     skipTrailingSlashRedirect: true,
     // Link's docs moved under /docs/link/ when Studio's docs arrived; old addresses are still indexed.
     async redirects() {
-        return ['getting_started', 'ptp-reference'].map((section) => ({
-            source: `/docs/${section}/:page*`,
-            destination: `/docs/link/${section}/:page*`,
-            permanent: true,
-        }))
+        return [
+            ...['getting_started', 'ptp-reference'].map(section => ({
+                source: `/docs/${section}/:page*`,
+                destination: `/docs/link/${section}/:page*`,
+                permanent: true,
+            })),
+            // The roadmap page is gone; its address is still linked from outside.
+            { source: '/roadmap', destination: '/', permanent: false },
+        ]
     },
     async rewrites() {
         return EXPERIMENTS.flatMap(({ path, origin }) => [
