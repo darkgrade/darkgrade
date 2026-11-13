@@ -21,6 +21,9 @@
         }
     },
     "favicon": "/assets/darkgrade_favicon_dark.svg",
+    "thumbnails": {
+        "background": "/assets/backdrop.jpg"
+    },
     "integrations": {
         "posthog": {
             "apiKey": "phc_eOW21t5JEdgDB5lue4y9GuJhltWD5miYyLw86JkMN6g",
@@ -111,11 +114,15 @@
                     },
                     {
                         "group": "Datatypes",
-                        "pages": ["link/ptp-reference/datatype-definitions"]
+                        "pages": [
+                            "link/ptp-reference/datatype-definitions"
+                        ]
                     },
                     {
                         "group": "Vendor IDs",
-                        "pages": ["link/ptp-reference/vendor-ids"]
+                        "pages": [
+                            "link/ptp-reference/vendor-ids"
+                        ]
                     },
                     {
                         "group": "Types",
@@ -154,7 +161,9 @@
             },
             {
                 "product": "Darkgrade Studio",
-                "pages": ["studio/index"]
+                "pages": [
+                    "studio/index"
+                ]
             }
         ]
     }
