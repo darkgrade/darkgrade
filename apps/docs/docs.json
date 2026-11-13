@@ -7,12 +7,18 @@
         "dark": "/assets/darkgrade_combo_dark.svg"
     },
     "colors": {
-        "primary": "#0969DA",
-        "light": "#60A5FA",
-        "dark": "#0969DA"
+        "primary": "#7a5c1e",
+        "light": "#f5cd8a",
+        "dark": "#7a5c1e"
     },
     "fonts": {
-        "family": "Google Sans"
+        "heading": {
+            "family": "Public Sans",
+            "weight": 600
+        },
+        "body": {
+            "family": "Public Sans"
+        }
     },
     "favicon": "/assets/darkgrade_favicon_dark.svg",
     "integrations": {
