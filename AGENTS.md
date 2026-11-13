@@ -43,16 +43,26 @@ is the single knob for every gold glow.
 | --- | --- | --- |
 | `apps/darkgrade.com/public` | the ten brand files | source of truth |
 | `apps/darkgrade.com/app/press-kit` | draws every social image live | regenerate here, never hand-edit a PNG |
-| `apps/drkgrd.co/public` | copies of the same ten filenames | its own type stack (`tay-*` local fonts) |
+| `apps/darkgrade.com/scripts/make-lockups.ts` | the wordmark in every ink | `bun run lockups`; writes into all three folders at once |
+| `apps/drkgrd.co/public` | copies of the brand files | its card is drawn by `app/opengraph-image.tsx`, not committed |
 | `apps/docs/assets` | copies, plus `ks_*` for kevinschaich.com | `docs.json` carries `fonts` and `colors` of its own |
-| `toolbench`, `voicebench`, `cambench` (separate repos) | `scripts/prerender.ts` | draws a card per route with satori; the tokens live in that template |
+| `toolbench`, `voicebench`, `cambench` (separate repos) | `scripts/prerender.ts` | draws a card per route with satori, from the shared component |
 | `kevinschaich.com` (separate repo) | `ks_*` cards, `public/kit/v1/brand.css` | its home page mirrors drkgrd.co; a projects page besides |
 
 The social images are rendered by `/press-kit`, which draws the home page's own scene: open it,
 pick the size, download the PNG. A card that was edited by hand will drift from the site the next
 time the scene changes.
 
-The benches are the exception, and not a card each: every one of them draws a card per route in
+One card is shared with kevinschaich.com: `@kevinschaich/components/og` exports `OgCard`, both
+brand marks as bare SVGs and the backdrop, and a consumer draws its own cards from them rather
+than committing a PNG. It takes a background, a logo (the mark beside a name — `Darkgrade` here,
+`Kevinschaich` on Kevin's own properties), a main line, a sub line and an address. Register the
+faces satori asks for under the names it expects: `body` (Public Sans 400), `heading` (Public
+Sans 600 and 500) and `mono` (Fragment Mono 400). darkgrade.com's own card is the exception — it
+is the camera from the home page's scene, which satori cannot draw, so it stays a render from
+`/press-kit`.
+
+The benches are the exception to the exception, and not a card each: every one of them draws a card per route in
 `scripts/prerender.ts` with satori, hundreds in a build, so there is nothing to hand over. What
 changes there is the template — its colours, its weights and its type — and the next build
 regenerates every card from it. The same goes for anything else that generates cards
