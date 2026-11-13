@@ -1,12 +1,18 @@
+import { SceneCanvas } from '@/app/components/scene-canvas'
+import type { SceneName } from '@/app/components/scenes/run-scene'
+
 import { Drawing } from './drawing'
 import type { MotionName } from './drawing-motion'
-import { FeatureList, LINK, MATRIX, type Product, STUDIO } from './products'
+import { FeatureList, LINK, type Product, STUDIO } from './products'
 import { LABEL, NPM_INSTALL } from './site-links'
+
+/** What stands beside an act's text: a scene rendered live from a 3D model, or an SVG drawing posed by scrolling. */
+type Picture = { alt: string; width: number; height: number } & ({ scene: SceneName } | { src: string; motion: MotionName })
 
 type Act = {
     number: string
     product: Product
-    drawing: { src: string; alt: string; width: number; height: number; motion: MotionName }
+    picture: Picture
     install?: boolean
 }
 
@@ -17,37 +23,36 @@ const ACTS: Act[] = [
     {
         number: 'Act I',
         product: LINK,
-        drawing: {
-            src: '/products/link.svg',
-            alt: 'A camera whose lens lifts as its aperture stops down',
+        picture: {
+            scene: 'link',
+            alt: 'A camera lying lens-up whose lens lifts off its mount and turns as its glass draws apart',
             width: 560,
             height: 430,
-            motion: 'aperture',
         },
         install: true,
     },
     {
         number: 'Act II',
         product: STUDIO,
-        drawing: {
-            src: '/products/studio.svg',
-            alt: 'A film studio: a camera on dolly rails faces a stool and backdrop, surrounded by lights and a monitor',
-            width: 850,
-            height: 750,
-            motion: 'studio',
+        picture: {
+            scene: 'studio',
+            alt: 'A studio being set up around a stage: softbox, lamps, a spotlight and a director’s chair all turn to follow a mark crossing it',
+            width: 800,
+            height: 600,
         },
     },
-    {
-        number: 'Act III',
-        product: MATRIX,
-        drawing: {
-            src: '/products/matrix.svg',
-            alt: 'A camera record rising from a card index',
-            width: 600,
-            height: 430,
-            motion: 'record',
-        },
-    },
+    // Matrix is off the home page for now. Its drawing is still in public/products and its motion in drawing-motion.ts.
+    // {
+    //     number: 'Act III',
+    //     product: MATRIX,
+    //     picture: {
+    //         src: '/products/matrix.svg',
+    //         alt: 'A camera record rising from a card index',
+    //         width: 600,
+    //         height: 430,
+    //         motion: 'record',
+    //     },
+    // },
 ]
 
 function InstallLine() {
@@ -71,21 +76,21 @@ function InstallLine() {
     )
 }
 
-/** The three products a creator touches, told in order, with the same bullets as the roadmap. */
+/** The products a creator touches, told in order, with the same bullets as the roadmap. */
 export function Acts() {
     return (
         <section id="product" className="pb-[clamp(100px,14vh,180px)]">
             <div className="shell">
                 <div className="mb-[26px] flex items-baseline justify-between">
                     <span className={`${LABEL} text-ink-55`} data-fade>
-                        <span className="mr-[14px] text-gold">01</span>Our product, in three acts
+                        <span className="mr-[14px] text-gold">01</span>Our product, in two acts
                     </span>
                     <span className={`${LABEL} text-ink-52`} data-fade>
                         2026 —
                     </span>
                 </div>
 
-                {ACTS.map(({ number, product, drawing, install }, index) => (
+                {ACTS.map(({ number, product, picture, install }, index) => (
                     <article
                         key={number}
                         id={product.name.toLowerCase()}
@@ -95,15 +100,19 @@ export function Acts() {
                         {/* drawings alternate sides so the section reads as a sequence, not a list */}
                         <div
                             className={`mx-auto w-full ${index % 2 ? 'order-2 max-[900px]:order-none' : ''}`}
-                            style={{ maxWidth: `${(DRAWING_MAX_HEIGHT * drawing.width) / drawing.height}px` }}
+                            style={{ maxWidth: `${(DRAWING_MAX_HEIGHT * picture.width) / picture.height}px` }}
                         >
-                            <Drawing
-                                src={drawing.src}
-                                label={drawing.alt}
-                                width={drawing.width}
-                                height={drawing.height}
-                                motion={drawing.motion}
-                            />
+                            {'scene' in picture ? (
+                                <SceneCanvas scene={picture.scene} label={picture.alt} width={picture.width} height={picture.height} />
+                            ) : (
+                                <Drawing
+                                    src={picture.src}
+                                    label={picture.alt}
+                                    width={picture.width}
+                                    height={picture.height}
+                                    motion={picture.motion}
+                                />
+                            )}
                         </div>
 
                         <div>
