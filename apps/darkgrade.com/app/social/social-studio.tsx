@@ -3,6 +3,7 @@
 import { LOOPBACK_HOSTNAMES } from '@/app/components/dev-font-chooser/dev-fonts'
 import { ASSET_FORMATS, getAssetFilename, type AssetFormat, type Guide } from '@/app/social/formats'
 import { canvasToPngBlob, readTypefaces, renderAssetCanvas } from '@/app/social/render-asset'
+import { PICTURE_SIZE, runSitePicture } from '@/app/social/site-picture'
 import { createZipBytes, type ZipEntry } from '@/app/social/zip'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -141,6 +142,29 @@ export function SocialStudio() {
        seek lands, so renders never race a seek that is still in flight. */
     const frameCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const [frameVersion, setFrameVersion] = useState(0)
+    /* The home page's picture, drawn live on a canvas of its own and never shown.
+       A card is drawn over one moment of it, copied out here, so the preview and
+       the download are the same moment. */
+    const liveSitePictureRef = useRef<HTMLCanvasElement | null>(null)
+    const sitePictureRef = useRef<HTMLCanvasElement | null>(null)
+    const [sitePictureVersion, setSitePictureVersion] = useState(0)
+
+    const captureSitePicture = useCallback(() => {
+        const live = liveSitePictureRef.current
+        if (!live || !live.width) return
+        const moment = sitePictureRef.current ?? document.createElement('canvas')
+        moment.width = live.width
+        moment.height = live.height
+        moment.getContext('2d')?.drawImage(live, 0, 0)
+        sitePictureRef.current = moment
+        setSitePictureVersion(version => version + 1)
+    }, [])
+
+    useEffect(() => {
+        const live = liveSitePictureRef.current
+        if (!isLoopback || !live) return
+        return runSitePicture(live, captureSitePicture)
+    }, [isLoopback, captureSitePicture])
 
     const activeFormat = ASSET_FORMATS.find(format => format.id === state.activeId) ?? ASSET_FORMATS[0]
 
@@ -222,6 +246,7 @@ export function SocialStudio() {
             typefaces: readTypefaces(),
             backdrop: frameCanvasRef.current,
             backdropPositionY: state.videoPositionY / 100,
+            picture: sitePictureRef.current,
         })
             .then(rendered => {
                 const target = previewCanvasRef.current
@@ -232,7 +257,7 @@ export function SocialStudio() {
                 setErrorMessage(null)
             })
             .catch(error => setErrorMessage(String(error?.message ?? error)))
-    }, [hasLoadedStorage, activeFormat, frameVersion, state.videoPositionY, typefaceVersion])
+    }, [hasLoadedStorage, activeFormat, frameVersion, sitePictureVersion, state.videoPositionY, typefaceVersion])
 
     const downloadOne = useCallback(
         async (format: AssetFormat) => {
@@ -242,6 +267,7 @@ export function SocialStudio() {
                     typefaces: readTypefaces(),
                     backdrop: frameCanvasRef.current,
                     backdropPositionY: state.videoPositionY / 100,
+                    picture: sitePictureRef.current,
                 })
                 saveBlob(await canvasToPngBlob(rendered), getAssetFilename(format))
                 setErrorMessage(null)
@@ -251,7 +277,7 @@ export function SocialStudio() {
                 setBusyMessage(null)
             }
         },
-        [frameVersion, state.videoPositionY]
+        [frameVersion, sitePictureVersion, state.videoPositionY]
     )
 
     const downloadAll = useCallback(async () => {
@@ -263,6 +289,7 @@ export function SocialStudio() {
                     typefaces: readTypefaces(),
                     backdrop: frameCanvasRef.current,
                     backdropPositionY: state.videoPositionY / 100,
+                    picture: sitePictureRef.current,
                 })
                 const png = await canvasToPngBlob(rendered)
                 entries.push({ name: getAssetFilename(format), bytes: new Uint8Array(await png.arrayBuffer()) })
@@ -274,17 +301,19 @@ export function SocialStudio() {
         } finally {
             setBusyMessage(null)
         }
-    }, [frameVersion, state.videoPositionY])
+    }, [frameVersion, sitePictureVersion, state.videoPositionY])
 
     const setFrameSeconds = useCallback(
         (frameSeconds: number) => setState(previous => ({ ...previous, frameSeconds })),
         []
     )
 
+    /** Another moment: of the home page's picture for a card, of the chosen video for everything else. */
     const pickRandomFrame = useCallback(() => {
+        if (activeFormat.look === 'card') return captureSitePicture()
         if (!durationSeconds) return
         setFrameSeconds(Math.round(Math.random() * (durationSeconds - FRAME_STEP_SECONDS) * 30) / 30)
-    }, [durationSeconds, setFrameSeconds])
+    }, [activeFormat, captureSitePicture, durationSeconds, setFrameSeconds])
 
     useEffect(() => {
         if (!isLoopback) return
@@ -320,6 +349,13 @@ export function SocialStudio() {
 
     return (
         <>
+            {/* the home page's picture, drawn at the size of a card and kept out of sight: only its frames are used */}
+            <canvas
+                ref={liveSitePictureRef}
+                aria-hidden="true"
+                className="pointer-events-none fixed top-0 left-0 z-0 opacity-0"
+                style={PICTURE_SIZE}
+            />
             {/* the page backdrop: the chosen frame, under the studio's uniform 60% dim */}
             <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0">
                 {videoUrl && (
@@ -370,7 +406,7 @@ export function SocialStudio() {
                                     disabled={!durationSeconds}
                                     onChange={event => setFrameSeconds(Number(event.currentTarget.value))}
                                     aria-valuetext={formatTimecode(state.frameSeconds)}
-                                    className="h-6 flex-1 cursor-pointer accent-[#f6dda8]"
+                                    className="h-6 flex-1 cursor-pointer accent-[#f5cd8a]"
                                 />
                             </label>
                             <span className="shrink-0 text-ink tabular-nums">
@@ -389,7 +425,7 @@ export function SocialStudio() {
                                         setState(previous => ({ ...previous, videoPositionY }))
                                     }}
                                     aria-valuetext={`${state.videoPositionY}% from the top`}
-                                    className="h-6 flex-1 cursor-pointer accent-[#f6dda8]"
+                                    className="h-6 flex-1 cursor-pointer accent-[#f5cd8a]"
                                 />
                                 <span className="w-[4ch] shrink-0 text-right text-ink tabular-nums">
                                     {state.videoPositionY}%

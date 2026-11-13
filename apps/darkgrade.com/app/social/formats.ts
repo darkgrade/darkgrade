@@ -21,7 +21,7 @@ export interface Guide {
 }
 
 export type AssetLook =
-    'banner' | 'mark-on-video' | 'mark-on-white' | 'mark-on-black' | 'mark-light-mode' | 'mark-dark-mode'
+    'banner' | 'card' | 'mark-on-video' | 'mark-on-white' | 'mark-on-black' | 'mark-light-mode' | 'mark-dark-mode'
 
 export interface AssetFormat {
     readonly id: string
@@ -32,7 +32,7 @@ export interface AssetFormat {
     readonly look: AssetLook
     /** Overrides the generated filename, to match an existing file in /public. */
     readonly filename?: string
-    /** Where banner content is centred. Unused for the square marks. */
+    /** Where banner content is centred, and where a card's words are set. Unused for the square marks. */
     readonly contentArea: PixelRectangle
     readonly guides: readonly Guide[]
     readonly fileNote: string
@@ -46,8 +46,8 @@ const SQUARE_SIZE = 1000
 /** The size of the cards in /public (darkgrade_opengraph_dark.png, ..._light.png). */
 const OPENGRAPH_WIDTH = 2400
 const OPENGRAPH_HEIGHT = 1260
-/** The same stacked composition as the banners, inside a 150px margin. */
-const OPENGRAPH_CONTENT_AREA: PixelRectangle = { x: 150, y: 150, width: 2100, height: 960 }
+/** The words take the left of the card, inside a 150px margin; the camera in the picture behind them is on the right. */
+const OPENGRAPH_CONTENT_AREA: PixelRectangle = { x: 150, y: 150, width: 1180, height: 960 }
 
 export const ASSET_FORMATS: readonly AssetFormat[] = [
     {
@@ -147,14 +147,15 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
         platform: 'Link preview card · dark',
         width: OPENGRAPH_WIDTH,
         height: OPENGRAPH_HEIGHT,
-        look: 'banner',
+        look: 'card',
         filename: 'darkgrade_opengraph_dark.png',
         contentArea: OPENGRAPH_CONTENT_AREA,
         guides: [],
         fileNote: 'PNG · replaces public/darkgrade_opengraph_dark.png',
         source: { label: 'Open Graph protocol', url: 'https://ogp.me/#structured' },
         notes: [
-            'The size of the cards already in /public, in the same layout as the banners. Dark and light are the same image: the site has no light mode.',
+            'The home page’s first fold as a card: its picture of the camera behind, the lockup, headline and tagline on the left. Press N for another moment of the picture.',
+            'Dark and light are the same image: the site has no light mode.',
         ],
     },
     {
@@ -163,7 +164,7 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
         platform: 'Link preview card · light',
         width: OPENGRAPH_WIDTH,
         height: OPENGRAPH_HEIGHT,
-        look: 'banner',
+        look: 'card',
         filename: 'darkgrade_opengraph_light.png',
         contentArea: OPENGRAPH_CONTENT_AREA,
         guides: [],
