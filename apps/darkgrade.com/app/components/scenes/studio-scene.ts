@@ -8,7 +8,7 @@ import { type Arrangement, type StandingItem, buildStudioSet, onArc, sway } from
 /** Mid set-up: lights going up on one side, the ladder open beside the spotlight, cases by the crate, the director's chair waiting. */
 const LOAD_IN: Arrangement = {
     aim: 'stage',
-    stageMetres: 2.6,
+    stageMetres: 3.4,
     placements: [
         onArc('softbox', -55, 2.7, { id: 'softbox' }),
         onArc('parabolicLamp', -22, 3.0, { id: 'parabolicLamp' }),
@@ -28,10 +28,17 @@ const LOAD_IN: Arrangement = {
 const FOLLOWERS = ['softbox', 'parabolicLamp', 'spotlight', 'floorLamp', 'chair']
 /** The items whose head turns on its stand; the others turn bodily. */
 const PANNING_ITEMS = ['softbox', 'spotlight', 'parabolicLamp']
-const MARK_RADIUS_MILLIMETRES = 110
+const MARK_RADIUS_MILLIMETRES = 170
 const MARK_HEIGHT_MILLIMETRES = 3
-const MARK_REACH_ACROSS_MILLIMETRES = 950
-const MARK_REACH_BACK_MILLIMETRES = 650
+/** The mark circles the stage, swinging in towards the middle and out to near the rim as it goes. */
+const MARK_NEAREST_MILLIMETRES = 250
+const MARK_FARTHEST_MILLIMETRES = 1500
+const MARK_RADIANS_PER_SECOND = 0.85
+const MARK_SWINGS_PER_SECOND = 1.9
+/** A light tips down at a mark close by and up at one far off: this much, in radians, a metre either side of the middle distance. */
+const TIP_PER_METRE = 0.16
+const MIDDLE_DISTANCE_MILLIMETRES = 2900
+const MOST_TIP_RADIANS = 0.32
 
 /** Turns a copy to face a point on the floor, by its pan joint if it has one and bodily if not. */
 function faceThePoint(item: StandingItem, acrossMillimetres: number, backMillimetres: number) {
@@ -39,9 +46,11 @@ function faceThePoint(item: StandingItem, acrossMillimetres: number, backMillime
     const turn = MathUtils.euclideanModulo(towards - item.homeTurn + Math.PI, Math.PI * 2) - Math.PI
     if (PANNING_ITEMS.includes(item.placement.item)) item.rig.pose.pan = turn
     else item.rig.root.rotation.y = item.homeTurn + turn
+    const away = Math.hypot(acrossMillimetres - item.home.x, backMillimetres - item.home.z)
+    item.rig.pose.tilt = MathUtils.clamp(((away - MIDDLE_DISTANCE_MILLIMETRES) / 1000) * TIP_PER_METRE, -MOST_TIP_RADIANS, MOST_TIP_RADIANS)
 }
 
-/** Studio: a mark wanders the stage and every light turns to keep it lit. */
+/** Studio: a mark sweeps round the stage and every light turns and tips to keep it lit. */
 export function studioScene(model: Model): Stage {
     const set = buildStudioSet(model, LOAD_IN)
     const followers = FOLLOWERS.map(id => set.byId(id))
@@ -54,9 +63,12 @@ export function studioScene(model: Model): Stage {
     return {
         scene: set.staging.scene,
         camera: set.staging.camera,
+        target: set.staging.target,
         update(seconds) {
-            const across = MARK_REACH_ACROSS_MILLIMETRES * Math.sin(seconds * 0.7)
-            const back = MARK_REACH_BACK_MILLIMETRES * Math.sin(seconds * 1.4)
+            const swing = (1 + Math.sin(seconds * MARK_SWINGS_PER_SECOND)) / 2
+            const out = MathUtils.lerp(MARK_NEAREST_MILLIMETRES, MARK_FARTHEST_MILLIMETRES, swing)
+            const across = out * Math.cos(seconds * MARK_RADIANS_PER_SECOND)
+            const back = out * Math.sin(seconds * MARK_RADIANS_PER_SECOND)
             sway(set, seconds)
             set.rest()
             mark.position.x = across

@@ -1,4 +1,4 @@
-import { Box3, BufferGeometry, Float32BufferAttribute, Group, LineSegments, MathUtils, Vector3 } from 'three'
+import { Box3, BufferGeometry, Float32BufferAttribute, Group, LineLoop, MathUtils, Vector3 } from 'three'
 
 import { ANATOMY, ISOMETRIC_ELEVATION_DEGREES, ISOMETRIC_FIELD_OF_VIEW_DEGREES, dotGrid, isometricLayers } from '@/app/components/scenes/isometric-look'
 import type { Model, ModelPiece } from '@/app/components/scenes/load-model'
@@ -25,7 +25,7 @@ export interface Placement {
 export interface Arrangement {
     /** Whether every item turns to face the middle of the stage, or all face the same way. */
     aim: 'stage' | 'ahead'
-    /** The side of the square stage's floor mark, in metres, or none. */
+    /** How far across the round stage's floor mark is, in metres, or none. */
     stageMetres?: number
     placements: Placement[]
 }
@@ -63,6 +63,7 @@ const NARROWEST_ASPECT = 4 / 3
 const FRAMING_MARGIN = 1.16
 const CAMERA_AZIMUTH_DEGREES = 225
 const STAGE_MARK_HEIGHT_MILLIMETRES = 2
+const STAGE_MARK_STEPS = 96
 const SWAY_RADIANS = 0.3
 const SWAY_RADIANS_PER_SECOND = 0.22
 
@@ -72,14 +73,17 @@ export function onArc(item: StudioItem, degrees: number, metres: number, more: P
     return { item, across: metres * Math.sin(angle), back: metres * Math.cos(angle), ...more }
 }
 
-function stageMark(sideMetres: number): LineSegments {
-    const half = (sideMetres / 2) * MILLIMETRES_PER_METRE
-    const y = STAGE_MARK_HEIGHT_MILLIMETRES
-    const corners = [-half, y, -half, half, y, -half, half, y, half, -half, y, half]
-    const outline = [0, 1, 1, 2, 2, 3, 3, 0].flatMap(corner => corners.slice(corner * 3, corner * 3 + 3))
+/** The stage's rim: a circle on the floor. */
+function stageMark(acrossMetres: number): LineLoop {
+    const radius = (acrossMetres / 2) * MILLIMETRES_PER_METRE
+    const rim: number[] = []
+    for (let step = 0; step < STAGE_MARK_STEPS; step++) {
+        const angle = (step / STAGE_MARK_STEPS) * Math.PI * 2
+        rim.push(Math.cos(angle) * radius, STAGE_MARK_HEIGHT_MILLIMETRES, Math.sin(angle) * radius)
+    }
     const geometry = new BufferGeometry()
-    geometry.setAttribute('position', new Float32BufferAttribute(outline, 3))
-    return new LineSegments(geometry, lineMaterial(ANATOMY.lit, 0.8))
+    geometry.setAttribute('position', new Float32BufferAttribute(rim, 3))
+    return new LineLoop(geometry, lineMaterial(ANATOMY.lit, 0.8))
 }
 
 function groupByItem(pieces: ModelPiece[]): Map<string, ModelPiece[]> {

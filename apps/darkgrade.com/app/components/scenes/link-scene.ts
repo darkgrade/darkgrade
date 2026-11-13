@@ -1,7 +1,7 @@
 import { Group } from 'three'
 
 import { BODY_CENTRE, createCameraRig } from '@/app/components/scenes/camera-rig'
-import { ISOMETRIC_ELEVATION_DEGREES, ISOMETRIC_FIELD_OF_VIEW_DEGREES, dotGrid, halo, isometricLayers } from '@/app/components/scenes/isometric-look'
+import { ISOMETRIC_ELEVATION_DEGREES, ISOMETRIC_FIELD_OF_VIEW_DEGREES, dotGrid, isometricLayers } from '@/app/components/scenes/isometric-look'
 import type { Model } from '@/app/components/scenes/load-model'
 import { type Stage, centreOn, createStaging, placeCamera, rise } from '@/app/components/scenes/staging'
 
@@ -12,7 +12,6 @@ const LOOK_AT_HEIGHT_MILLIMETRES = 112
 const BACK_BELOW_CENTRE_MILLIMETRES = 43
 const DOT_SPACING_MILLIMETRES = 16
 const DOT_GRID_HALF_COUNT = 16
-const HALO_SIZE_MILLIMETRES = 420
 const LOOP_SECONDS = 9
 
 /** Link: the camera lies on its back, its lens lifts off the mount and turns, and its glass draws apart. */
@@ -27,13 +26,14 @@ export function linkScene(model: Model): Stage {
     lyingDown.add(rig.root)
 
     const groundY = BODY_CENTRE.y - BACK_BELOW_CENTRE_MILLIMETRES - BODY_CENTRE.z
-    staging.scene.add(halo(groundY, HALO_SIZE_MILLIMETRES), dotGrid(groundY, DOT_SPACING_MILLIMETRES, DOT_GRID_HALF_COUNT), lyingDown)
+    staging.scene.add(dotGrid(groundY, DOT_SPACING_MILLIMETRES, DOT_GRID_HALF_COUNT), lyingDown)
     staging.target.set(0, LOOK_AT_HEIGHT_MILLIMETRES, 0)
     placeCamera(staging.camera, staging.target, CAMERA_DISTANCE_MILLIMETRES, CAMERA_AZIMUTH_DEGREES, ISOMETRIC_ELEVATION_DEGREES)
 
     return {
         scene: staging.scene,
         camera: staging.camera,
+        target: staging.target,
         update(seconds) {
             const time = seconds % LOOP_SECONDS
             const lift = rise(time, 0.6, 2.6, 6, 8)

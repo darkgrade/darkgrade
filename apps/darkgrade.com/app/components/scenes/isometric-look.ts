@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, LineSegments, Mesh, type Object3D, PlaneGeometry, Points, PointsMaterial, ShaderMaterial } from 'three'
+import { BufferGeometry, Color, Float32BufferAttribute, LineSegments, Mesh, type Object3D, Points, ShaderMaterial } from 'three'
 
 import type { ModelPiece } from '@/app/components/scenes/load-model'
 import { lineMaterial, outlineMaterial, toneMaterial } from '@/app/components/scenes/materials'
@@ -37,39 +37,48 @@ export function isometricLayers(): IsometricLayers {
     }
 }
 
-/** A square grid of dots on the floor, `halfCount` dots each way from the middle. */
+/** Where the dots start to dissolve, as a share of the floor's radius: almost from the middle, so the floor is a soft round pool. */
+const DOTS_FADE_FROM = 0.08
+const DOT_SIZE_PIXELS = 3
+
+/** A round floor of dots, `halfCount` dots from the middle to its rim, fading all the way out from the middle. */
 export function dotGrid(groundY: number, spacingMillimetres: number, halfCount: number): Points {
     const positions: number[] = []
     for (let column = -halfCount; column <= halfCount; column++) {
-        for (let row = -halfCount; row <= halfCount; row++) positions.push(column * spacingMillimetres, groundY, row * spacingMillimetres)
+        for (let row = -halfCount; row <= halfCount; row++) {
+            if (Math.hypot(column, row) <= halfCount) positions.push(column * spacingMillimetres, groundY, row * spacingMillimetres)
+        }
     }
     const geometry = new BufferGeometry()
     geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-    return new Points(geometry, new PointsMaterial({ color: ANATOMY.dot, size: 3, sizeAttenuation: false }))
-}
-
-/** The soft dark pool a drawing sits in. */
-export function halo(groundY: number, sizeMillimetres: number): Mesh {
     const material = new ShaderMaterial({
         transparent: true,
         depthWrite: false,
+        uniforms: {
+            uColour: { value: new Color(ANATOMY.dot) },
+            uReach: { value: halfCount * spacingMillimetres },
+            uFadeFrom: { value: DOTS_FADE_FROM },
+            uSize: { value: DOT_SIZE_PIXELS },
+        },
         vertexShader: /* glsl */ `
-            varying vec2 vUv;
+            uniform float uReach;
+            uniform float uFadeFrom;
+            uniform float uSize;
+            varying float vStrength;
             void main() {
-                vUv = uv;
+                vStrength = 1.0 - smoothstep(uFadeFrom, 1.0, length(position.xz) / uReach);
+                gl_PointSize = uSize;
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
         `,
         fragmentShader: /* glsl */ `
-            varying vec2 vUv;
+            uniform vec3 uColour;
+            varying float vStrength;
             void main() {
-                float falloff = 1.0 - smoothstep(0.25, 1.0, length((vUv - 0.5) * 2.0));
-                gl_FragColor = vec4(0.012, 0.012, 0.012, falloff * 0.7);
+                gl_FragColor = vec4(uColour, vStrength);
+                #include <colorspace_fragment>
             }
         `,
     })
-    const pool = new Mesh(new PlaneGeometry(sizeMillimetres, sizeMillimetres), material)
-    pool.rotation.x = -Math.PI / 2
-    pool.position.y = groundY + 0.5
-    return pool
+    return new Points(geometry, material)
 }
