@@ -1,4 +1,5 @@
 import { investigate } from '#collector/investigate'
+import { admissionLimit } from '#collector/abuse-limits'
 import { operatorApi } from '#collector/operator'
 import { postgresDatabase } from '#collector/postgres'
 import { cleanupWithdrawals, createTelemetry, resendContactSender } from '#collector/telemetry'
@@ -13,7 +14,15 @@ const handle = createTelemetry(database, {
         sendContact: resendContactSender(process.env.TELEMETRY_EMAIL_API_KEY, process.env.TELEMETRY_EMAIL_FROM ?? ''),
     }),
 })
+const admit = admissionLimit()
 const server = createServer(async (incoming, outgoing) => {
+    const release = admit()
+    if (!release) {
+        incoming.resume()
+        outgoing.writeHead(429, { 'content-type': 'application/json', 'retry-after': '1', 'cache-control': 'no-store' })
+        outgoing.end(JSON.stringify({ error: 'Collector busy; retry shortly' }))
+        return
+    }
     try {
         const request = new Request(`http://collector${incoming.url}`, {
             method: incoming.method,
@@ -52,6 +61,8 @@ const server = createServer(async (incoming, outgoing) => {
     } catch {
         outgoing.writeHead(500)
         outgoing.end('Collector unavailable')
+    } finally {
+        release()
     }
 })
 server.requestTimeout = 20_000

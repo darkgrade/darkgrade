@@ -14,14 +14,14 @@ firmware remain Unknown unless an authoritative identity is available. Custom/na
 backends outside these Link paths need explicit instrumentation.
 
 The random installation ID and secret are generated once in `~/.darkgrade/settings.json`
-(mode 0600), shared by CLI and Studio. There is no hardware fingerprint. `DARKGRADE_HOME`
+(mode 0600), shared by CLI and Studio. Installation identity is random; camera identity
+uses a separate one-way fingerprint of reliable device serials, never the raw serial. `DARKGRADE_HOME`
 changes this directory. File updates are atomic and serialized; stale enrollment writes
 cannot overwrite another process's opt-out. Corrupt state fails closed. A lock left by a
 crashed process must be investigated before removing it; initialization never steals a lock.
 
-Set `DARKGRADE_TELEMETRY_URL` to the deployed HTTPS origin. Without it, cloud upload is
-unconfigured; the saved default-on preference still exists. The unpublished package has
-no live endpoint built in. `DARKGRADE_CONTRIBUTIONS=0` or `DO_NOT_TRACK=1` overrides cloud
+Node clients use the hosted collector by default; `DARKGRADE_TELEMETRY_URL` overrides
+the HTTPS origin. `DARKGRADE_CONTRIBUTIONS=0` or `DO_NOT_TRACK=1` overrides cloud
 sharing. Saved opt-outs survive updates and Studio migrates its earlier encrypted state.
 
 `createApplicationDiagnostics` from `@darkgrade/contribute/application` is the portable
@@ -35,6 +35,19 @@ retry. An active process checks shared preferences before upload. Metadata inclu
 codes, responses, durations, byte counts, timestamps and an anonymous connection/session
 ID. It excludes serials, image contents, command arguments and free-form errors. A wire
 transaction counter only correlates messages within a session; it is not a user identity.
+
+Decoded evidence additionally includes advertised numeric operation/event/property codes
+and allowlisted numeric setting descriptors. Unknown codes are retained, but their values,
+opaque payloads, strings, network settings and authentication data are excluded. Numeric
+values must fit the declared PTP type. Named SDK calls still omit their arguments.
+
+`darkgrade telemetry benchmark --camera VVVV:PPPP` reads a deep camera profile through
+the existing Link camera implementation. It exports `~/.darkgrade/profiles/<uuid>.json`
+with restrictive permissions even when sharing is off. Progress is printed to stderr;
+Ctrl-C requests cancellation between bounded operations. The profile reports complete,
+partial or cancelled and retains the exact revision, transport and evidence type. Optional
+`--capture`/`--live` perform explicit media transfers; image bytes are never uploaded here.
+A completed inventory is not proof that every advertised feature works.
 
 `setConsent(false)` stops cloud uploads and clears the upload queue. Sanitized diagnostics
 continue locally in `~/.darkgrade/diagnostics` for debugging. Each process rotates at 2 MiB,

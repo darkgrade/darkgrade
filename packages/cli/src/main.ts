@@ -3,6 +3,7 @@ import {
     closeNodeDiagnostics,
     nodeDiagnostics,
     settingsDirectory,
+    saveDiagnosticProfile,
     sharedSettings,
 } from '@darkgrade/contribute/settings'
 import { randomUUID } from 'node:crypto'
@@ -96,32 +97,31 @@ try {
             logger: { renderInTerminal: false, captureConsole: false },
             transactionPolicy: { timeoutMilliseconds: 10_000, deviceBusyRetries: 1 },
         })
-        let timedOut = false
-        const deadline = setTimeout(() => {
-            timedOut = true
-            process.exitCode = 124
-            console.error('Benchmark exceeded its deadline; disconnecting the camera')
-            setTimeout(() => process.exit(124), 15_000).unref()
-            void camera
-                .disconnect()
-                .catch(() => {})
-                .finally(() => process.exit(124))
-        }, 120_000)
+        const cancellation = new AbortController()
+        const cancel = () => cancellation.abort()
+        process.once('SIGINT', cancel)
+        process.once('SIGTERM', cancel)
+        const deadline = setTimeout(cancel, 200_000)
         try {
             await camera.connect()
             const result = await runCameraBenchmark(camera, {
                 capture: args.includes('--capture'),
                 live: args.includes('--live'),
+                signal: cancellation.signal,
+                onProgress: (check: { passed: boolean; name: string }) =>
+                    console.error(`${check.passed ? '✓' : '!'} ${check.name}`),
             })
-            if (timedOut) throw new Error('Benchmark timed out')
+            const profilePath = saveDiagnosticProfile(result.profile)
             const upload = await (await nodeDiagnostics()).flush()
-            console.log(JSON.stringify({ ...result, upload }))
+            console.log(JSON.stringify({ ...result, profilePath, upload }))
             if (!result.passed) process.exitCode = 1
         } finally {
             try {
                 await camera.disconnect()
             } finally {
                 clearTimeout(deadline)
+                process.removeListener('SIGINT', cancel)
+                process.removeListener('SIGTERM', cancel)
             }
         }
     }

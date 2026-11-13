@@ -2,13 +2,15 @@ import type { Database } from '#collector/database'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
 import { validateBatch } from '@darkgrade/contribute/batch'
 import { createHash } from 'node:crypto'
+import type { ProtocolFinding } from '#collector/protocol-research'
 
 /** Deterministic validated diagnostics; a review label is independent of import eligibility. */
 export function diagnosticPattern(
     recordId: string,
     record: Record<string, any>,
     reviewedAt: Date | null = null,
-    credit: { name: string; publish: true } | null = null
+    credit: { name: string; publish: true } | null = null,
+    findings: ProtocolFinding[] = []
 ) {
     if (createHash('sha256').update(record.payload).digest('hex') !== record.sha256)
         throw new Error('Diagnostic integrity check failed')
@@ -29,6 +31,7 @@ export function diagnosticPattern(
             }
         >()
         for (const entry of contribution.entries) {
+            if (entry.protocol) continue
             const key = `${entry.kind}/${entry.direction}/${entry.operation ?? 'ptp'}/${entry.code ?? 'none'}`
             const summary = observed.get(key) ?? {
                 kind: entry.kind,
@@ -52,6 +55,8 @@ export function diagnosticPattern(
             camera: contribution.camera,
             droppedEntries: contribution.droppedEntries,
             observed: [...observed.values()],
+            ...(contribution.entries.some(entry => entry.protocol) &&
+                { protocol: contribution.entries.flatMap(entry => entry.protocol ? [entry.protocol] : []) }),
         }
     })
     const pattern = {
@@ -66,6 +71,7 @@ export function diagnosticPattern(
         source: '@darkgrade/contribute',
         credit,
         patterns,
+        ...(findings.length && { findings }),
     }
     return pattern
 }

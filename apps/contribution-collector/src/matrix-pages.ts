@@ -52,10 +52,11 @@ export async function exportMatrixPage(database: Database, cursor?: string, now 
             if (!original || (original.ingestionSequence ?? 0) > state.watermark || +original.receivedAt > started)
                 return
             const sourceRecord = row.path.slice('diagnostics/'.length)
-            const [installation, reviewed, contact] = await Promise.all([
+            const [installation, reviewed, contact, research] = await Promise.all([
                 transaction.get(`installations/${original.installId}`),
                 transaction.get(`reviewedPatterns/${sourceRecord}`),
                 transaction.get(`contacts/${original.installId}`),
+                transaction.get(`protocolFindings/${sourceRecord}`),
             ])
             if (
                 !installation ||
@@ -71,7 +72,8 @@ export async function exportMatrixPage(database: Database, cursor?: string, now 
                     reviewed && reviewed.sourceHash === original.sha256 && reviewed.reviewedAt instanceof Date
                         ? reviewed.reviewedAt
                         : null,
-                    contact?.confirmedAt && contact.credit?.publish === true ? contact.credit : null
+                    contact?.confirmedAt && contact.credit?.publish === true ? contact.credit : null,
+                    research && research.sourceHash === original.sha256 ? research.findings : []
                 ),
                 expiresAt: +original.expiresAt,
             }

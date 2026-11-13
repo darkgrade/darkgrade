@@ -35,6 +35,12 @@ function protect<T extends Record<string, unknown>>(callback: (argumentsValue: T
 }
 /** Register identical camera tools in a standalone Darkgrade server or a compatibility host. */
 export function registerCameraTools(server: McpServer, client: CameraClient) {
+    if (client.benchmark) server.registerTool('camera_benchmark', {
+        title: 'Benchmark and export a camera profile',
+        description: 'Explicit deep benchmark of an idle camera: read advertised operations, events and bounded safe numeric control descriptors, save a sanitized profile and upload evidence according to telemetry preferences. Uses host camera ownership; no photos, recording, arbitrary writes or competing sessions. May take three minutes. Partial results are not unsupported features or physical passes.',
+        inputSchema: z.object({ camera: z.string().min(1) }).strict(),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    }, protect(async ({camera}) => client.benchmark!(camera as string)))
     server.registerTool(
         'camera_take_photo',
         {

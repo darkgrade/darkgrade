@@ -1,3 +1,5 @@
+import { Camera } from '@camera/index'
+import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
@@ -58,7 +60,7 @@ function packet(type: number, code: number, transactionId: number, data: Uint8Ar
     bytes.set(data, 12)
     return bytes
 }
-function fixture(refuseProperty = false, nikonEventResponse?: number) {
+function fixture(refuseProperty = false, nikonEventResponse?: number, inventory = identity) {
     const commands: number[] = []
     const eventParameters: number[][] = []
     const replies: Uint8Array[] = []
@@ -90,9 +92,10 @@ function fixture(refuseProperty = false, nikonEventResponse?: number) {
             const code = view.getUint16(6, true)
             const id = view.getUint32(8, true)
             commands.push(code)
-            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? identity : {
+            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? inventory : {
                 ...identity, manufacturer: 'Nikon', model: 'Z 6', operationsSupportedRaw: [...identity.operationsSupportedRaw, 0x941c],
             })))
+            if (code === 0x1004) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
             if (code === 0x1014 && !refuseProperty) replies.push(packet(2, code, id, descriptor))
             if (code === 0x941c) {
                 const parameters = Array.from({ length: (bytes.length - 12) / 4 }, (_, index) => view.getUint32(12 + index * 4, true))
@@ -398,4 +401,27 @@ describe('complete transaction observation', () => {
         expect(accepted).toEqual([])
         expect(trace.skippedIncomplete()).toBe(1)
     })
+})
+
+
+it('deep benchmark exports a sanitized profile on the owned session and preserves partial/cancelled outcomes',async()=>{
+    const source=fixture(false,undefined,{...identity,operationsSupportedRaw:[...identity.operationsSupportedRaw,0x9fff]})
+    const camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
+    await camera.connect()
+    const result=await runCameraBenchmark(camera)
+    expect(result.passed).toBe(true)
+    expect(result.profile.status).toBe('complete')
+    expect(result.profile.evidence).toBe('synthetic')
+    expect(result.profile.datasets).toContainEqual(expect.objectContaining({type:'unknown',category:'operation',code:0x9fff}))
+    expect(result.profile.datasets).toContainEqual(expect.objectContaining({type:'descriptor',property:0x5001,current:75}))
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_SERIAL')
+    expect(result.profile.datasets.some(item=>'property' in item&&item.property===0x5011)).toBe(false)
+    expect(source.transport.isConnected()).toBe(true)
+    const cancel=new AbortController();cancel.abort()
+    expect((await runCameraBenchmark(camera,{signal:cancel.signal})).profile.status).toBe('cancelled')
+    await camera.disconnect()
+    const failed=fixture(true),other=new Camera({transport:failed.transport,logger:{renderInTerminal:false,captureConsole:false}})
+    await other.connect();const partial=await runCameraBenchmark(other)
+    expect(partial.profile.status).toBe('partial');expect(partial.checks.some(check=>!check.passed)).toBe(true)
+    await other.disconnect()
 })

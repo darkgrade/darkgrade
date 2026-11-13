@@ -14,6 +14,10 @@ export type SuggestionField = 'model' | 'installation' | 'session' | 'revision' 
 
 /** Parameterized, bounded operator queries; never return installation credentials or contact data. */
 export function operatorQueries(pool: Pool) {
+    const activeSource = `EXISTS (SELECT 1 FROM telemetry_state d WHERE d.path=telemetry_events.batch_path
+        AND d.data->>'expiresAt' > to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+        AND EXISTS (SELECT 1 FROM telemetry_state i WHERE i.path='installations/'||telemetry_events.installation_id
+        AND NOT coalesce((i.data->>'revoked')::boolean,false))`
     const where = `received_at >= now() - ($1::int * interval '1 day')
         AND ($2::uuid IS NULL OR installation_id=$2)
         AND ($3::text IS NULL OR model=$3)
@@ -32,6 +36,37 @@ export function operatorQueries(pool: Pool) {
         filters.hardware || null,
     ]
     return {
+        async protocol(filters: EventFilters, after?: string) {
+            const result = await pool.query(
+                `WITH grouped AS (
+                SELECT manufacturer,model,firmware,revision,transport,evidence,
+                    properties->'protocol'->>'category' AS category,
+                    (properties->'protocol'->>'code')::bigint AS code,
+                    count(*)::int AS occurrences, count(DISTINCT installation_id)::int AS installations,
+                    max(received_at) AS latest, min(batch_path) AS source,
+                    md5(jsonb_build_array(manufacturer,model,firmware,revision,transport,evidence,
+                        properties->'protocol'->>'category',properties->'protocol'->>'code')::text) AS key
+                FROM telemetry_events WHERE ${where} AND ${activeSource} AND properties->'protocol'->>'type'='unknown'
+                GROUP BY manufacturer,model,firmware,revision,transport,evidence,
+                    properties->'protocol'->>'category',properties->'protocol'->>'code')
+                SELECT g.*, r.data->'findings' AS findings FROM grouped g
+                LEFT JOIN telemetry_state r ON r.path='protocolFindings/'||substring(g.source from 13)
+                WHERE ($8::text IS NULL OR key COLLATE "C" > $8 COLLATE "C")
+                ORDER BY key COLLATE "C" LIMIT 51`,
+                [...values(filters), after || null]
+            )
+            return { items: result.rows.slice(0, 50), next: result.rows.length > 50 ? result.rows[49].key : null }
+        },
+        async profile(installation: string, benchmark: string) {
+            const result = await pool.query(
+                `SELECT batch_path,sequence,session_id,manufacturer,model,firmware,revision,transport,evidence,
+                    hardware_fingerprint, properties->'protocol' AS protocol
+                FROM telemetry_events WHERE installation_id=$1 AND ${activeSource} AND properties->'protocol'->>'benchmarkId'=$2
+                ORDER BY received_at,batch_path,sequence LIMIT 8193`, [installation, benchmark]
+            )
+            return { schema: 'darkgrade.camera-profile-evidence/v1', installation, benchmark, hardwarePass: false, items: result.rows.slice(0,8192),
+                truncated: result.rows.length > 8192 }
+        },
         async suggestions(field: SuggestionField, query: string, filters: EventFilters) {
             const column = {
                 model: 'model',

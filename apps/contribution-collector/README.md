@@ -37,8 +37,21 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   Reviewed patterns expire with their original batch and remain withdrawal-linked;
   minimal credential tombstones prevent replay.
 - Admission limits: 1,000 registrations/day across the service and 4,096 batches/day per
-  installation. Bodies are capped at 256 KiB, 1,000 entries and 16 camera contexts. These
-  bounds do not prevent the cost of arbitrary rejected HTTP traffic.
+  installation. Shared Postgres windows also limit registrations to 30/minute and uploads
+  to 600/minute globally and 120/minute per installation. Repeated registrations consume
+  the same burst budget. Before parsing bodies or querying Postgres, each process admits
+  at most 100 requests/second and 32 concurrent requests. Rejections return Retry-After;
+  withdrawal is not blocked by an exhausted upload budget. These are application limits,
+  not a DDoS shield or proof the caller is an official Link client.
+  Bodies are capped at 256 KiB, 1,000 entries and 16 camera contexts.
+- Deep benchmarks add typed advertised inventories and allowlisted numeric descriptors.
+  `/internal/api/profile` exports their retained evidence and `/internal/api/protocol`
+  groups unknown codes by exact model, firmware, revision, transport and evidence class.
+  Operator-only `/internal/api/protocol-finding` attaches interpretations and exact source
+  references to an original unknown observation. Tested findings require a regression-test
+  reference; the label is an operator assertion, not automatic hardware qualification.
+  Expired/withdrawn sources disappear from these views immediately, including while
+  cleanup is pending. Matrix automatically receives the same source-linked findings.
 - Optional email linking uses a single-use confirmation. CLI `telemetry login EMAIL`
   can enroll before camera use; `logout` removes the association without changing sharing.
   It stays unavailable until `TELEMETRY_EMAIL_API_KEY` (Resend) and a verified

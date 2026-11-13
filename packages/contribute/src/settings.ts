@@ -29,6 +29,21 @@ export const DEFAULT_TELEMETRY_URL = 'https://darkgrade-telemetry-4ba4fvhf5a-uc.
 export const telemetryEndpoint = () => process.env.DARKGRADE_TELEMETRY_URL?.trim() || DEFAULT_TELEMETRY_URL
 
 export const settingsDirectory = () => process.env.DARKGRADE_HOME || join(homedir(), '.darkgrade')
+/** Persist the benchmark's sanitized local profile even when cloud sharing is disabled. */
+export function saveDiagnosticProfile(profile: { id: string; schema: string }) {
+    if (profile.schema !== 'darkgrade.camera-profile/v1' ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(profile.id))
+        throw new Error('Invalid profile identity')
+    const directory = join(settingsDirectory(), 'profiles')
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    const path = join(directory, `${profile.id}.json`), temporary = `${path}.tmp`
+    const encoded = JSON.stringify(profile, null, 2)
+    if (Buffer.byteLength(encoded) > 8 * 1024 * 1024) throw new Error('Profile exceeds local limit')
+    const file = openSync(temporary, 'wx', 0o600)
+    try { writeFileSync(file, encoded); fsyncSync(file) } finally { closeSync(file) }
+    renameSync(temporary, path)
+    return path
+}
 export function sharedSettings(directory = settingsDirectory()): InstallationStore {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, 'settings.json')

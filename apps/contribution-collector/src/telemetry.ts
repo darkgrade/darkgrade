@@ -1,4 +1,5 @@
 import type { Database, Transaction } from '#collector/database'
+import { allowBurst } from '#collector/abuse-limits'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
 import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/contribute/batch'
 import { MAXIMUM_BODY_BYTES } from '@darkgrade/contribute/schema'
@@ -12,7 +13,8 @@ const dateKey = (date: Date) => date.toISOString().slice(0, 10)
 export class TelemetryError extends Error {
     constructor(
         readonly status: number,
-        message: string
+        message: string,
+        readonly retryAfterSeconds = 3600
     ) {
         super(message)
     }
@@ -59,6 +61,9 @@ export interface TelemetryOptions {
     now?: () => Date
     /** Bounds anonymous enrollment cost across instances; this is not per-person identity verification. */
     dailyEnrollmentLimit?: number
+    enrollmentBurstLimit?: number
+    uploadBurstLimit?: number
+    installationBurstLimit?: number
 }
 
 async function readJson(request: Request) {
@@ -102,6 +107,17 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
     const enrollmentLimit = options.dailyEnrollmentLimit ?? 1000
     if (!Number.isSafeInteger(enrollmentLimit) || enrollmentLimit < 1) throw new Error('Invalid enrollment limit')
     const now = options.now ?? (() => new Date())
+    const burstLimits = {
+        enrollment: options.enrollmentBurstLimit ?? 30,
+        upload: options.uploadBurstLimit ?? 600,
+        installation: options.installationBurstLimit ?? 120,
+    }
+    if (Object.values(burstLimits).some(value => !Number.isSafeInteger(value) || value < 1))
+        throw new Error('Invalid telemetry burst limit')
+    const guard = async (scope: string, limit: number) => {
+        if (!(await allowBurst(database, scope, limit, now())))
+            throw new TelemetryError(429, 'Too many requests; retry shortly', 60)
+    }
     const origins = new Set(options.allowedOrigins ?? [])
     for (const origin of origins) {
         const parsed = new URL(origin)
@@ -118,6 +134,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
             return Response.json({ version: NOTICE_VERSION, text: DIAGNOSTICS_NOTICE, retentionDays: RETENTION_DAYS })
         if (path === '/confirm' && method === 'GET') return confirmationPage()
         if (path === '/v2/installations' && method === 'POST') {
+            await guard('enrollment', burstLimits.enrollment)
             const body = await readJson(request)
             exact(body, ['noticeVersion', 'installKey'])
             if (body.noticeVersion !== NOTICE_VERSION) fail(422, 'Unsupported telemetry protocol version')
@@ -207,6 +224,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     }
                 })
         }
+        if (path === '/v2/batches' && method === 'POST') await guard('uploads', burstLimits.upload)
         const { installId, keyHash } = await authenticate(database, request.headers.get('authorization') ?? '')
         if (path === '/v2/installation' && method === 'GET') {
             const install = await database.get(`installations/${installId}`)
@@ -223,6 +241,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
             return Response.json(result, { status: result.deletionPending ? 202 : 200 })
         }
         if (path === '/v2/batches' && method === 'POST') {
+            await guard(`installation-${installId}`, burstLimits.installation)
             const body = await readJson(request)
             try {
                 validateBatch(body)
@@ -349,13 +368,15 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
             } catch (error) {
                 response = Response.json(
                     { error: error instanceof TelemetryError ? error.message : 'Telemetry temporarily unavailable' },
-                    { status: error instanceof TelemetryError ? error.status : 503 }
+                    { status: error instanceof TelemetryError ? error.status : 503,
+                        ...(error instanceof TelemetryError && error.status === 429 &&
+                            { headers: { 'retry-after': String(error.retryAfterSeconds) } }) }
                 )
             }
         response.headers.set('cache-control', 'no-store')
         response.headers.set('referrer-policy', 'no-referrer')
         response.headers.set('x-content-type-options', 'nosniff')
-        if (response.status === 429) response.headers.set('retry-after', '3600')
+        if (response.status === 429 && !response.headers.has('retry-after')) response.headers.set('retry-after', '3600')
         if (origin && (origins.has(origin) || origin === publicUrl.origin)) {
             response.headers.set('access-control-allow-origin', origin)
             response.headers.set('vary', 'Origin')
@@ -397,7 +418,7 @@ export async function cleanupInstallation(database: Database, installId: string,
     const install = await database.get(`installations/${installId}`)
     if (!install?.revoked) throw new Error('Cannot clean an active installation')
     let complete = true
-    for (const collection of ['diagnostics', 'contacts', 'contactChallenges', 'reviewedPatterns', 'uploadQuotas'])
+    for (const collection of ['diagnostics', 'contacts', 'contactChallenges', 'reviewedPatterns', 'protocolFindings', 'uploadQuotas'])
         if (!(await removeRows(database, collection, installId, maximumPages))) complete = false
     if (complete)
         await database.transaction(async transaction => {

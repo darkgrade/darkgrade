@@ -1,3 +1,12 @@
+Telemetry benchmark now exports a deep sanitized camera profile through Link's existing
+camera session. Keep inventories and allowlisted numeric descriptors separate from media,
+opaque payloads and private settings. Partial/cancelled exports retain evidence without
+claiming unsupported features. The CLI saves profiles even with sharing off; Test Bench
+supplies leases and exposes the Darkgrade `camera_benchmark` tool. Collector research
+findings require exact source, model, firmware, revision, transport and evidence scope,
+plus attributed references; they expire/withdraw with the source and never certify hardware.
+Shared admission quotas must remain consistent across collector instances.
+
 Matrix imports all validated batches as diagnostic evidence automatically, with optional human review separately labeled. Committed ingestion watermarks prevent live uploads starving pagination; review, withdrawal and credit changes invalidate exports. Camera fingerprints are absent when reliable serial identity is unavailable, and reconnect must clear stale body identity.
 
 Telemetry autocomplete uses bounded authenticated database suggestions scoped by other filters,

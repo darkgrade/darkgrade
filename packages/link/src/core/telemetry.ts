@@ -1,4 +1,5 @@
 import type { createApplicationDiagnostics } from '@darkgrade/contribute/application'
+import type { ProtocolEvidence } from '@darkgrade/contribute/protocol'
 import { cameraHardwareFingerprint, type CameraContext } from '@darkgrade/contribute/schema'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
@@ -7,7 +8,7 @@ declare const __LINK_TELEMETRY_DIRTY__: boolean
 type Diagnostics = Awaited<ReturnType<typeof createApplicationDiagnostics>>
 let configured: Diagnostics | undefined
 let sourceBuild: Promise<{ revision: string; dirty: boolean } | undefined> | undefined
-async function buildMetadata() {
+export async function linkBuildMetadata() {
     if (typeof __LINK_TELEMETRY_REVISION__ !== 'undefined')
         return { revision: __LINK_TELEMETRY_REVISION__, dirty: __LINK_TELEMETRY_DIRTY__ }
     // Bench tools execute this source directly. Resolve its own checkout, never the caller's cwd.
@@ -78,6 +79,12 @@ export function linkTelemetry(source: TransportInterface) {
     }
     const observer = {
         transport,
+        protocol(protocol: ProtocolEvidence, operation: number) {
+            try {
+                observed?.record({ protocol, kind: 'data', direction: 'in', code: operation,
+                    bytes: 0, durationMilliseconds: 0, failed: false })
+            } catch { /* Optional evidence never changes camera behavior. */ }
+        },
         operation<Result>(name: string, work: () => Promise<Result>): Promise<Result> {
             return observed ? observed.operation(name, work) : work()
         },
@@ -94,7 +101,7 @@ export function linkTelemetry(source: TransportInterface) {
             if (next === identity) return
             try {
                 const client = await diagnosticsClient()
-                const build = client && (await buildMetadata())
+                const build = client && (await linkBuildMetadata())
                 if (!client || !build) return
                 const hardwareFingerprint = hardware ? await cameraHardwareFingerprint(info) : undefined
                 const context: CameraContext = {
@@ -172,7 +179,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                 try {
                     if (/^[a-z_]{1,40}$/.test(command.cmd)) {
                         const client = await diagnosticsClient()
-                        const build = client && (await buildMetadata())
+                        const build = client && (await linkBuildMetadata())
                         if (build)
                             client?.record(
                                 {

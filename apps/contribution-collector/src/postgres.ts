@@ -37,6 +37,10 @@ CREATE INDEX IF NOT EXISTS telemetry_events_model ON telemetry_events (manufactu
 CREATE INDEX IF NOT EXISTS telemetry_events_received ON telemetry_events (received_at);
 CREATE INDEX IF NOT EXISTS telemetry_events_session_replay ON telemetry_events
     (installation_id,session_id,(coalesce(occurred_at,received_at)),batch_path,sequence);
+CREATE INDEX IF NOT EXISTS telemetry_events_protocol ON telemetry_events
+    ((properties->'protocol'->>'type'),received_at) WHERE properties ? 'protocol';
+CREATE INDEX IF NOT EXISTS telemetry_events_benchmark ON telemetry_events
+    (installation_id,(properties->'protocol'->>'benchmarkId')) WHERE properties ? 'protocol';
 `
 
 function checkedPath(path: string) {

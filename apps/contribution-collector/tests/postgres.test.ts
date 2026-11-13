@@ -416,3 +416,37 @@ test(
         }
     }
 )
+
+test('deep profiles and unknown-code queues retain scopes and source references in real Postgres', {skip:!process.env.DATABASE_URL},async()=>{
+ const database=await postgresDatabase(process.env.DATABASE_URL!),handle=createTelemetry(database,{publicUrl:'https://telemetry.example'}),user=await enroll(handle),payload=batch(),benchmark=randomUUID()
+ const entry=payload.contributions[0].entries[0]
+ Object.assign(entry,{protocol:{type:'unknown',benchmarkId:benchmark,vendorId:0x04b0,category:'property',code:0xdfff,advertised:true}})
+ const other=structuredClone(entry);Object.assign(other,{protocol:{type:'inventory',benchmarkId:benchmark,vendorId:0x04b0,category:'operation',codes:[0x1001,0x9fff]}})
+ payload.contributions[0].entries.push(other)
+ try {
+  assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
+  const queue=await database.operator.protocol({days:1,installation:user.installId})
+  assert.equal(queue.items.length,1);assert.equal(Number(queue.items[0].code),0xdfff);assert.equal(queue.items[0].evidence,'synthetic')
+  assert.equal(queue.items[0].source,'diagnostics/'+user.installId+'_'+payload.id)
+  assert.equal((await database.operator.protocol({days:1,installation:user.installId},queue.items[0].key)).items.length,0)
+  const profile=await database.operator.profile(user.installId,benchmark);assert.equal(profile.items.length,2);assert.equal(profile.hardwarePass,false)
+  assert.equal((await database.operator.profile(randomUUID(),benchmark)).items.length,0)
+  const sourcePath='diagnostics/'+user.installId+'_'+payload.id
+  let original: any
+  await database.transaction(async transaction=>{
+    original=await transaction.get(sourcePath)
+    transaction.set(sourcePath,{...original,expiresAt:new Date(0)})
+  })
+  assert.equal((await database.operator.profile(user.installId,benchmark)).items.length,0)
+  assert.equal((await database.operator.protocol({days:1,installation:user.installId})).items.length,0)
+  await database.transaction(async transaction=>{
+    transaction.set(sourcePath,original)
+    const path='installations/'+user.installId
+    transaction.set(path,{...await transaction.get(path),revoked:true})
+  })
+  assert.equal((await database.operator.profile(user.installId,benchmark)).items.length,0)
+  assert.equal((await database.operator.protocol({days:1,installation:user.installId})).items.length,0)
+  await handle(request('/v2/installation','DELETE',user.installKey))
+  assert.equal((await database.operator.protocol({days:1,installation:user.installId})).items.length,0)
+ } finally {await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
+})

@@ -1,7 +1,7 @@
 {
     "name": "@darkgrade/contribute",
     "version": "0.2.0",
-    "description": "Consent-controlled, payload-free camera diagnostics for Darkgrade",
+    "description": "Preference-controlled, sanitized camera diagnostics for Darkgrade",
     "type": "module",
     "license": "MIT",
     "files": [
@@ -9,6 +9,10 @@
         "README.md"
     ],
     "exports": {
+        "./protocol": {
+            "types": "./dist/protocol.d.ts",
+            "import": "./dist/protocol.js"
+        },
         ".": {
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js"

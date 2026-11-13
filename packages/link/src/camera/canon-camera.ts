@@ -135,6 +135,13 @@ export class CanonCamera extends GenericCamera {
         this.rawEventListeners.delete(listener)
     }
 
+    /** Refresh a benchmark's event evidence while preserving the session's property cache and events. */
+    async refreshEventProperties(): Promise<void> {
+        const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+        if (response.code !== 0x2001 || !Array.isArray(response.data)) throw new Error('No Canon event inventory')
+        this.processEvents(response.data, true)
+    }
+
     async connect(device?: DeviceDescriptor): Promise<void> {
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 

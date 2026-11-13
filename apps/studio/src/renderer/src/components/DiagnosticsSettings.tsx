@@ -40,12 +40,12 @@ export function DiagnosticsSettings() {
     }
     const benchmark = async () => {
         setBusy(true)
-        setMessage('Checking camera…')
+        setMessage('Reading camera profile… This can take up to three minutes.')
         try {
             const result = await window.studio.diagnosticsBenchmark()
             setMessage(
                 result.ok
-                    ? result.data.checks.map(check => `${check.passed ? '✅' : '❌'} ${check.name}`).join(' · ')
+                    ? `${result.data.passed ? '✅ Profile exported' : '⚠️ Partial profile exported'} · ${result.data.checks.filter(check => check.passed).length}/${result.data.checks.length} reads passed. Saved locally; upload follows your sharing setting.`
                     : result.error
             )
         } catch {
@@ -84,7 +84,7 @@ export function DiagnosticsSettings() {
                     <FieldLabel htmlFor="camera-diagnostics">Share camera diagnostics</FieldLabel>
                     <FieldDescription>
                         {status.configured
-                            ? 'Help improve Link and Matrix. No images, serial numbers or command parameters.'
+                            ? 'Help improve Link and Matrix with camera capabilities and safe numeric settings. No images or raw serial numbers.'
                             : (status.error ?? 'Sharing is off until a collector is configured.')}
                     </FieldDescription>
                 </FieldContent>
@@ -98,7 +98,7 @@ export function DiagnosticsSettings() {
             {status.installationId && (
                 <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" variant="outline" disabled={busy} onClick={() => void benchmark()}>
-                        Check camera
+                        Export camera profile
                     </Button>
                     <Button
                         size="sm"

@@ -468,6 +468,11 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             )
             return {
                 ...observer,
+                record: (entry: DiagnosticEntry) => {
+                    validateContribution({ schema: SCHEMA, disclosure: DISCLOSURE, id: crypto.randomUUID(),
+                        camera, entries: [entry], droppedEntries: 0 })
+                    observer.record(entry)
+                },
                 identify: (context: CameraContext) => {
                     camera = checked(context)
                 },

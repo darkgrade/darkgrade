@@ -128,6 +128,7 @@ export function observeTransport<Device, Kind extends string>(
     }
     return {
         transport,
+        record: save,
         operation: <Result>(name: string, work: () => Promise<Result>) =>
             /^[a-z_]{1,40}$/.test(name) ? operation('lifecycle', 'command', work, undefined, name) : work(),
         detach: () => {

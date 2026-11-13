@@ -56,6 +56,7 @@ export function validateMediaOptions(options: MediaOptions, action: string = 'ta
     return accepted
 }
 export interface CameraClient {
+    benchmark?(camera: string): Promise<unknown>
     control(camera: string, action: string, value?: string | number, property?: string): Promise<unknown>
     media(camera: string, action: string, options?: MediaOptions): Promise<unknown>
 }
@@ -65,6 +66,7 @@ export interface ControlSession {
 }
 /** Platform hosts supply connections and physical services, never a second MCP-owned session. */
 export interface CameraProvider {
+    benchmark?(camera: string): Promise<unknown>
     session(camera: string): ControlSession | undefined
     assertControlAllowed(camera: string, action: ControlAction): void | Promise<void>
     control(camera: string, action: ControlAction, value?: string | number, property?: string): Promise<unknown>
@@ -91,6 +93,12 @@ const readActions = new Set<ControlAction>(['status', 'live-view-status'])
 export class CameraRuntime implements CameraClient {
     private readonly operations = new Map<string, Promise<unknown>>()
     constructor(private readonly provider: CameraProvider) {}
+    benchmark(camera: string): Promise<unknown> {
+        return this.run(camera, async () => {
+            if (!this.provider.benchmark) throw new Error('This host does not expose profile benchmarks')
+            return this.provider.benchmark(camera)
+        })
+    }
 
     private async run<T>(camera: string, operation: () => Promise<T>): Promise<T> {
         if (typeof camera !== 'string' || !camera.trim()) throw new Error('A camera identity is required')

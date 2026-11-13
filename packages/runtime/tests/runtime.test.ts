@@ -41,6 +41,24 @@ function latch() {
     return { promise, release }
 }
 
+test('profile benchmarks serialize with camera work while other cameras remain available', async () => {
+    const { runtime, provider } = fixture(), entered=latch(), held=latch()
+    let controls=0
+    provider.benchmark=async camera=>{entered.release();await held.promise;return {camera,status:'partial'}}
+    provider.control=async()=>{controls++;return {}}
+    const benchmark=runtime.benchmark('nikon')
+    await entered.promise
+    const waiting=runtime.control('nikon','status')
+    await runtime.control('sony','status')
+    expect(controls).toBe(1)
+    held.release()
+    expect(await benchmark).toEqual({camera:'nikon',status:'partial'})
+    await waiting
+    expect(controls).toBe(2)
+    delete provider.benchmark
+    await expect(runtime.benchmark('nikon')).rejects.toThrow('does not expose')
+});
+
 test('MCP and UI share one queue and resolve the current session after waiting', async () => {
     const { runtime, provider, setSession } = fixture()
     const entered = latch(),
@@ -216,7 +234,7 @@ test('standalone MCP discovers the migrated tools and executes against the share
         await server.connect(serverTransport)
         await client.connect(clientTransport)
         const { tools } = await client.listTools()
-        expect(tools).toHaveLength(14)
+        expect(tools).toHaveLength(15)
         expect(tools.some(tool => tool.name === 'plug_power')).toBe(false)
         for (const tool of tools) {
             const required = Object.fromEntries((tool.inputSchema.required || []).map(key => [key, key === 'camera' ? 'sony' : '800']))

@@ -4,6 +4,7 @@ import type { EventFilters, SuggestionField } from '#collector/operator-queries'
 import type { postgresDatabase } from '#collector/postgres'
 import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
 import { withdrawInstallation } from '#collector/telemetry'
+import { saveProtocolFinding } from '#collector/protocol-research'
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
@@ -51,6 +52,32 @@ export async function operatorApi(
         (request.headers.has('origin') || request.headers.get('x-darkgrade-operator') !== '1')
     )
         return json({ error: 'Server operator request required' }, 403)
+    if (path === '/internal/api/protocol' && request.method === 'GET') {
+        if (Object.keys(parameters).some(key => !['days','installation','session','model','revision','transport','hardware','after'].includes(key)) ||
+            ![1,7,30,90].includes(Number(parameters.days || 7)) ||
+            ['installation','session'].some(key => parameters[key] && !uuid.test(parameters[key])) ||
+            (parameters.after && !/^[a-f0-9]{32}$/.test(parameters.after)) ||
+            (parameters.revision && !/^[a-f0-9]{7,40}$/.test(parameters.revision)) ||
+            (parameters.model?.length ?? 0) > 100 ||
+            (parameters.hardware && !/^camera-v1:[a-f0-9]{64}$/.test(parameters.hardware)) ||
+            (parameters.transport && !['usb','ptp-ip','sony-sdk'].includes(parameters.transport)))
+            return json({ error: 'Invalid protocol filters' },400)
+        return json(await database.operator.protocol({ ...parameters, days: Number(parameters.days || 7), after: undefined }, parameters.after))
+    }
+    if (path === '/internal/api/profile' && request.method === 'GET') {
+        if (Object.keys(parameters).sort().join(',') !== 'benchmark,installation' ||
+            !uuid.test(parameters.installation) || !uuid.test(parameters.benchmark))
+            return json({ error: 'Invalid benchmark scope' },400)
+        return json(await database.operator.profile(parameters.installation, parameters.benchmark))
+    }
+    if (path === '/internal/api/protocol-finding' && request.method === 'POST') {
+        try {
+            const value = await body(request)
+            if (Object.keys(value).sort().join(',') !== 'finding,sourceRecord' || typeof value.sourceRecord !== 'string')
+                return json({ error: 'Expected original source and referenced finding' },400)
+            return json(await saveProtocolFinding(database, value.sourceRecord, value.finding))
+        } catch { return json({ error: 'Finding is invalid, lacks references, or its source is no longer available' },400) }
+    }
     if (path === '/internal/api/suggestions' && request.method === 'GET') {
         if (
             Object.keys(parameters).some(

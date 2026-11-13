@@ -10,6 +10,8 @@ import {
     type PTPErrorContext,
 } from '@core/ptp-errors'
 import { linkTelemetry } from '@core/telemetry'
+import { protocolEvidence } from '@vendors/protocol-evidence'
+import type { ProtocolEvidence } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
@@ -71,6 +73,18 @@ export class GenericCamera {
     private recovery?: RecoveryAttempt
     private readonly channel: TransactionChannel
     private readonly telemetry: ReturnType<typeof linkTelemetry>
+    private profileObserver?: { id: string; observe: (evidence: ProtocolEvidence) => void }
+    /** A benchmark subscribes to this session's sanitized datasets, never to another connection. */
+    observeProfile(id: string, observe: (evidence: ProtocolEvidence) => void) {
+        if (this.profileObserver) throw new Error('A profile benchmark already owns this camera')
+        this.profileObserver = { id, observe }
+        return () => { if (this.profileObserver?.id === id) this.profileObserver = undefined }
+    }
+    recordProtocol(evidence: ProtocolEvidence, operation: number) {
+        const scoped = this.profileObserver ? { ...evidence, benchmarkId: this.profileObserver.id } : evidence
+        this.telemetry.protocol(scoped, operation)
+        this.profileObserver?.observe(scoped)
+    }
     public transport: TransportInterface
     protected logger: Logger
     public registry: Registry
@@ -252,6 +266,12 @@ export class GenericCamera {
                     serialNumber?: string
                 }
             )
+        }
+        if (response.code === OK.code && 'data' in response && response.data) {
+            try {
+                for (const evidence of protocolEvidence(this.vendorId ?? 0, this.registry, operation.code, response.data))
+                    this.recordProtocol(evidence, operation.code)
+            } catch { /* A diagnostics failure must not turn a completed camera read into a failure. */ }
         }
         return response
     }

@@ -1,9 +1,11 @@
+import { validateProtocol, type ProtocolEvidence } from '#contribute/protocol'
 export const SCHEMA = 'darkgrade.diagnostics/v1'
 export const DISCLOSURE = 'protocol-metadata-only/v1'
 export const MAXIMUM_ENTRIES = 1000
 export const MAXIMUM_BODY_BYTES = 256 * 1024
 
 export interface DiagnosticEntry {
+    protocol?: ProtocolEvidence
     operation?: string
     occurredAt?: string
     sessionId?: string
@@ -97,6 +99,7 @@ export function validateContribution(value: unknown): asserts value is Contribut
                 'direction',
                 'code',
                 'bytes',
+                'protocol',
                 'durationMilliseconds',
                 'failed',
                 'occurredAt',
@@ -122,6 +125,7 @@ export function validateContribution(value: unknown): asserts value is Contribut
                     !Number.isFinite(Date.parse(entry.occurredAt))))
         )
             throw new Error('Invalid diagnostic entry')
+        if (entry.protocol !== undefined) validateProtocol(entry.protocol)
     }
 }
 
