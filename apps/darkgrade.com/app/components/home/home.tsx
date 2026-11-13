@@ -16,7 +16,6 @@ import { useHeldWords } from '@/app/components/home/rise'
 import { TitleBlock } from '@/app/components/home/title-block'
 import { FeatureList } from '@/app/components/products'
 import { BTN_GHOST, BTN_SOLID } from '@/app/components/site-links'
-import { StarIcon } from '@/app/components/star-icon'
 
 import '@/app/components/home/home.css'
 
@@ -493,12 +492,8 @@ export function Home() {
                         {DREAM.punch}
                     </p>
                     <div className="mt-[clamp(20px,4vh,40px)] flex flex-wrap justify-center gap-[14px] max-[900px]:mt-[18px] max-[900px]:gap-[8px]">
-                        <button type="button" className={`${BTN_SOLID} cursor-pointer`} onClick={watchItInAction}>
-                            <span>{HERO.watch}</span>
-                        </button>
-                        <a className={BTN_GHOST} href={LINKS.github} target="_blank" rel="noopener">
-                            <span>Star on GitHub</span>
-                            <StarIcon className="size-[.85em] text-gold" />
+                        <a className={BTN_GHOST} href={LINKS.discord} target="_blank" rel="noopener">
+                            <span>{DREAM.action}</span>
                         </a>
                     </div>
                 </div>

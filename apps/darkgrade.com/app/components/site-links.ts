@@ -3,7 +3,14 @@ export const LINKS = {
     discord: 'https://discord.gg/fbDbdJv9dX',
     youtube: 'https://www.youtube.com/watch?v=tsNWxj-pmU4',
     docs: 'https://darkgrade.com/docs/link',
-    careers: 'https://notion.darkgrade.com/',
+    commits: 'https://github.com/darkgrade/darkgrade/commits/main',
+    x: 'https://x.com/darkgradehq',
+    linkedin: 'https://www.linkedin.com/company/darkgrade',
+    careers: '/careers',
+    careersEmail: 'careers@darkgrade.com',
+    contactEmail: 'hello@darkgrade.com',
+    privacy: '/privacy',
+    changelog: '/changelog',
 } as const
 
 export const NPM_INSTALL = 'npm i @darkgrade/link'

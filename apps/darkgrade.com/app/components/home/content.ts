@@ -11,7 +11,8 @@ export const HERO = {
     lede: 'Darkgrade dials in your camera, captures the shot, and returns a finished first cut — on your own machine. You stay the director. Nothing leaves your computer unless you say so.',
     /** The button that plays the page through from its start. */
     watch: 'Watch it in action',
-    secondary: { label: 'Join the Discord', href: LINKS.discord },
+    /** The waitlist is kept on the Discord until it has a form of its own. */
+    secondary: { label: 'Join the alpha waitlist', href: LINKS.discord },
 } as const
 
 export const MANIFESTO = ['Record is one button.', 'The rest are in your way.', 'We’re deleting the rest.'] as const
@@ -44,6 +45,8 @@ export const DREAM = {
     line: 'Somewhere, two people have a podcast in their heads',
     turn: 'humanity will never hear.',
     punch: 'The world is still waiting on what you haven’t made yet.',
+    /** The one button under the closing words: it goes to the Discord. */
+    action: 'Help shape our future',
 } as const
 
 export const TESTED_ON = [
