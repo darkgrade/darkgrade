@@ -18,6 +18,14 @@ const COLUMNS = [
         ],
     },
     {
+        head: 'Experiments',
+        links: [
+            { label: 'Toolbench', href: '/toolbench/', plain: true },
+            { label: 'Voicebench', href: '/voicebench/', plain: true },
+            { label: 'Cambench', href: '/cambench/', plain: true },
+        ],
+    },
+    {
         head: 'Community',
         links: [
             { label: 'GitHub', href: LINKS.github, external: true },
@@ -73,7 +81,12 @@ export function SiteFooter() {
                                 <div className={COL_HEAD}>{col.head}</div>
                                 {/* site pages move client-side, inside the (site) layout */}
                                 {col.links.map(l =>
-                                    'external' in l && l.external ? (
+                                    'plain' in l && l.plain ? (
+                                        // a separate app under this domain: a full page load, not Next's router
+                                        <a key={l.label} href={l.href} className={COL_LINK}>
+                                            {l.label}
+                                        </a>
+                                    ) : 'external' in l && l.external ? (
                                         <a
                                             key={l.label}
                                             href={l.href}
