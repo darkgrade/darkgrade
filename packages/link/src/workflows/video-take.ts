@@ -6,7 +6,8 @@ export interface TakeCamera {
     collect(media:TakeMedia[],progress:(bytes:number,total:number)=>void):Promise<TakeMedia[]>
     close():Promise<void>
 }
-export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopping'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number;transferRecovery?:string}
+/** stopRequestedAt precedes the first adapter stop attempt; stoppedAt includes card finalization/media discovery. */
+export interface TakeCameraState {camera:string;state:'preparing'|'ready'|'recording'|'stopping'|'stopped'|'collected'|'error'|'uncertain';recordingConfirmed?:boolean;startedAt?:string;stopRequestedAt?:string;stoppedAt?:string;evidence?:string;error?:string;warning?:string;media:TakeMedia[];transferredBytes?:number;totalBytes?:number;transferRecovery?:string}
 export interface VideoTakeState {id:string;name:string;stage:'preparing'|'armed'|'recording'|'stopping'|'review'|'collecting'|'complete'|'attention';createdAt:string;maximumMinutes:number;error?:string;stopRequested?:boolean;startedAt?:string;stoppedAt?:string;startSkewMilliseconds?:number;cameras:TakeCameraState[]}
 const message=(error:unknown)=>error instanceof Error?error.message:String(error)
 function matchesOriginalMedia(original:TakeMedia[],files:TakeMedia[]):boolean {
@@ -75,7 +76,7 @@ export class VideoTake {
     }
     private async stopAttempted(){
         await Promise.all(this.state.cameras.filter(state=>this.attempted.has(state.camera)).map(async state=>{
-            try{const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(state.camera)}
+            try{state.stopRequestedAt??=new Date().toISOString();this.changed();const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(state.camera)}
             catch(error){state.state='uncertain';state.error=message(error)}this.changed()
         }))
         this.state.stoppedAt=new Date().toISOString()
@@ -92,6 +93,7 @@ export class VideoTake {
         this.changed()
         try{
             try{
+                state.stopRequestedAt??=new Date().toISOString();this.changed()
                 const result=await this.devices.get(camera)!.stop()
                 if(!result.stopped)throw new Error('Camera did not confirm recording stopped')
                 state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(camera)
