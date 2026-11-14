@@ -65,6 +65,34 @@ export function operatorQueries(pool: Pool) {
     ]
     return {
         async protocol(filters: EventFilters, after?: string) {
+            // Session, body and signal scopes are narrow enough to read their own events. Everything
+            // else reads the per-installation summary kept current at ingest.
+            if (filters.session || filters.hardware || filters.signal) return this.protocolFromEvents(filters, after)
+            const result = await pool.query(
+                `WITH grouped AS (
+                SELECT u.key, min(u.manufacturer) AS manufacturer, min(u.model) AS model, min(u.firmware) AS firmware,
+                    min(u.revision) AS revision, min(u.transport) AS transport, min(u.evidence) AS evidence,
+                    min(u.category) AS category, min(u.code) AS code, sum(u.occurrences)::int AS occurrences,
+                    count(*)::int AS installations, max(u.latest) AS latest, min(u.source) AS source
+                FROM telemetry_unknown_codes u
+                WHERE u.latest >= now() - ($1::int * interval '1 day')
+                  AND ($2::uuid IS NULL OR u.installation_id=$2) AND ($3::text IS NULL OR u.model=$3)
+                  AND ($4::text IS NULL OR u.revision=$4) AND ($5::text IS NULL OR u.transport=$5)
+                  AND EXISTS (SELECT 1 FROM telemetry_state d WHERE d.path=u.source
+                    AND d.data->>'expiresAt' > to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+                  AND EXISTS (SELECT 1 FROM telemetry_state i WHERE i.path='installations/'||u.installation_id
+                    AND NOT coalesce((i.data->>'revoked')::boolean,false))
+                GROUP BY u.key)
+                SELECT g.*, r.data->'findings' AS findings FROM grouped g
+                LEFT JOIN telemetry_state r ON r.path='protocolFindings/'||substring(g.source from 13)
+                WHERE ($6::text IS NULL OR key COLLATE "C" > $6 COLLATE "C")
+                ORDER BY key COLLATE "C" LIMIT 51`,
+                [filters.days, filters.installation || null, filters.model || null, filters.revision || null,
+                    filters.transport || null, after || null]
+            )
+            return { items: result.rows.slice(0, 50), next: result.rows.length > 50 ? result.rows[49].key : null }
+        },
+        async protocolFromEvents(filters: EventFilters, after?: string) {
             const result = await pool.query(
                 `WITH grouped AS (
                 SELECT manufacturer,model,firmware,revision,transport,evidence,

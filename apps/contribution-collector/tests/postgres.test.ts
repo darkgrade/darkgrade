@@ -677,3 +677,44 @@ test('session summaries stay exact through uploads, late identity, withdrawal, r
         await database.close();await pool.end()
     }
 })
+
+test('the unknown-code queue reads its summary: counts across installations, a current source, and removal with its events', {skip:!process.env.DATABASE_URL}, async()=>{
+    let database=await postgresDatabase(process.env.DATABASE_URL!)
+    let handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+    const users=[await enroll(handle),await enroll(handle)],pool=new Pool({connectionString:process.env.DATABASE_URL!})
+    const model='Queue body '+randomUUID().slice(0,8)
+    const upload=async(user:typeof users[0],codes:number[])=>{
+        const payload=batch(),entry=payload.contributions[0].entries[0]
+        Object.assign(payload.contributions[0].camera,{model})
+        payload.contributions[0].entries=codes.map(code=>({...entry,sessionId:randomUUID(),kind:'data',protocol:{type:'unknown',vendorId:0x04a9,category:'operation',code,advertised:true}})) as any
+        const sent=await handle(request('/v2/batches','POST',user.installKey,payload));assert.equal(sent.status,202,await sent.text())
+        return 'diagnostics/'+user.installId+'_'+payload.id
+    }
+    try{
+        const first=await upload(users[0],[0x9101,0x9101,0x9102])
+        const second=await upload(users[0],[0x9101])
+        await upload(users[1],[0x9101])
+        let queue=await database.operator.protocol({days:1,model})
+        const item=(code:number)=>queue.items.find(row=>Number(row.code)===code)
+        assert.deepEqual([queue.items.length,item(0x9101).occurrences,item(0x9101).installations,item(0x9102).occurrences],[2,4,2,1])
+        assert.deepEqual(await database.operator.protocolFromEvents({days:1,model}).then(old=>old.items.map(row=>[Number(row.code),row.occurrences,row.installations]).sort()),
+            queue.items.map(row=>[Number(row.code),row.occurrences,row.installations]).sort(),'the summary agrees with a direct read of the events')
+        const own=await database.operator.protocol({days:1,model,installation:users[0].installId})
+        assert.equal(own.items.find(row=>Number(row.code)===0x9101).source,second,'the newest batch is the source')
+        // Rebuilding from events gives the same queue.
+        await pool.query("DELETE FROM telemetry_rollup_state WHERE name='unknown-codes-v1'; UPDATE telemetry_unknown_codes SET occurrences=999 WHERE model=$$"+model+"$$")
+        await database.close();database=await postgresDatabase(process.env.DATABASE_URL!);handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+        queue=await database.operator.protocol({days:1,model})
+        assert.deepEqual([item(0x9101).occurrences,item(0x9101).installations,item(0x9102).occurrences],[4,2,1])
+        // Removing the newest batch moves the source to the remaining one; removing all removes the entry.
+        await pool.query('DELETE FROM telemetry_state WHERE path=$1',[second])
+        const remaining=await database.operator.protocol({days:1,model,installation:users[0].installId})
+        assert.deepEqual(remaining.items.map(row=>[Number(row.code),row.occurrences,row.source]).sort(),[[0x9101,2,first],[0x9102,1,first]])
+        await handle(request('/v2/installation','DELETE',users[0].installKey))
+        queue=await database.operator.protocol({days:1,model})
+        assert.deepEqual(queue.items.map(row=>[Number(row.code),row.occurrences,row.installations]),[[0x9101,1,1]])
+    }finally{
+        for(const user of users)await handle(request('/v2/installation','DELETE',user.installKey)).catch(()=>{})
+        await database.close();await pool.end()
+    }
+})

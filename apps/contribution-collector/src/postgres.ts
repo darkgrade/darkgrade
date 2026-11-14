@@ -77,6 +77,17 @@ CREATE TABLE IF NOT EXISTS telemetry_session_signals (
     PRIMARY KEY (installation_id, session_id, signal)
 );
 CREATE INDEX IF NOT EXISTS telemetry_session_signals_signal ON telemetry_session_signals (signal, latest);
+CREATE TABLE IF NOT EXISTS telemetry_unknown_codes (
+    key text NOT NULL,
+    installation_id uuid NOT NULL,
+    manufacturer text NOT NULL, model text NOT NULL, firmware text NOT NULL, revision text NOT NULL,
+    transport text NOT NULL, evidence text NOT NULL, category text, code bigint,
+    occurrences bigint NOT NULL,
+    latest timestamptz NOT NULL,
+    source text NOT NULL,
+    PRIMARY KEY (key, installation_id)
+);
+CREATE INDEX IF NOT EXISTS telemetry_unknown_codes_latest ON telemetry_unknown_codes (latest);
 CREATE TABLE IF NOT EXISTS telemetry_rollup_state (name text PRIMARY KEY, completed_at timestamptz NOT NULL);
 CREATE OR REPLACE FUNCTION telemetry_event_signal(failed boolean, kind text, code integer, properties jsonb)
 RETURNS text LANGUAGE sql IMMUTABLE AS $f$
@@ -122,6 +133,20 @@ BEGIN
     FROM added GROUP BY 1,2,3 ORDER BY 1,2,3
     ON CONFLICT (installation_id,session_id,signal) DO UPDATE SET
         events=g.events+EXCLUDED.events, latest=greatest(g.latest,EXCLUDED.latest);
+    INSERT INTO telemetry_unknown_codes AS u (key,installation_id,manufacturer,model,firmware,revision,transport,evidence,
+        category,code,occurrences,latest,source)
+    SELECT md5(jsonb_build_array(manufacturer,model,firmware,revision,transport,evidence,
+                properties->'protocol'->>'category',properties->'protocol'->>'code')::text) AS key, installation_id,
+            manufacturer, model, firmware, revision, transport, evidence,
+            properties->'protocol'->>'category' AS category, (properties->'protocol'->>'code')::bigint AS code,
+            count(*) AS occurrences, max(received_at) AS latest,
+            (array_agg(batch_path ORDER BY received_at DESC))[1] AS source
+    FROM added WHERE properties->'protocol'->>'type'='unknown'
+    GROUP BY manufacturer,model,firmware,revision,transport,evidence,properties->'protocol'->>'category',
+        properties->'protocol'->>'code',installation_id ORDER BY 1,2
+    ON CONFLICT (key,installation_id) DO UPDATE SET occurrences=u.occurrences+EXCLUDED.occurrences,
+        source=CASE WHEN EXCLUDED.latest>=u.latest THEN EXCLUDED.source ELSE u.source END,
+        latest=greatest(u.latest,EXCLUDED.latest);
     RETURN NULL;
 END $f$;
 CREATE OR REPLACE FUNCTION telemetry_events_removed() RETURNS trigger LANGUAGE plpgsql AS $f$
@@ -144,6 +169,22 @@ BEGIN
     DELETE FROM telemetry_session_signals g USING (SELECT DISTINCT installation_id,
             coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id FROM removed) r
     WHERE g.installation_id=r.installation_id AND g.session_id=r.session_id AND g.events<=0;
+    IF EXISTS (SELECT 1 FROM removed WHERE properties->'protocol'->>'type'='unknown') THEN
+        UPDATE telemetry_unknown_codes u SET occurrences=u.occurrences-r.occurrences,
+            -- A removed source batch is replaced by this installation's newest remaining one.
+            source=CASE WHEN r.sources @> ARRAY[u.source] THEN coalesce((SELECT e.batch_path FROM telemetry_events e
+                WHERE e.installation_id=u.installation_id AND e.properties->'protocol'->>'type'='unknown'
+                  AND md5(jsonb_build_array(e.manufacturer,e.model,e.firmware,e.revision,e.transport,e.evidence,
+                      e.properties->'protocol'->>'category',e.properties->'protocol'->>'code')::text)=u.key
+                ORDER BY e.received_at DESC LIMIT 1),u.source) ELSE u.source END
+        FROM (SELECT md5(jsonb_build_array(manufacturer,model,firmware,revision,transport,evidence,
+                    properties->'protocol'->>'category',properties->'protocol'->>'code')::text) AS key, installation_id,
+                count(*) AS occurrences, array_agg(DISTINCT batch_path) AS sources
+              FROM removed WHERE properties->'protocol'->>'type'='unknown' GROUP BY 1,2) r
+        WHERE u.key=r.key AND u.installation_id=r.installation_id;
+        DELETE FROM telemetry_unknown_codes u USING (SELECT DISTINCT installation_id FROM removed) r
+        WHERE u.installation_id=r.installation_id AND u.occurrences<=0;
+    END IF;
     RETURN NULL;
 END $f$;
 DROP TRIGGER IF EXISTS telemetry_events_added ON telemetry_events;
@@ -198,8 +239,8 @@ const sessionColumns = `events,errors,signals,started_at,ended_at,latest_receive
 const rebuilt = new WeakSet<Pool>()
 async function backfillRollups(pool: Pool) {
     if (rebuilt.has(pool)) return
-    const done = await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
-    if (done.rowCount) {
+    const done = await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name IN ('sessions-v1','unknown-codes-v1')")
+    if (done.rowCount === 2) {
         rebuilt.add(pool)
         return
     }
@@ -266,6 +307,39 @@ async function backfillRollups(pool: Pool) {
                 SELECT installation_id, ${sessionless}, telemetry_event_signal(failed,kind,code,properties), count(*), max(received_at)
                 FROM telemetry_events WHERE session_id IS NULL GROUP BY 1,3`)
             await connection.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v1',now())")
+        }
+        const codes = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='unknown-codes-v1'")
+        if (!codes.rowCount) {
+            // The same pages of sessions as above: a statement over every event needs too much temporary space.
+            await connection.query('LOCK TABLE telemetry_events IN SHARE ROW EXCLUSIVE MODE')
+            await connection.query('DELETE FROM telemetry_unknown_codes')
+            await connection.query(`CREATE TEMP TABLE IF NOT EXISTS code_keys ON COMMIT DROP AS
+                SELECT installation_id, session_id, row_number() OVER (ORDER BY installation_id, session_id) AS position
+                FROM (SELECT DISTINCT installation_id, session_id FROM telemetry_events WHERE session_id IS NOT NULL) keys`)
+            await connection.query('CREATE INDEX IF NOT EXISTS code_keys_position ON code_keys (position)')
+            const total = Number((await connection.query('SELECT count(*) AS total FROM code_keys')).rows[0].total)
+            const summarize = (from: string) => `INSERT INTO telemetry_unknown_codes AS u (key,installation_id,manufacturer,model,
+                    firmware,revision,transport,evidence,category,code,occurrences,latest,source)
+                SELECT md5(jsonb_build_array(e.manufacturer,e.model,e.firmware,e.revision,e.transport,e.evidence,
+                        e.properties->'protocol'->>'category',e.properties->'protocol'->>'code')::text), e.installation_id,
+                    e.manufacturer, e.model, e.firmware, e.revision, e.transport, e.evidence,
+                    e.properties->'protocol'->>'category', (e.properties->'protocol'->>'code')::bigint,
+                    count(*), max(e.received_at), (array_agg(e.batch_path ORDER BY e.received_at DESC))[1]
+                FROM ${from} AND e.properties->'protocol'->>'type'='unknown'
+                GROUP BY e.manufacturer,e.model,e.firmware,e.revision,e.transport,e.evidence,
+                    e.properties->'protocol'->>'category',e.properties->'protocol'->>'code',e.installation_id
+                ON CONFLICT (key,installation_id) DO UPDATE SET occurrences=u.occurrences+EXCLUDED.occurrences,
+                    source=CASE WHEN EXCLUDED.latest>=u.latest THEN EXCLUDED.source ELSE u.source END,
+                    latest=greatest(u.latest,EXCLUDED.latest)`
+            for (let offset = 0; offset < total; offset += 200)
+                await connection.query(
+                    summarize(`telemetry_events e JOIN (SELECT installation_id, session_id FROM code_keys
+                        WHERE position>$1 AND position<=$2) p ON e.installation_id=p.installation_id AND e.session_id=p.session_id
+                        WHERE true`),
+                    [offset, offset + 200]
+                )
+            await connection.query(summarize('telemetry_events e WHERE e.session_id IS NULL'))
+            await connection.query("INSERT INTO telemetry_rollup_state VALUES('unknown-codes-v1',now())")
         }
         await connection.query('COMMIT')
         rebuilt.add(pool)
