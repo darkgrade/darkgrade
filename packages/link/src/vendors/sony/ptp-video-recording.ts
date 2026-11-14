@@ -62,19 +62,40 @@ export class SonyPtpVideoRecording {
         const inventory=await this.camera.send(this.operations.GetDeviceInfo,{})
         // DeviceInfo carries the numeric codes in operationsSupportedRaw; the decoded list holds names.
         const supported=inventory.data?.operationsSupportedRaw
-        if(inventory.code!==0x2001||!Array.isArray(supported)||![0x9802,0x9803].every(code=>supported.includes(code)))
+        const has=(code:number)=>Array.isArray(supported)&&supported.includes(code)
+        if(inventory.code!==0x2001||!((has(0x9802)&&has(0x9803))||has(0x9805)))
             throw new Error('Sony did not advertise a 64-bit original-size query; copy this original from its card')
-        const descriptor=await this.camera.send(this.operations.MtpGetObjectPropDesc,{ObjectPropertyCode:0xdc04,ObjectFormatCode:Number.isInteger(format)&&format>=0&&format<=0xffff?format:0})
-        const data=descriptor.data
-        if(descriptor.code!==0x2001||!(data instanceof Uint8Array)||data.length<18)
-            throw new Error('Sony original-size descriptor is unavailable')
-        const view=new DataView(data.buffer,data.byteOffset,data.byteLength)
-        if(view.getUint16(0,true)!==0xdc04||view.getUint16(2,true)!==8)
-            throw new Error('Sony did not describe original size as UINT64')
-        const result=await this.camera.send(this.operations.MtpGetObjectPropValue,{ObjectHandle:handle,ObjectPropertyCode:0xdc04})
-        if(result.code!==0x2001||!(result.data instanceof Uint8Array)||result.data.length!==8)
-            throw new Error('Sony did not return a complete 64-bit original size')
-        const size=Number(new DataView(result.data.buffer,result.data.byteOffset,8).getBigUint64(0,true))
+        let size:number|undefined
+        if(has(0x9802)&&has(0x9803)){
+            const descriptor=await this.camera.send(this.operations.MtpGetObjectPropDesc,{ObjectPropertyCode:0xdc04,ObjectFormatCode:Number.isInteger(format)&&format>=0&&format<=0xffff?format:0})
+            const data=descriptor.data
+            if(descriptor.code===0x2001){
+                if(!(data instanceof Uint8Array)||data.length<18)throw new Error('Sony original-size descriptor is unavailable')
+                const view=new DataView(data.buffer,data.byteOffset,data.byteLength)
+                if(view.getUint16(0,true)!==0xdc04||view.getUint16(2,true)!==8)
+                    throw new Error('Sony did not describe original size as UINT64')
+                const result=await this.camera.send(this.operations.MtpGetObjectPropValue,{ObjectHandle:handle,ObjectPropertyCode:0xdc04})
+                if(result.code!==0x2001||!(result.data instanceof Uint8Array)||result.data.length!==8)
+                    throw new Error('Sony did not return a complete 64-bit original size')
+                size=Number(new DataView(result.data.buffer,result.data.byteOffset,8).getBigUint64(0,true))
+            // 0x2005: the FX2 (firmware 1.01, bench take c1cc9e71, 2026-11-14) advertises the
+            // descriptor operation and then answers OperationNotSupported. Any other refusal is an error.
+            }else if(descriptor.code!==0x2005)throw new Error('Sony original-size descriptor is unavailable')
+        }
+        if(size===undefined&&has(0x9805)){
+            // MTP GetObjectPropList for one handle and one property returns the value with its
+            // data type: count, then handle, property code, data type, value. The same FX2 answered
+            // this with UINT64 (type 8). Require the exact handle, property and type.
+            const list=await this.camera.send(this.operations.MtpGetObjectPropList,{ObjectHandle:handle,ObjectFormatCode:0,ObjectPropertyCode:0xdc04,GroupCode:0,Depth:0})
+            const data=list.data
+            if(list.code!==0x2001||!(data instanceof Uint8Array)||data.length!==20)
+                throw new Error('Sony did not return a complete 64-bit original size')
+            const view=new DataView(data.buffer,data.byteOffset,20)
+            if(view.getUint32(0,true)!==1||view.getUint32(4,true)!==handle||view.getUint16(8,true)!==0xdc04||view.getUint16(10,true)!==8)
+                throw new Error('Sony did not describe original size as UINT64')
+            size=Number(view.getBigUint64(12,true))
+        }
+        if(size===undefined)throw new Error('Sony original-size descriptor is unavailable')
         if(!Number.isSafeInteger(size)||size<0xffffffff)throw new Error('Sony returned an invalid 64-bit original size')
         return size
     }

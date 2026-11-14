@@ -3,7 +3,7 @@ import {SonyPtpVideoRecording} from '@vendors/sony/ptp-video-recording'
 function fixture(){
  let state:unknown=0,handles=[1],bytes=3,name='new.MP4'
  const largeChunk=new Uint8Array(2*1024*1024)
- const operations=Object.fromEntries(['GetStorageIDs','GetObjectHandles','GetObjectInfo','SDIO_GetPartialLargeObject','GetDeviceInfo','MtpGetObjectPropDesc','MtpGetObjectPropValue'].map(name=>[name,{name}]))
+ const operations=Object.fromEntries(['GetStorageIDs','GetObjectHandles','GetObjectInfo','SDIO_GetPartialLargeObject','GetDeviceInfo','MtpGetObjectPropDesc','MtpGetObjectPropValue','MtpGetObjectPropList'].map(name=>[name,{name}]))
  const send=vi.fn(async(op:any,args:any)=>{
   if(op.name==='GetStorageIDs')return {code:0x2001,data:[0x10001]}
   if(op.name==='GetObjectHandles')return {code:0x2001,data:handles}
@@ -116,4 +116,38 @@ it('reads the 64-bit size support from a real DeviceInfo dataset, not from a han
  const decoded = dataset.decode(encoded).value
  expect(decoded.operationsSupportedRaw).toEqual([0x1001, 0x9802, 0x9803])
  expect((decoded as any).operationsSupported).toBeUndefined()
+})
+
+it('sizes an FX2 original over 4 GiB from its typed property list when the descriptor operation is refused', async () => {
+ // Bytes as the bench FX2 (firmware 1.01) returned them on 2026-11-14 for handle 0x40000c19:
+ // GetObjectPropDesc -> 0x2005; GetObjectPropList -> count 1, handle, 0xdc04, UINT64, 5,101,088,166 bytes.
+ const f = fixture(), original = f.camera.send.getMockImplementation()!, handle = 0x40000c19, size = 5_101_088_166
+ f.setBytes(0xffffffff); f.setHandles([1, handle])
+ const observed = Uint8Array.from(Buffer.from('01000000190c004004dc0800a66d0c3001000000', 'hex'))
+ let list = observed, descriptorCode = 0x2005
+ const asked: string[] = []
+ f.camera.send.mockImplementation(async (op, args) => {
+  if (op.name === 'GetDeviceInfo') return { code: 0x2001, data: { operationsSupportedRaw: [0x9801, 0x9802, 0x9803, 0x9805] } }
+  if (op.name === 'MtpGetObjectPropDesc') { asked.push(op.name); return { code: descriptorCode } }
+  if (op.name === 'MtpGetObjectPropValue') throw new Error('the untyped value must not be trusted without a type')
+  if (op.name === 'MtpGetObjectPropList') {
+   asked.push(op.name)
+   expect(args).toEqual({ ObjectHandle: handle, ObjectFormatCode: 0, ObjectPropertyCode: 0xdc04, GroupCode: 0, Depth: 0 })
+   return { code: 0x2001, data: list }
+  }
+  return original(op, args)
+ })
+ const sized = () => (f.recording as any).originalSize(handle, 0xffffffff, 0xb982)
+ expect(await sized()).toBe(size)
+ expect(asked).toEqual(['MtpGetObjectPropDesc', 'MtpGetObjectPropList'])
+ expect(await (f.recording as any).originalSize(handle, 1234, 0xb982)).toBe(1234)
+ // Another handle's entry, another type, or a truncated reply is never accepted as this original's size.
+ const altered = (change: (view: DataView) => void) => { const copy = observed.slice(); change(new DataView(copy.buffer)); return copy }
+ list = altered(view => view.setUint32(4, handle + 1, true)); await expect(sized()).rejects.toThrow('UINT64')
+ list = altered(view => view.setUint16(10, 6, true)); await expect(sized()).rejects.toThrow('UINT64')
+ list = altered(view => view.setUint32(0, 2, true)); await expect(sized()).rejects.toThrow('UINT64')
+ list = observed.slice(0, 16); await expect(sized()).rejects.toThrow('complete 64-bit')
+ list = altered(view => view.setBigUint64(12, 4096n, true)); await expect(sized()).rejects.toThrow('invalid 64-bit')
+ // A refusal other than "not supported" is not papered over.
+ list = observed; descriptorCode = 0x2002; await expect(sized()).rejects.toThrow('descriptor is unavailable')
 })
