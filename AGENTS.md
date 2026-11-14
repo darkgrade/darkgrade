@@ -8,9 +8,16 @@ or error is derived must change the trigger functions, the queries and the marke
 Events recorded before a connection's identity read adopt the single identity the same session
 read later (derived columns only; signed payloads stay as uploaded). Native Sony sessions read
 standard DeviceInfo once per connection after authentication; a refusal is logged and ignored.
-In-session GetDeviceInfo on Sony bodies was not yet confirmed on physical hardware when written.
-Link reports an inventory or setting fact for an identified body again only when it changes or
-after six hours, not on every connection; benchmark profiles are exempt and stay complete.
+The in-session read was confirmed physically on the a6700 and FX2 (2026-11-14): it follows
+authentication and precedes the first property read. Link remembers which inventory and setting
+facts this installation already shared in `reported-facts.json` under the settings directory
+(short hashes only), because bench camera work runs in short-lived workers; a fact is shared
+again when it changes or after six hours. Probe and vendor-session scopes are kept separately.
+Benchmark profiles are exempt and stay complete. Canon sessions still re-share about fifty
+property values per connection; the cause was not investigated.
+The summary rebuild pages through sessions: one statement over all events exceeded Cloud SQL's
+temporary-file limit in production. Never `git add -A` a folder here: dependency symlinks such
+as `packages/runtime/node_modules` are untracked on purpose and broke `bun install` on the benches.
 
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
 existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
