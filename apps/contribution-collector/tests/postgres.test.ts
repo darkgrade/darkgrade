@@ -718,3 +718,41 @@ test('the unknown-code queue reads its summary: counts across installations, a c
         await database.close();await pool.end()
     }
 })
+
+test('the one-time removal deletes only old unidentified events, keeps identified and later ones, and leaves summaries exact', {skip:!process.env.DATABASE_URL}, async()=>{
+    const {unidentifiedPurge}=await import('#collector/postgres')
+    let database=await postgresDatabase(process.env.DATABASE_URL!)
+    let handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+    const user=await enroll(handle),pool=new Pool({connectionString:process.env.DATABASE_URL!})
+    const upload=async(cameras:{model:string,sessions:string[]}[])=>{
+        const payload=batch(),template=payload.contributions[0],entry=template.entries[0]
+        payload.contributions=cameras.map(({model,sessions})=>({...template,id:randomUUID(),
+            camera:{...template.camera,model,manufacturer:model==='Unknown'?'Unknown':'Sony Corporation'},
+            entries:sessions.map(sessionId=>({...entry,sessionId}))})) as any
+        const sent=await handle(request('/v2/batches','POST',user.installKey,payload));assert.equal(sent.status,202,await sent.text())
+        return 'diagnostics/'+user.installId+'_'+payload.id
+    }
+    const native=randomUUID(),mixedUnknown=randomUUID(),identified=randomUUID(),later=randomUUID()
+    try{
+        const onlyUnknown=await upload([{model:'Unknown',sessions:[native,native,native]}])
+        const mixed=await upload([{model:'Unknown',sessions:[mixedUnknown]},{model:'ILCE-6700',sessions:[identified,identified]}])
+        const old=new Date(Date.parse(unidentifiedPurge.before)-3_600_000).toISOString()
+        await pool.query('UPDATE telemetry_events SET received_at=$2 WHERE installation_id=$1',[user.installId,old])
+        const recent=await upload([{model:'Unknown',sessions:[later]}])
+        assert.ok(Date.now()>Date.parse(unidentifiedPurge.before),'new uploads are after the cutoff')
+        await pool.query('DELETE FROM telemetry_rollup_state WHERE name=$1',[unidentifiedPurge.marker])
+        await database.close();database=await postgresDatabase(process.env.DATABASE_URL!);handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+        const events=(await pool.query('SELECT session_id,model,count(*)::int AS n FROM telemetry_events WHERE installation_id=$1 GROUP BY 1,2 ORDER BY 2,1',[user.installId])).rows
+        assert.deepEqual(events.map(row=>[row.session_id,row.model,row.n]).sort(),[[identified,'ILCE-6700',2],[later,'Unknown',1]].sort())
+        assert.equal(await database.get(onlyUnknown),undefined,'an upload with nothing left is removed')
+        assert.ok(await database.get(mixed),'an upload that still describes an identified camera stays');assert.ok(await database.get(recent))
+        const sessions=(await pool.query('SELECT session_id,events::int,model FROM telemetry_sessions WHERE installation_id=$1 ORDER BY session_id',[user.installId])).rows
+        assert.deepEqual(sessions.map(row=>[row.session_id,row.events,row.model]).sort(),[[identified,2,'ILCE-6700'],[later,1,'Unknown']].sort())
+        // A second start does nothing more.
+        await database.close();database=await postgresDatabase(process.env.DATABASE_URL!);handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM telemetry_events WHERE installation_id=$1',[user.installId])).rows[0].n,3)
+    }finally{
+        await handle(request('/v2/installation','DELETE',user.installKey)).catch(()=>{})
+        await database.close();await pool.end()
+    }
+})

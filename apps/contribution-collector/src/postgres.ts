@@ -232,6 +232,11 @@ const sessionAggregate = `count(*) AS events,
 const sessionColumns = `events,errors,signals,started_at,ended_at,latest_received_at,manufacturer,model,
     transports,evidence,backends,revisions,hardware_fingerprints,truncated`
 
+/** One-time removal requested on 2026-11-14: events recorded with no camera identity before
+ * Link learned to read it (the first commands of every connection that could not be matched to
+ * a session identity, and whole native Sony sessions). Later unidentified events are kept. */
+export const unidentifiedPurge = { marker: 'purge-unidentified-2026-11-14', before: '2026-11-14T18:30:00Z' }
+
 /** Build the session summaries once from existing events. Uploads wait behind the table lock so
  * no event is counted twice or missed; later starts find the marker and skip this. The work is
  * done a few hundred sessions at a time: one statement over every event needs more temporary
@@ -239,8 +244,10 @@ const sessionColumns = `events,errors,signals,started_at,ended_at,latest_receive
 const rebuilt = new WeakSet<Pool>()
 async function backfillRollups(pool: Pool) {
     if (rebuilt.has(pool)) return
-    const done = await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name IN ('sessions-v1','unknown-codes-v1')")
-    if (done.rowCount === 2) {
+    const done = await pool.query(
+        `SELECT 1 FROM telemetry_rollup_state WHERE name IN ('sessions-v1','unknown-codes-v1','${unidentifiedPurge.marker}')`
+    )
+    if (done.rowCount === 3) {
         rebuilt.add(pool)
         return
     }
@@ -340,6 +347,37 @@ async function backfillRollups(pool: Pool) {
                 )
             await connection.query(summarize('telemetry_events e WHERE e.session_id IS NULL'))
             await connection.query("INSERT INTO telemetry_rollup_state VALUES('unknown-codes-v1',now())")
+        }
+        const purged = await connection.query('SELECT 1 FROM telemetry_rollup_state WHERE name=$1', [unidentifiedPurge.marker])
+        if (!purged.rowCount) {
+            // Row locks only: uploads continue. The event triggers keep every summary exact.
+            await connection.query(
+                `CREATE TEMP TABLE unidentified ON COMMIT DROP AS
+                 SELECT batch_path, sequence FROM telemetry_events WHERE model='Unknown' AND received_at < $1::timestamptz`,
+                [unidentifiedPurge.before]
+            )
+            await connection.query(
+                'CREATE TEMP TABLE unidentified_batches ON COMMIT DROP AS SELECT DISTINCT batch_path FROM unidentified'
+            )
+            const total = Number((await connection.query('SELECT count(*) AS total FROM unidentified')).rows[0].total)
+            let events = 0
+            for (let done = 0; done < total; done += 5000) {
+                const removed = await connection.query(
+                    `WITH page AS (DELETE FROM unidentified WHERE ctid IN (SELECT ctid FROM unidentified LIMIT 5000)
+                        RETURNING batch_path, sequence)
+                     DELETE FROM telemetry_events e USING page p
+                     WHERE e.batch_path=p.batch_path AND e.sequence=p.sequence AND e.model='Unknown'`
+                )
+                events += removed.rowCount ?? 0
+            }
+            // An upload that held nothing but unidentified events has nothing left to describe.
+            const batches = await connection.query(
+                `DELETE FROM telemetry_state s USING unidentified_batches b
+                 WHERE s.path=b.batch_path AND NOT EXISTS (SELECT 1 FROM telemetry_events e WHERE e.batch_path=s.path)`
+            )
+            await connection.query('INSERT INTO telemetry_rollup_state VALUES($1,now())', [unidentifiedPurge.marker])
+            console.log(JSON.stringify({ component: 'contribution-collector', maintenance: unidentifiedPurge.marker,
+                removedEvents: events, removedUploads: batches.rowCount ?? 0 }))
         }
         await connection.query('COMMIT')
         rebuilt.add(pool)
