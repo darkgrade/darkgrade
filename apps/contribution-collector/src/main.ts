@@ -79,6 +79,7 @@ const maintain = async () => {
         await cleanupWithdrawals(database)
         await database.normalizeConnections()
         await database.refreshSessions()
+        await database.refreshUnknownCodeSources()
     } catch {
         console.error('Telemetry maintenance will retry')
     } finally {

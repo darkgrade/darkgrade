@@ -708,6 +708,8 @@ test('the unknown-code queue reads its summary: counts across installations, a c
         assert.deepEqual([item(0x9101).occurrences,item(0x9101).installations,item(0x9102).occurrences],[4,2,1])
         // Removing the newest batch moves the source to the remaining one; removing all removes the entry.
         await pool.query('DELETE FROM telemetry_state WHERE path=$1',[second])
+        assert.equal((await database.operator.protocol({days:1,model,installation:users[0].installId})).items.length,1,'an entry whose source was removed is hidden until maintenance repairs it')
+        await database.refreshUnknownCodeSources()
         const remaining=await database.operator.protocol({days:1,model,installation:users[0].installId})
         assert.deepEqual(remaining.items.map(row=>[Number(row.code),row.occurrences,row.source]).sort(),[[0x9101,2,first],[0x9102,1,first]])
         await handle(request('/v2/installation','DELETE',users[0].installKey))

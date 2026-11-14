@@ -78,6 +78,7 @@ export function operatorQueries(pool: Pool) {
                 WHERE u.latest >= now() - ($1::int * interval '1 day')
                   AND ($2::uuid IS NULL OR u.installation_id=$2) AND ($3::text IS NULL OR u.model=$3)
                   AND ($4::text IS NULL OR u.revision=$4) AND ($5::text IS NULL OR u.transport=$5)
+                  AND NOT EXISTS (SELECT 1 FROM telemetry_unknown_code_repairs p WHERE p.key=u.key AND p.installation_id=u.installation_id)
                   AND EXISTS (SELECT 1 FROM telemetry_state d WHERE d.path=u.source
                     AND d.data->>'expiresAt' > to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
                   AND EXISTS (SELECT 1 FROM telemetry_state i WHERE i.path='installations/'||u.installation_id

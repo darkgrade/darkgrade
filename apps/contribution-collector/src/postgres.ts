@@ -3,7 +3,10 @@ import { operatorQueries } from '#collector/operator-queries'
 import { Pool, type PoolClient } from 'pg'
 import {cameraConnection} from '#collector/transport'
 
-const schema = `
+/** Statements that take a lock on telemetry_events. They run only until its triggers exist:
+ * every later start would otherwise queue an exclusive lock behind any long-running work and
+ * stall uploads and reads behind it. A change to this block must also change `eventsSchemaReady`. */
+const eventsSchema = `
 CREATE TABLE IF NOT EXISTS telemetry_state (
     path text PRIMARY KEY,
     data jsonb NOT NULL
@@ -46,7 +49,19 @@ CREATE INDEX IF NOT EXISTS telemetry_events_protocol ON telemetry_events
     ((properties->'protocol'->>'type'),received_at) WHERE properties ? 'protocol';
 CREATE INDEX IF NOT EXISTS telemetry_events_benchmark ON telemetry_events
     (installation_id,(properties->'protocol'->>'benchmarkId')) WHERE properties ? 'protocol';
-CREATE TABLE IF NOT EXISTS telemetry_sessions (
+`
+const eventsTriggers = `
+DROP TRIGGER IF EXISTS telemetry_events_added ON telemetry_events;
+CREATE TRIGGER telemetry_events_added AFTER INSERT ON telemetry_events
+    REFERENCING NEW TABLE AS added FOR EACH STATEMENT EXECUTE FUNCTION telemetry_events_added();
+DROP TRIGGER IF EXISTS telemetry_events_removed ON telemetry_events;
+CREATE TRIGGER telemetry_events_removed AFTER DELETE ON telemetry_events
+    REFERENCING OLD TABLE AS removed FOR EACH STATEMENT EXECUTE FUNCTION telemetry_events_removed();
+`
+/** Summary tables and functions: safe to apply on every start without touching telemetry_events. */
+/** Summary tables and their indexes. Creating an index that already exists still locks its
+ * table, so these also run only until the last of them exists (see `summarySchemaReady`). */
+const summarySchema = `CREATE TABLE IF NOT EXISTS telemetry_sessions (
     installation_id uuid NOT NULL,
     session_id uuid NOT NULL,
     events bigint NOT NULL,
@@ -88,7 +103,16 @@ CREATE TABLE IF NOT EXISTS telemetry_unknown_codes (
     PRIMARY KEY (key, installation_id)
 );
 CREATE INDEX IF NOT EXISTS telemetry_unknown_codes_latest ON telemetry_unknown_codes (latest);
+
 CREATE TABLE IF NOT EXISTS telemetry_rollup_state (name text PRIMARY KEY, completed_at timestamptz NOT NULL);
+`
+/** Applied on every start: replacing a function or creating a new table waits on nothing. */
+const schema = `
+-- Entries whose source upload was removed, awaiting a replacement. A separate table: adding a
+-- column would need a lock that waits behind any transaction still touching the summary.
+CREATE TABLE IF NOT EXISTS telemetry_unknown_code_repairs (
+    key text NOT NULL, installation_id uuid NOT NULL, PRIMARY KEY (key, installation_id)
+);
 CREATE OR REPLACE FUNCTION telemetry_event_signal(failed boolean, kind text, code integer, properties jsonb)
 RETURNS text LANGUAGE sql IMMUTABLE AS $f$
     SELECT CASE WHEN failed THEN 'failed'
@@ -145,8 +169,13 @@ BEGIN
     GROUP BY manufacturer,model,firmware,revision,transport,evidence,properties->'protocol'->>'category',
         properties->'protocol'->>'code',installation_id ORDER BY 1,2
     ON CONFLICT (key,installation_id) DO UPDATE SET occurrences=u.occurrences+EXCLUDED.occurrences,
-        source=CASE WHEN EXCLUDED.latest>=u.latest THEN EXCLUDED.source ELSE u.source END,
+        source=CASE WHEN EXCLUDED.latest>=u.latest OR EXISTS (SELECT 1 FROM telemetry_unknown_code_repairs p
+            WHERE p.key=u.key AND p.installation_id=u.installation_id) THEN EXCLUDED.source ELSE u.source END,
         latest=greatest(u.latest,EXCLUDED.latest);
+    DELETE FROM telemetry_unknown_code_repairs p USING (SELECT DISTINCT md5(jsonb_build_array(manufacturer,model,firmware,
+            revision,transport,evidence,properties->'protocol'->>'category',properties->'protocol'->>'code')::text) AS key,
+            installation_id FROM added WHERE properties->'protocol'->>'type'='unknown') a
+    WHERE p.key=a.key AND p.installation_id=a.installation_id;
     RETURN NULL;
 END $f$;
 CREATE OR REPLACE FUNCTION telemetry_events_removed() RETURNS trigger LANGUAGE plpgsql AS $f$
@@ -170,13 +199,15 @@ BEGIN
             coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id FROM removed) r
     WHERE g.installation_id=r.installation_id AND g.session_id=r.session_id AND g.events<=0;
     IF EXISTS (SELECT 1 FROM removed WHERE properties->'protocol'->>'type'='unknown') THEN
-        UPDATE telemetry_unknown_codes u SET occurrences=u.occurrences-r.occurrences,
-            -- A removed source batch is replaced by this installation's newest remaining one.
-            source=CASE WHEN r.sources @> ARRAY[u.source] THEN coalesce((SELECT e.batch_path FROM telemetry_events e
-                WHERE e.installation_id=u.installation_id AND e.properties->'protocol'->>'type'='unknown'
-                  AND md5(jsonb_build_array(e.manufacturer,e.model,e.firmware,e.revision,e.transport,e.evidence,
-                      e.properties->'protocol'->>'category',e.properties->'protocol'->>'code')::text)=u.key
-                ORDER BY e.received_at DESC LIMIT 1),u.source) ELSE u.source END
+        -- A removed source batch is replaced later by maintenance; searching events here made
+        -- every large deletion scan an installation's whole history.
+        INSERT INTO telemetry_unknown_code_repairs (key, installation_id)
+        SELECT u.key, u.installation_id FROM telemetry_unknown_codes u
+        JOIN (SELECT DISTINCT installation_id, batch_path FROM removed
+              WHERE properties->'protocol'->>'type'='unknown') r
+          ON r.installation_id=u.installation_id AND r.batch_path=u.source
+        ON CONFLICT DO NOTHING;
+        UPDATE telemetry_unknown_codes u SET occurrences=u.occurrences-r.occurrences
         FROM (SELECT md5(jsonb_build_array(manufacturer,model,firmware,revision,transport,evidence,
                     properties->'protocol'->>'category',properties->'protocol'->>'code')::text) AS key, installation_id,
                 count(*) AS occurrences, array_agg(DISTINCT batch_path) AS sources
@@ -184,15 +215,12 @@ BEGIN
         WHERE u.key=r.key AND u.installation_id=r.installation_id;
         DELETE FROM telemetry_unknown_codes u USING (SELECT DISTINCT installation_id FROM removed) r
         WHERE u.installation_id=r.installation_id AND u.occurrences<=0;
+        DELETE FROM telemetry_unknown_code_repairs p USING (SELECT DISTINCT installation_id FROM removed) r
+        WHERE p.installation_id=r.installation_id AND NOT EXISTS (SELECT 1 FROM telemetry_unknown_codes u
+            WHERE u.key=p.key AND u.installation_id=p.installation_id);
     END IF;
     RETURN NULL;
 END $f$;
-DROP TRIGGER IF EXISTS telemetry_events_added ON telemetry_events;
-CREATE TRIGGER telemetry_events_added AFTER INSERT ON telemetry_events
-    REFERENCING NEW TABLE AS added FOR EACH STATEMENT EXECUTE FUNCTION telemetry_events_added();
-DROP TRIGGER IF EXISTS telemetry_events_removed ON telemetry_events;
-CREATE TRIGGER telemetry_events_removed AFTER DELETE ON telemetry_events
-    REFERENCING OLD TABLE AS removed FOR EACH STATEMENT EXECUTE FUNCTION telemetry_events_removed();
 `
 
 function checkedPath(path: string) {
@@ -236,6 +264,47 @@ const sessionColumns = `events,errors,signals,started_at,ended_at,latest_receive
  * Link learned to read it (the first commands of every connection that could not be matched to
  * a session identity, and whole native Sony sessions). Later unidentified events are kept. */
 export const unidentifiedPurge = { marker: 'purge-unidentified-2026-11-14', before: '2026-11-14T18:30:00Z' }
+
+/** Short transactions of a few thousand rows: uploads and later starts never wait behind it.
+ * Returns false when another instance is doing the work. */
+async function purgeUnidentified(connection: PoolClient) {
+    const marker = unidentifiedPurge.marker
+    if ((await connection.query('SELECT 1 FROM telemetry_rollup_state WHERE name=$1', [marker])).rowCount) return true
+    const lock = await connection.query("SELECT pg_try_advisory_lock(hashtext('darkgrade.telemetry.purge')) AS held")
+    if (!lock.rows[0].held) return false
+    try {
+        let events = 0, uploads = 0
+        for (;;) {
+            await connection.query('BEGIN')
+            await connection.query('SET LOCAL statement_timeout=0')
+            const removed = await connection.query(
+                `WITH page AS (SELECT batch_path, sequence FROM telemetry_events
+                     WHERE model='Unknown' AND received_at < $1::timestamptz LIMIT 4000),
+                 gone AS (DELETE FROM telemetry_events e USING page p
+                     WHERE e.batch_path=p.batch_path AND e.sequence=p.sequence RETURNING e.batch_path)
+                 SELECT array_agg(DISTINCT batch_path) AS batches, count(*)::int AS removed FROM gone`,
+                [unidentifiedPurge.before]
+            )
+            const { batches, removed: count } = removed.rows[0]
+            // An upload that held nothing but unidentified events has nothing left to describe.
+            const empty = count ? await connection.query(
+                `DELETE FROM telemetry_state s WHERE s.path=ANY($1::text[])
+                 AND NOT EXISTS (SELECT 1 FROM telemetry_events e WHERE e.batch_path=s.path)`, [batches]) : { rowCount: 0 }
+            if (!count) await connection.query('INSERT INTO telemetry_rollup_state VALUES($1,now()) ON CONFLICT DO NOTHING', [marker])
+            await connection.query('COMMIT')
+            events += count
+            uploads += empty.rowCount ?? 0
+            if (!count) break
+        }
+        console.log(JSON.stringify({ component: 'contribution-collector', maintenance: marker, removedEvents: events, removedUploads: uploads }))
+        return true
+    } catch (error) {
+        await connection.query('ROLLBACK').catch(() => {})
+        throw error
+    } finally {
+        await connection.query("SELECT pg_advisory_unlock(hashtext('darkgrade.telemetry.purge'))").catch(() => {})
+    }
+}
 
 /** Build the session summaries once from existing events. Uploads wait behind the table lock so
  * no event is counted twice or missed; later starts find the marker and skip this. The work is
@@ -348,39 +417,8 @@ async function backfillRollups(pool: Pool) {
             await connection.query(summarize('telemetry_events e WHERE e.session_id IS NULL'))
             await connection.query("INSERT INTO telemetry_rollup_state VALUES('unknown-codes-v1',now())")
         }
-        const purged = await connection.query('SELECT 1 FROM telemetry_rollup_state WHERE name=$1', [unidentifiedPurge.marker])
-        if (!purged.rowCount) {
-            // Row locks only: uploads continue. The event triggers keep every summary exact.
-            await connection.query(
-                `CREATE TEMP TABLE unidentified ON COMMIT DROP AS
-                 SELECT batch_path, sequence FROM telemetry_events WHERE model='Unknown' AND received_at < $1::timestamptz`,
-                [unidentifiedPurge.before]
-            )
-            await connection.query(
-                'CREATE TEMP TABLE unidentified_batches ON COMMIT DROP AS SELECT DISTINCT batch_path FROM unidentified'
-            )
-            const total = Number((await connection.query('SELECT count(*) AS total FROM unidentified')).rows[0].total)
-            let events = 0
-            for (let done = 0; done < total; done += 5000) {
-                const removed = await connection.query(
-                    `WITH page AS (DELETE FROM unidentified WHERE ctid IN (SELECT ctid FROM unidentified LIMIT 5000)
-                        RETURNING batch_path, sequence)
-                     DELETE FROM telemetry_events e USING page p
-                     WHERE e.batch_path=p.batch_path AND e.sequence=p.sequence AND e.model='Unknown'`
-                )
-                events += removed.rowCount ?? 0
-            }
-            // An upload that held nothing but unidentified events has nothing left to describe.
-            const batches = await connection.query(
-                `DELETE FROM telemetry_state s USING unidentified_batches b
-                 WHERE s.path=b.batch_path AND NOT EXISTS (SELECT 1 FROM telemetry_events e WHERE e.batch_path=s.path)`
-            )
-            await connection.query('INSERT INTO telemetry_rollup_state VALUES($1,now())', [unidentifiedPurge.marker])
-            console.log(JSON.stringify({ component: 'contribution-collector', maintenance: unidentifiedPurge.marker,
-                removedEvents: events, removedUploads: batches.rowCount ?? 0 }))
-        }
         await connection.query('COMMIT')
-        rebuilt.add(pool)
+        if (await purgeUnidentified(connection)) rebuilt.add(pool)
     } catch (error) {
         await connection.query('ROLLBACK').catch(() => {})
         console.error('Telemetry summary rebuild failed:', (error as Error).message)
@@ -403,8 +441,17 @@ export async function postgresDatabase(connectionString: string, options: { defe
     // Pool errors must not crash an otherwise idle HTTP service.
     pool.on('error', () => console.error('Telemetry database connection unavailable'))
     try {
+        const ready = await pool.query(`SELECT count(*)::int AS triggers FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+            WHERE c.relname='telemetry_events' AND t.tgname IN ('telemetry_events_added','telemetry_events_removed')`)
+        const eventsSchemaReady = ready.rows[0].triggers === 2
+        const summaries = await pool.query(`SELECT to_regclass('telemetry_unknown_codes_latest') IS NOT NULL
+            AND to_regclass('telemetry_session_signals_signal') IS NOT NULL AND to_regclass('telemetry_sessions_stale') IS NOT NULL
+            AND to_regclass('telemetry_sessions_recent') IS NOT NULL AND to_regclass('telemetry_rollup_state') IS NOT NULL AS ready`)
+        const summarySchemaReady = summaries.rows[0].ready === true
         await pool.query(
-            "BEGIN; SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.schema'));" + schema + ';COMMIT;'
+            "BEGIN; SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.schema'));" +
+                (eventsSchemaReady ? '' : eventsSchema) + (summarySchemaReady ? '' : summarySchema) + schema +
+                (eventsSchemaReady ? '' : eventsTriggers) + ';COMMIT;'
         )
         // A service defers this until it is listening: the rebuild can outlast a startup probe.
         if (!options.deferSummaryRebuild) await backfillRollups(pool)
@@ -492,6 +539,7 @@ export async function postgresDatabase(connectionString: string, options: { defe
         normalizeConnections(): Promise<number>
         refreshSessions(): Promise<number>
         rebuildSummaries(): Promise<void>
+        refreshUnknownCodeSources(): Promise<number>
         health(): Promise<void>
         timeline(filters: {
             installation?: string
@@ -649,6 +697,34 @@ export async function postgresDatabase(connectionString: string, options: { defe
                 if (!remaining.rowCount) break
             }
             return refreshed
+        },
+        async refreshUnknownCodeSources() {
+            // A summary row whose source upload was removed is hidden until it points at a remaining one.
+            const started = performance.now()
+            const stale = await pool.query('SELECT key, installation_id FROM telemetry_unknown_code_repairs LIMIT 20')
+            for (const row of stale.rows) {
+                if (performance.now() - started > 5000) break
+                const parameters = [row.key, row.installation_id]
+                try {
+                    await pool.query(
+                        `UPDATE telemetry_unknown_codes u SET source=found.batch_path
+                         FROM (SELECT e.batch_path FROM telemetry_events e JOIN telemetry_unknown_codes c
+                                ON c.key=$1 AND c.installation_id=$2
+                               WHERE e.installation_id=c.installation_id AND e.model=c.model AND e.revision=c.revision
+                                 AND e.firmware=c.firmware AND e.transport=c.transport AND e.evidence=c.evidence
+                                 AND e.properties->'protocol'->>'type'='unknown'
+                                 AND (e.properties->'protocol'->>'code')::bigint IS NOT DISTINCT FROM c.code
+                                 AND e.properties->'protocol'->>'category' IS NOT DISTINCT FROM c.category
+                               ORDER BY e.received_at DESC LIMIT 1) found
+                         WHERE u.key=$1 AND u.installation_id=$2`,
+                        parameters
+                    )
+                    await pool.query('DELETE FROM telemetry_unknown_code_repairs WHERE key=$1 AND installation_id=$2', parameters)
+                } catch {
+                    /* A slow search leaves the entry hidden; the next pass tries again. */
+                }
+            }
+            return stale.rows.length
         },
         async health() {
             await pool.query('SELECT 1')
