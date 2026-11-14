@@ -13,8 +13,11 @@ authentication and precedes the first property read. Link remembers which invent
 facts this installation already shared in `reported-facts.json` under the settings directory
 (short hashes only), because bench camera work runs in short-lived workers; a fact is shared
 again when it changes or after six hours. Probe and vendor-session scopes are kept separately.
-Benchmark profiles are exempt and stay complete. Canon sessions still re-share about fifty
-property values per connection; the cause was not investigated.
+Benchmark profiles are exempt and stay complete. Each kind of fact has its own memory entry
+(vendor scope, operation and field set): a Canon setting's value and its allowed values, or two
+operations listing one inventory category, must not replace each other.
+The unknown-code queue reads `telemetry_unknown_codes` (per installation, kept by the same
+triggers, marker `unknown-codes-v1`); session, body and signal scopes still read events.
 The summary rebuild pages through sessions: one statement over all events exceeded Cloud SQL's
 temporary-file limit in production. Never `git add -A` a folder here: dependency symlinks such
 as `packages/runtime/node_modules` are untracked on purpose and broke `bun install` on the benches.
