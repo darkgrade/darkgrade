@@ -366,6 +366,14 @@ test('facts already reported for an identified body are not re-sent on every con
             ;(camera as any).protocolSeen.clear()
             await telemetry.transport.disconnect()
         }
+        // A discovery probe reports the same code under another vendor scope: once, without
+        // making the vendor session's copy look new again.
+        await telemetry.identify(identity)
+        const mixed = queued()
+        for (const vendorId of [0, 0x054c, 0, 0x054c])
+            camera.recordProtocol({ type: 'unknown', vendorId, category: 'operation', code: 0x9201, advertised: true }, 0x1001)
+        expect(queued() - mixed).toBe(1)
+        ;(camera as any).protocolSeen.clear()
         // A changed value is still reported, as is a benchmark's own complete profile.
         const before = queued()
         await telemetry.identify(identity)

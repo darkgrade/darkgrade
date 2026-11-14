@@ -111,7 +111,9 @@ export class GenericCamera {
         this.protocolSeen.set(key, encoded)
         // Every reconnect re-reads the same inventory and settings. Report a fact about an
         // identified body again only when it changes or after six hours, not once per connection.
-        if (!scoped.benchmarkId && !this.telemetry.newFact(key, encoded)) return
+        // A discovery probe and a vendor session describe the same code under different vendor
+        // scopes; remember each separately so they do not keep replacing one another.
+        if (!scoped.benchmarkId && !this.telemetry.newFact(`${key}:${'vendorId' in scoped ? scoped.vendorId : ''}`, encoded)) return
         this.telemetry.protocol(scoped, operation)
         this.profileObserver?.observe(scoped)
     }
