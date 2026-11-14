@@ -30,6 +30,15 @@ Collector rules learned the hard way on 2026-11-14:
   maintenance within a time budget; it is hidden from the queue until then.
 - `purge-unidentified-2026-11-14` removed 65,947 old events with no camera identity and 164
   uploads left empty. It is marker-guarded and dated; unidentified events after the cutoff stay.
+Sony originals over 4 GiB (2026-11-14): ObjectInfo reports 0xffffffff. Support is read from
+DeviceInfo `operationsSupportedRaw` (there is no `operationsSupported` field; a test that fakes
+one proves nothing). The bench FX2 advertises GetObjectPropDesc but answers 0x2005; its size
+comes from GetObjectPropList for the exact handle and ObjectSize, typed UINT64. A 5,101,088,166
+byte FX2 original was sized, transferred, collected and fully decoded. The a6700 splits at 4 GB.
+EOS R6 Mark III with its lever at Movie cannot be put in still mode over PTP: Canon's SDK
+reference (6.9.5) requires the hardware in still position, and on firmware 1.0.1 every tried
+route left FixedMovie at 1 (MovieSelectSwitchOff, writing 0xd1c2, remote modes 0x11/0x15, AE
+mode writes under dial override). Do not spend more bench time on it without new information.
 Focus refusals say what the body reported: a Sony focus timeout includes the last focus status
 and a Canon refusal names the SDK reason. Sony bodies in movie mode stayed at UNLOCK on a
 half-press in bench tests, so focus confirmation was never obtained there.
