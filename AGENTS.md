@@ -39,6 +39,12 @@ EOS R6 Mark III with its lever at Movie cannot be put in still mode over PTP: Ca
 reference (6.9.5) requires the hardware in still position, and on firmware 1.0.1 every tried
 route left FixedMovie at 1 (MovieSelectSwitchOff, writing 0xd1c2, remote modes 0x11/0x15, AE
 mode writes under dial override). Do not spend more bench time on it without new information.
+A connection that fails before any identity read (body asleep or off) is attributed to the
+camera that last reported itself at the requested USB identity, from `known-cameras.json` in the
+settings directory: manufacturer and model only, firmware `unknown`, and a body fingerprint only
+when one exact serial was requested. A body never seen stays Unknown. Sony Wi-Fi attempts carry
+the model the caller named; the trust (`fingerprint`) step shares the following connect's session.
+Collector purge markers `purge-unidentified-2026-11-14` and `-14b` are one-time and dated.
 Focus refusals say what the body reported: a Sony focus timeout includes the last focus status
 and a Canon refusal names the SDK reason. Sony bodies in movie mode stayed at UNLOCK on a
 half-press in bench tests, so focus confirmation was never obtained there.
