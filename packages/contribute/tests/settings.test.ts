@@ -282,3 +282,47 @@ test('automatic Node clients never upload test-runner fixtures to the default co
         await rm(directory, { recursive: true, force: true })
     }
 })
+
+test('queued entries from before the identity read are uploaded under the identity the same session read', async () => {
+    const batches: any[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        fetch: async (_url, init) => {
+            const body = init?.body ? JSON.parse(String(init.body)) : {}
+            if (body.contributions) batches.push(body)
+            return Response.json(body.installKey ? { installKey: body.installKey, noticeVersion: body.noticeVersion } : {}, { status: body.contributions ? 202 : 200 })
+        },
+    })
+    const context = (model: string) => ({
+        manufacturer: model === 'Unknown' ? 'Unknown' : 'Sony Corporation', model,
+        firmware: model === 'Unknown' ? 'unknown' : '2.00', revision: 'abcdef0', dirty: false,
+        transport: 'usb' as const, evidence: 'synthetic' as const,
+    })
+    const source = {
+        connect: async () => {}, disconnect: async () => {}, classRequestReset: async () => {},
+        send: async () => {}, receive: async () => new Uint8Array(12),
+        isConnected: () => true, isLittleEndian: () => true, getType: () => 'usb',
+    }
+    try {
+        const observed = client.observe(source, context('Unknown'))
+        // An earlier connection that never read identity stays unidentified.
+        await observed.transport.connect()
+        await observed.transport.send(new Uint8Array(12), 1, 1)
+        await observed.transport.connect()
+        await observed.transport.send(new Uint8Array(12), 1, 1)
+        observed.identify(context('ILCE-6700'))
+        await observed.transport.send(new Uint8Array(12), 1, 2)
+        await client.flush()
+        const cameras = batches.flatMap(batch => batch.contributions)
+        const sessions = (model: string) => [...new Set(cameras.filter((item: any) => item.camera.model === model)
+            .flatMap((item: any) => item.entries.map((entry: any) => entry.sessionId)))]
+        assert.equal(sessions('Unknown').length, 1)
+        assert.equal(sessions('ILCE-6700').length, 1)
+        assert.notEqual(sessions('Unknown')[0], sessions('ILCE-6700')[0])
+        const identified = cameras.find((item: any) => item.camera.model === 'ILCE-6700').entries
+        assert.deepEqual(identified.map((entry: any) => entry.kind), ['connect', 'unknown', 'unknown'], 'chronological order is kept')
+    } finally {
+        client.close()
+    }
+})

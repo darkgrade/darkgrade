@@ -197,6 +197,7 @@ export class SonyCamera extends GenericCamera {
         await this.authenticate()
 
         await this.refreshPropertyStates()
+        await this.readIdentityForDiagnostics()
 
         if (options.mode === 'menus' || options.configure === false) return
 
@@ -1418,6 +1419,18 @@ export class SonyCamera extends GenericCamera {
         throw new Error(
             `Sony content-transfer mode did not disable after ${SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS} attempts`
         )
+    }
+
+    /** Sony's own handshake never reads the standard DeviceInfo dataset, which left every native
+     * Sony session without a model, firmware or body fingerprint in diagnostics. Read it once per
+     * connection. A refusal is not a connection failure: the session is already usable. */
+    private async readIdentityForDiagnostics(): Promise<void> {
+        try {
+            await this.send(this.registry.operations.GetDeviceInfo, {})
+        } catch (error) {
+            this.logger.addLog({ type: 'console', level: 'warn', consoleLevel: 'warn',
+                args: [`Sony identity read skipped: ${error instanceof Error ? error.message : String(error)}`] })
+        }
     }
 
     private async authenticate(): Promise<void> {

@@ -606,3 +606,74 @@ test('signal search and every session sort paginate tied values without losing s
         assert.ok(filtered.events.every(e=>e.code===0x2019))
     }finally{await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
 })
+
+test('session summaries stay exact through uploads, late identity, withdrawal, rebuild and refresh', {skip:!process.env.DATABASE_URL}, async()=>{
+    let database=await postgresDatabase(process.env.DATABASE_URL!)
+    let handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+    const user=await enroll(handle),other=await enroll(handle)
+    const pool=new Pool({connectionString:process.env.DATABASE_URL!})
+    const session=randomUUID(),native=randomUUID()
+    const upload=async(who:typeof user,camera:Record<string,unknown>,entries:Record<string,unknown>[])=>{
+        const payload=batch(),entry=payload.contributions[0].entries[0]
+        Object.assign(payload.contributions[0].camera,camera)
+        payload.contributions[0].entries=entries.map(fields=>({...entry,occurredAt:new Date().toISOString(),...fields})) as any
+        const sent=await handle(request('/v2/batches','POST',who.installKey,payload))
+        assert.equal(sent.status,202,await sent.text())
+        return payload
+    }
+    const summaries=async()=>(await pool.query(`SELECT session_id,events::int,errors::int,signals::int,model,manufacturer,hardware_fingerprints,stale
+        FROM telemetry_sessions WHERE installation_id=$1 ORDER BY session_id`,[user.installId])).rows
+    const recomputed=async()=>(await pool.query(`SELECT session_id,count(*)::int AS events,
+        count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193))::int AS errors
+        FROM telemetry_events WHERE installation_id=$1 AND session_id IS NOT NULL GROUP BY 1 ORDER BY 1`,[user.installId])).rows
+    try{
+        // The first commands of a connection are uploaded before its identity read completes.
+        const early=await upload(user,{manufacturer:'Unknown',model:'Unknown',firmware:'unknown'},[
+            {sessionId:session,kind:'connect',code:undefined},{sessionId:session,kind:'command',code:0x1002},
+            {sessionId:native,kind:'command',code:0x9210}])
+        let rows=await summaries()
+        assert.deepEqual(rows.map(row=>row.model),['Unknown','Unknown'])
+        await upload(user,{manufacturer:'Canon.Inc',model:'Canon EOS R6 Mark III',firmware:'3-1.0.1'},[
+            {sessionId:session,kind:'response',code:0x2019},{sessionId:session,kind:'response',code:0x2001,failed:true}])
+        rows=await summaries()
+        const identified=rows.find(row=>row.session_id===session),unidentified=rows.find(row=>row.session_id===native)
+        assert.deepEqual([identified.events,identified.errors,identified.signals,identified.model],[4,2,2,'Canon EOS R6 Mark III'])
+        assert.equal(unidentified.model,'Unknown','a session that never read identity is not given one')
+        const events=await pool.query('SELECT model,firmware FROM telemetry_events WHERE installation_id=$1 AND session_id=$2',[user.installId,session])
+        assert.ok(events.rows.every(row=>row.model==='Canon EOS R6 Mark III'&&row.firmware==='3-1.0.1'),'early events adopt the session identity')
+        assert.match((await database.get(`diagnostics/${user.installId}_${early.id}`))!.payload,/"model":"Unknown"/,'signed source payload is unchanged')
+        const report=await database.operator.report({days:1,installation:user.installId,includeEvents:false})
+        assert.deepEqual([report.summary.events,report.summary.errors,report.summary.sessions],[5,2,2])
+        assert.equal((await database.operator.suggestions('model','',{days:1,installation:user.installId})).items.find(item=>item.value==='Unknown').events,1)
+        assert.equal((await database.operator.report({days:1,installation:user.installId,signal:'response:0x2019',includeEvents:false})).sessions.length,1)
+        assert.equal((await database.operator.report({days:1,installation:user.installId,model:'Canon EOS R6 Mark III',includeEvents:false})).summary.events,4)
+
+        // Rebuilding from raw events yields exactly what incremental maintenance produced.
+        const before=await summaries()
+        await pool.query("DELETE FROM telemetry_rollup_state; UPDATE telemetry_sessions SET events=999 WHERE installation_id='"+user.installId+"'")
+        await database.close();database=await postgresDatabase(process.env.DATABASE_URL!)
+        handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+        assert.deepEqual(await summaries(),before)
+        assert.deepEqual((await summaries()).map(({session_id,events,errors})=>({session_id,events,errors})),await recomputed())
+
+        // Removing one batch decrements immediately; maintenance then refreshes bounds and labels.
+        await pool.query('DELETE FROM telemetry_state WHERE path=$1',[`diagnostics/${user.installId}_${early.id}`])
+        rows=await summaries()
+        assert.deepEqual(rows.map(row=>[row.session_id,row.events,row.stale]),[[session,2,true]])
+        assert.deepEqual((await pool.query('SELECT signal,events::int FROM telemetry_session_signals WHERE installation_id=$1 ORDER BY signal',[user.installId])).rows,
+            [{signal:'failed',events:1},{signal:'response:0x2019',events:1}])
+        await database.refreshSessions()
+        assert.deepEqual((await summaries()).map(row=>[row.events,row.errors,row.stale]),[[2,2,false]])
+
+        // Another installation's withdrawal never touches these summaries; this one's removes them.
+        await upload(other,{},[{sessionId:randomUUID()}])
+        await handle(request('/v2/installation','DELETE',other.installKey))
+        assert.equal((await summaries()).length,1)
+        await handle(request('/v2/installation','DELETE',user.installKey))
+        assert.deepEqual(await summaries(),[])
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM telemetry_session_signals WHERE installation_id=$1',[user.installId])).rows[0].n,0)
+    }finally{
+        for(const who of [user,other])await handle(request('/v2/installation','DELETE',who.installKey)).catch(()=>{})
+        await database.close();await pool.end()
+    }
+})

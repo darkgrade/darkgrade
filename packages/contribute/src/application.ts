@@ -421,6 +421,23 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         // Never await cloud I/O from a camera operation.
         if (count >= 800 || queueBytes >= MAXIMUM_BODY_BYTES * 0.8) void flush().catch(() => {})
     }
+    const adopt = (unidentified: CameraContext, camera: CameraContext, sessionId: string) => {
+        const source = queue.get(JSON.stringify(unidentified))
+        if (!source) return
+        const group = JSON.stringify(camera)
+        if (!queue.has(group) && queue.size >= MAXIMUM_BATCH_CAMERAS) return
+        const moved = source.entries.filter(entry => entry.sessionId === sessionId)
+        if (!moved.length) return
+        source.entries = source.entries.filter(entry => entry.sessionId !== sessionId)
+        if (!source.entries.length && !source.droppedEntries) queue.delete(JSON.stringify(unidentified))
+        let target = queue.get(group)
+        if (!target) {
+            target = { schema: SCHEMA, disclosure: DISCLOSURE, id: crypto.randomUUID(), camera: structuredClone(camera), entries: [], droppedEntries: 0 }
+            queue.set(group, target)
+            queueBytes += new TextEncoder().encode(group).length + 512
+        }
+        target.entries.unshift(...moved)
+    }
     return {
         enabled,
         status: () => ({
@@ -474,7 +491,12 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                     observer.record(entry)
                 },
                 identify: (context: CameraContext) => {
+                    const previous = camera
                     camera = checked(context)
+                    // A connection's first commands precede its identity read. Once this same
+                    // session identifies the camera, its still-queued entries take that identity.
+                    if (previous.model === 'Unknown' && camera.model !== 'Unknown')
+                        adopt(previous, camera, observer.session())
                 },
             }
         },

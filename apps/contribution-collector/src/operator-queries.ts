@@ -22,6 +22,7 @@ const eventSignal=`CASE WHEN failed THEN 'failed'
     WHEN kind='response' AND code=8193 THEN 'ok'
     WHEN code IS NOT NULL THEN kind||':0x'||lpad(to_hex(code),4,'0')
     ELSE kind END`
+const sessionless=`'00000000-0000-0000-0000-000000000000'::uuid`
 const signalName=`CASE WHEN signal='failed' THEN 'Failed'
     WHEN signal='dropped-events' THEN 'Dropped events'
     WHEN signal='response:0x2019' THEN 'Device busy · 0x2019'
@@ -42,8 +43,16 @@ export function operatorQueries(pool: Pool) {
         AND ($6::text IS NULL OR transport=$6)
         AND ($7::text IS NULL OR hardware_fingerprint=$7)
         AND ($8::text IS NULL OR ${eventSignal}=$8)`
+    const sessionWhere = `s.latest_received_at >= now() - ($1::int * interval '1 day')
+        AND ($2::uuid IS NULL OR s.installation_id=$2)
+        AND ($3::text IS NULL OR s.model=$3)
+        AND ($4::uuid IS NULL OR s.session_id=$4)
+        AND ($5::text IS NULL OR $5=ANY(s.revisions))
+        AND ($6::text IS NULL OR $6=ANY(s.transports))
+        AND ($7::text IS NULL OR $7=ANY(s.hardware_fingerprints))
+        AND ($8::text IS NULL OR EXISTS (SELECT 1 FROM telemetry_session_signals wanted
+            WHERE wanted.installation_id=s.installation_id AND wanted.session_id=s.session_id AND wanted.signal=$8))`
     const errors = `(failed OR (kind='response' AND code IS NOT NULL AND code<>8193))`
-    const signals = `(${errors} OR coalesce((properties->>'droppedEntries')::int,0)>0)`
     const values = (filters: EventFilters) => [
         filters.days,
         filters.installation || null,
@@ -88,35 +97,41 @@ export function operatorQueries(pool: Pool) {
                 truncated: result.rows.length > 8192 || result.rows.some(row => row.dropped_entries > 0) }
         },
         async suggestions(field: SuggestionField, query: string, filters: EventFilters) {
+            // Suggestions read the per-session summaries, never raw events.
             if(field==='signal'){
                 const result=await pool.query(`WITH grouped AS (
-                    SELECT ${eventSignal} AS signal,count(*)::int AS events,max(received_at) AS latest
-                    FROM telemetry_events WHERE ${where} GROUP BY ${eventSignal})
+                    SELECT g.signal,sum(g.events)::int AS events,max(g.latest) AS latest
+                    FROM telemetry_session_signals g JOIN telemetry_sessions s USING (installation_id,session_id)
+                    WHERE ${sessionWhere} GROUP BY g.signal)
                     SELECT signal AS value,${signalName} AS label,events,latest FROM grouped
                     WHERE strpos(lower(signal||' '||(${signalName})),lower($9::text))>0
                     ORDER BY events DESC,signal LIMIT 21`,[...values({...filters,signal:undefined}),query])
                 return {field,items:result.rows.slice(0,20),more:result.rows.length>20}
             }
             const column = {
-                model: 'model',
-                installation: 'installation_id',
-                session: 'session_id',
-                revision: 'revision',
-                hardware: 'hardware_fingerprint',
+                model: 's.model',
+                installation: 's.installation_id::text',
+                session: 's.session_id::text',
+                revision: 'choice',
+                hardware: 'choice',
             }[field]
             if (!column) throw new Error('Invalid suggestion field')
+            const expand = field === 'revision' ? ', unnest(s.revisions) AS choice'
+                : field === 'hardware' ? ', unnest(s.hardware_fingerprints) AS choice' : ''
             const result = await pool.query(
-                `SELECT ${column}::text AS value, min(manufacturer) AS manufacturer, min(model) AS model, count(DISTINCT model)::int AS models,
-                min(installation_id::text) AS installation, count(DISTINCT installation_id)::int AS installations,
-                array_agg(DISTINCT evidence) AS evidence, count(*)::int AS events, max(received_at) AS latest
-                FROM telemetry_events WHERE ${where} AND ${column} IS NOT NULL
+                `SELECT ${column} AS value, min(s.manufacturer) AS manufacturer, min(s.model) AS model, count(DISTINCT s.model)::int AS models,
+                min(s.installation_id::text) AS installation, count(DISTINCT s.installation_id)::int AS installations,
+                (SELECT array_agg(DISTINCT kind) FROM unnest(array_agg(array_to_string(s.evidence,','))) joined,
+                    unnest(string_to_array(joined,',')) kind) AS evidence,
+                sum(s.events)::int AS events, max(s.latest_received_at) AS latest
+                FROM telemetry_sessions s${expand} WHERE ${sessionWhere}${field === 'session' ? ` AND s.session_id<>${sessionless}` : ''}
                 AND ${
                     field === 'model'
                         ? `NOT EXISTS (SELECT 1 FROM unnest(string_to_array(lower($9::text),' ')) term
-                        WHERE strpos(lower(manufacturer||' '||model),term)=0)`
-                        : `strpos(lower(${column}::text),lower($9::text))>0`
+                        WHERE strpos(lower(s.manufacturer||' '||s.model),term)=0)`
+                        : `strpos(lower(${column}),lower($9::text))>0`
                 }
-                GROUP BY ${column} ORDER BY max(received_at) DESC,${column} LIMIT 21`,
+                GROUP BY ${column} ORDER BY max(s.latest_received_at) DESC,${column} LIMIT 21`,
                 [...values({ ...filters, [field]: undefined }), query]
             )
             return { field, items: result.rows.slice(0, 20), more: result.rows.length > 20 }
@@ -149,30 +164,32 @@ export function operatorQueries(pool: Pool) {
             const parameters = values(filters)
             const sort=filters.sort||'recent',direction=filters.direction||'desc'
             const order={
-                recent:'max(received_at)',
-                signals:`count(*) FILTER (WHERE ${signals})`,
-                events:'count(*)',
-                duration:'extract(epoch from (max(coalesce(occurred_at,received_at))-min(coalesce(occurred_at,received_at))))',
-                camera:`(array_agg(model ORDER BY (model='Unknown'),received_at DESC))[1] COLLATE "C"`,
+                recent:'s.latest_received_at',
+                signals:'s.signals',
+                events:'s.events',
+                duration:'extract(epoch from (s.ended_at-s.started_at))',
+                camera:`s.model COLLATE "C"`,
             }[sort]
             if(!order||!['asc','desc'].includes(direction))throw new Error('Invalid session sorting')
             const cursorType=sort==='recent'?'timestamptz':sort==='camera'?'text':'numeric'
             const comparison=direction==='asc'?'>':'<'
             if(filters.after&&((filters.after.sort||'recent')!==sort||(filters.after.direction||'desc')!==direction))
                 throw new Error('Session cursor belongs to a different sort')
+            // Summary and session list come from summaries kept current at ingest; issues use the
+            // partial error index. Nothing here scans every raw event in the window.
             const [summary, issues, events, sessions] = await Promise.all([
                 pool.query(
-                    `SELECT count(*)::int AS events, count(*) FILTER (WHERE ${errors})::int AS errors,
-                    count(DISTINCT installation_id)::int AS installations,
-                    count(DISTINCT session_id)::int AS sessions, max(received_at) AS latest
-                    FROM telemetry_events WHERE ${where}`,
+                    `SELECT coalesce(sum(s.events),0)::int AS events, coalesce(sum(s.errors),0)::int AS errors,
+                    count(DISTINCT s.installation_id)::int AS installations,
+                    count(*) FILTER (WHERE s.session_id<>${sessionless})::int AS sessions, max(s.latest_received_at) AS latest
+                    FROM telemetry_sessions s WHERE ${sessionWhere}`,
                     parameters
                 ),
                 pool.query(
                     `SELECT manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,
                     properties->>'operation' AS operation,count(*)::int AS occurrences,
                     count(DISTINCT installation_id)::int AS installations,max(received_at) AS latest
-                    FROM telemetry_events WHERE ${where} AND ${errors}
+                    FROM telemetry_events WHERE ${errors} AND ${where}
                     GROUP BY manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,properties->>'operation'
                     ORDER BY max(received_at) DESC LIMIT 100`,
                     parameters
@@ -185,24 +202,14 @@ export function operatorQueries(pool: Pool) {
                     parameters
                 ),
                 pool.query(
-                    `SELECT installation_id,session_id,count(*)::int AS events,
-                    count(*) FILTER (WHERE ${errors})::int AS errors,
-                    count(*) FILTER (WHERE ${signals})::int AS signals,
-                    min(coalesce(occurred_at,received_at)) AS started_at,
-                    max(coalesce(occurred_at,received_at)) AS ended_at,
-                    (array_agg(model ORDER BY (model='Unknown'),received_at DESC))[1] AS model,
-                    (array_agg(manufacturer ORDER BY (model='Unknown'),received_at DESC))[1] AS manufacturer,
-                    array_agg(DISTINCT transport) AS transports,array_agg(DISTINCT evidence) AS evidence,
-                    array_agg(DISTINCT backend) AS backends,
-                    array_agg(DISTINCT revision) AS revisions,
-                    array_remove(array_agg(DISTINCT hardware_fingerprint),NULL) AS hardware_fingerprints
-                    ,bool_or(coalesce((properties->>'droppedEntries')::int,0)>0) AS truncated
-                    ,to_char(max(received_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+                    `SELECT s.installation_id,s.session_id,s.events::int AS events,s.errors::int AS errors,s.signals::int AS signals,
+                    s.started_at,s.ended_at,s.model,s.manufacturer,s.transports,s.evidence,s.backends,s.revisions,
+                    s.hardware_fingerprints,s.truncated
+                    ,to_char(s.latest_received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
                     ,(${order})::text AS cursor_value
-                    FROM telemetry_events WHERE ${where} AND session_id IS NOT NULL
-                    GROUP BY installation_id,session_id
-                    HAVING ($9::${cursorType} IS NULL OR (${order},installation_id,session_id)${comparison}($9::${cursorType},$10::uuid,$11::uuid))
-                    ORDER BY ${order} ${direction},installation_id ${direction},session_id ${direction} LIMIT 101`,
+                    FROM telemetry_sessions s WHERE ${sessionWhere} AND s.session_id<>${sessionless}
+                    AND ($9::${cursorType} IS NULL OR (${order},s.installation_id,s.session_id)${comparison}($9::${cursorType},$10::uuid,$11::uuid))
+                    ORDER BY ${order} ${direction},s.installation_id ${direction},s.session_id ${direction} LIMIT 101`,
                     [
                         ...parameters,
                         filters.after?.value || filters.after?.time || null,
@@ -270,12 +277,12 @@ export function operatorQueries(pool: Pool) {
                   AND ($2::text IS NULL OR split_part(path,'/',2)=$2)
                   AND ($2::text IS NOT NULL OR NOT coalesce((data->>'revoked')::boolean,false)
                     OR coalesce((data->>'pendingDeletion')::boolean,false)
-                    OR EXISTS(SELECT 1 FROM telemetry_events e WHERE e.installation_id=split_part(path,'/',2)::uuid))
+                    OR EXISTS(SELECT 1 FROM telemetry_sessions e WHERE e.installation_id=split_part(path,'/',2)::uuid))
                 ORDER BY path COLLATE "C" LIMIT 101
             ) SELECT id, data->>'createdAt' AS created_at,
                 coalesce((data->>'revoked')::boolean,false) AS revoked,
                 coalesce((data->>'pendingDeletion')::boolean,false) AS deletion_pending,
-                (SELECT max(received_at) FROM telemetry_events WHERE installation_id=id::uuid) AS latest
+                (SELECT max(latest_received_at) FROM telemetry_sessions WHERE installation_id=id::uuid) AS latest
               FROM selected ORDER BY id COLLATE "C"`,
                 [after || null, installation || null]
             )

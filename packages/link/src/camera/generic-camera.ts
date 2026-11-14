@@ -62,6 +62,11 @@ interface RecoveryAttempt {
     previousSessionId: number | null
 }
 
+/** Process-wide memory of protocol facts already reported, per identified body. */
+const reportedProtocol = new Map<string, { encoded: string; at: number }>()
+/** Tests and long-running hosts can forget reported facts, for example after changing collectors. */
+export function resetReportedProtocol() { reportedProtocol.clear() }
+
 export class GenericCamera {
     protected emitter = new EventEmitter()
     public vendorId: number | null = null
@@ -109,6 +114,15 @@ export class GenericCamera {
         if (this.protocolSeen.get(key) === encoded) return
         if (this.protocolSeen.size >= 8192) this.protocolSeen.clear()
         this.protocolSeen.set(key, encoded)
+        // Every reconnect re-reads the same inventory and settings. Report a fact about an
+        // identified body again only when it changes or after six hours, not once per connection.
+        const identity = scoped.benchmarkId ? undefined : this.telemetry.identity()
+        if (identity) {
+            const shared = identity + '|' + key, previous = reportedProtocol.get(shared), now = Date.now()
+            if (previous && previous.encoded === encoded && now - previous.at < 6 * 3_600_000) return
+            if (reportedProtocol.size >= 65_536) reportedProtocol.clear()
+            reportedProtocol.set(shared, { encoded, at: now })
+        }
         this.telemetry.protocol(scoped, operation)
         this.profileObserver?.observe(scoped)
     }

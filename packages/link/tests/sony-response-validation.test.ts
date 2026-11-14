@@ -64,7 +64,7 @@ describe('Sony session response validation', () => {
         const connect = vi.spyOn(camera, 'connect')
         await facade.connectSonyObservationSession()
         expect(connect).toHaveBeenCalledWith(descriptor, { configure: false })
-        expect(sent).toEqual(['SDIO_OpenSession', 'SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo', 'SDIO_Connect'])
+        expect(sent).toEqual(['SDIO_OpenSession', 'SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo', 'SDIO_Connect', 'GetDeviceInfo'])
         expect(camera.set).not.toHaveBeenCalled()
         const other = new Camera({ vendorId: 0x04a9, transport, logger: { captureConsole: false, renderInTerminal: false } })
         await expect(other.connectSonyObservationSession()).rejects.toThrow('require a Sony camera')
@@ -80,8 +80,27 @@ describe('Sony session response validation', () => {
             'SDIO_Connect',
             'SDIO_GetExtDeviceInfo',
             'SDIO_Connect',
+            'GetDeviceInfo',
         ])
         expect(camera.set).not.toHaveBeenCalled()
+    })
+
+    it('reads the standard identity once per connection and stays connected when the body refuses or drops it', async () => {
+        for (const refusal of ['response', 'throw'] as const) {
+            const { camera, sent } = cameraFixture()
+            const reply = camera.send
+            camera.send = (async (operation, ...rest) => {
+                if (operation.name !== 'GetDeviceInfo') return reply(operation, ...rest)
+                sent.push(operation.name)
+                if (refusal === 'throw') throw new Error('identity read timed out')
+                return { code: 0x2005 }
+            }) as typeof camera.send
+            camera.refreshPropertyStates = async () => []
+            await camera.connect()
+            expect(sent.filter(name => name === 'GetDeviceInfo')).toHaveLength(1)
+            expect(sent.indexOf('GetDeviceInfo')).toBeGreaterThan(sent.lastIndexOf('SDIO_Connect'))
+            expect(camera.set).toHaveBeenCalledTimes(2)
+        }
     })
 
     it('stops before authentication or configuration if the camera refuses the session', async () => {

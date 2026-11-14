@@ -329,3 +329,46 @@ test('Sony USB SDK fingerprints require an acknowledged serial selection, and wi
         client.close()
     }
 })
+
+test('facts already reported for an identified body are not re-sent on every connection', async () => {
+    vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
+    vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)
+    const { GenericCamera, resetReportedProtocol } = await import('@camera/generic-camera')
+    const { Logger } = await import('@core/logger')
+    resetReportedProtocol()
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+    })
+    configureLinkTelemetry(client)
+    try {
+        let connected = false
+        const source = {
+            getType: () => 'usb', isLittleEndian: () => true, isConnected: () => connected, on: () => {}, off: () => {},
+            connect: async () => { connected = true }, disconnect: async () => { connected = false },
+            send: async () => {}, receive: async () => new Uint8Array(12), classRequestReset: async () => {},
+        } as any
+        const camera = new GenericCamera(source, new Logger({ captureConsole: false, renderInTerminal: false }))
+        const telemetry = (camera as any).telemetry
+        const identity = { manufacturer: 'Sony Corporation', model: 'ILCE-6700', deviceVersion: '2.00' }
+        const queued = () => (client as any).status().queuedEntries
+        for (let connection = 0; connection < 3; connection++) {
+            await telemetry.prepare()
+            await telemetry.transport.connect()
+            await telemetry.transport.send(new Uint8Array(12), 1, 1)
+            const before = queued()
+            await telemetry.identify(identity)
+            // The same inventory is advertised on every connection.
+            for (const code of [0x9201, 0x9202, 0x9209])
+                camera.recordProtocol({ type: 'unknown', vendorId: 0x054c, category: 'operation', code, advertised: true }, 0x1001)
+            expect(queued() - before).toBe(connection === 0 ? 3 : 0)
+            ;(camera as any).protocolSeen.clear()
+            await telemetry.transport.disconnect()
+        }
+        // A changed value is still reported, as is a benchmark's own complete profile.
+        const before = queued()
+        await telemetry.identify(identity)
+        camera.recordProtocol({ type: 'unknown', vendorId: 0x054c, category: 'operation', code: 0x9201, advertised: false }, 0x1001)
+        expect(queued() - before).toBe(1)
+    } finally { client.close() }
+})

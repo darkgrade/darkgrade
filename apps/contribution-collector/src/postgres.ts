@@ -46,6 +46,114 @@ CREATE INDEX IF NOT EXISTS telemetry_events_protocol ON telemetry_events
     ((properties->'protocol'->>'type'),received_at) WHERE properties ? 'protocol';
 CREATE INDEX IF NOT EXISTS telemetry_events_benchmark ON telemetry_events
     (installation_id,(properties->'protocol'->>'benchmarkId')) WHERE properties ? 'protocol';
+CREATE INDEX IF NOT EXISTS telemetry_events_errors ON telemetry_events (received_at)
+    WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193);
+CREATE TABLE IF NOT EXISTS telemetry_sessions (
+    installation_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    events bigint NOT NULL,
+    errors bigint NOT NULL,
+    signals bigint NOT NULL,
+    started_at timestamptz NOT NULL,
+    ended_at timestamptz NOT NULL,
+    latest_received_at timestamptz NOT NULL,
+    manufacturer text NOT NULL,
+    model text NOT NULL,
+    transports text[] NOT NULL,
+    evidence text[] NOT NULL,
+    backends text[] NOT NULL,
+    revisions text[] NOT NULL,
+    hardware_fingerprints text[] NOT NULL,
+    truncated boolean NOT NULL,
+    stale boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (installation_id, session_id)
+);
+CREATE INDEX IF NOT EXISTS telemetry_sessions_recent ON telemetry_sessions (latest_received_at, installation_id, session_id);
+CREATE INDEX IF NOT EXISTS telemetry_sessions_stale ON telemetry_sessions (installation_id) WHERE stale;
+CREATE TABLE IF NOT EXISTS telemetry_session_signals (
+    installation_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    signal text NOT NULL,
+    events bigint NOT NULL,
+    latest timestamptz NOT NULL,
+    PRIMARY KEY (installation_id, session_id, signal)
+);
+CREATE INDEX IF NOT EXISTS telemetry_session_signals_signal ON telemetry_session_signals (signal, latest);
+CREATE TABLE IF NOT EXISTS telemetry_rollup_state (name text PRIMARY KEY, completed_at timestamptz NOT NULL);
+CREATE OR REPLACE FUNCTION telemetry_event_signal(failed boolean, kind text, code integer, properties jsonb)
+RETURNS text LANGUAGE sql IMMUTABLE AS $f$
+    SELECT CASE WHEN failed THEN 'failed'
+        WHEN coalesce((properties->>'droppedEntries')::int,0)>0 THEN 'dropped-events'
+        WHEN properties ? 'operation' THEN 'operation:'||(properties->>'operation')
+        WHEN kind='response' AND code=8193 THEN 'ok'
+        WHEN code IS NOT NULL THEN kind||':0x'||lpad(to_hex(code),4,'0')
+        ELSE kind END
+$f$;
+CREATE OR REPLACE FUNCTION telemetry_union(a text[], b text[]) RETURNS text[] LANGUAGE sql IMMUTABLE AS $f$
+    SELECT coalesce(array_agg(DISTINCT value ORDER BY value),'{}') FROM unnest(a||b) AS value WHERE value IS NOT NULL
+$f$;
+CREATE OR REPLACE FUNCTION telemetry_events_added() RETURNS trigger LANGUAGE plpgsql AS $f$
+BEGIN
+    INSERT INTO telemetry_sessions AS s (installation_id,session_id,events,errors,signals,started_at,ended_at,
+        latest_received_at,manufacturer,model,transports,evidence,backends,revisions,hardware_fingerprints,truncated)
+    SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id, count(*),
+        count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)),
+        count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)
+            OR coalesce((properties->>'droppedEntries')::int,0)>0),
+        min(coalesce(occurred_at,received_at)), max(coalesce(occurred_at,received_at)), max(received_at),
+        (array_agg(manufacturer ORDER BY (model='Unknown'),received_at DESC))[1],
+        (array_agg(model ORDER BY (model='Unknown'),received_at DESC))[1],
+        telemetry_union(array_agg(transport),'{}'), telemetry_union(array_agg(evidence),'{}'),
+        telemetry_union(array_agg(backend),'{}'), telemetry_union(array_agg(revision),'{}'),
+        telemetry_union(array_agg(hardware_fingerprint),'{}'),
+        bool_or(coalesce((properties->>'droppedEntries')::int,0)>0)
+    FROM added GROUP BY 1,2 ORDER BY 1,2
+    ON CONFLICT (installation_id,session_id) DO UPDATE SET
+        events=s.events+EXCLUDED.events, errors=s.errors+EXCLUDED.errors, signals=s.signals+EXCLUDED.signals,
+        started_at=least(s.started_at,EXCLUDED.started_at), ended_at=greatest(s.ended_at,EXCLUDED.ended_at),
+        latest_received_at=greatest(s.latest_received_at,EXCLUDED.latest_received_at),
+        manufacturer=CASE WHEN EXCLUDED.model<>'Unknown' OR s.model='Unknown' THEN EXCLUDED.manufacturer ELSE s.manufacturer END,
+        model=CASE WHEN EXCLUDED.model<>'Unknown' OR s.model='Unknown' THEN EXCLUDED.model ELSE s.model END,
+        transports=telemetry_union(s.transports,EXCLUDED.transports), evidence=telemetry_union(s.evidence,EXCLUDED.evidence),
+        backends=telemetry_union(s.backends,EXCLUDED.backends), revisions=telemetry_union(s.revisions,EXCLUDED.revisions),
+        hardware_fingerprints=telemetry_union(s.hardware_fingerprints,EXCLUDED.hardware_fingerprints),
+        truncated=s.truncated OR EXCLUDED.truncated;
+    INSERT INTO telemetry_session_signals AS g (installation_id,session_id,signal,events,latest)
+    SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid),
+        telemetry_event_signal(failed,kind,code,properties), count(*), max(received_at)
+    FROM added GROUP BY 1,2,3 ORDER BY 1,2,3
+    ON CONFLICT (installation_id,session_id,signal) DO UPDATE SET
+        events=g.events+EXCLUDED.events, latest=greatest(g.latest,EXCLUDED.latest);
+    RETURN NULL;
+END $f$;
+CREATE OR REPLACE FUNCTION telemetry_events_removed() RETURNS trigger LANGUAGE plpgsql AS $f$
+BEGIN
+    -- Counts stay exact immediately. Time bounds and label sets are refreshed by maintenance (stale).
+    UPDATE telemetry_sessions s SET events=s.events-r.events, errors=s.errors-r.errors, signals=s.signals-r.signals, stale=true
+    FROM (SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id, count(*) AS events,
+            count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)) AS errors,
+            count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)
+                OR coalesce((properties->>'droppedEntries')::int,0)>0) AS signals
+          FROM removed GROUP BY 1,2) r
+    WHERE s.installation_id=r.installation_id AND s.session_id=r.session_id;
+    DELETE FROM telemetry_sessions s USING (SELECT DISTINCT installation_id,
+            coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id FROM removed) r
+    WHERE s.installation_id=r.installation_id AND s.session_id=r.session_id AND s.events<=0;
+    UPDATE telemetry_session_signals g SET events=g.events-r.events
+    FROM (SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id,
+            telemetry_event_signal(failed,kind,code,properties) AS signal, count(*) AS events FROM removed GROUP BY 1,2,3) r
+    WHERE g.installation_id=r.installation_id AND g.session_id=r.session_id AND g.signal=r.signal;
+    DELETE FROM telemetry_session_signals g USING (SELECT DISTINCT installation_id,
+            coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id FROM removed) r
+    WHERE g.installation_id=r.installation_id AND g.session_id=r.session_id AND g.events<=0;
+    RETURN NULL;
+END $f$;
+DROP TRIGGER IF EXISTS telemetry_events_added ON telemetry_events;
+CREATE TRIGGER telemetry_events_added AFTER INSERT ON telemetry_events
+    REFERENCING NEW TABLE AS added FOR EACH STATEMENT EXECUTE FUNCTION telemetry_events_added();
+DROP TRIGGER IF EXISTS telemetry_events_removed ON telemetry_events;
+CREATE TRIGGER telemetry_events_removed AFTER DELETE ON telemetry_events
+    REFERENCING OLD TABLE AS removed FOR EACH STATEMENT EXECUTE FUNCTION telemetry_events_removed();
 `
 
 function checkedPath(path: string) {
@@ -58,7 +166,68 @@ function restoreDates(data: Record<string, any>) {
     )
 }
 
-/** Two tables: private operational state and flat, queryable diagnostic events. */
+const sessionless = "'00000000-0000-0000-0000-000000000000'::uuid"
+/** A connection's first commands precede its identity read. Give those events the single camera
+ * identity the same connection session observed later; signed source payloads stay unchanged. */
+const adoptSessionIdentity = (scope: string) => `
+    UPDATE telemetry_events u SET manufacturer=k.manufacturer, model=k.model, firmware=k.firmware,
+        hardware_fingerprint=coalesce(u.hardware_fingerprint,k.hardware_fingerprint)
+    FROM (SELECT installation_id, session_id, min(manufacturer) AS manufacturer, min(model) AS model,
+            min(firmware) AS firmware, min(hardware_fingerprint) AS hardware_fingerprint
+          FROM telemetry_events e WHERE model<>'Unknown' AND session_id IS NOT NULL ${scope}
+          GROUP BY 1,2 HAVING count(DISTINCT (manufacturer,model,firmware))=1
+            AND count(DISTINCT hardware_fingerprint)<=1) k
+    WHERE u.model='Unknown' AND u.installation_id=k.installation_id AND u.session_id=k.session_id`
+const sessionAggregate = `count(*) AS events,
+    count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)) AS errors,
+    count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)
+        OR coalesce((properties->>'droppedEntries')::int,0)>0) AS signals,
+    min(coalesce(occurred_at,received_at)) AS started_at, max(coalesce(occurred_at,received_at)) AS ended_at,
+    max(received_at) AS latest_received_at,
+    (array_agg(manufacturer ORDER BY (model='Unknown'),received_at DESC))[1] AS manufacturer,
+    (array_agg(model ORDER BY (model='Unknown'),received_at DESC))[1] AS model,
+    telemetry_union(array_agg(DISTINCT transport),'{}') AS transports, telemetry_union(array_agg(DISTINCT evidence),'{}') AS evidence,
+    telemetry_union(array_agg(DISTINCT backend),'{}') AS backends, telemetry_union(array_agg(DISTINCT revision),'{}') AS revisions,
+    telemetry_union(array_agg(DISTINCT hardware_fingerprint),'{}') AS hardware_fingerprints,
+    bool_or(coalesce((properties->>'droppedEntries')::int,0)>0) AS truncated`
+const sessionColumns = `events,errors,signals,started_at,ended_at,latest_received_at,manufacturer,model,
+    transports,evidence,backends,revisions,hardware_fingerprints,truncated`
+
+/** Build the session summaries once from existing events. Uploads wait briefly behind the table
+ * lock so no event is counted twice or missed; later starts find the marker and skip this. */
+async function backfillRollups(pool: Pool) {
+    const done = await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
+    if (done.rowCount) return
+    const connection = await pool.connect()
+    try {
+        await connection.query('BEGIN')
+        await connection.query('SET LOCAL statement_timeout=0')
+        await connection.query("SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.rollup'))")
+        const again = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
+        if (!again.rowCount) {
+            await connection.query('LOCK TABLE telemetry_events IN SHARE ROW EXCLUSIVE MODE')
+            await connection.query(adoptSessionIdentity(''))
+            await connection.query('DELETE FROM telemetry_session_signals')
+            await connection.query('DELETE FROM telemetry_sessions')
+            await connection.query(`INSERT INTO telemetry_sessions (installation_id,session_id,${sessionColumns})
+                SELECT installation_id, coalesce(session_id,${sessionless}), ${sessionAggregate}
+                FROM telemetry_events GROUP BY 1,2`)
+            await connection.query(`INSERT INTO telemetry_session_signals (installation_id,session_id,signal,events,latest)
+                SELECT installation_id, coalesce(session_id,${sessionless}),
+                    telemetry_event_signal(failed,kind,code,properties), count(*), max(received_at)
+                FROM telemetry_events GROUP BY 1,2,3`)
+            await connection.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v1',now())")
+        }
+        await connection.query('COMMIT')
+    } catch (error) {
+        await connection.query('ROLLBACK').catch(() => {})
+        throw error
+    } finally {
+        connection.release()
+    }
+}
+
+/** Private operational state, flat diagnostic events, and per-session summaries kept current at ingest. */
 export async function postgresDatabase(connectionString: string) {
     if (!connectionString) throw new Error('DATABASE_URL is required')
     const pool = new Pool({
@@ -74,6 +243,7 @@ export async function postgresDatabase(connectionString: string) {
         await pool.query(
             "BEGIN; SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.schema'));" + schema + ';COMMIT;'
         )
+        await backfillRollups(pool)
     } catch (error) {
         await pool.end()
         throw error
@@ -127,12 +297,36 @@ export async function postgresDatabase(connectionString: string) {
                 failed boolean, properties jsonb, hardware_fingerprint text, backend text, connection_normalized boolean)`,
             [JSON.stringify(events)]
         )
+        const sessions = [...new Set(events.map((event: { session_id: string | null }) => event.session_id).filter(Boolean))]
+        if (!sessions.length) return
+        const unidentified = await connection.query(
+            `SELECT DISTINCT session_id FROM telemetry_events
+             WHERE installation_id=$1::uuid AND session_id=ANY($2::uuid[]) AND model='Unknown'`,
+            [data.installId, sessions]
+        )
+        if (!unidentified.rowCount) return
+        await connection.query(adoptSessionIdentity('AND e.installation_id=$1::uuid AND e.session_id=ANY($2::uuid[])'), [
+            data.installId,
+            unidentified.rows.map(row => row.session_id),
+        ])
+        // Session summaries were written before adoption; a later identity must replace Unknown there too.
+        await connection.query(
+            `UPDATE telemetry_sessions s SET manufacturer=k.manufacturer, model=k.model,
+                hardware_fingerprints=telemetry_union(s.hardware_fingerprints,k.fingerprints)
+             FROM (SELECT installation_id, session_id, min(manufacturer) AS manufacturer, min(model) AS model,
+                    array_agg(DISTINCT hardware_fingerprint) AS fingerprints FROM telemetry_events
+                   WHERE installation_id=$1::uuid AND session_id=ANY($2::uuid[]) AND model<>'Unknown'
+                   GROUP BY 1,2 HAVING count(DISTINCT (manufacturer,model))=1) k
+             WHERE s.installation_id=k.installation_id AND s.session_id=k.session_id AND s.model='Unknown'`,
+            [data.installId, unidentified.rows.map(row => row.session_id)]
+        )
     }
     const database: Database & {
         operator: ReturnType<typeof operatorQueries>
         close(): Promise<void>
         expire(): Promise<void>
         normalizeConnections(): Promise<number>
+        refreshSessions(): Promise<number>
         health(): Promise<void>
         timeline(filters: {
             installation?: string
@@ -243,7 +437,7 @@ export async function postgresDatabase(connectionString: string) {
                         WHERE e.transport='sony-sdk'
                           AND e.properties->>'operation' IN ('connect_wifi','connect_bluetooth_direct')
                     )
-                    UPDATE telemetry_events e SET
+                    , updated AS (UPDATE telemetry_events e SET
                         backend=CASE WHEN e.backend<>'unknown' THEN e.backend
                             WHEN e.properties ? 'operation' OR e.transport='sony-sdk' THEN 'vendor-api'
                             ELSE 'ptp' END,
@@ -252,11 +446,43 @@ export async function postgresDatabase(connectionString: string) {
                             ELSE 'unknown' END,
                         connection_normalized=true
                     FROM candidates c WHERE e.batch_path=c.batch_path AND NOT e.connection_normalized
+                    RETURNING e.installation_id, e.session_id),
+                    marked AS (UPDATE telemetry_sessions s SET stale=true
+                        FROM (SELECT DISTINCT installation_id, coalesce(session_id,${sessionless}) AS session_id FROM updated) u
+                        WHERE s.installation_id=u.installation_id AND s.session_id=u.session_id)
+                    SELECT count(*)::int AS updated FROM updated
                 `)
-                updated += result.rowCount ?? 0
-                if (!result.rowCount) break
+                updated += result.rows[0].updated
+                if (!result.rows[0].updated) break
             }
             return updated
+        },
+        async refreshSessions() {
+            // Deletions and relabeling keep counts exact but leave time bounds and label sets stale.
+            // Recompute a bounded number per pass; rows another upload holds are skipped until the next.
+            let refreshed = 0
+            const started = performance.now()
+            for (let page = 0; page < 50 && performance.now() - started < 5000; page++) {
+                const result = await pool.query(`
+                    WITH picked AS MATERIALIZED (SELECT installation_id,session_id FROM telemetry_sessions
+                        WHERE stale ORDER BY installation_id LIMIT 25 FOR UPDATE SKIP LOCKED),
+                    fresh AS (SELECT e.installation_id, e.session_id, ${sessionAggregate}
+                        FROM telemetry_events e JOIN picked p ON e.installation_id=p.installation_id AND e.session_id=p.session_id
+                        GROUP BY 1,2),
+                    renewed AS (UPDATE telemetry_sessions s SET (${sessionColumns})=
+                        (f.events,f.errors,f.signals,f.started_at,f.ended_at,f.latest_received_at,f.manufacturer,f.model,
+                         f.transports,f.evidence,f.backends,f.revisions,f.hardware_fingerprints,f.truncated), stale=false
+                        FROM fresh f WHERE s.installation_id=f.installation_id AND s.session_id=f.session_id)
+                    UPDATE telemetry_sessions s SET stale=false FROM picked p
+                    WHERE s.installation_id=p.installation_id AND s.session_id=p.session_id
+                      AND NOT EXISTS (SELECT 1 FROM fresh f WHERE f.installation_id=p.installation_id AND f.session_id=p.session_id)
+                    RETURNING 1`)
+                const remaining = await pool.query('SELECT 1 FROM telemetry_sessions WHERE stale LIMIT 1')
+                refreshed += 25
+                void result
+                if (!remaining.rowCount) break
+            }
+            return refreshed
         },
         async health() {
             await pool.query('SELECT 1')

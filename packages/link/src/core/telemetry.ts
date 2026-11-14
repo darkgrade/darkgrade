@@ -79,6 +79,8 @@ export function linkTelemetry(source: TransportInterface) {
     }
     const observer = {
         transport,
+        /** Stable for one identified body and build; undefined until this connection has read identity. */
+        identity: () => identity,
         protocol(protocol: ProtocolEvidence, operation?: number) {
             try {
                 const write = protocol.type === 'property-write'
