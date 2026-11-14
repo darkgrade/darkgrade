@@ -374,6 +374,22 @@ test('facts already reported for an identified body are not re-sent on every con
             camera.recordProtocol({ type: 'unknown', vendorId, category: 'operation', code: 0x9201, advertised: true }, 0x1001)
         expect(queued() - mixed).toBe(1)
         ;(camera as any).protocolSeen.clear()
+        // A Canon setting's value and its allowed values arrive as separate events for the same
+        // property, and two operations list the same inventory category: none of them may make
+        // another look new on the next connection.
+        const facts = () => {
+            camera.recordProtocol({ type: 'property-value', vendorId: 0x04a9, property: 0xd103, dataType: 6, current: 100 }, 0x9116)
+            camera.recordProtocol({ type: 'property-value', vendorId: 0x04a9, property: 0xd103, dataType: 6, values: [100, 200] }, 0x9116)
+            camera.recordProtocol({ type: 'inventory', vendorId: 0x054c, category: 'property', codes: [0x5007] }, 0x1001)
+            camera.recordProtocol({ type: 'inventory', vendorId: 0x054c, category: 'property', codes: [0x5007, 0xd200] }, 0x9209)
+        }
+        const paired = queued()
+        facts()
+        expect(queued() - paired).toBe(4)
+        ;(camera as any).protocolSeen.clear()
+        facts()
+        expect(queued() - paired).toBe(4)
+        ;(camera as any).protocolSeen.clear()
         // A changed value is still reported, as is a benchmark's own complete profile.
         const before = queued()
         await telemetry.identify(identity)
