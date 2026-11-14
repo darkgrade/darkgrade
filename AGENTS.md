@@ -1,3 +1,17 @@
+Telemetry scale and identity (2026-11-13): the collector keeps `telemetry_sessions` and
+`telemetry_session_signals` current with statement triggers on `telemetry_events`; the overview,
+session list, filters and suggestions read those and never scan raw events. Deletions decrement
+counts at once and mark the session stale; maintenance refreshes time bounds and label sets.
+A one-time startup rebuild (marker `sessions-v1` in `telemetry_rollup_state`) holds a brief table
+lock. Any new writer of `telemetry_events` is covered by the triggers; a change to how a signal
+or error is derived must change the trigger functions, the queries and the marker together.
+Events recorded before a connection's identity read adopt the single identity the same session
+read later (derived columns only; signed payloads stay as uploaded). Native Sony sessions read
+standard DeviceInfo once per connection after authentication; a refusal is logged and ignored.
+In-session GetDeviceInfo on Sony bodies was not yet confirmed on physical hardware when written.
+Link reports an inventory or setting fact for an identified body again only when it changes or
+after six hours, not on every connection; benchmark profiles are exempt and stay complete.
+
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
 existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
 no saved body power setting is rewritten. Explicit KeepDeviceOn rejects non-OK responses.
