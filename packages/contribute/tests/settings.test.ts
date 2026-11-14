@@ -326,3 +326,36 @@ test('queued entries from before the identity read are uploaded under the identi
         client.close()
     }
 })
+
+test('already-shared protocol facts are remembered across processes, re-shared on change or age, and survive a damaged file', async () => {
+    const { reportedFacts } = await import('#contribute/settings')
+    const { writeFile } = await import('node:fs/promises')
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-facts-'))
+    try {
+        const scope = 'camera-v1:' + 'a'.repeat(64), now = Date.now()
+        const worker = reportedFacts(directory)
+        assert.equal(worker.fresh(scope, 'unknown:operation:37121', '{"code":37121}', now), true)
+        assert.equal(worker.fresh(scope, 'unknown:operation:37121', '{"code":37121}', now + 1000), false)
+        worker.save()
+        const saved = await readFile(join(directory, 'reported-facts.json'), 'utf8')
+        assert.doesNotMatch(saved, /camera-v1|37121|operation/, 'only short hashes are stored')
+        assert.equal((await stat(join(directory, 'reported-facts.json'))).mode & 0o777, 0o600)
+        // A later bench worker is a new process: it must not share the same fact again.
+        const next = reportedFacts(directory)
+        assert.equal(next.fresh(scope, 'unknown:operation:37121', '{"code":37121}', now + 2000), false)
+        assert.equal(next.fresh(scope, 'unknown:operation:37121', '{"code":37121,"advertised":false}', now + 3000), true, 'a changed fact is shared')
+        assert.equal(next.fresh('another body', 'unknown:operation:37121', '{"code":37121}', now + 3000), true, 'another body is separate')
+        assert.equal(reportedFacts(directory).fresh(scope, 'unknown:operation:37121', '{"code":37121}', now + 7 * 3_600_000), true, 'shared again after six hours')
+        // Two processes saving in turn keep each other's entries.
+        next.save()
+        const first = reportedFacts(directory), second = reportedFacts(directory)
+        first.fresh(scope, 'one', '1', now); second.fresh(scope, 'two', '2', now); first.save(); second.save()
+        const merged = reportedFacts(directory)
+        assert.equal(merged.fresh(scope, 'one', '1', now + 10), false)
+        assert.equal(merged.fresh(scope, 'two', '2', now + 10), false)
+        await writeFile(join(directory, 'reported-facts.json'), '{broken')
+        assert.equal(reportedFacts(directory).fresh(scope, 'one', '1', now + 20), true, 'a damaged file only means sharing once more')
+    } finally {
+        await rm(directory, { recursive: true, force: true })
+    }
+})

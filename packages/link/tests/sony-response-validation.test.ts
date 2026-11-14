@@ -98,7 +98,7 @@ describe('Sony session response validation', () => {
             camera.refreshPropertyStates = async () => []
             await camera.connect()
             expect(sent.filter(name => name === 'GetDeviceInfo')).toHaveLength(1)
-            expect(sent.indexOf('GetDeviceInfo')).toBeGreaterThan(sent.lastIndexOf('SDIO_Connect'))
+            expect(sent.indexOf('GetDeviceInfo')).toBe(sent.lastIndexOf('SDIO_Connect') + 1)
             expect(camera.set).toHaveBeenCalledTimes(2)
         }
     })

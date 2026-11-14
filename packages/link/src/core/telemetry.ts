@@ -34,6 +34,14 @@ export async function linkBuildMetadata() {
         }
     })())
 }
+/** Facts already shared by this process (custom clients, browsers) or this installation (Node). */
+const processFacts = new Map<string, { encoded: string; at: number }>()
+let persistentFacts: { fresh(scope: string, key: string, encoded: string): boolean } | null | undefined
+/** Tests and hosts that change collectors can forget what this process reported. */
+export function resetReportedFacts() {
+    processFacts.clear()
+    persistentFacts = undefined
+}
 async function diagnosticsClient() {
     const node = typeof process !== 'undefined' && !!process.versions?.node
     return configured ?? (node ? await (await import('@darkgrade/contribute/settings')).nodeDiagnostics() : undefined)
@@ -73,14 +81,27 @@ export function linkTelemetry(source: TransportInterface) {
             return typeof value === 'function' ? value.bind(owner) : value
         },
     })
+    let factScope: string | undefined
     const resetIdentity = async () => {
         identity = undefined
+        factScope = undefined
         await observer.identify({ manufacturer: 'Unknown', model: 'Unknown', deviceVersion: 'unknown' })
     }
     const observer = {
         transport,
-        /** Stable for one identified body and build; undefined until this connection has read identity. */
-        identity: () => identity,
+        /** False when this unchanging fact about the identified body was already shared recently.
+         * Before the connection has read identity, every fact counts as new. */
+        newFact(key: string, encoded: string) {
+            if (!factScope) return true
+            try {
+                if (persistentFacts) return persistentFacts.fresh(factScope, key, encoded)
+            } catch { /* Fall back to this process's memory. */ }
+            const name = factScope + '|' + key, previous = processFacts.get(name), now = Date.now()
+            if (previous && previous.encoded === encoded && now - previous.at < 6 * 3_600_000) return false
+            if (processFacts.size >= 65_536) processFacts.clear()
+            processFacts.set(name, { encoded, at: now })
+            return true
+        },
         protocol(protocol: ProtocolEvidence, operation?: number) {
             try {
                 const write = protocol.type === 'property-write'
@@ -124,11 +145,17 @@ export function linkTelemetry(source: TransportInterface) {
                 else observed = client.observe(source, context)
                 observed.transport.on?.(relay)
                 identity = next
+                // The shared fingerprint, never the raw serial, scopes what was already reported.
+                factScope = info.model === 'Unknown' ? undefined
+                    : JSON.stringify([hardwareFingerprint ?? [info.manufacturer, info.model], info.deviceVersion, build.revision, context.transport])
+                if (factScope && !configured && persistentFacts === undefined && typeof process !== 'undefined' && process.env.NODE_ENV !== 'test')
+                    persistentFacts = await import('@darkgrade/contribute/settings').then(settings => settings.sharedReportedFacts(), () => null)
             } catch {
                 // A failed replacement must restore native events even after the old observer detached.
                 observed?.detach()
                 observed = undefined
                 identity = undefined
+                factScope = undefined
                 source.on?.(relay)
             }
         },

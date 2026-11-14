@@ -195,9 +195,10 @@ export class SonyCamera extends GenericCamera {
         // await this.waitMs(100)
 
         await this.authenticate()
+        // Before the first property read, so that inventory is attributed and not re-sent each connection.
+        await this.readIdentityForDiagnostics()
 
         await this.refreshPropertyStates()
-        await this.readIdentityForDiagnostics()
 
         if (options.mode === 'menus' || options.configure === false) return
 

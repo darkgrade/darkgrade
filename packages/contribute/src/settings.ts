@@ -21,6 +21,7 @@ import {
     unlinkSync,
     writeFileSync,
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -237,4 +238,72 @@ export async function closeNodeDiagnostics() {
     log?.close()
     shared = undefined
     log = undefined
+}
+
+let facts: ReturnType<typeof reportedFacts> | undefined
+/** The installation's single memory of protocol facts it has already shared. */
+export const sharedReportedFacts = () => (facts ??= reportedFacts())
+/** Remembers, across processes, which unchanging protocol facts this installation already shared,
+ * so each camera connection does not upload the same inventory again. Only short hashes are
+ * kept. A lost or damaged file means facts are shared once more, never that sharing stops. */
+export function reportedFacts(directory = settingsDirectory(), maximumAgeMilliseconds = 6 * 3_600_000) {
+    const file = join(directory, 'reported-facts.json')
+    const digest = (text: string, length: number) => createHash('sha256').update(text).digest('hex').slice(0, length)
+    type Facts = Record<string, [string, number]>
+    const read = (): Facts => {
+        try {
+            const value = JSON.parse(readFileSync(file, 'utf8')) as Facts
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+            return Object.fromEntries(Object.entries(value).filter(([, entry]) =>
+                Array.isArray(entry) && typeof entry[0] === 'string' && Number.isFinite(entry[1])))
+        } catch {
+            return {}
+        }
+    }
+    let known: Facts | undefined,
+        dirty = false,
+        savedAt = 0,
+        exitHook = false,
+        scheduled = false
+    const save = () => {
+        scheduled = false
+        if (!dirty || !known) return
+        dirty = false
+        savedAt = Date.now()
+        try {
+            // Another process may have saved since this one loaded: keep the newer entry of each.
+            for (const [key, entry] of Object.entries(read())) if (!known[key] || known[key][1] < entry[1]) known[key] = entry
+            const entries = Object.entries(known).sort((a, b) => b[1][1] - a[1][1]).slice(0, 50_000)
+            known = Object.fromEntries(entries)
+            mkdirSync(directory, { recursive: true, mode: 0o700 })
+            const temporary = `${file}.${process.pid}.tmp`
+            writeFileSync(temporary, JSON.stringify(known), { mode: 0o600 })
+            renameSync(temporary, file)
+        } catch {
+            /* Sharing a fact twice is harmless; camera work never depends on this file. */
+        }
+    }
+    return {
+        /** True when this fact is new, changed, or was last shared longer ago than the maximum age. */
+        fresh(scope: string, key: string, encoded: string, now = Date.now()) {
+            known ??= read()
+            const name = digest(scope + '\n' + key, 24),
+                value = digest(encoded, 16),
+                previous = known[name]
+            if (previous && previous[0] === value && now - previous[1] < maximumAgeMilliseconds) return false
+            known[name] = [value, now]
+            dirty = true
+            if (!exitHook) {
+                exitHook = true
+                process.once('exit', save)
+            }
+            // Short-lived bench workers exit soon after a burst; save promptly, but not per fact.
+            if (!scheduled) {
+                scheduled = true
+                setTimeout(save, Date.now() - savedAt > 2000 ? 250 : 2000).unref()
+            }
+            return true
+        },
+        save,
+    }
 }
