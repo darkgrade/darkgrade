@@ -191,8 +191,10 @@ const sessionAggregate = `count(*) AS events,
 const sessionColumns = `events,errors,signals,started_at,ended_at,latest_received_at,manufacturer,model,
     transports,evidence,backends,revisions,hardware_fingerprints,truncated`
 
-/** Build the session summaries once from existing events. Uploads wait briefly behind the table
- * lock so no event is counted twice or missed; later starts find the marker and skip this. */
+/** Build the session summaries once from existing events. Uploads wait behind the table lock so
+ * no event is counted twice or missed; later starts find the marker and skip this. The work is
+ * done a few hundred sessions at a time: one statement over every event needs more temporary
+ * space than a small database instance allows. */
 const rebuilt = new WeakSet<Pool>()
 async function backfillRollups(pool: Pool) {
     if (rebuilt.has(pool)) return
@@ -205,28 +207,71 @@ async function backfillRollups(pool: Pool) {
     try {
         await connection.query('BEGIN')
         await connection.query('SET LOCAL statement_timeout=0')
+        await connection.query("SET LOCAL work_mem='64MB'")
         await connection.query("SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.rollup'))")
         const again = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
         if (!again.rowCount) {
             await connection.query('LOCK TABLE telemetry_events IN SHARE ROW EXCLUSIVE MODE')
             await connection.query(`CREATE INDEX IF NOT EXISTS telemetry_events_errors ON telemetry_events (received_at)
                 WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)`)
-            await connection.query(adoptSessionIdentity(''))
             await connection.query('DELETE FROM telemetry_session_signals')
             await connection.query('DELETE FROM telemetry_sessions')
+            await connection.query(`CREATE TEMP TABLE rollup_keys ON COMMIT DROP AS
+                SELECT installation_id, session_id, row_number() OVER (ORDER BY installation_id, session_id) AS position
+                FROM (SELECT DISTINCT installation_id, session_id FROM telemetry_events WHERE session_id IS NOT NULL) keys`)
+            await connection.query('CREATE INDEX ON rollup_keys (position)')
+            const total = Number((await connection.query('SELECT count(*) AS total FROM rollup_keys')).rows[0].total)
+            const page = `(SELECT installation_id, session_id FROM rollup_keys WHERE position>$1 AND position<=$2)`
+            for (let offset = 0; offset < total; offset += 200) {
+                const range = [offset, offset + 200]
+                // The first and last identified events of a session must agree before its
+                // earlier, unidentified events take that identity.
+                await connection.query(
+                    `UPDATE telemetry_events u SET manufacturer=k.manufacturer, model=k.model, firmware=k.firmware,
+                        hardware_fingerprint=coalesce(u.hardware_fingerprint,k.hardware_fingerprint)
+                     FROM (SELECT p.installation_id, p.session_id, first.manufacturer, first.model, first.firmware,
+                                first.hardware_fingerprint
+                           FROM ${page} p
+                           CROSS JOIN LATERAL (SELECT manufacturer, model, firmware, hardware_fingerprint FROM telemetry_events e
+                               WHERE e.installation_id=p.installation_id AND e.session_id=p.session_id AND e.model<>'Unknown'
+                               ORDER BY coalesce(e.occurred_at,e.received_at), e.batch_path, e.sequence LIMIT 1) first
+                           CROSS JOIN LATERAL (SELECT manufacturer, model, firmware, hardware_fingerprint FROM telemetry_events e
+                               WHERE e.installation_id=p.installation_id AND e.session_id=p.session_id AND e.model<>'Unknown'
+                               ORDER BY coalesce(e.occurred_at,e.received_at) DESC, e.batch_path DESC, e.sequence DESC LIMIT 1) last
+                           WHERE (first.manufacturer, first.model, first.firmware)=(last.manufacturer, last.model, last.firmware)
+                             AND first.hardware_fingerprint IS NOT DISTINCT FROM last.hardware_fingerprint) k
+                     WHERE u.model='Unknown' AND u.installation_id=k.installation_id AND u.session_id=k.session_id`,
+                    range
+                )
+                await connection.query(
+                    `INSERT INTO telemetry_sessions (installation_id,session_id,${sessionColumns})
+                     SELECT e.installation_id, e.session_id, ${sessionAggregate}
+                     FROM telemetry_events e JOIN ${page} p ON e.installation_id=p.installation_id AND e.session_id=p.session_id
+                     GROUP BY 1,2`,
+                    range
+                )
+                await connection.query(
+                    `INSERT INTO telemetry_session_signals (installation_id,session_id,signal,events,latest)
+                     SELECT e.installation_id, e.session_id, telemetry_event_signal(e.failed,e.kind,e.code,e.properties),
+                        count(*), max(e.received_at)
+                     FROM telemetry_events e JOIN ${page} p ON e.installation_id=p.installation_id AND e.session_id=p.session_id
+                     GROUP BY 1,2,3`,
+                    range
+                )
+            }
             await connection.query(`INSERT INTO telemetry_sessions (installation_id,session_id,${sessionColumns})
-                SELECT installation_id, coalesce(session_id,${sessionless}), ${sessionAggregate}
-                FROM telemetry_events GROUP BY 1,2`)
+                SELECT installation_id, ${sessionless}, ${sessionAggregate}
+                FROM telemetry_events WHERE session_id IS NULL GROUP BY 1`)
             await connection.query(`INSERT INTO telemetry_session_signals (installation_id,session_id,signal,events,latest)
-                SELECT installation_id, coalesce(session_id,${sessionless}),
-                    telemetry_event_signal(failed,kind,code,properties), count(*), max(received_at)
-                FROM telemetry_events GROUP BY 1,2,3`)
+                SELECT installation_id, ${sessionless}, telemetry_event_signal(failed,kind,code,properties), count(*), max(received_at)
+                FROM telemetry_events WHERE session_id IS NULL GROUP BY 1,3`)
             await connection.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v1',now())")
         }
         await connection.query('COMMIT')
         rebuilt.add(pool)
     } catch (error) {
         await connection.query('ROLLBACK').catch(() => {})
+        console.error('Telemetry summary rebuild failed:', (error as Error).message)
         throw error
     } finally {
         connection.release()
