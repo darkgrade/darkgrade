@@ -18,9 +18,21 @@ Benchmark profiles are exempt and stay complete. Each kind of fact has its own m
 operations listing one inventory category, must not replace each other.
 The unknown-code queue reads `telemetry_unknown_codes` (per installation, kept by the same
 triggers, marker `unknown-codes-v1`); session, body and signal scopes still read events.
-The summary rebuild pages through sessions: one statement over all events exceeded Cloud SQL's
-temporary-file limit in production. Never `git add -A` a folder here: dependency symlinks such
-as `packages/runtime/node_modules` are untracked on purpose and broke `bun install` on the benches.
+Collector rules learned the hard way on 2026-11-14:
+- Startup must not queue table locks. DDL on `telemetry_events` and the summary tables
+  (including `CREATE INDEX IF NOT EXISTS`, `ALTER ... IF NOT EXISTS`, `CREATE TRIGGER`) runs only
+  until those objects exist (`eventsSchemaReady`, `summarySchemaReady` in postgres.ts). A schema
+  change to those tables must update the readiness check, or it will never be applied.
+- Maintenance works in short transactions. One long transaction blocks the next start, and a
+  backend keeps running after its collector instance is gone; only a database restart ended it.
+- Triggers must stay cheap for bulk deletes: never search events from inside them. A summary row
+  that needs a new source is listed in `telemetry_unknown_code_repairs` and repaired by
+  maintenance within a time budget; it is hidden from the queue until then.
+- `purge-unidentified-2026-11-14` removed 65,947 old events with no camera identity and 164
+  uploads left empty. It is marker-guarded and dated; unidentified events after the cutoff stay.
+Focus refusals say what the body reported: a Sony focus timeout includes the last focus status
+and a Canon refusal names the SDK reason. Sony bodies in movie mode stayed at UNLOCK on a
+half-press in bench tests, so focus confirmation was never obtained there.
 
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
 existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
