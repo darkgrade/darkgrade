@@ -307,3 +307,55 @@ export function reportedFacts(directory = settingsDirectory(), maximumAgeMillise
         save,
     }
 }
+
+let cameras: ReturnType<typeof knownCameras> | undefined
+/** The installation's single record of which camera each USB identity last reported itself as. */
+export const sharedKnownCameras = () => (cameras ??= knownCameras())
+/** Remembers, per USB identity a host asked for, the manufacturer and model the camera reported
+ * when it last answered there. A later connection that fails before any identity read (the body
+ * is asleep or switched off) can then be attributed instead of left unidentified. Only what the
+ * camera itself reported is kept; the body fingerprint is kept only when the host asked for one
+ * exact serial, and that serial is stored as a hash. */
+export function knownCameras(directory = settingsDirectory()) {
+    const file = join(directory, 'known-cameras.json')
+    type Known = { manufacturer: string; model: string; hardwareFingerprint?: string }
+    const key = (usb: { vendorId?: number; productId?: number; serialNumber?: string }) =>
+        Number.isInteger(usb.vendorId) && Number.isInteger(usb.productId)
+            ? `${usb.vendorId!.toString(16)}:${usb.productId!.toString(16)}:${
+                  usb.serialNumber ? createHash('sha256').update(usb.serialNumber).digest('hex').slice(0, 16) : ''}`
+            : undefined
+    const read = (): Record<string, Known> => {
+        try {
+            const value = JSON.parse(readFileSync(file, 'utf8'))
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+        } catch {
+            return {}
+        }
+    }
+    return {
+        lookup(usb: { vendorId?: number; productId?: number; serialNumber?: string }): Known | undefined {
+            const name = key(usb), known = name ? read()[name] : undefined
+            return known && typeof known.manufacturer === 'string' && typeof known.model === 'string' && known.model !== 'Unknown'
+                ? { manufacturer: known.manufacturer, model: known.model,
+                    ...(usb.serialNumber && typeof known.hardwareFingerprint === 'string' && { hardwareFingerprint: known.hardwareFingerprint }) }
+                : undefined
+        },
+        remember(usb: { vendorId?: number; productId?: number; serialNumber?: string }, camera: Known) {
+            const name = key(usb)
+            if (!name || camera.model === 'Unknown') return
+            try {
+                const all = read(), previous = all[name]
+                const next: Known = { manufacturer: camera.manufacturer, model: camera.model,
+                    ...(usb.serialNumber && camera.hardwareFingerprint && { hardwareFingerprint: camera.hardwareFingerprint }) }
+                if (JSON.stringify(previous) === JSON.stringify(next)) return
+                all[name] = next
+                mkdirSync(directory, { recursive: true, mode: 0o700 })
+                const temporary = `${file}.${process.pid}.tmp`
+                writeFileSync(temporary, JSON.stringify(Object.fromEntries(Object.entries(all).slice(-500))), { mode: 0o600 })
+                renameSync(temporary, file)
+            } catch {
+                /* Attribution of a later failed connection is optional. */
+            }
+        },
+    }
+}

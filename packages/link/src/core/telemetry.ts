@@ -37,6 +37,21 @@ export async function linkBuildMetadata() {
 /** Facts already shared by this process (custom clients, browsers) or this installation (Node). */
 const processFacts = new Map<string, { encoded: string; at: number }>()
 let persistentFacts: { fresh(scope: string, key: string, encoded: string): boolean } | null | undefined
+type UsbRequest = { vendorId?: number; productId?: number; serialNumber?: string }
+type KnownCameraStore = { lookup(usb: UsbRequest): { manufacturer: string; model: string; hardwareFingerprint?: string } | undefined
+    remember(usb: UsbRequest, camera: { manufacturer: string; model: string; hardwareFingerprint?: string }): void }
+let knownStore: KnownCameraStore | null | undefined
+/** Node installations keep it beside their settings; tests and browsers have none unless one is supplied. */
+async function knownCameraStore() {
+    if (knownStore !== undefined) return knownStore ?? undefined
+    if (typeof process === 'undefined' || !process.versions?.node || process.env.NODE_ENV === 'test') return undefined
+    knownStore = await import('@darkgrade/contribute/settings').then(settings => settings.sharedKnownCameras(), () => null)
+    return knownStore ?? undefined
+}
+/** Supply or clear the record of which camera each USB identity last reported itself as. */
+export function configureKnownCameras(store: KnownCameraStore | undefined) {
+    knownStore = store
+}
 /** Tests and hosts that change collectors can forget what this process reported. */
 export function resetReportedFacts() {
     processFacts.clear()
@@ -72,8 +87,16 @@ export function linkTelemetry(source: TransportInterface) {
                 }
             if (key === 'connect')
                 return async (...args: Parameters<TransportInterface['connect']>) => {
+                    requested = (args[0] as { usb?: { filters?: UsbRequest[] } } | undefined)?.usb?.filters?.[0]
                     await resetIdentity()
-                    return (observed?.transport ?? source).connect(...args)
+                    try {
+                        return await (observed?.transport ?? source).connect(...args)
+                    } catch (error) {
+                        // The body never answered, so nothing was read from it. Attribute the failed
+                        // attempt to the camera that last reported itself at this USB identity.
+                        await attributeFailedConnection().catch(() => {})
+                        throw error
+                    }
                 }
             const current = observed?.transport as unknown as TransportInterface | undefined
             const owner = current && key in current ? current : target
@@ -82,6 +105,17 @@ export function linkTelemetry(source: TransportInterface) {
         },
     })
     let factScope: string | undefined
+    let requested: UsbRequest | undefined
+    const attributeFailedConnection = async () => {
+        if (!requested || !observed || source.getType() !== 'usb') return
+        if (identity && identity !== JSON.stringify(['Unknown', 'Unknown', 'unknown', undefined])) return
+        const known = (await knownCameraStore())?.lookup(requested)
+        const build = known && (await linkBuildMetadata())
+        if (!known || !build) return
+        observed.identify({ ...(known.hardwareFingerprint && requested.serialNumber && { hardwareFingerprint: known.hardwareFingerprint }),
+            manufacturer: known.manufacturer, model: known.model, firmware: 'unknown', revision: build.revision,
+            dirty: build.dirty, transport: 'usb', backend: 'ptp', evidence: 'hardware' })
+    }
     const resetIdentity = async () => {
         identity = undefined
         factScope = undefined
@@ -148,6 +182,10 @@ export function linkTelemetry(source: TransportInterface) {
                 // The shared fingerprint, never the raw serial, scopes what was already reported.
                 factScope = info.model === 'Unknown' ? undefined
                     : JSON.stringify([hardwareFingerprint ?? [info.manufacturer, info.model], info.deviceVersion, build.revision, context.transport])
+                if (hardware && requested && info.model !== 'Unknown')
+                    (await knownCameraStore())?.remember(requested, { manufacturer: info.manufacturer, model: info.model,
+                        // A fingerprint is one body. Keep it only when the host asked for that exact body.
+                        ...(hardwareFingerprint && requested.serialNumber && { hardwareFingerprint }) })
                 if (factScope && !configured && persistentFacts === undefined && typeof process !== 'undefined' && process.env.NODE_ENV !== 'test')
                     persistentFacts = await import('@darkgrade/contribute/settings').then(settings => settings.sharedReportedFacts(), () => null)
             } catch {
@@ -169,15 +207,23 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
     let hardwareFingerprint: string | undefined
     let sessionId = globalThis.crypto?.randomUUID?.()
     let transport: 'usb' | 'wifi' | 'unknown' = 'unknown'
+    let awaitingWifiConnect = false
     return {
         async operation(command: Record<string, string>, work: () => Promise<Record<string, unknown>>) {
             const started = performance.now()
-            if (['connect', 'connect_wifi', 'connect_bluetooth_direct'].includes(command.cmd)) {
+            // A Wi-Fi connection begins with the trust (fingerprint) step; it belongs to the same
+            // session as the connect that follows it.
+            const continuesWifi = awaitingWifiConnect && command.cmd !== 'connect' && command.cmd !== 'fingerprint'
+            if (['connect', 'connect_wifi', 'connect_bluetooth_direct', 'fingerprint'].includes(command.cmd) && !continuesWifi) {
                 sessionId = globalThis.crypto?.randomUUID?.()
                 model = 'Unknown'
                 hardwareFingerprint = undefined
                 transport = command.cmd === 'connect' ? 'usb' : 'wifi'
             }
+            awaitingWifiConnect = command.cmd === 'fingerprint'
+            // The caller names the body it is reaching over Wi-Fi; a failed attempt is still about that body.
+            if (['connect_wifi', 'connect_bluetooth_direct', 'fingerprint'].includes(command.cmd) &&
+                ['ILCE-6700', 'ILME-FX2'].includes(command.model)) model = command.model
             let failed = false
             try {
                 const result = await work()

@@ -151,8 +151,18 @@ test('SDK telemetry preserves outcomes and profile scoping without passwords, pa
                 throw new Error('Connection failed')
             })
         ).rejects.toThrow('Connection failed')
-        expect(saved.at(-1).camera).toMatchObject({ model: 'Unknown', transport: 'wifi', backend: 'vendor-api' })
+        // A failed attempt is still about the body the caller named; an unlisted name stays unidentified.
+        expect(saved.at(-1).camera).toMatchObject({ model: 'ILCE-6700', transport: 'wifi', backend: 'vendor-api' })
         expect(saved.at(-1).entry.failed).toBe(true)
+        // The trust step that starts a Wi-Fi connection shares the session of the connect that follows.
+        await sdk.operation({ cmd: 'fingerprint', model: 'ILME-FX2', ip: 'PRIVATE' }, async () => ({ ok: true, fingerprint: 'PRIVATE' }))
+        const trust = saved.at(-1)
+        await sdk.operation({ cmd: 'connect_wifi', model: 'ILME-FX2' }, async () => ({ ok: true }))
+        expect(trust.camera).toMatchObject({ model: 'ILME-FX2', transport: 'wifi' })
+        expect(saved.at(-1).entry.sessionId).toBe(trust.entry.sessionId)
+        await sdk.operation({ cmd: 'fingerprint', model: 'private-name' }, async () => ({ ok: true }))
+        expect(saved.at(-1).camera.model).toBe('Unknown')
+        expect(saved.at(-1).entry.sessionId).not.toBe(trust.entry.sessionId)
     } finally {
         client.close()
     }
@@ -396,4 +406,53 @@ test('facts already reported for an identified body are not re-sent on every con
         camera.recordProtocol({ type: 'unknown', vendorId: 0x054c, category: 'operation', code: 0x9201, advertised: false }, 0x1001)
         expect(queued() - before).toBe(1)
     } finally { client.close() }
+})
+
+test('a connection that fails before any identity read is attributed to the camera last seen at that USB identity', async () => {
+    vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
+    vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)
+    const { configureKnownCameras } = await import('@core/telemetry')
+    const remembered = new Map<string, any>()
+    const key = (usb: any) => `${usb.vendorId}:${usb.productId}:${usb.serialNumber ?? ''}`
+    configureKnownCameras({ lookup: usb => remembered.get(key(usb)), remember: (usb, camera) => void remembered.set(key(usb), camera) })
+    const batches: any[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        fetch: async (_url, init) => {
+            const body = init?.body ? JSON.parse(String(init.body)) : {}
+            if (body.contributions) batches.push(body)
+            return Response.json(body.installKey ? { installKey: body.installKey, noticeVersion: body.noticeVersion } : {}, { status: body.contributions ? 202 : 200 })
+        },
+    })
+    configureLinkTelemetry(client)
+    try {
+        let asleep = false
+        const source = { telemetryEvidence: 'hardware', getType: () => 'usb', isLittleEndian: () => true, isConnected: () => false, on: () => {}, off: () => {},
+            connect: async () => { if (asleep) throw new Error('No USB devices available') }, disconnect: async () => {},
+            send: async () => {}, receive: async () => new Uint8Array(12), classRequestReset: async () => {} } as any
+        const wrapped = linkTelemetry(source)
+        const byModel = { usb: { filters: [{ vendorId: 0x04a9, productId: 0x3329 }] } }
+        const bySerial = { usb: { filters: [{ vendorId: 0x054c, productId: 0x0e78, serialNumber: 'PRIVATE-SERIAL' }] } }
+        const neverSeen = { usb: { filters: [{ vendorId: 0x04b0, productId: 0x0454 }] } }
+        await wrapped.transport.connect(byModel as any)
+        await wrapped.identify({ manufacturer: 'Canon.Inc', model: 'Canon EOS R8 Mark II', deviceVersion: '3-1.0.0', serialNumber: 'PRIVATE-CANON' })
+        await wrapped.transport.connect(bySerial as any)
+        await wrapped.identify({ manufacturer: 'Sony Corporation', model: 'ILCE-6700', deviceVersion: '2.00', serialNumber: 'PRIVATE-SERIAL' })
+        expect(JSON.stringify([...remembered])).not.toMatch(/PRIVATE-CANON/)
+        asleep = true
+        for (const body of [byModel, bySerial, neverSeen])
+            await expect(wrapped.transport.connect(body as any)).rejects.toThrow('No USB devices available')
+        await client.flush()
+        const failures = batches.flatMap(batch => batch.contributions)
+            .flatMap((contribution: any) => contribution.entries.filter((entry: any) => entry.kind === 'connect' && entry.failed)
+                .map(() => contribution.camera))
+        const canon = failures.find((camera: any) => camera.model === 'Canon EOS R8 Mark II')
+        const sony = failures.find((camera: any) => camera.model === 'ILCE-6700')
+        expect(canon).toMatchObject({ manufacturer: 'Canon.Inc', firmware: 'unknown', transport: 'usb', evidence: 'hardware' })
+        expect(canon.hardwareFingerprint).toBeUndefined() // only the model was asked for: any such body could be meant
+        expect(sony.hardwareFingerprint).toMatch(/^camera-v1:[a-f0-9]{64}$/)
+        expect(failures.filter((camera: any) => camera.model === 'Unknown')).toHaveLength(1) // a body never seen stays unidentified
+        expect(JSON.stringify(batches)).not.toMatch(/PRIVATE/)
+    } finally { client.close(); configureKnownCameras(undefined); configureLinkTelemetry(undefined) }
 })

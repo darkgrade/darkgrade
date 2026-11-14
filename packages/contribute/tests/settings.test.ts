@@ -359,3 +359,29 @@ test('already-shared protocol facts are remembered across processes, re-shared o
         await rm(directory, { recursive: true, force: true })
     }
 })
+
+test('the record of cameras last seen at a USB identity keeps what the body reported and never a raw serial', async () => {
+    const { knownCameras } = await import('#contribute/settings')
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-known-'))
+    try {
+        const store = knownCameras(directory), fingerprint = 'camera-v1:' + 'b'.repeat(64)
+        const byModel = { vendorId: 0x04a9, productId: 0x3329 }, bySerial = { vendorId: 0x054c, productId: 0x0e78, serialNumber: 'PRIVATE-SERIAL' }
+        assert.equal(store.lookup(byModel), undefined)
+        store.remember(byModel, { manufacturer: 'Canon.Inc', model: 'Canon EOS R8 Mark II', hardwareFingerprint: fingerprint })
+        store.remember(bySerial, { manufacturer: 'Sony Corporation', model: 'ILCE-6700', hardwareFingerprint: fingerprint })
+        store.remember(byModel, { manufacturer: 'Unknown', model: 'Unknown' })
+        // Another process reads the same file.
+        const later = knownCameras(directory)
+        assert.deepEqual(later.lookup(byModel), { manufacturer: 'Canon.Inc', model: 'Canon EOS R8 Mark II' })
+        assert.deepEqual(later.lookup(bySerial), { manufacturer: 'Sony Corporation', model: 'ILCE-6700', hardwareFingerprint: fingerprint })
+        assert.equal(later.lookup({ ...bySerial, serialNumber: 'OTHER' }), undefined)
+        assert.equal(later.lookup({ vendorId: 0x04b0 }), undefined)
+        const saved = await readFile(join(directory, 'known-cameras.json'), 'utf8')
+        assert.doesNotMatch(saved, /PRIVATE-SERIAL/)
+        assert.equal((await stat(join(directory, 'known-cameras.json'))).mode & 0o777, 0o600)
+        await (await import('node:fs/promises')).writeFile(join(directory, 'known-cameras.json'), '{broken')
+        assert.equal(knownCameras(directory).lookup(byModel), undefined)
+    } finally {
+        await rm(directory, { recursive: true, force: true })
+    }
+})
