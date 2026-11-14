@@ -103,6 +103,19 @@ describe('Sony session response validation', () => {
         }
     })
 
+    it.each([
+        ['AF_C_NOT_FOCUSED', /could not focus \(low contrast or too dark\)/],
+        ['AF_C_TRACKING', /still tracking the subject/],
+        ['UNLOCK', /last reported UNLOCK/],
+    ] as const)('a focus timeout says what the body reported: %s', async (status, expected) => {
+        const { camera } = cameraFixture()
+        camera.get = (async () => status) as typeof camera.get
+        await expect((camera as any).waitForFocus(120)).rejects.toThrow(expected)
+        await expect((camera as any).waitForFocus(120)).rejects.toThrow(/did not report focus within 120 ms/)
+        camera.get = (async () => 'AF_C_FOCUSED') as typeof camera.get
+        await expect((camera as any).waitForFocus(120)).resolves.toBe(true)
+    })
+
     it('stops before authentication or configuration if the camera refuses the session', async () => {
         const { camera, replies, sent } = cameraFixture()
         replies.push({ code: 0x2019 })
@@ -270,5 +283,17 @@ describe('Sony partial downloads', () => {
         Object.assign(camera, { contentTransferModeEnabled: true })
         replies.push({ code: 0x2001, data: Uint8Array.of(1, 2) }, { code: 0x2001, data: Uint8Array.of(3, 4, 5) })
         expect(await camera.getObject(7, 5)).toEqual(Uint8Array.of(1, 2, 3, 4, 5))
+    })
+})
+
+describe('Canon shutter results', () => {
+    it('names the reason the body gave, and keeps the wording other code matches on', async () => {
+        const { assertCanonCaptureResult } = await import('@vendors/canon/capture-result')
+        expect(() => assertCanonCaptureResult([0], 'release')).not.toThrow()
+        expect(() => assertCanonCaptureResult(undefined, 'release')).not.toThrow()
+        expect(() => assertCanonCaptureResult([1], 'AF focus press')).toThrow('Canon AF focus press rejected capture with shutter result 0x1: the camera could not focus (low contrast or too dark)')
+        expect(() => assertCanonCaptureResult([12], 'release')).toThrow(/movie configuration prevents still capture/)
+        expect(() => assertCanonCaptureResult([14], 'release')).toThrow(/the camera is in movie mode/)
+        expect(() => assertCanonCaptureResult([2], 'release')).toThrow(/shutter result 0x2$/)
     })
 })

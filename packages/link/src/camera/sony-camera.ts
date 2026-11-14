@@ -1131,7 +1131,9 @@ export class SonyCamera extends GenericCamera {
 
     private async waitForFocus(timeoutMilliseconds = 3_000, requireConfirmation = true): Promise<boolean> {
         let isFocused = false
+        let lastStatus: string | undefined
         const handler = (event: { Status?: string }) => {
+            lastStatus = event.Status ?? lastStatus
             isFocused = event.Status === 'AF_C_FOCUSED' || event.Status === 'AF_S_FOCUSED'
         }
         this.on(this.registry.events.SDIE_AFStatus, handler)
@@ -1140,12 +1142,18 @@ export class SonyCamera extends GenericCamera {
             while (!isFocused && Date.now() < deadline) {
                 try {
                     const status = await this.get(this.registry.properties.FocusIndication)
+                    lastStatus = String(status)
                     isFocused = status === 'AF_C_FOCUSED' || status === 'AF_S_FOCUSED'
                 } catch {}
                 if (!isFocused) await this.waitMs(50)
             }
             if (!isFocused && requireConfirmation) {
-                throw new Error(`Sony autofocus did not report focus within ${timeoutMilliseconds} ms`)
+                // Say what the body reported: a dark or featureless scene is not a driver fault.
+                const reported = lastStatus === 'AF_C_NOT_FOCUSED' || lastStatus === 'AF_S_NOT_FOCUSED'
+                    ? 'the camera reported it could not focus (low contrast or too dark)'
+                    : lastStatus === 'AF_C_TRACKING' ? 'the camera was still tracking the subject'
+                    : lastStatus ? `the camera last reported ${lastStatus}` : 'the camera reported no focus status'
+                throw new Error(`Sony autofocus did not report focus within ${timeoutMilliseconds} ms; ${reported}`)
             }
             return isFocused
         } finally {
