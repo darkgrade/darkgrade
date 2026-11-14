@@ -88,7 +88,7 @@ it('an exact-handle MTP UINT64 size transfers across the 4 GiB offset boundary w
  descriptorView.setUint16(0,0xdc04,true);descriptorView.setUint16(2,8,true)
  const sizeData=new Uint8Array(8);new DataView(sizeData.buffer).setBigUint64(0,BigInt(size),true)
  f.camera.send.mockImplementation(async(op,args)=>{
-  if(op.name==='GetDeviceInfo')return {code:0x2001,data:{operationsSupported:[0x9802,0x9803]}}
+  if(op.name==='GetDeviceInfo')return {code:0x2001,data:{operationsSupportedRaw:[0x9802,0x9803],operationsSupportedDecoded:['MtpGetObjectPropDesc','MtpGetObjectPropValue']}}
   if(op.name==='MtpGetObjectPropDesc')return {code:0x2001,data:descriptor}
   if(op.name==='MtpGetObjectPropValue'){
    expect(args).toEqual({ObjectHandle:2,ObjectPropertyCode:0xdc04})
@@ -104,4 +104,16 @@ it('an exact-handle MTP UINT64 size transfers across the 4 GiB offset boundary w
  descriptorView.setUint16(2,6,true)
  await expect(f.recording.transfer({id:'2',filename:'new.MP4',bytes:size,verified:true},async()=>{},()=>{}))
   .rejects.toThrow('UINT64')
+})
+
+it('reads the 64-bit size support from a real DeviceInfo dataset, not from a hand-made field', async () => {
+ const { DeviceInfoCodec } = await import('@ptp/datasets/device-info-dataset')
+ const { createSonyRegistry } = await import('@ptp/registry')
+ const registry = createSonyRegistry(true), dataset = new (DeviceInfoCodec as any)(registry)
+ const encoded = dataset.encode({ standardVersion: 100, vendorExtensionID: 0x11, vendorExtensionVersion: 300, vendorExtensionDesc: '', functionalMode: 0,
+  operationsSupportedRaw: [0x1001, 0x9802, 0x9803], eventsSupportedRaw: [], devicePropertiesSupported: [], captureFormats: [], imageFormatsRaw: [],
+  manufacturer: 'Sony Corporation', model: 'ILME-FX2', deviceVersion: '1.01', serialNumber: '' })
+ const decoded = dataset.decode(encoded).value
+ expect(decoded.operationsSupportedRaw).toEqual([0x1001, 0x9802, 0x9803])
+ expect((decoded as any).operationsSupported).toBeUndefined()
 })

@@ -60,7 +60,8 @@ export class SonyPtpVideoRecording {
         // override ObjectInfo with a UINT64 size. Bind to this exact handle,
         // never infer identity from a matching filename in a content list.
         const inventory=await this.camera.send(this.operations.GetDeviceInfo,{})
-        const supported=inventory.data?.operationsSupported
+        // DeviceInfo carries the numeric codes in operationsSupportedRaw; the decoded list holds names.
+        const supported=inventory.data?.operationsSupportedRaw
         if(inventory.code!==0x2001||!Array.isArray(supported)||![0x9802,0x9803].every(code=>supported.includes(code)))
             throw new Error('Sony did not advertise a 64-bit original-size query; copy this original from its card')
         const descriptor=await this.camera.send(this.operations.MtpGetObjectPropDesc,{ObjectPropertyCode:0xdc04,ObjectFormatCode:Number.isInteger(format)&&format>=0&&format<=0xffff?format:0})
