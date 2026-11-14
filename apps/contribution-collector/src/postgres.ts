@@ -263,12 +263,17 @@ const sessionColumns = `events,errors,signals,started_at,ended_at,latest_receive
 /** One-time removal requested on 2026-11-14: events recorded with no camera identity before
  * Link learned to read it (the first commands of every connection that could not be matched to
  * a session identity, and whole native Sony sessions). Later unidentified events are kept. */
-export const unidentifiedPurge = { marker: 'purge-unidentified-2026-11-14', before: '2026-11-14T18:30:00Z' }
+export const unidentifiedPurges = [
+    { marker: 'purge-unidentified-2026-11-14', before: '2026-11-14T18:30:00Z' },
+    // The same request, for events recorded that day before Link could attribute failed connections.
+    { marker: 'purge-unidentified-2026-11-14b', before: '2026-11-14T21:05:00Z' },
+] as const
+export const unidentifiedPurge = unidentifiedPurges[unidentifiedPurges.length - 1]
 
 /** Short transactions of a few thousand rows: uploads and later starts never wait behind it.
  * Returns false when another instance is doing the work. */
-async function purgeUnidentified(connection: PoolClient) {
-    const marker = unidentifiedPurge.marker
+async function purgeUnidentified(connection: PoolClient, purge: { marker: string; before: string }) {
+    const marker = purge.marker
     if ((await connection.query('SELECT 1 FROM telemetry_rollup_state WHERE name=$1', [marker])).rowCount) return true
     const lock = await connection.query("SELECT pg_try_advisory_lock(hashtext('darkgrade.telemetry.purge')) AS held")
     if (!lock.rows[0].held) return false
@@ -283,7 +288,7 @@ async function purgeUnidentified(connection: PoolClient) {
                  gone AS (DELETE FROM telemetry_events e USING page p
                      WHERE e.batch_path=p.batch_path AND e.sequence=p.sequence RETURNING e.batch_path)
                  SELECT array_agg(DISTINCT batch_path) AS batches, count(*)::int AS removed FROM gone`,
-                [unidentifiedPurge.before]
+                [purge.before]
             )
             const { batches, removed: count } = removed.rows[0]
             // An upload that held nothing but unidentified events has nothing left to describe.
@@ -314,9 +319,10 @@ const rebuilt = new WeakSet<Pool>()
 async function backfillRollups(pool: Pool) {
     if (rebuilt.has(pool)) return
     const done = await pool.query(
-        `SELECT 1 FROM telemetry_rollup_state WHERE name IN ('sessions-v1','unknown-codes-v1','${unidentifiedPurge.marker}')`
+        `SELECT 1 FROM telemetry_rollup_state WHERE name IN ('sessions-v1','unknown-codes-v1',${
+            unidentifiedPurges.map(purge => `'${purge.marker}'`).join(',')})`
     )
-    if (done.rowCount === 3) {
+    if (done.rowCount === 2 + unidentifiedPurges.length) {
         rebuilt.add(pool)
         return
     }
@@ -418,7 +424,9 @@ async function backfillRollups(pool: Pool) {
             await connection.query("INSERT INTO telemetry_rollup_state VALUES('unknown-codes-v1',now())")
         }
         await connection.query('COMMIT')
-        if (await purgeUnidentified(connection)) rebuilt.add(pool)
+        let finished = true
+        for (const purge of unidentifiedPurges) finished = (await purgeUnidentified(connection, purge)) && finished
+        if (finished) rebuilt.add(pool)
     } catch (error) {
         await connection.query('ROLLBACK').catch(() => {})
         console.error('Telemetry summary rebuild failed:', (error as Error).message)
