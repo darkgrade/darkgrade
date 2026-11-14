@@ -46,8 +46,6 @@ CREATE INDEX IF NOT EXISTS telemetry_events_protocol ON telemetry_events
     ((properties->'protocol'->>'type'),received_at) WHERE properties ? 'protocol';
 CREATE INDEX IF NOT EXISTS telemetry_events_benchmark ON telemetry_events
     (installation_id,(properties->'protocol'->>'benchmarkId')) WHERE properties ? 'protocol';
-CREATE INDEX IF NOT EXISTS telemetry_events_errors ON telemetry_events (received_at)
-    WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193);
 CREATE TABLE IF NOT EXISTS telemetry_sessions (
     installation_id uuid NOT NULL,
     session_id uuid NOT NULL,
@@ -195,9 +193,14 @@ const sessionColumns = `events,errors,signals,started_at,ended_at,latest_receive
 
 /** Build the session summaries once from existing events. Uploads wait briefly behind the table
  * lock so no event is counted twice or missed; later starts find the marker and skip this. */
+const rebuilt = new WeakSet<Pool>()
 async function backfillRollups(pool: Pool) {
+    if (rebuilt.has(pool)) return
     const done = await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
-    if (done.rowCount) return
+    if (done.rowCount) {
+        rebuilt.add(pool)
+        return
+    }
     const connection = await pool.connect()
     try {
         await connection.query('BEGIN')
@@ -206,6 +209,8 @@ async function backfillRollups(pool: Pool) {
         const again = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
         if (!again.rowCount) {
             await connection.query('LOCK TABLE telemetry_events IN SHARE ROW EXCLUSIVE MODE')
+            await connection.query(`CREATE INDEX IF NOT EXISTS telemetry_events_errors ON telemetry_events (received_at)
+                WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)`)
             await connection.query(adoptSessionIdentity(''))
             await connection.query('DELETE FROM telemetry_session_signals')
             await connection.query('DELETE FROM telemetry_sessions')
@@ -219,6 +224,7 @@ async function backfillRollups(pool: Pool) {
             await connection.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v1',now())")
         }
         await connection.query('COMMIT')
+        rebuilt.add(pool)
     } catch (error) {
         await connection.query('ROLLBACK').catch(() => {})
         throw error
@@ -228,7 +234,7 @@ async function backfillRollups(pool: Pool) {
 }
 
 /** Private operational state, flat diagnostic events, and per-session summaries kept current at ingest. */
-export async function postgresDatabase(connectionString: string) {
+export async function postgresDatabase(connectionString: string, options: { deferSummaryRebuild?: boolean } = {}) {
     if (!connectionString) throw new Error('DATABASE_URL is required')
     const pool = new Pool({
         connectionString,
@@ -243,7 +249,8 @@ export async function postgresDatabase(connectionString: string) {
         await pool.query(
             "BEGIN; SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.schema'));" + schema + ';COMMIT;'
         )
-        await backfillRollups(pool)
+        // A service defers this until it is listening: the rebuild can outlast a startup probe.
+        if (!options.deferSummaryRebuild) await backfillRollups(pool)
     } catch (error) {
         await pool.end()
         throw error
@@ -327,6 +334,7 @@ export async function postgresDatabase(connectionString: string) {
         expire(): Promise<void>
         normalizeConnections(): Promise<number>
         refreshSessions(): Promise<number>
+        rebuildSummaries(): Promise<void>
         health(): Promise<void>
         timeline(filters: {
             installation?: string
@@ -457,6 +465,7 @@ export async function postgresDatabase(connectionString: string) {
             }
             return updated
         },
+        rebuildSummaries: () => backfillRollups(pool),
         async refreshSessions() {
             // Deletions and relabeling keep counts exact but leave time bounds and label sets stale.
             // Recompute a bounded number per pass; rows another upload holds are skipped until the next.

@@ -6,7 +6,7 @@ import { cleanupWithdrawals, createTelemetry, resendContactSender } from '#colle
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 
-const database = await postgresDatabase(process.env.DATABASE_URL ?? '')
+const database = await postgresDatabase(process.env.DATABASE_URL ?? '', { deferSummaryRebuild: true })
 const handle = createTelemetry(database, {
     publicUrl: process.env.TELEMETRY_PUBLIC_URL ?? '',
     allowedOrigins: JSON.parse(process.env.TELEMETRY_ALLOWED_ORIGINS ?? '[]'),
@@ -74,6 +74,7 @@ const maintain = async () => {
     if (maintaining) return
     maintaining = true
     try {
+        await database.rebuildSummaries()
         await database.expire()
         await cleanupWithdrawals(database)
         await database.normalizeConnections()
