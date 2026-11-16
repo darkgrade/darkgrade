@@ -25,18 +25,30 @@ export default defineConfig({
             '@api': resolve(__dirname, './src/api'),
             '@constants': resolve(__dirname, './src/constants'),
             '@ptp': resolve(__dirname, './src/ptp'),
+            '@runtime': resolve(__dirname, './src/runtime'),
         },
     },
     build: {
         lib: {
-            entry: resolve(__dirname, 'src/index.ts'),
+            // The camera library, and the shared runtime (operation ordering, leases, MCP tools)
+            // that hosts embed. The runtime entries stay separate so a browser never loads
+            // the Node-only lease coordinator or the USB stack.
+            entry: {
+                index: resolve(__dirname, 'src/index.ts'),
+                'runtime/index': resolve(__dirname, 'src/runtime/index.ts'),
+                'runtime/browser': resolve(__dirname, 'src/runtime/browser.ts'),
+                'runtime/mcp': resolve(__dirname, 'src/runtime/mcp.ts'),
+                'runtime/ownership': resolve(__dirname, 'src/runtime/ownership.ts'),
+            },
             name: 'Fuse',
             formats: ['es', 'cjs'],
-            fileName: format => `index.${format === 'es' ? 'mjs' : 'cjs'}`,
+            fileName: (format, entry) => `${entry}.${format === 'es' ? 'mjs' : 'cjs'}`,
         },
         rollupOptions: {
             external: [
                 /^@darkgrade\/contribute(?:\/|$)/,
+                /^@modelcontextprotocol\//,
+                /^zod(?:\/|$)/,
                 'fs',
                 'path',
                 'usb',

@@ -1,6 +1,6 @@
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
-import { HttpCameraClient } from './http-client.ts'
-import { createCameraMcpServer } from './mcp.ts'
+import { HttpCameraClient } from '@runtime/http-client'
+import { createCameraMcpServer } from '@runtime/mcp'
 
 const host = process.env.DARKGRADE_RUNTIME_URL
 if (!host)

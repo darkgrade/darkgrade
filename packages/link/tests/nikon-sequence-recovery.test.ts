@@ -9,7 +9,7 @@ function setup() {
     const camera=new NikonCamera(transport,new Logger({expanded:false,captureConsole:false,renderInTerminal:false}))
     const warnings=[1,1,0],operations:number[]=[],movie:string[]=[]
     let releaseCode=0x2001
-    const information={operationsSupportedRaw:[0x9207],devicePropertiesSupportedRaw:[0xd102]}
+    const information={operationsSupportedRaw:[0x9207],devicePropertiesSupported:[0xd102]}
     camera.get=vi.fn(async property=>property.code===0xd102?warnings.shift():movie) as any
     camera.send=vi.fn(async operation=>{
         operations.push(operation.code)
@@ -35,7 +35,7 @@ describe('Nikon documented sequence-error recovery',()=>{
             const {camera,transport,information,warnings,operations}=setup()
             if(condition==='ip')transport.getType=()=>TransportType.IP
             if(condition==='operation')information.operationsSupportedRaw=[]
-            if(condition==='property')information.devicePropertiesSupportedRaw=[]
+            if(condition==='property')information.devicePropertiesSupported=[]
             if(condition==='cleared')warnings[1]=0
             if(condition==='new-fault')warnings[1]=3
             expect(await camera.recoverSequenceError()).toBe(false)

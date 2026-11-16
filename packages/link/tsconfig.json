@@ -18,8 +18,10 @@
             "@api/*": ["src/api/*"],
             "@factories/*": ["src/factories/*"],
             "@ptp/*": ["src/ptp/*"],
-            "@vendors/*": ["src/vendors/*"]
+            "@vendors/*": ["src/vendors/*"],
+            "@runtime/*": ["src/runtime/*"]
         }
     },
-    "include": ["src", "tests", "*.config.ts"]
+    "include": ["src", "tests", "*.config.ts"],
+    "exclude": ["tests/runtime"]
 }

@@ -1,3 +1,14 @@
+The shared camera runtime (operation ordering, leases, the common MCP tools) lives in
+`packages/link/src/runtime` and is imported as `@darkgrade/link/runtime` (`/browser`, `/mcp`,
+`/ownership`). There is no `packages/runtime`: put new camera code in Link. Its tests run under
+Bun (`bun run --cwd packages/link test:runtime`, which builds first) because they check package
+resolution with Bun's bundler; Vitest excludes `tests/runtime`. Hosts that load it by path
+(Test Bench) use `packages/link/src/runtime/index.ts` and `mcp.ts`.
+DeviceInfo carries numeric lists as `operationsSupportedRaw`, `eventsSupportedRaw` and
+`devicePropertiesSupported`; there is no `operationsSupported` or `devicePropertiesSupportedRaw`.
+Two recoveries read fields that do not exist and their tests faked them. Build test replies with
+the real codec.
+
 Telemetry scale and identity (2026-11-13): the collector keeps `telemetry_sessions` and
 `telemetry_session_signals` current with statement triggers on `telemetry_events`; the overview,
 session list, filters and suggestions read those and never scan raw events. Deletions decrement

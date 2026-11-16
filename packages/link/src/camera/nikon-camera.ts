@@ -849,7 +849,7 @@ export class NikonCamera extends GenericCamera {
         const information = await this.send(this.registry.operations.GetDeviceInfo, {})
         this.assertNikonResponse(information.code, 'GetDeviceInfo for shutter recovery')
         if (!information.data?.operationsSupportedRaw.includes(0x9207) ||
-            !information.data?.devicePropertiesSupportedRaw.includes(0xd102)) return false
+            !information.data?.devicePropertiesSupported.includes(0xd102)) return false
         const warning = this.registry.properties.NikonWarningStatus
         if (await this.get(warning) !== 1) return false
         const movie = await this.get(this.registry.properties.MovieRecProhibitionCondition)

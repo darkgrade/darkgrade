@@ -1,9 +1,11 @@
 # Darkgrade camera runtime
 
-`@darkgrade/runtime` owns the common camera MCP contract, frontend operation
+`@darkgrade/link/runtime` owns the common camera MCP contract, frontend operation
 ordering, and shared lease coordinator. Its host entry runs on Bun; a separate
-browser entry exposes the portable core. Both remain separate from the
-`@darkgrade/link` camera library.
+browser entry exposes the portable core. It lives in `packages/link/src/runtime`
+and ships with `@darkgrade/link`, but importing the camera library never loads it.
+The MCP entry needs `@modelcontextprotocol/server` and `zod`, which are optional
+peer dependencies: install them only when you serve the tools.
 
 The first migration covers 14 tools: controls, ISO, aperture, shutter speed,
 white balance, focus mode, autofocus, Manual exposure, movie format, photo
@@ -20,9 +22,8 @@ From the Darkgrade checkout, with Bun 1.4.2 or newer:
 
 ```sh
 bun install --frozen-lockfile
-bun run --cwd packages/runtime typecheck
-bun run --cwd packages/runtime test
-DARKGRADE_RUNTIME_URL=http://127.0.0.1:8787 bun run --cwd packages/runtime mcp
+bun run --cwd packages/link test:runtime
+DARKGRADE_RUNTIME_URL=http://127.0.0.1:8787 bun run --cwd packages/link mcp
 ```
 
 The stdio MCP server connects to an already running, session-owning host.
@@ -37,11 +38,11 @@ server, which is how Test Bench keeps its old API.
 
 ## In a browser
 
-`@darkgrade/runtime/browser` (also what bundlers resolve for the package under the
+`@darkgrade/link/runtime/browser` (also what bundlers resolve for the package under the
 `browser` condition) exports `CameraRuntime`, the tool contract, `HttpCameraClient`
-and `HardwareBusyError` with no `node:` imports; `@darkgrade/runtime/mcp` is
+and `HardwareBusyError` with no `node:` imports; `@darkgrade/link/runtime/mcp` is
 browser-safe too. `HardwareCoordinator` stays in the default entry and
-`@darkgrade/runtime/ownership`: its cross-process leases rely on Node's
+`@darkgrade/link/runtime/ownership`: its cross-process leases rely on Node's
 `AsyncLocalStorage` and a shared store. A `CameraRuntime` queue coordinates only
 that instance, not other tabs, workers or applications. Use `HttpCameraClient`
 with the owning host to retain shared hardware leases; a direct browser provider
@@ -49,7 +50,7 @@ must supply its own ownership mechanism. This entry does not provide WebUSB
 drivers or make host authentication and CORS automatic.
 
 Lease owners use the standard Web Crypto `crypto.randomUUID()`.
-`tests/browser.test.ts` checks the package's browser condition and explicit
+`tests/runtime/browser.test.ts` checks the package's browser condition and explicit
 browser/MCP exports, rejecting Node built-ins in their dependency graphs.
 
 ## Ownership

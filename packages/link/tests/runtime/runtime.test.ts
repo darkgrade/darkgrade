@@ -1,9 +1,9 @@
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { expect, test } from 'bun:test'
-import { HardwareBusyError } from '../src/errors.ts'
-import { HttpCameraClient } from '../src/http-client.ts'
-import { createCameraMcpServer } from '../src/mcp.ts'
-import { CameraRuntime, type CameraProvider, type ControlSession } from '../src/runtime.ts'
+import { HardwareBusyError } from '@runtime/errors'
+import { HttpCameraClient } from '@runtime/http-client'
+import { createCameraMcpServer } from '@runtime/mcp'
+import { CameraRuntime, type CameraProvider, type ControlSession } from '@runtime/runtime'
 
 function fixture() {
     const calls: unknown[] = []

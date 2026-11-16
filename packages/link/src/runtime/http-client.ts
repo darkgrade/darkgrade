@@ -1,5 +1,5 @@
-import { HardwareBusyError } from './errors.ts'
-import { validateMediaOptions, type CameraClient, type MediaOptions } from './runtime.ts'
+import { HardwareBusyError } from '@runtime/errors'
+import { validateMediaOptions, type CameraClient, type MediaOptions } from '@runtime/runtime'
 
 /** Connect to the existing owning host. Does not create a local hardware session. */
 export class HttpCameraClient implements CameraClient {

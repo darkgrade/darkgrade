@@ -126,7 +126,7 @@ it('sizes an FX2 original over 4 GiB from its typed property list when the descr
  const observed = Uint8Array.from(Buffer.from('01000000190c004004dc0800a66d0c3001000000', 'hex'))
  let list = observed, descriptorCode = 0x2005
  const asked: string[] = []
- f.camera.send.mockImplementation(async (op, args) => {
+ f.camera.send.mockImplementation((async (op: any, args: any) => {
   if (op.name === 'GetDeviceInfo') return { code: 0x2001, data: { operationsSupportedRaw: [0x9801, 0x9802, 0x9803, 0x9805] } }
   if (op.name === 'MtpGetObjectPropDesc') { asked.push(op.name); return { code: descriptorCode } }
   if (op.name === 'MtpGetObjectPropValue') throw new Error('the untyped value must not be trusted without a type')
@@ -136,7 +136,7 @@ it('sizes an FX2 original over 4 GiB from its typed property list when the descr
    return { code: 0x2001, data: list }
   }
   return original(op, args)
- })
+ }) as any)
  const sized = () => (f.recording as any).originalSize(handle, 0xffffffff, 0xb982)
  expect(await sized()).toBe(size)
  expect(asked).toEqual(['MtpGetObjectPropDesc', 'MtpGetObjectPropList'])

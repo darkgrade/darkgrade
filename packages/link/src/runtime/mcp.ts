@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import { HardwareBusyError } from './errors.ts'
-import type { CameraClient } from './runtime.ts'
+import { HardwareBusyError } from '@runtime/errors'
+import type { CameraClient } from '@runtime/runtime'
 
 function protect<T extends Record<string, unknown>>(callback: (argumentsValue: T) => Promise<unknown>) {
     return async (argumentsValue: T) => {

@@ -1,8 +1,8 @@
 // Browser-safe: no node: imports. Cross-process leases (HardwareCoordinator) need
 // Node's AsyncLocalStorage and stay in the default entry and `./ownership`.
-export { HardwareBusyError } from './errors.ts'
-export { HttpCameraClient } from './http-client.ts'
-export { CameraRuntime, controlActions, mediaActions, validateMediaOptions } from './runtime.ts'
+export { HardwareBusyError } from '@runtime/errors'
+export { HttpCameraClient } from '@runtime/http-client'
+export { CameraRuntime, controlActions, mediaActions, validateMediaOptions } from '@runtime/runtime'
 export type {
     CameraClient,
     CameraProvider,
@@ -10,4 +10,4 @@ export type {
     ControlSession,
     MediaAction,
     MediaOptions,
-} from './runtime.ts'
+} from '@runtime/runtime'

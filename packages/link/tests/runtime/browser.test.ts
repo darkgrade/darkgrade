@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const builtins = new Set(builtinModules.map(name => name.replace(/^node:/, '')))
-for (const entry of ['@darkgrade/runtime', '@darkgrade/runtime/browser', '@darkgrade/runtime/mcp']) {
+for (const entry of ['@darkgrade/link/runtime', '@darkgrade/link/runtime/browser', '@darkgrade/link/runtime/mcp']) {
     test(`${entry} resolves and bundles without Node built-ins for a browser`, async () => {
         const reached: string[] = []
         const directory = mkdtempSync(fileURLToPath(new URL('./.browser-', import.meta.url)))
@@ -38,7 +38,7 @@ for (const entry of ['@darkgrade/runtime', '@darkgrade/runtime/browser', '@darkg
 }
 
 test('the browser entry runs queued camera work', async () => {
-    const { CameraRuntime } = await import('../src/browser.ts')
+    const { CameraRuntime } = await import('@runtime/browser')
     const calls: string[] = []
     const runtime = new CameraRuntime({
         session: () => undefined,

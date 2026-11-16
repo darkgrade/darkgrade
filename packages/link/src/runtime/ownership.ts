@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { HardwareBusyError } from './errors.ts'
+import { HardwareBusyError } from '@runtime/errors'
 export interface OwnershipStore {
     claimHardwareResource(resource: string, owner: string, purpose: string, lifetimeMilliseconds: number): boolean
     heartbeatHardwareOwner(owner: string, lifetimeMilliseconds: number): unknown

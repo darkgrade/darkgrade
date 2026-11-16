@@ -1,0 +1,17 @@
+{
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "types": [
+            "node",
+            "bun"
+        ],
+        "noEmit": true,
+        "rootDir": "../..",
+        "baseUrl": "../.."
+    },
+    "include": [
+        "./*.ts",
+        "../../src/runtime"
+    ],
+    "exclude": []
+}

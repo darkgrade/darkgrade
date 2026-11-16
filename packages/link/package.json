@@ -8,6 +8,30 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.mjs",
             "require": "./dist/index.cjs"
+        },
+        "./runtime": {
+            "types": "./dist/runtime/index.d.ts",
+            "browser": {
+                "import": "./dist/runtime/browser.mjs",
+                "require": "./dist/runtime/browser.cjs"
+            },
+            "import": "./dist/runtime/index.mjs",
+            "require": "./dist/runtime/index.cjs"
+        },
+        "./runtime/browser": {
+            "types": "./dist/runtime/browser.d.ts",
+            "import": "./dist/runtime/browser.mjs",
+            "require": "./dist/runtime/browser.cjs"
+        },
+        "./runtime/mcp": {
+            "types": "./dist/runtime/mcp.d.ts",
+            "import": "./dist/runtime/mcp.mjs",
+            "require": "./dist/runtime/mcp.cjs"
+        },
+        "./runtime/ownership": {
+            "types": "./dist/runtime/ownership.d.ts",
+            "import": "./dist/runtime/ownership.mjs",
+            "require": "./dist/runtime/ownership.cjs"
         }
     },
     "files": [
@@ -16,7 +40,7 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite build --watch",
-        "test": "vitest run",
+        "test": "vitest run && bun run test:runtime",
         "test:fuzz": "vitest run tests/ptp-input-fuzz.test.ts",
         "bench:probe": "bun run tests/bench-probe.ts",
         "bench:profile": "bun run scripts/capture-profile.ts",
@@ -26,7 +50,9 @@
         "lint": "eslint . --ext .ts,.tsx",
         "format": "prettier --write .",
         "usb-ids": "bun run src/transport/usb/usb-ids/generate-usb-ids.ts",
-        "test:package": "bun run build && bun run scripts/check-package-exports.ts"
+        "test:package": "bun run build && bun run scripts/check-package-exports.ts",
+        "test:runtime": "bun run build && bun test ./tests/runtime",
+        "mcp": "bun run src/runtime/stdio.ts"
     },
     "keywords": [
         "ptp",
@@ -50,6 +76,9 @@
     },
     "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",
+        "@modelcontextprotocol/client": "2.0.0",
+        "@modelcontextprotocol/server": "2.0.0",
+        "@types/bun": "^1.3.14",
         "@types/node": "^20.11.0",
         "@types/react": "^19.1.11",
         "@types/usb": "^2.0.0",
@@ -59,10 +88,23 @@
         "glob": "^11.0.3",
         "string-similarity": "^4.0.4",
         "vite": "^7.1.7",
+        "vite-plugin-dts": "^5.0.3",
         "vitest": "^1.2.0",
-        "vite-plugin-dts": "^5.0.3"
+        "zod": "4.4.3"
     },
     "engines": {
         "node": ">=18"
+    },
+    "peerDependencies": {
+        "@modelcontextprotocol/server": "2.0.0",
+        "zod": "4.4.3"
+    },
+    "peerDependenciesMeta": {
+        "@modelcontextprotocol/server": {
+            "optional": true
+        },
+        "zod": {
+            "optional": true
+        }
     }
 }
