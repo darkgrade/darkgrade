@@ -1,0 +1,63 @@
+name: Telemetry checks
+on:
+    pull_request:
+        paths:
+            - 'packages/contribute/**'
+            - 'packages/link/**'
+            - 'packages/cli/**'
+            - 'apps/contribution-collector/**'
+            - 'apps/studio/**'
+            - 'bun.lock'
+            - '.github/workflows/telemetry-checks.yml'
+    workflow_dispatch:
+permissions:
+    contents: read
+jobs:
+    test:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        services:
+            postgres:
+                image: postgres:17-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
+                env:
+                    POSTGRES_PASSWORD: local-test-only
+                    POSTGRES_DB: telemetry
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd "pg_isready -U postgres"
+                    --health-interval 5s --health-timeout 5s --health-retries 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: '1.4.2'
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+            - run: bun install --frozen-lockfile --ignore-scripts
+            - run: npm run test --prefix packages/contribute
+            - run: npm run test --prefix apps/contribution-collector
+              env:
+                  DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry
+            - run: npm run build --prefix packages/link && npm run test --prefix packages/link -- tests/telemetry.test.ts tests/ptp-input-fuzz.test.ts
+            - run: npm run test:runtime --prefix packages/link
+            - run: npm run test --prefix packages/cli
+            - run: npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
+            - run: docker build -f apps/contribution-collector/Dockerfile -t telemetry-check .
+            - name: Test actual HTTP service
+              run: |
+                  docker run -d --name telemetry-service --network host \
+                    -e DATABASE_URL=postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry \
+                    -e TELEMETRY_PUBLIC_URL=https://telemetry.example -e PORT=8081 telemetry-check
+                  for attempt in $(seq 1 30); do
+                    if curl --silent --fail http://127.0.0.1:8081/healthz >/dev/null; then break; fi
+                    sleep 1
+                  done
+                  TELEMETRY_SMOKE_URL=http://127.0.0.1:8081 npm run smoke --prefix apps/contribution-collector
+            - name: Validate infrastructure
+              run: |
+                  docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 init -backend=false
+                  docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 validate
+            - if: always()
+              run: docker rm -f telemetry-service || true

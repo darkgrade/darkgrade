@@ -1,9 +1,15 @@
+import { validateProtocol, type ProtocolEvidence } from '#contribute/protocol'
 export const SCHEMA = 'darkgrade.diagnostics/v1'
 export const DISCLOSURE = 'protocol-metadata-only/v1'
 export const MAXIMUM_ENTRIES = 1000
 export const MAXIMUM_BODY_BYTES = 256 * 1024
 
 export interface DiagnosticEntry {
+    protocol?: ProtocolEvidence
+    operation?: string
+    occurredAt?: string
+    sessionId?: string
+    transactionId?: number
     kind: 'connect' | 'disconnect' | 'reset' | 'command' | 'response' | 'data' | 'event' | 'unknown'
     direction: 'out' | 'in' | 'lifecycle'
     code?: number
@@ -13,12 +19,15 @@ export interface DiagnosticEntry {
 }
 
 export interface CameraContext {
+    /** Versioned hash of the camera's manufacturer/model/serial. Never the installation identity or raw serial. */
+    hardwareFingerprint?: string
     manufacturer: string
     model: string
     firmware: string
     revision: string
     dirty: boolean
-    transport: 'usb' | 'ptp-ip' | 'sony-sdk'
+    transport: 'usb' | 'ptp-ip' | 'wifi' | 'unknown' | 'sony-sdk'
+    backend?: 'ptp' | 'vendor-api' | 'unknown'
     evidence: 'hardware' | 'synthetic'
 }
 
@@ -54,14 +63,29 @@ export function validateContribution(value: unknown): asserts value is Contribut
         throw new Error('Invalid contribution envelope')
     const camera = value.camera
     if (
-        !keys(camera, ['manufacturer', 'model', 'firmware', 'revision', 'dirty', 'transport', 'evidence']) ||
+        !keys(camera, [
+            'manufacturer',
+            'model',
+            'firmware',
+            'revision',
+            'dirty',
+            'transport',
+            'evidence',
+            'hardwareFingerprint',
+            'backend',
+        ]) ||
+        (camera.hardwareFingerprint !== undefined &&
+            (typeof camera.hardwareFingerprint !== 'string' ||
+                !/^camera-v1:[a-f0-9]{64}$/.test(camera.hardwareFingerprint) ||
+                camera.evidence !== 'hardware')) ||
         !label(camera.manufacturer, 32) ||
         !label(camera.model, 80) ||
         !label(camera.firmware, 40) ||
         typeof camera.revision !== 'string' ||
         !/^[a-f0-9]{7,40}$/.test(camera.revision) ||
         typeof camera.dirty !== 'boolean' ||
-        !['usb', 'ptp-ip', 'sony-sdk'].includes(String(camera.transport)) ||
+        !['usb', 'ptp-ip', 'wifi', 'unknown', 'sony-sdk'].includes(String(camera.transport)) ||
+        (camera.backend !== undefined && !['ptp', 'vendor-api', 'unknown'].includes(String(camera.backend))) ||
         !['hardware', 'synthetic'].includes(String(camera.evidence))
     )
         throw new Error('Invalid camera context')
@@ -73,7 +97,19 @@ export function validateContribution(value: unknown): asserts value is Contribut
         throw new Error('Invalid diagnostic count')
     for (const entry of value.entries) {
         if (
-            !keys(entry, ['kind', 'direction', 'code', 'bytes', 'durationMilliseconds', 'failed']) ||
+            !keys(entry, [
+                'kind',
+                'direction',
+                'code',
+                'bytes',
+                'protocol',
+                'durationMilliseconds',
+                'failed',
+                'occurredAt',
+                'sessionId',
+                'transactionId',
+                'operation',
+            ]) ||
             !['connect', 'disconnect', 'reset', 'command', 'response', 'data', 'event', 'unknown'].includes(
                 String(entry.kind)
             ) ||
@@ -81,8 +117,34 @@ export function validateContribution(value: unknown): asserts value is Contribut
             (entry.code !== undefined && !integer(entry.code, 65535)) ||
             !integer(entry.bytes, 2 ** 32 - 1) ||
             !integer(entry.durationMilliseconds, 3_600_000) ||
-            typeof entry.failed !== 'boolean'
+            typeof entry.failed !== 'boolean' ||
+            (entry.operation !== undefined &&
+                (typeof entry.operation !== 'string' || !/^[a-z_]{1,40}$/.test(entry.operation))) ||
+            (entry.sessionId !== undefined && !isContributionId(entry.sessionId)) ||
+            (entry.transactionId !== undefined && !integer(entry.transactionId, 2 ** 32 - 1)) ||
+            (entry.occurredAt !== undefined &&
+                (typeof entry.occurredAt !== 'string' ||
+                    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(entry.occurredAt) ||
+                    !Number.isFinite(Date.parse(entry.occurredAt))))
         )
             throw new Error('Invalid diagnostic entry')
+        if (entry.protocol !== undefined) validateProtocol(entry.protocol)
     }
+}
+
+/** Stable across reconnects, firmware updates and installations; absent when no reliable body serial exists. */
+export async function cameraHardwareFingerprint(info: {
+    manufacturer: string
+    model: string
+    serialNumber?: string
+}): Promise<string | undefined> {
+    const serial = info.serialNumber?.replace(/\0+$/, '').trim()
+    if (!serial || serial.length > 256 || /[\x00-\x1f\x7f]/.test(serial) || /^(unknown|none|n\/a|0+|f+)$/i.test(serial))
+        return
+    const manufacturer = info.manufacturer.trim().toLowerCase().replace(/\s+/g, ' ')
+    const model = info.model.trim().toLowerCase().replace(/\s+/g, ' ')
+    if (!manufacturer || !model || manufacturer === 'unknown' || model === 'unknown') return
+    const bytes = new TextEncoder().encode(JSON.stringify(['darkgrade.camera/v1', manufacturer, model, serial]))
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+    return 'camera-v1:' + Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('')
 }

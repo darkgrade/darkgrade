@@ -7,6 +7,18 @@ import { nikonShootingPropertyRegistry } from './nikon-shooting-property-definit
 const UINT8 = getDatatypeByName('UINT8')!.code
 const UINT32 = getDatatypeByName('UINT32')!.code
 
+/** Nikon Z5_2 USB/MTP reference §6.5.6.24; libgphoto2 PTP_DPC_NIKON_WarningStatus.
+ * Bit 0 is sequence error. Keep all bits so unrelated faults cannot be mistaken for it.
+ */
+export const NikonWarningStatus = {
+    code: 0xd102,
+    name: 'NikonWarningStatus',
+    description: 'Camera warning bits: bit 0 sequence error, bit 1 battery exhausted; read-only',
+    datatype: UINT32,
+    access: 'Get',
+    codec: registry => registry.codecs.uint32,
+} as const satisfies PropertyDefinition
+
 export const LiveViewStatus = {
     code: 0xd1b8,
     name: 'LiveViewStatus',
@@ -85,6 +97,7 @@ export const nikonPropertyRegistry = {
     ...nikonVideoPropertyRegistry,
     ...nikonShootingPropertyRegistry,
     ConnectionPath,
+    NikonWarningStatus,
     LiveViewStatus,
     LiveViewSelector,
     MovieRecProhibitionCondition,

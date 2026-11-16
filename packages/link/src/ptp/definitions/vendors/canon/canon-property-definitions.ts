@@ -500,6 +500,19 @@ export const CanonLiveViewMode = {
 // gphoto2 says this is correct, but it actually starts the recording rather than just setting the destination
 // libmtp calls this PTP_DPC_CANON_EOS_EVFRecordStatus
 // https://chromium.googlesource.com/chromium/deps/libmtp/+/4f4fad584e9c2735af5131f15b697376a3327de5/src/ptp.h#1655
+/** EOS PTP CaptureDestination, distinct from the Record command at 0xd1b8.
+ * Source: libgphoto2 camlibs/ptp2/config.c camera_canon_eos_update_capture_target.
+ * Card values come from the camera's enumeration; 4 denotes host memory.
+ */
+export const CanonCaptureDestination = {
+    code: 0xd11c,
+    name: 'CanonCaptureDestination',
+    description: 'Capture storage target (camera-advertised card values or host memory).',
+    datatype: UINT32,
+    codec: registry => registry.codecs.uint32,
+    access: 'GetSet' as const,
+} as const satisfies PropertyDefinition
+
 export const CanonRecordingDestination = {
     code: 0xd1b8,
     name: 'CanonRecordingDestination',
@@ -711,6 +724,7 @@ export const canonPropertyRegistry = {
     CanonMovieServoAutofocus,
     CanonLiveViewMode,
     CanonRecordingDestination,
+    CanonCaptureDestination,
     CanonLvViewTypeSelect,
     CanonMovieSize,
     CanonMovieFormat,

@@ -1,4 +1,4 @@
-import {describe,it,expect} from 'vitest'
+import {describe,it,expect,vi} from 'vitest'
 import {VideoTake,type TakeCamera} from '@workflows/video-take'
 function fixture(){
  const calls:string[]=[],failures=new Set<string>(),devices=new Map<string,TakeCamera>()
@@ -101,4 +101,17 @@ it('a driver cannot change expected file identity by mutating its collection inp
  const fixtureState=fixture();await fixtureState.take.start();await fixtureState.take.stop()
  fixtureState.devices.get('one')!.collect=async files=>{files[0].bytes=200;return files.map(file=>({...file,downloadUrl:'/files/'+file.id}))}
  await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].media[0].bytes).toBe(100)
+})
+
+for (const individual of [false,true]) it(`retains the first stop request separately from delayed completion (${individual ? 'single' : 'all'})`,async()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-11-13T18:00:00Z'))
+ try{
+  const f=fixture();await f.take.start();vi.setSystemTime(new Date('2026-11-13T18:00:20Z'))
+  f.failures.add('one');await (individual?f.take.stopCamera('one'):f.take.stop())
+  expect(f.take.state.cameras[0].stopRequestedAt).toBe('2026-11-13T18:00:20.000Z')
+  expect(f.take.state.cameras[0].stoppedAt).toBeUndefined()
+  vi.setSystemTime(new Date('2026-11-13T18:00:45Z'));await f.take.stop()
+  expect(f.take.state.cameras[0].stopRequestedAt).toBe('2026-11-13T18:00:20.000Z')
+  expect(f.take.state.cameras[0].stoppedAt).toBe('2026-11-13T18:00:45.000Z')
+ }finally{vi.useRealTimers()}
 })

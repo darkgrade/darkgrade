@@ -1,5 +1,5 @@
 import { resolve } from 'path'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
     resolve: {
@@ -13,9 +13,12 @@ export default defineConfig({
             '@api': resolve(__dirname, './src/api'),
             '@constants': resolve(__dirname, './src/constants'),
             '@ptp': resolve(__dirname, './src/ptp'),
+            '@runtime': resolve(__dirname, './src/runtime'),
         },
     },
     test: {
+        // The runtime's tests check package resolution with Bun's bundler: `bun run test:runtime`.
+        exclude: [...configDefaults.exclude, 'tests/runtime/**'],
         globals: true,
         environment: 'node',
         pool: 'forks',

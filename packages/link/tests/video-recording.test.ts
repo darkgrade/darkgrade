@@ -38,3 +38,30 @@ it('confirms Nikon recording only from the fresh movie-status descriptor',async(
  expect(started.recordingConfirmed).toBe(true)
  expect(started.evidence).toBe('Nikon reports active movie recording')
 })
+
+it('resolves Nikon 4 GiB sentinel sizes and transfers across the 32-bit offset boundary',async()=>{
+ const f=fixture(),send=f.camera.send,total=0x100000000+7,chunk=new Uint8Array(2*1024*1024)
+ Object.assign(f.camera.getInstance().registry.operations,{GetObjectSize:'GetObjectSize'})
+ const offsets:number[][]=[]
+ f.camera.send=async(operation:any,args:any)=>{
+  if(operation==='GetObjectInfo')return {code:0x2001,data:{filename:'CLIP.MOV',objectCompressedSize:0xffffffff}} as any
+  if(operation==='GetObjectSize')return {code:0x2001,data:BigInt(total)} as any
+  if(operation==='GetPartialObjectEx'){offsets.push([args.OffsetUpper,args.OffsetLower]);return {code:0x2001,data:chunk.subarray(0,args.MaxSizeLower)} as any}
+  return send(operation,args)
+ }
+ await f.recording.prepare();await f.recording.start();const stopped=await f.recording.stop()
+ expect(stopped.media[0].bytes).toBe(total)
+ let written=0
+ await f.recording.transfer(stopped.media[0],async bytes=>{written+=bytes.length},()=>{})
+ expect(written).toBe(total);expect(offsets.at(-1)).toEqual([1,0])
+})
+it('refuses a Nikon sentinel when the full size cannot be verified',async()=>{
+ const f=fixture(),send=f.camera.send
+ f.camera.send=async(operation:any,args:any)=>operation==='GetObjectInfo'?{code:0x2001,data:{filename:'CLIP.MOV',objectCompressedSize:0xffffffff}} as any:send(operation,args)
+ await expect(f.recording.transfer({id:'2',filename:'CLIP.MOV',bytes:0xffffffff,verified:true},async()=>{},()=>{})).rejects.toThrow('large-file size')
+ Object.assign(f.camera.getInstance().registry.operations,{GetObjectSize:'GetObjectSize'})
+ for(const invalid of [0n,BigInt(Number.MAX_SAFE_INTEGER)+1n,'4294967296',undefined]){
+  f.camera.send=async(operation:any,args:any)=>operation==='GetObjectSize'?{code:0x2001,data:invalid} as any:operation==='GetObjectInfo'?{code:0x2001,data:{filename:'CLIP.MOV',objectCompressedSize:0xffffffff}} as any:send(operation,args)
+  await expect(f.recording.transfer({id:'2',filename:'CLIP.MOV',bytes:0xffffffff,verified:true},async()=>{},()=>{})).rejects.toThrow('64-bit')
+ }
+})

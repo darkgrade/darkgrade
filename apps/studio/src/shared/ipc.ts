@@ -5,6 +5,10 @@ import type { SpeechModelId } from '@shared/speech-models'
  */
 
 export const IPC = {
+    DiagnosticsStatus: 'diagnostics:status',
+    DiagnosticsBenchmark: 'diagnostics:benchmark',
+    DiagnosticsChange: 'diagnostics:change',
+    DiagnosticsContact: 'diagnostics:contact',
     Connect: 'camera:connect',
     Disconnect: 'camera:disconnect',
     GetState: 'camera:get-state',
@@ -389,6 +393,14 @@ export interface StudioApi {
     /** Adds a line to the speech engine's log file. */
     voiceDiagnostic(message: string): Promise<IpcResult<void>>
     onVoiceStatus(callback: (status: VoiceEngineStatus) => void): () => void
+    diagnosticsBenchmark(): Promise<IpcResult<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }>>
+    getDiagnosticsStatus(): Promise<IpcResult<DiagnosticsStatus>>
+    changeDiagnostics(action: 'sharing' | 'withdraw' | 'retry', value?: boolean): Promise<IpcResult<DiagnosticsStatus>>
+    diagnosticsContact(
+        action: 'status' | 'remove' | 'request',
+        email?: string,
+        name?: string
+    ): Promise<IpcResult<DiagnosticsContact | null>>
     getPreferences(): Promise<IpcResult<Preferences>>
     setPreferences(change: Partial<Preferences>): Promise<IpcResult<Preferences>>
     onPreferences(callback: (preferences: Preferences) => void): () => void
@@ -408,4 +420,21 @@ export interface StudioApi {
     reportViewState(state: StudioViewState): Promise<IpcResult<void>>
     /** A tool asked the window to change what it shows. */
     onViewChange(callback: (change: Partial<StudioViewState>) => void): () => void
+}
+
+export interface DiagnosticsStatus {
+    installationId?: string | null
+    sharingEnabled?: boolean
+    configured: boolean
+    enabled: boolean
+    enrolled: boolean
+    withdrawalPending: boolean
+    queuedEntries: number
+    droppedEntries: number
+    error: string | null
+}
+export interface DiagnosticsContact {
+    email: string
+    verified: true
+    credit: { name: string; publish: true } | null
 }

@@ -11,7 +11,7 @@ import {
 import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
 import { createCanonRegistry } from '@ptp/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 function testCamera() {
     const transport = {
@@ -29,6 +29,73 @@ function testCamera() {
     }) as typeof camera.send
     return { camera, operations }
 }
+
+describe('Canon card recording destination', () => {
+    it('does not send movie selectors absent from an older body inventory', async () => {
+        const { camera, operations } = testCamera()
+        ;(camera as any).supportedOperations = new Set([0x9110, 0x9116])
+        await expect(camera.enterMovieMode()).rejects.toThrow('was not advertised')
+        await expect(camera.leaveMovieMode()).rejects.toThrow('was not advertised')
+        expect(operations).toHaveLength(0)
+    })
+    it('uses the advertised card value and restores host routing after the recording', async () => {
+        const { camera } = testCamera()
+        const property = camera.registry.properties.CanonCaptureDestination
+        const cache = (camera as any).propertyCache
+        cache.set(property, { current: 4, allowed: [4, 2] })
+        const writes: unknown[] = []
+        camera.set = (async (target, value) => {
+            expect(target).toBe(property)
+            writes.push(value)
+            cache.set(property, { current: value, allowed: [4, 2] })
+        }) as typeof camera.set
+        const restore = await camera.prepareRecordingDestination()
+        expect(writes).toEqual([2])
+        await restore()
+        await restore()
+        expect(writes).toEqual([2, 4])
+    })
+
+    it('does not invent a card value or write redundantly when already on a card', async () => {
+        const { camera } = testCamera()
+        const property = camera.registry.properties.CanonCaptureDestination
+        const cache = (camera as any).propertyCache
+        camera.set = vi.fn()
+        await (await camera.prepareRecordingDestination())()
+        cache.set(property, { current: 2, allowed: [2, 4] })
+        await (await camera.prepareRecordingDestination())()
+        expect(camera.set).not.toHaveBeenCalled()
+        for (const allowed of [undefined, [], [4], [0, 4]]) {
+            cache.set(property, { current: 4, allowed })
+            await expect(camera.prepareRecordingDestination()).rejects.toThrow('did not advertise a card')
+        }
+        expect(camera.set).not.toHaveBeenCalled()
+    })
+
+    it('prefers the verified advertised card value regardless of enum ordering', async () => {
+        const { camera } = testCamera(),property=camera.registry.properties.CanonCaptureDestination
+        const cache=(camera as any).propertyCache,writes:number[]=[]
+        cache.set(property,{current:4,allowed:[4,6,2]})
+        camera.set=(async(_property,value)=>{writes.push(Number(value));cache.set(property,{current:value,allowed:[4,6,2]})}) as typeof camera.set
+        const restore=await camera.prepareRecordingDestination()
+        expect(writes).toEqual([2])
+        await restore()
+        expect(writes).toEqual([2,4])
+    })
+
+    it('restores the original destination when card preparation changes state then fails', async () => {
+        const { camera } = testCamera()
+        const property = camera.registry.properties.CanonCaptureDestination
+        const cache = (camera as any).propertyCache
+        cache.set(property, { current: 4, allowed: [2, 4] })
+        camera.set = (async (_target, value) => {
+            cache.set(property, { current: value, allowed: [2, 4] })
+            if (value === 2) throw new Error('readback failed')
+        }) as typeof camera.set
+        await expect(camera.prepareRecordingDestination()).rejects.toThrow('readback failed')
+        expect(cache.get(property).current).toBe(4)
+    })
+})
 
 describe('Canon camera controls', () => {
     it('preserves the R6 III model identifier high bit from a four-byte property event', () => {

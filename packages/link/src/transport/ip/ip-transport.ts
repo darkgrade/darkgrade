@@ -22,6 +22,7 @@ import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-contai
 import type { Socket } from 'node:net'
 
 export interface IPTransportOptions {
+    telemetryEvidence?: 'hardware' | 'synthetic'
     address: string
     port?: number
     localAddress?: string
@@ -186,6 +187,7 @@ class PTPIPConnection {
 }
 
 export class IPTransport implements TransportInterface {
+    readonly telemetryEvidence: 'hardware' | 'synthetic'
     private connected = false
     private commandConnection?: PTPIPConnection
     private eventConnection?: PTPIPConnection
@@ -193,7 +195,7 @@ export class IPTransport implements TransportInterface {
     private eventTask?: Promise<void>
     private pendingCommand?: ReturnType<typeof USBContainerBuilder.parseContainer>
     private operationCodes = new Map<number, number>()
-    private options: Required<Omit<IPTransportOptions, 'localAddress' | 'clientGuid'>> &
+    private options: Required<Omit<IPTransportOptions, 'localAddress' | 'clientGuid' | 'telemetryEvidence'>> &
         Pick<IPTransportOptions, 'localAddress' | 'clientGuid'>
 
     /**
@@ -204,6 +206,8 @@ export class IPTransport implements TransportInterface {
         options: IPTransportOptions,
         private logger = new Logger({ renderInTerminal: false, captureConsole: false })
     ) {
+        this.telemetryEvidence = options.telemetryEvidence ??
+            (/^(?:localhost\.?|127\.\d+\.\d+\.\d+|\[?::1\]?)$/i.test(options.address) ? 'synthetic' : 'hardware')
         this.options = {
             address: options.address,
             port: options.port ?? DEFAULT_PORT,

@@ -1,8 +1,10 @@
 import type { SonySdkBridge } from '@vendors/sony/sdk-camera'
+import { sdkTelemetry } from '@core/telemetry'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
 export interface SonySdkBridgeOptions {
+    telemetryEvidence?: 'hardware' | 'synthetic'
     executable: string
     workingDirectory?: string
     environment?: Record<string, string>
@@ -23,6 +25,7 @@ export async function createSonySdkBridge(options: SonySdkBridgeOptions): Promis
 }
 
 class SonySdkNodeBridge implements SonySdkBridge {
+    private readonly telemetry: ReturnType<typeof sdkTelemetry>
     private readonly child: ChildProcessWithoutNullStreams
     private pending?: {
         resolve: (value: Record<string, unknown>) => void
@@ -35,6 +38,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
     private readonly timeoutMilliseconds: number
 
     constructor(options: SonySdkBridgeOptions) {
+        this.telemetry = sdkTelemetry(options.telemetryEvidence)
         this.timeoutMilliseconds = options.timeoutMilliseconds ?? 30_000
         if (
             !options.executable ||
@@ -128,7 +132,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
     }
 
     request(command: Record<string, string>): Promise<Record<string, unknown>> {
-        const operation = this.queue.then(async () => {
+        const operation = this.queue.then(() => this.telemetry.operation(command, async () => {
             if (this.closed) throw new Error('Sony SDK bridge is closed')
             if (Object.values(command).some(value => typeof value !== 'string' || /[\r\n]/.test(value)))
                 throw new Error('Invalid SDK bridge command')
@@ -139,7 +143,7 @@ class SonySdkNodeBridge implements SonySdkBridge {
             const reply = this.waitForReply(deadline)
             this.child.stdin.write(JSON.stringify(command) + '\n')
             return await reply
-        })
+        }))
         this.queue = operation.catch(() => undefined)
         return operation
     }

@@ -3,43 +3,66 @@ terraform {
   required_providers {
     google = { source = "hashicorp/google", version = "6.0.0" }
   }
+  backend "gcs" {}
 }
 variable "project_id" { type = string }
 variable "region" {
   type    = string
   default = "us-central1"
 }
-variable "bucket_name" { type = string }
-variable "collector_domain" {
-  type        = string
-  description = "Public collector DNS name; point its A record to collector_address before rollout."
-}
 variable "collector_image" {
   type = string
   validation {
     condition     = can(regex("@sha256:[a-f0-9]{64}$", var.collector_image))
-    error_message = "Pin the reviewed image by sha256 digest."
+    error_message = "Pin the reviewed image digest."
   }
 }
-variable "verification_keys" {
-  type        = map(object({ publicKey = string, uploads = bool }))
-  description = "Ed25519 public PEMs indexed by kid. Retain retired keys with uploads=false for withdrawal. Never provide private keys."
+variable "public_url" {
+  type = string
   validation {
-    condition     = length(var.verification_keys) > 0 && alltrue([for key in values(var.verification_keys) : strcontains(key.publicKey, "BEGIN PUBLIC KEY") && !strcontains(key.publicKey, "PRIVATE KEY")])
-    error_message = "Provide public verification keys only."
+    condition     = can(regex("^https://[a-zA-Z0-9.-]+$", var.public_url))
+    error_message = "Use the public HTTPS origin without a trailing slash."
   }
 }
-variable "legacy_withdrawal_secret_id" {
-  type        = string
-  default     = null
-  description = "Migration only: existing Secret Manager secret containing a JSON array of old HMAC keys. Accepted only for DELETE; never issue new HMAC grants."
+variable "database_password" {
+  type      = string
+  sensitive = true
+  validation {
+    condition     = length(var.database_password) >= 32
+    error_message = "Use a random database password of at least 32 characters."
+  }
 }
-variable "legacy_withdrawal_secret_version" {
+variable "admin_key" {
+  type      = string
+  sensitive = true
+  validation {
+    condition     = length(var.admin_key) >= 32
+    error_message = "Use a random operator password of at least 32 characters."
+  }
+}
+variable "allowed_origins" {
+  type    = list(string)
+  default = []
+}
+variable "email_api_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+variable "email_from" {
   type    = string
-  default = "1"
+  default = ""
+}
+variable "deploy_ref" {
+  type    = string
+  default = "refs/heads/main"
+}
+variable "bootstrap_principal" {
+  type    = string
+  default = ""
   validation {
-    condition     = can(regex("^[1-9][0-9]*$", var.legacy_withdrawal_secret_version))
-    error_message = "Pin the migration secret version."
+    condition     = var.bootstrap_principal == "" || can(regex("^(user|serviceAccount):[^ ]+@[^ ]+$", var.bootstrap_principal))
+    error_message = "Use a user or serviceAccount IAM principal, or leave empty."
   }
 }
 provider "google" {
@@ -47,314 +70,251 @@ provider "google" {
   region  = var.region
 }
 resource "google_project_service" "api" {
-  for_each           = toset(["run.googleapis.com", "storage.googleapis.com", "firestore.googleapis.com", "compute.googleapis.com", "cloudscheduler.googleapis.com", "iam.googleapis.com", "secretmanager.googleapis.com", "logging.googleapis.com", "monitoring.googleapis.com"])
+  for_each           = toset(["run.googleapis.com", "sqladmin.googleapis.com", "secretmanager.googleapis.com", "artifactregistry.googleapis.com", "iam.googleapis.com", "iamcredentials.googleapis.com", "sts.googleapis.com", "monitoring.googleapis.com", "billingbudgets.googleapis.com"])
   service            = each.value
   disable_on_destroy = false
 }
+resource "google_artifact_registry_repository" "telemetry" {
+  repository_id = "darkgrade-telemetry"
+  location      = var.region
+  format        = "DOCKER"
+  depends_on    = [google_project_service.api]
+}
+resource "google_sql_database_instance" "telemetry" {
+  name                = "darkgrade-telemetry"
+  database_version    = "POSTGRES_17"
+  region              = var.region
+  deletion_protection = true
+  settings {
+    # Concurrent bench uploads and Matrix export exhausted the shared micro instance.
+    tier            = "db-custom-1-3840"
+    edition         = "ENTERPRISE"
+    disk_size       = 10
+    disk_autoresize = true
+    deletion_protection_enabled = true
+    backup_configuration {
+      enabled                        = true
+      point_in_time_recovery_enabled = true
+    }
+    ip_configuration {
+      ipv4_enabled = true
+      ssl_mode = "ENCRYPTED_ONLY"
+      # No authorized networks. Only the authenticated Cloud SQL connector can connect.
+    }
+  }
+  depends_on = [google_project_service.api]
+}
+resource "google_sql_database" "telemetry" {
+  name     = "telemetry"
+  instance = google_sql_database_instance.telemetry.name
+}
+resource "google_sql_user" "collector" {
+  name     = "telemetry"
+  instance = google_sql_database_instance.telemetry.name
+  password = var.database_password
+}
 resource "google_service_account" "collector" {
-  account_id = "darkgrade-contributions"
+  account_id = "darkgrade-telemetry"
   depends_on = [google_project_service.api]
 }
-resource "google_storage_bucket" "contributions" {
-  name                        = var.bucket_name
-  location                    = var.region
-  uniform_bucket_level_access = true
-  public_access_prevention    = "enforced"
-  force_destroy               = false
-  versioning { enabled = false }
-  soft_delete_policy { retention_duration_seconds = 0 }
-  lifecycle_rule {
-    condition {
-      age            = 30
-      matches_prefix = ["contributions/"]
-    }
-    action { type = "Delete" }
-  }
-  lifecycle_rule {
-    condition {
-      age            = 2
-      matches_prefix = ["quotas/"]
-    }
-    action { type = "Delete" }
-  }
-  depends_on = [google_project_service.api]
+resource "google_service_account_iam_member" "bootstrap_act_as" {
+  count              = var.bootstrap_principal == "" ? 0 : 1
+  service_account_id = google_service_account.collector.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = var.bootstrap_principal
 }
-resource "google_storage_bucket_iam_member" "collector" {
-  bucket = google_storage_bucket.contributions.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.collector.email}"
-}
-resource "google_firestore_database" "contributions" {
-  project                 = var.project_id
-  name                    = "(default)"
-  location_id             = var.region
-  type                    = "FIRESTORE_NATIVE"
-  delete_protection_state = "DELETE_PROTECTION_ENABLED"
-  deletion_policy         = "ABANDON"
-  depends_on              = [google_project_service.api]
-}
-resource "google_firestore_field" "quota_expiry" {
-  project    = var.project_id
-  database   = google_firestore_database.contributions.name
-  collection = "quotas"
-  field      = "expiresAt"
-  ttl_config {}
-  index_config {}
-}
-resource "google_project_iam_member" "collector_database" {
+resource "google_project_iam_member" "bootstrap_monitoring" {
+  count   = var.bootstrap_principal == "" ? 0 : 1
   project = var.project_id
-  role    = "roles/datastore.user"
+  role    = "roles/monitoring.editor"
+  member  = var.bootstrap_principal
+}
+resource "google_project_iam_member" "sql" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
   member  = "serviceAccount:${google_service_account.collector.email}"
 }
-resource "google_secret_manager_secret_iam_member" "legacy_withdrawal" {
-  count     = var.legacy_withdrawal_secret_id == null ? 0 : 1
-  project   = var.project_id
-  secret_id = var.legacy_withdrawal_secret_id
+resource "google_secret_manager_secret" "configuration" {
+  for_each  = toset(concat(["database", "operator"], nonsensitive(var.email_api_key != "") ? ["email"] : []))
+  secret_id = "darkgrade-telemetry-${each.key}"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.api]
+}
+resource "google_secret_manager_secret_version" "email" {
+  count       = nonsensitive(var.email_api_key != "") ? 1 : 0
+  secret      = google_secret_manager_secret.configuration["email"].id
+  secret_data = var.email_api_key
+  lifecycle {
+    precondition {
+      condition     = var.email_from != "" && !can(regex("[\\r\\n]", var.email_from))
+      error_message = "Configure the verified sender address with the email key."
+    }
+  }
+}
+resource "google_secret_manager_secret_version" "database" {
+  secret      = google_secret_manager_secret.configuration["database"].id
+  secret_data = "postgresql://telemetry:${urlencode(var.database_password)}@localhost/telemetry?host=${urlencode("/cloudsql/${google_sql_database_instance.telemetry.connection_name}")}"
+}
+resource "google_secret_manager_secret_version" "operator" {
+  secret      = google_secret_manager_secret.configuration["operator"].id
+  secret_data = var.admin_key
+}
+resource "google_secret_manager_secret_iam_member" "configuration" {
+  for_each  = google_secret_manager_secret.configuration
+  secret_id = each.value.id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.collector.email}"
 }
 resource "google_cloud_run_v2_service" "collector" {
-  name     = "darkgrade-contributions"
+  name     = "darkgrade-telemetry"
   location = var.region
-  # Public run.app traffic cannot bypass Cloud Armor; Google load balancing is the public entry point.
-  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  ingress  = "INGRESS_TRAFFIC_ALL"
   template {
     service_account                  = google_service_account.collector.email
     timeout                          = "30s"
     max_instance_request_concurrency = 16
     scaling {
-      min_instance_count = 0
-      max_instance_count = 20
+      # One resident web process runs cleanup too: no separate scheduler or job.
+      min_instance_count = 1
+      max_instance_count = 2
+    }
+    volumes {
+      name = "cloudsql"
+      cloud_sql_instance { instances = [google_sql_database_instance.telemetry.connection_name] }
     }
     containers {
       image = var.collector_image
       resources {
-        limits   = { cpu = "1", memory = "256Mi" }
-        cpu_idle = true
+        limits   = { cpu = "1", memory = "512Mi" }
+        cpu_idle = false
+      }
+      volume_mounts {
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
       }
       env {
-        name  = "CONTRIBUTION_BUCKET"
-        value = google_storage_bucket.contributions.name
+        name = "DATABASE_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.configuration["database"].secret_id
+            version = google_secret_manager_secret_version.database.version
+          }
+        }
       }
       env {
-        name  = "GOOGLE_CLOUD_PROJECT"
-        value = var.project_id
+        name = "TELEMETRY_ADMIN_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.configuration["operator"].secret_id
+            version = google_secret_manager_secret_version.operator.version
+          }
+        }
       }
       env {
-        name  = "CONTRIBUTION_VERIFICATION_KEYS"
-        value = jsonencode(var.verification_keys)
+        name  = "TELEMETRY_PUBLIC_URL"
+        value = var.public_url
+      }
+      env {
+        name  = "TELEMETRY_ALLOWED_ORIGINS"
+        value = jsonencode(var.allowed_origins)
       }
       dynamic "env" {
-        for_each = var.legacy_withdrawal_secret_id == null ? [] : [var.legacy_withdrawal_secret_id]
+        for_each = nonsensitive(var.email_api_key != "") ? [1] : []
         content {
-          name = "CONTRIBUTION_LEGACY_WITHDRAWAL_KEYS"
+          name = "TELEMETRY_EMAIL_API_KEY"
           value_source {
             secret_key_ref {
-              secret  = env.value
-              version = var.legacy_withdrawal_secret_version
+              secret  = google_secret_manager_secret.configuration["email"].secret_id
+              version = google_secret_manager_secret_version.email[0].version
             }
           }
         }
       }
+      dynamic "env" {
+        for_each = nonsensitive(var.email_api_key != "") ? [1] : []
+        content {
+          name = "TELEMETRY_EMAIL_FROM"
+          value = var.email_from
+        }
+      }
+      startup_probe {
+        http_get { path = "/healthz" }
+        initial_delay_seconds = 5
+        period_seconds        = 5
+        failure_threshold     = 12
+      }
     }
   }
-  depends_on = [google_project_service.api, google_storage_bucket_iam_member.collector, google_project_iam_member.collector_database, google_firestore_database.contributions, google_secret_manager_secret_iam_member.legacy_withdrawal]
+  depends_on = [google_project_service.api, google_secret_manager_secret_iam_member.configuration, google_project_iam_member.sql, google_service_account_iam_member.bootstrap_act_as, google_sql_database.telemetry, google_sql_user.collector]
 }
-resource "google_cloud_run_v2_service_iam_member" "endpoint" {
+resource "google_cloud_run_v2_service_iam_member" "public" {
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.collector.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
-resource "google_compute_security_policy" "collector" {
-  name = "darkgrade-contribution-front-door"
-  dynamic "rule" {
-    for_each = { POST = { priority = 100, count = 120 }, DELETE = { priority = 110, count = 30 } }
-    content {
-      priority = rule.value.priority
-      action   = "throttle"
-      match {
-        expr { expression = "request.path == '/v1/contributions' && request.method == '${rule.key}'" }
-      }
-      rate_limit_options {
-        conform_action = "allow"
-        exceed_action  = "deny(429)"
-        enforce_on_key = "IP"
-        rate_limit_threshold {
-          count        = rule.value.count
-          interval_sec = 60
-        }
-      }
-    }
-  }
-  rule {
-    priority = 2147483647
-    action   = "deny(403)"
-    match {
-      versioned_expr = "SRC_IPS_V1"
-      config { src_ip_ranges = ["*"] }
-    }
-  }
+resource "google_service_account" "deploy" {
+  account_id = "darkgrade-telemetry-deploy"
   depends_on = [google_project_service.api]
 }
-resource "google_compute_region_network_endpoint_group" "collector" {
-  name                  = "darkgrade-contribution-run"
-  network_endpoint_type = "SERVERLESS"
-  region                = var.region
-  cloud_run { service = google_cloud_run_v2_service.collector.name }
-}
-resource "google_compute_backend_service" "collector" {
-  name                  = "darkgrade-contribution-backend"
-  protocol              = "HTTP"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  security_policy       = google_compute_security_policy.collector.id
-  backend { group = google_compute_region_network_endpoint_group.collector.id }
-}
-resource "google_compute_global_address" "collector" {
-  name       = "darkgrade-contribution-address"
-  depends_on = [google_project_service.api]
-}
-resource "google_compute_managed_ssl_certificate" "collector" {
-  name = "darkgrade-contribution-tls"
-  managed { domains = [var.collector_domain] }
-  depends_on = [google_project_service.api]
-}
-resource "google_compute_url_map" "collector" {
-  name            = "darkgrade-contribution-routes"
-  default_service = google_compute_backend_service.collector.id
-}
-resource "google_compute_target_https_proxy" "collector" {
-  name             = "darkgrade-contribution-https"
-  url_map          = google_compute_url_map.collector.id
-  ssl_certificates = [google_compute_managed_ssl_certificate.collector.id]
-}
-resource "google_compute_global_forwarding_rule" "collector" {
-  name                  = "darkgrade-contribution-https"
-  target                = google_compute_target_https_proxy.collector.id
-  port_range            = "443"
-  ip_address            = google_compute_global_address.collector.address
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-}
-resource "google_cloud_run_v2_job" "withdrawals" {
-  name     = "darkgrade-withdrawals"
-  location = var.region
-  template {
-    task_count  = 1
-    parallelism = 1
-    template {
-      service_account = google_service_account.collector.email
-      timeout         = "240s"
-      max_retries     = 3
-      containers {
-        image   = var.collector_image
-        command = ["node"]
-        args    = ["dist/withdrawal-worker.js"]
-        env {
-          name  = "CONTRIBUTION_BUCKET"
-          value = google_storage_bucket.contributions.name
-        }
-        env {
-          name  = "GOOGLE_CLOUD_PROJECT"
-          value = var.project_id
-        }
-      }
-    }
-  }
-  depends_on = [google_project_iam_member.collector_database, google_storage_bucket_iam_member.collector]
-}
-resource "google_service_account" "scheduler" {
-  account_id = "darkgrade-withdrawal-scheduler"
-  depends_on = [google_project_service.api]
-}
-resource "google_cloud_run_v2_job_iam_member" "scheduler" {
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_job.withdrawals.name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.scheduler.email}"
-}
-resource "google_cloud_scheduler_job" "withdrawals" {
-  name     = "darkgrade-withdrawal-retry"
-  schedule = "*/5 * * * *"
-  region   = var.region
-  http_target {
-    http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.withdrawals.name}:run"
-    oauth_token { service_account_email = google_service_account.scheduler.email }
-  }
-  depends_on = [google_project_service.api, google_cloud_run_v2_job_iam_member.scheduler]
-}
-output "collector_url" { value = "https://${var.collector_domain}" }
-output "collector_address" { value = google_compute_global_address.collector.address }
-output "private_bucket" { value = google_storage_bucket.contributions.name }
 
-variable "notification_channels" {
-  type        = list(string)
-  default     = []
-  description = "Existing Cloud Monitoring channel resource names. Empty means incidents visible in Monitoring without notifications."
+resource "google_iam_workload_identity_pool" "github" {
+  workload_identity_pool_id = "darkgrade-telemetry-github"
+  depends_on                = [google_project_service.api]
 }
-resource "google_logging_metric" "collector_outcomes" {
-  name   = "darkgrade_contribution_outcomes"
-  filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${google_cloud_run_v2_service.collector.name}\" AND jsonPayload.component=\"contribution-collector\""
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    labels {
-      key        = "outcome"
-      value_type = "STRING"
-    }
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github"
+  attribute_mapping = {
+    "google.subject" = "assertion.sub", "attribute.repository" = "assertion.repository", "attribute.ref" = "assertion.ref"
   }
-  label_extractors = { outcome = "EXTRACT(jsonPayload.outcome)" }
-  depends_on       = [google_project_service.api]
+  attribute_condition = "assertion.repository == 'darkgrade/darkgrade' && assertion.ref == '${var.deploy_ref}'"
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
 }
-resource "google_logging_metric" "withdrawal_failures" {
-  name   = "darkgrade_withdrawal_failures"
-  filter = "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"${google_cloud_run_v2_job.withdrawals.name}\" AND jsonPayload.component=\"contribution-withdrawal\" AND jsonPayload.failed>0"
-  metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-  }
-  depends_on = [google_project_service.api]
+
+resource "google_service_account_iam_member" "github" {
+  service_account_id = google_service_account.deploy.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/darkgrade/darkgrade"
 }
-resource "google_monitoring_alert_policy" "collector_outcomes" {
-  for_each              = toset(["rejected", "quota", "unavailable"])
-  display_name          = "Darkgrade contribution ${each.key} spike"
-  combiner              = "OR"
-  notification_channels = var.notification_channels
-  conditions {
-    display_name = "Repeated ${each.key} outcomes"
-    condition_threshold {
-      filter          = "resource.type = \"cloud_run_revision\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.collector_outcomes.name}\" AND metric.label.outcome = \"${each.key}\""
-      duration        = "300s"
-      comparison      = "COMPARISON_GT"
-      threshold_value = each.key == "unavailable" ? 0 : 20
-      aggregations {
-        alignment_period     = "60s"
-        per_series_aligner   = "ALIGN_SUM"
-        cross_series_reducer = "REDUCE_SUM"
-      }
-    }
-  }
-  depends_on = [google_project_service.api]
+
+resource "google_project_iam_member" "deploy_run" {
+  project = var.project_id
+  role    = "roles/run.developer"
+  member  = "serviceAccount:${google_service_account.deploy.email}"
 }
-resource "google_monitoring_alert_policy" "withdrawals" {
-  display_name          = "Darkgrade withdrawal cleanup failed"
-  combiner              = "OR"
-  notification_channels = var.notification_channels
-  conditions {
-    display_name = "Withdrawal retry needs attention"
-    condition_threshold {
-      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.withdrawal_failures.name}\""
-      duration        = "0s"
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      aggregations {
-        alignment_period     = "300s"
-        per_series_aligner   = "ALIGN_SUM"
-        cross_series_reducer = "REDUCE_SUM"
-      }
-    }
-  }
-  depends_on = [google_project_service.api]
+
+resource "google_artifact_registry_repository_iam_member" "deploy_images" {
+  repository = google_artifact_registry_repository.telemetry.name
+  location   = var.region
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.deploy.email}"
+}
+
+resource "google_service_account_iam_member" "deploy_act_as" {
+  service_account_id = google_service_account.collector.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.deploy.email}"
+}
+
+output "collector_url" {
+  value = google_cloud_run_v2_service.collector.uri
+}
+
+output "registry" {
+  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.telemetry.repository_id}"
+}
+
+output "workload_identity_provider" {
+  value = google_iam_workload_identity_pool_provider.github.name
+}
+
+output "deploy_service_account" {
+  value = google_service_account.deploy.email
 }

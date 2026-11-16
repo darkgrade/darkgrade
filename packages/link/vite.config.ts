@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { resolve } from 'path'
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
@@ -5,6 +6,8 @@ import dts from 'vite-plugin-dts'
 export default defineConfig({
     define: {
         global: 'globalThis',
+        __LINK_TELEMETRY_REVISION__: JSON.stringify(process.env.LINK_REVISION || execFileSync('git', ['rev-parse', 'HEAD']).toString().trim()),
+        __LINK_TELEMETRY_DIRTY__: JSON.stringify(execFileSync('git', ['status', '--porcelain', '--untracked-files=no']).toString().trim().length > 0),
     },
     plugins: [
         // Emits dist/index.d.ts (+ tree) with @camera/@core/... aliases
@@ -22,17 +25,30 @@ export default defineConfig({
             '@api': resolve(__dirname, './src/api'),
             '@constants': resolve(__dirname, './src/constants'),
             '@ptp': resolve(__dirname, './src/ptp'),
+            '@runtime': resolve(__dirname, './src/runtime'),
         },
     },
     build: {
         lib: {
-            entry: resolve(__dirname, 'src/index.ts'),
+            // The camera library, and the shared runtime (operation ordering, leases, MCP tools)
+            // that hosts embed. The runtime entries stay separate so a browser never loads
+            // the Node-only lease coordinator or the USB stack.
+            entry: {
+                index: resolve(__dirname, 'src/index.ts'),
+                'runtime/index': resolve(__dirname, 'src/runtime/index.ts'),
+                'runtime/browser': resolve(__dirname, 'src/runtime/browser.ts'),
+                'runtime/mcp': resolve(__dirname, 'src/runtime/mcp.ts'),
+                'runtime/ownership': resolve(__dirname, 'src/runtime/ownership.ts'),
+            },
             name: 'Fuse',
             formats: ['es', 'cjs'],
-            fileName: format => `index.${format === 'es' ? 'mjs' : 'cjs'}`,
+            fileName: (format, entry) => `${entry}.${format === 'es' ? 'mjs' : 'cjs'}`,
         },
         rollupOptions: {
             external: [
+                /^@darkgrade\/contribute(?:\/|$)/,
+                /^@modelcontextprotocol\//,
+                /^zod(?:\/|$)/,
                 'fs',
                 'path',
                 'usb',

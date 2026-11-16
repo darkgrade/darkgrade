@@ -85,6 +85,7 @@ function isUsbDeviceGone(error: unknown): boolean {
 }
 
 export class USBTransport implements TransportInterface {
+    readonly telemetryEvidence = 'hardware' as const
     private device: USBDevice | null = null
     private interfaceNumber = 0
     private endpoints: EndpointConfiguration | null = null

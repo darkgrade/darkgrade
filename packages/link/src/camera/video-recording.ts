@@ -1,6 +1,7 @@
 import {readCameraStorages, readCameraObjectHandles} from '@camera/storage'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 import {openCanonRecordingMode} from '@vendors/canon/recording-mode'
+import {readNikonObjectSize} from '@vendors/nikon/object-size'
 import type {TakeMedia} from '@workflows/video-take'
 const sleep=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
 /** Persistent PTP movie recording, final-file discovery and bounded-memory transfer. */
@@ -50,7 +51,8 @@ export class UsbVideoRecording {
                 for(const handle of await this.handles()){
                     if(this.baseline.has(handle))continue
                     const result=await this.camera.send(this.operations.GetObjectInfo,{ObjectHandle:handle}),info=result.data
-                    const bytes=Number(info?.objectCompressedSize)
+                    const reported=Number(info?.objectCompressedSize)
+                    const bytes=result.code===0x2001&&this.vendor==='nikon'?await readNikonObjectSize(this.camera,handle,reported):reported
                     if(result.code===0x2001&&Number.isSafeInteger(bytes)&&bytes>0&&/\.(mp4|mov|mts|m2ts|avi|crm)$/i.test(info?.filename||''))media.push({id:String(handle),filename:String(info.filename),bytes,verified:true})
                 }
                 if(media.length)break
@@ -62,7 +64,10 @@ export class UsbVideoRecording {
     }
     async transfer(file:TakeMedia,write:(bytes:Uint8Array)=>Promise<void>,progress:(bytes:number,total:number)=>void){
         const handle=Number(file.id),fresh=await this.camera.send(this.operations.GetObjectInfo,{ObjectHandle:handle})
-        if(fresh.code!==0x2001||fresh.data?.filename!==file.filename||Number(fresh.data?.objectCompressedSize)!==file.bytes)throw new Error('Camera file changed; transfer refused')
+        if(fresh.code!==0x2001||fresh.data?.filename!==file.filename)throw new Error('Camera file changed; transfer refused')
+        const reported=Number(fresh.data?.objectCompressedSize)
+        const freshSize=this.vendor==='nikon'?await readNikonObjectSize(this.camera,handle,reported):reported
+        if(freshSize!==file.bytes)throw new Error('Camera file changed; transfer refused')
         if(!Number.isSafeInteger(file.bytes)||file.bytes<=0)throw new Error('Invalid camera file size')
         const extended=this.vendor==='nikon'&&this.operations.GetPartialObjectEx
         if(!extended&&file.bytes>0xffffffff)throw new Error('This camera transfer path cannot safely address files over 4 GiB; copy this original from its card')

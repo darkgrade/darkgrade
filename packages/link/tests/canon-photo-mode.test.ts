@@ -1,5 +1,45 @@
 import { expect, it, vi } from 'vitest'
-import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
+import { withCanonPhotoMode, openCanonRecordingMode, withCanonRecordingMode } from '@vendors/canon/recording-mode'
+
+it('prepares the card before movie selection and restores it only after leaving movie mode', async () => {
+    vi.useFakeTimers()
+    try {
+        const order: string[] = []
+        const camera = {
+            getCanonUnknownPropertyStates: async () => [],
+            getCanonPropertyStates: async () => [{ name: 'CanonAutoExposureMode', value: 1 }],
+            prepareCanonRecordingDestination: async () => {
+                order.push('card')
+                return async () => { order.push('restore destination') }
+            },
+            enterMovieMode: async () => { order.push('movie on') },
+            leaveMovieMode: async () => { order.push('movie off') },
+        }
+        const opening = openCanonRecordingMode(camera)
+        await vi.runAllTimersAsync()
+        const mode = await opening
+        expect(order).toEqual(['card', 'movie on'])
+        await mode.restore()
+        expect(order).toEqual(['card', 'movie on', 'movie off', 'restore destination'])
+        order.length = 0
+        const recording = withCanonRecordingMode(camera, async () => { order.push('record') }, () => false)
+        await vi.runAllTimersAsync()
+        await recording
+        expect(order).toEqual(['card', 'movie on', 'record'])
+    } finally { vi.useRealTimers() }
+})
+
+it('restores card routing when movie selection fails before a recording starts', async () => {
+    const restore = vi.fn(async () => {})
+    const camera = {
+        getCanonUnknownPropertyStates: async () => [],
+        getCanonPropertyStates: async () => [{ name: 'CanonAutoExposureMode', value: 1 }],
+        prepareCanonRecordingDestination: async () => restore,
+        enterMovieMode: async () => { throw new Error('mode refused') },
+    }
+    await expect(openCanonRecordingMode(camera)).rejects.toThrow('mode refused')
+    expect(restore).toHaveBeenCalledTimes(1)
+})
 
 it('reports the physical Canon selector requirement without retrying an already-active movie mode', async () => {
     vi.useFakeTimers()
@@ -19,4 +59,46 @@ it('reports the physical Canon selector requirement without retrying an already-
     } finally {
         vi.useRealTimers()
     }
+})
+it('records preparation, failed transitions and cleanup from cache without diagnostic errors changing recovery',async()=>{
+ const phases:string[]=[],restore=vi.fn(async()=>{})
+ const camera={
+  getInstance:()=>({recordStateSnapshot:(_workflow:string,phase:string)=>{phases.push(phase);throw Error('diagnostics unavailable')}}),
+  getCanonPropertyStates:async()=>[{name:'CanonAutoExposureMode',value:1}],getCanonUnknownPropertyStates:async()=>[],
+  prepareCanonRecordingDestination:async()=>restore,enterMovieMode:async()=>{throw Error('mode refused')},
+ }
+ await expect(openCanonRecordingMode(camera)).rejects.toThrow('mode refused')
+ expect(phases).toEqual(['before-prepare','failure','after-cleanup'])
+ expect(restore).toHaveBeenCalledTimes(1)
+})
+it('records preparation and cleanup around a successful mode switch without extra camera reads',async()=>{
+ vi.useFakeTimers()
+ try{
+  const phases:string[]=[],reads=vi.fn(async()=>[{name:'CanonAutoExposureMode',value:1}])
+  const camera={getInstance:()=>({recordStateSnapshot:(_workflow:string,phase:string)=>phases.push(phase)}),getCanonPropertyStates:reads,getCanonUnknownPropertyStates:async()=>[],enterMovieMode:async()=>{},leaveMovieMode:async()=>{}}
+  const opening=openCanonRecordingMode(camera);await vi.runAllTimersAsync();const mode=await opening;await mode.restore()
+  expect(phases).toEqual(['before-prepare','after-prepare','after-cleanup']);expect(reads).toHaveBeenCalledTimes(1)
+ }finally{vi.useRealTimers()}
+})
+
+it.each(['delayed','ignored'] as const)('requires observed movie mode after an acknowledged %s selector',async behavior=>{
+ vi.useFakeTimers()
+ try{
+  let mode=0,pending=false,polls=0,destination=4
+  const record=vi.fn(async()=>{expect(mode).toBe(1)})
+  const camera={
+   getInstance:()=>({refreshEventProperties:async()=>{if(pending&&behavior==='delayed'&&++polls>=3){mode=1;pending=false}}}),
+   getCanonPropertyStates:async()=>[{name:'CanonAutoExposureMode',value:1}],
+   getCanonUnknownPropertyStates:async()=>[{name:'FixedMovie',rawValue:mode}],
+   prepareCanonRecordingDestination:async()=>{destination=2;return async()=>{destination=4}},
+   enterMovieMode:vi.fn(async()=>{pending=true}),
+   leaveMovieMode:vi.fn(async()=>{mode=0;pending=false}),
+  }
+  const run=withCanonRecordingMode(camera,record)
+  const result=behavior==='ignored'?expect(run).rejects.toThrow('did not confirm Movie'):expect(run).resolves.toBeUndefined()
+  await vi.runAllTimersAsync();await result
+  expect(record).toHaveBeenCalledTimes(behavior==='ignored'?0:1)
+  expect(camera.enterMovieMode).toHaveBeenCalledTimes(1)
+  expect(mode).toBe(0);expect(destination).toBe(4)
+ }finally{vi.useRealTimers()}
 })

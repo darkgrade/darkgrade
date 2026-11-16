@@ -1,3 +1,108 @@
+The shared camera runtime (operation ordering, leases, the common MCP tools) lives in
+`packages/link/src/runtime` and is imported as `@darkgrade/link/runtime` (`/browser`, `/mcp`,
+`/ownership`). There is no `packages/runtime`: put new camera code in Link. Its tests run under
+Bun (`bun run --cwd packages/link test:runtime`, which builds first) because they check package
+resolution with Bun's bundler; Vitest excludes `tests/runtime`. Hosts that load it by path
+(Test Bench) use `packages/link/src/runtime/index.ts` and `mcp.ts`.
+DeviceInfo carries numeric lists as `operationsSupportedRaw`, `eventsSupportedRaw` and
+`devicePropertiesSupported`; there is no `operationsSupported` or `devicePropertiesSupportedRaw`.
+Two recoveries read fields that do not exist and their tests faked them. Build test replies with
+the real codec.
+
+Telemetry scale and identity (2026-11-13): the collector keeps `telemetry_sessions` and
+`telemetry_session_signals` current with statement triggers on `telemetry_events`; the overview,
+session list, filters and suggestions read those and never scan raw events. Deletions decrement
+counts at once and mark the session stale; maintenance refreshes time bounds and label sets.
+A one-time startup rebuild (marker `sessions-v1` in `telemetry_rollup_state`) holds a brief table
+lock. Any new writer of `telemetry_events` is covered by the triggers; a change to how a signal
+or error is derived must change the trigger functions, the queries and the marker together.
+Events recorded before a connection's identity read adopt the single identity the same session
+read later (derived columns only; signed payloads stay as uploaded). Native Sony sessions read
+standard DeviceInfo once per connection after authentication; a refusal is logged and ignored.
+The in-session read was confirmed physically on the a6700 and FX2 (2026-11-14): it follows
+authentication and precedes the first property read. Link remembers which inventory and setting
+facts this installation already shared in `reported-facts.json` under the settings directory
+(short hashes only), because bench camera work runs in short-lived workers; a fact is shared
+again when it changes or after six hours. Probe and vendor-session scopes are kept separately.
+Benchmark profiles are exempt and stay complete. Each kind of fact has its own memory entry
+(vendor scope, operation and field set): a Canon setting's value and its allowed values, or two
+operations listing one inventory category, must not replace each other.
+The unknown-code queue reads `telemetry_unknown_codes` (per installation, kept by the same
+triggers, marker `unknown-codes-v1`); session, body and signal scopes still read events.
+Collector rules learned the hard way on 2026-11-14:
+- Startup must not queue table locks. DDL on `telemetry_events` and the summary tables
+  (including `CREATE INDEX IF NOT EXISTS`, `ALTER ... IF NOT EXISTS`, `CREATE TRIGGER`) runs only
+  until those objects exist (`eventsSchemaReady`, `summarySchemaReady` in postgres.ts). A schema
+  change to those tables must update the readiness check, or it will never be applied.
+- Maintenance works in short transactions. One long transaction blocks the next start, and a
+  backend keeps running after its collector instance is gone; only a database restart ended it.
+- Triggers must stay cheap for bulk deletes: never search events from inside them. A summary row
+  that needs a new source is listed in `telemetry_unknown_code_repairs` and repaired by
+  maintenance within a time budget; it is hidden from the queue until then.
+- `purge-unidentified-2026-11-14` removed 65,947 old events with no camera identity and 164
+  uploads left empty. It is marker-guarded and dated; unidentified events after the cutoff stay.
+Sony originals over 4 GiB (2026-11-14): ObjectInfo reports 0xffffffff. Support is read from
+DeviceInfo `operationsSupportedRaw` (there is no `operationsSupported` field; a test that fakes
+one proves nothing). The bench FX2 advertises GetObjectPropDesc but answers 0x2005; its size
+comes from GetObjectPropList for the exact handle and ObjectSize, typed UINT64. A 5,101,088,166
+byte FX2 original was sized, transferred, collected and fully decoded. The a6700 splits at 4 GB.
+EOS R6 Mark III with its lever at Movie cannot be put in still mode over PTP: Canon's SDK
+reference (6.9.5) requires the hardware in still position, and on firmware 1.0.1 every tried
+route left FixedMovie at 1 (MovieSelectSwitchOff, writing 0xd1c2, remote modes 0x11/0x15, AE
+mode writes under dial override). Do not spend more bench time on it without new information.
+A connection that fails before any identity read (body asleep or off) is attributed to the
+camera that last reported itself at the requested USB identity, from `known-cameras.json` in the
+settings directory: manufacturer and model only, firmware `unknown`, and a body fingerprint only
+when one exact serial was requested. A body never seen stays Unknown. Sony Wi-Fi attempts carry
+the model the caller named; the trust (`fingerprint`) step shares the following connect's session.
+Collector purge markers `purge-unidentified-2026-11-14` and `-14b` are one-time and dated.
+Focus refusals say what the body reported: a Sony focus timeout includes the last focus status
+and a Canon refusal names the SDK reason. Sony bodies in movie mode stayed at UNLOCK on a
+half-press in bench tests, so focus confirmation was never obtained there.
+
+Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
+existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
+no saved body power setting is rewritten. Explicit KeepDeviceOn rejects non-OK responses.
+Nikon USB reference Z5_2UsbMtpE_01 §2.2 says PC connection disables meter auto-off already.
+Its §11.7.5 documents one release command to clear a recoverable WarningStatus bit-0
+sequence error. Link retries live-view startup once only after that exact warning,
+idle movie/buffer state, advertised operations and fresh clearing readback. Other
+hardware errors remain errors. SDK documents stay private; attribution in the workspace
+camera-keepalive-2026-11-13 report must remain. Physical user actions can race warning
+reads; recovery may release a shutter if someone clears the warning first.
+Keep all changes on PR #58; no merge.
+
+Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
+failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
+writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,
+waits or cloud calls. Canon FixedMovie is allowlisted as a numeric readback using the supplied
+EDSDK/libgphoto2 references; SDK and PTP property IDs are different. Deploy collector and Matrix
+schema support before candidate Link clients upload snapshots. Missing settings stay unknown;
+no snapshot implies that recording or independent media validation passed. Keep PR #58 open.
+
+Canon movie workflows prepare a camera-advertised card destination before movie selection,
+restoring prior host routing after safe cleanup. This follows the Canon EDSDK sample and
+libgphoto2 card-target enumeration; it is not proof of the R8 Mark II failure's root cause.
+Numeric Canon property-write telemetry retains intent, transaction and response separately
+from observed state. Deploy the matching collector and Matrix contract before rolling out
+this Link candidate. Keep PR #58 open and preserve real versus simulated evidence.
+
+Telemetry benchmark now exports a deep sanitized camera profile through Link's existing
+camera session. Keep inventories and allowlisted numeric descriptors separate from media,
+opaque payloads and private settings. Partial/cancelled exports retain evidence without
+claiming unsupported features. The CLI saves profiles even with sharing off; Test Bench
+supplies leases and exposes the Darkgrade `camera_benchmark` tool. Collector research
+findings require exact source, model, firmware, revision, transport and evidence scope,
+plus attributed references; they expire/withdraw with the source and never certify hardware.
+Shared admission quotas must remain consistent across collector instances.
+
+Matrix imports all validated batches as diagnostic evidence automatically, with optional human review separately labeled. Committed ingestion watermarks prevent live uploads starving pagination; review, withdrawal and credit changes invalidate exports. Camera fingerprints are absent when reliable serial identity is unavailable, and reconnect must clear stale body identity.
+
+Telemetry autocomplete uses bounded authenticated database suggestions scoped by other filters,
+including old sessions. Preserve hardware/synthetic provenance and hide credentials/contact details.
+Inspection modals keep summaries readable and raw evidence collapsed; test keyboard selection, stale
+responses, Escape/focus return, friendly installation labels, and narrow screens.
+
 # Project Cheat Sheet
 
 ## Tech Stack:
@@ -134,7 +239,7 @@ Outpost's private recording utility archives/restores these bundles through the 
 connector. Keep contributor/source attribution attached, and do not infer a lender or person.
 
 Keep this work on one ongoing branch/PR until the user requests a merge; the current batch is
-`feat/private-camera-recordings`. Do not create a separate PR per small follow-up fix.
+`feat/runtime-browser-core`. Do not create a separate PR per small follow-up fix.
 
 Run `bun run --cwd packages/link test:fuzz` for reproducible PTP input mutation checks.
 The fixed seed `0x4d415452` covers standard/Sony descriptors and Canon/Nikon event records,
@@ -143,35 +248,55 @@ These synthetic parser checks neither contact hardware nor certify model support
 independent copies of the wire seeds in its fixed candidate harness so driver changes cannot
 silently weaken their own regression gate.
 
-## Default-on camera diagnostics
+## Shared telemetry — November 12, 2026
 
-`packages/contribute` is a separately packaged, preference-controlled diagnostics observer.
-Importing Link or the contribution package has no side effects. Initializing the client
-enables metadata diagnostics when its saved preference is absent; preserve saved opt-outs.
-Corrupt preferences fail closed. A visible setting calls setConsent(enabled);
-`setConsent(false)` stops collection and clears buffered diagnostics, while `optOut()` also
-revokes the contributor grant and requests cloud deletion. Honor environment overrides.
-Full recordings and image payloads stay in the existing explicit private recording workflow.
-Do not route those blobs through the metadata-only collector or automatically promote uploads.
+The ingestion audit adds early bounded SDK flushes, email login/logout, paged session lists,
+an operator review queue and generation-consistent Matrix exports. Reviewed evidence expires
+with its original diagnostic. Test with real Postgres and a separate growth-test database:
+reviewing or withdrawing during an export deliberately invalidates its cursor.
+Terraform now includes encrypted-only SQL connections, server-side deletion protection and
+minimal health/CPU/disk monitoring. Notification delivery requires verified channel IDs;
+email requires a configured sender. Do not claim live email delivery from a mock sender test.
 
-`apps/contribution-collector` provides the scoped-token collector and validated GCP Terraform.
-Use workload identity and Secret Manager; no cloud/signing credentials belong in npm clients.
-Uploads remain private/unreviewed with contributor ID, optional consented credit, terms version,
-source hash, firmware, dirty flag and driver revision. Retain that reference in derived artifacts.
-Revocation tombstones are permanent; quota records expire after two days, diagnostics after 30.
-The application still owns enrollment, notice, grant refresh and withdrawal retry UI. Cloud
-project/deployment identity and an approved enrollment flow are required before customer rollout.
-Use 15-minute Ed25519 grants with key IDs. Keep retired public keys for withdrawal,
-never private signing keys in the collector. The optional legacy HMAC verifier accepts
-withdrawals only during migration. Firestore owns quota/revocation, and the scheduled
-worker revisits permanent tombstones to finish interrupted or late deletion.
+The user replaced project 18 with one HTTPS service and Postgres. Keep this on PR #58,
+`feat/runtime-browser-core`; do not merge. `apps/contribution-collector/src/postgres.ts`
+stores flat telemetry_events plus operational state; main.ts performs its own cleanup and
+serves an operator-authenticated /internal timeline. Firestore/GCS/grant collector deployment
+code and the separate cleanup job were removed. Terraform provisions Cloud Run + Cloud SQL
+with restricted configuration secrets; validation is not a live deployment.
 
-The public collector uses Cloud Armor and an HTTPS load balancer; direct public Cloud
-Run ingress is disabled. Terraform validation is not deployment verification.
+The Outpost Telemetry app uses `/internal/api` for bounded issues/session reports,
+installation lookup, batch review, full Matrix exports and authenticated revocation.
+Never expose credential hashes/contact details. Operator mutations require JSON, the
+operator header, no browser Origin and an exact ID confirmation for deletion. Keep
+deletion shared with the installation API so pending cleanup and revocation stay consistent.
+`bootstrap_principal` in Terraform grants scoped actAs on the collector service account;
+it does not grant organization or billing-account access.
 
-Build the new workspaces before tests/package checks. Run their public-seam tests plus Link's
-contribution transfer test; verify package contents and Terraform without deploying credentials.
-Keep all this work on `feat/private-camera-recordings` and the same PR until requested to merge.
+Link instruments existing USB/PTP-IP sessions, with Unknown identity until GetDeviceInfo. Custom
+transports need explicit telemetry configuration, and loopback IP defaults to synthetic.
+Do not mistake a real socket for proof of physical hardware. Sony SDK bridge calls have separate named-operation telemetry; no SDK arguments or payloads
+are collected. USB SDK model/firmware remain Unknown when the bridge cannot supply them. Model/firmware/revision/transport,
+source hashes and contributor attribution stay attached; metadata never becomes a hardware
+pass. All validated Matrix diagnostic snapshots replace fully and expire within 24 hours.
+
+Direct-source bench execution resolves revision/dirty state from the Link source checkout when
+build constants are absent. Normal Node/Bun process exit attempts a bounded final flush; forced
+exit preserves buffered local metadata but cannot promise cloud delivery. Keep these lifecycle
+checks alongside transport attribution tests.
+
+Node applications and packages/cli share packages/contribute/settings: one random installation
+ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Installation identity stays random; camera-body fingerprints are separate versioned hashes of manufacturer/model/serial. Never retain the raw serial in telemetry. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI
+retention-age blurb. The built-in hosted collector is used when no endpoint override is supplied. Opt-out stops
+cloud uploads but keeps bounded sanitized local logs. Delete disables sharing first and
+preserves retry state. Respect environment overrides and saved/corrupt preferences. Native
+Studio migrates the earlier encrypted preference before initializing the shared file.
+
+Run SDK, real Postgres collector, CLI, Studio and Link tests; validate Terraform and the
+actual HTTP container. Test the event listener before/after observer replacement: telemetry
+must not steal a camera's event handler. Run the Matrix export/import contract without
+promoting metadata or mutating the installed Matrix app. No hardware operations are needed
+for ordinary telemetry validation. Keep unrelated dependency symlinks intact.
 
 **Core Philosophy**: Prioritize readability and maintainability over premature optimization. Code is written for humans to understand.
 

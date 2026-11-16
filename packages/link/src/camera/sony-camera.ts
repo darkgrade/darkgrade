@@ -195,6 +195,8 @@ export class SonyCamera extends GenericCamera {
         // await this.waitMs(100)
 
         await this.authenticate()
+        // Before the first property read, so that inventory is attributed and not re-sent each connection.
+        await this.readIdentityForDiagnostics()
 
         await this.refreshPropertyStates()
 
@@ -1129,7 +1131,9 @@ export class SonyCamera extends GenericCamera {
 
     private async waitForFocus(timeoutMilliseconds = 3_000, requireConfirmation = true): Promise<boolean> {
         let isFocused = false
+        let lastStatus: string | undefined
         const handler = (event: { Status?: string }) => {
+            lastStatus = event.Status ?? lastStatus
             isFocused = event.Status === 'AF_C_FOCUSED' || event.Status === 'AF_S_FOCUSED'
         }
         this.on(this.registry.events.SDIE_AFStatus, handler)
@@ -1138,12 +1142,18 @@ export class SonyCamera extends GenericCamera {
             while (!isFocused && Date.now() < deadline) {
                 try {
                     const status = await this.get(this.registry.properties.FocusIndication)
+                    lastStatus = String(status)
                     isFocused = status === 'AF_C_FOCUSED' || status === 'AF_S_FOCUSED'
                 } catch {}
                 if (!isFocused) await this.waitMs(50)
             }
             if (!isFocused && requireConfirmation) {
-                throw new Error(`Sony autofocus did not report focus within ${timeoutMilliseconds} ms`)
+                // Say what the body reported: a dark or featureless scene is not a driver fault.
+                const reported = lastStatus === 'AF_C_NOT_FOCUSED' || lastStatus === 'AF_S_NOT_FOCUSED'
+                    ? 'the camera reported it could not focus (low contrast or too dark)'
+                    : lastStatus === 'AF_C_TRACKING' ? 'the camera was still tracking the subject'
+                    : lastStatus ? `the camera last reported ${lastStatus}` : 'the camera reported no focus status'
+                throw new Error(`Sony autofocus did not report focus within ${timeoutMilliseconds} ms; ${reported}`)
             }
             return isFocused
         } finally {
@@ -1418,6 +1428,18 @@ export class SonyCamera extends GenericCamera {
         throw new Error(
             `Sony content-transfer mode did not disable after ${SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS} attempts`
         )
+    }
+
+    /** Sony's own handshake never reads the standard DeviceInfo dataset, which left every native
+     * Sony session without a model, firmware or body fingerprint in diagnostics. Read it once per
+     * connection. A refusal is not a connection failure: the session is already usable. */
+    private async readIdentityForDiagnostics(): Promise<void> {
+        try {
+            await this.send(this.registry.operations.GetDeviceInfo, {})
+        } catch (error) {
+            this.logger.addLog({ type: 'console', level: 'warn', consoleLevel: 'warn',
+                args: [`Sony identity read skipped: ${error instanceof Error ? error.message : String(error)}`] })
+        }
     }
 
     private async authenticate(): Promise<void> {

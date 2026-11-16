@@ -1,4 +1,5 @@
 import { SonyCamera } from '@camera/sony-camera'
+import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
@@ -51,6 +52,24 @@ describe('Sony incremental property boundaries', () => {
 })
 
 describe('Sony session response validation', () => {
+    it('opens facade observation through the native session without rewriting camera settings', async () => {
+        const descriptor = { usb: { filters: [{ vendorId: 0x054c, productId: 0x0e78, serialNumber: 'test-body' }] } }
+        const transport = { isLittleEndian: () => true, isConnected: () => true } as unknown as TransportInterface
+        const facade = new Camera({ device: descriptor, transport, logger: { captureConsole: false, renderInTerminal: false } })
+        const camera = facade.getInstance() as SonyCamera
+        const sent: string[] = []
+        camera.send = (async operation => { sent.push(operation.name); return { code: 0x2001 } }) as typeof camera.send
+        camera.refreshPropertyStates = async () => []
+        camera.set = vi.fn(async () => undefined)
+        const connect = vi.spyOn(camera, 'connect')
+        await facade.connectSonyObservationSession()
+        expect(connect).toHaveBeenCalledWith(descriptor, { configure: false })
+        expect(sent).toEqual(['SDIO_OpenSession', 'SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo', 'SDIO_Connect', 'GetDeviceInfo'])
+        expect(camera.set).not.toHaveBeenCalled()
+        const other = new Camera({ vendorId: 0x04a9, transport, logger: { captureConsole: false, renderInTerminal: false } })
+        await expect(other.connectSonyObservationSession()).rejects.toThrow('require a Sony camera')
+    })
+
     it('allows an inventory session without changing host priority or save destination', async () => {
         const { camera, sent } = cameraFixture()
         camera.refreshPropertyStates = async () => []
@@ -61,8 +80,40 @@ describe('Sony session response validation', () => {
             'SDIO_Connect',
             'SDIO_GetExtDeviceInfo',
             'SDIO_Connect',
+            'GetDeviceInfo',
         ])
         expect(camera.set).not.toHaveBeenCalled()
+    })
+
+    it('reads the standard identity once per connection and stays connected when the body refuses or drops it', async () => {
+        for (const refusal of ['response', 'throw'] as const) {
+            const { camera, sent } = cameraFixture()
+            const reply = camera.send
+            camera.send = (async (operation, ...rest) => {
+                if (operation.name !== 'GetDeviceInfo') return reply(operation, ...rest)
+                sent.push(operation.name)
+                if (refusal === 'throw') throw new Error('identity read timed out')
+                return { code: 0x2005 }
+            }) as typeof camera.send
+            camera.refreshPropertyStates = async () => []
+            await camera.connect()
+            expect(sent.filter(name => name === 'GetDeviceInfo')).toHaveLength(1)
+            expect(sent.indexOf('GetDeviceInfo')).toBe(sent.lastIndexOf('SDIO_Connect') + 1)
+            expect(camera.set).toHaveBeenCalledTimes(2)
+        }
+    })
+
+    it.each([
+        ['AF_C_NOT_FOCUSED', /could not focus \(low contrast or too dark\)/],
+        ['AF_C_TRACKING', /still tracking the subject/],
+        ['UNLOCK', /last reported UNLOCK/],
+    ] as const)('a focus timeout says what the body reported: %s', async (status, expected) => {
+        const { camera } = cameraFixture()
+        camera.get = (async () => status) as typeof camera.get
+        await expect((camera as any).waitForFocus(120)).rejects.toThrow(expected)
+        await expect((camera as any).waitForFocus(120)).rejects.toThrow(/did not report focus within 120 ms/)
+        camera.get = (async () => 'AF_C_FOCUSED') as typeof camera.get
+        await expect((camera as any).waitForFocus(120)).resolves.toBe(true)
     })
 
     it('stops before authentication or configuration if the camera refuses the session', async () => {
@@ -232,5 +283,17 @@ describe('Sony partial downloads', () => {
         Object.assign(camera, { contentTransferModeEnabled: true })
         replies.push({ code: 0x2001, data: Uint8Array.of(1, 2) }, { code: 0x2001, data: Uint8Array.of(3, 4, 5) })
         expect(await camera.getObject(7, 5)).toEqual(Uint8Array.of(1, 2, 3, 4, 5))
+    })
+})
+
+describe('Canon shutter results', () => {
+    it('names the reason the body gave, and keeps the wording other code matches on', async () => {
+        const { assertCanonCaptureResult } = await import('@vendors/canon/capture-result')
+        expect(() => assertCanonCaptureResult([0], 'release')).not.toThrow()
+        expect(() => assertCanonCaptureResult(undefined, 'release')).not.toThrow()
+        expect(() => assertCanonCaptureResult([1], 'AF focus press')).toThrow('Canon AF focus press rejected capture with shutter result 0x1: the camera could not focus (low contrast or too dark)')
+        expect(() => assertCanonCaptureResult([12], 'release')).toThrow(/movie configuration prevents still capture/)
+        expect(() => assertCanonCaptureResult([14], 'release')).toThrow(/the camera is in movie mode/)
+        expect(() => assertCanonCaptureResult([2], 'release')).toThrow(/shutter result 0x2$/)
     })
 })

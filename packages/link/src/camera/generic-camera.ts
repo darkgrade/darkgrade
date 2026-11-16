@@ -9,6 +9,9 @@ import {
     PTPTimeoutError,
     type PTPErrorContext,
 } from '@core/ptp-errors'
+import { linkTelemetry } from '@core/telemetry'
+import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
+import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
@@ -69,6 +72,54 @@ export class GenericCamera {
     private lastFailure?: PTPErrorContext
     private recovery?: RecoveryAttempt
     private readonly channel: TransactionChannel
+    private readonly telemetry: ReturnType<typeof linkTelemetry>
+    private profileObserver?: { id: string; observe: (evidence: ProtocolEvidence) => void }
+    private protocolSeen = new Map<string, string>()
+    private diagnosticSettings = new Map<number, CachedDiagnosticSetting>()
+    /** Synchronous, bounded and entirely cache-based. Diagnostic failures cannot change a camera workflow. */
+    recordStateSnapshot(workflow: 'recording' | 'photo' | 'benchmark', phase: StatePhase) {
+        try {
+            this.recordProtocol(stateSnapshotEvidence(this.vendorId ?? 0, this.diagnosticSettings.values(), workflow, phase, performance.now()))
+        } catch { /* Optional diagnostics must never interfere with capture or recovery. */ }
+    }
+    /** A benchmark subscribes to this session's sanitized datasets, never to another connection. */
+    observeProfile(id: string, observe: (evidence: ProtocolEvidence) => void) {
+        if (this.profileObserver) throw new Error('A profile benchmark already owns this camera')
+        this.profileObserver = { id, observe }
+        return () => { if (this.profileObserver?.id === id) this.profileObserver = undefined }
+    }
+    recordProtocol(evidence: ProtocolEvidence, operation?: number) {
+        try {
+            validateProtocol(evidence)
+            if ((evidence.type === 'descriptor' || evidence.type === 'property-value') && evidence.current !== undefined) {
+                if (this.diagnosticSettings.size >= 256 && !this.diagnosticSettings.has(evidence.property)) this.diagnosticSettings.clear()
+                this.diagnosticSettings.set(evidence.property, { property: evidence.property, dataType: evidence.dataType, current: evidence.current, observedAt: performance.now() })
+            }
+        } catch { return }
+        const scoped = this.profileObserver ? { ...evidence, benchmarkId: this.profileObserver.id } : evidence
+        if (scoped.type === 'property-write' || scoped.type === 'state-snapshot') {
+            this.telemetry.protocol(scoped, operation)
+            this.profileObserver?.observe(scoped)
+            return
+        }
+        const key = [scoped.benchmarkId ?? '', scoped.type,
+            'property' in scoped ? scoped.property : 'category' in scoped ? scoped.category : '',
+            'code' in scoped ? scoped.code : 'status' in scoped ? scoped.status : ''].join(':')
+        const encoded = JSON.stringify(scoped)
+        if (this.protocolSeen.get(key) === encoded) return
+        if (this.protocolSeen.size >= 8192) this.protocolSeen.clear()
+        this.protocolSeen.set(key, encoded)
+        // Every reconnect re-reads the same inventory and settings. Report a fact about an
+        // identified body again only when it changes or after six hours, not once per connection.
+        // The same key can carry different facts: a probe and a vendor session scope a code
+        // differently, a setting's value and its allowed values arrive separately, and two
+        // operations list the same inventory category. Remember each kind on its own so they
+        // do not keep replacing one another and look new on every connection.
+        const kind = `${key}:${'vendorId' in scoped ? scoped.vendorId : ''}:${operation ?? ''}:${Object.keys(scoped).sort().join(',')}`
+        if (!scoped.benchmarkId && !this.telemetry.newFact(kind, encoded)) return
+        this.telemetry.protocol(scoped, operation)
+        this.profileObserver?.observe(scoped)
+    }
     public transport: TransportInterface
     protected logger: Logger
     public registry: Registry
@@ -79,6 +130,8 @@ export class GenericCamera {
     protected defaultChunkSize = 10 * 1024 * 1024 // 10MB
 
     constructor(transport: TransportInterface, logger: Logger) {
+        this.telemetry = linkTelemetry(transport)
+        transport = this.telemetry.transport
         this.transport = transport
         this.logger = logger
         this.channel = new TransactionChannel(transport, ({ container, reason }) =>
@@ -93,9 +146,27 @@ export class GenericCamera {
         logger.setRegistry(this.registry)
 
         this.transport.on?.(event => this.handleEvent(event))
+        // Record the public workflow outcome alongside its existing wire session.
+        for (const [method, operation] of [
+            ['startRecording', 'record_start'],
+            ['stopRecording', 'record_stop'],
+        ] as const) {
+            const work = this[method].bind(this)
+            this[method] = () => this.telemetry.operation(operation, async () => {
+                this.recordStateSnapshot('recording', method === 'startRecording' ? 'before-start' : 'before-stop')
+                try {
+                    await work()
+                    this.recordStateSnapshot('recording', method === 'startRecording' ? 'after-start' : 'after-stop')
+                } catch (error) {
+                    this.recordStateSnapshot('recording', 'failure')
+                    throw error
+                }
+            })
+        }
     }
 
     protected async connectTransport(device?: DeviceDescriptor): Promise<void> {
+        await this.telemetry.prepare()
         if (this.recovery?.status === 'pending')
             throw new PTPRecoveryRequiredError('Transport recovery is still running', this.lastFailure)
         if (!this.transport.isConnected()) {
@@ -103,6 +174,8 @@ export class GenericCamera {
             // The transport drops its event handler on disconnect; subscribe again for this connection.
             this.transport.on?.(event => this.handleEvent(event))
             this.channel.newConnection()
+            this.protocolSeen.clear()
+            this.diagnosticSettings.clear()
             this.needsResynchronization = false
             this.lastFailure = undefined
             this.recovery = undefined
@@ -160,7 +233,7 @@ export class GenericCamera {
                 this.lastFailure
             )
         this.emitter.removeAllListeners()
-        await this.closeSessionAndTransport()
+        try { await this.closeSessionAndTransport() } finally { this.diagnosticSettings.clear() }
     }
 
     /**
@@ -229,7 +302,24 @@ export class GenericCamera {
             () => undefined
         )
 
-        return result
+        const response = await result
+        if (operation.code === 0x1001 && response.code === OK.code && 'data' in response && response.data) {
+            await this.telemetry.identify(
+                response.data as unknown as {
+                    manufacturer: string
+                    model: string
+                    deviceVersion: string
+                    serialNumber?: string
+                }
+            )
+        }
+        if (response.code === OK.code && 'data' in response && response.data) {
+            try {
+                for (const evidence of protocolEvidence(this.vendorId ?? 0, this.registry, operation.code, response.data))
+                    this.recordProtocol(evidence, operation.code)
+            } catch { /* A diagnostics failure must not turn a completed camera read into a failure. */ }
+        }
+        return response
     }
 
     private async sendTransaction<Op extends OperationDefinition>(
@@ -475,7 +565,7 @@ export class GenericCamera {
         const transactionId = this.getNextTransactionId()
         const sessionId = this.sessionId ?? 0
         try {
-            return await this.exchange(
+            const response = await this.exchange(
                 operation,
                 paramsRecord,
                 encodedParams,
@@ -484,7 +574,10 @@ export class GenericCamera {
                 data,
                 maxDataLength
             )
+            this.recordPropertyWrite(operation.code, data, transactionId, response.code)
+            return response
         } catch (error) {
+            this.recordPropertyWrite(operation.code, data, transactionId)
             if (error instanceof PTPTimeoutError || error instanceof PTPProtocolError) {
                 this.needsResynchronization = true
                 this.lastFailure = { operation: operation.name, transactionId, cause: error }
@@ -493,6 +586,13 @@ export class GenericCamera {
             if (!this.transport.isConnected()) this.sessionId = null
             throw error
         }
+    }
+
+    private recordPropertyWrite(operation: number, data: Uint8Array | undefined, transactionId: number, response?: number) {
+        try {
+            const evidence = propertyWriteEvidence(this.vendorId ?? 0, operation, data, transactionId, response)
+            if (evidence) this.recordProtocol(evidence, operation)
+        } catch { /* Optional diagnostics cannot change the result of a camera transaction. */ }
     }
 
     private async exchange<Op extends OperationDefinition>(
@@ -743,9 +843,8 @@ export class GenericCamera {
 
         return {
             code: responseContainer.code,
-            parameters: responseContainer.type === 3
-                ? this.decodeResponseParameters(responseContainer.payload)
-                : undefined,
+            parameters:
+                responseContainer.type === 3 ? this.decodeResponseParameters(responseContainer.payload) : undefined,
             data: returnData,
         } as OperationResponse<Op>
     }
@@ -1007,19 +1106,21 @@ export class GenericCamera {
         const result: { [storageId: number]: StorageEntry } = {}
 
         const storageIdsResponse = await this.send(this.registry.operations.GetStorageIDs, {})
-        if(storageIdsResponse.code!==0x2001)throw new PTPResponseError(storageIdsResponse.code,undefined,{operation:'GetStorageIDs'})
+        if (storageIdsResponse.code !== 0x2001)
+            throw new PTPResponseError(storageIdsResponse.code, undefined, { operation: 'GetStorageIDs' })
         const storageIds = storageIdsResponse.data
-        if(!Array.isArray(storageIds))throw new Error('GetStorageIDs returned no storage dataset')
+        if (!Array.isArray(storageIds)) throw new Error('GetStorageIDs returned no storage dataset')
 
         for (const storageId of storageIds) {
-            if((storageId&0xffff)===0)continue
+            if ((storageId & 0xffff) === 0) continue
             // Get info for this storage
             const storageInfoResponse = await this.send(this.registry.operations.GetStorageInfo, {
                 StorageID: storageId,
             })
-            if(storageInfoResponse.code!==0x2001)throw new PTPResponseError(storageInfoResponse.code,undefined,{operation:'GetStorageInfo'})
+            if (storageInfoResponse.code !== 0x2001)
+                throw new PTPResponseError(storageInfoResponse.code, undefined, { operation: 'GetStorageInfo' })
             const storageInfo = storageInfoResponse.data
-            if(!storageInfo)throw new Error('GetStorageInfo returned no card dataset')
+            if (!storageInfo) throw new Error('GetStorageInfo returned no card dataset')
 
             // Prepare container for objects in this storage
             const storageObjects: { [objectHandle: number]: ObjectInfo } = {}
@@ -1028,17 +1129,19 @@ export class GenericCamera {
             const objectIdsResponse = await this.send(this.registry.operations.GetObjectHandles, {
                 StorageID: storageId,
             })
-            if(objectIdsResponse.code!==0x2001)throw new PTPResponseError(objectIdsResponse.code,undefined,{operation:'GetObjectHandles'})
+            if (objectIdsResponse.code !== 0x2001)
+                throw new PTPResponseError(objectIdsResponse.code, undefined, { operation: 'GetObjectHandles' })
             const objectHandles = objectIdsResponse.data
-            if(!Array.isArray(objectHandles))throw new Error('GetObjectHandles returned no object dataset')
+            if (!Array.isArray(objectHandles)) throw new Error('GetObjectHandles returned no object dataset')
 
             // Get detailed info for each object handle
             for (const objectHandle of objectHandles) {
                 const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                     ObjectHandle: objectHandle,
                 })
-                if(objectInfoResponse.code!==0x2001)throw new PTPResponseError(objectInfoResponse.code,undefined,{operation:'GetObjectInfo'})
-                if(!objectInfoResponse.data)throw new Error('GetObjectInfo returned no object metadata')
+                if (objectInfoResponse.code !== 0x2001)
+                    throw new PTPResponseError(objectInfoResponse.code, undefined, { operation: 'GetObjectInfo' })
+                if (!objectInfoResponse.data) throw new Error('GetObjectInfo returned no object metadata')
                 storageObjects[objectHandle] = objectInfoResponse.data
             }
 

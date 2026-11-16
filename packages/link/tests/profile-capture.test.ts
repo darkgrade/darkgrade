@@ -1,3 +1,7 @@
+import { Camera } from '@camera/index'
+import { SonyCamera } from '@camera/sony-camera'
+import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
@@ -10,8 +14,57 @@ import {
 } from '@vendors/profile-capture'
 import { describe, expect, it } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
+import { configureLinkTelemetry } from '@core/telemetry'
+import { createApplicationDiagnostics } from '@darkgrade/contribute/application'
 
 const codecs = createPTPRegistry(true).codecs
+it('retains numeric Canon write intent and rejection without inventing a readback or retaining opaque bytes', () => {
+    const backing = new Uint8Array(32)
+    const data = backing.subarray(5, 17)
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    view.setUint32(0, 12, true)
+    view.setUint32(4, 0xd1b8, true)
+    view.setUint32(8, 4, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2019)).toEqual({
+        type: 'property-write', vendorId: 0x04a9, property: 0xd1b8, dataType: 6,
+        requested: 4, transactionId: 23, outcome: 'response', response: 0x2019,
+    })
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 24)).toMatchObject({ outcome: 'error' })
+    expect(propertyWriteEvidence(0x054c, 0x9110, data, 23, 0x2001)).toBeUndefined()
+    expect(propertyWriteEvidence(0x04a9, 0x100d, data, 23, 0x2001)).toBeUndefined()
+    expect(propertyWriteEvidence(0x04a9, 0x9110, backing, 23, 0x2001)).toBeUndefined()
+    view.setUint32(4, 0xd115, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2001)).toBeUndefined()
+    view.setUint32(4, 0xd11c, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2001)).toMatchObject({ property: 0xd11c })
+    view.setUint32(0, 16, true)
+    expect(propertyWriteEvidence(0x04a9, 0x9110, data, 23, 0x2001)).toBeUndefined()
+})
+it('initial generic discovery recognizes vendor definitions without borrowing another vendor’s codes', () => {
+    const data={operationsSupportedRaw:[0x9209,0x9fff],eventsSupportedRaw:[],devicePropertiesSupported:[]}
+    const sony=protocolEvidence(0x054c,createPTPRegistry(true),0x1001,data)
+    expect(sony.filter(item=>item.type==='unknown').map(item=>(item as any).code)).toEqual([0x9fff])
+    const generic=protocolEvidence(0,createPTPRegistry(true),0x1001,data)
+    expect(generic.filter(item=>item.type==='unknown').map(item=>(item as any).code)).toEqual([0x9209,0x9fff])
+})
+it('Sony profile storage reads enter transfer mode and restore shooting after a failed read', async () => {
+    const calls:string[]=[]
+    const instance=Object.assign(Object.create(SonyCamera.prototype),{
+        vendorId:0x054c,registry:createPTPRegistry(true),
+        observeProfile:()=>()=>{},recordProtocol:()=>{},
+        transport:{getType:()=>TransportType.USB},
+        prepareStorageRead:async()=>{calls.push('prepare')},
+        resumeShooting:async()=>{calls.push('restore')},
+    })
+    const camera={getInstance:()=>instance,send:async(operation:any)=>{
+        if(operation.code===0x1001)return {code:0x2001,data:identity}
+        calls.push('storage')
+        throw new Error('Read refused')
+    }} as unknown as Camera
+    const result=await runCameraBenchmark(camera)
+    expect(result.profile.status).toBe('partial')
+    expect(calls).toEqual(['prepare','storage','restore'])
+})
 it('rejects invalid or unintended media recording requests before connecting', async () => {
     for (const extra of [
         { repetitions: 2 },
@@ -58,7 +111,7 @@ function packet(type: number, code: number, transactionId: number, data: Uint8Ar
     bytes.set(data, 12)
     return bytes
 }
-function fixture(refuseProperty = false, nikonEventResponse?: number) {
+function fixture(refuseProperty = false, nikonEventResponse?: number, inventory = identity) {
     const commands: number[] = []
     const eventParameters: number[][] = []
     const replies: Uint8Array[] = []
@@ -90,9 +143,10 @@ function fixture(refuseProperty = false, nikonEventResponse?: number) {
             const code = view.getUint16(6, true)
             const id = view.getUint32(8, true)
             commands.push(code)
-            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? identity : {
+            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? inventory : {
                 ...identity, manufacturer: 'Nikon', model: 'Z 6', operationsSupportedRaw: [...identity.operationsSupportedRaw, 0x941c],
             })))
+            if (code === 0x1004) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
             if (code === 0x1014 && !refuseProperty) replies.push(packet(2, code, id, descriptor))
             if (code === 0x941c) {
                 const parameters = Array.from({ length: (bytes.length - 12) / 4 }, (_, index) => view.getUint32(12 + index * 4, true))
@@ -398,4 +452,95 @@ describe('complete transaction observation', () => {
         expect(accepted).toEqual([])
         expect(trace.skippedIncomplete()).toBe(1)
     })
+})
+
+
+it('deep benchmark exports a sanitized profile on the owned session and preserves partial/cancelled outcomes',async()=>{
+    const source=fixture(false,undefined,{...identity,operationsSupportedRaw:[...identity.operationsSupportedRaw,0x9fff]})
+    const camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
+    await camera.connect()
+    let flushes=0
+    const result=await runCameraBenchmark(camera,{flushEvidence:async()=>{flushes++;if(flushes===2)throw new Error('Collector offline')}})
+    expect(result.passed).toBe(true)
+    expect(flushes).toBeGreaterThanOrEqual(3)
+    expect(result.profile.status).toBe('complete')
+    expect(result.profile.evidence).toBe('synthetic')
+    expect(result.profile.datasets).toContainEqual(expect.objectContaining({type:'unknown',category:'operation',code:0x9fff}))
+    expect(result.profile.datasets).toContainEqual(expect.objectContaining({type:'descriptor',property:0x5001,current:75}))
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_SERIAL')
+    expect(result.profile.datasets.some(item=>'property' in item&&item.property===0x5011)).toBe(false)
+    expect(source.transport.isConnected()).toBe(true)
+    const cancel=new AbortController();cancel.abort()
+    expect((await runCameraBenchmark(camera,{signal:cancel.signal})).profile.status).toBe('cancelled')
+    await camera.disconnect()
+    const failed=fixture(true),other=new Camera({transport:failed.transport,logger:{renderInTerminal:false,captureConsole:false}})
+    await other.connect();const partial=await runCameraBenchmark(other)
+    expect(partial.profile.status).toBe('partial');expect(partial.checks.some(check=>!check.passed)).toBe(true)
+    await other.disconnect()
+})
+it('repeated protocol refreshes retain changed values and each new benchmark has its own inventory',async()=>{
+    const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
+    await camera.connect()
+    const instance=camera.getInstance(),seen:any[]=[]
+    const detach=instance.observeProfile(crypto.randomUUID(),value=>seen.push(value))
+    for(const current of [75,75,50,75])instance.recordProtocol({type:'descriptor',vendorId:0,property:0x5001,dataType:4,writable:false,current},0x1014)
+    expect(seen.map(value=>value.current)).toEqual([75,50,75])
+    detach()
+    const next=instance.observeProfile(crypto.randomUUID(),value=>seen.push(value))
+    instance.recordProtocol({type:'descriptor',vendorId:0,property:0x5001,dataType:4,writable:false,current:75},0x1014)
+    next()
+    expect(seen).toHaveLength(4)
+    await camera.disconnect()
+})
+it('retains reviewed FixedMovie numeric events while excluding private property values',()=>{
+ const events=[0xd1c2,0xd115].map(property=>({code:0xc189,parameters:[property,1],valueData:new Uint8Array([1,0,0,0])}))
+ const observed=protocolEvidence(0x04a9,createPTPRegistry(true),0x9116,events)
+ expect(observed.filter(item=>item.type==='property-value')).toEqual([{type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:1}])
+})
+
+it('snapshot age is explicit, excludes future/stale cache entries and preserves empty observations',()=>{
+ const sample={property:0xd1c2,dataType:6,current:1,observedAt:100}
+ expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',450)).toMatchObject({settings:[{property:0xd1c2,current:1,ageMilliseconds:350}]})
+ expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',99)).toMatchObject({settings:[]})
+ expect(stateSnapshotEvidence(0x04a9,[sample],'recording','after-prepare',0x100000100)).toMatchObject({settings:[]})
+})
+
+it('benchmark includes preexisting observations with age and never substitutes an acknowledged write',async()=>{
+ const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
+ await camera.connect()
+ try {
+  const instance=camera.getInstance()
+  instance.recordProtocol({type:'property-value',vendorId:0,property:0x5001,dataType:4,current:63},0x1015)
+  instance.recordProtocol({type:'property-write',vendorId:0,property:0x5001,dataType:4,requested:99,transactionId:8,outcome:'response',response:0x2001},0x1016)
+  const result=await runCameraBenchmark(camera)
+  const snapshot=result.profile.datasets.find(item=>item.type==='state-snapshot')
+  expect(snapshot).toMatchObject({workflow:'benchmark',phase:'before-prepare',basis:'observed-cache',benchmarkId:result.profile.id,
+   settings:expect.arrayContaining([expect.objectContaining({property:0x5001,current:63,ageMilliseconds:expect.any(Number)})])})
+  expect(result.profile.datasets.filter(item=>item.type==='state-snapshot')).toHaveLength(1)
+  const next=await runCameraBenchmark(camera)
+  expect(next.profile.datasets.find(item=>item.type==='state-snapshot')).toMatchObject({benchmarkId:next.profile.id,
+   settings:expect.arrayContaining([expect.objectContaining({property:0x5001,current:75})])})
+  expect(next.profile.id).not.toBe(result.profile.id)
+ } finally {await camera.disconnect()}
+})
+
+it('initial benchmark settings share the discovered camera identity without adding an identity read',async()=>{
+ const retained:{context:any;entry:any}[]=[]
+ const client=await createApplicationDiagnostics({
+  endpoint:'https://telemetry.example',store:{read:async()=>null,write:async()=>{}},
+  localRecord:(context,entry)=>{retained.push({context,entry})},
+ })
+ configureLinkTelemetry(client)
+ const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
+ try{
+  await camera.connect()
+  const start=source.commands.length
+  const result=await runCameraBenchmark(camera)
+  const initial=retained.filter(item=>item.entry.protocol?.benchmarkId===result.profile.id&&
+   (item.entry.protocol.type==='state-snapshot'||item.entry.protocol.status==='started'))
+  expect(initial).toHaveLength(2)
+  expect(initial.every(item=>item.context.model===result.profile.identity?.model&&item.context.firmware===result.profile.identity?.firmware)).toBe(true)
+  expect(initial.every(item=>item.context.model!=='Unknown')).toBe(true)
+  expect(source.commands.slice(start).filter(command=>command===0x1001)).toHaveLength(1)
+ }finally{await camera.disconnect();configureLinkTelemetry(undefined);client.close()}
 })

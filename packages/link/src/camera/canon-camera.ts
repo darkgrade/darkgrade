@@ -98,6 +98,9 @@ export class CanonCamera extends GenericCamera {
     private resumePolling = false
     private pollingPause?: Promise<void>
     private polling = false
+    private keepAliveEnabled = true
+    private lastKeepAliveAttempt?: number
+    private keepAliveUnavailable = false
     private rawEventListeners = new Set<(event: CanonRawEvent) => void>()
     private pollingLoop?: Promise<void>
     private liveViewEnabled = false
@@ -135,7 +138,16 @@ export class CanonCamera extends GenericCamera {
         this.rawEventListeners.delete(listener)
     }
 
+    /** Refresh a benchmark's event evidence while preserving the session's property cache and events. */
+    async refreshEventProperties(): Promise<void> {
+        const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+        if (response.code !== 0x2001 || !Array.isArray(response.data)) throw new Error('No Canon event inventory')
+        this.processEvents(response.data, true)
+    }
+
     async connect(device?: DeviceDescriptor): Promise<void> {
+        await this.stopPolling()
+        this.clearCachedState()
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
         this.sessionId = 1
@@ -156,8 +168,7 @@ export class CanonCamera extends GenericCamera {
     async disconnect(): Promise<void> {
         await this.stopPolling()
         if (!this.transport.isConnected()) {
-            this.liveViewEnabled = false
-            this.liveViewOriginalOutput = undefined
+            this.clearCachedState()
             return super.disconnect()
         }
         let failure: unknown
@@ -173,7 +184,19 @@ export class CanonCamera extends GenericCamera {
                 failure ??= error
             }
         }
+        this.clearCachedState()
         if (failure) throw failure
+    }
+
+    private clearCachedState(): void {
+        this.propertyCache.clear()
+        this.unknownPropertyCache.clear()
+        this.advertisedPropertyData.clear()
+        this.supportedOperations = undefined
+        this.liveViewEnabled = false
+        this.liveViewOriginalOutput = undefined
+        this.lastKeepAliveAttempt = undefined
+        this.keepAliveUnavailable = false
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -181,7 +204,19 @@ export class CanonCamera extends GenericCamera {
             throw new Error(`Property ${property.name} is not readable`)
         }
 
-        const cached = this.propertyCache.get(property)
+        let cached = this.propertyCache.get(property)
+        if (cached?.current === undefined && this.transport.isConnected?.()) {
+            // A fast reconnect may receive the initial property dump in a later poll.
+            // Refresh only a missing value, never invent it or repeat a state-changing command.
+            await this.withoutPolling(async () => {
+                for (let attempt = 0; attempt < 10; attempt++) {
+                    await this.refreshEventProperties()
+                    cached = this.propertyCache.get(property)
+                    if (cached?.current !== undefined) return
+                    if (attempt < 9) await new Promise(resolve => setTimeout(resolve, 50))
+                }
+            })
+        }
         if (!cached || cached.current === undefined) {
             throw new Error(
                 `Property ${property.name} (0x${property.code.toString(16)}) not found in cache. The camera may not support this property or event mode is not enabled.`
@@ -467,6 +502,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     async enterMovieMode(): Promise<void> {
+        if (this.supportedOperations)
+            this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOn.code)
         await this.withoutPolling(async () => {
             for (let attempt = 0; attempt < 4; attempt++) {
                 const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
@@ -484,6 +521,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     async leaveMovieMode(): Promise<void> {
+        if (this.supportedOperations)
+            this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOff.code)
         await this.withoutPolling(async () => {
             const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
             if (response.code !== OK.code) {
@@ -529,9 +568,30 @@ export class CanonCamera extends GenericCamera {
     }
 
     async keepDeviceOn(): Promise<void> {
+        this.assertOperationSupported(this.registry.operations.CanonKeepDeviceOn.code)
         await this.withoutPolling(async () => {
-            await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+            const response = await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+            this.assertResponseOk(response.code, 'keep device on')
+            this.lastKeepAliveAttempt = performance.now()
         })
+    }
+
+    /** Controls the session heartbeat without changing the body's saved power settings. */
+    setKeepAliveEnabled(enabled: boolean): void {
+        this.keepAliveEnabled = enabled
+    }
+
+    private async maintainKeepAlive(): Promise<void> {
+        if (!this.keepAliveEnabled || this.keepAliveUnavailable ||
+            !this.supportedOperations?.has(this.registry.operations.CanonKeepDeviceOn.code)) return
+        const now = performance.now()
+        // libgphoto2 camlibs/ptp2/config.c camera_keep_device_on: EOS R8 needs
+        // KeepDeviceOn about every 10 s; GetEvent polling alone is insufficient.
+        if (this.lastKeepAliveAttempt !== undefined && now - this.lastKeepAliveAttempt < 10_000) return
+        this.lastKeepAliveAttempt = now
+        const response = await this.send(this.registry.operations.CanonKeepDeviceOn, {})
+        if (response.code === 0x2005) this.keepAliveUnavailable = true
+        this.assertResponseOk(response.code, 'automatic keep device on')
     }
 
     /** Explicit capability audit; some bodies require model-specific initialization before 0x9108. */
@@ -636,6 +696,39 @@ export class CanonCamera extends GenericCamera {
         await this.enableLiveView()
 
         await this.set(this.registry.properties.CanonRecordingDestination, 'CARD')
+    }
+
+    /**
+     * EDSDK 13.20.21 MultiCamCui CameraModel::RecStart prepares SaveTo_Camera.
+     * PTP card IDs are body-specific (libgphoto2 camera_canon_eos_update_capture_target).
+     * Only replace host routing with an advertised card value, and restore after recording.
+     */
+    async prepareRecordingDestination(): Promise<() => Promise<void>> {
+        const property = this.registry.properties.CanonCaptureDestination
+        const original = this.propertyCache.get(property)?.current
+        if (original === undefined) return async () => {}
+        if (original !== 4) return async () => {}
+        const choices = this.getPropertyAllowedValues(property)
+        // Prefer the card value physically verified on the R8/R6 when advertised.
+        // Other body-specific values retain libgphoto2's advertised-choice fallback.
+        const card = choices?.includes(2) ? 2 : choices?.find(value => value > 0 && value !== 4)
+        if (card === undefined)
+            throw new Error('Canon is routing captures to host memory and did not advertise a card destination')
+        let restored = false
+        const restore = async () => {
+            if (restored) return
+            await this.set(property, original)
+            restored = true
+        }
+        try {
+            await this.set(property, card)
+        } catch (error) {
+            try { await restore() } catch (cleanup) {
+                throw new AggregateError([error, cleanup], 'Canon card preparation failed and its destination could not be restored')
+            }
+            throw error
+        }
+        return restore
     }
 
     /** Enables host EVF output, preserving the body's existing output for stop/disconnect. */
@@ -872,7 +965,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async enableRemoteMode(): Promise<void> {
-        await this.send(this.registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
+        const response = await this.send(this.registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
+        this.assertResponseOk(response.code, 'remote-mode initialization')
     }
 
     private async disableRemoteMode(): Promise<void> {
@@ -880,7 +974,8 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async enableEventMode(): Promise<void> {
-        await this.send(this.registry.operations.CanonSetEventMode, { EventMode: 'ENABLE' })
+        const response = await this.send(this.registry.operations.CanonSetEventMode, { EventMode: 'ENABLE' })
+        this.assertResponseOk(response.code, 'event-mode initialization')
     }
 
     private async disableEventMode(): Promise<void> {
@@ -1015,6 +1110,8 @@ export class CanonCamera extends GenericCamera {
     private async runPollingLoop(intervalMs: number): Promise<void> {
         while (this.polling) {
             try {
+                await this.maintainKeepAlive()
+                if (!this.polling) return
                 const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
                 if (this.polling && response.data && Array.isArray(response.data) && response.data.length > 0) {
                     this.processEvents(response.data, true)
@@ -1036,16 +1133,18 @@ export class CanonCamera extends GenericCamera {
 
     private async flushInitialEvents(): Promise<void> {
         // The initial dump takes a few rounds; a camera that never drains its queue must not stall connect().
+        let emptyRounds = 0
         for (let round = 0; round < MAXIMUM_INITIAL_EVENT_ROUNDS; round++) {
-            try {
-                const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-                if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
-                    break
+            const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+            this.assertResponseOk(response.code, 'initial event readback')
+            if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
+                if (this.propertyCache.size === 0 && ++emptyRounds < 6) {
+                    await new Promise(resolve => setTimeout(resolve, 100))
+                    continue
                 }
-                this.processEvents(response.data, false)
-            } catch (error) {
                 break
             }
+            this.processEvents(response.data, false)
         }
 
         const propertiesWithAllowedValues = Array.from(this.propertyCache.values()).filter(p => p.allowed).length

@@ -123,6 +123,23 @@ function cameraOn(reply: Reply, policy = { timeoutMilliseconds: 50, deviceBusyBa
     return { camera, transport, operations: camera.registry.operations }
 }
 
+it('retains all five rejected Canon write attempts with their exact transaction IDs', async () => {
+    // Replay the observed response pattern, not an invented R8 property dump.
+    // 0xd1b8 is the test's explicit request; the original upload omitted that payload.
+    const transport = new ScriptedTransport(command => [container(CONTAINER.response, 0x2019, command.transactionId)])
+    const camera = new CanonCamera(transport, quietLogger())
+    const evidence: any[] = []
+    const stop = camera.observeProfile('a2e40c0c-4695-4e0a-a80b-b63caac50001', entry => evidence.push(entry))
+    try {
+        await expect(camera.set(camera.registry.properties.CanonRecordingDestination, 'CARD')).rejects.toMatchObject({ code: 0x2019 })
+        expect(evidence).toHaveLength(5)
+        expect(evidence.map(entry => entry.transactionId)).toEqual(transport.commands.map(command => command.transactionId))
+        expect(evidence.every(entry => entry.type === 'property-write' && entry.property === 0xd1b8 &&
+            entry.requested === 4 && entry.response === 0x2019 && entry.outcome === 'response')).toBe(true)
+        expect(transport.resets).toBe(0)
+    } finally { stop() }
+})
+
 describe('Sony partial-image data container opcode', () => {
     it.each([0x9211, 0x101b])('accepts opcode 0x%s only on the matching extended download', async code => {
         const { camera } = cameraOn(({ transactionId }) => [

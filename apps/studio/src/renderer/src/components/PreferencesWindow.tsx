@@ -10,6 +10,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from '@kevinschaich/components'
+import { DiagnosticsSettings } from '@renderer/components/DiagnosticsSettings'
 import type { McpServerStatus, Preferences } from '@shared/ipc'
 import { Check, Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -80,7 +81,10 @@ function McpServerSection({
                     </div>
                     <div className="space-y-1.5">
                         <p className="text-xs text-muted-foreground">Add to Claude Code</p>
-                        <CopyableValue label="command" value={`claude mcp add --transport http darkgrade-studio ${url}`} />
+                        <CopyableValue
+                            label="command"
+                            value={`claude mcp add --transport http darkgrade-studio ${url}`}
+                        />
                     </div>
                 </div>
             )}
@@ -113,12 +117,15 @@ export function PreferencesWindow(): React.JSX.Element | null {
                     Settings
                 </header>
                 <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-8">
-                    <h2 className="mb-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">Integrations</h2>
+                    <h2 className="mb-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                        Integrations
+                    </h2>
                     <McpServerSection
                         preferences={preferences}
                         status={status}
                         onChange={enabled => void api.setPreferences({ mcpServerEnabled: enabled })}
                     />
+                    <DiagnosticsSettings />
                 </main>
             </div>
         </TooltipProvider>
