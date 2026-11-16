@@ -41,6 +41,7 @@ jobs:
               env:
                   DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry
             - run: npm run build --prefix packages/link && npm run test --prefix packages/link -- tests/telemetry.test.ts tests/ptp-input-fuzz.test.ts
+            - run: npm run test:runtime --prefix packages/link
             - run: npm run test --prefix packages/cli
             - run: npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
             - run: docker build -f apps/contribution-collector/Dockerfile -t telemetry-check .
