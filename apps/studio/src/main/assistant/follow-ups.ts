@@ -20,12 +20,15 @@ function normalise(sentence: string): string {
         .toLowerCase()
 }
 
-const REPEAT = /^((a )?(little|bit|touch|tad|smidge) more|(a )?bit more|more|again|one more|same again|keep going|do it again)$/
-const REVERSE_PHRASE = "((that's |it's |this is )?too (far|much)( back)?|back (a )?(bit|touch|little|tad)|(pull|bring) it back( (a )?(bit|touch|little))?|(a )?(bit|little|touch) less|less|overshot( it)?)"
+const REPEAT =
+    /^((a )?(little|bit|touch|tad|smidge) more|(a )?bit more|more|again|one more|same again|keep going|do it again)$/
+const REVERSE_PHRASE =
+    "((that's |it's |this is )?too (far|much)( back)?|back (a )?(bit|touch|little|tad)|(pull|bring) it back( (a )?(bit|touch|little))?|(a )?(bit|little|touch) less|less|overshot( it)?)"
 /** One or more reversal phrases in a row: "too far, pull it back", "too much, back a touch". */
 const REVERSE = new RegExp(`^${REVERSE_PHRASE}( ${REVERSE_PHRASE})*$`)
 /** "Too warm, back a bit": a reversal that names what went too far; only valid when it matches. */
-const REVERSE_NAMED = /^(that's |it's |this is |now it's )?too (warm|cool|cold|blue|orange|bright|dark)( (back|pull it back|bring it back)( (a )?(bit|touch|little))?)?$/
+const REVERSE_NAMED =
+    /^(that's |it's |this is |now it's )?too (warm|cool|cold|blue|orange|bright|dark)( (back|pull it back|bring it back)( (a )?(bit|touch|little))?)?$/
 const UNDO = /^(undo( that| it)?|go back|put it back|revert( that)?|change it back)$/
 const TURN_OFF = /^(turn|switch|shut) (it|that|them) off$|^(turn|switch) off$|^off$/
 
@@ -41,7 +44,8 @@ const NAMED_DIRECTION: Record<string, { action: FoundRequest['action']; sign: 1 
 }
 
 function repeat(last: FoundRequest): FoundRequest | null {
-    if (last.action === 'adjust_exposure' || last.action === 'adjust_color_temperature' || last.action === 'zoom') return { ...last }
+    if (last.action === 'adjust_exposure' || last.action === 'adjust_color_temperature' || last.action === 'zoom')
+        return { ...last }
     return null
 }
 

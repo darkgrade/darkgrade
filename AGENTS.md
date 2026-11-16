@@ -121,6 +121,70 @@ responses, Escape/focus return, friendly installation labels, and narrow screens
 - Everything runnable via npm scripts
 - Easy setup and execution
 
+## Brand and site changes
+
+`apps/darkgrade.com` is the source of truth for the brand. Nothing syncs it to the places that
+copy it, so a change to the look, the wordmark, the type or the social images is not finished
+until every row below is updated in the same batch. Check this list on any rebrand, any change
+to the type or colour tokens, and any re-render of the social images.
+
+The look today: Public Sans for headings and running text, Fragment Mono for labels and readings;
+`--heading-weight: 600`, `--lockup-weight: 500` (the name beside the mark is one weight lighter
+than a heading); gold `#f5cd8a`, obsidian `#0A0A0B`, bone `#EAE6DC`, one red `#e0483e`; `--gI`
+is the single knob for every gold glow.
+
+| Where | Holds | Note |
+| --- | --- | --- |
+| `apps/darkgrade.com/public` | the ten brand files | source of truth |
+| `apps/darkgrade.com/app/press-kit` | draws every social image live | regenerate here, never hand-edit a PNG |
+| `apps/darkgrade.com/scripts/make-lockups.ts` | the wordmark in every ink | `bun run lockups`; writes into all three folders at once |
+| `apps/drkgrd.co/public` | copies of the brand files | its card is drawn by `app/opengraph-image.tsx`, not committed |
+| `apps/docs/assets` | copies, plus `ks_*` for kevinschaich.com | `docs.json` carries `fonts` and `colors` of its own |
+| `toolbench`, `voicebench`, `cambench` (separate repos) | `scripts/prerender.ts` | draws a card per route with satori, from the shared component |
+| `kevinschaich.com` (separate repo) | `ks_*` cards, `public/kit/v1/brand.css` | its home page mirrors drkgrd.co; a projects page besides |
+
+The social images are rendered by `/press-kit`, which draws the home page's own scene: open it,
+pick the size, download the PNG. A card that was edited by hand will drift from the site the next
+time the scene changes.
+
+One card is shared with kevinschaich.com: `@kevinschaich/components/og` exports `OgCard`, both
+brand marks as bare SVGs and the backdrop, and a consumer draws its own cards from them rather
+than committing a PNG. It takes a background, a logo (the mark beside a name — `Darkgrade` here,
+`Kevinschaich` on Kevin's own properties), a main line, a sub line and an address. Register the
+faces satori asks for under the names it expects: `body` (Public Sans 400), `heading` (Public
+Sans 600 and 500) and `mono` (Fragment Mono 400). darkgrade.com's own card is the exception — it
+is the camera from the home page's scene, which satori cannot draw, so it stays a render from
+`/press-kit`.
+
+The benches are the exception to the exception, and not a card each: every one of them draws a card per route in
+`scripts/prerender.ts` with satori, hundreds in a build, so there is nothing to hand over. What
+changes there is the template — its colours, its weights and its type — and the next build
+regenerates every card from it. The same goes for anything else that generates cards
+programmatically, kevinschaich.com's `opengraph-image.tsx` among them: change the template, not
+the output.
+
+A change that lands in another repository is a pull request there, not a file copied across.
+Say in the darkgrade pull request which other repositories still need the same change, so the
+batch can be finished rather than half-applied.
+
+## Metrics
+
+Everything we publish reports to the one PostHog project, through our own proxy at
+`ph.darkgrade.com` — never to a PostHog host directly, and never to a project of its own. That
+covers darkgrade.com, drkgrd.co, the docs, the three benches, kevinschaich.com, and every project
+linked from `kevinschaich.com/projects` that we host.
+
+A Next app reads `NEXT_PUBLIC_POSTHOG_KEY` and `NEXT_PUBLIC_POSTHOG_HOST` from the environment in
+`instrumentation-client`, with `defaults: '2025-11-30'`, autocapture on, and session recording,
+surveys and dead clicks off. Copy `apps/darkgrade.com/instrumentation-client.js` rather than
+writing another one. The values themselves live in Vercel, so a new property is not reporting
+until they are set there — adding the file is only half of it.
+
+A static page carries the same project key and `https://ph.darkgrade.com` inline, since it has no
+build to read an environment from. The key is a public write-only `phc_` key; it is already in
+`apps/docs/docs.json` and in shipped JavaScript, so committing it again is fine. Never put a
+personal or project *API* key (`phx_`) in a client.
+
 ## Physical Testbench
 
 This checkout uses the project-scoped `darkgrade_testbench` MCP server from `.codex/config.toml`.

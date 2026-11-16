@@ -4,7 +4,10 @@ export type TranscriptionCommand = { type: 'start'; enginePort: number; audioPor
 
 export type TranscriptionEvent =
     | { type: 'listening' }
+    /** An utterance's final words; only these join the transcript the assistant follows. */
     | { type: 'delta'; text: string }
+    /** The utterance being spoken so far; shown, then replaced by its delta. Never acted on. */
+    | { type: 'partial'; text: string }
     /** The worker started a new session; the transcript continues on a new paragraph. */
     | { type: 'paragraph' }
     | { type: 'error'; message: string }

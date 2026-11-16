@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
 import { createMuxBackdrop } from '@/app/components/mux'
+import { useEffect, useRef } from 'react'
 
 /** The Mux playback ID of darkgrade.com's backdrop. public/bg-poster.jpg is its still. */
 const BACKGROUND_VIDEO_ID = '5jSc3eg7Fh9OgGyz00kRt6gthd1KEWgwxqjmvLlJkp9M'
@@ -32,7 +32,10 @@ export function BackgroundVideo() {
                     disablePictureInPicture
                 />
             </div>
-            <div className="absolute inset-0 bg-black opacity-70" />
+            {/* darkgrade.com's own backdrop is near-black dust; the footage has to sit that far back for
+                the type to carry the page rather than compete with it. */}
+            <div className="absolute inset-0 bg-black opacity-[.86]" />
+            <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_18%_30%,rgba(10,10,11,.92)_0%,rgba(10,10,11,.72)_45%,rgba(10,10,11,.45)_100%)]" />
         </div>
     )
 }

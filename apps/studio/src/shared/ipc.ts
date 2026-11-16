@@ -1,3 +1,4 @@
+import type { SpeechModelId } from '@shared/speech-models'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
  * Every camera capability exposed by @darkgrade/link has a channel here.
@@ -276,7 +277,14 @@ export interface LocalModelStatus {
     message: string | null
 }
 
-export type VoiceEngineStatus = LocalModelStatus
+/** The part of voice setup under way: Python, its packages, the speech model's download, then loading it. */
+export type VoiceSetupStep = 'python' | 'tools' | 'speech-model' | 'loading'
+
+export interface VoiceEngineStatus extends LocalModelStatus {
+    setupStep: VoiceSetupStep | null
+    /** The chosen speech model's full download size, whatever step setup is on. */
+    speechModelBytes: number
+}
 
 /** A stretch of live transcript handed to the assistant. Times are milliseconds since the epoch, for the timing log. */
 export interface TranscriptSegment {
@@ -321,6 +329,8 @@ export interface Preferences {
     /** Serve Studio's camera tools to MCP clients on this Mac. Off by default. */
     mcpServerEnabled: boolean
     mcpServerPort: number
+    /** Which Bark model voice uses; switching unloads the old one and loads the new one. */
+    speechModel: SpeechModelId
 }
 
 export interface McpServerStatus {

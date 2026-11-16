@@ -8,27 +8,30 @@
         "build": "next build",
         "start": "next start",
         "typecheck": "tsc --noEmit",
-        "lint": "next lint"
+        "lint": "next lint",
+        "lockups": "bun scripts/make-lockups.ts"
     },
     "devDependencies": {
-        "@types/node": "^20.0.0",
+        "@fontsource/public-sans": "^5.3.0",
+        "@resvg/resvg-js": "^2.6.2",
         "@tailwindcss/postcss": "^4.1.0",
+        "@types/node": "^20.0.0",
+        "@types/three": "0.170.0",
         "autoprefixer": "^10.4.21",
+        "fontkit": "^3.0.0",
         "postcss": "^8.5.6",
         "tailwindcss": "^4.1.0",
         "typescript": "^5.0.0"
     },
     "dependencies": {
-        "@chriscourses/perlin-noise": "^1.0.6",
         "@darkgrade/ui": "workspace:*",
+        "@kevinschaich/components": "^0.8.3",
         "@types/react": "^19.1.11",
         "@types/react-dom": "^19.1.8",
-        "gsap": "^3.13.0",
-        "hls.js": "^1.7.3",
-        "locomotive-scroll": "^5.0.1",
         "next": "^15.5.0",
         "posthog-js": "^1.334.1",
         "react": "19.1.1",
-        "react-dom": "19.1.1"
+        "react-dom": "19.1.1",
+        "three": "0.170.0"
     }
 }

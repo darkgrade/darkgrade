@@ -1,53 +1,20 @@
-import type { Metadata, Viewport } from 'next'
-import localFont from 'next/font/local'
-import { DevTools } from '@/app/components/dev-font-chooser/dev-tools'
 import { DEV_FONT_BOOTSTRAP_SCRIPT } from '@/app/components/dev-font-chooser/dev-fonts'
-import { VIDEO_BACKGROUND_ENABLED } from '@/app/components/backgrounds/field'
-import { MUX_STREAM_ORIGIN } from '@/app/components/backgrounds/mux'
+import { DevTools } from '@/app/components/dev-font-chooser/dev-tools'
+import type { Metadata, Viewport } from 'next'
+import { Fragment_Mono, Public_Sans } from 'next/font/google'
 import './globals.css'
 
 /* The font chooser exists only under `next dev`; the component additionally
    checks for a localhost hostname, so it never shows on a LAN address. */
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development'
 
-// All four TAY faces are static Regular (400) only. Weight utilities in the page
-// (font-[340], font-[460], font-medium) all resolve to that one face; nothing on
-// the page asks for 600+, so no bold is ever synthesised. Italic IS synthesised
-// (a slant of the upright) because none of these ship an italic.
-//
-// Glyph coverage is basic Latin: © (and a few others) are missing from some or all
-// of them and fall through the `fallback` stacks below. Anything decorative or
-// displayed large is drawn instead (the star, the stat dash, the separator dots).
-const tayFlapjack = localFont({
-    src: [{ path: './fonts/tay-flapjack.woff2', weight: '400', style: 'normal' }],
-    variable: '--font-tay-flapjack',
-    display: 'swap',
-    preload: true,
-    fallback: ['Georgia', 'serif'],
-})
-
-const tayRoadRunner = localFont({
-    src: [{ path: './fonts/tay-road-runner-regular.woff2', weight: '400', style: 'normal' }],
-    variable: '--font-tay-road-runner',
-    display: 'swap',
-    preload: true,
-    fallback: ['system-ui', 'sans-serif'],
-})
-
-// Mono: Tommy Tokyo is live. To switch back to Quick Draw, point `path` at
-// './fonts/tay-quick-draw.woff2' (still in ./fonts, currently unused).
-const tayTommyTokyo = localFont({
-    src: [{ path: './fonts/tay-tommy-tokyo-regular.woff2', weight: '400', style: 'normal' }],
-    variable: '--font-tay-tommy-tokyo',
-    display: 'swap',
-    // Preloaded: it sets the eyebrow labels, chips and "tested on" line, all above the fold.
-    preload: true,
-    fallback: ['ui-monospace', 'monospace'],
-})
+// Public Sans for headings and running text alike, and Fragment Mono for labels, readings and
+// code. Fragment Mono has one weight, so nothing set in it may ask for a bold.
+const siteSans = Public_Sans({ subsets: ['latin'], variable: '--font-site-sans', display: 'swap' })
+const siteMono = Fragment_Mono({ subsets: ['latin'], weight: '400', variable: '--font-site-mono', display: 'swap' })
 
 const TITLE = 'Darkgrade — Shoot more. Edit less.'
-const DESCRIPTION =
-    'Local-first AI for creative professionals.'
+const DESCRIPTION = 'Local-first AI for creative professionals.'
 const OG_IMAGE = 'https://darkgrade.com/darkgrade_opengraph_dark.png'
 
 export const metadata: Metadata = {
@@ -93,39 +60,21 @@ export const viewport: Viewport = {
     colorScheme: 'dark',
 }
 
-/* CSS hides [data-fade]/[data-reveal] content, and locks scrolling behind the
-   preloader, only under html.js / html.preload - so a visitor without
-   JavaScript still gets the whole page, unlocked. This has to land before
-   first paint, which means before hydration, which means <html>'s class
-   attribute is deliberately not what the server sent: hence
-   suppressHydrationWarning on it below. That opts out one element's own
-   attributes, nothing nested.
-
-   The preloader plays only when a visit lands on the home page: html.intro
-   shows it and html.preload locks scrolling behind it. Landing anywhere else,
-   or moving between pages afterwards (client-side, in the (site) layout), never
-   shows it. */
-const JS_FLAG =
-    "var c=document.documentElement.classList;c.add('js');if(location.pathname==='/')c.add('intro','preload')"
+/* CSS hides content that animates in ([data-rise]) only under html.js, so a visitor without JavaScript still gets the whole
+   page. This has to land before first paint, which means before hydration,
+   which means <html>'s class attribute is deliberately not what the server
+   sent: hence suppressHydrationWarning on it below. That opts out one
+   element's own attributes, nothing nested. */
+const JS_FLAG = "document.documentElement.classList.add('js')"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html
-            lang="en"
-            className={`${tayRoadRunner.variable} ${tayFlapjack.variable} ${tayTommyTokyo.variable}`}
-            suppressHydrationWarning
-        >
+        <html lang="en" className={`${siteSans.variable} ${siteMono.variable}`} suppressHydrationWarning>
             <head>
                 <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
-                {VIDEO_BACKGROUND_ENABLED && (
-                    <>
-                        <link rel="preconnect" href={MUX_STREAM_ORIGIN} />
-                        <link rel="preconnect" href="https://image.mux.com" />
-                    </>
-                )}
                 {IS_DEVELOPMENT && <script dangerouslySetInnerHTML={{ __html: DEV_FONT_BOOTSTRAP_SCRIPT }} />}
             </head>
-            <body className="[html.preload_&]:h-dvh [html.preload_&]:overflow-hidden">
+            <body>
                 {children}
                 {IS_DEVELOPMENT && <DevTools />}
             </body>

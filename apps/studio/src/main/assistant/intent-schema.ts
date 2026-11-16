@@ -11,18 +11,22 @@ export const INTENT_INSTRUCTIONS = `You listen to a filmmaker talking while they
 These are requests, even mid-sentence or after other talk:
 - commands: "take a photo", "start recording", "set the aperture to f8", "zoom in a bit", "movie mode", "switch over to video", "AF-C and focus area wide", "show me the waveform"
 - film-set words: "roll camera", "rolling" = start recording; "cut", "that's a wrap" = stop recording
-- QUESTIONS about the shot are always requests (ask): "is it in focus?", "am I clipping anywhere?", "is it focused on my eyes or the background?", "are my highlights okay?", "what shutter should I use?"
+- QUESTIONS about the shot are always requests (ask): "is it in focus?", "am I clipping anywhere?", "what's in focus?", "are my highlights okay?", "what shutter should I use?"
 - complaints about how it looks (brightness complaints are exposure only; colour only when they mention colour): "it's a little dark", "the window is way too hot", "the light behind me is too hard", "it's looking a bit blue"
 - looks and styles: "make it look more cinematic", "moodier", "punchier", "cleaner"
-- follow-ups: "little more", "bit more", "again", "too far, back a bit", "turn it off", "undo that"
+- follow-ups: "little more", "bit more", "again", "too far, back a bit", "turn it off", "undo that"; "that's wrong, try again" repeats the last request: "focus on the computers" … "no, try again" → ask focus on the computers, try a different spot
+
+The transcript is speech recognition, so camera words can be misheard as sound-alikes. Read them as the camera word when the rest fits a request: "emperature f eight" or "aperature F four" → set aperture f8 / f4; "hyperdraft four" → set aperture f4; "focus speaking" → focus peaking.
 
 These are not requests:
 - stories and facts, including quoted commands inside a story ("I'd tell the second shooter 'stop down to f8'")
 - habits and teaching ("I always shoot at ISO 100", "it's clean up to 6400")
 - anything said to a person: names, crew, physical tasks ("Jamie, bring the reflector closer", "move left", "right there")
 - narration that happens to use camera words ("we're rolling on the lens review" while introducing a video)
+- remarks about what just happened, even naming a setting: "that's my forehead", "you went back to eye focus", "it just set it back to eye focus", "okay, that was correct", "it should look at the histogram", "you're done"
+- talk about Studio itself, its speech or AI models, or complaints about what it just did ("this is now switched to Bark three point zero pro", "why did you switch that?", "the transcription is worse") — none, even when it names a mode or setting
 
-CAMERA says what the camera is doing right now. If it says RECORDING NOW (in any mode), then "cut", a lone "Cut.", "stop" and "that's a wrap" are ALWAYS: 1 record off.
+CAMERA says what the camera is doing right now. If it says RECORDING NOW (in any mode), then "cut", a lone "Cut.", "stop recording" and "that's a wrap" are ALWAYS: 1 record off. Ending a thought is not cut: "we're gonna stop it there" or "let's stop there" → none.
 
 A follow-up continues the MOST RECENT request in EARLIER CONTEXT, whatever it was: "bit more" after "warm it up" → warmth +250; "bit more" after "brighter" → exposure +0.33; "turn it off" after "turn on peaking" → view peaking-off; "too far, pull it back" after brightening → exposure -0.33.
 
@@ -33,12 +37,14 @@ EARLIER CONTEXT shows the last thing said before. Use it to understand reference
 Answer on ONE line: the single word none, or the NUMBER of requests (1, 2 or 3) followed by the requests separated by "; ". "Roll camera" → 1 record on. "Back to photo mode and turn off the zebras" → 2 set exposureProgram photo; view zebras-off. Never add requests that weren't asked for.
 Requests:
 - set <setting> <value> — an exact value or mode; the value is ONE word (use - for spaces: movie-manual). Settings: ${CAMERA_CONTROL_NAMES.join(', ')}. "ISO to 1000" → set iso 1000; "aperture f4" → set aperture f4; "manual focus" → set focusMode MF; "keep it on continuous" after a focus change → set focusMode AF-C; "focus area wide" → set focusArea wide; "movie mode" or "switch over to video" → set exposureProgram movie; "back to photo mode" → set exposureProgram photo
-- exposure <signed stops> [shutter|aperture|iso] — brighter is +; add the setting ONLY when they named it to change ("keep the shutter where it is" → exposure -0.33 iso) ("bump it to 6400 and darken it with the shutter" → 2 set iso 6400; exposure -1 shutter): "a little dark" → exposure +0.33; "way too bright" → exposure -1. A follow-up repeats or reverses the PREVIOUS request in EARLIER CONTEXT: "little more" after brightening → exposure +0.33; "too far, back a touch" after brightening → exposure -0.33
+- exposure <signed stops> [shutter|aperture|iso] — brighter is +; add the setting ONLY when they named it to change ("keep the shutter where it is" → exposure -0.33 iso) ("bump it to 6400 and darken it with the shutter" → 2 set iso 6400; exposure -1 shutter): "a little dark" → exposure +0.33; "way too bright" → exposure -1; a counted amount is that many stops: "a stop brighter" → exposure +1, "two stops darker" → exposure -2. A follow-up repeats or reverses the PREVIOUS request in EARLIER CONTEXT: "little more" after brightening → exposure +0.33; "too far, back a touch" after brightening → exposure -0.33
 - warmth <signed kelvin> — warmer is +: "a touch warmer" → warmth +250; "a bit blue" → warmth +300; "cooler" → warmth -300
 - record on | record off — start/roll or stop/cut
 - photo ("take a still", "grab a still for the thumbnail", "snap one") | focus | undo | zoom in | zoom out | liveview on | liveview off
-- view <changes> — Studio's own view, only what was asked: histogram, waveform, vectorscope, zebras-on, zebras-off, zebras-<level 70–100>, peaking-on, peaking-off. "Waveform and zebras at ninety" → view waveform zebras-on zebras-90
-- ask <their request> — anything else, for the full assistant, with THEIR words (only this request, references resolved): "am I clipping?" → ask am I clipping anywhere?. For: questions ("is it in focus?"), judgments and styles that need a look ("make it look more cinematic", "moodier"), files, anything unclear. Write the instruction standalone, with references resolved from the context and amounts kept.
+- "fix it", "do that", "go ahead" right after asking about the shot → ask with the reference resolved from EARLIER CONTEXT: "is it too dark?" … "okay, fix it" → ask fix the exposure
+- focus — autofocus now: "focus on me", "focus on my face", "grab focus", "refocus". Focusing on something else, or moving focus, is ask, in their words: "focus on the background" → ask focus on the background; "focus left more" → ask move focus a bit more to the left; "focus left" → ask move focus to the left; "focus on the top of the frame" → ask focus on the top of the frame; "focus on the neon sign" → ask focus on the neon sign. Only focusing on the speaker ("me", "my face") is focus. "Focus off" means focus peaking: view peaking-off. A QUESTION about focus ("am I in focus?") is ask, not focus.
+- view <changes> — Studio's own view, only what was asked, with only the scope they named: histogram, waveform, vectorscope, zebras-on, zebras-off, zebras-<level 70–100>, peaking-on, peaking-off. "Waveform and zebras at ninety" → view waveform zebras-on zebras-90; "show the histogram" → view histogram. A zebra level outside 70–100 can't be set: "zebras to thirty" → ask set zebras to 30 percent. Never add zebras-off or peaking-off to a scope change: "show the histogram" → view histogram. Focus peaking has no level and is not zebras: "focus peaking to seventy" → ask set focus peaking to 70
+- ask <their request> — anything else, for the full assistant, with THEIR words (never words copied from an example here) (only this request, references resolved): "am I clipping?" → ask am I clipping anywhere?. For: questions ("is it in focus?"), judgments and styles that need a look ("make it look more cinematic", "moodier"), files, anything unclear. Write the instruction standalone, with references resolved from the context and amounts kept.
 
 Counting:
 - Two ways of saying the same change are ONE request ("make it a touch warmer, it's looking a bit blue" → warmth +250).
@@ -72,7 +78,7 @@ kelvin ::= [1-9] [0-9]? [0-9]? [0-9]?
 setting ::= ${SETTING_RULE}
 value ::= [^; \\n]{1,24}
 item ::= "histogram" | "waveform" | "vectorscope" | "zebras-on" | "zebras-off" | "zebras-" [7-9] [0-9] | "zebras-100" | "peaking-on" | "peaking-off"
-text ::= [^;\\n]{1,200}`
+text ::= [^;\\n]{1,120}`
 
 export interface FoundRequest {
     action: 'agent' | (typeof DIRECT_ACTIONS)[number]
@@ -109,7 +115,10 @@ function parseView(items: string[]): FoundRequest {
 
 /** One answer line to a request; null for lines that don't parse (the grammar makes those rare). */
 export function parseIntentLine(line: string): FoundRequest | null {
-    const [word, ...rest] = line.trim().replace(/^[1-3] /, '').split(/\s+/)
+    const [word, ...rest] = line
+        .trim()
+        .replace(/^[1-3] /, '')
+        .split(/\s+/)
     const argument = rest.join(' ')
     switch (word) {
         case 'photo':

@@ -1,35 +1,15 @@
-import type { Metadata, Viewport } from 'next'
-import localFont from 'next/font/local'
 import { MUX_STREAM_ORIGIN } from '@/app/components/mux'
+import type { Metadata, Viewport } from 'next'
+import { Fragment_Mono, Public_Sans } from 'next/font/google'
 import './globals.css'
 
-const tayFlapjack = localFont({
-    src: [{ path: './fonts/tay-flapjack.woff2', weight: '400', style: 'normal' }],
-    variable: '--font-tay-flapjack',
-    display: 'swap',
-    preload: true,
-    fallback: ['Georgia', 'serif'],
-})
-
-const tayRoadRunner = localFont({
-    src: [{ path: './fonts/tay-road-runner-regular.woff2', weight: '400', style: 'normal' }],
-    variable: '--font-tay-road-runner',
-    display: 'swap',
-    preload: true,
-    fallback: ['system-ui', 'sans-serif'],
-})
-
-const tayTommyTokyo = localFont({
-    src: [{ path: './fonts/tay-tommy-tokyo-regular.woff2', weight: '400', style: 'normal' }],
-    variable: '--font-tay-tommy-tokyo',
-    display: 'swap',
-    preload: true,
-    fallback: ['ui-monospace', 'monospace'],
-})
+// The same two faces darkgrade.com is set in: Public Sans for headings and running text,
+// Fragment Mono for labels. Fragment Mono has one weight, so nothing set in it may ask for a bold.
+const siteSans = Public_Sans({ subsets: ['latin'], variable: '--font-site-sans', display: 'swap' })
+const siteMono = Fragment_Mono({ subsets: ['latin'], weight: '400', variable: '--font-site-mono', display: 'swap' })
 
 const TITLE = 'Darkgrade — Shoot more. Edit less.'
 const DESCRIPTION = 'Local-first AI for creative professionals.'
-const OG_IMAGE = 'https://drkgrd.co/darkgrade_opengraph_dark.png'
 
 export const metadata: Metadata = {
     metadataBase: new URL('https://drkgrd.co'),
@@ -44,7 +24,6 @@ export const metadata: Metadata = {
         title: TITLE,
         siteName: TITLE,
         description: DESCRIPTION,
-        images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: 'Darkgrade' }],
         type: 'website',
         url: 'https://drkgrd.co',
     },
@@ -52,7 +31,6 @@ export const metadata: Metadata = {
         card: 'summary_large_image',
         title: TITLE,
         description: DESCRIPTION,
-        images: [OG_IMAGE],
     },
 }
 
@@ -65,7 +43,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en" className={`${tayRoadRunner.variable} ${tayFlapjack.variable} ${tayTommyTokyo.variable}`}>
+        <html lang="en" className={`${siteSans.variable} ${siteMono.variable}`}>
             <head>
                 <link rel="preconnect" href={MUX_STREAM_ORIGIN} />
             </head>

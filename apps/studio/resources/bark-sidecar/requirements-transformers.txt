@@ -1,0 +1,5 @@
+# Bark 3.0 Pro only, installed when it is first chosen. Pinned to the versions Voicebench scored it
+# with (voicebench bench/setup.ts) and the model's own runtime/requirements.txt.
+torch==2.15.0
+transformers==5.19.0
+librosa==0.11.0

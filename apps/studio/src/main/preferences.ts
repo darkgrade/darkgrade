@@ -1,11 +1,13 @@
+import type { Preferences } from '@shared/ipc'
+import { DEFAULT_SPEECH_MODEL, speechModel } from '@shared/speech-models'
 import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Preferences } from '@shared/ipc'
 
 export const DEFAULT_PREFERENCES: Preferences = {
     mcpServerEnabled: false,
     mcpServerPort: 7461,
+    speechModel: DEFAULT_SPEECH_MODEL,
 }
 
 /** Studio's settings, kept as JSON in Application Support and read once at launch. */
@@ -20,8 +22,11 @@ class PreferencesStore {
     get(): Preferences {
         if (this.current) return this.current
         try {
-            const saved = existsSync(this.path) ? (JSON.parse(readFileSync(this.path, 'utf8')) as Partial<Preferences>) : {}
+            const saved = existsSync(this.path)
+                ? (JSON.parse(readFileSync(this.path, 'utf8')) as Partial<Preferences>)
+                : {}
             this.current = { ...DEFAULT_PREFERENCES, ...saved }
+            this.current.speechModel = speechModel(this.current.speechModel).id
         } catch {
             this.current = { ...DEFAULT_PREFERENCES }
         }

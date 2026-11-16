@@ -109,10 +109,10 @@ export class LlamaServerProcess {
                 exited.then(description => description),
                 new Promise<null>(resolve => setTimeout(() => resolve(null), HEALTH_POLL_INTERVAL_MS)),
             ])
-            if (result !== null) throw new Error(`The speech engine didn't start (${result}): ${lastOutput}`)
+            if (result !== null) throw new Error(`The model server didn't start (${result}): ${lastOutput}`)
         }
         await this.stop()
-        throw new Error('The speech engine took too long to start')
+        throw new Error('The model server took too long to start')
     }
 
     async stop(): Promise<void> {

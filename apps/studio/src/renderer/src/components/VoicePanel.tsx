@@ -1,6 +1,5 @@
 import {
     Button,
-    Progress,
     Select,
     SelectContent,
     SelectItem,
@@ -12,9 +11,19 @@ import {
     TooltipTrigger,
 } from '@kevinschaich/components'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
+import {
+    AssistantSetupNotice,
+    formatDownloadSize,
+    ModelLicenseNotice,
+    VoiceSetupProgress,
+} from '@renderer/components/VoiceSetupProgress'
+import type { VoiceEngineStatus } from '@shared/ipc'
+import { MICROPHONE_SETTINGS_URL } from '@shared/microphone-errors'
+import { summarizeSetup, type SetupSummary } from '@shared/setup-progress'
+import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
 import { microphoneLevel, transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
-import { ChevronDown, Download, Eraser, Mic, Square } from 'lucide-react'
+import { AudioLines, ChevronDown, Download, Eraser, Mic, Square } from 'lucide-react'
 
 interface VoicePanelProps {
     voice: LiveTranscription
@@ -22,11 +31,17 @@ interface VoicePanelProps {
     onCollapse: () => void
 }
 
-function formatGigabytes(bytes: number): string {
-    return `${(bytes / 1e9).toFixed(1)} GB`
-}
-
 const LEVEL_BARS = 5
+
+const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
+    phase: 'idle',
+    receivedBytes: 0,
+    totalBytes: 0,
+    port: null,
+    message: null,
+    setupStep: null,
+    speechModelBytes: 0,
+}
 
 /** A small meter that shows the microphone is hearing you. */
 function LevelMeter({ active }: { active: boolean }): React.JSX.Element {
@@ -56,7 +71,11 @@ function MicrophonePicker({ voice }: { voice: LiveTranscription }): React.JSX.El
             .map(microphone => ({ value: microphone.deviceId, label: microphone.label })),
     ]
     return (
-        <Select items={items} value={voice.microphoneId} onValueChange={value => void voice.chooseMicrophone(String(value))}>
+        <Select
+            items={items}
+            value={voice.microphoneId}
+            onValueChange={value => void voice.chooseMicrophone(String(value))}
+        >
             <SelectTrigger size="sm" aria-label="Microphone" className="h-7 max-w-56 min-w-0 gap-1.5 text-xs">
                 <Mic className="text-muted-foreground" />
                 <SelectValue className="truncate" />
@@ -72,28 +91,61 @@ function MicrophonePicker({ voice }: { voice: LiveTranscription }): React.JSX.El
     )
 }
 
-function EngineMessage({ voice }: { voice: LiveTranscription }): React.JSX.Element | null {
+function SpeechModelPicker({ voice }: { voice: LiveTranscription }): React.JSX.Element {
+    const items = SPEECH_MODELS.map(model => ({ value: model.id, label: model.name }))
+    const busy = voice.listening === 'preparing' || voice.listening === 'stopping'
+    return (
+        <Select
+            items={items}
+            value={voice.speechModelId}
+            disabled={busy}
+            onValueChange={value => void voice.chooseSpeechModel(value as SpeechModelId)}
+        >
+            <SelectTrigger size="sm" aria-label="Speech model" className="h-7 min-w-0 gap-1.5 text-xs">
+                <AudioLines className="text-muted-foreground" />
+                <SelectValue className="truncate" />
+            </SelectTrigger>
+            <SelectContent>
+                {SPEECH_MODELS.map(model => (
+                    <SelectItem key={model.id} value={model.id}>
+                        <span className="flex flex-col">
+                            <span>{model.name}</span>
+                            <span className="text-xs text-muted-foreground">{model.description}</span>
+                        </span>
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    )
+}
+
+function EngineMessage({
+    voice,
+    summary,
+}: {
+    voice: LiveTranscription
+    summary: SetupSummary
+}): React.JSX.Element | null {
     const engine = voice.engine
     if (voice.error) {
-        return <p className="text-sm text-destructive">{voice.error}</p>
-    }
-    if (engine?.phase === 'downloading') {
-        const fraction = engine.totalBytes ? engine.receivedBytes / engine.totalBytes : 0
         return (
-            <div className="w-72 space-y-2 text-center">
-                <p className="text-sm text-muted-foreground">Downloading the speech model…</p>
-                <Progress value={fraction * 100} />
-                <p className="text-xs text-muted-foreground tabular-nums">
-                    {formatGigabytes(engine.receivedBytes)} of {formatGigabytes(engine.totalBytes)}
-                </p>
+            <div className="flex max-w-xl flex-col items-center gap-3 text-center">
+                <p className="text-sm text-pretty text-destructive">{voice.error}</p>
+                {voice.microphoneBlocked && (
+                    <Button size="sm" variant="secondary" onClick={() => window.open(MICROPHONE_SETTINGS_URL)}>
+                        Open Microphone Settings
+                    </Button>
+                )}
             </div>
         )
     }
-    if (engine?.phase === 'starting' || voice.listening === 'preparing') {
+    const settingUp = engine?.phase === 'downloading' || engine?.phase === 'starting' || voice.listening === 'preparing'
+    if (settingUp) {
         return (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner /> Loading the speech model…
-            </p>
+            <div className="flex flex-col items-center gap-6">
+                <VoiceSetupProgress summary={summary} />
+                <ModelLicenseNotice speechModelId={voice.speechModelId} />
+            </div>
         )
     }
     if (voice.listening === 'listening') {
@@ -101,13 +153,16 @@ function EngineMessage({ voice }: { voice: LiveTranscription }): React.JSX.Eleme
     }
     if (engine?.phase === 'not-downloaded') {
         return (
-            <div className="max-w-sm space-y-3 text-center">
-                <p className="text-sm text-muted-foreground">
-                    Live transcription runs entirely on this Mac. The speech model is a one-time{' '}
-                    {formatGigabytes(engine.totalBytes)} download.
-                </p>
+            <div className="flex flex-col items-center gap-5 text-center">
+                <div className="flex flex-col items-center gap-2.5">
+                    <p className="text-sm text-pretty">
+                        Enabling local voice features requires a one-time download of about{' '}
+                        {formatDownloadSize(summary.totalBytes)}.
+                    </p>
+                    <ModelLicenseNotice speechModelId={voice.speechModelId} />
+                </div>
                 <Button size="sm" onClick={() => void voice.start()}>
-                    <Download /> Download and start
+                    <Download /> Set up and start
                 </Button>
             </div>
         )
@@ -136,6 +191,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     const listening = voice.listening === 'listening'
     const paragraphs = transcriptParagraphs.use()
     const hasText = paragraphs.some(paragraph => paragraph.trim())
+    const summary = summarizeSetup(voice.engine ?? IDLE_VOICE_ENGINE, voice.assistant)
     return (
         <section
             id="voice-panel"
@@ -150,6 +206,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                     <LevelMeter active={listening} />
                 </span>
                 <span className="flex-1" />
+                <SpeechModelPicker voice={voice} />
                 <MicrophonePicker voice={voice} />
                 <Tooltip>
                     <TooltipTrigger
@@ -181,10 +238,11 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                 <LiveTranscript paragraphs={paragraphs} listening={listening} />
             ) : (
                 <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
-                    <EngineMessage voice={voice} />
+                    <EngineMessage voice={voice} summary={summary} />
                 </div>
             )}
             {hasText && voice.error && <p className="shrink-0 px-5 pb-2 text-xs text-destructive">{voice.error}</p>}
+            {listening && <AssistantSetupNotice summary={summary} />}
         </section>
     )
 }
