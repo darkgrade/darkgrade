@@ -1,3 +1,4 @@
+import type { CameraRecoveryOptions, CameraRecoveryReport } from '@camera/generic-camera'
 import type { SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import type { TransactionPolicy } from '@camera/transaction-channel'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
@@ -139,6 +140,15 @@ export class Camera {
     async connectSonyObservationSession(device?: DeviceDescriptor): Promise<void> {
         if (!(this.instance instanceof SonyCamera)) throw new Error('Sony observation sessions require a Sony camera')
         await this.instance.connect(device || this.deviceDescriptor, { configure: false })
+    }
+
+    /**
+     * Software-only recovery for a camera that stopped answering: a fresh session, then a PTP
+     * Device Reset, then a USB port reset, each proven by GetDeviceInfo. The transport is closed
+     * afterwards; call connect() to use the camera. See GenericCamera.recover.
+     */
+    async recover(options?: CameraRecoveryOptions): Promise<CameraRecoveryReport> {
+        return this.instance.recover(this.deviceDescriptor, options)
     }
 
     async disconnect(): Promise<void> {

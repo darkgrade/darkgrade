@@ -24,6 +24,7 @@ vi.mock('@camera/generic-camera',()=>({GenericCamera:class{
  registry=cameraFixture().registry
  send=cameraFixture().send
  constructor(private transport:any){}
+ configureTransactions(){}
  async disconnect(){await this.transport.disconnect()}
 }}))
 vi.mock('@camera/index',()=>({Camera:class{

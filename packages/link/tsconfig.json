@@ -22,6 +22,6 @@
             "@runtime/*": ["src/runtime/*"]
         }
     },
-    "include": ["src", "tests", "*.config.ts"],
+    "include": ["src", "tests", "scripts/recover-camera.ts", "*.config.ts"],
     "exclude": ["tests/runtime"]
 }

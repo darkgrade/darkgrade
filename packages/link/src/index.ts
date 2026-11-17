@@ -10,6 +10,7 @@ export type { CameraIdentification, CameraIdentityCandidate } from '@camera/iden
 // Main protocol implementation
 export { CanonCamera } from '@camera/canon-camera'
 export { GenericCamera } from '@camera/generic-camera'
+export type { CameraRecoveryOptions, CameraRecoveryReport, CameraRecoveryStep } from '@camera/generic-camera'
 export { Camera } from '@camera/index'
 export { inspectMovieTrackHandlers, readCameraMovieAudio } from '@camera/movie-audio'
 export type { CameraMovieAudio } from '@camera/movie-audio'
