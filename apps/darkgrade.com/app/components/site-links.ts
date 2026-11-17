@@ -7,8 +7,6 @@ export const LINKS = {
     x: 'https://x.com/darkgradehq',
     linkedin: 'https://www.linkedin.com/company/darkgrade',
     careers: '/careers',
-    careersEmail: 'careers@darkgrade.com',
-    contactEmail: 'hello@darkgrade.com',
     privacy: '/privacy',
     changelog: '/changelog',
     blog: '/blog',

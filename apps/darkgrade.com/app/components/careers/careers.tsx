@@ -12,11 +12,11 @@ const CAREERS = {
         { name: 'Open roles', value: 'None at this time' },
         { name: 'Headquarters', value: 'Denver, Colorado' },
         { name: 'Source', value: 'Open on GitHub', href: LINKS.github },
-        { name: 'Write to', value: LINKS.careersEmail, href: `mailto:${LINKS.careersEmail}` },
+        { name: 'Say hello', value: 'Discord', href: LINKS.discord },
     ],
     closing: {
         line: 'Want to build with us?',
-        detail: 'Send a note with something you’ve made and what you’d want to work on. A person reads every one.',
+        detail: 'Tell us in Discord what you’ve made and what you’d want to work on. We read what’s posted there.',
     },
 } as const
 
@@ -24,7 +24,7 @@ const CAREERS = {
 const WORK = [LINK, STUDIO]
 
 /**
- * The Careers page: there are no open roles, what the team works on, and where to write if you
+ * The Careers page: there are no open roles, what the team works on, and where to say hello if you
  * would like to build with it anyway.
  */
 export function Careers() {
@@ -55,8 +55,8 @@ export function Careers() {
             </SheetSection>
 
             <SheetClosing line={CAREERS.closing.line} detail={CAREERS.closing.detail}>
-                <a className={BTN_SOLID} href={`mailto:${LINKS.careersEmail}`}>
-                    {LINKS.careersEmail}
+                <a className={BTN_SOLID} href={LINKS.discord} target="_blank" rel="noopener">
+                    Join the Discord
                 </a>
                 <a className={BTN_GHOST} href="/about">
                     Meet the team

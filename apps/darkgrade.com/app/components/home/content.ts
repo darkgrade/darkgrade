@@ -8,7 +8,7 @@ export { LINK, LINKS, NPM_INSTALL, STUDIO }
 export const HERO = {
     eyebrow: 'Local-first AI for creative professionals',
     headline: ['Shoot more.', 'Edit less.'],
-    lede: 'Darkgrade dials in your camera, captures the shot, and returns a finished first cut — on your own machine. You stay the director. Nothing leaves your computer unless you say so.',
+    lede: 'Darkgrade dials in your camera, captures the shot, and, soon, returns a first cut — on your own machine. You stay the director. You’re in charge of what leaves your machine.',
     /** The button that plays the page through from its start. */
     watch: 'Watch it in action',
     /** The waitlist is kept on the Discord until it has a form of its own. */
@@ -20,18 +20,18 @@ export const MANIFESTO = ['Record is one button.', 'The rest are in your way.', 
 export const PRINCIPLES = [
     {
         index: '/01',
-        title: 'You’re never replaced',
-        body: 'No AI slop, no fake people. We make your real footage move faster — and give you back your evenings.',
+        title: 'You stay the director',
+        body: 'We don’t generate footage or people. We make your real footage move faster — and give you back your evenings.',
     },
     {
         index: '/02',
         title: 'Local-first & private',
-        body: 'Everything runs on your machine by default. We don’t train on your footage.',
+        body: 'Camera control, speech recognition and text models run on your machine by default. We don’t train on your footage.',
     },
     {
         index: '/03',
         title: 'Open & fair',
-        body: 'The core is free, and stays free. The app is priced fairly, with no bait-and-switch.',
+        body: 'Link is open source and free to use. Studio will be a paid app, and we’ll publish the price before we charge for it.',
         /** A line of its own under the body, all of it a link. */
         link: { label: 'Our code is on GitHub. Read it here.', href: LINKS.github },
     },

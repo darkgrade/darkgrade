@@ -5,7 +5,7 @@ import { Changelog } from '@/app/components/changelog/changelog'
 export const metadata: Metadata = {
     title: 'Changelog · Darkgrade',
     description:
-        'A record of what ships in Link and Studio. Coming soon; until then, every change is public on GitHub.',
+        'A record of what ships in Link and Studio. Coming soon; until then, changes are public on GitHub as they merge.',
     alternates: { canonical: '/changelog' },
 }
 

@@ -6,12 +6,12 @@ const DOCUMENT_NUMBER = 'DG-PP-001'
 /* The words of the Privacy page, until the policy itself is published. They promise nothing about data: the policy will. */
 const PRIVACY = {
     headline: { first: 'Privacy policy', second: 'coming', lit: 'soon.' },
-    lede: 'Our privacy policy is being written, and will be published on this page. Until it is, write to us with any question about your data and a person will answer it.',
+    lede: 'Our privacy policy is being written, and will be published on this page. Until it is, ask us in Discord about your data and a person will answer.',
     facts: [
         { name: 'Status', value: 'Coming soon' },
         { name: 'Covers', value: 'This site, Link and Studio' },
         { name: 'Source', value: 'Open on GitHub', href: LINKS.github },
-        { name: 'Questions', value: LINKS.contactEmail, href: `mailto:${LINKS.contactEmail}` },
+        { name: 'Questions', value: 'Discord', href: LINKS.discord },
     ],
     closing: {
         line: 'A question about your data?',
@@ -26,8 +26,8 @@ export function Privacy() {
             <SheetHeadline {...PRIVACY.headline} lede={PRIVACY.lede} />
             <FactStrip facts={PRIVACY.facts} />
             <SheetClosing line={PRIVACY.closing.line} detail={PRIVACY.closing.detail}>
-                <a className={BTN_SOLID} href={`mailto:${LINKS.contactEmail}`}>
-                    {LINKS.contactEmail}
+                <a className={BTN_SOLID} href={LINKS.discord} target="_blank" rel="noopener">
+                    Join the Discord
                 </a>
                 <a className={BTN_GHOST} href="/about">
                     About Darkgrade

@@ -125,7 +125,7 @@ const COLUMNS = [
             { label: 'Blog', href: LINKS.blog },
             { label: 'Careers', href: LINKS.careers },
             { label: 'Press kit', href: LINKS.pressKit },
-            { label: 'Contact', href: `mailto:${LINKS.contactEmail}` },
+            { label: 'Contact', href: LINKS.discord },
             { label: 'Privacy', href: LINKS.privacy },
         ],
     },

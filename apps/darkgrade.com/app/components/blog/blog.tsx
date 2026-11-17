@@ -11,11 +11,11 @@ const BLOG = {
         { name: 'Status', value: 'Coming soon' },
         { name: 'Writing about', value: 'Cameras and local AI' },
         { name: 'Until then', value: 'Discord', href: LINKS.discord },
-        { name: 'Write to us', value: LINKS.contactEmail, href: `mailto:${LINKS.contactEmail}` },
+        { name: 'In the open', value: 'GitHub', href: LINKS.github },
     ],
     closing: {
         line: 'Want to hear it first?',
-        detail: 'Discord is where we think out loud while the blog is being written, and where the alpha is discussed every day.',
+        detail: 'Discord is where we think out loud while the blog is being written, and where we discuss the alpha.',
     },
 } as const
 
