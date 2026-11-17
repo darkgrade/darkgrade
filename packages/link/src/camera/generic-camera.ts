@@ -218,7 +218,7 @@ export class GenericCamera {
             await this.openFreshSession()
         } catch (error) {
             const unanswered = error instanceof PTPTimeoutError || error instanceof PTPRecoveryRequiredError
-            if (!unanswered || !this.transport.resetPort) throw error
+            if (!unanswered || !this.channel.policy.automaticUSBReset || !this.transport.resetPort) throw error
             await this.recovery?.task.catch(() => undefined)
             await this.transport.resetPort()
             this.recovery = undefined

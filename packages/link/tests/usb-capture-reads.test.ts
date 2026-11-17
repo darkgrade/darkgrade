@@ -53,6 +53,22 @@ describe('USB capture-sized bulk reads', () => {
         expect(reads).toEqual([16_384])
     })
 
+    it('reads a dataset whose header arrives in its own short transfer', async () => {
+        const data = container(2_048)
+        const response = container(12, 3, 0x2001)
+        const { transport } = transportWithPackets([data.slice(0, 12), data.slice(12), response], 16_384)
+        expect(await transport.receive(262_144, 1, 7)).toEqual(data)
+        expect(await transport.receive(512, 1, 7)).toEqual(response)
+    })
+
+    it('assembles several short dataset transfers before reading the response', async () => {
+        const data = container(1_025)
+        const response = container(12, 3, 0x2001)
+        const { transport } = transportWithPackets([data.slice(0, 128), data.slice(128, 640), data.slice(640), response])
+        expect(await transport.receive(262_144, 1, 7)).toEqual(data)
+        expect(await transport.receive(512, 1, 7)).toEqual(response)
+    })
+
     it('preserves full-size reads when capture mode is not requested', async () => {
         const data = container(65_537)
         const { transport, reads } = transportWithPackets([data])

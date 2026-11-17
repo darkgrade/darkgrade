@@ -101,6 +101,16 @@ const camera = (transport: object) => new GenericCamera(transport as any, new Lo
 const fast = { stepTimeoutMilliseconds: 150, waitForDeviceMilliseconds: 3_000 }
 
 describe('software camera recovery', () => {
+    it('connect does not reset a port when the caller disabled automatic USB recovery', async () => {
+        const { transport, calls } = wedgedCamera('port-reset')
+        const instance = camera(transport)
+        instance.configureTransactions({ timeoutMilliseconds: 20, automaticUSBReset: false, deviceBusyRetries: 0 })
+        try {
+            await expect(instance.connect()).rejects.toThrow()
+            expect(calls.portResets).toBe(0)
+            expect(calls.deviceResets).toBe(0)
+        } finally { await transport.disconnect() }
+    })
     it('a responsive camera needs only a fresh session, and the transport is left closed', async () => {
         const { transport, calls } = wedgedCamera('none')
         const report = await camera(transport).recover(undefined, fast)
