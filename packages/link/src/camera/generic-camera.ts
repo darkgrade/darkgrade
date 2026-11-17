@@ -13,6 +13,7 @@ import { linkTelemetry } from '@core/telemetry'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
 import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { DeviceBusy, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
@@ -275,8 +276,8 @@ export class GenericCamera {
 
     /**
      * Brings back a camera that has stopped answering, using only software: no power or hub
-     * cycling. Each step is tried only if the one before it failed, and each ends by reading the
-     * camera's identity, which is the only proof the camera answers again:
+     * cycling. Each step is tried only if the one before it failed, and each verifies a fresh
+     * camera identity and the vendor's advertised readiness check before claiming recovery:
      *
      * 1. session: open a fresh session (a camera that is merely idle or left with a stale session).
      * 2. device-reset: the still-image class Device Reset Request, a wait for abandoned I/O to
@@ -354,9 +355,13 @@ export class GenericCamera {
         const response = await this.send(this.registry.operations.GetDeviceInfo, {})
         if (response.code !== OK.code || !response.data)
             throw new PTPResponseError(response.code, `GetDeviceInfo returned 0x${response.code.toString(16)}`, { operation: 'GetDeviceInfo' })
+        await this.verifyRecoveryState(response.data)
         const info = response.data as { manufacturer?: string; model?: string; deviceVersion?: string }
         return { manufacturer: String(info.manufacturer ?? ''), model: String(info.model ?? ''), firmware: String(info.deviceVersion ?? '') }
     }
+
+    /** Vendors may still reject controls while their identity remains readable. */
+    protected async verifyRecoveryState(_information: DeviceInfo): Promise<void> {}
 
     /** Opens the transport, retrying until the camera is on the bus or the wait runs out. */
     private async waitForTransport(device: DeviceDescriptor | undefined, milliseconds: number): Promise<{ ok: true } | { ok: false; detail: string }> {

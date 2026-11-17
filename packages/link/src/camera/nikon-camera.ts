@@ -3,6 +3,7 @@ import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
 import {matchesNikonShutter, nikonShutterLabel} from '@vendors/nikon/shutter-values'
 import type {DevicePropDesc} from '@ptp/datasets/device-prop-desc-dataset'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import type { NikonLiveViewDataset } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -60,6 +61,16 @@ export class NikonCamera extends GenericCamera {
         logger.setRegistry(this.registry)
     }
 
+    protected async verifyRecoveryState(information: DeviceInfo): Promise<void> {
+        const supported = information.operationsSupportedRaw
+        if (supported.includes(this.registry.operations.DeviceReady.code)) {
+            await this.waitForDeviceReady()
+            return
+        }
+        if (![0x100e, 0x90c0, 0x9201, 0x9207, 0x920a].some(code => supported.includes(code)))
+            throw new Error('Nikon advertises file transfer without camera controls; inspect camera power and mode')
+    }
+
     async disconnect(): Promise<void> {
         if (!this.transport.isConnected()) {
             // A vanished transport cannot end live view; only local state is cleared.
@@ -99,7 +110,7 @@ export class NikonCamera extends GenericCamera {
         if (response.code !== OK.code) {
             throw new PTPResponseError(
                 response.code,
-                `Nikon ${operationName} returned 0x${response.code.toString(16)}`,
+                `Nikon ${operationName} returned 0x${response.code.toString(16)} for ${property.name} (0x${property.code.toString(16)})`,
                 { operation: operationName }
             )
         }

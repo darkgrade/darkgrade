@@ -1,4 +1,5 @@
 import { GenericCamera } from '@camera/generic-camera'
+import { NikonCamera } from '@camera/nikon-camera'
 import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry } from '@ptp/registry'
@@ -15,15 +16,16 @@ import { describe, expect, it } from 'vitest'
  */
 type Wedge = 'none' | 'session' | 'device-reset' | 'port-reset' | 'dead'
 
-function wedgedCamera(wedge: Wedge, options: { absentConnects?: number } = {}) {
+function wedgedCamera(wedge: Wedge, options: { absentConnects?: number; deniedReady?: boolean; neverReady?: boolean; transferOnly?: boolean } = {}) {
     const deviceInfo = new DeviceInfoCodec(createPTPRegistry(true)).encode({
         standardVersion: 100, vendorExtensionID: 0, vendorExtensionVersion: 100, vendorExtensionDesc: '', functionalMode: 0,
-        operationsSupportedRaw: [0x1001, 0x1002, 0x1003], operationsSupportedDecoded: [], eventsSupportedRaw: [], eventsSupportedDecoded: [],
+        operationsSupportedRaw: [0x1001, 0x1002, 0x1003, ...(options.transferOnly ? [] : [0x100e]), ...(options.deniedReady ? [0x90c8] : [])], operationsSupportedDecoded: [], eventsSupportedRaw: [], eventsSupportedDecoded: [],
         devicePropertiesSupported: [], devicePropertiesSupportedDecoded: [], captureFormats: [], imageFormatsRaw: [], imageFormatsDecoded: [],
         manufacturer: 'Test', model: 'Wedge', deviceVersion: '1.0', serialNumber: '',
     } as any)
     let stuck = wedge !== 'none' && wedge !== 'session'
     let staleSession = wedge === 'session'
+    let deniedReady = options.deniedReady ?? false
     let absentConnects = options.absentConnects ?? 0
     let connected = false
     const queued: Uint8Array[] = []
@@ -66,6 +68,7 @@ function wedgedCamera(wedge: Wedge, options: { absentConnects?: number } = {}) {
             const code = view.getUint16(6, true), transactionId = view.getUint32(8, true)
             calls.operations.push(code)
             if (stuck) return
+            if (code === 0x90c8 && deniedReady) return reply(container(3, 0x200f, transactionId))
             if (code === 0x1002 && staleSession) {
                 staleSession = false
                 return reply(container(3, 0x201e, transactionId))
@@ -83,6 +86,7 @@ function wedgedCamera(wedge: Wedge, options: { absentConnects?: number } = {}) {
             calls.deviceResets++
             for (const reader of waiting.splice(0)) reader.reject(new Error('released'))
             if (wedge === 'device-reset') stuck = false
+            if (!options.neverReady) deniedReady = false
         },
         resetPort: async () => {
             calls.portResets++
@@ -101,6 +105,42 @@ const camera = (transport: object) => new GenericCamera(transport as any, new Lo
 const fast = { stepTimeoutMilliseconds: 150, waitForDeviceMilliseconds: 3_000 }
 
 describe('software camera recovery', () => {
+    it('Nikon identity alone does not claim recovery while advertised controls remain denied', async () => {
+        const { transport, calls } = wedgedCamera('none', { deniedReady: true })
+        const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
+        const report = await instance.recover(undefined, { ...fast, allowPortReset: false })
+        expect(report.steps.map(step => [step.step, step.ok])).toEqual([['session', false], ['device-reset', true]])
+        expect(report.recovered).toBe(true)
+        expect(calls).toMatchObject({ deviceResets: 1, portResets: 0 })
+        expect(calls.operations.filter(code => code === 0x90c8)).toHaveLength(2)
+    })
+
+    it('Nikon readiness that stays denied remains a failure without a forbidden port reset', async () => {
+        const { transport, calls } = wedgedCamera('none', { deniedReady: true, neverReady: true })
+        const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
+        const report = await instance.recover(undefined, { ...fast, allowPortReset: false })
+        expect(report.recovered).toBe(false)
+        expect(report.steps.every(step => !step.ok)).toBe(true)
+        expect(calls.portResets).toBe(0)
+        expect(transport.isConnected()).toBe(false)
+    })
+
+    it('Nikon recovery does not assume an unadvertised readiness operation exists', async () => {
+        const { transport, calls } = wedgedCamera('none')
+        const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
+        expect((await instance.recover(undefined, fast)).recovered).toBe(true)
+        expect(calls.operations).not.toContain(0x90c8)
+    })
+
+    it('a Nikon offering only file transfer does not claim camera controls were recovered', async () => {
+        const { transport, calls } = wedgedCamera('none', { transferOnly: true })
+        const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
+        const report = await instance.recover(undefined, { ...fast, allowPortReset: false })
+        expect(report.recovered).toBe(false)
+        expect(report.steps.every(step => step.detail?.includes('file transfer'))).toBe(true)
+        expect(calls.portResets).toBe(0)
+    })
+
     it('connect does not reset a port when the caller disabled automatic USB recovery', async () => {
         const { transport, calls } = wedgedCamera('port-reset')
         const instance = camera(transport)
