@@ -11,35 +11,43 @@
     "exports": {
         "./protocol": {
             "types": "./dist/protocol.d.ts",
-            "import": "./dist/protocol.js"
+            "import": "./dist/protocol.js",
+            "default": "./dist/protocol.js"
         },
         ".": {
             "types": "./dist/index.d.ts",
-            "import": "./dist/index.js"
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
         },
         "./schema": {
             "types": "./dist/schema.d.ts",
-            "import": "./dist/schema.js"
+            "import": "./dist/schema.js",
+            "default": "./dist/schema.js"
         },
         "./node": {
             "types": "./dist/node.d.ts",
-            "import": "./dist/node.js"
+            "import": "./dist/node.js",
+            "default": "./dist/node.js"
         },
         "./application": {
             "types": "./dist/application.d.ts",
-            "import": "./dist/application.js"
+            "import": "./dist/application.js",
+            "default": "./dist/application.js"
         },
         "./batch": {
             "types": "./dist/batch.d.ts",
-            "import": "./dist/batch.js"
+            "import": "./dist/batch.js",
+            "default": "./dist/batch.js"
         },
         "./installation-store": {
             "types": "./dist/installation-store.d.ts",
-            "import": "./dist/installation-store.js"
+            "import": "./dist/installation-store.js",
+            "default": "./dist/installation-store.js"
         },
         "./settings": {
             "types": "./dist/settings.d.ts",
-            "import": "./dist/settings.js"
+            "import": "./dist/settings.js",
+            "default": "./dist/settings.js"
         }
     },
     "imports": {

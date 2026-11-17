@@ -52,7 +52,8 @@
         "usb-ids": "bun run src/transport/usb/usb-ids/generate-usb-ids.ts",
         "test:package": "bun run build && bun run scripts/check-package-exports.ts",
         "test:runtime": "bun run build && bun test ./tests/runtime",
-        "mcp": "bun run src/runtime/stdio.ts"
+        "mcp": "bun run src/runtime/stdio.ts",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit"
     },
     "keywords": [
         "ptp",

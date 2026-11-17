@@ -87,7 +87,7 @@ it('an exact-handle MTP UINT64 size transfers across the 4 GiB offset boundary w
  const descriptor=new Uint8Array(18),descriptorView=new DataView(descriptor.buffer)
  descriptorView.setUint16(0,0xdc04,true);descriptorView.setUint16(2,8,true)
  const sizeData=new Uint8Array(8);new DataView(sizeData.buffer).setBigUint64(0,BigInt(size),true)
- f.camera.send.mockImplementation(async(op,args)=>{
+ f.camera.send.mockImplementation((async(op:any,args:any)=>{
   if(op.name==='GetDeviceInfo')return {code:0x2001,data:{operationsSupportedRaw:[0x9802,0x9803],operationsSupportedDecoded:['MtpGetObjectPropDesc','MtpGetObjectPropValue']}}
   if(op.name==='MtpGetObjectPropDesc')return {code:0x2001,data:descriptor}
   if(op.name==='MtpGetObjectPropValue'){
@@ -95,7 +95,7 @@ it('an exact-handle MTP UINT64 size transfers across the 4 GiB offset boundary w
    return {code:0x2001,data:sizeData}
   }
   return original(op,args)
- })
+ }) as any)
  let received=0
  await f.recording.transfer({id:'2',filename:'new.MP4',bytes:size,verified:true},async data=>{received+=data.length},()=>{})
  expect(received).toBe(size)
