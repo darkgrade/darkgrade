@@ -261,6 +261,11 @@ export class NikonCamera extends GenericCamera {
         return events
     }
 
+    async getIso(): Promise<string> {
+        if (await this.get(ISOAutoControl) === 'ON') return 'ISO AUTO'
+        return super.getIso()
+    }
+
     async setIso(value: string): Promise<void> {
         const isAuto = value.toLowerCase().includes('auto')
 
