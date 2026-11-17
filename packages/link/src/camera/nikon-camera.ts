@@ -48,6 +48,7 @@ export class NikonCamera extends GenericCamera {
     private applicationMode: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
     private liveViewStatus: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
     private liveViewStartPending = false
+    private ownsLiveView = false
     private manualVideoExposureRequested = false
 
     vendorId = VendorIDs.NIKON
@@ -64,10 +65,13 @@ export class NikonCamera extends GenericCamera {
             // A vanished transport cannot end live view; only local state is cleared.
             this.liveViewStatus = 'UNKNOWN'
             this.liveViewStartPending = false
+            this.ownsLiveView = false
         }
         try {
-            if (this.liveViewStatus === 'ON' || this.liveViewStartPending) await this.disableLiveView()
+            if (this.ownsLiveView || this.liveViewStartPending) await this.disableLiveView()
         } finally {
+            this.liveViewStatus = 'UNKNOWN'
+            this.ownsLiveView = false
             this.manualVideoExposureRequested = false
             await super.disconnect()
         }
@@ -207,6 +211,7 @@ export class NikonCamera extends GenericCamera {
         const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
         if (condition.includes('alreadyRecording')) throw new Error('Nikon photo settings cannot interrupt an active recording')
         const restoreLiveView = this.liveViewStatus === 'ON'
+        const restoreLiveViewOwnership = this.ownsLiveView
         const restorePcMode = this.cameraMode !== 'REMOTE'
         let failure: unknown
         try {
@@ -220,6 +225,7 @@ export class NikonCamera extends GenericCamera {
             try {
                 await this.selectLiveViewMode('VIDEO', true)
                 if (restoreLiveView) await this.enableLiveView()
+                this.ownsLiveView = restoreLiveViewOwnership
                 if (restorePcMode) await this.enablePcCameraMode()
             } catch (error) {
                 if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Nikon movie mode: ${String(error)}`)
@@ -822,6 +828,17 @@ export class NikonCamera extends GenericCamera {
     }
 
     private async enableLiveView(): Promise<void> {
+        if (this.liveViewStatus === 'UNKNOWN') {
+            try {
+                const status = await this.get(this.registry.properties.LiveViewStatus)
+                if (status !== 'ON' && status !== 'OFF') throw new Error('Nikon live-view status is unknown')
+                this.liveViewStatus = status
+            } catch (error) {
+                const unsupported = error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)
+                const legacyEmpty = error instanceof Error && error.message === 'No data received from GetDevicePropDescEx'
+                if (!unsupported && !legacyEmpty) throw error
+            }
+        }
         if (this.liveViewStatus === 'ON') {
             return
         }
@@ -836,6 +853,7 @@ export class NikonCamera extends GenericCamera {
                 `Nikon StartLiveView failed with response 0x${response.code.toString(16)}`
             )
         }
+        this.ownsLiveView = true
         this.liveViewStartPending = true
         await this.waitForDeviceReady()
         this.liveViewStatus = 'ON'
@@ -895,6 +913,7 @@ export class NikonCamera extends GenericCamera {
         await this.waitForDeviceReady()
         this.liveViewStatus = 'OFF'
         this.liveViewStartPending = false
+        this.ownsLiveView = false
     }
 
     private async enablePhotoMode(): Promise<void> {
