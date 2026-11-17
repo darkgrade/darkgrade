@@ -107,7 +107,9 @@ export class USBTransport implements TransportInterface {
     private readonly maxBulkReadBytes: number
 
     constructor(private logger: Logger, options: USBTransportOptions = {}) {
-        const limit = options.maxBulkReadBytes ?? USB_LIMITS.MAX_USB_TRANSFER
+        // A receive limit bounds a complete PTP dataset, not one libusb allocation.
+        // Large object reads are assembled below from bounded endpoint transfers.
+        const limit = options.maxBulkReadBytes ?? USB_LIMITS.DEFAULT_BULK_SIZE
         if (!Number.isInteger(limit) || limit < 1024 || limit > USB_LIMITS.MAX_USB_TRANSFER || limit % 1024 !== 0)
             throw new Error('maxBulkReadBytes must be a multiple of 1024 between 1024 and 1073741824')
         this.maxBulkReadBytes = limit

@@ -69,11 +69,11 @@ describe('USB capture-sized bulk reads', () => {
         expect(await transport.receive(512, 1, 7)).toEqual(response)
     })
 
-    it('preserves full-size reads when capture mode is not requested', async () => {
+    it('bounds default endpoint allocations even when the caller allows a large object', async () => {
         const data = container(65_537)
         const { transport, reads } = transportWithPackets([data])
         expect(await transport.receive(262_144, 1, 7)).toEqual(data)
-        expect(reads).toEqual([262_144])
+        expect(reads).toEqual([8_192, 8_192, 8_192, 8_192, 8_192, 8_192, 8_192, 8_192, 1])
     })
 
     it('accepts the terminating zero-length packet after an aligned data phase', async () => {

@@ -145,6 +145,15 @@ describe('software camera recovery', () => {
         expect(calls.portResets).toBe(1)
     })
 
+    it('explicit recovery can stop after session and device recovery without resetting a USB port', async () => {
+        const { transport, calls } = wedgedCamera('port-reset')
+        const report = await camera(transport).recover(undefined, { ...fast, allowPortReset: false })
+        expect(report.recovered).toBe(false)
+        expect(report.steps.map(step => step.step)).toEqual(['session', 'device-reset'])
+        expect(calls.portResets).toBe(0)
+        expect(transport.isConnected()).toBe(false)
+    })
+
     it('a camera nothing in software can reach is reported as needing a physical action', async () => {
         const { transport } = wedgedCamera('dead')
         const report = await camera(transport).recover(undefined, fast)

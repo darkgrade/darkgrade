@@ -59,6 +59,8 @@ export interface CameraRecoveryOptions {
     stepTimeoutMilliseconds?: number
     /** How long to wait for the camera to (re)appear on USB. Default 20 s. */
     waitForDeviceMilliseconds?: number
+    /** Default true. Disable when recovery must preserve USB enumeration and other consumers. */
+    allowPortReset?: boolean
 }
 
 export interface CameraRecoveryStep {
@@ -323,7 +325,7 @@ export class GenericCamera {
                     await delay(DEVICE_RESET_SETTLE_MS)
                     await this.openFreshSession()
                 })
-            if (!identity && this.transport.resetPort)
+            if (!identity && options.allowPortReset !== false && this.transport.resetPort)
                 identity = await attempt('port-reset', async () => {
                     if (!this.transport.isConnected()) await this.connectTransport(device)
                     await this.withStepTimeout(this.transport.resetPort!(), stepTimeout, 'the USB port reset')
