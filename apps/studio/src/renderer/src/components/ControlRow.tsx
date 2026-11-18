@@ -18,6 +18,10 @@ interface ControlRowProps {
     format?: (value: string) => string
 }
 
+/** A setting's menu button: the same everywhere in the inspector. */
+export const CONTROL_TRIGGER_CLASS =
+    'flex h-6 w-36 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-1.5 pl-2 outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12'
+
 /** Menus with more choices than this get a search field. */
 export const SEARCH_FROM = 8
 
@@ -47,15 +51,7 @@ export function ControlRow({
                     if (option && option.value !== control.value) onChange(option.value)
                 }}
             >
-                <ComboboxTrigger
-                    aria-label={label}
-                    render={
-                        <button
-                            type="button"
-                            className="flex h-6 w-36 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-1.5 pl-2 outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12"
-                        />
-                    }
-                >
+                <ComboboxTrigger aria-label={label} render={<button type="button" className={CONTROL_TRIGGER_CLASS} />}>
                     <span className="truncate">{control.value ? format(control.value) : '—'}</span>
                 </ComboboxTrigger>
                 <ComboboxContent className="min-w-44">

@@ -110,7 +110,7 @@ function clockRow(cameraState: CameraState): DetailRow | null {
 function DetailGroup({ rows }: { rows: DetailRow[] }): React.JSX.Element | null {
     if (rows.length === 0) return null
     return (
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.75">
             {rows.map(([term, value]) => (
                 <div key={term} className="contents">
                     <dt className="text-muted-foreground">{term}</dt>
@@ -128,7 +128,7 @@ function CameraDetails({ cameraState }: { cameraState: CameraState }): React.JSX
     const { battery, card } = cameraState
     const present = (rows: Array<DetailRow | null>): DetailRow[] => rows.filter((row): row is DetailRow => row !== null)
     return (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
             <DetailGroup rows={[['Connection', 'USB']]} />
             <DetailGroup
                 rows={present([
@@ -210,7 +210,7 @@ export function TopBar({
                         </span>
                     )}
                 </PopoverTrigger>
-                <PopoverContent className="w-80 gap-4 p-4">
+                <PopoverContent className="w-72 gap-3 p-3">
                     <PopoverHeader>
                         <PopoverTitle>
                             {cameraState.connected ? cameraName(cameraState) : 'No camera connected'}
@@ -223,7 +223,7 @@ export function TopBar({
                     </PopoverHeader>
                     <CameraDetails cameraState={cameraState} />
                     {cameraState.osdOverlay !== null && (
-                        <label className="flex items-center justify-between gap-4 text-sm">
+                        <label className="flex items-center justify-between gap-4 leading-none">
                             <span className="text-muted-foreground">Show camera display</span>
                             <Switch checked={cameraState.osdOverlay} onCheckedChange={onOsdOverlayChange} />
                         </label>

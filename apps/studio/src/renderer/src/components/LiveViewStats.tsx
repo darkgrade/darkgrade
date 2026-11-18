@@ -1,5 +1,4 @@
 import {
-    Button,
     Popover,
     PopoverContent,
     PopoverDescription,
@@ -10,7 +9,6 @@ import {
     ToggleGroupItem,
 } from '@kevinschaich/components'
 import type { CameraControl } from '@shared/ipc'
-import { Info } from 'lucide-react'
 
 interface LiveViewStatsProps {
     /** Average frames per second over the last ten seconds; null before any frame. */
@@ -31,10 +29,20 @@ export function LiveViewStats(props: LiveViewStatsProps): React.JSX.Element | nu
     return (
         <div className="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground tabular-nums">
             <Popover>
-                <PopoverTrigger render={<Button variant="ghost" size="xs" className="quiet-control -mr-1 gap-1" />}>
-                    Preview <Info aria-hidden />
+                <PopoverTrigger
+                    openOnHover
+                    delay={150}
+                    render={<button type="button" className="flex items-center gap-3 outline-none" />}
+                >
+                    <span>Preview</span>
+                    {props.framesPerSecond !== null && <span>{props.framesPerSecond.toFixed(1)} fps</span>}
+                    {props.frameSize && (
+                        <span>
+                            {props.frameSize.width}×{props.frameSize.height}
+                        </span>
+                    )}
                 </PopoverTrigger>
-                <PopoverContent side="top" align="end" className="w-72">
+                <PopoverContent side="top" align="end" className="w-72 gap-2.5 p-3">
                     <PopoverHeader>
                         <PopoverTitle>About the preview</PopoverTitle>
                         <PopoverDescription>
@@ -44,18 +52,21 @@ export function LiveViewStats(props: LiveViewStatsProps): React.JSX.Element | nu
                             limits in a future version.
                         </PopoverDescription>
                     </PopoverHeader>
+                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.75 text-[13px]">
+                        <dt className="text-muted-foreground">Frame rate</dt>
+                        <dd className="text-right">
+                            {props.framesPerSecond !== null ? `${props.framesPerSecond.toFixed(1)} fps` : '—'}
+                        </dd>
+                        <dt className="text-muted-foreground">Resolution</dt>
+                        <dd className="text-right">
+                            {props.frameSize ? `${props.frameSize.width}×${props.frameSize.height}` : '—'}
+                        </dd>
+                    </dl>
+                    <p className="text-[11px] text-muted-foreground">
+                        Frame rate is averaged over the last 10 seconds.
+                    </p>
                 </PopoverContent>
             </Popover>
-            {props.framesPerSecond !== null && (
-                <span title="Live view frames per second, averaged over the last 10 seconds">
-                    {props.framesPerSecond.toFixed(1)} fps
-                </span>
-            )}
-            {props.frameSize && (
-                <span title="Live view resolution">
-                    {props.frameSize.width}×{props.frameSize.height}
-                </span>
-            )}
             {props.quality && (
                 <ToggleGroup
                     className="rounded-md bg-foreground/6 p-0.5"

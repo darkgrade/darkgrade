@@ -7,7 +7,7 @@ import {
     ComboboxList,
     ComboboxTrigger,
 } from '@kevinschaich/components'
-import { ControlRow, SEARCH_FROM } from '@renderer/components/ControlRow'
+import { CONTROL_TRIGGER_CLASS, ControlRow, SEARCH_FROM } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
 import {
     APERTURE_VALUES,
@@ -79,47 +79,41 @@ function ExposureDial({
     }
 
     return (
-        <Combobox<{ value: string; label: string }>
-            items={options}
-            value={options.find(option => option.value === selected) ?? null}
-            disabled={disabled}
-            itemToStringLabel={option => option.label}
-            itemToStringValue={option => option.value}
-            isItemEqualToValue={(item, current) => item.value === current.value}
-            onValueChange={option => {
-                if (option && option.value !== selected) onApply(option.value)
-            }}
-        >
-            <ComboboxTrigger
-                aria-label={`${label}: ${currentValue ? format(currentValue) : 'unknown'}`}
-                render={
-                    <button
-                        type="button"
-                        className="flex w-full flex-col items-center justify-center gap-1 rounded-lg px-2 py-1.5 transition-colors outline-none hover:bg-foreground/6 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 disabled:hover:bg-transparent data-popup-open:bg-foreground/10 [&>svg]:hidden"
-                        onWheel={onWheel}
-                    />
-                }
+        <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">{label}</span>
+            <Combobox<{ value: string; label: string }>
+                items={options}
+                value={options.find(option => option.value === selected) ?? null}
+                disabled={disabled}
+                itemToStringLabel={option => option.label}
+                itemToStringValue={option => option.value}
+                isItemEqualToValue={(item, current) => item.value === current.value}
+                onValueChange={option => {
+                    if (option && option.value !== selected) onApply(option.value)
+                }}
             >
-                <span className="slate-label">{label}</span>
-                <span className="text-[20px] leading-none font-medium tracking-tight text-foreground tabular-nums">
-                    {currentValue ? format(currentValue) : '—'}
-                </span>
-            </ComboboxTrigger>
-            <ComboboxContent className="min-w-32">
-                {/* Search only a list long enough to need it (ISO, shutter), not a handful of choices. */}
-                {options.length > SEARCH_FROM && (
-                    <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
-                )}
-                <ComboboxEmpty>No matches</ComboboxEmpty>
-                <ComboboxList>
-                    {(option: { value: string; label: string }) => (
-                        <ComboboxItem key={option.value} value={option} className="tabular-nums">
-                            {option.label}
-                        </ComboboxItem>
+                <ComboboxTrigger
+                    aria-label={label}
+                    render={<button type="button" className={CONTROL_TRIGGER_CLASS} onWheel={onWheel} />}
+                >
+                    <span className="truncate tabular-nums">{currentValue ? format(currentValue) : '—'}</span>
+                </ComboboxTrigger>
+                <ComboboxContent className="min-w-32">
+                    {/* Search only a list long enough to need it (ISO, shutter), not a handful of choices. */}
+                    {options.length > SEARCH_FROM && (
+                        <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
                     )}
-                </ComboboxList>
-            </ComboboxContent>
-        </Combobox>
+                    <ComboboxEmpty>No matches</ComboboxEmpty>
+                    <ComboboxList>
+                        {(option: { value: string; label: string }) => (
+                            <ComboboxItem key={option.value} value={option} className="tabular-nums">
+                                {option.label}
+                            </ComboboxItem>
+                        )}
+                    </ComboboxList>
+                </ComboboxContent>
+            </Combobox>
+        </div>
     )
 }
 
@@ -162,8 +156,8 @@ export function SettingsPanel({
             {!cameraState.connected ? (
                 <p className="text-muted-foreground">Connect a camera to set exposure.</p>
             ) : (
-                <>
-                    <div className="grid grid-cols-3 gap-1">
+                <div className="flex flex-col gap-1.75">
+                    <div className="contents">
                         <ExposureDial
                             label="Shutter"
                             currentValue={cameraState.settings.shutterSpeed}
@@ -201,7 +195,7 @@ export function SettingsPanel({
                         />
                     </div>
                     {cameraState.controls && (
-                        <div className="flex flex-col gap-1.75">
+                        <div className="contents">
                             <ControlRow
                                 label="White balance"
                                 control={cameraState.controls.whiteBalance}
@@ -217,7 +211,7 @@ export function SettingsPanel({
                             />
                         </div>
                     )}
-                </>
+                </div>
             )}
         </InspectorSection>
     )
