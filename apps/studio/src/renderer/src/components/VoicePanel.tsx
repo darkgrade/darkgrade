@@ -94,6 +94,9 @@ function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | 
                 stream={stream}
                 active={active}
                 colors={VOICE_RIBBON_COLORS}
+                // The strands rest just above the status bar's hairline (the glow box runs on to the window's bottom), so
+                // their glow and haze spill softly over the status bar rather than ending at a hard edge.
+                restOffset={below}
                 strands={5}
                 lineWidth={2.4}
                 fan={0.34}

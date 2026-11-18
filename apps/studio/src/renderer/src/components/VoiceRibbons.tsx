@@ -21,6 +21,11 @@ export interface VoiceRibbonsProps {
      * waves rise from it, upward only; above that it is a centre line the waves swing both sides of.
      */
     baseline?: number
+    /**
+     * Anchored at the bottom: how far above the canvas's bottom edge the strands rest, in CSS px, so their glow
+     * and haze can spill below the line (over a status bar) instead of being cut off at the edge.
+     */
+    restOffset?: number
     /** The tallest rise (or swing) at full voice, as a fraction of the height. */
     reach?: number
     /** Length of one wave, as a fraction of the width. */
@@ -75,6 +80,7 @@ export function VoiceRibbons({
     colors,
     strands = 9,
     baseline = 1,
+    restOffset = 0,
     reach = 0.5,
     wavelength = 0.32,
     speed = 0.55,
@@ -98,6 +104,7 @@ export function VoiceRibbons({
         colors,
         strands,
         baseline,
+        restOffset,
         reach,
         wavelength,
         speed,
@@ -116,6 +123,7 @@ export function VoiceRibbons({
         colors,
         strands,
         baseline,
+        restOffset,
         reach,
         wavelength,
         speed,
@@ -227,7 +235,7 @@ export function VoiceRibbons({
             const voice = heard.level
             // Anchored at the bottom, the line sits just inside the edge so its core stays whole, and waves rise from it.
             const anchored = s.baseline >= 0.98
-            const base = anchored ? height - s.lineWidth * 1.5 : height * s.baseline
+            const base = anchored ? height - s.restOffset - s.lineWidth * 1.5 : height * s.baseline
             // The lively part wanders along the line rather than sitting still at the centre.
             const centre = width * (0.5 + 0.14 * Math.sin(clock * 0.31) + 0.06 * Math.sin(clock * 0.83 + 1.3))
             const spreadPx = width * s.spread * (0.75 + 0.5 * voice)
@@ -308,6 +316,25 @@ export function VoiceRibbons({
             hot.addColorStop(1, 'rgba(0, 0, 0, 0)')
             context.fillStyle = hot
             context.fillRect(0, 0, width, height)
+
+            // No hard edges: whatever spills below the resting line fades to nothing by the canvas's bottom edge, and
+            // the top edge fades in too, so neither the glow nor the haze is ever cut off by the box.
+            const soften = (target: CanvasRenderingContext2D): void => {
+                target.globalCompositeOperation = 'destination-out'
+                const below = target.createLinearGradient(0, anchored ? base : height * 0.85, 0, height)
+                below.addColorStop(0, 'rgba(0, 0, 0, 0)')
+                below.addColorStop(1, 'rgba(0, 0, 0, 1)')
+                target.fillStyle = below
+                target.fillRect(0, anchored ? base : height * 0.85, width, height)
+                const above = target.createLinearGradient(0, 0, 0, Math.min(48, height * 0.2))
+                above.addColorStop(0, 'rgba(0, 0, 0, 1)')
+                above.addColorStop(1, 'rgba(0, 0, 0, 0)')
+                target.fillStyle = above
+                target.fillRect(0, 0, width, Math.min(48, height * 0.2))
+                target.globalCompositeOperation = 'source-over'
+            }
+            soften(context)
+            soften(hazeContext)
         }
         frame = requestAnimationFrame(draw)
         return () => cancelAnimationFrame(frame)
