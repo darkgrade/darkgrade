@@ -74,7 +74,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
             }
         >
             {controls ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-6">
                     {controls.exposureProgram?.value && shootingModeOf(controls.exposureProgram.value) && (
                         <ToggleGroup
                             className="w-full rounded-lg bg-foreground/6 p-0.5"
