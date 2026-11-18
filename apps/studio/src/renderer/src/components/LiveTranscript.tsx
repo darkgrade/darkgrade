@@ -18,8 +18,9 @@ interface LiveTranscriptProps {
 /** How close to the bottom still counts as following the latest words. */
 const FOLLOW_THRESHOLD_PX = 48
 
-function splitWords(text: string): string[] {
-    return text.match(/\s*\S+/g) ?? []
+/** Each word with the space after it, and where it starts in the text. */
+function splitWords(text: string): { word: string; trailing: string; start: number }[] {
+    return [...text.matchAll(/(\S+)(\s*)/g)].map(match => ({ word: match[1], trailing: match[2], start: match.index }))
 }
 
 const HIGHLIGHT_CLASS: Record<IntentHighlight['state'], string> = {
@@ -40,62 +41,48 @@ interface ParagraphProps {
     caret?: boolean
 }
 
-/** One paragraph; requests heard in it are coloured by how far the assistant has got with them. */
+/**
+ * One paragraph. Every word keeps its own element, keyed by its place in the paragraph, from the moment it is first
+ * heard: a word still being heard is grey, and when it's confirmed the same element turns white, so nothing vanishes
+ * and fades back in. A request's words take its colour the same way, fading between states.
+ */
 const Paragraph = memo(
     function Paragraph({ text, offset, highlights, partial, caret }: ParagraphProps) {
-        // Consecutive words of one request become one highlighted run, so a command reads as one block.
-        const runs: {
-            highlight: IntentHighlight | undefined
-            words: { key: number; leading: string; word: string }[]
-        }[] = []
-        let position = offset
-        splitWords(text).forEach((word, index) => {
-            const leadingLength = word.length - word.trimStart().length
-            const wordStart = position + leadingLength
-            const wordEnd = position + word.length
-            position = wordEnd
-            const highlight = highlights.find(range => range.start < wordEnd && range.end > wordStart)
-            const entry = { key: index, leading: word.slice(0, leadingLength), word: word.slice(leadingLength) }
-            const last = runs.at(-1)
-            if (last && last.highlight === highlight && highlight) last.words.push(entry)
-            else runs.push({ highlight, words: [entry] })
-        })
+        const words = splitWords(text).map(entry => ({
+            ...entry,
+            heard: false,
+            highlight: highlights.find(
+                range => range.start < offset + entry.start + entry.word.length && range.end > offset + entry.start
+            ),
+        }))
+        // Words still being heard continue the paragraph's numbering, so each keeps its element once confirmed.
+        const heard = splitWords(partial ?? '').map(entry => ({ ...entry, heard: true, highlight: undefined }))
+        if (heard.length && words.length && !words.at(-1)!.trailing) words.at(-1)!.trailing = ' '
+        const all = [...words, ...heard]
         const answered = highlights.filter(highlight => highlight.state !== 'recognized')
         return (
             <>
                 <p className="transcript-paragraph">
-                    {runs.map(run => {
-                        if (!run.highlight) {
-                            return run.words.map(entry => (
-                                <span key={entry.key} className="transcript-word">
-                                    {entry.leading + entry.word}
-                                </span>
-                            ))
-                        }
-                        const [first, ...rest] = run.words
+                    {all.map((entry, index) => {
+                        const { highlight } = entry
+                        const first = highlight && all[index - 1]?.highlight !== highlight
+                        const last = highlight && all[index + 1]?.highlight !== highlight
+                        const edges = `${first ? ' transcript-intent-first' : ''}${last ? ' transcript-intent-last' : ''}`
                         return (
-                            <span key={first.key}>
-                                {first.leading}
+                            <span
+                                key={index}
+                                className={entry.heard ? 'transcript-word transcript-word-heard' : 'transcript-word'}
+                            >
                                 <span
-                                    className={HIGHLIGHT_CLASS[run.highlight.state]}
-                                    title={run.highlight.reply ?? undefined}
+                                    className={highlight ? HIGHLIGHT_CLASS[highlight.state] + edges : undefined}
+                                    title={highlight?.reply ?? undefined}
                                 >
-                                    <span className="transcript-word">{first.word}</span>
-                                    {rest.map(entry => (
-                                        <span key={entry.key} className="transcript-word">
-                                            {entry.leading + entry.word}
-                                        </span>
-                                    ))}
+                                    {last ? entry.word : entry.word + entry.trailing}
                                 </span>
+                                {last ? entry.trailing : null}
                             </span>
                         )
                     })}
-                    {partial && (
-                        <span className="text-muted-foreground">
-                            {/\s$/.test(text) || /^\s/.test(partial) ? '' : ' '}
-                            {partial}{' '}
-                        </span>
-                    )}
                     {caret && <span className="transcript-caret" aria-hidden />}
                 </p>
                 {answered.map(highlight => (
@@ -137,6 +124,19 @@ function AssistantReply({ highlight }: { highlight: IntentHighlight }): React.JS
     )
 }
 
+/** How long a request's state must hold before its colour changes. */
+const HIGHLIGHT_SETTLE_MS = 200
+
+/** The value once it has held still for a moment; the first value shows at once. */
+function useSettled<T>(value: T, milliseconds: number): T {
+    const [settled, setSettled] = useState(value)
+    useEffect(() => {
+        const timer = setTimeout(() => setSettled(value), milliseconds)
+        return () => clearTimeout(timer)
+    }, [value, milliseconds])
+    return settled
+}
+
 /** How long the lines take to glide up as a new one arrives at the bottom, and how they ease into place. */
 const PUSH_UP_MS = 420
 const PUSH_UP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
@@ -150,11 +150,14 @@ const PUSH_UP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
 export function LiveTranscript({ paragraphs, listening, preparing = false }: LiveTranscriptProps): React.JSX.Element {
     const scrollRef = useRef<HTMLDivElement>(null)
     const [following, setFollowing] = useState(true)
-    const highlights = intentHighlights.use()
+    // A request's state settles for 200 ms before it shows, so quick steps (heard, working, done) read as one fade.
+    const highlights = useSettled(intentHighlights.use(), HIGHLIGHT_SETTLE_MS)
     const partial = transcriptPartial.use()
     // Words still being heard go where they'll land: on the last line, or on a new paragraph of their own.
     const partialOwnParagraph = transcriptPartialNewParagraph.use() && partial !== '' && paragraphs.length > 0
-    const lastIndex = partialOwnParagraph ? -1 : paragraphs.length - 1
+    // The first words heard, and words heard on a line of their own, render as the paragraph they'll become.
+    const pendingParagraph = partial !== '' && (paragraphs.length === 0 || partialOwnParagraph)
+    const lastIndex = pendingParagraph ? -1 : paragraphs.length - 1
     const offsets: number[] = []
     paragraphs.reduce((start, text) => {
         offsets.push(start)
@@ -209,30 +212,32 @@ export function LiveTranscript({ paragraphs, listening, preparing = false }: Liv
                 aria-label="Live transcript"
             >
                 <div ref={contentRef} className="mt-auto">
-                    {paragraphs.map((text, index) => {
-                        const offset = offsets[index]
+                    {/* One keyed list, the paragraph still being heard included at the index it will have, so its
+                        words keep their elements once confirmed. */}
+                    {[...paragraphs, ...(pendingParagraph ? [''] : [])].map((text, index) => {
+                        const pending = index === paragraphs.length
+                        const offset = pending ? 0 : offsets[index]
                         const end = offset + text.length
                         return (
                             <Paragraph
                                 key={index}
                                 text={text}
-                                latest={index === paragraphs.length - 1}
+                                latest={index >= paragraphs.length - 1}
                                 offset={offset}
-                                highlights={highlights.filter(range => range.start < end && range.end > offset)}
-                                partial={index === lastIndex ? partial : undefined}
-                                caret={index === lastIndex && listening}
+                                highlights={
+                                    pending ? [] : highlights.filter(range => range.start < end && range.end > offset)
+                                }
+                                partial={pending || index === lastIndex ? partial : undefined}
+                                caret={(pending || index === lastIndex) && listening}
                             />
                         )
                     })}
-                    {(paragraphs.length === 0 || partialOwnParagraph) && (
+                    {paragraphs.length === 0 && !partial && (
                         <p className="transcript-paragraph">
-                            {partial && <span className="text-muted-foreground">{partial} </span>}
                             {listening && <span className="transcript-caret" aria-hidden />}
-                            {!partial && paragraphs.length === 0 && (
-                                <span className="transcript-placeholder">
-                                    {preparing ? 'Getting ready…' : 'Start talking. Your words appear here.'}
-                                </span>
-                            )}
+                            <span className="transcript-placeholder">
+                                {preparing ? 'Getting ready…' : 'Start talking. Your words appear here.'}
+                            </span>
                         </p>
                     )}
                 </div>

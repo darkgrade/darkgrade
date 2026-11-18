@@ -32,10 +32,12 @@ describe('the voice panel as the switch', () => {
 })
 
 describe('where an utterance lands', () => {
-    it('starts a new paragraph only after a finished sentence and a pause', () => {
+    it('starts a new line when speaking starts after a pause, or at a marked paragraph after a sentence', () => {
         expect(startsNewParagraph(['How you doing?'], true, false)).toBe(true)
+        expect(startsNewParagraph(['How you'], true, false)).toBe(true)
         expect(startsNewParagraph(['How you doing?'], false, false)).toBe(false)
-        expect(startsNewParagraph(['How you'], true, false)).toBe(false)
+        expect(startsNewParagraph(['How you doing?'], false, true)).toBe(true)
+        expect(startsNewParagraph(['How you'], false, true)).toBe(false)
         expect(startsNewParagraph([], true, true)).toBe(false)
     })
 })

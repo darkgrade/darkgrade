@@ -11,13 +11,13 @@ export const transcriptPartial = createStore('')
 export const transcriptPartialNewParagraph = createStore(false)
 
 /**
- * Whether an utterance starts a new paragraph: only after the last one ended a sentence, and only after a real
- * pause or a pause the speech model marked. Decided once, when the utterance is first heard, so its words never
- * move between paragraphs when they're confirmed.
+ * Whether an utterance starts a new paragraph: whenever speaking starts again after a real pause, and after a
+ * finished sentence where the speech model marked a paragraph. Decided once, when the utterance is first heard, so
+ * its words never move between paragraphs when they're confirmed.
  */
 export function startsNewParagraph(previous: string[], paused: boolean, paragraphPending: boolean): boolean {
     const sentenceEnded = /[.?!]["'”’)]?\s*$/.test(previous.at(-1) ?? '')
-    return previous.length > 0 && sentenceEnded && (paused || paragraphPending)
+    return previous.length > 0 && (paused || (sentenceEnded && paragraphPending))
 }
 
 /** A request heard in the transcript: where its words are, and how far the assistant has got with it. */
