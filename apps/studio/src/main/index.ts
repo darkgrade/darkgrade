@@ -45,6 +45,15 @@ function createWindow(): void {
         },
     })
 
+    // Developer Mode › Appearance picks the window's material; it switches live, with a short fade.
+    let material = preferences.get().windowMaterial
+    const stopFollowingMaterial = preferences.onChange(current => {
+        if (process.platform !== 'darwin' || current.windowMaterial === material) return
+        material = current.windowMaterial
+        mainWindow?.setVibrancy(material, { animationDuration: 200 })
+    })
+    mainWindow.on('closed', stopFollowingMaterial)
+
     // Trackpad pinch doesn't zoom the window; Cmd + / Cmd - / Cmd 0 do, from the View menu.
     void mainWindow.webContents.setVisualZoomLevelLimits(1, 1)
 
