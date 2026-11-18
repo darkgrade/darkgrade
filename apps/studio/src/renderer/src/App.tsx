@@ -360,16 +360,16 @@ export function App(): React.JSX.Element {
                         </div>
                     </aside>
                     <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-(--card-surface)">
-                        <div className="titlebar-drag relative flex h-12 shrink-0 items-center justify-center px-3">
-                            <CameraPill
-                                cameraState={cameraState}
-                                busy={busy}
-                                onConnect={() => void run(() => api.connect())}
-                                onDisconnect={() => void run(() => api.disconnect())}
-                                onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
-                            />
-                        </div>
                         <LiveViewPanel
+                            header={
+                                <CameraPill
+                                    cameraState={cameraState}
+                                    busy={busy}
+                                    onConnect={() => void run(() => api.connect())}
+                                    onDisconnect={() => void run(() => api.disconnect())}
+                                    onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
+                                />
+                            }
                             cameraState={cameraState}
                             previewAssists={previewAssists}
                             busy={busy}

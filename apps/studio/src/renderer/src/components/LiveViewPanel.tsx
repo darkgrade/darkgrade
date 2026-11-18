@@ -20,6 +20,8 @@ import { Camera, Crosshair, Mic, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 interface LiveViewPanelProps {
+    /** Above the picture (the camera pill), 12px from it as the toolbar is below. */
+    header: React.ReactNode
     cameraState: CameraState
     busy: boolean
     capturing: boolean
@@ -107,7 +109,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const tool =
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
-        <div className="flex shrink-0 justify-center px-4 pb-4">
+        <div className="flex shrink-0 justify-center">
             <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
                 <HoverTip
                     tip={
@@ -211,6 +213,9 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
         </div>
     )
 }
+
+/** The height the pill (28px), the toolbar (44px) and the two 12px gaps between them and the picture take. */
+const PICTURE_CHROME_PX = 28 + 44 + 12 * 2
 
 type FocusMarker = { x: number; y: number; status: 'focusing' | 'focused' | 'failed' }
 
@@ -318,12 +323,18 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <div className="relative flex min-h-0 flex-1 items-center justify-center p-4 [container-type:size]">
+        // One column, 12px apart and 12px from the card's edges: the pill, the picture and the toolbar, the picture as
+        // large as its shape allows between them (the space they take is PICTURE_CHROME_PX).
+        <div className="flex min-h-0 flex-1 flex-col p-3 [container-type:size]">
+            <div className="flex size-full flex-col items-center justify-center gap-3">
+                <div className="titlebar-drag flex w-full shrink-0 justify-center">{props.header}</div>
                 {showFrame ? (
                     <div
                         className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}
-                        style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
+                        style={{
+                            aspectRatio: frameAspect,
+                            width: `min(100cqw, calc((100cqh - ${PICTURE_CHROME_PX}px) * ${frameAspect}))`,
+                        }}
                         onClick={event => {
                             if (!canFocusAt || !props.onFocusAt) return
                             if ((event.target as HTMLElement).closest('button')) return
@@ -370,14 +381,16 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                     </div>
                 ) : null}
                 {showFrame ? null : (
-                    <ViewportPlaceholder
-                        cameraState={cameraState}
-                        readingCard={props.readingCard}
-                        onRetryLiveView={props.onRetryLiveView}
-                    />
+                    <div className="flex min-h-0 flex-1 items-center justify-center">
+                        <ViewportPlaceholder
+                            cameraState={cameraState}
+                            readingCard={props.readingCard}
+                            onRetryLiveView={props.onRetryLiveView}
+                        />
+                    </div>
                 )}
+                <CameraControls {...props} disabled={disabled} />
             </div>
-            <CameraControls {...props} disabled={disabled} />
         </div>
     )
 }
