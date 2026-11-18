@@ -215,23 +215,27 @@ export function LivePicture({ assists, recording, dimmed, onAspect }: LivePictur
         }
     }, [])
 
-    const fallback = useLiveFrame()
-    if (unavailable)
-        return fallback ? (
-            <img
-                className={`size-full object-contain ${dimmed ? 'opacity-40' : ''}`}
-                src={fallback.url}
-                alt="Live view from the camera"
-            />
-        ) : (
-            <></>
-        )
+    // Only the fallback image follows frames through React; the GPU path never re-renders per frame.
+    if (unavailable) return <FallbackPicture dimmed={dimmed} />
     return (
         <canvas
             ref={canvasRef}
             className={`block size-full transition-opacity duration-300 ${dimmed ? 'opacity-40' : ''}`}
             role="img"
             aria-label="Live view from the camera"
+        />
+    )
+}
+
+/** Where WebGPU isn't available: the frame as a plain image, without Studio's overlays. */
+function FallbackPicture({ dimmed }: { dimmed: boolean }): React.JSX.Element | null {
+    const frame = useLiveFrame()
+    if (!frame) return null
+    return (
+        <img
+            className={`size-full object-contain ${dimmed ? 'opacity-40' : ''}`}
+            src={frame.url}
+            alt="Live view from the camera"
         />
     )
 }
