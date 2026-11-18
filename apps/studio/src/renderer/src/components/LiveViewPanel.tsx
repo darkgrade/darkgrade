@@ -11,9 +11,9 @@ import {
 } from '@kevinschaich/components'
 import { HoverTip } from '@renderer/components/HoverTip'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
+import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { LivePicture } from '@renderer/gpu/LivePicture'
 import { useFocusFrames, useHasLiveFrame } from '@renderer/lib/live-frame-store'
-import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
 import { Camera, Crosshair, Mic, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -100,8 +100,7 @@ interface CameraControlsProps extends LiveViewPanelProps {
 }
 
 /**
- * Focus, shutter, record and voice as icons in a small floating toolbar under the picture, on the main card's own
- * surface (30% black by default), with no edge.
+ * Focus, shutter, record and voice as icons in a small floating toolbar under the picture, on a 30% white surface, with no edge.
  */
 function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const { cameraState, disabled } = props
@@ -109,7 +108,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
         <div className="flex shrink-0 justify-center px-4 pb-4">
-            <div className="flex items-center gap-1 rounded-xl bg-(--card-surface) p-1">
+            <div className="flex items-center gap-1 rounded-xl bg-white/30 p-1">
                 <HoverTip
                     tip={
                         <>
