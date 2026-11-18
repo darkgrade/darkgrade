@@ -100,8 +100,8 @@ interface CameraControlsProps extends LiveViewPanelProps {
 }
 
 /**
- * Focus, shutter and record as icons in a small floating toolbar under the picture, as Screen Studio floats its tool
- * dock: a slightly lighter rounded panel with a faint edge, off the window's edges, on the same black as the viewer.
+ * Focus, shutter, record and voice as icons in a small floating toolbar under the picture, on the main card's own
+ * surface (30% black by default), with no edge.
  */
 function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const { cameraState, disabled } = props
@@ -109,7 +109,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
         <div className="flex shrink-0 justify-center px-4 pb-4">
-            <div className="flex items-center gap-1 rounded-xl border border-foreground/8 bg-float-raised p-1 shadow-[inset_0_1px_0_rgb(255_255_255/5%),0_8px_24px_-8px_rgb(0_0_0/60%)]">
+            <div className="flex items-center gap-1 rounded-xl bg-(--card-surface) p-1">
                 <HoverTip
                     tip={
                         <>
