@@ -14,7 +14,7 @@ html.dark {
     /* Screen Studio's flat near-black, a touch cool, everywhere: window, top bar, status bar, viewer. */
     --background: #07090b;
     /* Floating panels a step or two above it: the inspector card and the capture dock. */
-    --float: #131419;
+    --float: #0f1014;
     --float-raised: #18191e;
     --foreground: #eae6dc;
     --card: #101012;

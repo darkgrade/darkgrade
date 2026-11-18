@@ -323,7 +323,7 @@ export function App(): React.JSX.Element {
                             />
                         </main>
                         <aside
-                            className="relative mt-4 mr-3 mb-3 flex shrink-0 flex-col rounded-xl border border-foreground/7 bg-float"
+                            className="relative mt-4 mr-3 mb-3 flex shrink-0 flex-col rounded-xl bg-float"
                             style={{ width: sidebar.size }}
                             aria-label="Camera controls"
                         >
