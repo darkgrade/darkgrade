@@ -100,7 +100,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                         </ToggleGroup>
                     )}
                     <div className="flex flex-col gap-1.75">
-                        <span className="text-[11px] font-medium text-muted-foreground">Photo</span>
+                        <span className="slate-label">Photo</span>
                         <ControlRow
                             label="Format"
                             control={controls.stillFormat}
@@ -127,7 +127,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                         />
                     </div>
                     <div className="flex flex-col gap-1.75">
-                        <span className="text-[11px] font-medium text-muted-foreground">Video</span>
+                        <span className="slate-label">Video</span>
                         <ControlRow
                             label="Format"
                             control={controls.movieFormat}
