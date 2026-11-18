@@ -14,7 +14,7 @@ import {
     type CanonLiveViewPosition,
 } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import type { CanonMovieFormat } from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
-import { OK } from '@ptp/definitions/response-definitions'
+import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { CANON_PROPERTY_NAMES } from '@ptp/definitions/vendors/canon/canon-property-names'
 import { CanonRegistry, createCanonRegistry } from '@ptp/registry'
@@ -22,7 +22,8 @@ import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
-import { GenericCamera } from './generic-camera'
+import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from './generic-camera'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 
 const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
 export interface CanonPropertyState {
@@ -150,8 +151,19 @@ export class CanonCamera extends GenericCamera {
         this.clearCachedState()
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
-        this.sessionId = 1
-        await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+        this.sessionId = this.createSessionId()
+        try {
+            let opened = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            if (opened.code === SessionAlreadyOpen.code) {
+                const closed = await this.send(this.registry.operations.CloseSession, {})
+                if (closed.code !== OK.code) throw new PTPResponseError(closed.code, 'Canon stale session could not be closed')
+                opened = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            }
+            if (opened.code !== OK.code) throw new PTPResponseError(opened.code, 'Canon OpenSession failed')
+        } catch (error) {
+            this.sessionId = null
+            throw error
+        }
         const deviceInfo = await this.send(this.registry.operations.GetDeviceInfo, {})
         if (deviceInfo.code !== OK.code) throw new PTPResponseError(deviceInfo.code, 'Canon GetDeviceInfo failed')
         if (!deviceInfo.data) throw new PTPDecodeError('Canon GetDeviceInfo failed: no DeviceInfo dataset')
@@ -186,6 +198,34 @@ export class CanonCamera extends GenericCamera {
         }
         this.clearCachedState()
         if (failure) throw failure
+    }
+
+    protected override createSessionId(): number {
+        // EOS control sessions must use the same convention during connect and recovery.
+        return 1
+    }
+
+    override async recover(device?: DeviceDescriptor, options: CameraRecoveryOptions = {}): Promise<CameraRecoveryReport> {
+        if (this.propertyCache.get(this.registry.properties.CanonRecordingDestination)?.current === 'CARD')
+            throw new Error('Stop the Canon recording before recovering its session')
+        await this.stopPolling()
+        // Release the owned EOS mode before opening a replacement PTP session.
+        // An unresponsive connection still reaches the bounded recovery steps.
+        try { await this.disconnect() } catch { /* Recovery verifies the replacement session. */ }
+        try { return await super.recover(device, options) }
+        finally { this.clearCachedState() }
+    }
+
+    protected override async verifyRecoveryState(_information: DeviceInfo): Promise<void> {
+        // GetDeviceInfo can answer while EOS controls still report SessionNotOpen.
+        try {
+            await this.enableRemoteMode()
+            await this.enableEventMode()
+            await this.refreshEventProperties()
+        } finally {
+            await this.disableRemoteMode()
+            await this.disableEventMode()
+        }
     }
 
     private clearCachedState(): void {
@@ -524,12 +564,15 @@ export class CanonCamera extends GenericCamera {
         if (this.supportedOperations)
             this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOff.code)
         await this.withoutPolling(async () => {
-            const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
-            if (response.code !== OK.code) {
-                throw new PTPResponseError(
-                    response.code,
-                    `Canon movie-mode release returned 0x${response.code.toString(16)}`
-                )
+            for (let attempt = 0; attempt < 4; attempt++) {
+                const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
+                if (response.code === OK.code) return
+                if (response.code !== 0x2019 || attempt === 3)
+                    throw new PTPResponseError(
+                        response.code,
+                        `Canon movie-mode release returned 0x${response.code.toString(16)}`
+                    )
+                await new Promise(resolve => setTimeout(resolve, 500))
             }
         })
     }
@@ -886,6 +929,7 @@ export class CanonCamera extends GenericCamera {
     async stopRecording(): Promise<void> {
         const property = this.registry.properties.CanonRecordingDestination
         const deadline = Date.now() + 5000
+        let stopRequested = false
         for (;;) {
             // Reconnecting can find an already finalized movie. Read camera events before
             // treating an idle Stop as successful; a missing property is never idle proof.
@@ -896,13 +940,17 @@ export class CanonCamera extends GenericCamera {
             // EOS reports 3 (legacy codec label SDRAM) in movie standby after
             // reconnect. Only the explicit NONE/standby states prove card Record ended.
             if (current === 'NONE' || current === 'SDRAM') return
-            try {
-                await this.set(property, 'NONE')
-                return
-            } catch (error) {
-                if ((error as {code?:number}).code !== 0x2019 || Date.now() >= deadline) throw error
-                await new Promise(resolve => setTimeout(resolve, 250))
+            if (Date.now() >= deadline)
+                throw new Error('Canon did not confirm recording stopped within 5 seconds')
+            if (!stopRequested) {
+                try {
+                    await this.set(property, 'NONE')
+                    stopRequested = true
+                } catch (error) {
+                    if ((error as {code?:number}).code !== 0x2019) throw error
+                }
             }
+            await new Promise(resolve => setTimeout(resolve, 250))
         }
     }
 

@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { PTPResponseError } from '@core/ptp-errors'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { NotLiveView } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { describe, expect, it, vi } from 'vitest'
@@ -35,6 +36,7 @@ describe('Nikon live-view lifecycle', () => {
 
     it('accepts a busy start response and returns the first decoded JPEG', async () => {
         const camera = cameraFixture()
+        vi.spyOn(camera, 'get').mockResolvedValue('OFF' as any)
         const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9])
         vi.spyOn(camera, 'send').mockImplementation(async operation => {
             if (operation.name === 'StartLiveView') return { code: DeviceBusy.code } as any
@@ -50,6 +52,7 @@ describe('Nikon live-view lifecycle', () => {
 
     it('restarts live view when a long session receives Nikon NotLiveView', async () => {
         const camera = cameraFixture()
+        vi.spyOn(camera, 'get').mockResolvedValue('OFF' as any)
         const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9])
         let imageAttempts = 0
         const send = vi.spyOn(camera, 'send').mockImplementation(async operation => {
@@ -68,6 +71,54 @@ describe('Nikon live-view lifecycle', () => {
         await expect(camera.captureLiveView({ includeInfo: false })).resolves.toMatchObject({ data: jpeg })
         expect(send.mock.calls.filter(([operation]) => operation.name === 'StartLiveView')).toHaveLength(2)
         expect(imageAttempts).toBe(3)
+    })
+
+    it('reads an inherited live view without starting or stopping the operator’s view', async () => {
+        const camera = cameraFixture()
+        const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9])
+        vi.spyOn(camera, 'get').mockResolvedValue('ON' as any)
+        const send = vi.spyOn(camera, 'send').mockImplementation(async operation => {
+            if (operation.name === 'GetLiveViewImageEx') return { code: OK.code, data: { liveViewImage: jpeg } } as any
+            throw new Error(`Unexpected operation ${operation.name}`)
+        })
+
+        await expect(camera.captureLiveView({ includeInfo: false })).resolves.toMatchObject({ data: jpeg })
+        await camera.disconnect()
+        expect(send.mock.calls.map(([operation]) => operation.name)).toEqual(['GetLiveViewImageEx'])
+    })
+
+    it('ends its own live view when disconnecting', async () => {
+        const camera = cameraFixture()
+        vi.spyOn(camera, 'get').mockResolvedValue('OFF' as any)
+        const send = vi.spyOn(camera, 'send').mockResolvedValue({ code: OK.code } as any)
+        await camera.captureLiveView({ includeData: false })
+        await camera.disconnect()
+        expect(send.mock.calls.filter(([operation]) => operation.name === 'EndLiveView')).toHaveLength(1)
+    })
+
+    it('refuses an unknown physical live-view state before sending activation commands', async () => {
+        const camera = cameraFixture()
+        vi.spyOn(camera, 'get').mockResolvedValue('UNKNOWN' as any)
+        const send = vi.spyOn(camera, 'send')
+        await expect(camera.captureLiveView({ includeData: false })).rejects.toThrow('live-view status is unknown')
+        await camera.disconnect()
+        expect(send).not.toHaveBeenCalled()
+    })
+
+    it('preserves a refused status read instead of attempting live-view activation', async () => {
+        const camera = cameraFixture()
+        vi.spyOn(camera, 'get').mockRejectedValue(new PTPResponseError(DeviceBusy.code, 'Status is busy'))
+        const send = vi.spyOn(camera, 'send')
+        await expect(camera.captureLiveView({ includeData: false })).rejects.toThrow('Status is busy')
+        expect(send).not.toHaveBeenCalled()
+    })
+
+    it('retains live-view startup on older bodies that do not expose the status descriptor', async () => {
+        const camera = cameraFixture()
+        vi.spyOn(camera, 'get').mockRejectedValue(new Error('No data received from GetDevicePropDescEx'))
+        const send = vi.spyOn(camera, 'send').mockResolvedValue({ code: OK.code } as any)
+        await camera.captureLiveView({ includeData: false })
+        expect(send.mock.calls.filter(([operation]) => operation.name === 'StartLiveView')).toHaveLength(1)
     })
 
     it('fires the shutter with the default capture options and with retrieval explicitly turned off', async () => {

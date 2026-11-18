@@ -22,11 +22,7 @@ export default defineConfig({
         globals: true,
         environment: 'node',
         pool: 'forks',
-        poolOptions: {
-            forks: {
-                singleFork: true,
-            },
-        },
+        maxWorkers: 1,
         fileParallelism: false,
         sequence: {
             shuffle: false,

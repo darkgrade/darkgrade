@@ -1,0 +1,25 @@
+{
+    "name": "@darkgrade/testbench",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Basic local USB camera Test Bench with an optional simulated UI",
+    "scripts": {
+        "dev": "vite --host localhost",
+        "build": "tsc --noEmit && vite build",
+        "preview": "vite preview --host localhost",
+        "start": "bun run server/main.ts",
+        "typecheck": "tsc --noEmit",
+        "test": "bun test tests/demo.test.ts tests/dev-boundary.test.ts tests/host.test.ts tests/http.test.ts",
+        "test:e2e": "playwright test"
+    },
+    "dependencies": {
+        "@darkgrade/link": "workspace:*"
+    },
+    "devDependencies": {
+        "@playwright/test": "1.55.1",
+        "@types/bun": "^1.3.14",
+        "typescript": "^5.9.2",
+        "vite": "^7.3.7"
+    }
+}

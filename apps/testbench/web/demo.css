@@ -1,0 +1,46 @@
+.demo-banner { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 20px; border:1px solid var(--line); border-radius:12px; margin:22px 0; color:var(--muted); font-size:13px; }
+main { padding-top:12px; }
+.demo-heading { margin:20px 0 28px; }
+.demo-heading h1 { font:400 clamp(42px,6vw,72px)/1 var(--font-display); margin:12px 0 18px; }
+.demo-heading em { color:var(--brand); font-weight:400; }
+.demo-heading p { color:var(--muted); max-width:640px; line-height:1.7; }
+.demo-shoot-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+.demo-shoot-camera { min-width:0; overflow:hidden; padding:0; }
+.demo-card-header,.demo-camera-footer { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:18px; }
+.demo-card-header label { display:flex; gap:10px; align-items:center; min-width:0; }
+.demo-card-header input { width:18px; height:18px; min-height:18px; padding:0; flex:0 0 18px; accent-color:var(--brand); }
+.demo-card-header strong { font-size:14px; }
+.demo-camera-footer { flex-wrap:wrap; font-size:12px; }
+.demo-preview { margin:0; }
+.demo-preview figcaption { color:var(--faint); font:10px var(--font-mono); padding:10px 16px; }
+.demo-scene { aspect-ratio:16/10; background:radial-gradient(ellipse at 68% 27%,#52625c,#252d2c 48%,#111515 78%); position:relative; overflow:hidden; }
+.demo-scene-light { position:absolute; width:45%; height:90%; top:-10%; right:0; background:linear-gradient(90deg,transparent,#dacb9b33); transform:skew(-18deg); }
+.demo-scene-subject { position:absolute; width:29%; height:66%; left:35%; bottom:-8%; background:linear-gradient(90deg,#26302c,#a79974 48%,#514939); border-radius:45% 45% 8% 8%; box-shadow:18px 8px 45px #0008; }
+.demo-scene-subject::before { content:""; position:absolute; width:55%; height:42%; left:22%; top:-23%; background:linear-gradient(110deg,#b8a681,#6c6659); border-radius:48%; }
+.demo-scene-1 .demo-scene { background:radial-gradient(ellipse at 35% 22%,#697987,#303c48 48%,#17232c 78%); }
+.demo-scene-2 .demo-scene { background:radial-gradient(ellipse at 70% 38%,#857664,#423c33 48%,#231e19 78%); }
+.demo-focus-box { position:absolute; left:37%; top:20%; width:26%; height:32%; border:1px solid #e4dccb88; }
+.demo-take-bar { margin:24px 0; padding:20px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.demo-take-bar p { margin:8px 0 0; font-size:13px; }
+.demo-results { margin-top:24px; padding:20px; }
+.demo-take { display:grid; gap:8px; padding:16px 0; border-top:1px solid var(--line); }
+.demo-take span,.demo-take small { color:var(--muted); }
+.demo-setup { max-width:720px; padding:24px; }
+.demo-setup p { color:var(--muted); line-height:1.7; }
+.demo-controls-dialog { width:min(1120px,calc(100vw - 32px)); max-height:90vh; padding:24px; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:18px; }
+.demo-controls-dialog::backdrop { background:#000a; backdrop-filter:blur(6px); }
+.demo-controls-dialog .dialog-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+.demo-controls-dialog .camera-control-workspace { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr); gap:24px; }
+.demo-controls-dialog .console-context { grid-column:1/-1; }
+.demo-controls-dialog .camera-console-camera { min-width:0; }
+.demo-controls-dialog .demo-name { margin-top:20px; }
+#demo-feedback:not(:empty) { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--panel-raised); padding:14px 20px; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); z-index:1000; max-width:calc(100vw - 32px); }
+#demo-feedback[data-failed=true] { border-color:var(--red); }
+.usb-empty { grid-column:1/-1; padding:32px; }
+.usb-empty p { color:var(--muted); max-width:640px; line-height:1.7; }
+.usb-preview { display:block; width:100%; aspect-ratio:16/10; object-fit:contain; background:#080a0b; }
+.usb-preview-empty { display:grid; place-items:center; min-height:180px; padding:24px; color:var(--muted); background:#111617; text-align:center; }
+.usb-error { color:var(--red); font-size:12px; padding:0 18px 12px; overflow-wrap:anywhere; }
+.usb-actions { margin:18px 0; }
+#scenario-field { margin-top:18px; }
+@media(max-width:900px) { .demo-shoot-grid { grid-template-columns:1fr; } .demo-take-bar { align-items:stretch; flex-direction:column; } .demo-controls-dialog .camera-control-workspace { grid-template-columns:1fr; } .demo-banner { flex-wrap:wrap; } }

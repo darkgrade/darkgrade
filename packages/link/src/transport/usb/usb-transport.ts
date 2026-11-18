@@ -107,7 +107,9 @@ export class USBTransport implements TransportInterface {
     private readonly maxBulkReadBytes: number
 
     constructor(private logger: Logger, options: USBTransportOptions = {}) {
-        const limit = options.maxBulkReadBytes ?? USB_LIMITS.MAX_USB_TRANSFER
+        // A receive limit bounds a complete PTP dataset, not one libusb allocation.
+        // Large object reads are assembled below from bounded endpoint transfers.
+        const limit = options.maxBulkReadBytes ?? USB_LIMITS.DEFAULT_BULK_SIZE
         if (!Number.isInteger(limit) || limit < 1024 || limit > USB_LIMITS.MAX_USB_TRANSFER || limit % 1024 !== 0)
             throw new Error('maxBulkReadBytes must be a multiple of 1024 between 1024 and 1073741824')
         this.maxBulkReadBytes = limit
@@ -363,7 +365,7 @@ export class USBTransport implements TransportInterface {
         // An exactly packet-aligned data phase can leave its terminating ZLP for the next read.
         if (received.result.status === 'ok' && received.result.data?.byteLength === 0)
             received = await this.readBulkIn(endpoint, requested)
-        const { result, length } = received
+        const { result } = received
 
         if (result.status === 'stall') {
             await this.clearHalt(EndpointType.BULK_IN)
@@ -376,7 +378,9 @@ export class USBTransport implements TransportInterface {
         // A bounded capture read, or a transfer taken over from an abandoned reader, may be shorter.
         const declared = data.byteLength >= 4 ? new DataView(data.buffer, data.byteOffset).getUint32(0, true) : 0
         if (declared > maxLength) throw new Error(`USB container length ${declared} exceeds receive limit ${maxLength}`)
-        if (length < maxLength && data.byteLength === length && declared > length && declared <= maxLength)
+        // Cameras may send the header and dataset in separate short USB transfers.
+        // The declared PTP length, rather than the USB short packet, ends the container.
+        if (declared > data.byteLength && declared <= maxLength)
             data = await this.readRemainder(endpoint, data, declared)
         const container = USBContainerBuilder.parseContainer(data)
 

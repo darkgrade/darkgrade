@@ -1,5 +1,6 @@
 import {nikonCanRecordToStorage} from '@vendors/nikon/card-storage'
 import {PTPResponseError} from '@core/ptp-errors'
+import {sonyStorageRecordingCapability} from '@vendors/sony/card-storage'
 
 /** Read current card capacity and camera recording capability, independently of host upload access. */
 export async function readCameraStorages(camera: any) {
@@ -14,8 +15,10 @@ export async function readCameraStorages(camera: any) {
         if (storage.code !== 0x2001) throw new Error('Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
         const info = storage.data || {}
         const access = Number(info.accessCapability ?? info.AccessCapability ?? -1)
-        const writable = camera.getInstance().vendorId === 0x04b0
-            ? await nikonCanRecordToStorage(camera, access) : access === 0
+        const vendor = camera.getInstance().vendorId
+        const sony = vendor === 0x054c ? await sonyStorageRecordingCapability(camera, Number(storageId)) : undefined
+        const writable = vendor === 0x04b0
+            ? await nikonCanRecordToStorage(camera, access) : sony ? sony.recordingReady : access === 0
         summaries.push({
             storageId: Number(storageId),
             description: String(info.storageDescription ?? info.StorageDescription ?? ''),
@@ -25,6 +28,7 @@ export async function readCameraStorages(camera: any) {
             freeImages: info.freeSpaceInImages === undefined ? undefined : Number(info.freeSpaceInImages),
             hostAccessCapability: access,
             writable,
+            ...sony,
         })
     }
     return summaries

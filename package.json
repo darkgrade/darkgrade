@@ -2,7 +2,10 @@
     "name": "@darkgrade/darkgrade",
     "version": "0.1.0",
     "private": true,
-    "workspaces": ["apps/*", "packages/*"],
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
     "scripts": {
         "build": "turbo build",
         "dev": "turbo dev",
@@ -10,11 +13,22 @@
         "lint": "turbo lint",
         "format": "turbo format",
         "studio": "bun run --cwd apps/studio dev",
-        "studio:bundle": "bun run --cwd apps/studio package && open apps/studio/release"
+        "studio:bundle": "bun run --cwd apps/studio package && open apps/studio/release",
+        "testbench": "bun run --cwd packages/contribute build && bun run --cwd packages/link build && bun run --cwd apps/testbench build && bun run --cwd apps/testbench start",
+        "security:check": "bun run scripts/security-check.ts",
+        "security:test": "bun test scripts/tests"
     },
-    "trustedDependencies": ["electron", "electron-builder", "esbuild"],
+    "trustedDependencies": [
+        "electron",
+        "electron-builder",
+        "esbuild"
+    ],
     "overrides": {
-        "esbuild": "~0.27.0"
+        "esbuild": "^0.28.1",
+        "postcss": "^8.5.23",
+        "sharp": "^0.35.5",
+        "minimatch@^9.0.0": "11.0.1",
+        "minimatch@^10.0.0": "11.0.1"
     },
     "devDependencies": {
         "turbo": "^2.3.3",
@@ -25,8 +39,8 @@
         "@typescript-eslint/eslint-plugin": "^6.21.0",
         "@typescript-eslint/parser": "^6.21.0"
     },
-    "packageManager": "bun@1.4.2",
+    "packageManager": "bun@1.4.3",
     "engines": {
-        "node": ">=18"
+        "node": ">=22.18"
     }
 }

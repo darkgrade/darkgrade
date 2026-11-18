@@ -1,14 +1,16 @@
 import { sveltekit } from '@sveltejs/kit/vite'
+import adapter from '@sveltejs/adapter-auto'
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 import { defineConfig } from 'vite'
 import devtoolsJson from 'vite-plugin-devtools-json'
 
 export default defineConfig({
-    plugins: [sveltekit(), tailwindcss(), devtoolsJson()],
+    plugins: [sveltekit({ adapter: adapter(), preprocess: vitePreprocess() }), tailwindcss(), devtoolsJson()],
     resolve: {
         alias: {
-            '@darkgrade/link': resolve(__dirname, '../../packages/link'),
+            '@darkgrade/link': resolve(import.meta.dirname, '../../packages/link'),
         },
     },
     build: {

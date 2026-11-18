@@ -1,8 +1,9 @@
+import type { CameraRecoveryOptions, CameraRecoveryReport } from '@camera/generic-camera'
 import type { SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import type { TransactionPolicy } from '@camera/transaction-channel'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
-import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
+import { openCanonRecordingMode, withCanonPhotoMode } from '@vendors/canon/recording-mode'
 export {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
@@ -56,6 +57,13 @@ export interface CameraOptions {
 }
 
 export class Camera {
+    /** Enumerate USB PTP devices without opening a camera session. */
+    static async discover() {
+        const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
+        const devices = await transport.discover({ usb: { filters: [{ classCode: 6, subclassCode: 1 }] } })
+        return devices.map(({ vendorId, productId, serialNumber, model }) => ({ vendorId, productId, serialNumber, model }))
+    }
+
     private instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera | VendorExtensionCamera
     private deviceDescriptor?: DeviceDescriptor
     private logger: Logger
@@ -139,6 +147,15 @@ export class Camera {
     async connectSonyObservationSession(device?: DeviceDescriptor): Promise<void> {
         if (!(this.instance instanceof SonyCamera)) throw new Error('Sony observation sessions require a Sony camera')
         await this.instance.connect(device || this.deviceDescriptor, { configure: false })
+    }
+
+    /**
+     * Software-only recovery for a camera that stopped answering: a fresh session, then a PTP
+     * Device Reset, then a USB port reset, each proven by GetDeviceInfo. The transport is closed
+     * afterwards; call connect() to use the camera. See GenericCamera.recover.
+     */
+    async recover(options?: CameraRecoveryOptions): Promise<CameraRecoveryReport> {
+        return this.instance.recover(this.deviceDescriptor, options)
     }
 
     async disconnect(): Promise<void> {
@@ -697,6 +714,12 @@ export class Camera {
 
     async startRecording(): Promise<void> {
         return this.instance.startRecording()
+    }
+
+    /** Hold the camera's required recording mode until a confirmed stop, then restore it. */
+    async prepareRecordingMode(): Promise<{ restore(): Promise<void> }> {
+        if (this.instance instanceof CanonCamera) return openCanonRecordingMode(this)
+        return { restore: async () => {} }
     }
 
     async stopRecording(): Promise<void> {

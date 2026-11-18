@@ -13,7 +13,7 @@ function camera() {
     return {instance,state}
 }
 
-afterEach(()=>vi.restoreAllMocks())
+afterEach(()=>{vi.restoreAllMocks()})
 
 describe('Canon KeepDeviceOn operation', () => {
     it('registers the parameterless EOS timer-reset command', () => {

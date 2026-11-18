@@ -2,6 +2,20 @@ import {describe,it,expect,vi} from 'vitest'
 import {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 function fixture(access:number,flags='notInApplicationMode (Not in application mode)',vendor=0x04b0){return {getInstance:()=>({vendorId:vendor,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info'},properties:{MovieRecProhibitionCondition:'flags'}}}),get:async()=>flags,send:async(op:string)=>({code:0x2001,data:op==='ids'?[0x10000,0x20001]:{accessCapability:access,maxCapacity:256n,freeSpaceInBytes:128n,volumeLabel:'Slot 2'}})}}
 describe('camera-side card write capability',()=>{
+ it('uses native Sony card status while preserving zero-capacity host storage',async()=>{
+  const camera=fixture(1,'none',0x054c) as any
+  camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
+  camera.getInstance=()=>({vendorId:0x054c,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info',GetDeviceInfo:'identity'}}})
+  camera.send=async(op:string)=>({code:0x2001,data:op==='ids'?[0x10001]:op==='identity'?{model:'ILCE-6700'}:{accessCapability:1,maxCapacity:0n,freeSpaceInBytes:0n}})
+  expect((await readCameraStorages(camera))[0]).toMatchObject({writable:true,recordingReady:true,hostAccessCapability:1,capacityBytes:0})
+  camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:2,sonyEnabledFlag:2}]
+  expect((await readCameraStorages(camera))[0].writable).toBe(false)
+ })
+ it('does not invent a single-slot Sony destination for an unidentified body',async()=>{
+  const camera=fixture(1,'none',0x054c) as any
+  camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
+  expect((await readCameraStorages(camera))[0].writable).toBe(false)
+ })
  it('accepts Nikon host read/delete access when camera protection is clear',async()=>{const cards=await readCameraStorages(fixture(2));expect(cards).toHaveLength(1);expect(cards[0]).toMatchObject({writable:true,hostAccessCapability:2,capacityBytes:256})})
  for(const flag of ['noCardInserted','cardAccessError','cardNotFormatted','noFreeSpace','cardProtected'])it('rejects Nikon '+flag,async()=>{expect((await readCameraStorages(fixture(2,flag)))[0].writable).toBe(false)})
  it('does not generalize Nikon host permissions to other brands',async()=>{expect((await readCameraStorages(fixture(2,'none',0x04a9)))[0].writable).toBe(false)})

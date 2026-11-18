@@ -1,0 +1,165 @@
+import { test, expect } from 'bun:test'
+import { fixtureBench } from './fixture'
+import { LocalBench } from '../server/host'
+
+test('scan is passive; connect and advertised settings use the generic camera', async () => {
+    const { bench, camera } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    expect(camera.calls).toEqual([])
+    await bench.action(id, 'connect')
+    await expect(bench.action(id, 'setting', 'iso', '800')).rejects.toThrow('advertised')
+    await bench.action(id, 'setting', 'iso', '200')
+    expect(camera.calls).toEqual(['connect', 'set:200'])
+    await bench.close()
+})
+test('ambiguous recording start cannot be retried, reset or disconnected before a confirmed stop', async () => {
+    const { bench, camera } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    camera.failStart = true
+    await expect(bench.action(id, 'start')).rejects.toThrow('reply lost')
+    expect(bench.state().cameras[0].recording).toBe('uncertain')
+    for (const action of ['connect', 'start', 'disconnect', 'recover', 'photo'] as const)
+        await expect(bench.action(id, action)).rejects.toThrow('Stop and confirm')
+    expect(camera.calls.filter(call => call === 'start')).toHaveLength(1)
+    await bench.action(id, 'stop')
+    await bench.close()
+})
+test('shutdown stays behind an in-flight connection and releases it after completion', async () => {
+    const { bench, camera } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    let finish!: () => void
+    camera.wait = new Promise(resolve => { finish = resolve })
+    const connecting = bench.action(id, 'connect')
+    await Promise.resolve(); await Promise.resolve()
+    const closing = bench.close()
+    expect(camera.calls).not.toContain('disconnect')
+    finish()
+    await connecting; await closing
+    expect(camera.calls).toEqual(['connect', 'disconnect'])
+})
+test('a completed write with failed readback is preserved and never repeated automatically', async () => {
+    const { bench, camera, adapter } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    const original = adapter.controls!
+    let reads = 0
+    adapter.controls = async (...args) => {
+        if (++reads === 2) throw Error('observation failed')
+        return original(...args)
+    }
+    await expect(bench.action(id, 'setting', 'iso', '200')).rejects.toThrow('write completed')
+    expect(camera.calls.filter(call => call.startsWith('set:'))).toEqual(['set:200'])
+    expect(camera.value).toBe('200')
+    await bench.close()
+})
+test('duplicate USB identities never cause a camera to be picked arbitrarily', async () => {
+    const { adapter, camera } = fixtureBench()
+    const device = { vendorId: 1, productId: 2, model: 'USB camera' }
+    adapter.discover = async () => [device, device]
+    const bench = new LocalBench(adapter, 'fixture')
+    const { id } = (await bench.scan()).cameras[0]
+    await expect(bench.action(id, 'connect')).rejects.toThrow('unique USB identity')
+    expect(camera.calls).toEqual([])
+})
+test('a failed connection closes its attempt and can be connected explicitly after the device returns', async () => {
+    const { bench, camera } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    const connect = camera.connect.bind(camera)
+    camera.connect = async () => { camera.calls.push('connect'); throw Error('Camera was unplugged') }
+    await expect(bench.action(id, 'connect')).rejects.toThrow('unplugged')
+    expect(bench.state().cameras[0].connected).toBe(false)
+    expect(camera.calls).toEqual(['connect', 'disconnect'])
+    camera.connect = connect
+    await bench.action(id, 'connect')
+    await bench.close()
+    expect(camera.calls).toEqual(['connect', 'disconnect', 'connect', 'disconnect'])
+})
+test('successful Link recovery reconnects its closed transport before reading controls', async () => {
+    const { bench, camera, adapter } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    let closed = false
+    camera.recover = async () => { camera.calls.push('recover'); closed = true; return { recovered: true } }
+    const connect = camera.connect.bind(camera), read = adapter.controls!
+    camera.connect = async () => { await connect(); closed = false }
+    adapter.controls = async (...args) => { if (closed) throw Error('transport closed'); return read(...args) }
+    await bench.action(id, 'recover')
+    expect(bench.state().cameras[0].connected).toBe(true)
+    expect(camera.calls).toEqual(['connect', 'recover', 'connect'])
+    await bench.close()
+})
+test('Canon advertised access arrays enable supported exposure values', async () => {
+    const { adapter, camera } = fixtureBench()
+    delete adapter.controls
+    adapter.discover = async () => [{ vendorId: 0x04a9, productId: 1, model: 'USB camera' }]
+    camera.getCanonPropertyStates = async () => [{ name: 'CanonIso', value: camera.value,
+        allowedValues: ['100', '200'], access: ['Get', 'Set'] }] as any
+    const bench = new LocalBench(adapter, 'fixture')
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    expect(bench.state().cameras[0].controls.iso?.enabled).toBe(true)
+    await bench.action(id, 'setting', 'iso', '200')
+    expect(camera.value).toBe('200')
+    await bench.close()
+})
+test('Sony Auto ISO can return to an advertised manual sensitivity through the gain-mode control', async () => {
+    const { adapter, camera } = fixtureBench()
+    delete adapter.controls
+    camera.value = 'ISO AUTO'
+    adapter.discover = async () => [{ vendorId: 0x054c, productId: 1, model: 'USB camera' }]
+    camera.getSonyPropertyStates = async () => [
+        { name: 'Iso', value: camera.value, allowedValues: ['ISO AUTO', 'ISO 100', 'ISO 200'], writable: false, enabled: false },
+        { name: 'GainControlSetting', value: 'Auto', allowedValues: ['Auto', 'Manual'], writable: true, enabled: true },
+    ] as any
+    const bench = new LocalBench(adapter, 'fixture')
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    await bench.action(id, 'setting', 'iso', 'ISO 100')
+    expect(camera.value).toBe('ISO 100')
+    await bench.close()
+})
+test('Sony ISO restoration survives an Auto mode that hides its manual list within the owned session', async () => {
+    const { adapter, camera } = fixtureBench()
+    delete adapter.controls
+    camera.value = 'ISO 200'
+    adapter.discover = async () => [{ vendorId: 0x054c, productId: 1, model: 'USB camera' }]
+    camera.getSonyPropertyStates = async () => [
+        { name: 'Iso', value: camera.value,
+            allowedValues: camera.value === 'ISO AUTO' ? [] : ['ISO AUTO', 'ISO 100', 'ISO 200'],
+            writable: camera.value !== 'ISO AUTO', enabled: camera.value !== 'ISO AUTO' },
+        { name: 'GainControlSetting', value: camera.value === 'ISO AUTO' ? 'Auto' : 'Manual',
+            allowedValues: ['Auto', 'Manual'], writable: true, enabled: true },
+    ] as any
+    const bench = new LocalBench(adapter, 'fixture')
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    await bench.action(id, 'setting', 'iso', 'ISO AUTO')
+    await expect(bench.action(id, 'setting', 'iso', 'ISO 800')).rejects.toThrow('advertised')
+    await bench.action(id, 'setting', 'iso', 'ISO 200')
+    expect(camera.value).toBe('ISO 200')
+    await bench.action(id, 'setting', 'iso', 'ISO AUTO')
+    await bench.action(id, 'disconnect')
+    await bench.action(id, 'connect')
+    expect(bench.state().cameras[0].controls.iso?.enabled).toBe(false)
+    await bench.close()
+})
+test('recording mode stays owned until stop, and failed restoration retries without another stop command', async () => {
+    const { bench, camera } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    let restores = 0
+    camera.prepareRecordingMode = async () => {
+        camera.calls.push('prepare')
+        return { restore: async () => { if (++restores === 1) throw Error('mode restore failed') } }
+    }
+    await bench.action(id, 'connect')
+    await bench.action(id, 'start')
+    expect(restores).toBe(0)
+    await expect(bench.action(id, 'stop')).rejects.toThrow('mode restore failed')
+    await expect(bench.action(id, 'disconnect')).rejects.toThrow('Stop and confirm')
+    await bench.action(id, 'stop')
+    expect(restores).toBe(2)
+    expect(camera.calls.filter(call => call === 'stop')).toHaveLength(1)
+    expect(bench.state().cameras[0].recording).toBe('idle')
+    await bench.close()
+})

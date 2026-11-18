@@ -44,6 +44,14 @@ variable "allowed_origins" {
   type    = list(string)
   default = []
 }
+variable "daily_batch_limit" {
+  type    = number
+  default = 4096
+  validation {
+    condition     = var.daily_batch_limit >= 1 && var.daily_batch_limit <= 65536 && floor(var.daily_batch_limit) == var.daily_batch_limit
+    error_message = "Daily upload budget must be an integer from 1 through 65536."
+  }
+}
 variable "email_api_key" {
   type      = string
   sensitive = true
@@ -219,6 +227,10 @@ resource "google_cloud_run_v2_service" "collector" {
       env {
         name  = "TELEMETRY_ALLOWED_ORIGINS"
         value = jsonencode(var.allowed_origins)
+      }
+      env {
+        name  = "TELEMETRY_DAILY_BATCH_LIMIT"
+        value = tostring(var.daily_batch_limit)
       }
       dynamic "env" {
         for_each = nonsensitive(var.email_api_key != "") ? [1] : []

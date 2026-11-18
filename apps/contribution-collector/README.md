@@ -37,7 +37,12 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   Reviewed patterns expire with their original batch and remain withdrawal-linked;
   minimal credential tombstones prevent replay.
 - Admission limits: 1,000 registrations/day across the service and 4,096 batches/day per
-  installation. Shared Postgres windows also limit registrations to 30/minute and uploads
+  installation by default. `TELEMETRY_DAILY_BATCH_LIMIT` (Terraform `daily_batch_limit`)
+  sets an explicit integer service budget from 1 through 65,536; existing quota counts
+  and installation identities stay intact. The day resets at UTC midnight, and daily
+  rejection returns the seconds until that reset. Link identifies this rejection
+  explicitly; its bounded queue can still drop events if delivery remains blocked.
+  Shared Postgres windows also limit registrations to 30/minute and uploads
   to 600/minute globally and 120/minute per installation. Repeated registrations consume
   the same burst budget. Before parsing bodies or querying Postgres, each process admits
   at most 100 requests/second and 32 concurrent requests. Rejections return Retry-After;

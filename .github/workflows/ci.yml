@@ -1,21 +1,20 @@
-name: Telemetry checks
+name: CI
+# Every pull request and every push to main runs the whole suite: a camera fix in Link can
+# break telemetry, Studio or the collector, and a path filter would hide that.
 on:
     pull_request:
-        paths:
-            - 'packages/contribute/**'
-            - 'packages/link/**'
-            - 'packages/cli/**'
-            - 'apps/contribution-collector/**'
-            - 'apps/studio/**'
-            - 'bun.lock'
-            - '.github/workflows/telemetry-checks.yml'
+    push:
+        branches: [main]
     workflow_dispatch:
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
 permissions:
     contents: read
 jobs:
     test:
         runs-on: ubuntu-24.04
-        timeout-minutes: 20
+        timeout-minutes: 30
         services:
             postgres:
                 image: postgres:17-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
@@ -31,17 +30,33 @@ jobs:
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: '1.4.2'
+                  bun-version: '1.4.3'
             - uses: actions/setup-node@v4
               with:
                   node-version: '24'
             - run: bun install --frozen-lockfile --ignore-scripts
-            - run: npm run test --prefix packages/contribute
+            - name: Leak and migration boundary checks
+              run: bun run security:check && bun run security:test
+            - name: Dependency security audit
+              run: bun audit
+            - run: npm run build --prefix packages/contribute && npm run test --prefix packages/contribute
+            - run: npm run build --prefix packages/link
+            - name: Test Bench host and UI
+              run: |
+                  bun run --cwd apps/testbench build
+                  bun run --cwd apps/testbench test
+                  cd apps/testbench
+                  node node_modules/@playwright/test/cli.js install --with-deps chromium
+                  bun run test:e2e
             - run: npm run test --prefix apps/contribution-collector
               env:
                   DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry
-            - run: npm run build --prefix packages/link && npm run test --prefix packages/link -- tests/telemetry.test.ts tests/ptp-input-fuzz.test.ts
-            - run: npm run test:runtime --prefix packages/link
+            - name: Link type check
+              run: npm run typecheck --prefix packages/link
+            - name: Link tests (camera library and runtime)
+              run: npm run test --prefix packages/link
+            - name: Link package exports
+              run: npm run test:package --prefix packages/link
             - run: npm run test --prefix packages/cli
             - run: npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
             - run: docker build -f apps/contribution-collector/Dockerfile -t telemetry-check .

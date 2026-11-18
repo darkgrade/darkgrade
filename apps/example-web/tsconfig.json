@@ -1,8 +1,5 @@
 {
-    "extends": ["@darkgrade/typescript-config/app.json", "./.svelte-kit/tsconfig.json"],
-    "include": ["src/**/*", ".svelte-kit/**/*"],
-    "compilerOptions": {
-        "verbatimModuleSyntax": false,
-        "isolatedModules": false
-    }
+    "extends": ["@darkgrade/typescript-config/app.json", "$app/tsconfig"],
+    "include": ["src", "test", "*"],
+    "exclude": ["src/service-worker"]
 }

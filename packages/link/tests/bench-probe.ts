@@ -38,6 +38,10 @@ const logger = new Logger({ expanded: false, captureConsole: false, renderInTerm
 // Keep this bounded identity probe visible to Linux usbmon even on SG/IOMMU hosts.
 const transport = new USBTransport(logger, { maxBulkReadBytes: 16 * 1024 })
 const camera = new GenericCamera(transport, logger)
+// A health probe only observes: every transaction ends well inside the watchdog below, so the
+// process never exits mid-transaction (which can itself leave a camera stuck), and it never
+// resets the camera. A failed probe is followed by Camera.recover(), not by this script.
+camera.configureTransactions({ timeoutMilliseconds: 4_000, deviceBusyRetries: 2, automaticUSBReset: false })
 const watchdog = setTimeout(() => {
     writeResult({ responsive: false, detail: 'Darkgrade PTP probe timed out before GetDeviceInfo completed' })
     process.exit(124)

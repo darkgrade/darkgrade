@@ -297,7 +297,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         try {
             const key = await enroll(generation)
             if (!key || generation !== epoch || !enabled()) return 'disabled'
-            const { response } = await call('/v2/batches', 'POST', batch, key)
+            const { response, data } = await call('/v2/batches', 'POST', batch, key)
             if (generation !== epoch || !enabled()) return 'disabled'
             if ([401, 403, 410].includes(response.status)) {
                 state.enabled = false
@@ -315,7 +315,10 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 const seconds = Number(response.headers.get('retry-after'))
                 retryAt =
                     Date.now() + (Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 86_400) * 1000 : 60_000)
-                lastError = 'Upload will retry'
+                lastError =
+                    response.status === 429 && data?.error === 'Daily batch limit reached'
+                        ? 'Daily diagnostics upload limit reached'
+                        : 'Upload will retry'
                 return 'retry'
             }
             pending = undefined

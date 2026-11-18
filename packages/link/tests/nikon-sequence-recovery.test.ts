@@ -57,6 +57,7 @@ describe('Nikon documented sequence-error recovery',()=>{
     })
     it('retries live-view startup once after verified recovery, without an unbounded release loop',async()=>{
         const {camera}=setup();let starts=0
+        camera.get=vi.fn(async()=> 'OFF') as any
         camera.recoverSequenceError=vi.fn(async()=>true)
         camera.send=vi.fn(async operation=>({code:operation.code===0x9201&&++starts===1?0xa001:0x2001})) as any
         await (camera as any).enableLiveView()

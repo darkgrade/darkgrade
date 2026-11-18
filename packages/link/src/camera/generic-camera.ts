@@ -13,6 +13,7 @@ import { linkTelemetry } from '@core/telemetry'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
 import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@darkgrade/contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { DeviceBusy, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
@@ -30,6 +31,8 @@ import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.in
 /** ISO 15740 standard operation codes; their DeviceBusy answers mean "not performed, retry later". */
 /** How long a camera takes to enumerate again after a USB port reset. */
 const PORT_RESET_SETTLE_MS = 1500
+/** A camera needs a moment after a Device Reset Request before it accepts OpenSession. */
+const DEVICE_RESET_SETTLE_MS = 500
 
 function delay(milliseconds: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -50,6 +53,32 @@ export interface StandardPropertyState {
     minimumValue?: number | bigint | string
     maximumValue?: number | bigint | string
     stepSize?: number | bigint | string
+}
+
+export interface CameraRecoveryOptions {
+    /** Upper bound for each transaction and reset during recovery. Default 8 s. */
+    stepTimeoutMilliseconds?: number
+    /** How long to wait for the camera to (re)appear on USB. Default 20 s. */
+    waitForDeviceMilliseconds?: number
+    /** Default true. Disable when recovery must preserve USB enumeration and other consumers. */
+    allowPortReset?: boolean
+}
+
+export interface CameraRecoveryStep {
+    step: 'enumerate' | 'session' | 'device-reset' | 'port-reset'
+    ok: boolean
+    durationMilliseconds: number
+    detail?: string
+}
+
+export interface CameraRecoveryReport {
+    /** The camera answered GetDeviceInfo after one of the steps. */
+    recovered: boolean
+    /** Software recovery could not bring the camera back: only now are power or hub cycling warranted. */
+    needsPhysicalAction: boolean
+    steps: CameraRecoveryStep[]
+    durationMilliseconds: number
+    identity?: { manufacturer: string; model: string; firmware: string }
 }
 
 interface RecoveryAttempt {
@@ -192,7 +221,7 @@ export class GenericCamera {
             await this.openFreshSession()
         } catch (error) {
             const unanswered = error instanceof PTPTimeoutError || error instanceof PTPRecoveryRequiredError
-            if (!unanswered || !this.transport.resetPort) throw error
+            if (!unanswered || !this.channel.policy.automaticUSBReset || !this.transport.resetPort) throw error
             await this.recovery?.task.catch(() => undefined)
             await this.transport.resetPort()
             this.recovery = undefined
@@ -204,8 +233,12 @@ export class GenericCamera {
         }
     }
 
+    protected createSessionId(): number {
+        return randomSessionId()
+    }
+
     private async openFreshSession(): Promise<void> {
-        this.sessionId = randomSessionId()
+        this.sessionId = this.createSessionId()
         try {
             let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
             if (openResult.code === SessionAlreadyOpen.code) {
@@ -243,6 +276,131 @@ export class GenericCamera {
     async reopenSession(device?: DeviceDescriptor): Promise<void> {
         await this.closeSessionAndTransport()
         await this.connect(device)
+    }
+
+    /**
+     * Brings back a camera that has stopped answering, using only software: no power or hub
+     * cycling. Each step is tried only if the one before it failed, and each verifies a fresh
+     * camera identity and the vendor's advertised readiness check before claiming recovery:
+     *
+     * 1. session: open a fresh session (a camera that is merely idle or left with a stale session).
+     * 2. device-reset: the still-image class Device Reset Request, a wait for abandoned I/O to
+     *    settle, then a fresh session (a camera left mid-transaction by a host that died).
+     * 3. port-reset: a libusb port reset, the software equivalent of a replug, then a wait for the
+     *    camera to enumerate again and a fresh session.
+     *
+     * A camera that is not on USB at all is waited for, up to `waitForDeviceMilliseconds`, since it
+     * may still be starting. Whatever the outcome the transport is left closed, so the caller
+     * connects normally afterwards (vendor setup belongs to connect). When no step works,
+     * `needsPhysicalAction` is true: only then are power or hub cycling warranted.
+     */
+    async recover(device?: DeviceDescriptor, options: CameraRecoveryOptions = {}): Promise<CameraRecoveryReport> {
+        const stepTimeout = options.stepTimeoutMilliseconds ?? 8_000
+        const waitForDevice = options.waitForDeviceMilliseconds ?? 20_000
+        const previousPolicy = { ...this.channel.policy }
+        // Recovery chooses its own steps: no automatic reset or busy retries may run underneath it.
+        this.channel.configure({ timeoutMilliseconds: stepTimeout, automaticUSBReset: false, deviceBusyRetries: 2, recoverTransport: undefined })
+        const steps: CameraRecoveryStep[] = []
+        const started = Date.now()
+        const attempt = async (step: CameraRecoveryStep['step'], work: () => Promise<void>) => {
+            const begun = Date.now()
+            try {
+                await work()
+                const identity = await this.readIdentityForRecovery()
+                steps.push({ step, ok: true, durationMilliseconds: Date.now() - begun })
+                return identity
+            } catch (error) {
+                steps.push({ step, ok: false, durationMilliseconds: Date.now() - begun, detail: error instanceof Error ? error.message : String(error) })
+                return undefined
+            }
+        }
+        try {
+            const present = await this.waitForTransport(device, waitForDevice)
+            if (!present.ok) {
+                steps.push({ step: 'enumerate', ok: false, durationMilliseconds: Date.now() - started, detail: present.detail })
+                return { recovered: false, needsPhysicalAction: true, steps, durationMilliseconds: Date.now() - started }
+            }
+            let identity = await attempt('session', () => this.openFreshSession())
+            if (!identity)
+                identity = await attempt('device-reset', async () => {
+                    if (!this.transport.isConnected()) await this.connectTransport(device)
+                    await this.withStepTimeout(this.transport.classRequestReset(), stepTimeout, 'the Device Reset Request')
+                    if (!(await this.channel.settle(stepTimeout))) throw new Error('abandoned USB I/O did not settle after the Device Reset Request')
+                    this.clearRecoveryState()
+                    await delay(DEVICE_RESET_SETTLE_MS)
+                    await this.openFreshSession()
+                })
+            if (!identity && options.allowPortReset !== false && this.transport.resetPort)
+                identity = await attempt('port-reset', async () => {
+                    if (!this.transport.isConnected()) await this.connectTransport(device)
+                    await this.withStepTimeout(this.transport.resetPort!(), stepTimeout, 'the USB port reset')
+                    this.sessionId = null
+                    this.clearRecoveryState()
+                    await delay(PORT_RESET_SETTLE_MS)
+                    const back = await this.waitForTransport(device, waitForDevice)
+                    if (!back.ok) throw new Error(`the camera did not enumerate again after the port reset: ${back.detail}`)
+                    await this.openFreshSession()
+                })
+            return {
+                recovered: !!identity,
+                needsPhysicalAction: !identity,
+                steps,
+                durationMilliseconds: Date.now() - started,
+                ...(identity && { identity }),
+            }
+        } finally {
+            this.channel.configure(previousPolicy)
+            await this.closeSessionAndTransport().catch(() => undefined)
+            this.clearRecoveryState()
+        }
+    }
+
+    private async readIdentityForRecovery(): Promise<CameraRecoveryReport['identity']> {
+        const response = await this.send(this.registry.operations.GetDeviceInfo, {})
+        if (response.code !== OK.code || !response.data)
+            throw new PTPResponseError(response.code, `GetDeviceInfo returned 0x${response.code.toString(16)}`, { operation: 'GetDeviceInfo' })
+        await this.verifyRecoveryState(response.data)
+        const info = response.data as { manufacturer?: string; model?: string; deviceVersion?: string }
+        return { manufacturer: String(info.manufacturer ?? ''), model: String(info.model ?? ''), firmware: String(info.deviceVersion ?? '') }
+    }
+
+    /** Vendors may still reject controls while their identity remains readable. */
+    protected async verifyRecoveryState(_information: DeviceInfo): Promise<void> {}
+
+    /** Opens the transport, retrying until the camera is on the bus or the wait runs out. */
+    private async waitForTransport(device: DeviceDescriptor | undefined, milliseconds: number): Promise<{ ok: true } | { ok: false; detail: string }> {
+        const deadline = Date.now() + milliseconds
+        let last = 'the camera is not on USB'
+        for (;;) {
+            try {
+                if (!this.transport.isConnected()) await this.connectTransport(device)
+                return { ok: true }
+            } catch (error) {
+                last = error instanceof Error ? error.message : String(error)
+            }
+            if (Date.now() >= deadline) return { ok: false, detail: last }
+            await delay(500)
+        }
+    }
+
+    private async withStepTimeout<T>(work: Promise<T>, milliseconds: number, what: string): Promise<T> {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+            return await Promise.race([
+                work,
+                new Promise<never>((_, reject) => {
+                    timer = setTimeout(() => reject(new Error(`${what} did not complete within ${milliseconds} ms`)), milliseconds)
+                }),
+            ])
+        } finally {
+            clearTimeout(timer)
+        }
+    }
+
+    private clearRecoveryState(): void {
+        this.needsResynchronization = false
+        this.lastFailure = undefined
+        this.recovery = undefined
     }
 
     private async closeSessionAndTransport(): Promise<void> {
@@ -500,7 +658,7 @@ export class GenericCamera {
     /** A Device Reset may or may not end the session; reopen it, keeping one the camera still holds. */
     private async reopenSessionAfterReset(previousSessionId: number): Promise<void> {
         const openSession = this.registry.operations.OpenSession
-        const sessionId = randomSessionId()
+        const sessionId = this.createSessionId()
         this.sessionId = sessionId
         const params = { SessionID: sessionId }
         const response = await this.runTransaction(openSession, params, this.encodeParameters(openSession, params))

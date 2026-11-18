@@ -1,11 +1,12 @@
 import { preferences } from '@main/preferences'
+import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
 import type { PerfReport, PerfTrace, ProcessSample } from '@shared/ipc'
 import { IPC_EVENTS } from '@shared/ipc'
-import { app, BrowserWindow, contentTracing, screen, webContents } from 'electron'
+import { app, BrowserWindow, contentTracing, screen, shell, webContents } from 'electron'
 import { execFile } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /**
  * Developer Mode's performance monitor, main-process side: every process Studio runs (its own Electron processes and
@@ -349,9 +350,10 @@ export function openPerfWindow(): void {
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         show: false,
         webPreferences: {
-            preload: join(currentDir, '../preload/index.mjs'),
+            preload: join(currentDir, '../preload/index.cjs'),
             contextIsolation: true,
-            sandbox: false,
+            nodeIntegration: false,
+            sandbox: true,
         },
     })
     perfWindow.once('ready-to-show', () => perfWindow?.show())
@@ -359,8 +361,12 @@ export function openPerfWindow(): void {
         perfWindow = null
         announce(false)
     })
-    if (process.env.ELECTRON_RENDERER_URL) void perfWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}#perf`)
-    else void perfWindow.loadFile(join(currentDir, '../renderer/index.html'), { hash: 'perf' })
+    const rendererUrl = rendererDocumentUrl(pathToFileURL(join(currentDir, '../renderer/index.html')).href,
+        app.isPackaged, process.env.ELECTRON_RENDERER_URL)
+    protectRenderer(perfWindow.webContents, rendererUrl, url => shell.openExternal(url))
+    const performanceUrl = new URL(rendererUrl)
+    performanceUrl.hash = 'perf'
+    void perfWindow.loadURL(performanceUrl.href)
     announce(true)
     if (lastReport) perfWindow.webContents.once('did-finish-load', () => lastReport && receivePerfReport(lastReport))
 }

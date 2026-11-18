@@ -6,6 +6,49 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+test('daily upload rejection is explicit and retains the bounded pending batch without repeating delivery early', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-daily-budget-'))
+    let batches = 0
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: sharedSettings(directory),
+        fetch: async (url, init) => {
+            if (String(url).endsWith('/v2/installations')) {
+                const body = JSON.parse(String(init!.body))
+                return Response.json({ installKey: body.installKey, noticeVersion: body.noticeVersion })
+            }
+            batches++
+            return Response.json(
+                { error: 'Daily batch limit reached' },
+                { status: 429, headers: { 'retry-after': '60' } }
+            )
+        },
+    })
+    try {
+        client.record(
+            {
+                manufacturer: 'Nikon',
+                model: 'Z5II',
+                firmware: '1',
+                revision: 'abcdef0',
+                dirty: false,
+                transport: 'usb',
+                evidence: 'synthetic',
+            },
+            { kind: 'command', direction: 'out', bytes: 12, failed: false, durationMilliseconds: 1 }
+        )
+        assert.equal(await client.flush(), 'retry')
+        assert.equal(client.status().error, 'Daily diagnostics upload limit reached')
+        assert.equal(client.status().queuedEntries, 1)
+        assert.equal(client.status().droppedEntries, 0)
+        assert.equal(await client.flush(), 'retry')
+        assert.equal(batches, 1)
+    } finally {
+        client.close()
+        await rm(directory, { recursive: true, force: true })
+    }
+})
+
 test('a temporary external opt-out cannot leave old sharing entries queued for a later opt-in', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-opt-out-queue-'))
     const store = sharedSettings(directory),
@@ -291,18 +334,30 @@ test('queued entries from before the identity read are uploaded under the identi
         fetch: async (_url, init) => {
             const body = init?.body ? JSON.parse(String(init.body)) : {}
             if (body.contributions) batches.push(body)
-            return Response.json(body.installKey ? { installKey: body.installKey, noticeVersion: body.noticeVersion } : {}, { status: body.contributions ? 202 : 200 })
+            return Response.json(
+                body.installKey ? { installKey: body.installKey, noticeVersion: body.noticeVersion } : {},
+                { status: body.contributions ? 202 : 200 }
+            )
         },
     })
     const context = (model: string) => ({
-        manufacturer: model === 'Unknown' ? 'Unknown' : 'Sony Corporation', model,
-        firmware: model === 'Unknown' ? 'unknown' : '2.00', revision: 'abcdef0', dirty: false,
-        transport: 'usb' as const, evidence: 'synthetic' as const,
+        manufacturer: model === 'Unknown' ? 'Unknown' : 'Sony Corporation',
+        model,
+        firmware: model === 'Unknown' ? 'unknown' : '2.00',
+        revision: 'abcdef0',
+        dirty: false,
+        transport: 'usb' as const,
+        evidence: 'synthetic' as const,
     })
     const source = {
-        connect: async () => {}, disconnect: async () => {}, classRequestReset: async () => {},
-        send: async () => {}, receive: async () => new Uint8Array(12),
-        isConnected: () => true, isLittleEndian: () => true, getType: () => 'usb',
+        connect: async () => {},
+        disconnect: async () => {},
+        classRequestReset: async () => {},
+        send: async () => {},
+        receive: async () => new Uint8Array(12),
+        isConnected: () => true,
+        isLittleEndian: () => true,
+        getType: () => 'usb',
     }
     try {
         const observed = client.observe(source, context('Unknown'))
@@ -315,13 +370,22 @@ test('queued entries from before the identity read are uploaded under the identi
         await observed.transport.send(new Uint8Array(12), 1, 2)
         await client.flush()
         const cameras = batches.flatMap(batch => batch.contributions)
-        const sessions = (model: string) => [...new Set(cameras.filter((item: any) => item.camera.model === model)
-            .flatMap((item: any) => item.entries.map((entry: any) => entry.sessionId)))]
+        const sessions = (model: string) => [
+            ...new Set(
+                cameras
+                    .filter((item: any) => item.camera.model === model)
+                    .flatMap((item: any) => item.entries.map((entry: any) => entry.sessionId))
+            ),
+        ]
         assert.equal(sessions('Unknown').length, 1)
         assert.equal(sessions('ILCE-6700').length, 1)
         assert.notEqual(sessions('Unknown')[0], sessions('ILCE-6700')[0])
         const identified = cameras.find((item: any) => item.camera.model === 'ILCE-6700').entries
-        assert.deepEqual(identified.map((entry: any) => entry.kind), ['connect', 'unknown', 'unknown'], 'chronological order is kept')
+        assert.deepEqual(
+            identified.map((entry: any) => entry.kind),
+            ['connect', 'unknown', 'unknown'],
+            'chronological order is kept'
+        )
     } finally {
         client.close()
     }
@@ -332,7 +396,8 @@ test('already-shared protocol facts are remembered across processes, re-shared o
     const { writeFile } = await import('node:fs/promises')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-facts-'))
     try {
-        const scope = 'camera-v1:' + 'a'.repeat(64), now = Date.now()
+        const scope = 'camera-v1:' + 'a'.repeat(64),
+            now = Date.now()
         const worker = reportedFacts(directory)
         assert.equal(worker.fresh(scope, 'unknown:operation:37121', '{"code":37121}', now), true)
         assert.equal(worker.fresh(scope, 'unknown:operation:37121', '{"code":37121}', now + 1000), false)
@@ -343,18 +408,38 @@ test('already-shared protocol facts are remembered across processes, re-shared o
         // A later bench worker is a new process: it must not share the same fact again.
         const next = reportedFacts(directory)
         assert.equal(next.fresh(scope, 'unknown:operation:37121', '{"code":37121}', now + 2000), false)
-        assert.equal(next.fresh(scope, 'unknown:operation:37121', '{"code":37121,"advertised":false}', now + 3000), true, 'a changed fact is shared')
-        assert.equal(next.fresh('another body', 'unknown:operation:37121', '{"code":37121}', now + 3000), true, 'another body is separate')
-        assert.equal(reportedFacts(directory).fresh(scope, 'unknown:operation:37121', '{"code":37121}', now + 7 * 3_600_000), true, 'shared again after six hours')
+        assert.equal(
+            next.fresh(scope, 'unknown:operation:37121', '{"code":37121,"advertised":false}', now + 3000),
+            true,
+            'a changed fact is shared'
+        )
+        assert.equal(
+            next.fresh('another body', 'unknown:operation:37121', '{"code":37121}', now + 3000),
+            true,
+            'another body is separate'
+        )
+        assert.equal(
+            reportedFacts(directory).fresh(scope, 'unknown:operation:37121', '{"code":37121}', now + 7 * 3_600_000),
+            true,
+            'shared again after six hours'
+        )
         // Two processes saving in turn keep each other's entries.
         next.save()
-        const first = reportedFacts(directory), second = reportedFacts(directory)
-        first.fresh(scope, 'one', '1', now); second.fresh(scope, 'two', '2', now); first.save(); second.save()
+        const first = reportedFacts(directory),
+            second = reportedFacts(directory)
+        first.fresh(scope, 'one', '1', now)
+        second.fresh(scope, 'two', '2', now)
+        first.save()
+        second.save()
         const merged = reportedFacts(directory)
         assert.equal(merged.fresh(scope, 'one', '1', now + 10), false)
         assert.equal(merged.fresh(scope, 'two', '2', now + 10), false)
         await writeFile(join(directory, 'reported-facts.json'), '{broken')
-        assert.equal(reportedFacts(directory).fresh(scope, 'one', '1', now + 20), true, 'a damaged file only means sharing once more')
+        assert.equal(
+            reportedFacts(directory).fresh(scope, 'one', '1', now + 20),
+            true,
+            'a damaged file only means sharing once more'
+        )
     } finally {
         await rm(directory, { recursive: true, force: true })
     }
@@ -364,16 +449,30 @@ test('the record of cameras last seen at a USB identity keeps what the body repo
     const { knownCameras } = await import('#contribute/settings')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-known-'))
     try {
-        const store = knownCameras(directory), fingerprint = 'camera-v1:' + 'b'.repeat(64)
-        const byModel = { vendorId: 0x04a9, productId: 0x3329 }, bySerial = { vendorId: 0x054c, productId: 0x0e78, serialNumber: 'PRIVATE-SERIAL' }
+        const store = knownCameras(directory),
+            fingerprint = 'camera-v1:' + 'b'.repeat(64)
+        const byModel = { vendorId: 0x04a9, productId: 0x3329 },
+            bySerial = { vendorId: 0x054c, productId: 0x0e78, serialNumber: 'PRIVATE-SERIAL' }
         assert.equal(store.lookup(byModel), undefined)
-        store.remember(byModel, { manufacturer: 'Canon.Inc', model: 'Canon EOS R8 Mark II', hardwareFingerprint: fingerprint })
-        store.remember(bySerial, { manufacturer: 'Sony Corporation', model: 'ILCE-6700', hardwareFingerprint: fingerprint })
+        store.remember(byModel, {
+            manufacturer: 'Canon.Inc',
+            model: 'Canon EOS R8 Mark II',
+            hardwareFingerprint: fingerprint,
+        })
+        store.remember(bySerial, {
+            manufacturer: 'Sony Corporation',
+            model: 'ILCE-6700',
+            hardwareFingerprint: fingerprint,
+        })
         store.remember(byModel, { manufacturer: 'Unknown', model: 'Unknown' })
         // Another process reads the same file.
         const later = knownCameras(directory)
         assert.deepEqual(later.lookup(byModel), { manufacturer: 'Canon.Inc', model: 'Canon EOS R8 Mark II' })
-        assert.deepEqual(later.lookup(bySerial), { manufacturer: 'Sony Corporation', model: 'ILCE-6700', hardwareFingerprint: fingerprint })
+        assert.deepEqual(later.lookup(bySerial), {
+            manufacturer: 'Sony Corporation',
+            model: 'ILCE-6700',
+            hardwareFingerprint: fingerprint,
+        })
         assert.equal(later.lookup({ ...bySerial, serialNumber: 'OTHER' }), undefined)
         assert.equal(later.lookup({ vendorId: 0x04b0 }), undefined)
         const saved = await readFile(join(directory, 'known-cameras.json'), 'utf8')
