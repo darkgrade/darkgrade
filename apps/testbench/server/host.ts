@@ -180,9 +180,19 @@ export class LocalBench {
                         await camera.stopRecording()
                         view.recording = 'idle'
                     } else if (action === 'recover') {
-                        const recovery = await camera.recover({ allowPortReset: false })
-                        if (!recovery.recovered) throw Error('Link could not recover the camera session')
-                        await this.read(entry)
+                        // Link recovery verifies identity, then leaves the transport closed.
+                        view.connected = false
+                        try {
+                            const recovery = await camera.recover({ allowPortReset: false })
+                            if (!recovery.recovered) throw Error('Link could not recover the camera session')
+                            await camera.connect()
+                            view.connected = true
+                            await this.read(entry)
+                        } catch (error) {
+                            try { await camera.disconnect(); entry.camera = undefined; view.connected = false; view.controls = {} }
+                            catch { /* Keep the owned instance available for explicit cleanup. */ }
+                            throw error
+                        }
                     } else throw Error('Unsupported camera action')
                 }
                 view.error = undefined

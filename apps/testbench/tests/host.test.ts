@@ -75,3 +75,17 @@ test('a failed connection closes its attempt and can be connected explicitly aft
     await bench.close()
     expect(camera.calls).toEqual(['connect', 'disconnect', 'connect', 'disconnect'])
 })
+test('successful Link recovery reconnects its closed transport before reading controls', async () => {
+    const { bench, camera, adapter } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    let closed = false
+    camera.recover = async () => { camera.calls.push('recover'); closed = true; return { recovered: true } }
+    const connect = camera.connect.bind(camera), read = adapter.controls!
+    camera.connect = async () => { await connect(); closed = false }
+    adapter.controls = async (...args) => { if (closed) throw Error('transport closed'); return read(...args) }
+    await bench.action(id, 'recover')
+    expect(bench.state().cameras[0].connected).toBe(true)
+    expect(camera.calls).toEqual(['connect', 'recover', 'connect'])
+    await bench.close()
+})
