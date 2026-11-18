@@ -250,7 +250,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
 
     return (
-        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 pl-4 [container-type:size]">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 p-4 [container-type:size]">
             {showFrame ? (
                 <div
                     className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}

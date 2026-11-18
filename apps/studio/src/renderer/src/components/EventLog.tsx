@@ -40,7 +40,7 @@ export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventL
     }, [logs, expanded])
 
     return (
-        <div className="flex shrink-0 flex-col bg-black/55">
+        <div className="flex shrink-0 flex-col border-t border-border bg-black/55">
             <div className="relative flex h-8 items-center gap-3 px-3 text-xs">
                 {leading}
                 <Button

@@ -12,7 +12,7 @@ import {
 } from '@kevinschaich/components'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
 import { Resizer } from '@renderer/components/Resizer'
-import { VoiceBeam } from '@renderer/components/voice-glow'
+import { VoiceRibbons } from '@renderer/components/VoiceRibbons'
 import {
     AssistantSetupNotice,
     formatDownloadSize,
@@ -45,54 +45,34 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
     speechModelBytes: 0,
 }
 
-/**
- * The library's mobile preset is tuned for a ~400px-wide screen at scale 1.25. `scale` grows heights as well as
- * widths, so it stays fixed here and only the horizontal geometry widens to the panel.
- */
-const VOICE_GLOW_REFERENCE_WIDTH = 400
-const VOICE_GLOW_PRESET_SCALE = 1.25
-const VOICE_GLOW_SCALE = 1.5
-const VOICE_GLOW_PRESET_WIDTHS = { rangeWidth: 1.25, glowWidth: 1.15, lobeSpacing: 1.35 }
 /** How far the glow fades out before the panel's right edge, where the sidebar begins. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
 /**
- * Darkgrade's gold as the site's lamp halo carries it: amber golds with its reds and oranges among them (the halo's
- * outer layers, 239 141 64 and 229 91 33), out of order so neighbouring lobes differ. All are saturated: the lobes
- * drift sideways with the voice, so each is dim somewhere, and a pale yellow dimmed against near-black reads olive.
+ * The strands' colours from the outside of the ribbon in, in darkgrade.com's lamp: its halo's red-orange and amber,
+ * then the gold, a pale gold and a white-hot centre strand.
  */
-const VOICE_GLOW_GOLDS = [
-    'rgb(240, 175, 90)',
-    'rgb(229, 104, 44)',
-    'rgb(234, 164, 78)',
-    'rgb(214, 124, 50)',
+const VOICE_RIBBON_COLORS = [
+    'rgb(229, 91, 33)',
     'rgb(239, 141, 64)',
-    'rgb(206, 84, 40)',
-    'rgb(236, 170, 84)',
+    'rgb(246, 185, 97)',
+    'rgb(250, 214, 150)',
+    'rgb(255, 244, 224)',
 ]
-/** The band: a warm near-white ridge whose fringes split into gold and red-orange ribbons, not red, green and blue. */
-const VOICE_GLOW_BAND = {
-    core: 'rgb(255, 242, 220)',
-    above: 'rgb(245, 185, 85)',
-    mid: 'rgb(250, 214, 150)',
-    below: 'rgb(229, 91, 33)',
-}
 
 /**
- * Voice (libraries.dev's voice glow), in Darkgrade's gold, across the whole panel, behind its contents and on down behind the status bar
- * to the bottom of the window: it rises and blooms from there with the microphone's level while listening.
+ * The voice panel's glow: bright strands of light rising from the bottom of the window as you speak, on a soft haze
+ * (the lineup's "Bold strands": five thick strands fanned wide with a heavy glow). It sits behind the panel's
+ * contents and runs on down behind the status bar to the window's bottom edge, where the strands rest.
  */
 function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | null }): React.JSX.Element {
     const ref = useRef<HTMLDivElement>(null)
-    const [width, setWidth] = useState(VOICE_GLOW_REFERENCE_WIDTH)
     // The distance from the panel's bottom to the window's: the status bar's height, more while its log is open.
     const [below, setBelow] = useState(0)
     useEffect(() => {
         const panel = ref.current?.parentElement
         if (!panel) return
         const measure = (): void => {
-            const bounds = panel.getBoundingClientRect()
-            setWidth(Math.round(bounds.width))
-            setBelow(Math.max(0, Math.round(window.innerHeight - bounds.bottom)))
+            setBelow(Math.max(0, Math.round(window.innerHeight - panel.getBoundingClientRect().bottom)))
         }
         measure()
         const observer = new ResizeObserver(measure)
@@ -100,7 +80,6 @@ function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | 
         observer.observe(document.documentElement)
         return () => observer.disconnect()
     }, [])
-    const widen = (width / VOICE_GLOW_REFERENCE_WIDTH) * (VOICE_GLOW_PRESET_SCALE / VOICE_GLOW_SCALE)
     const fade = `linear-gradient(to right, black calc(100% - ${VOICE_GLOW_RIGHT_FADE}), transparent)`
     return (
         <div
@@ -109,52 +88,19 @@ function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | 
             style={{ bottom: -below, isolation: 'isolate', maskImage: fade, WebkitMaskImage: fade }}
             aria-hidden
         >
-            <VoiceBeam
-                type="mobile"
-                scale={VOICE_GLOW_SCALE}
-                rangeWidth={VOICE_GLOW_PRESET_WIDTHS.rangeWidth * widen}
-                glowWidth={VOICE_GLOW_PRESET_WIDTHS.glowWidth * widen}
-                lobeSpacing={VOICE_GLOW_PRESET_WIDTHS.lobeSpacing * widen}
-                // The library's gold palette, recoloured to Darkgrade's own golds.
-                colorVariant="gold"
-                colors={VOICE_GLOW_GOLDS}
-                bandColors={VOICE_GLOW_BAND}
-                // Held still, with the dark theme's +5° hue offset turned back so the golds don't lean yellow-green.
-                staticColors
-                saturation={1.4}
-                // A defined peak, not a dome fading top to bottom: a narrower, cusp-like bell set higher, a ridge that
-                // doesn't curl up at the edges, crisper lobes. Like a lens flare, its fringes split wide into ribbons
-                // and a small white-hot core sits at the centre.
-                bandSpread={0.5}
-                bandCurve={1.45}
-                bandPosition={0.55}
-                bandStrength={1.7}
-                bandWidth={1.6}
-                bandOffset={-36}
-                bandTail={0.15}
-                bandAberration={1}
-                coreLight={0.7}
-                coreLightWidth={0.7}
-                coreLightHeight={0.45}
-                bend={80}
-                softness={0.95}
-                active={active}
-                // The microphone itself, read every frame by the glow's own analyser: the transcription's level comes
-                // in 80 ms blocks after noise suppression and gain control, which lags each syllable by a beat.
+            <VoiceRibbons
+                // The microphone itself, read every frame by the ribbons' own analyser: the transcription's level
+                // comes in 80 ms blocks after noise suppression and gain control, which lags each syllable by a beat.
                 stream={stream}
-                // Quick to rise and fall with each syllable (the library's 0.325 s / 0.86 s lag behind speech), and
-                // a low reach, so it stays near the bottom and only loud speech lifts it.
-                attack={0.03}
-                release={0.18}
-                reach={0.7}
-                // The distortion layer is painted only inside a strip sized to the glow's recent height; a sudden
-                // rise cuts its warped copy flat, a sliver at the peak. Off, the peak stays smooth.
-                distortion={0}
-                borderRadius={0}
-                style={{ position: 'absolute', inset: 0, ['--voice-hue-base' as string]: '-10deg' }}
-            >
-                <div className="size-full" />
-            </VoiceBeam>
+                active={active}
+                colors={VOICE_RIBBON_COLORS}
+                strands={5}
+                lineWidth={2.4}
+                fan={0.34}
+                glow={1.6}
+                hotspot={1.3}
+                style={{ position: 'absolute', inset: 0 }}
+            />
         </div>
     )
 }
