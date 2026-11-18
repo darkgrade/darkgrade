@@ -220,7 +220,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     return (
         <section
             id="voice-panel"
-            className="voice-panel relative shrink-0 border-t border-border bg-black/55"
+            className="voice-panel relative shrink-0 border-t border-border"
             style={{ ['--voice-height' as string]: `${height.size}px` }}
             data-expanded={expanded}
             data-dragging={height.dragging || undefined}

@@ -104,8 +104,8 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const tool =
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
-        <div className="flex shrink-0 justify-center bg-black/55 px-4 pb-4">
-            <div className="flex items-center gap-1 rounded-xl border border-foreground/8 bg-[#171716] p-1 shadow-[inset_0_1px_0_rgb(255_255_255/5%),0_8px_24px_-8px_rgb(0_0_0/60%)]">
+        <div className="flex shrink-0 justify-center px-4 pb-3">
+            <div className="flex items-center gap-1 rounded-xl border border-foreground/8 bg-float-raised p-1 shadow-[inset_0_1px_0_rgb(255_255_255/5%),0_8px_24px_-8px_rgb(0_0_0/60%)]">
                 <HoverTip
                     tip={
                         <>
@@ -288,7 +288,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 p-4 [container-type:size]">
+            <div className="relative flex min-h-0 flex-1 items-center justify-center p-4 [container-type:size]">
                 {showFrame ? (
                     <div
                         className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}

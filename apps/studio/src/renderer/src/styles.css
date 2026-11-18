@@ -11,7 +11,11 @@
  */
 html.dark {
     color-scheme: dark;
-    --background: #0a0a0b;
+    /* Screen Studio's flat near-black, a touch cool, everywhere: window, top bar, status bar, viewer. */
+    --background: #07090b;
+    /* Floating panels a step or two above it: the inspector card and the capture dock. */
+    --float: #131419;
+    --float-raised: #18191e;
     --foreground: #eae6dc;
     --card: #101012;
     --card-foreground: #eae6dc;
@@ -43,6 +47,8 @@ html.dark {
     --color-gold: var(--gold);
     --color-gold-dim: var(--gold-dim);
     --color-canvas: var(--canvas);
+    --color-float: var(--float);
+    --color-float-raised: var(--float-raised);
     /* One face everywhere, as the site sets its running text: Public Sans, with tabular figures for numbers. */
     --font-mono: var(--font-sans);
 }

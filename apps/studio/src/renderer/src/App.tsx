@@ -1,5 +1,4 @@
 import { toast, Toaster, TooltipProvider } from '@kevinschaich/components'
-import { AmbientBackdrop } from '@renderer/components/AmbientBackdrop'
 import { EventLog } from '@renderer/components/EventLog'
 import { FilesPanel } from '@renderer/components/FilesPanel'
 import { FocusPanel } from '@renderer/components/FocusPanel'
@@ -289,7 +288,6 @@ export function App(): React.JSX.Element {
         <TooltipProvider delay={400}>
             <Toaster>
                 <div className="relative flex h-full flex-col">
-                    <AmbientBackdrop active={cameraState.connected} />
                     <TopBar
                         cameraState={cameraState}
                         busy={busy}
@@ -325,7 +323,7 @@ export function App(): React.JSX.Element {
                             />
                         </main>
                         <aside
-                            className="relative flex shrink-0 flex-col border-l border-border bg-black/55"
+                            className="relative mt-4 mr-3 mb-3 flex shrink-0 flex-col rounded-xl border border-foreground/7 bg-float"
                             style={{ width: sidebar.size }}
                             aria-label="Camera controls"
                         >
@@ -340,7 +338,7 @@ export function App(): React.JSX.Element {
                                 onKeyDown={sidebar.onKeyDown}
                             />
                             {/* The controls scroll and fade at an edge they run past; the panel itself stays solid. */}
-                            <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
+                            <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto rounded-xl">
                                 <ScopesPanel
                                     active={cameraState.connected && cameraState.liveView}
                                     connected={cameraState.connected}
