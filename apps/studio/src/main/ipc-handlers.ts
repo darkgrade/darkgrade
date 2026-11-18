@@ -3,7 +3,7 @@ import { cameraService } from '@main/camera-service'
 import { changeDiagnostics, diagnosticsContact, diagnosticsStatus } from '@main/diagnostics'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
-import { sampleProcesses } from '@main/perf-monitor'
+import { openPerfWindow, perfMonitorOpen, receivePerfReport, sampleProcesses } from '@main/perf-monitor'
 import { preferences } from '@main/preferences'
 import { studioView } from '@main/studio-view'
 import { voiceService } from '@main/voice/voice-service'
@@ -12,6 +12,7 @@ import type {
     CaptureOptions,
     DownloadRequest,
     IpcResult,
+    PerfReport,
     Preferences,
     StudioViewState,
     TranscriptSegment,
@@ -57,6 +58,9 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     handle(IPC.PreferencesSet, (change: Partial<Preferences>) => preferences.set(change))
     handle(IPC.McpServerGetStatus, () => studioMcpServer.getStatus())
     handle(IPC.PerfSampleProcesses, sampleProcesses)
+    handle(IPC.PerfOpen, openPerfWindow)
+    handle(IPC.PerfIsOpen, perfMonitorOpen)
+    handle(IPC.PerfReport, (report: PerfReport) => receivePerfReport(report))
     assistantService.setBroadcast(broadcast)
     studioView.setBroadcast(broadcast)
     handle(IPC.ViewReportState, (state: StudioViewState) => studioView.report(state))

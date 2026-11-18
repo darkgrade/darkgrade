@@ -1,4 +1,5 @@
 import { App } from '@renderer/App'
+import { PerfWindow } from '@renderer/components/PerfMonitor'
 import { PreferencesWindow } from '@renderer/components/PreferencesWindow'
 import '@renderer/styles.css'
 import { StrictMode } from 'react'
@@ -32,5 +33,13 @@ watchScrolling()
 if (navigator.userAgent.includes('Macintosh')) document.documentElement.dataset.vibrancy = ''
 
 createRoot(document.getElementById('root')!).render(
-    <StrictMode>{window.location.hash === '#preferences' ? <PreferencesWindow /> : <App />}</StrictMode>
+    <StrictMode>
+        {window.location.hash === '#preferences' ? (
+            <PreferencesWindow />
+        ) : window.location.hash === '#perf' ? (
+            <PerfWindow />
+        ) : (
+            <App />
+        )}
+    </StrictMode>
 )

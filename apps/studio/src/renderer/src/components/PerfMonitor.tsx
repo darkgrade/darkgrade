@@ -1,134 +1,22 @@
 import { HoverTip } from '@renderer/components/HoverTip'
 import { perf, takePerf } from '@renderer/lib/perf'
-import type { ProcessSample } from '@shared/ipc'
-import { Activity, X } from 'lucide-react'
+import type { PerfReport, ProcessSample } from '@shared/ipc'
+import { Activity } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 /**
  * Developer Mode's performance monitor, after Fairway Atlas's: a card at the foot of the sidebar with the frame rate
- * and Studio's total CPU, opening a panel of every process Studio runs and, inside the Studio window, what its time
- * goes to. Each row has a live graph of the last minute; numbers refresh every second and every three seconds the
- * rows slide into order of cost. Nothing is measured while Developer Mode is off; the detailed timing runs only while
- * the panel is open.
+ * and Studio's CPU and GPU, opening a window of its own with every process Studio runs and, inside the Studio window,
+ * what its time goes to. Each row shows CPU and GPU side by side, each with a live graph of the last minute; numbers
+ * refresh every second and every three seconds the rows slide into order of cost. The detailed timing in the Studio
+ * window runs only while the monitor window is open.
  */
 
 const HISTORY = 60
 const SAMPLE_MS = 1000
 const RESORT_MS = 3000
-const OPEN_KEY = 'studio.perf-open'
 
-interface Row {
-    key: string
-    label: string
-    detail?: string
-    /** % of one core (CPU) or of the GPU's time. */
-    value: number
-    history: number[]
-    unit: 'cpu' | 'gpu'
-}
-
-function push(history: number[] | undefined, value: number): number[] {
-    return [...(history ?? []), value].slice(-HISTORY)
-}
-
-function percent(value: number): string {
-    return value >= 10 ? `${Math.round(value)}%` : `${value.toFixed(1)}%`
-}
-
-/** A minute of one row as a filled line, on its section's scale so rows compare at a glance. */
-function Spark({ values, unit, peak }: { values: number[]; unit: Row['unit']; peak: number }): React.JSX.Element {
-    const width = 96
-    const height = 22
-    const x = (index: number): number => width - (values.length - 1 - index) * (width / (HISTORY - 1))
-    const y = (value: number): number => height - 1 - (value / peak) * (height - 3)
-    const line = values
-        .map((value, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(value).toFixed(1)}`)
-        .join('')
-    const colour = unit === 'gpu' ? 'oklch(0.75 0.12 240)' : 'var(--gold)'
-    return (
-        <svg width={width} height={height} className="shrink-0" aria-hidden>
-            {values.length > 1 && (
-                <>
-                    <path
-                        d={`${line}L${x(values.length - 1)},${height}L${x(0)},${height}Z`}
-                        fill={colour}
-                        opacity={0.14}
-                    />
-                    <path d={line} fill="none" stroke={colour} strokeWidth={1.25} strokeLinejoin="round" />
-                </>
-            )}
-        </svg>
-    )
-}
-
-/** Rows that slide into their new places when the order changes, rather than jumping. */
-function SortedRows({ rows, order, peak }: { rows: Row[]; order: string[]; peak: number }): React.JSX.Element {
-    const listRef = useRef<HTMLOListElement>(null)
-    const positions = useRef(new Map<string, number>())
-    useLayoutEffect(() => {
-        const list = listRef.current
-        if (!list) return
-        for (const element of list.children as HTMLCollectionOf<HTMLElement>) {
-            const key = element.dataset.key!
-            const top = element.offsetTop
-            const before = positions.current.get(key)
-            positions.current.set(key, top)
-            if (before === undefined || before === top) continue
-            element.animate([{ transform: `translateY(${before - top}px)` }, { transform: 'none' }], {
-                duration: 600,
-                easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-            })
-        }
-    }, [order])
-    const byKey = new Map(rows.map(row => [row.key, row]))
-    return (
-        <ol ref={listRef} className="flex flex-col">
-            {order
-                .map(key => byKey.get(key))
-                .filter(row => row !== undefined)
-                .map(row => (
-                    <li key={row.key} data-key={row.key} className="flex items-center gap-3 py-1.5">
-                        <div className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate text-[12px] text-foreground">{row.label}</span>
-                            {row.detail && (
-                                <span className="truncate text-[11px] text-muted-foreground">{row.detail}</span>
-                            )}
-                        </div>
-                        <Spark values={row.history} unit={row.unit} peak={peak} />
-                        <span className="w-12 shrink-0 text-right font-mono text-[12px] text-foreground tabular-nums">
-                            {percent(row.value)}
-                        </span>
-                    </li>
-                ))}
-        </ol>
-    )
-}
-
-/** The top of a section's graphs: a quarter above the largest value any row reached in the last minute (at least 5%). */
-function sectionPeak(rows: Row[]): number {
-    return Math.max(5, ...rows.flatMap(row => row.history)) * 1.25
-}
-
-function Section(props: {
-    title: string
-    note: string
-    rows: Row[]
-    order: string[]
-    peak?: number
-}): React.JSX.Element | null {
-    if (!props.rows.length) return null
-    return (
-        <section className="flex flex-col gap-1">
-            <header className="flex items-baseline justify-between gap-3">
-                <h3 className="text-[12px] font-semibold text-foreground">{props.title}</h3>
-                <span className="text-[11px] text-muted-foreground">{props.note}</span>
-            </header>
-            <SortedRows rows={props.rows} order={props.order} peak={props.peak ?? sectionPeak(props.rows)} />
-        </section>
-    )
-}
-
-/** Frames the page drew over the last second (requestAnimationFrame), for the card. */
+/** Frames the page drew over the last second (requestAnimationFrame). */
 function useFrameRate(): number {
     const [fps, setFps] = useState(0)
     useEffect(() => {
@@ -149,202 +37,350 @@ function useFrameRate(): number {
     return fps
 }
 
-export function PerfMonitor(): React.JSX.Element {
-    const [open, setOpen] = useState(() => {
-        try {
-            return localStorage.getItem(OPEN_KEY) === '1'
-        } catch {
-            return false
-        }
-    })
-    const fps = useFrameRate()
-    const [processes, setProcesses] = useState<Row[]>([])
-    const [inside, setInside] = useState<Row[]>([])
-    const [gpu, setGpu] = useState<Row[]>([])
-    const [orders, setOrders] = useState<Record<string, string[]>>({ processes: [], inside: [], gpu: [] })
-    const histories = useRef(new Map<string, number[]>())
-    const lastSort = useRef(0)
+function percent(value: number | null): string {
+    if (value === null) return '—'
+    return value >= 10 ? `${Math.round(value)}%` : `${value.toFixed(1)}%`
+}
 
-    useEffect(() => {
-        try {
-            localStorage.setItem(OPEN_KEY, open ? '1' : '0')
-        } catch {
-            // Not kept; the panel still opens and closes.
-        }
-    }, [open])
+const CPU_COLOUR = 'var(--gold)'
+const GPU_COLOUR = 'oklch(0.75 0.12 240)'
 
-    // The backtick toggles the panel, as in Fairway Atlas, while nothing editable has focus.
+/** A minute of one value as a filled line, on its column's scale so rows compare at a glance. */
+function Spark(props: { values: number[]; colour: string; peak: number; width?: number }): React.JSX.Element {
+    const width = props.width ?? 120
+    const height = 24
+    const { values } = props
+    const x = (index: number): number => width - (values.length - 1 - index) * (width / (HISTORY - 1))
+    const y = (value: number): number => height - 1 - (value / props.peak) * (height - 3)
+    const line = values
+        .map((value, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(value).toFixed(1)}`)
+        .join('')
+    return (
+        <svg width={width} height={height} className="shrink-0" aria-hidden>
+            {values.length > 1 && (
+                <>
+                    <path
+                        d={`${line}L${x(values.length - 1)},${height}L${x(0)},${height}Z`}
+                        fill={props.colour}
+                        opacity={0.14}
+                    />
+                    <path d={line} fill="none" stroke={props.colour} strokeWidth={1.25} strokeLinejoin="round" />
+                </>
+            )}
+        </svg>
+    )
+}
+
+/** The top of a column's graphs: a quarter above the largest value any row reached in the last minute (at least 5%). */
+function peakOf(histories: number[][]): number {
+    return Math.max(5, ...histories.flat()) * 1.25
+}
+
+// ---------- the card in the Studio window
+
+/** The Studio window's side: times its subsystems while the monitor window is open and sends the totals each second. */
+function usePerfReporter(fps: number): void {
+    const fpsRef = useRef(fps)
+    fpsRef.current = fps
     useEffect(() => {
-        const onKey = (event: KeyboardEvent): void => {
-            if ((event.target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable]')) return
-            if (event.key === '`') setOpen(value => !value)
-            if (event.key === 'Escape') setOpen(false)
+        let timer: ReturnType<typeof setInterval> | undefined
+        const enable = (enabled: boolean): void => {
+            perf.enabled = enabled
+            clearInterval(timer)
+            takePerf()
+            if (enabled)
+                timer = setInterval(
+                    () => void window.studio.perfReport({ fps: fpsRef.current, subsystems: takePerf() }),
+                    SAMPLE_MS
+                )
         }
-        window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
+        // A reply that lands after this effect was cleaned up must not start a second reporter.
+        let active = true
+        void window.studio.perfIsOpen().then(result => active && result.ok && enable(result.data))
+        const unsubscribe = window.studio.onPerfEnabled(enable)
+        return () => {
+            active = false
+            unsubscribe()
+            enable(false)
+        }
     }, [])
+}
 
+export function PerfCard(): React.JSX.Element {
+    const fps = useFrameRate()
+    usePerfReporter(fps)
+    const [totals, setTotals] = useState<{ cpu: number[]; gpu: number[] }>({ cpu: [], gpu: [] })
     useEffect(() => {
-        let cancelled = false
-        perf.enabled = open
-        takePerf()
         const sample = async (): Promise<void> => {
             const result = await window.studio.perfSampleProcesses()
-            if (cancelled || !result.ok) return
-            const remember = (key: string, value: number): number[] => {
-                const history = push(histories.current.get(key), value)
-                histories.current.set(key, history)
-                return history
-            }
-            const processRows: Row[] = result.data.map(entry => ({
-                key: `process:${entry.name}`,
-                label: entry.name,
-                detail: `${entry.role} · ${Math.round(entry.memoryMegabytes)} MB`,
-                value: entry.cpuPercent,
-                history: remember(`process:${entry.name}`, entry.cpuPercent),
-                unit: 'cpu',
+            if (!result.ok) return
+            const ours = result.data.filter(entry => !entry.outside)
+            const sum = (key: 'cpuPercent' | 'gpuPercent'): number =>
+                ours.reduce((total, entry) => total + entry[key], 0)
+            setTotals(previous => ({
+                cpu: [...previous.cpu, sum('cpuPercent')].slice(-HISTORY),
+                gpu: [...previous.gpu, sum('gpuPercent')].slice(-HISTORY),
             }))
-            const total = result.data.reduce((sum, entry) => sum + entry.cpuPercent, 0)
-            processRows.unshift({
-                key: 'process:total',
-                label: 'All of Studio',
-                detail: `${result.data.length} processes, together`,
-                value: total,
-                history: remember('process:total', total),
-                unit: 'cpu',
-            })
-            setProcesses(processRows)
-
-            if (open) {
-                const measured = takePerf()
-                const renderer: ProcessSample | undefined = result.data.find(entry => entry.name === 'Studio window')
-                const timed = measured.filter(entry => entry.cpuPercent > 0)
-                const timedTotal = timed.reduce((sum, entry) => sum + entry.cpuPercent, 0)
-                const insideRows: Row[] = timed.map(entry => ({
-                    key: `cpu:${entry.label}`,
-                    label: entry.label,
-                    value: entry.cpuPercent,
-                    history: remember(`cpu:${entry.label}`, entry.cpuPercent),
-                    unit: 'cpu',
-                }))
-                if (renderer) {
-                    const other = Math.max(0, renderer.cpuPercent - timedTotal)
-                    insideRows.push({
-                        key: 'cpu:other',
-                        label: 'Other page work',
-                        detail: 'React, layout, styles, microphone capture, IPC',
-                        value: other,
-                        history: remember('cpu:other', other),
-                        unit: 'cpu',
-                    })
-                }
-                setInside(insideRows)
-                setGpu(
-                    measured
-                        .filter(entry => entry.gpuPercent > 0)
-                        .map(entry => ({
-                            key: `gpu:${entry.label}`,
-                            label: entry.label,
-                            value: entry.gpuPercent,
-                            history: remember(`gpu:${entry.label}`, entry.gpuPercent),
-                            unit: 'gpu',
-                        }))
-                )
-            }
         }
         void sample()
         const timer = setInterval(() => void sample(), SAMPLE_MS)
-        return () => {
-            cancelled = true
-            clearInterval(timer)
-            perf.enabled = false
+        // The backtick opens the monitor, as in Fairway Atlas, while nothing editable has focus.
+        const onKey = (event: KeyboardEvent): void => {
+            if ((event.target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable]')) return
+            if (event.key === '`') void window.studio.perfOpen()
         }
-    }, [open])
-
-    // Every three seconds the rows take the order of their cost; new rows join at once.
-    useEffect(() => {
-        const sorted = (rows: Row[]): string[] => [...rows].sort((a, b) => b.value - a.value).map(row => row.key)
-        const due = performance.now() - lastSort.current >= RESORT_MS
-        setOrders(previous => {
-            const next = { ...previous }
-            for (const [name, rows] of Object.entries({ processes, inside, gpu })) {
-                const known = previous[name] ?? []
-                const missing = rows.some(row => !known.includes(row.key)) || known.length !== rows.length
-                if (due || missing) next[name] = sorted(rows)
-            }
-            return next
-        })
-        if (due) lastSort.current = performance.now()
-    }, [processes, inside, gpu])
-
-    const total = processes.find(row => row.key === 'process:total')
+        window.addEventListener('keydown', onKey)
+        return () => {
+            clearInterval(timer)
+            window.removeEventListener('keydown', onKey)
+        }
+    }, [])
     return (
-        <div className="relative shrink-0 px-3 pb-3">
+        <div className="shrink-0 px-3 pb-3">
             <HoverTip
-                tip="Performance (`)"
+                tip="Open the performance monitor (`)"
                 render={
                     <button
                         type="button"
-                        aria-expanded={open}
-                        onClick={() => setOpen(value => !value)}
+                        onClick={() => void window.studio.perfOpen()}
                         className="flex w-full items-center gap-2.5 rounded-lg bg-foreground/5 px-2.5 py-1.5 text-left hover:bg-foreground/8"
                     />
                 }
             >
-                <Activity className="size-3.5 text-muted-foreground" aria-hidden />
-                <span className="font-mono text-[12px] text-foreground tabular-nums">{fps} fps</span>
-                <span className="font-mono text-[12px] text-muted-foreground tabular-nums">
-                    CPU {total ? percent(total.value) : '—'}
+                <Activity className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="font-mono text-[12px] whitespace-nowrap text-foreground tabular-nums">{fps} fps</span>
+                <span className="font-mono text-[12px] whitespace-nowrap text-muted-foreground tabular-nums">
+                    CPU {percent(totals.cpu.at(-1) ?? null)} · GPU {percent(totals.gpu.at(-1) ?? null)}
                 </span>
-                {total && (
-                    <span className="ml-auto">
-                        <Spark values={total.history} unit="cpu" peak={sectionPeak([total])} />
-                    </span>
-                )}
             </HoverTip>
-            {open && (
-                <section
-                    role="dialog"
-                    aria-label="Performance"
-                    className="absolute bottom-3 left-full z-50 ml-3 flex max-h-[80vh] w-[420px] flex-col gap-4 overflow-y-auto rounded-xl bg-popover p-4 shadow-2xl ring-1 ring-foreground/10"
-                >
-                    <header className="flex items-center justify-between gap-3">
-                        <div className="flex flex-col">
-                            <h2 className="text-[14px] font-semibold text-foreground">Performance</h2>
-                            <span className="text-[11px] text-muted-foreground">
-                                100% is one full core · the last minute, re-sorted every 3 s
-                            </span>
-                        </div>
-                        <button
-                            type="button"
-                            aria-label="Close"
-                            onClick={() => setOpen(false)}
-                            className="rounded-md p-1 text-muted-foreground hover:bg-foreground/8 hover:text-foreground"
+        </div>
+    )
+}
+
+// ---------- the monitor window
+
+interface Row {
+    key: string
+    label: string
+    detail?: string
+    /** null where this row has no such cost (or it can't be measured), shown as a dash. */
+    cpu: number | null
+    gpu: number | null
+    cpuHistory: number[]
+    gpuHistory: number[]
+}
+
+function push(history: number[] | undefined, value: number | null): number[] {
+    return value === null ? (history ?? []) : [...(history ?? []), value].slice(-HISTORY)
+}
+
+/** Rows that slide into their new places when the order changes, rather than jumping. */
+function Table(props: { title: string; note: string; rows: Row[]; order: string[] }): React.JSX.Element | null {
+    const listRef = useRef<HTMLOListElement>(null)
+    const positions = useRef(new Map<string, number>())
+    useLayoutEffect(() => {
+        const list = listRef.current
+        if (!list) return
+        for (const element of list.children as HTMLCollectionOf<HTMLElement>) {
+            const key = element.dataset.key!
+            const top = element.offsetTop
+            const before = positions.current.get(key)
+            positions.current.set(key, top)
+            if (before === undefined || before === top) continue
+            element.animate([{ transform: `translateY(${before - top}px)` }, { transform: 'none' }], {
+                duration: 600,
+                easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            })
+        }
+    }, [props.order])
+    if (!props.rows.length) return null
+    const byKey = new Map(props.rows.map(row => [row.key, row]))
+    const cpuPeak = peakOf(props.rows.filter(row => row.key !== 'total').map(row => row.cpuHistory))
+    const gpuPeak = peakOf(props.rows.filter(row => row.key !== 'total').map(row => row.gpuHistory))
+    return (
+        <section className="flex flex-col gap-1">
+            <header className="grid grid-cols-[minmax(0,1fr)_minmax(0,180px)_minmax(0,180px)] items-baseline gap-6 px-1">
+                <div className="flex items-baseline gap-2">
+                    <h2 className="text-[14px] font-semibold text-foreground">{props.title}</h2>
+                    <span className="truncate text-[11px] text-muted-foreground">{props.note}</span>
+                </div>
+                <span className="text-right text-[11px] font-medium text-muted-foreground">CPU · % of a core</span>
+                <span className="text-right text-[11px] font-medium text-muted-foreground">GPU · % of the GPU</span>
+            </header>
+            <ol ref={listRef} className="flex flex-col rounded-xl bg-(--card-surface) py-1">
+                {props.order
+                    .map(key => byKey.get(key))
+                    .filter(row => row !== undefined)
+                    .map(row => (
+                        <li
+                            key={row.key}
+                            data-key={row.key}
+                            className="grid grid-cols-[minmax(0,1fr)_minmax(0,180px)_minmax(0,180px)] items-center gap-6 px-4 py-2"
                         >
-                            <X className="size-4" />
-                        </button>
-                    </header>
-                    <Section
-                        title="Processes"
-                        note="CPU"
-                        rows={processes}
-                        order={orders.processes}
-                        peak={sectionPeak(processes.filter(row => row.key !== 'process:total'))}
-                    />
-                    <Section
-                        title="Inside the Studio window"
-                        note="CPU of its renderer"
-                        rows={inside}
-                        order={orders.inside}
-                    />
-                    <Section title="GPU passes" note="GPU time" rows={gpu} order={orders.gpu} />
-                    {!gpu.length && inside.length > 0 && (
-                        <p className="text-[11px] text-muted-foreground">
-                            GPU times appear where the GPU reports pass timestamps.
-                        </p>
-                    )}
-                </section>
-            )}
+                            <div className="flex min-w-0 flex-col">
+                                <span className="truncate text-[13px] text-foreground">{row.label}</span>
+                                {row.detail && (
+                                    <span className="truncate text-[11px] text-muted-foreground">{row.detail}</span>
+                                )}
+                            </div>
+                            {(['cpu', 'gpu'] as const).map(unit => (
+                                <div key={unit} className="flex items-center justify-end gap-3">
+                                    <Spark
+                                        values={unit === 'cpu' ? row.cpuHistory : row.gpuHistory}
+                                        colour={unit === 'cpu' ? CPU_COLOUR : GPU_COLOUR}
+                                        peak={
+                                            row.key === 'total'
+                                                ? peakOf([unit === 'cpu' ? row.cpuHistory : row.gpuHistory])
+                                                : unit === 'cpu'
+                                                  ? cpuPeak
+                                                  : gpuPeak
+                                        }
+                                        width={110}
+                                    />
+                                    <span
+                                        className={`w-12 shrink-0 text-right font-mono text-[12px] tabular-nums ${row[unit] === null ? 'text-muted-foreground' : 'text-foreground'}`}
+                                    >
+                                        {percent(row[unit])}
+                                    </span>
+                                </div>
+                            ))}
+                        </li>
+                    ))}
+            </ol>
+        </section>
+    )
+}
+
+export function PerfWindow(): React.JSX.Element {
+    const [processes, setProcesses] = useState<Row[]>([])
+    const [inside, setInside] = useState<Row[]>([])
+    const [fps, setFps] = useState<number | null>(null)
+    const [orders, setOrders] = useState<{ processes: string[]; inside: string[] }>({ processes: [], inside: [] })
+    const histories = useRef(new Map<string, { cpu: number[]; gpu: number[] }>())
+    const report = useRef<PerfReport | null>(null)
+    const lastSort = useRef(0)
+
+    useEffect(() => window.studio.onPerfReport(next => (report.current = next)), [])
+
+    useEffect(() => {
+        const remember = (key: string, cpu: number | null, gpu: number | null): { cpu: number[]; gpu: number[] } => {
+            const before = histories.current.get(key)
+            const next = { cpu: push(before?.cpu, cpu), gpu: push(before?.gpu, gpu) }
+            histories.current.set(key, next)
+            return next
+        }
+        const row = (
+            key: string,
+            label: string,
+            detail: string | undefined,
+            cpu: number | null,
+            gpu: number | null
+        ): Row => {
+            const history = remember(key, cpu, gpu)
+            return { key, label, detail, cpu, gpu, cpuHistory: history.cpu, gpuHistory: history.gpu }
+        }
+        const sample = async (): Promise<void> => {
+            const result = await window.studio.perfSampleProcesses()
+            if (!result.ok) return
+            const ours = result.data.filter(entry => !entry.outside)
+            const sum = (key: 'cpuPercent' | 'gpuPercent'): number =>
+                ours.reduce((total, entry) => total + entry[key], 0)
+            setProcesses([
+                row(
+                    'total',
+                    'All of Studio',
+                    `${ours.length} processes, together`,
+                    sum('cpuPercent'),
+                    sum('gpuPercent')
+                ),
+                ...result.data.map((entry: ProcessSample) =>
+                    row(
+                        `process:${entry.name}`,
+                        entry.name,
+                        `${entry.role} · ${Math.round(entry.memoryMegabytes)} MB`,
+                        entry.cpuPercent,
+                        entry.gpuPercent
+                    )
+                ),
+            ])
+            const current = report.current
+            report.current = null
+            if (!current) return
+            setFps(current.fps)
+            const studioWindow = result.data.find(entry => entry.name === 'Studio window')
+            const timedCpu = current.subsystems.reduce((total, entry) => total + entry.cpuPercent, 0)
+            const insideRows = current.subsystems.map(entry =>
+                row(
+                    `inside:${entry.label}`,
+                    entry.label,
+                    undefined,
+                    entry.cpuPercent,
+                    // Work done on a worker or the main thread alone has no GPU passes.
+                    /worker|detector/i.test(entry.label) ? null : entry.gpuPercent
+                )
+            )
+            if (studioWindow)
+                insideRows.push(
+                    row(
+                        'inside:other',
+                        'Other page work',
+                        'React, layout, styles, microphone capture, IPC; its GPU work is the GPU process compositing',
+                        Math.max(0, studioWindow.cpuPercent - timedCpu),
+                        null
+                    )
+                )
+            setInside(insideRows)
+        }
+        void sample()
+        const timer = setInterval(() => void sample(), SAMPLE_MS)
+        return () => clearInterval(timer)
+    }, [])
+
+    // Every three seconds the rows take the order of their cost (CPU and GPU together); new rows join at once.
+    useEffect(() => {
+        const cost = (row: Row): number => (row.key === 'total' ? Infinity : (row.cpu ?? 0) + (row.gpu ?? 0))
+        const sorted = (rows: Row[]): string[] => [...rows].sort((a, b) => cost(b) - cost(a)).map(row => row.key)
+        const due = performance.now() - lastSort.current >= RESORT_MS
+        setOrders(previous => {
+            const next = { ...previous }
+            for (const [name, rows] of Object.entries({ processes, inside }) as ['processes' | 'inside', Row[]][]) {
+                const known = previous[name]
+                const changed = known.length !== rows.length || rows.some(row => !known.includes(row.key))
+                if (due || changed) next[name] = sorted(rows)
+            }
+            return next
+        })
+        if (due) lastSort.current = performance.now()
+    }, [processes, inside])
+
+    return (
+        <div className="flex h-full flex-col">
+            <header className="flex h-11 shrink-0 items-center justify-center text-[13px] font-semibold [-webkit-app-region:drag]">
+                Performance
+            </header>
+            <main className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 pt-2 pb-8">
+                <p className="px-1 text-[12px] text-muted-foreground">
+                    The last minute, refreshed every second; rows re-sort by cost every 3 s.
+                    {fps !== null && <> The Studio window is drawing {fps} frames a second.</>}
+                </p>
+                <Table
+                    title="Processes"
+                    note="Studio's own, and WindowServer"
+                    rows={processes}
+                    order={orders.processes}
+                />
+                <Table
+                    title="Inside the Studio window"
+                    note="its renderer's CPU, and GPU time by draw loop"
+                    rows={inside}
+                    order={orders.inside}
+                />
+                {!inside.length && (
+                    <p className="px-1 text-[12px] text-muted-foreground">
+                        Waiting for the Studio window's first report…
+                    </p>
+                )}
+            </main>
         </div>
     )
 }

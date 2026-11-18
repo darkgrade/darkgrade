@@ -51,9 +51,14 @@ export const IPC = {
     ViewReportState: 'view:report-state',
     VoiceDiagnostic: 'voice:diagnostic',
     PerfSampleProcesses: 'perf:sample-processes',
+    PerfOpen: 'perf:open',
+    PerfReport: 'perf:report',
+    PerfIsOpen: 'perf:is-open',
 } as const
 
 export const IPC_EVENTS = {
+    PerfEnabled: 'evt:perf-enabled',
+    PerfReport: 'evt:perf-report',
     State: 'evt:state',
     Log: 'evt:log',
     LiveViewFrame: 'evt:liveview-frame',
@@ -372,8 +377,18 @@ export interface ProcessSample {
     name: string
     /** What the process does, in a few words. */
     role: string
+    /** Not Studio's own: WindowServer, shown because it composites Studio's windows. */
+    outside: boolean
     cpuPercent: number
+    /** % of the GPU's time, from the time macOS records per process. */
+    gpuPercent: number
     memoryMegabytes: number
+}
+
+/** The Studio window's own breakdown, once a second while the monitor window is open. */
+export interface PerfReport {
+    fps: number
+    subsystems: { label: string; cpuPercent: number; gpuPercent: number }[]
 }
 
 export interface StudioApi {
@@ -449,6 +464,14 @@ export interface StudioApi {
     getMcpServerStatus(): Promise<IpcResult<McpServerStatus>>
     /** Every process Studio runs, with the CPU each used since the last call (Developer Mode's monitor). */
     perfSampleProcesses(): Promise<IpcResult<ProcessSample[]>>
+    /** Opens the performance monitor's window. */
+    perfOpen(): Promise<IpcResult<void>>
+    perfIsOpen(): Promise<IpcResult<boolean>>
+    /** The Studio window sends its breakdown here; the monitor window receives it. */
+    perfReport(report: PerfReport): Promise<IpcResult<void>>
+    onPerfReport(callback: (report: PerfReport) => void): () => void
+    /** Whether the monitor window is open, so the Studio window times its subsystems. */
+    onPerfEnabled(callback: (enabled: boolean) => void): () => void
     onMcpServerStatus(callback: (status: McpServerStatus) => void): () => void
     assistantGetStatus(): Promise<IpcResult<LocalModelStatus>>
     /** Hands a stretch of live transcript to the assistant to find and carry out camera requests. */
