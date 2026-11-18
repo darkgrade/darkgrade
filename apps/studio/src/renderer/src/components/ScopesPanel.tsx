@@ -103,7 +103,7 @@ export function ScopesPanel({ active, connected, assists, onAssistsChange }: Sco
     return (
         <InspectorSection title="Scopes" collapsible defaultOpen>
             <ToggleGroup
-                className="segmented w-full"
+                className="w-full rounded-lg bg-foreground/6 p-0.5"
                 spacing={0}
                 size="sm"
                 value={[scope]}
@@ -117,7 +117,7 @@ export function ScopesPanel({ active, connected, assists, onAssistsChange }: Sco
                     <ToggleGroupItem
                         key={option.id}
                         value={option.id}
-                        className="flex-1 rounded-sm! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground"
+                        className="flex-1 rounded-md! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground"
                     >
                         {option.label}
                     </ToggleGroupItem>

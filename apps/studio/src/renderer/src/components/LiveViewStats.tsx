@@ -21,7 +21,7 @@ interface LiveViewStatsProps {
 }
 
 const QUALITY_ITEM_CLASS =
-    'h-5 rounded-sm! px-2 text-[11px] text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground'
+    'h-5 rounded-[4px]! px-2 text-[11px] text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground'
 
 /** Live view's frame rate, resolution and Sony's LQ/HQ switch, at the end of the status bar. */
 export function LiveViewStats(props: LiveViewStatsProps): React.JSX.Element | null {
@@ -69,7 +69,7 @@ export function LiveViewStats(props: LiveViewStatsProps): React.JSX.Element | nu
             </Popover>
             {props.quality && (
                 <ToggleGroup
-                    className="segmented"
+                    className="rounded-md bg-foreground/6 p-0.5"
                     spacing={0}
                     size="sm"
                     value={props.quality.value ? [props.quality.value] : []}

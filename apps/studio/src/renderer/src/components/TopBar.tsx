@@ -170,7 +170,7 @@ export function TopBar({
     const connecting = cameraState.phase === 'connecting' || cameraState.phase === 'recovering'
     return (
         <header
-            className={`titlebar-drag grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] raised-bar items-center gap-3 border-b border-line pr-3 ${isMac ? 'pl-[110px]' : 'pl-4'}`}
+            className={`titlebar-drag grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-border bg-black/55 pr-3 ${isMac ? 'pl-[110px]' : 'pl-4'}`}
         >
             <div className="flex min-w-0 items-center gap-2">
                 <img className="h-3.5 w-auto" src={brandMark} alt="Darkgrade" draggable={false} />
@@ -183,7 +183,7 @@ export function TopBar({
                         <Button
                             variant="secondary"
                             size="sm"
-                            className="h-7 gap-0 rounded-md border border-line bg-well px-0 font-normal shadow-none hover:bg-well hover:border-foreground/15 data-popup-open:border-gold/60 [&>span]:px-3 [&>span+span]:border-l [&>span+span]:border-foreground/10"
+                            className="gap-3.5 rounded-full bg-foreground/8 px-3.5 font-normal hover:bg-foreground/12"
                         />
                     }
                 >

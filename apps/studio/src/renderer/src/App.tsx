@@ -325,7 +325,7 @@ export function App(): React.JSX.Element {
                             />
                         </main>
                         <aside
-                            className="relative flex shrink-0 flex-col border-l border-line bg-panel"
+                            className="relative flex shrink-0 flex-col border-l border-border bg-black/55"
                             style={{ width: sidebar.size }}
                             aria-label="Camera controls"
                         >

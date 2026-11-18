@@ -49,7 +49,7 @@ export function EventLog({
     }, [logs, expanded])
 
     return (
-        <div className="raised-bar flex shrink-0 flex-col border-t border-line">
+        <div className="flex shrink-0 flex-col border-t border-border bg-black/55">
             <div className="relative flex h-8 items-center gap-3 px-3 text-xs">
                 {leading}
                 {showActivity ? (
