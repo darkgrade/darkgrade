@@ -4,7 +4,13 @@ import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
 import { IntentFollower } from '@voice/intent-follower'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
 import type { ListeningState } from '@voice/panel-switch'
-import { microphoneLevel, transcriptParagraphs, transcriptPartial } from '@voice/transcript-store'
+import {
+    microphoneLevel,
+    startsNewParagraph,
+    transcriptParagraphs,
+    transcriptPartial,
+    transcriptPartialNewParagraph,
+} from '@voice/transcript-store'
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import TranscriptionWorker from '@voice/transcription.worker?worker'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -116,6 +122,8 @@ export function useLiveTranscription() {
     }, [refreshMicrophones])
 
     const lastWordAtRef = useRef(0)
+    /** The paragraph decided for the utterance being heard (see startsNewParagraph); null between utterances. */
+    const partialDecisionRef = useRef<boolean | null>(null)
 
     /**
      * A new paragraph starts after a real pause between words, and only once the last sentence has
@@ -126,8 +134,9 @@ export function useLiveTranscription() {
         const now = performance.now()
         const paused = lastWordAtRef.current > 0 && now - lastWordAtRef.current > PARAGRAPH_PAUSE_MS
         lastWordAtRef.current = now
-        const sentenceEnded = /[.?!]["'”’)]?\s*$/.test(previous.at(-1) ?? '')
-        const startNew = (paragraphPendingRef.current || paused) && sentenceEnded && previous.length > 0
+        // The paragraph was decided when this utterance was first heard, if it was; else decide now.
+        const startNew = partialDecisionRef.current ?? startsNewParagraph(previous, paused, paragraphPendingRef.current)
+        partialDecisionRef.current = null
         paragraphPendingRef.current = false
         if (startNew || previous.length === 0) {
             transcriptParagraphs.set([...previous, text.trimStart()])
@@ -183,6 +192,14 @@ export function useLiveTranscription() {
                 followerRef.current?.flush()
             }
             if (message.type === 'partial') {
+                // A new utterance: decide its paragraph now, from the pause before it, and keep to that.
+                if (!transcriptPartial.get()) {
+                    const previous = transcriptParagraphs.get()
+                    const paused =
+                        lastWordAtRef.current > 0 && performance.now() - lastWordAtRef.current > PARAGRAPH_PAUSE_MS
+                    partialDecisionRef.current = startsNewParagraph(previous, paused, paragraphPendingRef.current)
+                    transcriptPartialNewParagraph.set(partialDecisionRef.current)
+                }
                 transcriptPartial.set(message.text)
                 followerRef.current?.warmUpPartial(message.text)
             }

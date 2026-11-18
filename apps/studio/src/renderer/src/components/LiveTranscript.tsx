@@ -1,5 +1,10 @@
 import { Button } from '@kevinschaich/components'
-import { intentHighlights, transcriptPartial, type IntentHighlight } from '@voice/transcript-store'
+import {
+    intentHighlights,
+    transcriptPartial,
+    transcriptPartialNewParagraph,
+    type IntentHighlight,
+} from '@voice/transcript-store'
 import { ArrowDown, Check, Loader, X } from 'lucide-react'
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
@@ -83,7 +88,12 @@ const Paragraph = memo(
                             </span>
                         )
                     })}
-                    {partial && <span className="text-muted-foreground">{partial} </span>}
+                    {partial && (
+                        <span className="text-muted-foreground">
+                            {/\s$/.test(text) || /^\s/.test(partial) ? '' : ' '}
+                            {partial}{' '}
+                        </span>
+                    )}
                     {caret && <span className="transcript-caret" aria-hidden />}
                 </p>
                 {answered.map(highlight => (
@@ -140,6 +150,9 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
     const [following, setFollowing] = useState(true)
     const highlights = intentHighlights.use()
     const partial = transcriptPartial.use()
+    // Words still being heard go where they'll land: on the last line, or on a new paragraph of their own.
+    const partialOwnParagraph = transcriptPartialNewParagraph.use() && partial !== '' && paragraphs.length > 0
+    const lastIndex = partialOwnParagraph ? -1 : paragraphs.length - 1
     const offsets: number[] = []
     paragraphs.reduce((start, text) => {
         offsets.push(start)
@@ -204,16 +217,16 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
                                 latest={index === paragraphs.length - 1}
                                 offset={offset}
                                 highlights={highlights.filter(range => range.start < end && range.end > offset)}
-                                partial={index === paragraphs.length - 1 ? partial : undefined}
-                                caret={index === paragraphs.length - 1 && listening}
+                                partial={index === lastIndex ? partial : undefined}
+                                caret={index === lastIndex && listening}
                             />
                         )
                     })}
-                    {paragraphs.length === 0 && (
+                    {(paragraphs.length === 0 || partialOwnParagraph) && (
                         <p className="transcript-paragraph">
                             {partial && <span className="text-muted-foreground">{partial} </span>}
                             {listening && <span className="transcript-caret" aria-hidden />}
-                            {!partial && (
+                            {!partial && paragraphs.length === 0 && (
                                 <span className="transcript-placeholder">Start talking. Your words appear here.</span>
                             )}
                         </p>

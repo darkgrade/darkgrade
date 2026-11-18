@@ -1,4 +1,5 @@
 import { panelSwitchAction, type PanelSwitchState } from '@voice/panel-switch'
+import { startsNewParagraph } from '@voice/transcript-store'
 import { describe, expect, it } from 'vitest'
 
 const state = (change: Partial<PanelSwitchState>): PanelSwitchState => ({
@@ -27,5 +28,14 @@ describe('the voice panel as the switch', () => {
 
     it('does not retry a start that failed while the panel stays open', () => {
         expect(panelSwitchAction(state({ startedThisOpening: true }))).toBeNull()
+    })
+})
+
+describe('where an utterance lands', () => {
+    it('starts a new paragraph only after a finished sentence and a pause', () => {
+        expect(startsNewParagraph(['How you doing?'], true, false)).toBe(true)
+        expect(startsNewParagraph(['How you doing?'], false, false)).toBe(false)
+        expect(startsNewParagraph(['How you'], true, false)).toBe(false)
+        expect(startsNewParagraph([], true, true)).toBe(false)
     })
 })
