@@ -18,6 +18,10 @@ let stopping = false
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, async () => {
     if (stopping) return
     stopping = true
-    try { await application.close(); process.exitCode = 0 }
-    catch (error) { console.error(error instanceof Error ? error.message : 'Camera cleanup failed'); process.exitCode = 1 }
+    try { await application.close(); process.exit(0) }
+    catch (error) {
+        console.error(error instanceof Error ? error.message : 'Camera cleanup failed')
+        stopping = false
+        // Keep ownership and the Stop control available until cleanup can succeed.
+    }
 })
