@@ -160,7 +160,8 @@ function EngineMessage({
             </div>
         )
     }
-    const settingUp = engine?.phase === 'downloading' || engine?.phase === 'starting' || voice.listening === 'preparing'
+    // The setup view is for the one-time download only; an engine that's set up just starts, in the transcript.
+    const settingUp = engine?.phase === 'downloading'
     if (settingUp) {
         return (
             <div className="flex flex-col items-center gap-6">
@@ -200,6 +201,11 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     const paragraphs = transcriptParagraphs.use()
     const hasText = paragraphs.some(paragraph => paragraph.trim())
     const summary = summarizeSetup(voice.engine ?? IDLE_VOICE_ENGINE, voice.assistant)
+    // Starting an engine that's already downloaded: shown as the transcript getting ready, not as setup.
+    const warming =
+        voice.engine?.phase !== 'downloading' &&
+        voice.engine?.phase !== 'not-downloaded' &&
+        (voice.listening === 'preparing' || voice.engine?.phase === 'starting')
 
     // The panel is the switch: open listens, closed stops (panelSwitchAction says when).
     const startedThisOpening = useRef(false)
@@ -278,8 +284,8 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                 </header>
                 {/* Positioned, so the panel's contents paint above the glow behind them. */}
                 <div className="relative flex min-h-0 flex-1 flex-col">
-                    {hasText || listening ? (
-                        <LiveTranscript paragraphs={paragraphs} listening={listening} />
+                    {hasText || listening || warming ? (
+                        <LiveTranscript paragraphs={paragraphs} listening={listening} preparing={warming} />
                     ) : (
                         <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
                             <EngineMessage voice={voice} summary={summary} />

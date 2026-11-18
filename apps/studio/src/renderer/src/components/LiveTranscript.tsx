@@ -11,6 +11,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 interface LiveTranscriptProps {
     paragraphs: string[]
     listening: boolean
+    /** The microphone and engine are getting ready (already set up): the placeholder says so, without a caret. */
+    preparing?: boolean
 }
 
 /** How close to the bottom still counts as following the latest words. */
@@ -145,7 +147,7 @@ const PUSH_UP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
  * fades evenly from fully opaque on the last line to nothing at the top. The view follows the newest line unless
  * scrolled back. With nothing said yet, a placeholder sits where the first words will appear.
  */
-export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): React.JSX.Element {
+export function LiveTranscript({ paragraphs, listening, preparing = false }: LiveTranscriptProps): React.JSX.Element {
     const scrollRef = useRef<HTMLDivElement>(null)
     const [following, setFollowing] = useState(true)
     const highlights = intentHighlights.use()
@@ -227,7 +229,9 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
                             {partial && <span className="text-muted-foreground">{partial} </span>}
                             {listening && <span className="transcript-caret" aria-hidden />}
                             {!partial && paragraphs.length === 0 && (
-                                <span className="transcript-placeholder">Start talking. Your words appear here.</span>
+                                <span className="transcript-placeholder">
+                                    {preparing ? 'Getting ready…' : 'Start talking. Your words appear here.'}
+                                </span>
                             )}
                         </p>
                     )}
