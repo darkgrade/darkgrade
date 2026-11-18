@@ -14,6 +14,7 @@ import type { VoiceEngineStatus } from '@shared/ipc'
 import { MICROPHONE_SETTINGS_URL } from '@shared/microphone-errors'
 import { summarizeSetup, type SetupSummary } from '@shared/setup-progress'
 import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
+import { panelSwitchAction } from '@voice/panel-switch'
 import { transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
 import { AudioLines, ChevronDown, Download, Mic, Trash2 } from 'lucide-react'
@@ -203,22 +204,21 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     const hasText = paragraphs.some(paragraph => paragraph.trim())
     const summary = summarizeSetup(voice.engine ?? IDLE_VOICE_ENGINE, voice.assistant)
 
-    // The panel is the switch: open listens, closed stops. Once per opening, so a failed start isn't retried in a
-    // loop, and never before the engine says it's downloaded: the one-time download waits for Set up voice.
+    // The panel is the switch: open listens, closed stops (panelSwitchAction says when).
     const startedThisOpening = useRef(false)
-    const enginePhase = voice.engine?.phase
     useEffect(() => {
-        if (!expanded) {
-            startedThisOpening.current = false
-            return
+        if (!expanded) startedThisOpening.current = false
+        const action = panelSwitchAction({
+            open: expanded,
+            listening: voice.listening,
+            enginePhase: voice.engine?.phase,
+            startedThisOpening: startedThisOpening.current,
+        })
+        if (action === 'start') {
+            startedThisOpening.current = true
+            void voice.start()
         }
-        if (startedThisOpening.current || !enginePhase || enginePhase === 'not-downloaded') return
-        startedThisOpening.current = true
-        if (voice.listening === 'off') void voice.start()
-    }, [expanded, enginePhase, voice])
-    // Closing stops listening, including a start that finishes after the panel was closed.
-    useEffect(() => {
-        if (!expanded && voice.listening === 'listening') void voice.stop()
+        if (action === 'stop') void voice.stop()
     }, [expanded, voice])
     return (
         <section

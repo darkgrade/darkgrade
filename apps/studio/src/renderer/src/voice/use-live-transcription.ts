@@ -3,6 +3,7 @@ import { describeMicrophoneError } from '@shared/microphone-errors'
 import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
 import { IntentFollower } from '@voice/intent-follower'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
+import type { ListeningState } from '@voice/panel-switch'
 import { microphoneLevel, transcriptParagraphs, transcriptPartial } from '@voice/transcript-store'
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import TranscriptionWorker from '@voice/transcription.worker?worker'
@@ -13,12 +14,14 @@ export interface Microphone {
     label: string
 }
 
-export type ListeningState = 'off' | 'preparing' | 'listening' | 'stopping'
+export type { ListeningState } from '@voice/panel-switch'
 
 const SAMPLE_RATE = 16_000
 const MICROPHONE_STORAGE_KEY = 'voice.microphoneId'
 /** A pause this long starts a new paragraph. */
 const PARAGRAPH_PAUSE_MS = 1400
+/** A session that hasn't wound down this long after Stop is ended anyway, so voice never sticks between sessions. */
+const STOP_TIMEOUT_MS = 8000
 
 function readStoredMicrophone(): string {
     try {
@@ -234,7 +237,14 @@ export function useLiveTranscription() {
         await stopCapture()
         const command: TranscriptionCommand = { type: 'stop' }
         worker.postMessage(command)
-    }, [stopCapture])
+        // The worker answers 'stopped' once its last words are transcribed; an engine that never answers would
+        // otherwise leave the session stopping forever. Its last words are dropped, the session ends.
+        setTimeout(() => {
+            if (workerRef.current !== worker) return
+            void api.voiceDiagnostic(`stop timed out after ${STOP_TIMEOUT_MS} ms; ended the session`)
+            handleWorkerEvent(new MessageEvent('message', { data: { type: 'stopped' } }))
+        }, STOP_TIMEOUT_MS)
+    }, [api, handleWorkerEvent, stopCapture])
 
     /** Switches the input; while listening, audio keeps flowing into the same session. */
     const chooseMicrophone = useCallback(async (deviceId: string) => {

@@ -18,6 +18,7 @@
         "src/renderer/src/scopes/preview-assists-painting.ts",
         "src/renderer/src/voice/intent-follower.ts",
         "src/renderer/src/voice/transcript-store.ts",
+        "src/renderer/src/voice/panel-switch.ts",
         "src/renderer/src/lib/external-store.ts",
         "electron.vite.config.ts",
         "tests/**/*"
