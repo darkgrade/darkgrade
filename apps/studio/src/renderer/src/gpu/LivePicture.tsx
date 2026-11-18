@@ -1,3 +1,4 @@
+import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import {
     animate,
     configureCanvas,
@@ -9,7 +10,6 @@ import {
 } from '@renderer/gpu/device'
 import { NOISE_SHADER, PICTURE_SHADER } from '@renderer/gpu/picture-shader'
 import { useLiveFrame } from '@renderer/lib/live-frame-store'
-import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { useEffect, useRef, useState } from 'react'
 
 interface LivePictureProps {
