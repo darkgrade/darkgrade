@@ -63,13 +63,14 @@ html.dark {
     background-color: var(--gold) !important;
 }
 
-/* Small uppercase labels (inspector sections, readout names): Public Sans, semibold, lightly tracked, quiet ink. */
+/* Every small-caps label (inspector sections, readout names, the voice panel's title, Preferences' headings):
+   Public Sans, semibold, lightly tracked, in the quietest ink. */
 .slate-label {
     font-size: 10.5px;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgb(234 230 220 / 55%);
+    color: rgb(234 230 220 / 40%);
 }
 
 html,

@@ -47,22 +47,10 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
 
 /** How far the glow fades out before the panel's right edge, where the sidebar begins. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
-/**
- * The strands' colours from the outside of the ribbon in, in darkgrade.com's lamp: its halo's red-orange and amber,
- * then the gold, a pale gold and a white-hot centre strand.
- */
-const VOICE_RIBBON_COLORS = [
-    'rgb(229, 91, 33)',
-    'rgb(239, 141, 64)',
-    'rgb(246, 185, 97)',
-    'rgb(250, 214, 150)',
-    'rgb(255, 244, 224)',
-]
 
 /**
- * The voice panel's glow: bright strands of light rising from the bottom of the window as you speak, on a soft haze
- * (the lineup's "Bold strands": five thick strands fanned wide with a heavy glow). It sits behind the panel's
- * contents and runs on down behind the status bar to the window's bottom edge, where the strands rest.
+ * The voice panel's glow: VoiceRibbons behind the panel's contents, running on down behind the status bar to the
+ * window's bottom edge. The strands rest just above the status bar's hairline and their glow spills softly over it.
  */
 function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | null }): React.JSX.Element {
     const ref = useRef<HTMLDivElement>(null)
@@ -89,19 +77,9 @@ function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | 
             aria-hidden
         >
             <VoiceRibbons
-                // The microphone itself, read every frame by the ribbons' own analyser: the transcription's level
-                // comes in 80 ms blocks after noise suppression and gain control, which lags each syllable by a beat.
                 stream={stream}
                 active={active}
-                colors={VOICE_RIBBON_COLORS}
-                // The strands rest just above the status bar's hairline (the glow box runs on to the window's bottom), so
-                // their glow and haze spill softly over the status bar rather than ending at a hard edge.
                 restOffset={below}
-                strands={5}
-                lineWidth={2.4}
-                fan={0.34}
-                glow={1.6}
-                hotspot={1.3}
                 style={{ position: 'absolute', inset: 0 }}
             />
         </div>

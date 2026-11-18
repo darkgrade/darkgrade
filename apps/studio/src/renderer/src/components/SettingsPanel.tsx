@@ -100,7 +100,7 @@ function ExposureDial({
                     />
                 }
             >
-                <span className="slate-label text-[10px]!">{label}</span>
+                <span className="slate-label">{label}</span>
                 <span className="text-[20px] leading-none font-medium tracking-tight text-foreground tabular-nums">
                     {currentValue ? format(currentValue) : '—'}
                 </span>

@@ -37,7 +37,7 @@ export function InspectorSection({
             <header className="flex min-h-7 items-center justify-between gap-2">
                 <CollapsibleTrigger className="group -ml-1 flex flex-1 items-center gap-1 rounded-sm px-1 text-left focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
                     <ChevronRight
-                        className="size-3.5 text-muted-foreground transition-transform duration-200 group-data-[panel-open]:rotate-90"
+                        className="size-3.5 text-foreground/40 transition-transform duration-200 group-data-[panel-open]:rotate-90"
                         aria-hidden
                     />
                     <h2 className={TITLE_CLASS}>{title}</h2>

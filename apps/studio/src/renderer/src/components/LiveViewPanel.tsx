@@ -12,16 +12,13 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@kevinschaich/components'
-import { BorderBeam } from '@renderer/components/border-beam'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
+import { RecordingTally } from '@renderer/components/RecordingTally'
 import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
 import { Camera, Focus, Square, Video, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
-
-/** The recording red (`--color-rec`, oklch(0.64 0.23 25)) as rgb, for the tally's beam. */
-const RECORDING_RED = 'rgb(232, 52, 64)'
 
 interface LiveViewPanelProps {
     cameraState: CameraState
@@ -296,27 +293,8 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                             draggable={false}
                         />
                     )}
-                    {cameraState.recording && (
-                        // Tally: Border Beam (rotate, large, mono) in shades of the recording red, inside the
-                        // picture's edge. Isolated, so its layers stay beneath the badge and controls after it.
-                        <BorderBeam
-                            size="md"
-                            colorVariant="mono"
-                            tint={RECORDING_RED}
-                            hueRange={5}
-                            duration={4}
-                            borderWidth={2}
-                            spread={0.7}
-                            brightness={1.25}
-                            // The segmented controls' rounded-lg (10px); the frame above matches.
-                            borderRadius={10}
-                            className="pointer-events-none"
-                            style={{ position: 'absolute', inset: 0, isolation: 'isolate' }}
-                            aria-hidden
-                        >
-                            <span className="block size-full" />
-                        </BorderBeam>
-                    )}
+                    {/* Inside the picture's edge, beneath the badge and controls drawn after it. */}
+                    {cameraState.recording && <RecordingTally />}
                     {cameraState.recording && <RecordingBadge />}
                     {focusMarker ? (
                         <CameraFocusFrame frame={lastFocusFrame.current} marker={focusMarker} />
