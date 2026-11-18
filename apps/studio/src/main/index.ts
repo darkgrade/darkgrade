@@ -6,7 +6,7 @@ import { startCameraDaemonKillerLoop, stopCameraDaemonKillerLoop } from '@main/m
 import { studioMcpServer } from '@main/mcp/mcp-server'
 import { installApplicationMenu } from '@main/preferences-window'
 import { voiceService } from '@main/voice/voice-service'
-import { app, BrowserWindow, powerMonitor, session, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, nativeTheme, powerMonitor, session, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -15,16 +15,22 @@ const currentDir = fileURLToPath(new URL('.', import.meta.url))
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+    // Studio is dark only; the window's vibrancy and the system's menus and dialogs follow.
+    nativeTheme.themeSource = 'dark'
     mainWindow = new BrowserWindow({
         width: 1440,
         height: 900,
         minWidth: 1080,
         minHeight: 680,
         title: 'Darkgrade Studio',
-        backgroundColor: '#000000',
+        // On macOS the window is the system's sidebar material (vibrancy, as Messages and Maps use); the page paints
+        // only the main card on it, so the window itself is clear.
+        ...(process.platform === 'darwin'
+            ? { vibrancy: 'sidebar' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+            : { backgroundColor: '#07090b' }),
         titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
-        // Centered in the 52px header: macOS traffic lights are 14px tall
-        trafficLightPosition: { x: 20, y: 19 },
+        // Centered in the sidebar's 44px drag strip: macOS traffic lights are 14px tall
+        trafficLightPosition: { x: 18, y: 15 },
         webPreferences: {
             preload: join(currentDir, '../preload/index.mjs'),
             contextIsolation: true,

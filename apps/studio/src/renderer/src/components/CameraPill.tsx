@@ -9,13 +9,11 @@ import {
     Spinner,
     Switch,
 } from '@kevinschaich/components'
-import brandMark from '@renderer/assets/darkgrade_icon_dark.svg'
-import { HoverTip } from '@renderer/components/HoverTip'
 import { formatFocalLength } from '@renderer/components/LensPanel'
 import type { CameraBattery, CameraState } from '@shared/ipc'
 import { BatteryFull, BatteryLow, BatteryMedium, BatteryWarning, CardSim, PlugZap, Unplug } from 'lucide-react'
 
-interface TopBarProps {
+interface CameraPillProps {
     cameraState: CameraState
     busy: boolean
     onConnect: () => void
@@ -159,103 +157,81 @@ function CameraDetails({ cameraState }: { cameraState: CameraState }): React.JSX
     )
 }
 
-export function TopBar({
+/**
+ * The camera's status as a pill above the picture: its name, lens, battery and card space. Its popover has the
+ * details, the camera display switch, and Connect or Disconnect.
+ */
+export function CameraPill({
     cameraState,
     busy,
     onConnect,
     onDisconnect,
     onOsdOverlayChange,
-}: TopBarProps): React.JSX.Element {
-    const isMac = cameraState.platform === 'darwin'
+}: CameraPillProps): React.JSX.Element {
     const connecting = cameraState.phase === 'connecting' || cameraState.phase === 'recovering'
     return (
-        <header
-            className={`titlebar-drag grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-border bg-background pr-3 ${isMac ? 'pl-[110px]' : 'pl-4'}`}
-        >
-            <div className="flex min-w-0 items-center gap-2">
-                <img className="h-3.5 w-auto" src={brandMark} alt="Darkgrade" draggable={false} />
-                <span className="text-[15px] font-semibold tracking-tight">Studio</span>
-            </div>
-
-            <Popover>
-                <PopoverTrigger
-                    render={
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            className="gap-3.5 rounded-full bg-foreground/8 px-3.5 font-normal hover:bg-foreground/12"
-                        />
-                    }
-                >
-                    <span className="flex items-center gap-2">
-                        <StatusDot cameraState={cameraState} />
-                        <span className="font-medium">{statusText(cameraState)}</span>
+        <Popover>
+            <PopoverTrigger
+                render={
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        className="gap-3.5 rounded-full bg-foreground/8 px-3.5 font-normal hover:bg-foreground/12"
+                    />
+                }
+            >
+                <span className="flex items-center gap-2">
+                    <StatusDot cameraState={cameraState} />
+                    <span className="font-medium">{statusText(cameraState)}</span>
+                </span>
+                {cameraState.connected && cameraState.lens?.name && (
+                    <span className="text-muted-foreground">
+                        {cameraState.lens.name}
+                        {cameraState.lens.focalLengthMillimetres != null &&
+                            ` · ${formatFocalLength(cameraState.lens.focalLengthMillimetres)}`}
                     </span>
-                    {cameraState.connected && cameraState.lens?.name && (
-                        <span className="text-muted-foreground">
-                            {cameraState.lens.name}
-                            {cameraState.lens.focalLengthMillimetres != null &&
-                                ` · ${formatFocalLength(cameraState.lens.focalLengthMillimetres)}`}
-                        </span>
+                )}
+                {cameraState.connected && cameraState.battery && (
+                    <span className="flex items-center gap-1 text-muted-foreground tabular-nums [&_svg]:size-4">
+                        <BatteryIcon battery={cameraState.battery} />
+                        {batteryLabel(cameraState.battery)}
+                    </span>
+                )}
+                {cameraState.connected && cardSpaceLabel(cameraState) && (
+                    <span className="flex items-center gap-1 text-muted-foreground tabular-nums [&_svg]:size-4">
+                        <CardSim aria-hidden />
+                        {cardSpaceLabel(cameraState)}
+                    </span>
+                )}
+            </PopoverTrigger>
+            <PopoverContent className="w-72 gap-3 p-3">
+                <PopoverHeader>
+                    <PopoverTitle>
+                        {cameraState.connected ? cameraName(cameraState) : 'No camera connected'}
+                    </PopoverTitle>
+                    {!cameraState.connected && (
+                        <PopoverDescription>
+                            Connect the camera over USB and set it to PC Remote. Studio connects on its own.
+                        </PopoverDescription>
                     )}
-                    {cameraState.connected && cameraState.battery && (
-                        <span className="flex items-center gap-1 text-muted-foreground tabular-nums [&_svg]:size-4">
-                            <BatteryIcon battery={cameraState.battery} />
-                            {batteryLabel(cameraState.battery)}
-                        </span>
-                    )}
-                    {cameraState.connected && cardSpaceLabel(cameraState) && (
-                        <span className="flex items-center gap-1 text-muted-foreground tabular-nums [&_svg]:size-4">
-                            <CardSim aria-hidden />
-                            {cardSpaceLabel(cameraState)}
-                        </span>
-                    )}
-                </PopoverTrigger>
-                <PopoverContent className="w-72 gap-3 p-3">
-                    <PopoverHeader>
-                        <PopoverTitle>
-                            {cameraState.connected ? cameraName(cameraState) : 'No camera connected'}
-                        </PopoverTitle>
-                        {!cameraState.connected && (
-                            <PopoverDescription>
-                                Connect the camera over USB and set it to PC Remote. Studio connects on its own.
-                            </PopoverDescription>
-                        )}
-                    </PopoverHeader>
-                    <CameraDetails cameraState={cameraState} />
-                    {cameraState.osdOverlay !== null && (
-                        <label className="flex items-center justify-between gap-4 leading-none">
-                            <span className="text-muted-foreground">Show camera display</span>
-                            <Switch checked={cameraState.osdOverlay} onCheckedChange={onOsdOverlayChange} />
-                        </label>
-                    )}
-                </PopoverContent>
-            </Popover>
-
-            <div className="flex items-center justify-end">
+                </PopoverHeader>
+                <CameraDetails cameraState={cameraState} />
+                {cameraState.osdOverlay !== null && (
+                    <label className="flex items-center justify-between gap-4 leading-none">
+                        <span className="text-muted-foreground">Show camera display</span>
+                        <Switch checked={cameraState.osdOverlay} onCheckedChange={onOsdOverlayChange} />
+                    </label>
+                )}
                 {cameraState.connected ? (
-                    <HoverTip
-                        side="bottom"
-                        tip="Disconnect camera"
-                        render={
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="quiet-control"
-                                disabled={busy}
-                                onClick={onDisconnect}
-                                aria-label="Disconnect camera"
-                            />
-                        }
-                    >
-                        <Unplug />
-                    </HoverTip>
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={onDisconnect}>
+                        <Unplug /> Disconnect
+                    </Button>
                 ) : (
                     <Button variant="secondary" size="sm" disabled={busy || connecting} onClick={onConnect}>
-                        Connect
+                        {connecting ? <Spinner /> : <PlugZap />} Connect
                     </Button>
                 )}
-            </div>
-        </header>
+            </PopoverContent>
+        </Popover>
     )
 }

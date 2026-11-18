@@ -1,7 +1,10 @@
 import { useCallback, useState } from 'react'
 
-/** Which way the pane grows as its edge is dragged: a right sidebar widens leftward, a bottom panel heightens upward. */
-export type ResizeEdge = 'left' | 'top'
+/**
+ * The pane's edge that drags: a right sidebar's left edge widens it leftward, a left sidebar's right edge widens it
+ * rightward, and a bottom panel's top edge heightens it upward.
+ */
+export type ResizeEdge = 'left' | 'right' | 'top'
 
 function stored(key: string, fallback: number): number {
     try {
@@ -37,15 +40,16 @@ export function useResizable(key: string, initial: number, min: number, max: () 
 
     const startDrag = (event: React.PointerEvent): void => {
         event.preventDefault()
-        const start = edge === 'left' ? event.clientX : event.clientY
+        const horizontal = edge !== 'top'
+        const start = horizontal ? event.clientX : event.clientY
         const from = size
         let latest = from
         setDragging(true)
         // The resize cursor stays while the pointer is anywhere in the window, not just over the strip.
-        document.documentElement.style.cursor = edge === 'left' ? 'col-resize' : 'row-resize'
+        document.documentElement.style.cursor = horizontal ? 'col-resize' : 'row-resize'
         const move = (moved: PointerEvent): void => {
-            const now = edge === 'left' ? moved.clientX : moved.clientY
-            latest = clamp(from + (start - now))
+            const now = horizontal ? moved.clientX : moved.clientY
+            latest = clamp(from + (edge === 'right' ? now - start : start - now))
             setSize(latest)
         }
         const end = (): void => {
@@ -62,8 +66,8 @@ export function useResizable(key: string, initial: number, min: number, max: () 
     }
 
     const onKeyDown = (event: React.KeyboardEvent): void => {
-        const grow = edge === 'left' ? ['ArrowLeft'] : ['ArrowUp']
-        const shrink = edge === 'left' ? ['ArrowRight'] : ['ArrowDown']
+        const grow = { left: ['ArrowLeft'], right: ['ArrowRight'], top: ['ArrowUp'] }[edge]
+        const shrink = { left: ['ArrowRight'], right: ['ArrowLeft'], top: ['ArrowDown'] }[edge]
         const step = event.shiftKey ? 48 : 16
         let next: number | null = null
         if (grow.includes(event.key)) next = clamp(size + step)

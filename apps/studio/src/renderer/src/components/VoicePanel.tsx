@@ -17,13 +17,12 @@ import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
 import { panelSwitchAction } from '@voice/panel-switch'
 import { transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
-import { AudioLines, ChevronDown, Download, Mic, Trash2 } from 'lucide-react'
+import { AudioLines, Download, Mic, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 interface VoicePanelProps {
     voice: LiveTranscription
     expanded: boolean
-    onCollapse: () => void
 }
 
 const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
@@ -40,8 +39,8 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
 const VOICE_TRIGGER_CLASS =
     'h-6! min-w-0 gap-1.5 rounded-md border-0 bg-foreground/5 px-2 text-[13px] shadow-none hover:bg-foreground/9 dark:bg-foreground/5 dark:hover:bg-foreground/9'
 
-/** The strands rest this far inside the card's bottom edge; their glow spills a little past it. */
-const VOICE_GLOW_REST_INSET = 6
+/** The strands rest just above the panel's control row along its bottom; their glow spills softly below it. */
+const VOICE_GLOW_REST_INSET = 44
 
 /** How far the glow fades out before the card's right edge. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
@@ -194,8 +193,8 @@ const VOICE_PANEL_HEIGHT = 300
 const VOICE_PANEL_MIN = 160
 const voicePanelMax = (): number => window.innerHeight * 0.65
 
-/** Live transcription, opened from the status bar; grows up from the bottom of the preview column. */
-export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): React.JSX.Element {
+/** Live transcription, opened from the toolbar's microphone; grows up seamlessly beneath the picture in the main card. */
+export function VoicePanel({ voice, expanded }: VoicePanelProps): React.JSX.Element {
     const height = useResizable('studio.voice-panel-height', VOICE_PANEL_HEIGHT, VOICE_PANEL_MIN, voicePanelMax, 'top')
     const listening = voice.listening === 'listening'
     const paragraphs = transcriptParagraphs.use()
@@ -226,7 +225,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     return (
         <section
             id="voice-panel"
-            className="voice-panel relative mx-4 shrink-0 rounded-xl bg-float"
+            className="voice-panel relative shrink-0"
             style={{ ['--voice-height' as string]: `${height.size}px` }}
             data-expanded={expanded}
             data-dragging={height.dragging || undefined}
@@ -247,9 +246,23 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
             )}
             <VoiceGlow active={listening && expanded} stream={voice.stream} />
             {/* Clips the panel's contents to its height as it opens; the glow behind them runs on past its bottom. */}
-            <div className="absolute inset-0 flex flex-col overflow-hidden rounded-xl">
-                <header className="relative flex h-10 shrink-0 items-center gap-2 px-3">
-                    <span className="flex-1" />
+            <div className="absolute inset-0 flex flex-col overflow-hidden">
+                {/* Positioned, so the panel's contents paint above the glow behind them. */}
+                <div className="relative flex min-h-0 flex-1 flex-col">
+                    {hasText || listening || warming ? (
+                        <LiveTranscript paragraphs={paragraphs} listening={listening} preparing={warming} />
+                    ) : (
+                        <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
+                            <EngineMessage voice={voice} summary={summary} />
+                        </div>
+                    )}
+                    {hasText && voice.error && (
+                        <p className="shrink-0 px-5 pb-2 text-xs text-destructive">{voice.error}</p>
+                    )}
+                    {listening && <AssistantSetupNotice summary={summary} />}
+                </div>
+                {/* The panel's own controls sit along its bottom, out of the way of the words. */}
+                <footer className="relative flex h-10 shrink-0 items-center justify-end gap-2 px-3">
                     <SpeechModelPicker voice={voice} />
                     <MicrophonePicker voice={voice} />
                     <HoverTip
@@ -267,63 +280,8 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                     >
                         <Trash2 />
                     </HoverTip>
-                    <HoverTip
-                        tip="Hide and stop voice"
-                        render={
-                            <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                className="quiet-control"
-                                aria-label="Hide voice"
-                                onClick={onCollapse}
-                            />
-                        }
-                    >
-                        <ChevronDown />
-                    </HoverTip>
-                </header>
-                {/* Positioned, so the panel's contents paint above the glow behind them. */}
-                <div className="relative flex min-h-0 flex-1 flex-col">
-                    {hasText || listening || warming ? (
-                        <LiveTranscript paragraphs={paragraphs} listening={listening} preparing={warming} />
-                    ) : (
-                        <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
-                            <EngineMessage voice={voice} summary={summary} />
-                        </div>
-                    )}
-                    {hasText && voice.error && (
-                        <p className="shrink-0 px-5 pb-2 text-xs text-destructive">{voice.error}</p>
-                    )}
-                    {listening && <AssistantSetupNotice summary={summary} />}
-                </div>
+                </footer>
             </div>
         </section>
-    )
-}
-
-/** The status bar entry that opens the voice panel, with a live dot while listening. */
-export function VoiceStatusButton({
-    voice,
-    expanded,
-    onToggle,
-}: {
-    voice: LiveTranscription
-    expanded: boolean
-    onToggle: () => void
-}): React.JSX.Element {
-    const listening = voice.listening === 'listening'
-    return (
-        <Button
-            variant="ghost"
-            size="xs"
-            className="quiet-control"
-            onClick={onToggle}
-            aria-expanded={expanded}
-            aria-controls="voice-panel"
-        >
-            {listening ? <span className="voice-live-dot" aria-hidden /> : <Mic />}
-            Voice
-            {listening && <span className="text-muted-foreground">Listening</span>}
-        </Button>
     )
 }

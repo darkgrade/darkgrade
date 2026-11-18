@@ -15,7 +15,7 @@ import { RecordingTally } from '@renderer/components/RecordingTally'
 import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
-import { Camera, Crosshair, VideoOff } from 'lucide-react'
+import { Camera, Crosshair, Mic, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 interface LiveViewPanelProps {
@@ -38,6 +38,10 @@ interface LiveViewPanelProps {
     onCapture: () => void
     onStartRecording: () => void
     onStopRecording: () => void
+    /** The voice panel opens under the picture from the toolbar's microphone; open is listening. */
+    voiceOpen: boolean
+    voiceListening: boolean
+    onToggleVoice: () => void
 }
 
 function ViewportPlaceholder(
@@ -104,7 +108,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const tool =
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
-        <div className="flex shrink-0 justify-center px-4 pb-3">
+        <div className="flex shrink-0 justify-center px-4 pb-4">
             <div className="flex items-center gap-1 rounded-xl border border-foreground/8 bg-float-raised p-1 shadow-[inset_0_1px_0_rgb(255_255_255/5%),0_8px_24px_-8px_rgb(0_0_0/60%)]">
                 <HoverTip
                     tip={
@@ -182,6 +186,27 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
                         <span className="size-[15px] rounded-full bg-rec" aria-hidden />
                     </HoverTip>
                 )}
+                <span className="mx-1 h-5 w-px bg-foreground/10" aria-hidden />
+                <HoverTip
+                    tip={props.voiceOpen ? 'Stop voice' : 'Voice'}
+                    render={
+                        <Button
+                            variant="ghost"
+                            className={`${tool} ${props.voiceOpen ? 'bg-gold-dim text-gold hover:bg-gold-dim hover:text-gold' : ''}`}
+                            onClick={props.onToggleVoice}
+                            aria-pressed={props.voiceOpen}
+                            aria-controls="voice-panel"
+                            aria-label="Voice"
+                        />
+                    }
+                >
+                    <span className="relative flex">
+                        <Mic aria-hidden />
+                        {props.voiceListening && (
+                            <span className="voice-live-dot absolute -top-0.5 -right-1 size-1.5!" aria-hidden />
+                        )}
+                    </span>
+                </HoverTip>
             </div>
         </div>
     )
@@ -352,7 +377,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                     />
                 )}
             </div>
-            {cameraState.connected && <CameraControls {...props} disabled={disabled} />}
+            <CameraControls {...props} disabled={disabled} />
         </div>
     )
 }

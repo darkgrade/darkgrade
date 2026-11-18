@@ -5,14 +5,8 @@ import { useEffect, useRef } from 'react'
 
 interface EventLogProps {
     logs: LogEntry[]
-    /** Developer Mode: the Activity button, its latest line and the log itself. */
-    showActivity: boolean
     expanded: boolean
     onToggle: () => void
-    /** Shown at the left end of the bar, before the activity log (the voice button). */
-    leading?: React.ReactNode
-    /** Shown at the right end of the bar (live view stats). */
-    trailing?: React.ReactNode
 }
 
 /** Paths read better relative to the home folder, as Finder shows them. */
@@ -31,14 +25,8 @@ const SOURCE_COLORS: Record<LogEntry['source'], string> = {
     voice: 'text-live/80',
 }
 
-export function EventLog({
-    logs,
-    showActivity,
-    expanded,
-    onToggle,
-    leading,
-    trailing,
-}: EventLogProps): React.JSX.Element {
+/** Developer Mode's activity log, along the bottom of the main card: the latest line, opening to the whole log. */
+export function EventLog({ logs, expanded, onToggle }: EventLogProps): React.JSX.Element {
     const scrollRef = useRef<HTMLDivElement>(null)
     const latest = logs.at(-1)
     const errorCount = logs.filter(entry => entry.level === 'error').length
@@ -49,43 +37,33 @@ export function EventLog({
     }, [logs, expanded])
 
     return (
-        <div className="flex shrink-0 flex-col border-t border-border bg-background">
+        <div className="flex shrink-0 flex-col border-t border-border">
             <div className="relative flex h-8 items-center gap-3 px-3 text-xs">
-                {leading}
-                {showActivity ? (
-                    <>
-                        <Button
-                            variant="ghost"
-                            size="xs"
-                            className="quiet-control"
-                            onClick={onToggle}
-                            aria-expanded={expanded}
-                            aria-controls="event-log"
-                        >
-                            {expanded ? <ChevronDown /> : <ChevronUp />} Activity
-                            <span className="text-muted-foreground tabular-nums">{logs.length}</span>
-                            {errorCount > 0 && (
-                                <span className="text-destructive tabular-nums">
-                                    · {errorCount} {errorCount === 1 ? 'error' : 'errors'}
-                                </span>
-                            )}
-                        </Button>
-                        {!expanded && latest ? (
-                            <span
-                                className={`min-w-0 flex-1 truncate ${latest.level === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
-                            >
-                                {shortenPaths(latest.message)}
-                            </span>
-                        ) : (
-                            <span className="flex-1" />
-                        )}
-                    </>
-                ) : (
-                    <span className="flex-1" />
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    className="quiet-control"
+                    onClick={onToggle}
+                    aria-expanded={expanded}
+                    aria-controls="event-log"
+                >
+                    {expanded ? <ChevronDown /> : <ChevronUp />} Activity
+                    <span className="text-muted-foreground tabular-nums">{logs.length}</span>
+                    {errorCount > 0 && (
+                        <span className="text-destructive tabular-nums">
+                            · {errorCount} {errorCount === 1 ? 'error' : 'errors'}
+                        </span>
+                    )}
+                </Button>
+                {!expanded && latest && (
+                    <span
+                        className={`min-w-0 flex-1 truncate ${latest.level === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
+                    >
+                        {shortenPaths(latest.message)}
+                    </span>
                 )}
-                {trailing}
             </div>
-            {showActivity && expanded && (
+            {expanded && (
                 <div
                     id="event-log"
                     ref={scrollRef}

@@ -117,6 +117,12 @@ body,
 
 body {
     background: var(--background);
+}
+/* On macOS the window is vibrancy (the system's sidebar material); the page leaves it showing. */
+html[data-vibrancy] body {
+    background: transparent;
+}
+body {
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 13px;
@@ -193,17 +199,13 @@ img {
  */
 .voice-panel {
     height: 0;
-    transition:
-        height 280ms cubic-bezier(0.32, 0.72, 0, 1),
-        margin-bottom 280ms cubic-bezier(0.32, 0.72, 0, 1);
+    transition: height 280ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 .voice-panel[data-dragging] {
     transition: none;
 }
 .voice-panel[data-expanded='true'] {
     height: var(--voice-height, clamp(200px, 38%, 380px));
-    /* The card floats above the status bar, its bottom in line with the inspector card's. */
-    margin-bottom: 12px;
 }
 .transcript-paragraph {
     margin-bottom: 0.75em;

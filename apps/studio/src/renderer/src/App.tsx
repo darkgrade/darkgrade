@@ -1,4 +1,5 @@
 import { toast, Toaster, TooltipProvider } from '@kevinschaich/components'
+import { CameraPill } from '@renderer/components/CameraPill'
 import { EventLog } from '@renderer/components/EventLog'
 import { FilesPanel } from '@renderer/components/FilesPanel'
 import { FocusPanel } from '@renderer/components/FocusPanel'
@@ -10,8 +11,7 @@ import { RecordingPanel } from '@renderer/components/RecordingPanel'
 import { Resizer } from '@renderer/components/Resizer'
 import { chooseScope, scopeChoice, ScopesPanel } from '@renderer/components/ScopesPanel'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
-import { TopBar } from '@renderer/components/TopBar'
-import { VoicePanel, VoiceStatusButton } from '@renderer/components/VoicePanel'
+import { VoicePanel } from '@renderer/components/VoicePanel'
 import { readJpegSize } from '@renderer/lib/jpeg-size'
 import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
 import { useResizable } from '@renderer/lib/use-resizable'
@@ -287,137 +287,136 @@ export function App(): React.JSX.Element {
     return (
         <TooltipProvider delay={400}>
             <Toaster>
-                <div className="relative flex h-full flex-col">
-                    <TopBar
-                        cameraState={cameraState}
-                        busy={busy}
-                        onConnect={() => void run(() => api.connect())}
-                        onDisconnect={() => void run(() => api.disconnect())}
-                        onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
-                    />
-                    <div className="flex min-h-0 flex-1">
-                        <main className="flex min-w-0 flex-1 flex-col">
-                            <LiveViewPanel
+                {/* Dia's arrangement: the window is macOS's own sidebar material (vibrancy), the inspector sits on it
+                    full height at the left, and everything else lives in one dark card inset a few px from the edges. */}
+                <div className="relative flex h-full">
+                    <aside
+                        className="relative flex shrink-0 flex-col"
+                        style={{ width: sidebar.size }}
+                        aria-label="Camera controls"
+                    >
+                        <Resizer
+                            edge="right"
+                            label="Resize the camera controls"
+                            size={sidebar.size}
+                            min={SIDEBAR_MIN}
+                            max={sidebarMax()}
+                            dragging={sidebar.dragging}
+                            onPointerDown={sidebar.startDrag}
+                            onKeyDown={sidebar.onKeyDown}
+                        />
+                        {/* The traffic lights sit here, on a strip that drags the window. */}
+                        <div className="titlebar-drag h-11 shrink-0" />
+                        {/* The controls scroll and fade at an edge they run past. */}
+                        <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
+                            <ScopesPanel
+                                active={cameraState.connected && cameraState.liveView}
+                                connected={cameraState.connected}
+                                assists={previewAssists}
+                                onAssistsChange={setPreviewAssists}
+                            />
+                            <SettingsPanel
                                 cameraState={cameraState}
-                                previewAssists={previewAssists}
-                                osdFrameUrl={cameraState.osdOverlay ? osdFrameUrl : null}
-                                busy={busy}
-                                capturing={capturing}
                                 locked={cardBusy}
-                                readingCard={cardBusy}
-                                onRetryLiveView={() => void run(() => api.liveViewStart())}
-                                onFocus={focus}
-                                onFocusAt={
-                                    cameraState.vendor === 'Sony' || cameraState.vendor === 'Nikon'
-                                        ? async (x, y) => (await run(() => api.focusAt(x, y))) !== null
-                                        : null
+                                onSetIso={value => void run(() => api.setIso(value))}
+                                onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
+                                onSetAperture={value => void run(() => api.setAperture(value))}
+                                onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
+                            />
+                            <FocusPanel
+                                cameraState={cameraState}
+                                locked={cardBusy}
+                                onChange={(name, value) => void run(() => api.setControl(name, value))}
+                            />
+                            <LensPanel
+                                cameraState={cameraState}
+                                locked={cardBusy}
+                                onZoomStart={direction => {
+                                    zoomingRef.current = true
+                                    void api.zoomStart(direction)
+                                }}
+                                onZoomStop={() => {
+                                    if (!zoomingRef.current) return
+                                    zoomingRef.current = false
+                                    void api.zoomStop()
+                                }}
+                                onChange={(name, value) => void run(() => api.setControl(name, value))}
+                            />
+                            <RecordingPanel
+                                cameraState={cameraState}
+                                locked={cardBusy}
+                                onChange={(name, value) => void run(() => api.setControl(name, value))}
+                            />
+                            <FilesPanel
+                                cameraState={cameraState}
+                                files={files}
+                                updating={filesUpdating}
+                                downloadProgress={downloadProgress}
+                                previewing={previewEntry}
+                                onPreview={entry => void openPreview(entry)}
+                                onDownload={entry => void run(() => api.downloadFile(entry))}
+                                onDownloadAll={() =>
+                                    void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
                                 }
-                                onCapture={() => void capture()}
-                                onStartRecording={() => void run(() => api.recordStart())}
-                                onStopRecording={() => void run(() => api.recordStop())}
+                                onChooseDir={() => void run(() => api.chooseDownloadDir())}
+                                onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
                             />
-                            <VoicePanel
-                                voice={voice}
-                                expanded={voiceExpanded}
-                                onCollapse={() => setVoiceExpanded(false)}
+                        </div>
+                    </aside>
+                    <main className="my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background shadow-[0_0_0_1px_rgb(255_255_255/6%)]">
+                        <div className="titlebar-drag relative flex h-12 shrink-0 items-center justify-center px-3">
+                            <CameraPill
+                                cameraState={cameraState}
+                                busy={busy}
+                                onConnect={() => void run(() => api.connect())}
+                                onDisconnect={() => void run(() => api.disconnect())}
+                                onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
                             />
-                        </main>
-                        <aside
-                            className="relative mt-4 mr-3 mb-3 flex shrink-0 flex-col rounded-xl bg-float"
-                            style={{ width: sidebar.size }}
-                            aria-label="Camera controls"
-                        >
-                            <Resizer
-                                edge="left"
-                                label="Resize the camera controls"
-                                size={sidebar.size}
-                                min={SIDEBAR_MIN}
-                                max={sidebarMax()}
-                                dragging={sidebar.dragging}
-                                onPointerDown={sidebar.startDrag}
-                                onKeyDown={sidebar.onKeyDown}
+                            {cameraState.connected && (
+                                <div className="absolute right-3">
+                                    <LiveViewStats
+                                        framesPerSecond={cameraState.liveView ? liveFramesPerSecond : null}
+                                        frameSize={cameraState.liveView ? liveFrameSize : null}
+                                        quality={cameraState.controls?.liveViewQuality ?? null}
+                                        disabled={busy}
+                                        onQualityChange={value =>
+                                            void run(() => api.setControl('liveViewQuality', value))
+                                        }
+                                    />
+                                </div>
+                            )}
+                        </div>
+                        <LiveViewPanel
+                            cameraState={cameraState}
+                            previewAssists={previewAssists}
+                            osdFrameUrl={cameraState.osdOverlay ? osdFrameUrl : null}
+                            busy={busy}
+                            capturing={capturing}
+                            locked={cardBusy}
+                            readingCard={cardBusy}
+                            onRetryLiveView={() => void run(() => api.liveViewStart())}
+                            onFocus={focus}
+                            onFocusAt={
+                                cameraState.vendor === 'Sony' || cameraState.vendor === 'Nikon'
+                                    ? async (x, y) => (await run(() => api.focusAt(x, y))) !== null
+                                    : null
+                            }
+                            onCapture={() => void capture()}
+                            onStartRecording={() => void run(() => api.recordStart())}
+                            onStopRecording={() => void run(() => api.recordStop())}
+                            voiceOpen={voiceExpanded}
+                            voiceListening={voice.listening === 'listening'}
+                            onToggleVoice={() => setVoiceExpanded(previous => !previous)}
+                        />
+                        <VoicePanel voice={voice} expanded={voiceExpanded} />
+                        {developerMode && (
+                            <EventLog
+                                logs={logs}
+                                expanded={logExpanded}
+                                onToggle={() => setLogExpanded(previous => !previous)}
                             />
-                            {/* The controls scroll and fade at an edge they run past; the panel itself stays solid. */}
-                            <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto rounded-xl">
-                                <ScopesPanel
-                                    active={cameraState.connected && cameraState.liveView}
-                                    connected={cameraState.connected}
-                                    assists={previewAssists}
-                                    onAssistsChange={setPreviewAssists}
-                                />
-                                <SettingsPanel
-                                    cameraState={cameraState}
-                                    locked={cardBusy}
-                                    onSetIso={value => void run(() => api.setIso(value))}
-                                    onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
-                                    onSetAperture={value => void run(() => api.setAperture(value))}
-                                    onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
-                                />
-                                <FocusPanel
-                                    cameraState={cameraState}
-                                    locked={cardBusy}
-                                    onChange={(name, value) => void run(() => api.setControl(name, value))}
-                                />
-                                <LensPanel
-                                    cameraState={cameraState}
-                                    locked={cardBusy}
-                                    onZoomStart={direction => {
-                                        zoomingRef.current = true
-                                        void api.zoomStart(direction)
-                                    }}
-                                    onZoomStop={() => {
-                                        if (!zoomingRef.current) return
-                                        zoomingRef.current = false
-                                        void api.zoomStop()
-                                    }}
-                                    onChange={(name, value) => void run(() => api.setControl(name, value))}
-                                />
-                                <RecordingPanel
-                                    cameraState={cameraState}
-                                    locked={cardBusy}
-                                    onChange={(name, value) => void run(() => api.setControl(name, value))}
-                                />
-                                <FilesPanel
-                                    cameraState={cameraState}
-                                    files={files}
-                                    updating={filesUpdating}
-                                    downloadProgress={downloadProgress}
-                                    previewing={previewEntry}
-                                    onPreview={entry => void openPreview(entry)}
-                                    onDownload={entry => void run(() => api.downloadFile(entry))}
-                                    onDownloadAll={() =>
-                                        void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
-                                    }
-                                    onChooseDir={() => void run(() => api.chooseDownloadDir())}
-                                    onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
-                                />
-                            </div>
-                        </aside>
-                    </div>
-                    <EventLog
-                        logs={logs}
-                        showActivity={developerMode}
-                        expanded={logExpanded}
-                        onToggle={() => setLogExpanded(previous => !previous)}
-                        leading={
-                            <VoiceStatusButton
-                                voice={voice}
-                                expanded={voiceExpanded}
-                                onToggle={() => setVoiceExpanded(previous => !previous)}
-                            />
-                        }
-                        trailing={
-                            cameraState.connected && (
-                                <LiveViewStats
-                                    framesPerSecond={cameraState.liveView ? liveFramesPerSecond : null}
-                                    frameSize={cameraState.liveView ? liveFrameSize : null}
-                                    quality={cameraState.controls?.liveViewQuality ?? null}
-                                    disabled={busy}
-                                    onQualityChange={value => void run(() => api.setControl('liveViewQuality', value))}
-                                />
-                            )
-                        }
-                    />
+                        )}
+                    </main>
                 </div>
                 <PreviewDialog
                     entry={previewEntry}

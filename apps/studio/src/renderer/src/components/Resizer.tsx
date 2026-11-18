@@ -25,7 +25,7 @@ export function Resizer({
     onPointerDown,
     onKeyDown,
 }: ResizerProps): React.JSX.Element {
-    const vertical = edge === 'left'
+    const vertical = edge !== 'top'
     return (
         <div
             role="separator"
@@ -36,7 +36,7 @@ export function Resizer({
             aria-valuemax={max}
             tabIndex={0}
             data-dragging={dragging || undefined}
-            className={`resizer group absolute z-20 outline-none ${vertical ? 'inset-y-0 -left-1 w-2 cursor-col-resize!' : 'inset-x-0 -top-1 h-2 cursor-row-resize!'}`}
+            className={`resizer group absolute z-20 outline-none ${{ left: 'inset-y-0 -left-1 w-2 cursor-col-resize!', right: 'inset-y-0 -right-1 w-2 cursor-col-resize!', top: 'inset-x-0 -top-1 h-2 cursor-row-resize!' }[edge]}`}
             onPointerDown={onPointerDown}
             onKeyDown={onKeyDown}
         >
