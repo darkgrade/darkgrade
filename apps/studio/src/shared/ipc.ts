@@ -374,6 +374,17 @@ export interface McpServerStatus {
 /** One of Studio's processes in Developer Mode's performance monitor; 100% CPU is one full core. */
 export interface ProcessSample {
     pid: number
+    kind:
+        | 'main'
+        | 'gpu'
+        | 'studio'
+        | 'settings'
+        | 'monitor'
+        | 'utility'
+        | 'speech'
+        | 'assistant'
+        | 'windowserver'
+        | 'other'
     name: string
     /** What the process does, in a few words. */
     role: string

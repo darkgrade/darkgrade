@@ -252,10 +252,11 @@ function Table(props: { title: string; note: string; rows: Row[]; order: string[
 }
 
 export function PerfWindow(): React.JSX.Element {
+    const [features, setFeatures] = useState<Row[]>([])
     const [processes, setProcesses] = useState<Row[]>([])
-    const [inside, setInside] = useState<Row[]>([])
+    const [windowServer, setWindowServer] = useState<ProcessSample | null>(null)
     const [fps, setFps] = useState<number | null>(null)
-    const [orders, setOrders] = useState<{ processes: string[]; inside: string[] }>({ processes: [], inside: [] })
+    const [orders, setOrders] = useState<{ features: string[]; processes: string[] }>({ features: [], processes: [] })
     const histories = useRef(new Map<string, { cpu: number[]; gpu: number[] }>())
     const report = useRef<PerfReport | null>(null)
     const lastSort = useRef(0)
@@ -263,12 +264,6 @@ export function PerfWindow(): React.JSX.Element {
     useEffect(() => window.studio.onPerfReport(next => (report.current = next)), [])
 
     useEffect(() => {
-        const remember = (key: string, cpu: number | null, gpu: number | null): { cpu: number[]; gpu: number[] } => {
-            const before = histories.current.get(key)
-            const next = { cpu: push(before?.cpu, cpu), gpu: push(before?.gpu, gpu) }
-            histories.current.set(key, next)
-            return next
-        }
         const row = (
             key: string,
             label: string,
@@ -276,60 +271,100 @@ export function PerfWindow(): React.JSX.Element {
             cpu: number | null,
             gpu: number | null
         ): Row => {
-            const history = remember(key, cpu, gpu)
+            const before = histories.current.get(key)
+            const history = { cpu: push(before?.cpu, cpu), gpu: push(before?.gpu, gpu) }
+            histories.current.set(key, history)
             return { key, label, detail, cpu, gpu, cpuHistory: history.cpu, gpuHistory: history.gpu }
         }
+        let latestReport: PerfReport | null = null
         const sample = async (): Promise<void> => {
             const result = await window.studio.perfSampleProcesses()
             if (!result.ok) return
-            const ours = result.data.filter(entry => !entry.outside)
-            const sum = (key: 'cpuPercent' | 'gpuPercent'): number =>
-                ours.reduce((total, entry) => total + entry[key], 0)
-            setProcesses([
+            if (report.current) latestReport = report.current
+            report.current = null
+            if (latestReport) setFps(latestReport.fps)
+            const ours = result.data.filter(entry => entry.kind !== 'windowserver')
+            setWindowServer(result.data.find(entry => entry.kind === 'windowserver') ?? null)
+            const of = (kind: ProcessSample['kind']): ProcessSample[] => ours.filter(entry => entry.kind === kind)
+            const sum = (entries: ProcessSample[], key: 'cpuPercent' | 'gpuPercent'): number =>
+                entries.reduce((total, entry) => total + entry[key], 0)
+            const subsystems = latestReport?.subsystems ?? []
+            const timedCpu = subsystems.reduce((total, entry) => total + entry.cpuPercent, 0)
+            const timedGpu = subsystems.reduce((total, entry) => total + entry.gpuPercent, 0)
+
+            // Each feature on its own, wherever it runs: the Studio window's own parts, then whole processes.
+            const featureRows: Row[] = [
                 row(
                     'total',
                     'All of Studio',
-                    `${ours.length} processes, together`,
-                    sum('cpuPercent'),
-                    sum('gpuPercent')
+                    `${ours.length} processes`,
+                    sum(ours, 'cpuPercent'),
+                    sum(ours, 'gpuPercent')
                 ),
-                ...result.data.map((entry: ProcessSample) =>
+                ...subsystems.map(entry =>
                     row(
-                        `process:${entry.name}`,
-                        entry.name,
-                        `${entry.role} · ${Math.round(entry.memoryMegabytes)} MB`,
+                        `feature:${entry.label}`,
+                        entry.label,
+                        /detector/i.test(entry.label)
+                            ? 'Silero, in a worker of the Studio window, on every 32 ms of audio'
+                            : 'a draw loop in the Studio window: its JavaScript, and its passes on the GPU',
                         entry.cpuPercent,
-                        entry.gpuPercent
+                        /worker|detector/i.test(entry.label) ? null : entry.gpuPercent
                     )
                 ),
-            ])
-            const current = report.current
-            report.current = null
-            if (!current) return
-            setFps(current.fps)
-            const studioWindow = result.data.find(entry => entry.name === 'Studio window')
-            const timedCpu = current.subsystems.reduce((total, entry) => total + entry.cpuPercent, 0)
-            const insideRows = current.subsystems.map(entry =>
-                row(
-                    `inside:${entry.label}`,
-                    entry.label,
-                    undefined,
-                    entry.cpuPercent,
-                    // Work done on a worker or the main thread alone has no GPU passes.
-                    /worker|detector/i.test(entry.label) ? null : entry.gpuPercent
-                )
-            )
-            if (studioWindow)
-                insideRows.push(
+            ]
+            const studio = of('studio')
+            if (studio.length)
+                featureRows.push(
                     row(
-                        'inside:other',
+                        'feature:page',
                         'Other page work',
-                        'React, layout, styles, microphone capture, IPC; its GPU work is the GPU process compositing',
-                        Math.max(0, studioWindow.cpuPercent - timedCpu),
+                        latestReport
+                            ? 'the rest of the Studio window: React, layout, styles, microphone capture, IPC'
+                            : 'the whole Studio window (its parts appear once it reports)',
+                        Math.max(0, sum(studio, 'cpuPercent') - timedCpu),
                         null
                     )
                 )
-            setInside(insideRows)
+            const gpuProcess = of('gpu')
+            if (gpuProcess.length)
+                featureRows.push(
+                    row(
+                        'feature:compositing',
+                        'Compositing',
+                        "the GPU process putting Studio's windows together, beyond the draw loops above",
+                        sum(gpuProcess, 'cpuPercent'),
+                        Math.max(0, sum(gpuProcess, 'gpuPercent') - timedGpu)
+                    )
+                )
+            const whole: [ProcessSample['kind'], string, string][] = [
+                ['main', 'Camera, files and IPC', 'the main process'],
+                ['speech', 'Speech engine', 'Python: turning speech into words'],
+                ['assistant', 'Assistant model', 'llama-server: finding requests in the words'],
+                ['utility', 'Electron services', 'audio, network and storage services'],
+                ['settings', 'Settings window', 'its page'],
+                ['monitor', 'This monitor', 'the performance window itself'],
+                ['other', 'Other processes', 'anything else Studio started'],
+            ]
+            for (const [kind, label, detail] of whole) {
+                const entries = of(kind)
+                if (entries.length)
+                    featureRows.push(
+                        row(`feature:${kind}`, label, detail, sum(entries, 'cpuPercent'), sum(entries, 'gpuPercent'))
+                    )
+            }
+            setFeatures(featureRows)
+            setProcesses(
+                ours.map(entry =>
+                    row(
+                        `process:${entry.pid}`,
+                        entry.name,
+                        `${entry.role} · ${Math.round(entry.memoryMegabytes)} MB · pid ${entry.pid}`,
+                        entry.cpuPercent,
+                        entry.gpuPercent
+                    )
+                )
+            )
         }
         void sample()
         const timer = setInterval(() => void sample(), SAMPLE_MS)
@@ -343,7 +378,7 @@ export function PerfWindow(): React.JSX.Element {
         const due = performance.now() - lastSort.current >= RESORT_MS
         setOrders(previous => {
             const next = { ...previous }
-            for (const [name, rows] of Object.entries({ processes, inside }) as ['processes' | 'inside', Row[]][]) {
+            for (const [name, rows] of Object.entries({ features, processes }) as ['features' | 'processes', Row[]][]) {
                 const known = previous[name]
                 const changed = known.length !== rows.length || rows.some(row => !known.includes(row.key))
                 if (due || changed) next[name] = sorted(rows)
@@ -351,7 +386,7 @@ export function PerfWindow(): React.JSX.Element {
             return next
         })
         if (due) lastSort.current = performance.now()
-    }, [processes, inside])
+    }, [features, processes])
 
     return (
         <div className="flex h-full flex-col">
@@ -364,22 +399,24 @@ export function PerfWindow(): React.JSX.Element {
                     {fps !== null && <> The Studio window is drawing {fps} frames a second.</>}
                 </p>
                 <Table
-                    title="Processes"
-                    note="Studio's own, and WindowServer"
+                    title="By feature"
+                    note="each part of Studio on its own, wherever it runs"
+                    rows={features}
+                    order={orders.features}
+                />
+                {windowServer && (
+                    <p className="-mt-4 px-1 text-[12px] text-muted-foreground">
+                        Not counted above: WindowServer, which composites every app on screen, is using{' '}
+                        {percent(windowServer.cpuPercent)} CPU and {percent(windowServer.gpuPercent)} GPU across all of
+                        them. macOS doesn't say how much of that is Studio's.
+                    </p>
+                )}
+                <Table
+                    title="By process"
+                    note="as Activity Monitor lists them"
                     rows={processes}
                     order={orders.processes}
                 />
-                <Table
-                    title="Inside the Studio window"
-                    note="its renderer's CPU, and GPU time by draw loop"
-                    rows={inside}
-                    order={orders.inside}
-                />
-                {!inside.length && (
-                    <p className="px-1 text-[12px] text-muted-foreground">
-                        Waiting for the Studio window's first report…
-                    </p>
-                )}
             </main>
         </div>
     )

@@ -53,40 +53,47 @@ async function listProcesses(): Promise<{ pid: number; ppid: number; time: strin
         }))
 }
 
-/** Each process's GPU time so far, in nanoseconds, from the GPU driver's clients (Apple silicon's AGX). */
+/**
+ * Each process's GPU time so far, in nanoseconds, from the GPU driver's clients (Apple silicon's AGX). Each client is
+ * one block of ioreg's output, its usage listed before the process that created it, so a block is read whole.
+ */
 async function gpuTimes(): Promise<Map<number, number>> {
     const out = await run('ioreg', ['-r', '-d', '1', '-w0', '-c', 'AGXDeviceUserClient'])
     const times = new Map<number, number>()
-    let pid: number | null = null
-    for (const line of out.split('\n')) {
-        const creator = line.match(/"IOUserClientCreator" = "pid (\d+),/)
-        if (creator) pid = Number(creator[1])
-        if (pid !== null && line.includes('"AppUsage"'))
-            for (const match of line.matchAll(/"accumulatedGPUTime"=(\d+)/g))
-                times.set(pid, (times.get(pid) ?? 0) + Number(match[1]))
+    for (const block of out.split('+-o ')) {
+        const creator = block.match(/"IOUserClientCreator" = "pid (\d+),/)
+        if (!creator) continue
+        const pid = Number(creator[1])
+        for (const match of block.matchAll(/"accumulatedGPUTime"=(\d+)/g))
+            times.set(pid, (times.get(pid) ?? 0) + Number(match[1]))
     }
     return times
 }
 
-/** A readable name for one of Studio's processes, and what it does. */
-function describe(pid: number, args: string, metrics: Map<number, Electron.ProcessMetric>): [string, string] {
-    if (pid === process.pid) return ['Main process', 'camera, files, IPC, menus']
+/** What one of Studio's processes is, a readable name for it, and what it does. */
+function describe(
+    pid: number,
+    args: string,
+    metrics: Map<number, Electron.ProcessMetric>
+): [ProcessSample['kind'], string, string] {
+    if (pid === process.pid) return ['main', 'Main process', 'camera, files, IPC, menus']
     const metric = metrics.get(pid)
-    if (metric?.type === 'GPU') return ['GPU process', "WebGPU drawing and compositing Studio's windows"]
+    if (metric?.type === 'GPU') return ['gpu', 'GPU process', "WebGPU and compositing for Studio's windows"]
     if (metric?.type === 'Tab') {
         const url = webContents
             .getAllWebContents()
             .find(contents => contents.getOSProcessId() === pid)
             ?.getURL()
-        if (url?.includes('#preferences')) return ['Settings window', 'its page']
-        if (url?.includes('#perf')) return ['Performance window', 'this window']
-        return ['Studio window', 'the page: React, draw loops, voice detector']
+        if (url?.includes('#preferences')) return ['settings', 'Settings window', 'its page']
+        if (url?.includes('#perf')) return ['monitor', 'Performance window', 'this window']
+        return ['studio', 'Studio window', 'the page: React, draw loops, voice detector']
     }
-    if (metric?.type === 'Utility') return [metric.name ?? metric.serviceName ?? 'Utility', 'Electron service']
-    if (/transcription_server\.py/.test(args)) return ['Speech engine', 'Python: transcription']
-    if (/llama-server/.test(args)) return ['Assistant model', 'llama-server: understanding requests']
-    if (metric) return [metric.name ?? metric.type, metric.type]
-    return [args.split(' ')[0].split('/').at(-1) ?? 'Process', 'started by Studio']
+    if (metric?.type === 'Utility')
+        return ['utility', metric.name ?? metric.serviceName ?? 'Utility', 'Electron service']
+    if (/transcription_server\.py/.test(args)) return ['speech', 'Speech engine', 'Python: transcription']
+    if (/llama-server/.test(args)) return ['assistant', 'Assistant model', 'llama-server: understanding requests']
+    if (metric) return ['other', metric.name ?? metric.type, metric.type]
+    return ['other', args.split(' ')[0].split('/').at(-1) ?? 'Process', 'started by Studio']
 }
 
 async function measure(): Promise<ProcessSample[]> {
@@ -111,12 +118,13 @@ async function measure(): Promise<ProcessSample[]> {
             next.set(entry.pid, counters)
             const elapsed = before ? (now - before.at) / 1000 : 0
             const outside = entry.pid === windowServer?.pid
-            const [name, role] = outside
-                ? ['WindowServer', 'macOS: composites every app, blurs vibrancy']
+            const [kind, name, role]: [ProcessSample['kind'], string, string] = outside
+                ? ['windowserver', 'WindowServer', 'macOS: composites every app on screen, not just Studio']
                 : describe(entry.pid, entry.args, metrics)
             const rate = (delta: number): number => (before && elapsed > 0 ? Math.max(0, (delta / elapsed) * 100) : 0)
             return {
                 pid: entry.pid,
+                kind,
                 name,
                 role,
                 outside,
