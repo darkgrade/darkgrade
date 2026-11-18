@@ -1,15 +1,5 @@
-import {
-    Button,
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-    Spinner,
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '@kevinschaich/components'
+import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kevinschaich/components'
+import { HoverTip } from '@renderer/components/HoverTip'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
 import { Resizer } from '@renderer/components/Resizer'
 import { VoiceRibbons } from '@renderer/components/VoiceRibbons'
@@ -26,7 +16,7 @@ import { summarizeSetup, type SetupSummary } from '@shared/setup-progress'
 import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
 import { transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
-import { AudioLines, ChevronDown, Download, Eraser, Mic, Square } from 'lucide-react'
+import { AudioLines, ChevronDown, Download, Mic, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 interface VoicePanelProps {
@@ -44,6 +34,10 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
     setupStep: null,
     speechModelBytes: 0,
 }
+
+/** The voice panel's menu buttons, as the inspector's: 24px, a faint fill, no outline. */
+const VOICE_TRIGGER_CLASS =
+    'h-6! min-w-0 gap-1.5 rounded-md border-0 bg-foreground/5 px-2 text-[13px] shadow-none hover:bg-foreground/9 dark:bg-foreground/5 dark:hover:bg-foreground/9'
 
 /** How far the glow fades out before the panel's right edge, where the sidebar begins. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
@@ -99,7 +93,7 @@ function MicrophonePicker({ voice }: { voice: LiveTranscription }): React.JSX.El
             value={voice.microphoneId}
             onValueChange={value => void voice.chooseMicrophone(String(value))}
         >
-            <SelectTrigger size="sm" aria-label="Microphone" className="h-7 max-w-56 min-w-0 gap-1.5 text-xs">
+            <SelectTrigger size="sm" aria-label="Microphone" className={`${VOICE_TRIGGER_CLASS} max-w-56`}>
                 <Mic className="text-muted-foreground" />
                 <SelectValue className="truncate" />
             </SelectTrigger>
@@ -124,7 +118,7 @@ function SpeechModelPicker({ voice }: { voice: LiveTranscription }): React.JSX.E
             disabled={busy}
             onValueChange={value => void voice.chooseSpeechModel(value as SpeechModelId)}
         >
-            <SelectTrigger size="sm" aria-label="Speech model" className="h-7 min-w-0 gap-1.5 text-xs">
+            <SelectTrigger size="sm" aria-label="Speech model" className={VOICE_TRIGGER_CLASS}>
                 <AudioLines className="text-muted-foreground" />
                 <SelectValue className="truncate" />
             </SelectTrigger>
@@ -185,28 +179,12 @@ function EngineMessage({
                     <ModelLicenseNotice speechModelId={voice.speechModelId} />
                 </div>
                 <Button size="sm" onClick={() => void voice.start()}>
-                    <Download /> Set up and start
+                    <Download /> Set up voice
                 </Button>
             </div>
         )
     }
-    return <p className="text-sm text-muted-foreground">Press Start to transcribe what you say, live.</p>
-}
-
-function ListenButton({ voice }: { voice: LiveTranscription }): React.JSX.Element {
-    const busy = voice.listening === 'preparing' || voice.listening === 'stopping'
-    if (voice.listening === 'listening' || voice.listening === 'stopping') {
-        return (
-            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void voice.stop()}>
-                <Square className="fill-current" /> Stop
-            </Button>
-        )
-    }
-    return (
-        <Button size="sm" disabled={busy} onClick={() => void voice.start()}>
-            {busy ? <Spinner /> : <Mic />} Start
-        </Button>
-    )
+    return <p className="text-sm text-muted-foreground">Starting the microphone…</p>
 }
 
 /** The voice panel's height: 300px to start, dragged by its top edge between these, at most 65% of the window. */
@@ -221,6 +199,24 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     const paragraphs = transcriptParagraphs.use()
     const hasText = paragraphs.some(paragraph => paragraph.trim())
     const summary = summarizeSetup(voice.engine ?? IDLE_VOICE_ENGINE, voice.assistant)
+
+    // The panel is the switch: open listens, closed stops. Once per opening, so a failed start isn't retried in a
+    // loop, and never before the engine says it's downloaded: the one-time download waits for Set up voice.
+    const startedThisOpening = useRef(false)
+    const enginePhase = voice.engine?.phase
+    useEffect(() => {
+        if (!expanded) {
+            startedThisOpening.current = false
+            return
+        }
+        if (startedThisOpening.current || !enginePhase || enginePhase === 'not-downloaded') return
+        startedThisOpening.current = true
+        if (voice.listening === 'off') void voice.start()
+    }, [expanded, enginePhase, voice])
+    // Closing stops listening, including a start that finishes after the panel was closed.
+    useEffect(() => {
+        if (!expanded && voice.listening === 'listening') void voice.stop()
+    }, [expanded, voice])
     return (
         <section
             id="voice-panel"
@@ -251,33 +247,35 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                     <span className="flex-1" />
                     <SpeechModelPicker voice={voice} />
                     <MicrophonePicker voice={voice} />
-                    <Tooltip>
-                        <TooltipTrigger
-                            render={
-                                <Button
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    aria-label="Clear transcript"
-                                    disabled={!hasText}
-                                    onClick={voice.clear}
-                                />
-                            }
-                        >
-                            <Eraser />
-                        </TooltipTrigger>
-                        <TooltipContent>Clear transcript</TooltipContent>
-                    </Tooltip>
-                    <ListenButton voice={voice} />
-                    <Tooltip>
-                        <TooltipTrigger
-                            render={
-                                <Button size="icon-sm" variant="ghost" aria-label="Hide voice" onClick={onCollapse} />
-                            }
-                        >
-                            <ChevronDown />
-                        </TooltipTrigger>
-                        <TooltipContent>Hide</TooltipContent>
-                    </Tooltip>
+                    <HoverTip
+                        tip="Clear transcript"
+                        render={
+                            <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                className="quiet-control"
+                                aria-label="Clear transcript"
+                                disabled={!hasText}
+                                onClick={voice.clear}
+                            />
+                        }
+                    >
+                        <Trash2 />
+                    </HoverTip>
+                    <HoverTip
+                        tip="Hide and stop voice"
+                        render={
+                            <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                className="quiet-control"
+                                aria-label="Hide voice"
+                                onClick={onCollapse}
+                            />
+                        }
+                    >
+                        <ChevronDown />
+                    </HoverTip>
                 </header>
                 {/* Positioned, so the panel's contents paint above the glow behind them. */}
                 <div className="relative flex min-h-0 flex-1 flex-col">

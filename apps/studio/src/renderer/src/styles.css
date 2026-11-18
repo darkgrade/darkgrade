@@ -48,6 +48,34 @@ html.dark {
 }
 
 /*
+ * Every icon is Lucide (stroke="currentColor", fill="none"). Lucide's stroke scales with the icon, so a 12px chevron
+ * drew 1px lines and an 18px toolbar icon 1.5px; one 1.5px line at any size makes them read as one set.
+ */
+svg[stroke='currentColor'][fill='none'] {
+    stroke-width: 1.5px;
+}
+svg[stroke='currentColor'][fill='none'] * {
+    vector-effect: non-scaling-stroke;
+}
+
+/*
+ * Menus (selects and comboboxes) on the inspector's rhythm: as wide as their longest choice rather than their button,
+ * rows 28px tall at 13px with 8px in, and the popover's 4px inset.
+ */
+[data-slot='select-content'],
+[data-slot='combobox-content'] {
+    width: max-content;
+    min-width: max(var(--anchor-width), 11rem);
+    max-width: min(24rem, var(--available-width));
+}
+[data-slot='select-item'],
+[data-slot='combobox-item'] {
+    min-height: 28px;
+    padding: 4px 32px 4px 8px;
+    font-size: 13px;
+}
+
+/*
  * One light for the current choice, as on darkgrade.com: the selected tab or segment and a switched-on
  * switch take the gold, with a faint gold wash and hairline, not a grey pill.
  */
@@ -331,77 +359,71 @@ img {
  * animations), so a list at its top shows no top fade.
  */
 @property --scroll-fade-t {
-  syntax: "<length-percentage>";
-  inherits: false;
-  initial-value: 0px;
+    syntax: '<length-percentage>';
+    inherits: false;
+    initial-value: 0px;
 }
 @property --scroll-fade-b {
-  syntax: "<length-percentage>";
-  inherits: false;
-  initial-value: 0px;
+    syntax: '<length-percentage>';
+    inherits: false;
+    initial-value: 0px;
 }
 @property --scroll-fade-mask {
-  syntax: "*";
-  inherits: false;
+    syntax: '*';
+    inherits: false;
 }
 
 @theme inline {
-  @keyframes scroll-fade-reveal-t {
-    from {
-      --scroll-fade-t: 0px;
+    @keyframes scroll-fade-reveal-t {
+        from {
+            --scroll-fade-t: 0px;
+        }
+        to {
+            --scroll-fade-t: var(--_scroll-fade-size-t, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+        }
     }
-    to {
-      --scroll-fade-t: var(--_scroll-fade-size-t, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+    @keyframes scroll-fade-reveal-b {
+        from {
+            --scroll-fade-b: var(--_scroll-fade-size-b, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+        }
+        to {
+            --scroll-fade-b: 0px;
+        }
     }
-  }
-  @keyframes scroll-fade-reveal-b {
-    from {
-      --scroll-fade-b: var(--_scroll-fade-size-b, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
-    }
-    to {
-      --scroll-fade-b: 0px;
-    }
-  }
 }
 
 @utility scroll-fade-y {
-  --_scroll-fade-size-t: var(
-    --scroll-fade-t-size,
-    var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10)))
-  );
-  --_scroll-fade-size-b: var(
-    --scroll-fade-b-size,
-    var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10)))
-  );
-  --scroll-fade-block: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--scroll-fade-t, 0px),
-    #000 calc(100% - var(--scroll-fade-b, 0px)),
-    transparent 100%
-  );
-  -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
-  mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
+    --_scroll-fade-size-t: var(--scroll-fade-t-size, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+    --_scroll-fade-size-b: var(--scroll-fade-b-size, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+    --scroll-fade-block: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 var(--scroll-fade-t, 0px),
+        #000 calc(100% - var(--scroll-fade-b, 0px)),
+        transparent 100%
+    );
+    -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
+    mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
 
-  @supports (animation-timeline: scroll()) {
-    animation:
-      scroll-fade-reveal-t 1ms ease-in-out,
-      scroll-fade-reveal-b 1ms ease-in-out;
-    animation-timeline: scroll(self y), scroll(self y);
-    animation-range:
-      0 var(--scroll-fade-reveal, calc(var(--spacing) * 24)),
-      calc(100% - var(--scroll-fade-reveal, calc(var(--spacing) * 24))) 100%;
-    animation-fill-mode: both;
-  }
+    @supports (animation-timeline: scroll()) {
+        animation:
+            scroll-fade-reveal-t 1ms ease-in-out,
+            scroll-fade-reveal-b 1ms ease-in-out;
+        animation-timeline: scroll(self y), scroll(self y);
+        animation-range:
+            0 var(--scroll-fade-reveal, calc(var(--spacing) * 24)),
+            calc(100% - var(--scroll-fade-reveal, calc(var(--spacing) * 24))) 100%;
+        animation-fill-mode: both;
+    }
 
-  @supports not (animation-timeline: scroll()) {
-    --scroll-fade-t: var(--_scroll-fade-size-t);
-    --scroll-fade-b: var(--_scroll-fade-size-b);
-  }
+    @supports not (animation-timeline: scroll()) {
+        --scroll-fade-t: var(--_scroll-fade-size-t);
+        --scroll-fade-b: var(--_scroll-fade-size-b);
+    }
 }
 
 /*
