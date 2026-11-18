@@ -25,6 +25,7 @@ export class FixtureCamera implements LocalCamera {
     async captureImage() { this.calls.push('photo'); return { data: fixtureImage, info: { filename: 'FIXTURE.PNG' } } }
     async startRecording() { this.calls.push('start'); if (this.failStart) throw Error('start reply lost') }
     async stopRecording() { this.calls.push('stop') }
+    async prepareRecordingMode() { return { restore: async () => {} } }
     async recover() { this.calls.push('recover'); return { recovered: true } }
 }
 // Generated solid-color PNG fixture; no camera image or vendor asset is imported.

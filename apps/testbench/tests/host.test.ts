@@ -89,3 +89,52 @@ test('successful Link recovery reconnects its closed transport before reading co
     expect(camera.calls).toEqual(['connect', 'recover', 'connect'])
     await bench.close()
 })
+test('Canon advertised access arrays enable supported exposure values', async () => {
+    const { adapter, camera } = fixtureBench()
+    delete adapter.controls
+    adapter.discover = async () => [{ vendorId: 0x04a9, productId: 1, model: 'USB camera' }]
+    camera.getCanonPropertyStates = async () => [{ name: 'CanonIso', value: camera.value,
+        allowedValues: ['100', '200'], access: ['Get', 'Set'] }] as any
+    const bench = new LocalBench(adapter, 'fixture')
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    expect(bench.state().cameras[0].controls.iso?.enabled).toBe(true)
+    await bench.action(id, 'setting', 'iso', '200')
+    expect(camera.value).toBe('200')
+    await bench.close()
+})
+test('Sony Auto ISO can return to an advertised manual sensitivity through the gain-mode control', async () => {
+    const { adapter, camera } = fixtureBench()
+    delete adapter.controls
+    camera.value = 'ISO AUTO'
+    adapter.discover = async () => [{ vendorId: 0x054c, productId: 1, model: 'USB camera' }]
+    camera.getSonyPropertyStates = async () => [
+        { name: 'Iso', value: camera.value, allowedValues: ['ISO AUTO', 'ISO 100', 'ISO 200'], writable: false, enabled: false },
+        { name: 'GainControlSetting', value: 'Auto', allowedValues: ['Auto', 'Manual'], writable: true, enabled: true },
+    ] as any
+    const bench = new LocalBench(adapter, 'fixture')
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    await bench.action(id, 'setting', 'iso', 'ISO 100')
+    expect(camera.value).toBe('ISO 100')
+    await bench.close()
+})
+test('recording mode stays owned until stop, and failed restoration retries without another stop command', async () => {
+    const { bench, camera } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    let restores = 0
+    camera.prepareRecordingMode = async () => {
+        camera.calls.push('prepare')
+        return { restore: async () => { if (++restores === 1) throw Error('mode restore failed') } }
+    }
+    await bench.action(id, 'connect')
+    await bench.action(id, 'start')
+    expect(restores).toBe(0)
+    await expect(bench.action(id, 'stop')).rejects.toThrow('mode restore failed')
+    await expect(bench.action(id, 'disconnect')).rejects.toThrow('Stop and confirm')
+    await bench.action(id, 'stop')
+    expect(restores).toBe(2)
+    expect(camera.calls.filter(call => call === 'stop')).toHaveLength(1)
+    expect(bench.state().cameras[0].recording).toBe('idle')
+    await bench.close()
+})

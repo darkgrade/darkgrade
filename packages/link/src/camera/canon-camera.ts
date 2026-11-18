@@ -14,7 +14,7 @@ import {
     type CanonLiveViewPosition,
 } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import type { CanonMovieFormat } from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
-import { OK } from '@ptp/definitions/response-definitions'
+import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { CANON_PROPERTY_NAMES } from '@ptp/definitions/vendors/canon/canon-property-names'
 import { CanonRegistry, createCanonRegistry } from '@ptp/registry'
@@ -151,7 +151,18 @@ export class CanonCamera extends GenericCamera {
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
         this.sessionId = 1
-        await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+        try {
+            let opened = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            if (opened.code === SessionAlreadyOpen.code) {
+                const closed = await this.send(this.registry.operations.CloseSession, {})
+                if (closed.code !== OK.code) throw new PTPResponseError(closed.code, 'Canon stale session could not be closed')
+                opened = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
+            }
+            if (opened.code !== OK.code) throw new PTPResponseError(opened.code, 'Canon OpenSession failed')
+        } catch (error) {
+            this.sessionId = null
+            throw error
+        }
         const deviceInfo = await this.send(this.registry.operations.GetDeviceInfo, {})
         if (deviceInfo.code !== OK.code) throw new PTPResponseError(deviceInfo.code, 'Canon GetDeviceInfo failed')
         if (!deviceInfo.data) throw new PTPDecodeError('Canon GetDeviceInfo failed: no DeviceInfo dataset')

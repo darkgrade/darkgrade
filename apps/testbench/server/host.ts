@@ -2,7 +2,7 @@ import { CameraRuntime } from '@darkgrade/link/runtime'
 import { settingNames, type BenchAction, type BenchCamera, type BenchControl, type BenchState, type SettingName } from '../src/contracts'
 
 export type USBIdentity = { vendorId: number; productId: number; serialNumber?: string; model?: string }
-type PropertyState = { name: string; value: unknown; allowedValues?: unknown[]; writable?: boolean; enabled?: boolean; access?: string }
+type PropertyState = { name: string; value: unknown; allowedValues?: unknown[]; writable?: boolean; enabled?: boolean; access?: string | readonly string[] }
 export interface LocalCamera {
     connect(): Promise<void>
     disconnect(): Promise<void>
@@ -21,9 +21,11 @@ export interface LocalCamera {
     captureImage(options: { includeInfo: boolean; includeData: boolean; autofocus: boolean; destination?: 'memory' }): Promise<{ data?: Uint8Array; info?: { filename?: string } }>
     startRecording(): Promise<void>
     stopRecording(): Promise<void>
+    prepareRecordingMode?(): Promise<{ restore(): Promise<void> }>
     recover(options: { allowPortReset: boolean }): Promise<{ recovered: boolean }>
 }
-type Entry = { identity: USBIdentity; view: BenchCamera; camera?: LocalCamera; ambiguous?: boolean }
+type Entry = { identity: USBIdentity; view: BenchCamera; camera?: LocalCamera; ambiguous?: boolean;
+    recordingMode?: { restore(): Promise<void> }; stopAcknowledged?: boolean }
 export type CameraAdapter = {
     discover(): Promise<USBIdentity[]>
     create(identity: USBIdentity): LocalCamera
@@ -107,7 +109,15 @@ export class LocalBench {
                 // Never invent writable choices when a body/transport does not advertise them.
                 controls[setting] = { value, choices,
                     enabled: property?.enabled !== false &&
-                        (property?.writable === true || property?.access === 'GetSet') && choices.length > 0 }
+                        (property?.writable === true || property?.access === 'GetSet' ||
+                            Array.isArray(property?.access) && property.access.includes('Set')) && choices.length > 0 }
+                if (setting === 'iso' && entry.identity.vendorId === 0x054c) {
+                    const mode = states.find(state => state.name === 'GainControlSetting')
+                    // Link's ISO setter switches the separately advertised gain mode first.
+                    if (mode?.enabled && mode.writable && mode.allowedValues?.includes('Manual') &&
+                        mode.allowedValues.includes('Auto') && choices.length)
+                        controls.iso!.enabled = true
+                }
             } catch { /* Unsupported controls stay absent. */ }
         }
         entry.view.controls = controls
@@ -172,12 +182,19 @@ export class LocalBench {
                                     ? 'image/png' : 'application/octet-stream' }
                     } else if (action === 'start') {
                         if (!view.canRecord) throw Error('Recording is not implemented for this camera')
+                        entry.recordingMode = await camera.prepareRecordingMode?.()
+                        entry.stopAcknowledged = false
                         view.recording = 'uncertain'
                         await camera.startRecording()
                         view.recording = 'recording'
                     } else if (action === 'stop') {
                         if (view.recording === 'idle') throw Error('This host has no active recording to stop')
-                        await camera.stopRecording()
+                        if (!entry.stopAcknowledged) {
+                            await camera.stopRecording()
+                            entry.stopAcknowledged = true
+                        }
+                        await entry.recordingMode?.restore()
+                        entry.recordingMode = undefined
                         view.recording = 'idle'
                     } else if (action === 'recover') {
                         // Link recovery verifies identity, then leaves the transport closed.
@@ -208,7 +225,12 @@ export class LocalBench {
         for (const [id, entry] of this.entries) {
             try { await this.runtime.runExclusive(id, async () => {
                 if (!entry.camera) return
-                if (entry.view.recording !== 'idle') { await entry.camera.stopRecording(); entry.view.recording = 'idle' }
+                if (entry.view.recording !== 'idle') {
+                    if (!entry.stopAcknowledged) { await entry.camera.stopRecording(); entry.stopAcknowledged = true }
+                    await entry.recordingMode?.restore()
+                    entry.recordingMode = undefined
+                    entry.view.recording = 'idle'
+                }
                 await entry.camera.disconnect()
                 entry.camera = undefined
                 entry.view.connected = false

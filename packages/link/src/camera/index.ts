@@ -3,7 +3,7 @@ import type { SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import type { TransactionPolicy } from '@camera/transaction-channel'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
-import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
+import { openCanonRecordingMode, withCanonPhotoMode } from '@vendors/canon/recording-mode'
 export {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
@@ -714,6 +714,12 @@ export class Camera {
 
     async startRecording(): Promise<void> {
         return this.instance.startRecording()
+    }
+
+    /** Hold the camera's required recording mode until a confirmed stop, then restore it. */
+    async prepareRecordingMode(): Promise<{ restore(): Promise<void> }> {
+        if (this.instance instanceof CanonCamera) return openCanonRecordingMode(this)
+        return { restore: async () => {} }
     }
 
     async stopRecording(): Promise<void> {
