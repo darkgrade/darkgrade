@@ -524,12 +524,15 @@ export class CanonCamera extends GenericCamera {
         if (this.supportedOperations)
             this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOff.code)
         await this.withoutPolling(async () => {
-            const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
-            if (response.code !== OK.code) {
-                throw new PTPResponseError(
-                    response.code,
-                    `Canon movie-mode release returned 0x${response.code.toString(16)}`
-                )
+            for (let attempt = 0; attempt < 4; attempt++) {
+                const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
+                if (response.code === OK.code) return
+                if (response.code !== 0x2019 || attempt === 3)
+                    throw new PTPResponseError(
+                        response.code,
+                        `Canon movie-mode release returned 0x${response.code.toString(16)}`
+                    )
+                await new Promise(resolve => setTimeout(resolve, 500))
             }
         })
     }
@@ -886,6 +889,7 @@ export class CanonCamera extends GenericCamera {
     async stopRecording(): Promise<void> {
         const property = this.registry.properties.CanonRecordingDestination
         const deadline = Date.now() + 5000
+        let stopRequested = false
         for (;;) {
             // Reconnecting can find an already finalized movie. Read camera events before
             // treating an idle Stop as successful; a missing property is never idle proof.
@@ -896,13 +900,17 @@ export class CanonCamera extends GenericCamera {
             // EOS reports 3 (legacy codec label SDRAM) in movie standby after
             // reconnect. Only the explicit NONE/standby states prove card Record ended.
             if (current === 'NONE' || current === 'SDRAM') return
-            try {
-                await this.set(property, 'NONE')
-                return
-            } catch (error) {
-                if ((error as {code?:number}).code !== 0x2019 || Date.now() >= deadline) throw error
-                await new Promise(resolve => setTimeout(resolve, 250))
+            if (Date.now() >= deadline)
+                throw new Error('Canon did not confirm recording stopped within 5 seconds')
+            if (!stopRequested) {
+                try {
+                    await this.set(property, 'NONE')
+                    stopRequested = true
+                } catch (error) {
+                    if ((error as {code?:number}).code !== 0x2019) throw error
+                }
             }
+            await new Promise(resolve => setTimeout(resolve, 250))
         }
     }
 
