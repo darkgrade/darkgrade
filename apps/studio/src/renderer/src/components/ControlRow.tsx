@@ -20,7 +20,7 @@ interface ControlRowProps {
 
 /** A setting's menu button: the same everywhere in the inspector. */
 export const CONTROL_TRIGGER_CLASS =
-    'flex h-6 w-36 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-1.5 pl-2 outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12'
+    'flex h-6 w-[55%] shrink-0 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-1.5 pl-2 outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12'
 
 /** Menus with more choices than this get a search field. */
 export const SEARCH_FROM = 8
@@ -39,7 +39,7 @@ export function ControlRow({
     const unavailable = disabled || !control.enabled || options.length < 2
     return (
         <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">{label}</span>
+            <span className="min-w-0 truncate text-muted-foreground">{label}</span>
             <Combobox<{ value: string; label: string }>
                 items={choices}
                 value={choices.find(option => option.value === control.value) ?? null}

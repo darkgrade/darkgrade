@@ -19,6 +19,7 @@ import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-s
 import { useResizable } from '@renderer/lib/use-resizable'
 import type { CameraState, DownloadProgress, FileEntry, LogEntry } from '@shared/ipc'
 import { useLiveTranscription } from '@voice/use-live-transcription'
+import { Unplug } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const MAX_LOG_ENTRIES = 500
@@ -307,58 +308,68 @@ export function App(): React.JSX.Element {
                         {/* The controls scroll and fade at an edge they run past. */}
                         <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
                             {developerMode && <AppearanceTuner />}
-                            <ScopesPanel
-                                active={cameraState.connected && cameraState.liveView}
-                                connected={cameraState.connected}
-                                assists={previewAssists}
-                                onAssistsChange={setPreviewAssists}
-                            />
-                            <SettingsPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onSetIso={value => void run(() => api.setIso(value))}
-                                onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
-                                onSetAperture={value => void run(() => api.setAperture(value))}
-                                onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <FocusPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <LensPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onZoomStart={direction => {
-                                    zoomingRef.current = true
-                                    void api.zoomStart(direction)
-                                }}
-                                onZoomStop={() => {
-                                    if (!zoomingRef.current) return
-                                    zoomingRef.current = false
-                                    void api.zoomStop()
-                                }}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <RecordingPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <FilesPanel
-                                cameraState={cameraState}
-                                files={files}
-                                updating={filesUpdating}
-                                downloadProgress={downloadProgress}
-                                previewing={previewEntry}
-                                onPreview={entry => void openPreview(entry)}
-                                onDownload={entry => void run(() => api.downloadFile(entry))}
-                                onDownloadAll={() =>
-                                    void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
-                                }
-                                onChooseDir={() => void run(() => api.chooseDownloadDir())}
-                                onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
-                            />
+                            {/* With no camera there is nothing to set: one line for the whole sidebar, not one per section. */}
+                            {!cameraState.connected ? (
+                                <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 pb-16 text-center">
+                                    <Unplug className="size-5 text-foreground/30" aria-hidden />
+                                    <p className="text-muted-foreground">Connect a camera to see its settings.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <ScopesPanel
+                                        active={cameraState.connected && cameraState.liveView}
+                                        connected={cameraState.connected}
+                                        assists={previewAssists}
+                                        onAssistsChange={setPreviewAssists}
+                                    />
+                                    <SettingsPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onSetIso={value => void run(() => api.setIso(value))}
+                                        onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
+                                        onSetAperture={value => void run(() => api.setAperture(value))}
+                                        onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <FocusPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <LensPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onZoomStart={direction => {
+                                            zoomingRef.current = true
+                                            void api.zoomStart(direction)
+                                        }}
+                                        onZoomStop={() => {
+                                            if (!zoomingRef.current) return
+                                            zoomingRef.current = false
+                                            void api.zoomStop()
+                                        }}
+                                        onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <RecordingPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <FilesPanel
+                                        cameraState={cameraState}
+                                        files={files}
+                                        updating={filesUpdating}
+                                        downloadProgress={downloadProgress}
+                                        previewing={previewEntry}
+                                        onPreview={entry => void openPreview(entry)}
+                                        onDownload={entry => void run(() => api.downloadFile(entry))}
+                                        onDownloadAll={() =>
+                                            void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
+                                        }
+                                        onChooseDir={() => void run(() => api.chooseDownloadDir())}
+                                        onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
+                                    />
+                                </>
+                            )}
                         </div>
                     </aside>
                     <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] bg-(--card-surface)">

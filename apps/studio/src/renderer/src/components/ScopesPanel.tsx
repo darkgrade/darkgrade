@@ -1,8 +1,8 @@
 import { Slider, Switch, ToggleGroup, ToggleGroupItem } from '@kevinschaich/components'
 import { InspectorSection } from '@renderer/components/InspectorSection'
+import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { createStore } from '@renderer/lib/external-store'
 import { Histogram } from '@renderer/scopes/Histogram'
-import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { Vectorscope } from '@renderer/scopes/Vectorscope'
 import { Waveform } from '@renderer/scopes/Waveform'
 import { SCOPE_IDS, type ScopeId } from '@shared/ipc'
@@ -117,7 +117,7 @@ export function ScopesPanel({ active, connected, assists, onAssistsChange }: Sco
                     <ToggleGroupItem
                         key={option.id}
                         value={option.id}
-                        className="flex-1 rounded-md! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground"
+                        className="min-w-0 flex-1 rounded-md! px-0.5! text-[12px]! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground"
                     >
                         {option.label}
                     </ToggleGroupItem>

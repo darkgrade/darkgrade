@@ -80,7 +80,7 @@ function ExposureDial({
 
     return (
         <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">{label}</span>
+            <span className="min-w-0 truncate text-muted-foreground">{label}</span>
             <Combobox<{ value: string; label: string }>
                 items={options}
                 value={options.find(option => option.value === selected) ?? null}

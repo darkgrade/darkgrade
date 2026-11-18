@@ -55,8 +55,8 @@ export function FocusPanel({ cameraState, locked, onChange }: FocusPanelProps): 
                         </>
                     )}
                     <p className="pt-1 text-[11px] text-muted-foreground">
-                        Click the picture to move the focus area there. In Wide, Zone or Center it switches to your last
-                        Flexible Spot until you press Focus.
+                        Click the picture to focus there. Wide, Zone and Center switch to your last Flexible Spot until
+                        you press Focus.
                     </p>
                 </div>
             ) : (
