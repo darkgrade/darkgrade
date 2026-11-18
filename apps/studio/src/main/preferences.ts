@@ -10,7 +10,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     speechModel: DEFAULT_SPEECH_MODEL,
     developerMode: false,
     windowMaterial: 'hud',
-    dimWhenInactive: false,
+    dimWhenInactive: true,
 }
 
 /** Studio's settings, kept as JSON in Application Support and read once at launch. */

@@ -14,9 +14,9 @@ export interface Appearance {
 
 const DEFAULT_APPEARANCE: Appearance = {
     windowColor: '#000000',
-    windowOpacity: 0,
+    windowOpacity: 50,
     cardColor: '#07090b',
-    cardOpacity: 50,
+    cardOpacity: 30,
 }
 const STORAGE_KEY = 'studio.appearance'
 

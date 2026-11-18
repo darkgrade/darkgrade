@@ -123,8 +123,8 @@ body {
  * as Arc does, and the main card sits on that. Both colours are tunable live in Developer Mode › Appearance.
  */
 :root {
-    --window-tint: rgb(0 0 0 / 0%);
-    --card-surface: rgb(7 9 11 / 50%);
+    --window-tint: rgb(0 0 0 / 50%);
+    --card-surface: rgb(7 9 11 / 30%);
 }
 html[data-vibrancy] body {
     background: var(--window-tint);
