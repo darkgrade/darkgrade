@@ -55,7 +55,7 @@ const VOICE_GLOW_PRESET_WIDTHS = { rangeWidth: 1.25, glowWidth: 1.15, lobeSpacin
 const VOICE_GLOW_RIGHT_FADE = '12rem'
 
 /**
- * Voice (libraries.dev's voice glow) across the whole panel, behind its contents and on down behind the status bar
+ * Voice (libraries.dev's voice glow), in its ice palette, across the whole panel, behind its contents and on down behind the status bar
  * to the bottom of the window: it rises and blooms from there with the microphone's level while listening.
  */
 function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
@@ -92,6 +92,8 @@ function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
                 rangeWidth={VOICE_GLOW_PRESET_WIDTHS.rangeWidth * widen}
                 glowWidth={VOICE_GLOW_PRESET_WIDTHS.glowWidth * widen}
                 lobeSpacing={VOICE_GLOW_PRESET_WIDTHS.lobeSpacing * widen}
+                // The library's ice palette as it comes: its own lobe and band colours and colour drift.
+                colorVariant="ice"
                 active={active}
                 // The level the old meter read: the microphone's RMS, lifted so speech fills the range. It is already
                 // lifted, so no further gain (the library's default of 3.1 pinned it at full on every syllable).
