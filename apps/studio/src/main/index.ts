@@ -4,6 +4,7 @@ import { closeDiagnostics, initializeDiagnostics } from '@main/diagnostics'
 import { registerIpcHandlers } from '@main/ipc-handlers'
 import { startCameraDaemonKillerLoop, stopCameraDaemonKillerLoop } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
+import { preferences } from '@main/preferences'
 import { installApplicationMenu } from '@main/preferences-window'
 import { voiceService } from '@main/voice/voice-service'
 import { app, BrowserWindow, nativeTheme, powerMonitor, session, shell, systemPreferences } from 'electron'
@@ -26,7 +27,13 @@ function createWindow(): void {
         // On macOS the window is the system's sidebar material (vibrancy, as Messages and Maps use); the page paints
         // only the main card on it, so the window itself is clear.
         ...(process.platform === 'darwin'
-            ? { vibrancy: 'sidebar' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+            ? {
+                  vibrancy: preferences.get().windowMaterial,
+                  visualEffectState: preferences.get().dimWhenInactive
+                      ? ('followWindow' as const)
+                      : ('active' as const),
+                  backgroundColor: '#00000000',
+              }
             : { backgroundColor: '#07090b' }),
         titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
         // Centered in the sidebar's 44px drag strip: macOS traffic lights are 14px tall

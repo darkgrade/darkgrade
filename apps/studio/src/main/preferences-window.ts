@@ -1,4 +1,5 @@
 import { preferences } from '@main/preferences'
+import { WINDOW_MATERIALS } from '@shared/ipc'
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,6 +39,40 @@ export function openPreferences(): void {
     else void preferencesWindow.loadFile(join(currentDir, '../renderer/index.html'), { hash: 'preferences' })
 }
 
+/**
+ * View › Window Material: the macOS vibrancy behind the main window, switched live with a short fade and saved;
+ * and Dim When Inactive, which macOS only lets a window take when it opens, so it applies from the next launch.
+ */
+function windowMaterialItems(): MenuItemConstructorOptions[] {
+    const saved = preferences.get()
+    return [
+        { type: 'separator' },
+        {
+            label: 'Window Material',
+            submenu: [
+                ...WINDOW_MATERIALS.map(([material, label]): MenuItemConstructorOptions => ({
+                    label,
+                    type: 'radio',
+                    checked: saved.windowMaterial === material,
+                    click: () => {
+                        preferences.set({ windowMaterial: material })
+                        for (const window of BrowserWindow.getAllWindows())
+                            if (window !== preferencesWindow) window.setVibrancy(material, { animationDuration: 200 })
+                    },
+                })),
+                { type: 'separator' },
+                {
+                    label: 'Dim When Inactive',
+                    sublabel: 'From the next launch',
+                    type: 'checkbox',
+                    checked: saved.dimWhenInactive,
+                    click: item => preferences.set({ dimWhenInactive: item.checked }),
+                },
+            ],
+        },
+    ]
+}
+
 /** The standard macOS menus, with Settings… (⌘,) and Developer Mode in the app menu, and zoom (⌘ = / ⌘ − / ⌘ 0). */
 export function installApplicationMenu(): void {
     const template: MenuItemConstructorOptions[] = [
@@ -75,6 +110,7 @@ export function installApplicationMenu(): void {
                 { role: 'zoomIn', accelerator: 'CmdOrCtrl+=' },
                 { role: 'zoomIn', accelerator: 'CmdOrCtrl+Plus', visible: false, acceleratorWorksWhenHidden: true },
                 { role: 'zoomOut' },
+                ...(process.platform === 'darwin' ? windowMaterialItems() : []),
                 { type: 'separator' },
                 { role: 'togglefullscreen' },
             ],

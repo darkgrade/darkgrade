@@ -333,7 +333,29 @@ export interface Preferences {
     speechModel: SpeechModelId
     /** Developer tools in the main window (the Activity log); off by default, toggled from the app menu. */
     developerMode: boolean
+    /** The macOS material behind the window (View › Window Material); switches live. */
+    windowMaterial: WindowMaterial
+    /** Let the material go flat while Studio is in the background, as Finder and Messages do; from the next launch. */
+    dimWhenInactive: boolean
 }
+
+/** The macOS vibrancy materials worth offering, as Electron names them, in the order the menu lists them. */
+export const WINDOW_MATERIALS = [
+    ['sidebar', 'Sidebar'],
+    ['under-window', 'Under Window'],
+    ['under-page', 'Under Page'],
+    ['window', 'Window'],
+    ['content', 'Content'],
+    ['header', 'Header'],
+    ['titlebar', 'Title Bar'],
+    ['sheet', 'Sheet'],
+    ['popover', 'Popover'],
+    ['menu', 'Menu'],
+    ['hud', 'HUD'],
+    ['fullscreen-ui', 'Full Screen UI'],
+    ['tooltip', 'Tooltip'],
+] as const
+export type WindowMaterial = (typeof WINDOW_MATERIALS)[number][0]
 
 export interface McpServerStatus {
     running: boolean
