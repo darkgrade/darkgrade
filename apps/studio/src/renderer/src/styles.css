@@ -193,17 +193,17 @@ img {
  */
 .voice-panel {
     height: 0;
-    border-top-color: transparent;
     transition:
         height 280ms cubic-bezier(0.32, 0.72, 0, 1),
-        border-color 280ms;
+        margin-bottom 280ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 .voice-panel[data-dragging] {
     transition: none;
 }
 .voice-panel[data-expanded='true'] {
     height: var(--voice-height, clamp(200px, 38%, 380px));
-    border-top-color: var(--border);
+    /* The card floats above the status bar, its bottom in line with the inspector card's. */
+    margin-bottom: 12px;
 }
 .transcript-paragraph {
     margin-bottom: 0.75em;

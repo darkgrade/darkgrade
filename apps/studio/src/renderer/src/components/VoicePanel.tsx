@@ -39,12 +39,15 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
 const VOICE_TRIGGER_CLASS =
     'h-6! min-w-0 gap-1.5 rounded-md border-0 bg-foreground/5 px-2 text-[13px] shadow-none hover:bg-foreground/9 dark:bg-foreground/5 dark:hover:bg-foreground/9'
 
-/** How far the glow fades out before the panel's right edge, where the sidebar begins. */
+/** The strands rest this far inside the card's bottom edge; their glow spills a little past it. */
+const VOICE_GLOW_REST_INSET = 6
+
+/** How far the glow fades out before the card's right edge. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
 
 /**
- * The voice panel's glow: VoiceRibbons behind the panel's contents, running on down behind the status bar to the
- * window's bottom edge. The strands rest just above the status bar's hairline and their glow spills softly over it.
+ * The voice card's glow: VoiceRibbons behind the card's contents, running on down to the window's bottom edge. The
+ * strands rest just inside the card's bottom edge and their glow spills softly out past it.
  */
 function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | null }): React.JSX.Element {
     const ref = useRef<HTMLDivElement>(null)
@@ -73,7 +76,7 @@ function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | 
             <VoiceRibbons
                 stream={stream}
                 active={active}
-                restOffset={below}
+                restOffset={below + VOICE_GLOW_REST_INSET}
                 style={{ position: 'absolute', inset: 0 }}
             />
         </div>
@@ -220,7 +223,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     return (
         <section
             id="voice-panel"
-            className="voice-panel relative shrink-0 border-t border-border"
+            className="voice-panel relative mx-4 shrink-0 rounded-xl bg-float"
             style={{ ['--voice-height' as string]: `${height.size}px` }}
             data-expanded={expanded}
             data-dragging={height.dragging || undefined}
@@ -241,7 +244,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
             )}
             <VoiceGlow active={listening && expanded} stream={voice.stream} />
             {/* Clips the panel's contents to its height as it opens; the glow behind them runs on past its bottom. */}
-            <div className="absolute inset-0 flex flex-col overflow-hidden">
+            <div className="absolute inset-0 flex flex-col overflow-hidden rounded-xl">
                 <header className="relative flex h-10 shrink-0 items-center gap-2 px-3">
                     <span className="slate-label">Live transcript</span>
                     <span className="flex-1" />
