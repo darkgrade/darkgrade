@@ -1,4 +1,5 @@
 import { toast, Toaster, TooltipProvider } from '@kevinschaich/components'
+import { AppearanceTuner } from '@renderer/components/AppearanceTuner'
 import { CameraPill } from '@renderer/components/CameraPill'
 import { EventLog } from '@renderer/components/EventLog'
 import { FilesPanel } from '@renderer/components/FilesPanel'
@@ -12,10 +13,10 @@ import { Resizer } from '@renderer/components/Resizer'
 import { chooseScope, scopeChoice, ScopesPanel } from '@renderer/components/ScopesPanel'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
 import { VoicePanel } from '@renderer/components/VoicePanel'
+import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/gpu/assists'
 import { readJpegSize } from '@renderer/lib/jpeg-size'
 import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
 import { useResizable } from '@renderer/lib/use-resizable'
-import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/gpu/assists'
 import type { CameraState, DownloadProgress, FileEntry, LogEntry } from '@shared/ipc'
 import { useLiveTranscription } from '@voice/use-live-transcription'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -309,6 +310,7 @@ export function App(): React.JSX.Element {
                         <div className="titlebar-drag h-11 shrink-0" />
                         {/* The controls scroll and fade at an edge they run past. */}
                         <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
+                            {developerMode && <AppearanceTuner />}
                             <ScopesPanel
                                 active={cameraState.connected && cameraState.liveView}
                                 connected={cameraState.connected}
@@ -363,7 +365,7 @@ export function App(): React.JSX.Element {
                             />
                         </div>
                     </aside>
-                    <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background/50 shadow-[0_0_0_1px_rgb(255_255_255/6%)]">
+                    <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-(--card-surface) shadow-[0_0_0_1px_rgb(255_255_255/6%)]">
                         <div className="titlebar-drag relative flex h-12 shrink-0 items-center justify-center px-3">
                             <CameraPill
                                 cameraState={cameraState}

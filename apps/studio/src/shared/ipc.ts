@@ -341,6 +341,7 @@ export interface Preferences {
 
 /** The macOS vibrancy materials worth offering, as Electron names them, in the order the menu lists them. */
 export const WINDOW_MATERIALS = [
+    ['hud', 'HUD'],
     ['sidebar', 'Sidebar'],
     ['under-window', 'Under Window'],
     ['under-page', 'Under Page'],
@@ -351,7 +352,6 @@ export const WINDOW_MATERIALS = [
     ['sheet', 'Sheet'],
     ['popover', 'Popover'],
     ['menu', 'Menu'],
-    ['hud', 'HUD'],
     ['fullscreen-ui', 'Full Screen UI'],
     ['tooltip', 'Tooltip'],
 ] as const

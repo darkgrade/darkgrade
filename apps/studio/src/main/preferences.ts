@@ -9,7 +9,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     mcpServerPort: 7461,
     speechModel: DEFAULT_SPEECH_MODEL,
     developerMode: false,
-    windowMaterial: 'sidebar',
+    windowMaterial: 'hud',
     dimWhenInactive: false,
 }
 
