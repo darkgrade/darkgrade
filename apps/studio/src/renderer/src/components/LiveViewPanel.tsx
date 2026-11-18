@@ -1,4 +1,3 @@
-import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import {
     Button,
     Empty,
@@ -13,11 +12,15 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@kevinschaich/components'
-import { TallyComet } from '@renderer/components/TallyComet'
+import { BorderBeam } from '@renderer/components/border-beam'
+import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
 import { Camera, Focus, Square, Video, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
+
+/** The recording red (`--color-rec`, oklch(0.64 0.23 25)) as rgb, for the tally's beam. */
+const RECORDING_RED = 'rgb(232, 52, 64)'
 
 interface LiveViewPanelProps {
     cameraState: CameraState
@@ -227,9 +230,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     // The camera reports faces and eyes in every area, but in a Flexible Spot it focuses on the spot:
     // only show them where the camera picks the subject itself.
     const cameraPicksSubject = !/flexible spot/i.test(cameraState.controls?.focusArea?.value ?? '')
-    const shownFrames = cameraPicksSubject
-        ? focusFrames
-        : focusFrames.filter(frame => frame.kind === 'focus')
+    const shownFrames = cameraPicksSubject ? focusFrames : focusFrames.filter(frame => frame.kind === 'focus')
     if (currentFocusFrame) lastFocusFrame.current = currentFocusFrame
     const disabled = !cameraState.connected || props.busy || props.locked
     const canFocusAt = props.onFocusAt !== null && !disabled && !props.readingCard
@@ -237,10 +238,10 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
 
     return (
-        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 [container-type:size]">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 pl-4 [container-type:size]">
             {showFrame ? (
                 <div
-                    className={`relative overflow-hidden rounded-md ${canFocusAt ? 'cursor-crosshair!' : ''}`}
+                    className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}
                     style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
                     onClick={event => {
                         if (!canFocusAt || !props.onFocusAt) return
@@ -284,6 +285,27 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                         />
                     )}
                     {cameraState.recording && (
+                        // Tally: Border Beam (rotate, large, mono) in shades of the recording red, inside the
+                        // picture's edge. Isolated, so its layers stay beneath the badge and controls after it.
+                        <BorderBeam
+                            size="md"
+                            colorVariant="mono"
+                            tint={RECORDING_RED}
+                            hueRange={5}
+                            duration={5}
+                            borderWidth={2}
+                            spread={1}
+                            brightness={1.5}
+                            // The segmented controls' rounded-lg (10px); the frame above matches.
+                            borderRadius={10}
+                            className="pointer-events-none"
+                            style={{ position: 'absolute', inset: 0, isolation: 'isolate' }}
+                            aria-hidden
+                        >
+                            <span className="block size-full" />
+                        </BorderBeam>
+                    )}
+                    {cameraState.recording && (
                         <span className="absolute top-3 left-3 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold tracking-wide text-rec">
                             <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden /> REC
                         </span>
@@ -296,16 +318,6 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                     <CameraControls {...props} disabled={disabled} />
                 </div>
             ) : null}
-            {showFrame && cameraState.recording && (
-                // Tally: a neon tube around the picture, outside its clipped corners so the glow can spill.
-                <span
-                    className="tally pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-                    style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
-                    aria-hidden
-                >
-                    <TallyComet />
-                </span>
-            )}
             {showFrame ? null : (
                 <>
                     <ViewportPlaceholder

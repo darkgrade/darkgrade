@@ -40,7 +40,7 @@ export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventL
 
     return (
         <div className="flex shrink-0 flex-col bg-black/55">
-            <div className="flex h-8 items-center gap-3 px-3 text-xs">
+            <div className="relative flex h-8 items-center gap-3 px-3 text-xs">
                 {leading}
                 <Button variant="ghost" size="xs" onClick={onToggle} aria-expanded={expanded} aria-controls="event-log">
                     {expanded ? <ChevronDown /> : <ChevronUp />} Activity
@@ -66,7 +66,7 @@ export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventL
                 <div
                     id="event-log"
                     ref={scrollRef}
-                    className="selectable h-44 overflow-y-auto px-3 pb-2 font-mono text-xs leading-5"
+                    className="selectable relative h-44 overflow-y-auto px-3 pb-2 font-mono text-xs leading-5"
                     role="log"
                     aria-live="polite"
                 >

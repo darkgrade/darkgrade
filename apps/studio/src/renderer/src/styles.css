@@ -105,39 +105,6 @@ img {
 }
 
 /*
- * Recording tally: a neon tube around the picture. A thin near-white core, a tight red glow either side of
- * it, a wide bloom spilling outward, and hot spots where the tube catches the light at top and bottom.
- */
-@keyframes tally-start {
-    0% { opacity: 0; filter: brightness(2.5); }
-    30% { opacity: 1; filter: brightness(1.8); }
-    100% { opacity: 1; filter: brightness(1); }
-}
-@keyframes tally-breathe {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(0.72); }
-}
-.tally {
-    --tube: var(--color-rec);
-    border-radius: 10px;
-    border: 2px solid color-mix(in oklab, var(--color-rec) 70%, transparent);
-    /* A quieter tube, so the travelling comet is the brightest thing on screen. */
-    box-shadow:
-        0 0 1px 1px color-mix(in oklab, var(--color-rec) 60%, transparent),
-        0 0 6px 1px color-mix(in oklab, var(--tube) 60%, transparent),
-        0 0 22px 4px color-mix(in oklab, var(--tube) 25%, transparent),
-        inset 0 0 6px 1px color-mix(in oklab, var(--tube) 45%, transparent),
-        inset 0 0 20px 4px color-mix(in oklab, var(--tube) 18%, transparent);
-    animation:
-        tally-start 700ms ease-out,
-        tally-breathe 2.6s ease-in-out 700ms infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-    .tally { animation: none; }
-    .tally-comet { display: none; }
-}
-
-/*
  * Voice: the panel grows up from the status bar and the preview shrinks to make room. Each word fades
  * in; a caret breathes where the next one goes. Only opacity animates, and a finished fade is dropped
  * (fill: backwards), so a long transcript costs nothing to keep on screen.
@@ -172,8 +139,13 @@ img {
     animation: transcript-word-in 200ms ease-out backwards;
 }
 @keyframes transcript-caret {
-    0%, 100% { opacity: 0.15; }
-    50% { opacity: 0.7; }
+    0%,
+    100% {
+        opacity: 0.15;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 .transcript-caret {
     display: inline-block;
@@ -186,8 +158,13 @@ img {
     animation: transcript-caret 1.1s ease-in-out infinite;
 }
 @keyframes voice-live-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-live) 55%, transparent); }
-    50% { box-shadow: 0 0 0 4px transparent; }
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-live) 55%, transparent);
+    }
+    50% {
+        box-shadow: 0 0 0 4px transparent;
+    }
 }
 .voice-live-dot {
     width: 7px;
@@ -197,10 +174,16 @@ img {
     animation: voice-live-pulse 1.6s ease-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-    .voice-panel { transition: none; }
-    .transcript-word { animation-duration: 1ms; }
+    .voice-panel {
+        transition: none;
+    }
+    .transcript-word {
+        animation-duration: 1ms;
+    }
     .transcript-caret,
-    .voice-live-dot { animation: none; }
+    .voice-live-dot {
+        animation: none;
+    }
 }
 
 /*
@@ -241,11 +224,18 @@ img {
     text-decoration-color: oklch(0.68 0.2 25 / 60%);
 }
 @keyframes transcript-intent-working {
-    0%, 100% { background-color: oklch(0.65 0.15 240 / 10%); }
-    50% { background-color: oklch(0.65 0.15 240 / 24%); }
+    0%,
+    100% {
+        background-color: oklch(0.65 0.15 240 / 10%);
+    }
+    50% {
+        background-color: oklch(0.65 0.15 240 / 24%);
+    }
 }
 @media (prefers-reduced-motion: reduce) {
-    .transcript-intent-running { animation: none; }
+    .transcript-intent-running {
+        animation: none;
+    }
 }
 
 /* The assistant's answer, tucked under the paragraph that asked, in the colour of its highlight. */

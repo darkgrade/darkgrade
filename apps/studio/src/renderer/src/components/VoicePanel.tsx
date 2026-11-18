@@ -11,6 +11,7 @@ import {
     TooltipTrigger,
 } from '@kevinschaich/components'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
+import { VoiceBeam } from '@renderer/components/voice-glow'
 import {
     AssistantSetupNotice,
     formatDownloadSize,
@@ -24,14 +25,13 @@ import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
 import { microphoneLevel, transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
 import { AudioLines, ChevronDown, Download, Eraser, Mic, Square } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 interface VoicePanelProps {
     voice: LiveTranscription
     expanded: boolean
     onCollapse: () => void
 }
-
-const LEVEL_BARS = 5
 
 const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
     phase: 'idle',
@@ -43,23 +43,74 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
     speechModelBytes: 0,
 }
 
-/** A small meter that shows the microphone is hearing you. */
-function LevelMeter({ active }: { active: boolean }): React.JSX.Element {
-    const level = microphoneLevel.use()
-    const loudness = Math.min(1, Math.sqrt(level) * 3.2)
+/**
+ * The library's mobile preset is tuned for a ~400px-wide screen at scale 1.25. `scale` grows heights as well as
+ * widths, so it stays fixed here and only the horizontal geometry widens to the panel.
+ */
+const VOICE_GLOW_REFERENCE_WIDTH = 400
+const VOICE_GLOW_PRESET_SCALE = 1.25
+const VOICE_GLOW_SCALE = 1.5
+const VOICE_GLOW_PRESET_WIDTHS = { rangeWidth: 1.25, glowWidth: 1.15, lobeSpacing: 1.35 }
+/** How far the glow fades out before the panel's right edge, where the sidebar begins. */
+const VOICE_GLOW_RIGHT_FADE = '12rem'
+
+/**
+ * Voice (libraries.dev's voice glow) across the whole panel, behind its contents and on down behind the status bar
+ * to the bottom of the window: it rises and blooms from there with the microphone's level while listening.
+ */
+function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
+    const ref = useRef<HTMLDivElement>(null)
+    const [width, setWidth] = useState(VOICE_GLOW_REFERENCE_WIDTH)
+    // The distance from the panel's bottom to the window's: the status bar's height, more while its log is open.
+    const [below, setBelow] = useState(0)
+    useEffect(() => {
+        const panel = ref.current?.parentElement
+        if (!panel) return
+        const measure = (): void => {
+            const bounds = panel.getBoundingClientRect()
+            setWidth(Math.round(bounds.width))
+            setBelow(Math.max(0, Math.round(window.innerHeight - bounds.bottom)))
+        }
+        measure()
+        const observer = new ResizeObserver(measure)
+        observer.observe(panel)
+        observer.observe(document.documentElement)
+        return () => observer.disconnect()
+    }, [])
+    const widen = (width / VOICE_GLOW_REFERENCE_WIDTH) * (VOICE_GLOW_PRESET_SCALE / VOICE_GLOW_SCALE)
+    const fade = `linear-gradient(to right, black calc(100% - ${VOICE_GLOW_RIGHT_FADE}), transparent)`
     return (
-        <span className="flex h-3.5 items-end gap-[2px]" aria-hidden>
-            {Array.from({ length: LEVEL_BARS }, (_, index) => {
-                const lit = active && loudness * LEVEL_BARS > index
-                return (
-                    <span
-                        key={index}
-                        className={`w-[3px] rounded-full transition-[height,background-color] duration-100 ${lit ? 'bg-live' : 'bg-foreground/15'}`}
-                        style={{ height: `${30 + index * 17}%` }}
-                    />
-                )
-            })}
-        </span>
+        <div
+            ref={ref}
+            className="pointer-events-none absolute inset-x-0 top-0"
+            style={{ bottom: -below, isolation: 'isolate', maskImage: fade, WebkitMaskImage: fade }}
+            aria-hidden
+        >
+            <VoiceBeam
+                type="mobile"
+                scale={VOICE_GLOW_SCALE}
+                rangeWidth={VOICE_GLOW_PRESET_WIDTHS.rangeWidth * widen}
+                glowWidth={VOICE_GLOW_PRESET_WIDTHS.glowWidth * widen}
+                lobeSpacing={VOICE_GLOW_PRESET_WIDTHS.lobeSpacing * widen}
+                active={active}
+                // The level the old meter read: the microphone's RMS, lifted so speech fills the range. It is already
+                // lifted, so no further gain (the library's default of 3.1 pinned it at full on every syllable).
+                level={() => Math.min(1, Math.sqrt(microphoneLevel.get()) * 3.2)}
+                sensitivity={1}
+                // Quick to rise and fall with each syllable (the library's 0.325s / 0.86s lag behind speech), and
+                // a low reach, so it stays near the bottom and only loud speech lifts it.
+                attack={0.03}
+                release={0.18}
+                reach={0.7}
+                // The distortion layer is painted only inside a strip sized to the glow's recent height; a sudden
+                // rise cuts its warped copy flat, a sliver at the peak. Off, the peak stays smooth.
+                distortion={0}
+                borderRadius={0}
+                style={{ position: 'absolute', inset: 0 }}
+            >
+                <div className="size-full" />
+            </VoiceBeam>
+        </div>
     )
 }
 
@@ -195,54 +246,62 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     return (
         <section
             id="voice-panel"
-            className="voice-panel flex shrink-0 flex-col overflow-hidden border-t border-border bg-black/55"
+            className="voice-panel relative shrink-0 border-t border-border bg-black/55"
             data-expanded={expanded}
             aria-label="Voice"
             inert={!expanded}
         >
-            <header className="flex h-10 shrink-0 items-center gap-2 px-3">
-                <span className="flex items-center gap-2 text-sm font-medium">
-                    Live transcript
-                    <LevelMeter active={listening} />
-                </span>
-                <span className="flex-1" />
-                <SpeechModelPicker voice={voice} />
-                <MicrophonePicker voice={voice} />
-                <Tooltip>
-                    <TooltipTrigger
-                        render={
-                            <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                aria-label="Clear transcript"
-                                disabled={!hasText}
-                                onClick={voice.clear}
-                            />
-                        }
-                    >
-                        <Eraser />
-                    </TooltipTrigger>
-                    <TooltipContent>Clear transcript</TooltipContent>
-                </Tooltip>
-                <ListenButton voice={voice} />
-                <Tooltip>
-                    <TooltipTrigger
-                        render={<Button size="icon-sm" variant="ghost" aria-label="Hide voice" onClick={onCollapse} />}
-                    >
-                        <ChevronDown />
-                    </TooltipTrigger>
-                    <TooltipContent>Hide</TooltipContent>
-                </Tooltip>
-            </header>
-            {hasText ? (
-                <LiveTranscript paragraphs={paragraphs} listening={listening} />
-            ) : (
-                <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
-                    <EngineMessage voice={voice} summary={summary} />
+            <VoiceGlow active={listening && expanded} />
+            {/* Clips the panel's contents to its height as it opens; the glow behind them runs on past its bottom. */}
+            <div className="absolute inset-0 flex flex-col overflow-hidden">
+                <header className="relative flex h-10 shrink-0 items-center gap-2 px-3">
+                    <span className="text-sm font-medium">Live transcript</span>
+                    <span className="flex-1" />
+                    <SpeechModelPicker voice={voice} />
+                    <MicrophonePicker voice={voice} />
+                    <Tooltip>
+                        <TooltipTrigger
+                            render={
+                                <Button
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    aria-label="Clear transcript"
+                                    disabled={!hasText}
+                                    onClick={voice.clear}
+                                />
+                            }
+                        >
+                            <Eraser />
+                        </TooltipTrigger>
+                        <TooltipContent>Clear transcript</TooltipContent>
+                    </Tooltip>
+                    <ListenButton voice={voice} />
+                    <Tooltip>
+                        <TooltipTrigger
+                            render={
+                                <Button size="icon-sm" variant="ghost" aria-label="Hide voice" onClick={onCollapse} />
+                            }
+                        >
+                            <ChevronDown />
+                        </TooltipTrigger>
+                        <TooltipContent>Hide</TooltipContent>
+                    </Tooltip>
+                </header>
+                {/* Positioned, so the panel's contents paint above the glow behind them. */}
+                <div className="relative flex min-h-0 flex-1 flex-col">
+                    {hasText ? (
+                        <LiveTranscript paragraphs={paragraphs} listening={listening} />
+                    ) : (
+                        <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
+                            <EngineMessage voice={voice} summary={summary} />
+                        </div>
+                    )}
+                    {hasText && voice.error && (
+                        <p className="shrink-0 px-5 pb-2 text-xs text-destructive">{voice.error}</p>
+                    )}
+                    {listening && <AssistantSetupNotice summary={summary} />}
                 </div>
-            )}
-            {hasText && voice.error && <p className="shrink-0 px-5 pb-2 text-xs text-destructive">{voice.error}</p>}
-            {listening && <AssistantSetupNotice summary={summary} />}
+            </div>
         </section>
     )
 }
