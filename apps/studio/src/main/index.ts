@@ -32,11 +32,8 @@ function createWindow(): void {
         },
     })
 
-    // A desktop app doesn't zoom its own chrome with Cmd +/-.
+    // Trackpad pinch doesn't zoom the window; Cmd + / Cmd - / Cmd 0 do, from the View menu.
     void mainWindow.webContents.setVisualZoomLevelLimits(1, 1)
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-        if ((input.meta || input.control) && ['=', '+', '-', '0'].includes(input.key)) event.preventDefault()
-    })
 
     mainWindow.on('closed', () => {
         mainWindow = null

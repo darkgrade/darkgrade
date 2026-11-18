@@ -169,9 +169,6 @@ function EngineMessage({
             </div>
         )
     }
-    if (voice.listening === 'listening') {
-        return <p className="text-sm text-muted-foreground">Listening — start speaking</p>
-    }
     if (engine?.phase === 'not-downloaded') {
         return (
             <div className="flex flex-col items-center gap-5 text-center">
@@ -246,7 +243,6 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
             {/* Clips the panel's contents to its height as it opens; the glow behind them runs on past its bottom. */}
             <div className="absolute inset-0 flex flex-col overflow-hidden rounded-xl">
                 <header className="relative flex h-10 shrink-0 items-center gap-2 px-3">
-                    <span className="slate-label">Live transcript</span>
                     <span className="flex-1" />
                     <SpeechModelPicker voice={voice} />
                     <MicrophonePicker voice={voice} />
@@ -282,7 +278,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
                 </header>
                 {/* Positioned, so the panel's contents paint above the glow behind them. */}
                 <div className="relative flex min-h-0 flex-1 flex-col">
-                    {hasText ? (
+                    {hasText || listening ? (
                         <LiveTranscript paragraphs={paragraphs} listening={listening} />
                     ) : (
                         <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">

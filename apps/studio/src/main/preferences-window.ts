@@ -38,7 +38,7 @@ export function openPreferences(): void {
     else void preferencesWindow.loadFile(join(currentDir, '../renderer/index.html'), { hash: 'preferences' })
 }
 
-/** The standard macOS menus, with Settings… (⌘,) and Developer Mode in the app menu. */
+/** The standard macOS menus, with Settings… (⌘,) and Developer Mode in the app menu, and zoom (⌘ = / ⌘ − / ⌘ 0). */
 export function installApplicationMenu(): void {
     const template: MenuItemConstructorOptions[] = [
         {
@@ -64,7 +64,21 @@ export function installApplicationMenu(): void {
             ],
         },
         { role: 'editMenu' },
-        { role: 'viewMenu' },
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'toggleDevTools' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                // Cmd = as well as Cmd +, as macOS apps do: Electron's own zoom-in needs Shift.
+                { role: 'zoomIn', accelerator: 'CmdOrCtrl+=' },
+                { role: 'zoomIn', accelerator: 'CmdOrCtrl+Plus', visible: false, acceleratorWorksWhenHidden: true },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' },
+            ],
+        },
         { role: 'windowMenu' },
     ]
     Menu.setApplicationMenu(Menu.buildFromTemplate(template))

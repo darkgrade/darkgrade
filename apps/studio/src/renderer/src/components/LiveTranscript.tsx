@@ -28,11 +28,14 @@ interface ParagraphProps {
     /** Where this paragraph starts in the joined transcript, for placing highlights. */
     offset: number
     highlights: IntentHighlight[]
+    /** The last paragraph ends with the words still being heard and the caret, on its own last line. */
+    partial?: string
+    caret?: boolean
 }
 
 /** One paragraph; requests heard in it are coloured by how far the assistant has got with them. */
 const Paragraph = memo(
-    function Paragraph({ text, latest, offset, highlights }: ParagraphProps) {
+    function Paragraph({ text, offset, highlights, partial, caret }: ParagraphProps) {
         // Consecutive words of one request become one highlighted run, so a command reads as one block.
         const runs: {
             highlight: IntentHighlight | undefined
@@ -53,7 +56,7 @@ const Paragraph = memo(
         const answered = highlights.filter(highlight => highlight.state !== 'recognized')
         return (
             <>
-                <p className={`transcript-paragraph ${latest ? 'text-foreground' : 'text-foreground/55'}`}>
+                <p className="transcript-paragraph">
                     {runs.map(run => {
                         if (!run.highlight) {
                             return run.words.map(entry => (
@@ -80,6 +83,8 @@ const Paragraph = memo(
                             </span>
                         )
                     })}
+                    {partial && <span className="text-muted-foreground">{partial} </span>}
+                    {caret && <span className="transcript-caret" aria-hidden />}
                 </p>
                 {answered.map(highlight => (
                     <AssistantReply key={highlight.id} highlight={highlight} />
@@ -90,6 +95,8 @@ const Paragraph = memo(
     (previous, next) =>
         previous.text === next.text &&
         previous.latest === next.latest &&
+        previous.partial === next.partial &&
+        previous.caret === next.caret &&
         previous.offset === next.offset &&
         highlightKey(previous.highlights) === highlightKey(next.highlights)
 )
@@ -118,7 +125,16 @@ function AssistantReply({ highlight }: { highlight: IntentHighlight }): React.JS
     )
 }
 
-/** The words as they're spoken: each fades in, and the view follows the newest line unless scrolled back. */
+/** How long the lines take to glide up as a new one arrives at the bottom, and how they ease into place. */
+const PUSH_UP_MS = 420
+const PUSH_UP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
+
+/**
+ * The words as they're spoken, anchored to the bottom: each new word fades in on the last line, and when the text
+ * grows the lines above glide up into place rather than jump. The text (only the text, not the glow behind it)
+ * fades evenly from fully opaque on the last line to nothing at the top. The view follows the newest line unless
+ * scrolled back. With nothing said yet, a placeholder sits where the first words will appear.
+ */
 export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): React.JSX.Element {
     const scrollRef = useRef<HTMLDivElement>(null)
     const [following, setFollowing] = useState(true)
@@ -142,8 +158,21 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
         if (element) element.scrollTo({ top: element.scrollHeight, behavior })
     }, [])
 
+    // Push-up: when the text grows, start it where it was and ease it into its new place.
+    const contentRef = useRef<HTMLDivElement>(null)
+    const lastHeight = useRef(0)
     useLayoutEffect(() => {
         if (following) scrollToLatest('auto')
+        const content = contentRef.current
+        if (!content) return
+        const height = content.offsetHeight
+        const grown = height - lastHeight.current
+        lastHeight.current = height
+        if (grown > 0 && grown < 200 && following && !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+            content.animate([{ transform: `translateY(${grown}px)` }, { transform: 'none' }], {
+                duration: PUSH_UP_MS,
+                easing: PUSH_UP_EASING,
+            })
     }, [paragraphs, partial, highlights, following, scrollToLatest])
 
     useEffect(() => {
@@ -159,26 +188,37 @@ export function LiveTranscript({ paragraphs, listening }: LiveTranscriptProps): 
             <div
                 ref={scrollRef}
                 onScroll={onScroll}
-                className="selectable h-full overflow-y-auto px-5 pt-3 pb-5"
+                className="transcript-scroll selectable flex h-full flex-col overflow-y-auto px-5 pb-5"
                 role="log"
                 aria-live="polite"
                 aria-label="Live transcript"
             >
-                {paragraphs.map((text, index) => {
-                    const offset = offsets[index]
-                    const end = offset + text.length
-                    return (
-                        <Paragraph
-                            key={index}
-                            text={text}
-                            latest={index === paragraphs.length - 1}
-                            offset={offset}
-                            highlights={highlights.filter(range => range.start < end && range.end > offset)}
-                        />
-                    )
-                })}
-                {partial && <span className="text-muted-foreground">{partial} </span>}
-                {listening && <span className="transcript-caret" aria-hidden />}
+                <div ref={contentRef} className="mt-auto">
+                    {paragraphs.map((text, index) => {
+                        const offset = offsets[index]
+                        const end = offset + text.length
+                        return (
+                            <Paragraph
+                                key={index}
+                                text={text}
+                                latest={index === paragraphs.length - 1}
+                                offset={offset}
+                                highlights={highlights.filter(range => range.start < end && range.end > offset)}
+                                partial={index === paragraphs.length - 1 ? partial : undefined}
+                                caret={index === paragraphs.length - 1 && listening}
+                            />
+                        )
+                    })}
+                    {paragraphs.length === 0 && (
+                        <p className="transcript-paragraph">
+                            {partial && <span className="text-muted-foreground">{partial} </span>}
+                            {listening && <span className="transcript-caret" aria-hidden />}
+                            {!partial && (
+                                <span className="transcript-placeholder">Start talking. Your words appear here.</span>
+                            )}
+                        </p>
+                    )}
+                </div>
             </div>
             {!following && (
                 <Button
