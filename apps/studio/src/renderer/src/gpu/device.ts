@@ -63,7 +63,10 @@ async function upload(blob: Blob): Promise<void> {
     try {
         const gpu = await getGpu()
         if (!gpu) return
+        const decodeStarted = performance.now()
         const bitmap = await createImageBitmap(blob)
+        perf.cpu('Live frame decode', performance.now() - decodeStarted)
+        const uploadStarted = performance.now()
         const { width, height } = bitmap
         if (!frame || frame.width !== width || frame.height !== height) {
             frame?.texture.destroy()
@@ -76,6 +79,7 @@ async function upload(blob: Blob): Promise<void> {
         }
         gpu.device.queue.copyExternalImageToTexture({ source: bitmap }, { texture: frame.texture }, [width, height])
         bitmap.close()
+        perf.cpu('Live frame upload to the GPU', performance.now() - uploadStarted)
         frame = { ...frame, version: frame.version + 1 }
         listeners.forEach(listener => listener(frame))
     } catch {
@@ -142,7 +146,7 @@ export function animate(label: string, draw: (now: number) => void): () => void 
         if (!perf.enabled) return draw(now)
         const start = performance.now()
         draw(now)
-        perf.cpu(label, performance.now() - start)
+        perf.cpu(label, performance.now() - start, true)
     })
     return () => cancelAnimationFrame(handle)
 }

@@ -1,8 +1,9 @@
 import { App } from '@renderer/App'
 import { PerfWindow } from '@renderer/components/PerfMonitor'
 import { PreferencesWindow } from '@renderer/components/PreferencesWindow'
+import { perf } from '@renderer/lib/perf'
 import '@renderer/styles.css'
-import { StrictMode } from 'react'
+import { Profiler, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 const SCROLL_PILL_LINGER_MS = 900
@@ -39,7 +40,10 @@ createRoot(document.getElementById('root')!).render(
         ) : window.location.hash === '#perf' ? (
             <PerfWindow />
         ) : (
-            <App />
+            // React's own render time, for the performance monitor (development builds report it).
+            <Profiler id="app" onRender={(_id, _phase, milliseconds) => perf.cpu('React rendering', milliseconds)}>
+                <App />
+            </Profiler>
         )}
     </StrictMode>
 )

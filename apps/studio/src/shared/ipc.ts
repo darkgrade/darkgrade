@@ -399,7 +399,13 @@ export interface ProcessSample {
 /** The Studio window's own breakdown, once a second while the monitor window is open. */
 export interface PerfReport {
     fps: number
-    subsystems: { label: string; cpuPercent: number; gpuPercent: number }[]
+    subsystems: {
+        label: string
+        detail?: string
+        cpuPercent: number
+        /** null for work with no GPU passes of its own. */
+        gpuPercent: number | null
+    }[]
 }
 
 export interface StudioApi {
@@ -475,6 +481,8 @@ export interface StudioApi {
     getMcpServerStatus(): Promise<IpcResult<McpServerStatus>>
     /** Every process Studio runs, with the CPU each used since the last call (Developer Mode's monitor). */
     perfSampleProcesses(): Promise<IpcResult<ProcessSample[]>>
+    /** Each event channel's count, bytes and handler time since the last call (Developer Mode's monitor). */
+    perfTakeIpc(): { channel: string; count: number; milliseconds: number; bytes: number }[]
     /** Opens the performance monitor's window. */
     perfOpen(): Promise<IpcResult<void>>
     perfIsOpen(): Promise<IpcResult<boolean>>

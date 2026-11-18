@@ -78,6 +78,26 @@ function peakOf(histories: number[][]): number {
 
 // ---------- the card in the Studio window
 
+/** Events from the main process, by what they carry. */
+const IPC_LABELS: Record<string, string> = {
+    'evt:liveview-frame': 'Live frames arriving',
+    'evt:state': 'Camera state updates',
+    'evt:focus-frames': 'Focus frames arriving',
+    'evt:osd-frame': "The camera's display arriving",
+    'evt:log': 'Activity log entries',
+    'evt:voice-status': 'Voice engine status',
+    'evt:assistant-status': 'Assistant status',
+    'evt:files': 'Card file list',
+    'evt:perf-report': 'Performance reports',
+}
+
+const SUBSYSTEM_DETAILS: Record<string, string> = {
+    'Live frame decode': 'JPEG to pixels, on a decoder thread; time from asking to having it',
+    'Live frame upload to the GPU': 'copying the decoded frame into the shared texture',
+    'React rendering': 'components re-rendering (reported by development builds only)',
+    'Voice detector (worker thread)': 'Silero, in a worker, on every 32 ms of audio',
+}
+
 /** The Studio window's side: times its subsystems while the monitor window is open and sends the totals each second. */
 function usePerfReporter(fps: number): void {
     const fpsRef = useRef(fps)
@@ -89,10 +109,27 @@ function usePerfReporter(fps: number): void {
             clearInterval(timer)
             takePerf()
             if (enabled)
-                timer = setInterval(
-                    () => void window.studio.perfReport({ fps: fpsRef.current, subsystems: takePerf() }),
-                    SAMPLE_MS
-                )
+                timer = setInterval(() => {
+                    // Each IPC event type on its own: how often it arrives, how much it carries, and its handler.
+                    const ipc = window.studio.perfTakeIpc().map(entry => ({
+                        label: IPC_LABELS[entry.channel] ?? `Event: ${entry.channel.replace(/^evt:/, '')}`,
+                        detail: `${entry.count} a second${entry.bytes ? ` · ${(entry.bytes / 1048576).toFixed(1)} MB/s` : ''} · receiving it and its handler`,
+                        cpuPercent: entry.milliseconds / 10,
+                        gpuPercent: null,
+                    }))
+                    void window.studio.perfReport({
+                        fps: fpsRef.current,
+                        subsystems: [
+                            ...takePerf().map(({ label, cpuPercent, gpuPercent }) => ({
+                                label,
+                                detail: SUBSYSTEM_DETAILS[label],
+                                cpuPercent,
+                                gpuPercent,
+                            })),
+                            ...ipc,
+                        ],
+                    })
+                }, SAMPLE_MS)
         }
         // A reply that lands after this effect was cleaned up must not start a second reporter.
         let active = true
@@ -290,7 +327,7 @@ export function PerfWindow(): React.JSX.Element {
                 entries.reduce((total, entry) => total + entry[key], 0)
             const subsystems = latestReport?.subsystems ?? []
             const timedCpu = subsystems.reduce((total, entry) => total + entry.cpuPercent, 0)
-            const timedGpu = subsystems.reduce((total, entry) => total + entry.gpuPercent, 0)
+            const timedGpu = subsystems.reduce((total, entry) => total + (entry.gpuPercent ?? 0), 0)
 
             // Each feature on its own, wherever it runs: the Studio window's own parts, then whole processes.
             const featureRows: Row[] = [
@@ -305,11 +342,12 @@ export function PerfWindow(): React.JSX.Element {
                     row(
                         `feature:${entry.label}`,
                         entry.label,
-                        /detector/i.test(entry.label)
-                            ? 'Silero, in a worker of the Studio window, on every 32 ms of audio'
-                            : 'a draw loop in the Studio window: its JavaScript, and its passes on the GPU',
+                        entry.detail ??
+                            (entry.gpuPercent !== null
+                                ? 'a draw loop in the Studio window: its JavaScript, and its passes on the GPU'
+                                : undefined),
                         entry.cpuPercent,
-                        /worker|detector/i.test(entry.label) ? null : entry.gpuPercent
+                        entry.gpuPercent
                     )
                 ),
             ]
@@ -318,10 +356,10 @@ export function PerfWindow(): React.JSX.Element {
                 featureRows.push(
                     row(
                         'feature:page',
-                        'Other page work',
+                        latestReport ? 'Unattributed page work' : 'Studio window',
                         latestReport
-                            ? 'the rest of the Studio window: React, layout, styles, microphone capture, IPC'
-                            : 'the whole Studio window (its parts appear once it reports)',
+                            ? "the rest of the Studio window: style, layout, paint, garbage collection, timers; JavaScript can't time these"
+                            : 'the whole window (its parts appear once it reports)',
                         Math.max(0, sum(studio, 'cpuPercent') - timedCpu),
                         null
                     )
