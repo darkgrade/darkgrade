@@ -15,13 +15,18 @@ import {
     FieldLabel,
     Input,
     Switch,
+    toast,
 } from '@kevinschaich/components'
 import type { DiagnosticsStatus } from '@shared/ipc'
 import { ChevronRight } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+/** Paths read better relative to the home folder, as Finder shows them. */
+const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~')
 
 export function DiagnosticsSettings() {
     const [status, setStatus] = useState<DiagnosticsStatus | null>(null)
+    const wasDeleting = useRef(false)
     const [busy, setBusy] = useState(false)
     const [message, setMessage] = useState('')
     const [email, setEmail] = useState('')
@@ -30,8 +35,13 @@ export function DiagnosticsSettings() {
         const refresh = async () => {
             try {
                 const result = await window.studio.getDiagnosticsStatus()
-                if (active && result.ok) setStatus(result.data)
-                else if (active && !result.ok) setMessage(result.error)
+                if (active && result.ok) {
+                    // A deletion finishes on its own after the first request; say so when it does.
+                    if (wasDeleting.current && !result.data.withdrawalPending)
+                        setMessage("Deleted from Darkgrade's servers. You can turn sharing back on.")
+                    wasDeleting.current = result.data.withdrawalPending
+                    setStatus(result.data)
+                } else if (active && !result.ok) setMessage(result.error)
             } catch {
                 if (active) setMessage('Telemetry settings could not be loaded.')
             }
@@ -49,8 +59,16 @@ export function DiagnosticsSettings() {
         setMessage('')
         try {
             const result = await window.studio.changeDiagnostics(action, value)
-            if (result.ok) setStatus(result.data)
-            else setMessage(result.error)
+            if (!result.ok) return setMessage(result.error)
+            setStatus(result.data)
+            wasDeleting.current = result.data.withdrawalPending
+            if (action === 'withdraw' || action === 'retry')
+                setMessage(
+                    result.data.withdrawalPending
+                        ? "Deleting what this Mac shared from Darkgrade's servers. It finishes on its own; this updates when it's done."
+                        : "Deleted from Darkgrade's servers. You can turn sharing back on."
+                )
+            if (action === 'sharing') setMessage(value ? 'Sharing is on.' : 'Sharing is off.')
         } catch {
             setMessage('Could not update telemetry. Try again.')
         } finally {
@@ -62,11 +80,14 @@ export function DiagnosticsSettings() {
         setMessage('Reading camera profile… This can take up to three minutes.')
         try {
             const result = await window.studio.diagnosticsBenchmark()
-            setMessage(
-                result.ok
-                    ? `${result.data.passed ? '✅ Profile exported' : '⚠️ Partial profile exported'} · ${result.data.checks.filter(check => check.passed).length}/${result.data.checks.length} reads passed. Saved locally; upload follows your sharing setting.`
-                    : result.error
-            )
+            if (!result.ok) return setMessage(result.error)
+            const { passed, checks, path } = result.data
+            setMessage('')
+            toast.add({
+                title: passed ? 'Camera profile exported' : 'Partial camera profile exported',
+                description: `${checks.filter(check => check.passed).length} of ${checks.length} reads passed · ${shortPath(path)}`,
+                actionProps: { children: 'Show in Finder', onClick: () => void window.studio.revealPath(path) },
+            })
         } catch {
             setMessage('Camera check failed. Try again.')
         } finally {
@@ -80,12 +101,12 @@ export function DiagnosticsSettings() {
             setMessage(
                 result.ok
                     ? action === 'request'
-                        ? 'Check your email to confirm this installation.'
+                        ? `Sent to ${email}. Open the link in that email to confirm this Mac.`
                         : action === 'remove'
-                          ? 'Email association removed.'
+                          ? 'Email unlinked from this Mac.'
                           : result.data
-                            ? `Verified: ${result.data.email}`
-                            : 'No verified email linked.'
+                            ? `Linked and confirmed: ${result.data.email}`
+                            : 'No email is linked to this Mac yet.'
                     : result.error
             )
             if (result.ok && action !== 'status') setEmail('')
@@ -102,9 +123,11 @@ export function DiagnosticsSettings() {
                 <FieldContent>
                     <FieldLabel htmlFor="camera-diagnostics">Share camera diagnostics</FieldLabel>
                     <FieldDescription>
-                        {status.configured
-                            ? 'Help improve Link and Matrix with camera capabilities and safe numeric settings. No images or raw serial numbers.'
-                            : (status.error ?? 'Sharing is off until a collector is configured.')}
+                        {!status.configured
+                            ? (status.error ?? 'Sharing is off until a collector is configured.')
+                            : status.withdrawalPending
+                              ? "Deleting what this Mac shared. Sharing can be turned back on once that's done."
+                              : 'Help improve Link and Matrix with camera capabilities and safe numeric settings. No images or raw serial numbers.'}
                     </FieldDescription>
                 </FieldContent>
                 <Switch
@@ -204,16 +227,16 @@ export function DiagnosticsSettings() {
                             value={email}
                             onChange={event => setEmail(event.target.value)}
                             placeholder="you@example.com"
-                            disabled={busy}
+                            disabled={busy || !status.enabled}
                         />
-                        <Button size="sm" type="submit" disabled={busy || !email || status.withdrawalPending}>
+                        <Button size="sm" type="submit" disabled={busy || !email || !status.enabled}>
                             Send confirmation
                         </Button>
                         <Button
                             size="sm"
                             type="button"
                             variant="ghost"
-                            disabled={busy}
+                            disabled={busy || !status.enrolled}
                             onClick={() => void contact('status')}
                         >
                             Check status
@@ -222,12 +245,15 @@ export function DiagnosticsSettings() {
                             size="sm"
                             type="button"
                             variant="ghost"
-                            disabled={busy}
+                            disabled={busy || !status.enrolled}
                             onClick={() => void contact('remove')}
                         >
                             Unlink
                         </Button>
                     </form>
+                    {!status.enabled && (
+                        <p className="mt-2 text-xs text-muted-foreground">Turn on sharing to link an email.</p>
+                    )}
                 </details>
             )}
             {(message || status.error) && (

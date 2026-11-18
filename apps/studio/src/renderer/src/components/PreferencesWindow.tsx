@@ -5,6 +5,7 @@ import {
     FieldDescription,
     FieldLabel,
     Switch,
+    Toaster,
     Tooltip,
     TooltipContent,
     TooltipProvider,
@@ -112,20 +113,22 @@ export function PreferencesWindow(): React.JSX.Element | null {
     if (!preferences) return null
     return (
         <TooltipProvider delay={400}>
-            <div className="flex h-full flex-col bg-canvas">
-                <header className="flex h-12 shrink-0 items-center justify-center text-sm font-medium [-webkit-app-region:drag]">
-                    Settings
-                </header>
-                <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-8">
-                    <h2 className="slate-label mb-4">Integrations</h2>
-                    <McpServerSection
-                        preferences={preferences}
-                        status={status}
-                        onChange={enabled => void api.setPreferences({ mcpServerEnabled: enabled })}
-                    />
-                    <DiagnosticsSettings />
-                </main>
-            </div>
+            <Toaster>
+                <div className="flex h-full flex-col bg-canvas">
+                    <header className="flex h-12 shrink-0 items-center justify-center text-sm font-medium [-webkit-app-region:drag]">
+                        Settings
+                    </header>
+                    <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-8">
+                        <h2 className="slate-label mb-4">Integrations</h2>
+                        <McpServerSection
+                            preferences={preferences}
+                            status={status}
+                            onChange={enabled => void api.setPreferences({ mcpServerEnabled: enabled })}
+                        />
+                        <DiagnosticsSettings />
+                    </main>
+                </div>
+            </Toaster>
         </TooltipProvider>
     )
 }

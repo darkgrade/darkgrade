@@ -418,7 +418,12 @@ export interface StudioApi {
     voiceDiagnostic(message: string): Promise<IpcResult<void>>
     onVoiceStatus(callback: (status: VoiceEngineStatus) => void): () => void
     diagnosticsBenchmark(): Promise<
-        IpcResult<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }>
+        IpcResult<{
+            passed: boolean
+            checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }>
+            /** Where the profile was saved on this Mac. */
+            path: string
+        }>
     >
     getDiagnosticsStatus(): Promise<IpcResult<DiagnosticsStatus>>
     changeDiagnostics(action: 'sharing' | 'withdraw' | 'retry', value?: boolean): Promise<IpcResult<DiagnosticsStatus>>

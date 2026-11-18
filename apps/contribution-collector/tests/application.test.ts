@@ -452,3 +452,23 @@ test('transient failures retry an immutable batch, bounded queues drop overflow,
         client.close()
     }
 })
+
+test("email and deletion failures carry the collector's reason, and sharing off says so", async () => {
+    const fixture = memoryDatabase(),
+        saved = settings()
+    // A collector with no email sender configured.
+    const handle = createTelemetry(fixture.database, { publicUrl: 'https://telemetry.example' })
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: saved.store,
+        fetch: (url, init) => handle(new Request(url, init)),
+    })
+    try {
+        await assert.rejects(client.requestContact('camera@example.com'), /Email confirmation is not configured/)
+        await client.withdraw()
+        assert.equal(client.status().withdrawalPending, false)
+        await assert.rejects(client.requestContact('camera@example.com'), /Turn on sharing to link an email/)
+    } finally {
+        client.close()
+    }
+})

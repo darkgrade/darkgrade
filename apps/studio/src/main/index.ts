@@ -112,8 +112,9 @@ if (!hasSingleInstanceLock) {
         if (process.platform === 'darwin') {
             void systemPreferences.askForMediaAccess('microphone')
         }
+        // The microphone (live transcription) and writing to the clipboard (Copy buttons); nothing else.
         session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-            callback(permission === 'media')
+            callback(permission === 'media' || permission === 'clipboard-sanitized-write')
         })
 
         installApplicationMenu()
