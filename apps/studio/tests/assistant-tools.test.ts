@@ -1,7 +1,19 @@
 import { analyseFrame } from '@shared/frame-analysis'
 import { matchOption } from '@shared/setting-values'
 import { locateQuote } from '@voice/intent-follower'
+import { intentHasStarted } from '@main/assistant/intent-schema'
 import { describe, expect, it } from 'vitest'
+
+describe('recognizing a streamed request', () => {
+    it('does not leave a provisional request for none, including its final streamed newline', () => {
+        for (const answer of ['', ' ', '\n', 'n', 'no', 'non', 'none', 'none\n', ' none \n', 'NONE\r\n'])
+            expect(intentHasStarted(answer)).toBe(false)
+    })
+    it('recognizes numbered requests before their complete action has arrived', () => {
+        for (const answer of ['1', '1 ', '1 photo\n', '2 set iso 800; ', '\n3 view waveform'])
+            expect(intentHasStarted(answer)).toBe(true)
+    })
+})
 
 describe('matching spoken values to the camera’s own', () => {
     it('reads apertures, shutter speeds and ISO however they are said', () => {

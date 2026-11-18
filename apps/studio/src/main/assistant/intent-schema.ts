@@ -98,6 +98,12 @@ export interface FoundRequest {
     focusPeaking?: boolean
 }
 
+/** A streamed answer has begun a request, rather than whitespace or the no-request token. */
+export function intentHasStarted(answer: string): boolean {
+    const word = answer.trim().toLowerCase()
+    return word.length > 0 && !'none'.startsWith(word)
+}
+
 function parseView(items: string[]): FoundRequest {
     const request: FoundRequest = { action: 'set_studio_view' }
     for (const item of items) {

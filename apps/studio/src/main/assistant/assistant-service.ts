@@ -1,5 +1,5 @@
 import { describeDone, resolveFollowUp } from '@main/assistant/follow-ups'
-import { INTENT_GRAMMAR, INTENT_INSTRUCTIONS, parseIntentLine, type FoundRequest } from '@main/assistant/intent-schema'
+import { INTENT_GRAMMAR, INTENT_INSTRUCTIONS, intentHasStarted, parseIntentLine, type FoundRequest } from '@main/assistant/intent-schema'
 import { toolCallsWrittenAsText } from '@main/assistant/text-tool-calls'
 import { cameraService } from '@main/camera-service'
 import { llamaServerBinary, LlamaServerProcess } from '@main/models/llama-server-process'
@@ -543,8 +543,7 @@ class AssistantService {
                 if (chunk.timings) timings = chunk.timings
                 answer += chunk.content ?? ''
                 // "none" means nothing to do; any other first word is already a request being written.
-                const begun = answer.trimStart().toLowerCase()
-                if (!commandStarted && begun && !'none'.startsWith(begun)) {
+                if (!commandStarted && intentHasStarted(answer)) {
                     commandStarted = true
                     onCommandStarted()
                 }
