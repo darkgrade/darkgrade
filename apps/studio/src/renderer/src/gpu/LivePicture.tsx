@@ -36,8 +36,8 @@ const DRIFTS: Array<[number, number]> = [
     [3.9, 1.3],
     [5.9, 4.2],
 ]
-/** The picture's corner radius, as its frame's rounded-lg. */
-const RADIUS = 10
+/** The picture's corner radius, as its frame's rounded-xl (the window's own corner, more or less). */
+const RADIUS = 14
 /** Zebra stripes step along a stripe width twelve times a second. */
 const ZEBRA_STEPS_PER_SECOND = 12
 /** Focus peaking's threshold: the frame's noise times this, from the least (1) to the most (100) sensitive. */

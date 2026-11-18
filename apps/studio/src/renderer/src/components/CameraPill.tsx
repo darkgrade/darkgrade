@@ -176,7 +176,7 @@ export function CameraPill({
                     <Button
                         variant="secondary"
                         size="sm"
-                        className="gap-3.5 rounded-full bg-foreground/8 px-3.5 font-normal hover:bg-foreground/12"
+                        className="gap-3.5 rounded-full bg-black/55 px-3.5 font-normal backdrop-blur-sm hover:bg-black/65"
                     />
                 }
             >

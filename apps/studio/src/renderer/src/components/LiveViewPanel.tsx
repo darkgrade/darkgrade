@@ -9,7 +9,6 @@ import {
     Kbd,
     Spinner,
 } from '@kevinschaich/components'
-import { appearance } from '@renderer/components/AppearanceTuner'
 import { HoverTip } from '@renderer/components/HoverTip'
 import { PreviewQuality, type PreviewQualityProps } from '@renderer/components/PreviewQuality'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
@@ -21,7 +20,7 @@ import { Camera, Crosshair, Mic, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 interface LiveViewPanelProps {
-    /** Above the picture (the camera pill), 12px from it as the toolbar is below. */
+    /** Floats over the top of the picture (the camera pill), as the toolbar floats over its bottom. */
     header: React.ReactNode
     cameraState: CameraState
     busy: boolean
@@ -111,7 +110,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
         <div className="flex shrink-0 justify-center">
-            <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
+            <div className="flex items-center gap-1 rounded-xl bg-black/55 p-1 backdrop-blur-sm">
                 <HoverTip
                     tip={
                         <>
@@ -214,9 +213,6 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
         </div>
     )
 }
-
-/** The height the pill (28px), the toolbar (44px) and the two 12px gaps between them and the picture take. */
-const PICTURE_CHROME_PX = 28 + 44 + 12 * 2
 
 type FocusMarker = { x: number; y: number; status: 'focusing' | 'focused' | 'failed' }
 
@@ -322,41 +318,35 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const canFocusAt = props.onFocusAt !== null && !disabled && !props.readingCard
     // While the card is read, live view is paused: keep the last frame, dimmed and labelled, rather than flash.
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
-    // Developer Mode › Appearance can float the pill and toolbar over a picture that fills the card.
-    const overlay = appearance.use().overlayControls && showFrame
 
     return (
-        // One column, 12px apart and 12px from the card's edges: the pill, the picture and the toolbar, the picture as
-        // large as its shape allows between them (the space they take is PICTURE_CHROME_PX).
-        <div className="flex min-h-0 flex-1 flex-col p-3 [container-type:size]">
-            <div className="flex size-full flex-col items-center justify-center gap-3">
-                {!overlay && <div className="titlebar-drag flex w-full shrink-0 justify-center">{props.header}</div>}
+        // The picture alone, as large as its shape allows, rounded like the window's corners. The camera pill and the
+        // toolbar float over it, 12px from its top and bottom; clicks around them still focus.
+        <div className="flex min-h-0 flex-1 items-center justify-center [container-type:size]">
+            <div
+                className={`relative overflow-hidden rounded-xl ${showFrame ? '' : 'bg-black/40'} ${canFocusAt ? 'cursor-crosshair!' : ''}`}
+                style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
+                onClick={event => {
+                    if (!showFrame || !canFocusAt || !props.onFocusAt) return
+                    if ((event.target as HTMLElement).closest('button')) return
+                    const bounds = event.currentTarget.getBoundingClientRect()
+                    const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
+                    const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+                    if (focusRingTimer.current) clearTimeout(focusRingTimer.current)
+                    setFocusMarker({ x, y, status: 'focusing' })
+                    void props.onFocusAt(x, y).then(focused => {
+                        setFocusMarker(marker =>
+                            marker && marker.x === x && marker.y === y
+                                ? { ...marker, status: focused ? 'focused' : 'failed' }
+                                : marker
+                        )
+                        focusRingTimer.current = setTimeout(() => setFocusMarker(null), FOCUS_RING_LINGER_MS)
+                    })
+                }}
+                title={showFrame && canFocusAt ? 'Click to focus there' : undefined}
+            >
                 {showFrame ? (
-                    <div
-                        className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}
-                        style={{
-                            aspectRatio: frameAspect,
-                            width: `min(100cqw, calc((100cqh - ${overlay ? 0 : PICTURE_CHROME_PX}px) * ${frameAspect}))`,
-                        }}
-                        onClick={event => {
-                            if (!canFocusAt || !props.onFocusAt) return
-                            if ((event.target as HTMLElement).closest('button')) return
-                            const bounds = event.currentTarget.getBoundingClientRect()
-                            const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
-                            const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
-                            if (focusRingTimer.current) clearTimeout(focusRingTimer.current)
-                            setFocusMarker({ x, y, status: 'focusing' })
-                            void props.onFocusAt(x, y).then(focused => {
-                                setFocusMarker(marker =>
-                                    marker && marker.x === x && marker.y === y
-                                        ? { ...marker, status: focused ? 'focused' : 'failed' }
-                                        : marker
-                                )
-                                focusRingTimer.current = setTimeout(() => setFocusMarker(null), FOCUS_RING_LINGER_MS)
-                            })
-                        }}
-                        title={canFocusAt ? 'Click to focus there' : undefined}
-                    >
+                    <>
                         <LivePicture
                             assists={
                                 props.readingCard
@@ -381,24 +371,9 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                             marker={focusMarker}
                             lastFocusFrame={lastFocusFrame}
                         />
-                        {overlay && (
-                            <>
-                                {/* Floating over the picture: only the controls take clicks, the rest still focuses. */}
-                                <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center *:pointer-events-auto">
-                                    {props.header}
-                                </div>
-                                <div
-                                    className="absolute inset-x-0 bottom-3 flex justify-center"
-                                    onClick={event => event.stopPropagation()}
-                                >
-                                    <CameraControls {...props} disabled={disabled} />
-                                </div>
-                            </>
-                        )}
-                    </div>
-                ) : null}
-                {showFrame ? null : (
-                    <div className="flex min-h-0 flex-1 items-center justify-center">
+                    </>
+                ) : (
+                    <div className="absolute inset-0 flex items-center justify-center p-16">
                         <ViewportPlaceholder
                             cameraState={cameraState}
                             readingCard={props.readingCard}
@@ -406,7 +381,15 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                         />
                     </div>
                 )}
-                {!overlay && <CameraControls {...props} disabled={disabled} />}
+                <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center *:pointer-events-auto">
+                    {props.header}
+                </div>
+                <div
+                    className="absolute inset-x-0 bottom-3 flex justify-center"
+                    onClick={event => event.stopPropagation()}
+                >
+                    <CameraControls {...props} disabled={disabled} />
+                </div>
             </div>
         </div>
     )
