@@ -68,6 +68,8 @@ interface Capture {
 export function useLiveTranscription() {
     const api = window.studio
     const [engine, setEngine] = useState<VoiceEngineStatus | null>(null)
+    /** The open microphone, for what draws it live (the voice glow reads it every frame, not in 80 ms blocks). */
+    const [stream, setStream] = useState<MediaStream | null>(null)
     const [assistant, setAssistant] = useState<LocalModelStatus | null>(null)
     const [listening, setListening] = useState<ListeningState>('off')
     const [error, setError] = useState<string | null>(null)
@@ -143,6 +145,7 @@ export function useLiveTranscription() {
         captureRef.current = null
         if (!capture) return
         capture.stream.getTracks().forEach(track => track.stop())
+        setStream(null)
         await capture.context.close()
         microphoneLevel.set(0)
     }, [])
@@ -159,6 +162,7 @@ export function useLiveTranscription() {
             const channel = new MessageChannel()
             node.port.postMessage({ audioPort: channel.port1 }, [channel.port1])
             captureRef.current = { context, node, source, stream }
+            setStream(stream)
             void refreshMicrophones()
             return channel.port2
         },
@@ -245,6 +249,7 @@ export function useLiveTranscription() {
             capture.stream.getTracks().forEach(track => track.stop())
             source.connect(capture.node)
             captureRef.current = { ...capture, source, stream }
+            setStream(stream)
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught))
         }
@@ -310,6 +315,7 @@ export function useLiveTranscription() {
         microphoneBlocked,
         microphones,
         microphoneId: selectedMicrophone,
+        stream,
         start,
         stop,
         chooseMicrophone,

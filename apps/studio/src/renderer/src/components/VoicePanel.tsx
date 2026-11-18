@@ -22,7 +22,7 @@ import type { VoiceEngineStatus } from '@shared/ipc'
 import { MICROPHONE_SETTINGS_URL } from '@shared/microphone-errors'
 import { summarizeSetup, type SetupSummary } from '@shared/setup-progress'
 import { SPEECH_MODELS, type SpeechModelId } from '@shared/speech-models'
-import { microphoneLevel, transcriptParagraphs } from '@voice/transcript-store'
+import { transcriptParagraphs } from '@voice/transcript-store'
 import type { LiveTranscription } from '@voice/use-live-transcription'
 import { AudioLines, ChevronDown, Download, Eraser, Mic, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -67,19 +67,19 @@ const VOICE_GLOW_GOLDS = [
     'rgb(206, 84, 40)',
     'rgb(236, 170, 84)',
 ]
-/** The band: a warm gold ridge over the glow, its fringes in golds and red-orange rather than red, green and blue. */
+/** The band: a warm near-white ridge whose fringes split into gold and red-orange ribbons, not red, green and blue. */
 const VOICE_GLOW_BAND = {
-    core: 'rgb(250, 222, 172)',
-    above: 'rgb(240, 160, 70)',
-    mid: 'rgb(245, 196, 120)',
-    below: 'rgb(220, 100, 45)',
+    core: 'rgb(255, 242, 220)',
+    above: 'rgb(245, 185, 85)',
+    mid: 'rgb(250, 214, 150)',
+    below: 'rgb(229, 91, 33)',
 }
 
 /**
  * Voice (libraries.dev's voice glow), in Darkgrade's gold, across the whole panel, behind its contents and on down behind the status bar
  * to the bottom of the window: it rises and blooms from there with the microphone's level while listening.
  */
-function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
+function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | null }): React.JSX.Element {
     const ref = useRef<HTMLDivElement>(null)
     const [width, setWidth] = useState(VOICE_GLOW_REFERENCE_WIDTH)
     // The distance from the panel's bottom to the window's: the status bar's height, more while its log is open.
@@ -117,28 +117,30 @@ function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
                 colorVariant="gold"
                 colors={VOICE_GLOW_GOLDS}
                 bandColors={VOICE_GLOW_BAND}
-                // Held still and only lightly saturated: drift, the mobile preset's 1.5 saturation and the dark
-                // theme's +5° hue lean the golds toward yellow-green.
+                // Held still, with the dark theme's +5° hue offset turned back so the golds don't lean yellow-green.
                 staticColors
-                saturation={1.1}
-                // A defined peak, not a dome fading top to bottom: a narrower, cusp-like bell set higher, a thin gold
-                // ridge along it that doesn't curl up at the edges, crisper lobes, and fringes that barely split.
+                saturation={1.4}
+                // A defined peak, not a dome fading top to bottom: a narrower, cusp-like bell set higher, a ridge that
+                // doesn't curl up at the edges, crisper lobes. Like a lens flare, its fringes split wide into ribbons
+                // and a small white-hot core sits at the centre.
                 bandSpread={0.5}
                 bandCurve={1.45}
                 bandPosition={0.55}
-                bandStrength={1.3}
-                bandWidth={1.3}
+                bandStrength={1.7}
+                bandWidth={1.6}
                 bandOffset={-36}
                 bandTail={0.15}
-                bandAberration={0.4}
+                bandAberration={1}
+                coreLight={0.7}
+                coreLightWidth={0.7}
+                coreLightHeight={0.45}
                 bend={80}
                 softness={0.95}
                 active={active}
-                // The level the old meter read: the microphone's RMS, lifted so speech fills the range. It is already
-                // lifted, so no further gain (the library's default of 3.1 pinned it at full on every syllable).
-                level={() => Math.min(1, Math.sqrt(microphoneLevel.get()) * 3.2)}
-                sensitivity={1}
-                // Quick to rise and fall with each syllable (the library's 0.325s / 0.86s lag behind speech), and
+                // The microphone itself, read every frame by the glow's own analyser: the transcription's level comes
+                // in 80 ms blocks after noise suppression and gain control, which lags each syllable by a beat.
+                stream={stream}
+                // Quick to rise and fall with each syllable (the library's 0.325 s / 0.86 s lag behind speech), and
                 // a low reach, so it stays near the bottom and only loud speech lifts it.
                 attack={0.03}
                 release={0.18}
@@ -292,7 +294,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
             aria-label="Voice"
             inert={!expanded}
         >
-            <VoiceGlow active={listening && expanded} />
+            <VoiceGlow active={listening && expanded} stream={voice.stream} />
             {/* Clips the panel's contents to its height as it opens; the glow behind them runs on past its bottom. */}
             <div className="absolute inset-0 flex flex-col overflow-hidden">
                 <header className="relative flex h-10 shrink-0 items-center gap-2 px-3">
