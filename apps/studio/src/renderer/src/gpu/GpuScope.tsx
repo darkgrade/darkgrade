@@ -1,4 +1,4 @@
-import { animate, configureCanvas, currentFrameTexture, fitCanvas, getGpu } from '@renderer/gpu/device'
+import { animate, configureCanvas, currentFrameTexture, fitCanvas, getGpu, passTimer } from '@renderer/gpu/device'
 import type { ScopeShader } from '@renderer/gpu/scope-shaders'
 import { useEffect, useRef } from 'react'
 
@@ -75,14 +75,22 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
             let lastDrawMs = 0
             const values = new Float32Array(4)
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            const timer = passTimer(gpu, `Scope: ${label}`)
 
-            stop = animate(now => {
+            stop = animate(`Scope: ${label}`, now => {
                 if (now - lastDrawMs < DRAW_INTERVAL_MS) return
                 lastDrawMs = now
                 const { width, height } = fitCanvas(canvas)
                 values.set([width, height, window.devicePixelRatio || 1, reduceMotion ? 1 : EASING_PER_FRAME])
                 device.queue.writeBuffer(uniforms, 0, values)
                 const encoder = device.createCommandEncoder()
+                // The frame's first pass starts the GPU timing: measuring, when a new frame came, else easing.
+                let firstPass = true
+                const timed = (last: boolean): GPUComputePassTimestampWrites | undefined => {
+                    const writes = timer.writes(firstPass, last)
+                    firstPass = false
+                    return writes
+                }
                 const frame = currentFrameTexture()
                 if (!activeRef.current) {
                     if (wasActive) encoder.clearBuffer(goal)
@@ -112,7 +120,7 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
                         }
                     }
                     encoder.clearBuffer(bins)
-                    const pass = encoder.beginComputePass()
+                    const pass = encoder.beginComputePass({ timestampWrites: timed(false) })
                     pass.setPipeline(accumulate)
                     pass.setBindGroup(0, groups.accumulate)
                     pass.dispatchWorkgroups(Math.ceil(frame.width / 16), Math.ceil(frame.height / 16))
@@ -121,7 +129,7 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
                     pass.dispatchWorkgroups(shader.resolveGroups)
                     pass.end()
                 }
-                const easePass = encoder.beginComputePass()
+                const easePass = encoder.beginComputePass({ timestampWrites: timed(false) })
                 easePass.setPipeline(ease)
                 easePass.setBindGroup(0, easeGroup)
                 easePass.dispatchWorkgroups(Math.ceil(shader.values / 64))
@@ -135,24 +143,28 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
                             clearValue: [0, 0, 0, 0],
                         },
                     ],
+                    timestampWrites: timed(true),
                 })
                 pass.setPipeline(draw)
                 pass.setBindGroup(0, drawGroup)
                 pass.draw(3)
                 pass.end()
+                timer.resolve(encoder)
                 device.queue.submit([encoder.finish()])
+                timer.collect()
             })
             const previous = stop
             stop = () => {
                 previous()
                 for (const buffer of [uniforms, bins, goal, shown]) buffer.destroy()
+                timer.destroy()
             }
         })
         return () => {
             cancelled = true
             stop()
         }
-    }, [shader])
+    }, [shader, label])
 
     return (
         <div className={`relative ${SCOPE_CANVAS_CLASS} ${className}`}>

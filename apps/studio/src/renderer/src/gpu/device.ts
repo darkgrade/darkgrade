@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { subscribeToLiveFrames } from '@renderer/lib/live-frame-store'
+import { perf } from '@renderer/lib/perf'
 
 /**
  * Studio's one WebGPU device, and the live frame on it. Each live-view JPEG is decoded once (createImageBitmap,
@@ -9,6 +10,8 @@ import { subscribeToLiveFrames } from '@renderer/lib/live-frame-store'
 export interface Gpu {
     device: GPUDevice
     format: GPUTextureFormat
+    /** Whether passes can be timed on the GPU (Developer Mode's performance monitor). */
+    timestamps: boolean
 }
 
 let gpuPromise: Promise<Gpu | null> | null = null
@@ -18,11 +21,12 @@ export function getGpu(): Promise<Gpu | null> {
     gpuPromise ??= (async () => {
         const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' })
         if (!adapter) return null
-        const device = await adapter.requestDevice()
+        const timestamps = adapter.features.has('timestamp-query')
+        const device = await adapter.requestDevice({ requiredFeatures: timestamps ? ['timestamp-query'] : [] })
         device.lost.then(() => {
             gpuPromise = null
         })
-        return { device, format: navigator.gpu.getPreferredCanvasFormat() }
+        return { device, format: navigator.gpu.getPreferredCanvasFormat(), timestamps }
     })().catch(() => null)
     return gpuPromise
 }
@@ -128,13 +132,92 @@ subscribeToLiveFrames(live => {
     if (live) void upload(live.blob)
 })
 
-/** Calls draw on every display frame until the returned function stops it. */
-export function animate(draw: (now: number) => void): () => void {
+/**
+ * Calls draw on every display frame until the returned function stops it. While the performance monitor is open, the
+ * CPU time each draw takes is added under its label.
+ */
+export function animate(label: string, draw: (now: number) => void): () => void {
     let handle = requestAnimationFrame(function tick(now) {
         handle = requestAnimationFrame(tick)
+        if (!perf.enabled) return draw(now)
+        const start = performance.now()
         draw(now)
+        perf.cpu(label, performance.now() - start)
     })
     return () => cancelAnimationFrame(handle)
+}
+
+/**
+ * Times a loop's passes on the GPU for the performance monitor: the first pass of a frame writes the start, the last
+ * the end, and the span is read back without waiting. Frames drawn while a reading is still on its way count at the
+ * last reading's time, so the total stays the loop's whole GPU time. Does nothing where timestamps aren't available
+ * or while the monitor is closed.
+ */
+export interface PassTimer {
+    /** The timestamp writes for a pass: `first` and/or `last` of this frame's passes. */
+    writes(first: boolean, last: boolean): GPURenderPassTimestampWrites | undefined
+    /** After the frame's passes, before finish. */
+    resolve(encoder: GPUCommandEncoder): void
+    /** After submit. */
+    collect(): void
+    destroy(): void
+}
+
+export function passTimer(gpu: Gpu, label: string): PassTimer {
+    if (!gpu.timestamps) return { writes: () => undefined, resolve: () => {}, collect: () => {}, destroy: () => {} }
+    const { device } = gpu
+    const querySet = device.createQuerySet({ type: 'timestamp', count: 2 })
+    const resolved = device.createBuffer({ size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC })
+    const readable = device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST })
+    let timing = false
+    let reading = false
+    let lastMs = 0
+    return {
+        writes(first, last) {
+            if (!perf.enabled) return undefined
+            if (first) {
+                timing = !reading
+                if (!timing && lastMs) perf.gpu(label, lastMs)
+            }
+            // A pass in the middle of the frame writes nothing: timestamp writes need at least one index.
+            if (!timing || (!first && !last)) return undefined
+            return {
+                querySet,
+                ...(first ? { beginningOfPassWriteIndex: 0 } : {}),
+                ...(last ? { endOfPassWriteIndex: 1 } : {}),
+            }
+        },
+        resolve(encoder) {
+            if (!timing) return
+            encoder.resolveQuerySet(querySet, 0, 2, resolved, 0)
+            encoder.copyBufferToBuffer(resolved, 0, readable, 0, 16)
+        },
+        collect() {
+            if (!timing) return
+            timing = false
+            reading = true
+            readable
+                .mapAsync(GPUMapMode.READ)
+                .then(() => {
+                    const [start, end] = new BigUint64Array(readable.getMappedRange())
+                    readable.unmap()
+                    const milliseconds = Number(end - start) / 1e6
+                    if (milliseconds > 0 && milliseconds < 1000) {
+                        lastMs = milliseconds
+                        perf.gpu(label, milliseconds)
+                    }
+                })
+                .catch(() => {})
+                .finally(() => {
+                    reading = false
+                })
+        },
+        destroy() {
+            querySet.destroy()
+            resolved.destroy()
+            readable.destroy()
+        },
+    }
 }
 
 /** Keeps a canvas's backing store at its CSS size times the device pixel ratio; returns its size in device px. */

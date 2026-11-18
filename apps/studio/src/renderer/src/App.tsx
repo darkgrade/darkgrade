@@ -6,6 +6,7 @@ import { FilesPanel } from '@renderer/components/FilesPanel'
 import { FocusPanel } from '@renderer/components/FocusPanel'
 import { LensPanel } from '@renderer/components/LensPanel'
 import { LiveViewPanel } from '@renderer/components/LiveViewPanel'
+import { PerfMonitor } from '@renderer/components/PerfMonitor'
 import { PreviewDialog, type PreviewState } from '@renderer/components/PreviewDialog'
 import { RecordingPanel } from '@renderer/components/RecordingPanel'
 import { Resizer } from '@renderer/components/Resizer'
@@ -371,6 +372,7 @@ export function App(): React.JSX.Element {
                                 </>
                             )}
                         </div>
+                        {developerMode && <PerfMonitor />}
                     </aside>
                     <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] bg-(--card-surface)">
                         <LiveViewPanel

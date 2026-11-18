@@ -112,10 +112,23 @@ function requestPartialWhenDue(): void {
     void transcribePartial(utterance)
 }
 
+/** The voice detector's time, reported once a second for the performance monitor (cheap: two numbers). */
+let detectorMs = 0
+let detectorWindows = 0
+setInterval(() => {
+    if (!detectorWindows) return
+    emit({ type: 'perf', detectorMs, windows: detectorWindows })
+    detectorMs = 0
+    detectorWindows = 0
+}, 1000)
+
 async function detectWindow(window: Int16Array): Promise<void> {
     if (!detector) return
+    const started = performance.now()
     const floatWindow = Float32Array.from(window, sample => sample / 32768)
     const probability = await detector.speechProbability(floatWindow)
+    detectorMs += performance.now() - started
+    detectorWindows++
     cutter.addWindow(window, probability)
     if (cutter.speaking) samplesSincePartial += window.length
     requestPartialWhenDue()

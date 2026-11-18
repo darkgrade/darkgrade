@@ -56,6 +56,7 @@ const studioApi: StudioApi = {
     setPreferences: change => ipcRenderer.invoke(IPC.PreferencesSet, change),
     onPreferences: subscribe(IPC_EVENTS.Preferences),
     getMcpServerStatus: () => ipcRenderer.invoke(IPC.McpServerGetStatus),
+    perfSampleProcesses: () => ipcRenderer.invoke(IPC.PerfSampleProcesses),
     onMcpServerStatus: subscribe(IPC_EVENTS.McpServerStatus),
     assistantGetStatus: () => ipcRenderer.invoke(IPC.AssistantGetStatus),
     assistantProcessTranscript: segment => ipcRenderer.invoke(IPC.AssistantProcessTranscript, segment),

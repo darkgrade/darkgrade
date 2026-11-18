@@ -50,6 +50,7 @@ export const IPC = {
     AssistantWarmUp: 'assistant:warm-up',
     ViewReportState: 'view:report-state',
     VoiceDiagnostic: 'voice:diagnostic',
+    PerfSampleProcesses: 'perf:sample-processes',
 } as const
 
 export const IPC_EVENTS = {
@@ -365,6 +366,16 @@ export interface McpServerStatus {
 }
 
 /** API surface exposed on `window.studio` by the preload script. */
+/** One of Studio's processes in Developer Mode's performance monitor; 100% CPU is one full core. */
+export interface ProcessSample {
+    pid: number
+    name: string
+    /** What the process does, in a few words. */
+    role: string
+    cpuPercent: number
+    memoryMegabytes: number
+}
+
 export interface StudioApi {
     connect(): Promise<IpcResult<CameraState>>
     disconnect(): Promise<IpcResult<CameraState>>
@@ -436,6 +447,8 @@ export interface StudioApi {
     setPreferences(change: Partial<Preferences>): Promise<IpcResult<Preferences>>
     onPreferences(callback: (preferences: Preferences) => void): () => void
     getMcpServerStatus(): Promise<IpcResult<McpServerStatus>>
+    /** Every process Studio runs, with the CPU each used since the last call (Developer Mode's monitor). */
+    perfSampleProcesses(): Promise<IpcResult<ProcessSample[]>>
     onMcpServerStatus(callback: (status: McpServerStatus) => void): () => void
     assistantGetStatus(): Promise<IpcResult<LocalModelStatus>>
     /** Hands a stretch of live transcript to the assistant to find and carry out camera requests. */

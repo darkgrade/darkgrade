@@ -1,4 +1,4 @@
-import { animate, configureCanvas, fitCanvas, FULLSCREEN_VERTEX, getGpu } from '@renderer/gpu/device'
+import { animate, configureCanvas, fitCanvas, FULLSCREEN_VERTEX, getGpu, passTimer } from '@renderer/gpu/device'
 import { useEffect, useRef } from 'react'
 
 /**
@@ -217,8 +217,9 @@ export function VoiceRibbons({
                 entries: [{ binding: 0, resource: { buffer: uniforms } }],
             })
             const values = new Float32Array(16)
+            const timer = passTimer(gpu, 'Voice glow')
             let idle = false
-            stop = animate(now => {
+            stop = animate('Voice glow', now => {
                 const dt = Math.min(0.05, (now - last) / 1000)
                 last = now
                 clock += still ? 0 : dt
@@ -260,17 +261,21 @@ export function VoiceRibbons({
                             clearValue: [0, 0, 0, 0],
                         },
                     ],
+                    timestampWrites: timer.writes(true, true),
                 })
                 pass.setPipeline(pipeline)
                 pass.setBindGroup(0, group)
                 pass.draw(3)
                 pass.end()
+                timer.resolve(encoder)
                 device.queue.submit([encoder.finish()])
+                timer.collect()
             })
             const previous = stop
             stop = () => {
                 previous()
                 uniforms.destroy()
+                timer.destroy()
             }
         })
         return () => {

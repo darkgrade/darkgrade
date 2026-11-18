@@ -1,3 +1,4 @@
+import { perf } from '@renderer/lib/perf'
 import type { LocalModelStatus, VoiceEngineStatus } from '@shared/ipc'
 import { describeMicrophoneError } from '@shared/microphone-errors'
 import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
@@ -206,6 +207,7 @@ export function useLiveTranscription() {
             if (message.type === 'paragraph') paragraphPendingRef.current = true
             if (message.type === 'error') setError(message.message)
             if (message.type === 'diagnostic') void api.voiceDiagnostic(message.message)
+            if (message.type === 'perf') perf.cpu('Voice detector (worker thread)', message.detectorMs)
             if (message.type === 'session-audio') void api.voiceSaveSessionAudio(new Uint8Array(message.pcm))
             if (message.type !== 'stopped') return
             transcriptPartial.set('')

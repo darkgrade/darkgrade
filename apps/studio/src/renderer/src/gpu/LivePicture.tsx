@@ -7,6 +7,7 @@ import {
     fitCanvas,
     getGpu,
     onFrameTexture,
+    passTimer,
     type FrameTexture,
 } from '@renderer/gpu/device'
 import { NOISE_SHADER, PICTURE_SHADER } from '@renderer/gpu/picture-shader'
@@ -149,7 +150,8 @@ export function LivePicture({
             }
 
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-            stop = animate(now => {
+            const timer = passTimer(gpu, 'Live picture')
+            stop = animate('Live picture', now => {
                 const frame = currentFrameTexture()
                 if (!frame) return
                 const { assists: settings, recording: tallyOn, cameraDisplay: showDisplay } = live.current
@@ -197,9 +199,10 @@ export function LivePicture({
                 device.queue.writeBuffer(uniforms, 0, values)
 
                 const encoder = device.createCommandEncoder()
-                if (settings.focusPeaking && newFrame) {
+                const peaking = settings.focusPeaking && newFrame
+                if (peaking) {
                     encoder.clearBuffer(bins)
-                    const pass = encoder.beginComputePass()
+                    const pass = encoder.beginComputePass({ timestampWrites: timer.writes(true, false) })
                     pass.setPipeline(binSteps)
                     pass.setBindGroup(0, groups.bin)
                     pass.dispatchWorkgroups(Math.ceil(frame.width / 7 / 8), Math.ceil(frame.height / 8))
@@ -217,12 +220,15 @@ export function LivePicture({
                             clearValue: [0, 0, 0, 1],
                         },
                     ],
+                    timestampWrites: timer.writes(!peaking, true),
                 })
                 pass.setPipeline(pipeline)
                 pass.setBindGroup(0, groups.picture)
                 pass.draw(3)
                 pass.end()
+                timer.resolve(encoder)
                 device.queue.submit([encoder.finish()])
+                timer.collect()
             })
             const unsubscribe = onFrameTexture(frame => {
                 if (frame) live.current.onAspect(frame.width / frame.height)
@@ -233,6 +239,7 @@ export function LivePicture({
                 unsubscribe()
                 uniforms.destroy()
                 noDisplay.destroy()
+                timer.destroy()
                 bins.destroy()
                 noise.destroy()
             }
