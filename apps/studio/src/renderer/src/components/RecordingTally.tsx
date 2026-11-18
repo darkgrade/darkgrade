@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'react'
  * the same twice. The beam's speed swells and eases three times a lap.
  */
 
-const RADIUS = 10
+const RADIUS = 6
 const STROKE = 2
 /** Seconds a lap takes at the average speed, and how far the speed swings: fastest / slowest = (1 + A) / (1 - A). */
 const LAP_SECONDS = 4

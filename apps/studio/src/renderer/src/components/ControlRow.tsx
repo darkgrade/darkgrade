@@ -20,7 +20,7 @@ interface ControlRowProps {
 
 /** A setting's menu button: the same everywhere in the inspector. */
 export const CONTROL_TRIGGER_CLASS =
-    'flex h-6 w-36 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-1.5 pl-2 outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12'
+    'flex h-6 w-36 items-center justify-between gap-1.5 rounded-sm border border-line bg-well pr-1.5 pl-2 outline-none hover:border-foreground/15 focus-visible:border-gold/60 disabled:opacity-50 disabled:hover:border-line data-popup-open:border-gold/60'
 
 /** Menus with more choices than this get a search field. */
 export const SEARCH_FROM = 8

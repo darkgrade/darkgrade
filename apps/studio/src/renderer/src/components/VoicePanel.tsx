@@ -37,7 +37,7 @@ const IDLE_VOICE_ENGINE: VoiceEngineStatus = {
 
 /** The voice panel's menu buttons, as the inspector's: 24px, a faint fill, no outline. */
 const VOICE_TRIGGER_CLASS =
-    'h-6! min-w-0 gap-1.5 rounded-md border-0 bg-foreground/5 px-2 text-[13px] shadow-none hover:bg-foreground/9 dark:bg-foreground/5 dark:hover:bg-foreground/9'
+    'h-6! min-w-0 gap-1.5 rounded-sm border border-line bg-well px-2 text-[13px] shadow-none hover:border-foreground/15 dark:bg-well dark:hover:bg-well data-popup-open:border-gold/60'
 
 /** How far the glow fades out before the panel's right edge, where the sidebar begins. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
@@ -220,7 +220,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
     return (
         <section
             id="voice-panel"
-            className="voice-panel relative shrink-0 border-t border-border bg-black/55"
+            className="voice-panel relative shrink-0 border-t border-line bg-panel"
             style={{ ['--voice-height' as string]: `${height.size}px` }}
             data-expanded={expanded}
             data-dragging={height.dragging || undefined}

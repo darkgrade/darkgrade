@@ -95,13 +95,13 @@ interface CameraControlsProps extends LiveViewPanelProps {
     disabled: boolean
 }
 
-/** Focus, shutter and record as icons on one pill floating over the bottom of the picture, like the camera pill above. */
+/** Focus, shutter and record as icons in a toolbar band docked under the picture, as Resolve docks its transport. */
 function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const { cameraState, disabled } = props
     const tool =
-        'size-9 rounded-full p-0 text-foreground/80 hover:bg-foreground/10 hover:text-foreground [&_svg]:size-[18px]'
+        'size-7 rounded-md p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
-        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 p-1 ring-1 ring-foreground/10">
+        <div className="raised-bar flex h-10 shrink-0 items-center justify-center gap-2 border-t border-line">
             <HoverTip
                 tip={
                     <>
@@ -253,7 +253,7 @@ function LiveFrameImage({ dimmed, onAspect }: { dimmed: boolean; onAspect: (aspe
 function RecordingBadge(): React.JSX.Element {
     const elapsed = useRecordingClock(true)
     return (
-        <span className="absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold tracking-[0.06em] text-rec tabular-nums">
+        <span className="absolute top-3 left-3 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-[11px] font-semibold tracking-[0.06em] text-rec tabular-nums">
             <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden />
             REC
             {elapsed && <span className="font-medium tracking-normal text-foreground/85">{elapsed}</span>}
@@ -282,73 +282,72 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
 
     return (
-        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 p-4 [container-type:size]">
-            {showFrame ? (
-                <div
-                    className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}
-                    style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
-                    onClick={event => {
-                        if (!canFocusAt || !props.onFocusAt) return
-                        if ((event.target as HTMLElement).closest('button')) return
-                        const bounds = event.currentTarget.getBoundingClientRect()
-                        const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
-                        const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
-                        if (focusRingTimer.current) clearTimeout(focusRingTimer.current)
-                        setFocusMarker({ x, y, status: 'focusing' })
-                        void props.onFocusAt(x, y).then(focused => {
-                            setFocusMarker(marker =>
-                                marker && marker.x === x && marker.y === y
-                                    ? { ...marker, status: focused ? 'focused' : 'failed' }
-                                    : marker
-                            )
-                            focusRingTimer.current = setTimeout(() => setFocusMarker(null), FOCUS_RING_LINGER_MS)
-                        })
-                    }}
-                    title={canFocusAt ? 'Click to focus there' : undefined}
-                >
-                    <LiveFrameImage
-                        dimmed={props.readingCard}
-                        onAspect={aspect => {
-                            if (Math.abs(aspect - frameAspect) > 0.01) setFrameAspect(aspect)
+        <div className="flex min-h-0 flex-1 flex-col">
+            <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 p-4 [container-type:size]">
+                {showFrame ? (
+                    <div
+                        className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}
+                        style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
+                        onClick={event => {
+                            if (!canFocusAt || !props.onFocusAt) return
+                            if ((event.target as HTMLElement).closest('button')) return
+                            const bounds = event.currentTarget.getBoundingClientRect()
+                            const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
+                            const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+                            if (focusRingTimer.current) clearTimeout(focusRingTimer.current)
+                            setFocusMarker({ x, y, status: 'focusing' })
+                            void props.onFocusAt(x, y).then(focused => {
+                                setFocusMarker(marker =>
+                                    marker && marker.x === x && marker.y === y
+                                        ? { ...marker, status: focused ? 'focused' : 'failed' }
+                                        : marker
+                                )
+                                focusRingTimer.current = setTimeout(() => setFocusMarker(null), FOCUS_RING_LINGER_MS)
+                            })
                         }}
-                    />
-                    {props.readingCard && (
-                        <span className="absolute top-3 right-3 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[11px] text-muted-foreground">
-                            <Spinner className="size-3" /> Live view paused while the card is read
-                        </span>
-                    )}
-                    {(props.previewAssists.zebras || props.previewAssists.focusPeaking) && !props.readingCard && (
-                        <PreviewAssistsOverlay settings={props.previewAssists} />
-                    )}
-                    {props.osdFrameUrl && (
-                        <img
-                            className="pointer-events-none absolute inset-0 size-full object-fill"
-                            src={props.osdFrameUrl}
-                            alt=""
-                            draggable={false}
+                        title={canFocusAt ? 'Click to focus there' : undefined}
+                    >
+                        <LiveFrameImage
+                            dimmed={props.readingCard}
+                            onAspect={aspect => {
+                                if (Math.abs(aspect - frameAspect) > 0.01) setFrameAspect(aspect)
+                            }}
                         />
-                    )}
-                    {/* Inside the picture's edge, beneath the badge and controls drawn after it. */}
-                    {cameraState.recording && <RecordingTally />}
-                    {cameraState.recording && <RecordingBadge />}
-                    {focusMarker ? (
-                        <CameraFocusFrame frame={lastFocusFrame.current} marker={focusMarker} />
-                    ) : (
-                        shownFrames.map((frame, index) => <CameraFocusFrame key={index} frame={frame} />)
-                    )}
-                    <CameraControls {...props} disabled={disabled} />
-                </div>
-            ) : null}
-            {showFrame ? null : (
-                <>
+                        {props.readingCard && (
+                            <span className="absolute top-3 right-3 flex items-center gap-1.5 rounded-sm bg-black/70 px-2 py-1 text-[11px] text-muted-foreground">
+                                <Spinner className="size-3" /> Live view paused while the card is read
+                            </span>
+                        )}
+                        {(props.previewAssists.zebras || props.previewAssists.focusPeaking) && !props.readingCard && (
+                            <PreviewAssistsOverlay settings={props.previewAssists} />
+                        )}
+                        {props.osdFrameUrl && (
+                            <img
+                                className="pointer-events-none absolute inset-0 size-full object-fill"
+                                src={props.osdFrameUrl}
+                                alt=""
+                                draggable={false}
+                            />
+                        )}
+                        {/* Inside the picture's edge, beneath the badge and controls drawn after it. */}
+                        {cameraState.recording && <RecordingTally />}
+                        {cameraState.recording && <RecordingBadge />}
+                        {focusMarker ? (
+                            <CameraFocusFrame frame={lastFocusFrame.current} marker={focusMarker} />
+                        ) : (
+                            shownFrames.map((frame, index) => <CameraFocusFrame key={index} frame={frame} />)
+                        )}
+                    </div>
+                ) : null}
+                {showFrame ? null : (
                     <ViewportPlaceholder
                         cameraState={cameraState}
                         readingCard={props.readingCard}
                         onRetryLiveView={props.onRetryLiveView}
                     />
-                    {cameraState.connected && <CameraControls {...props} disabled={disabled} />}
-                </>
-            )}
+                )}
+            </div>
+            {cameraState.connected && <CameraControls {...props} disabled={disabled} />}
         </div>
     )
 }

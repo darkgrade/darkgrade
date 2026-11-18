@@ -5,17 +5,28 @@
 
 /*
  * Studio is a desktop app, not a page: dark like a monitor, an arrow cursor everywhere, and no
- * text selection except in logs. Its palette is darkgrade.com's: warm ink on near-black, hairlines
- * of that ink, and one gold light for whatever is selected or switched on. Surfaces are solid, so
- * menus never show what is under them.
+ * text selection except in logs. Its palette is darkgrade.com's warm ink and one gold light for
+ * whatever is selected or switched on, built the way Resolve builds its panels: opaque greys in a
+ * few steps (chrome, panel, raised, well), joined by 1px near-black lines, with a faint highlight
+ * along the top of raised bars. Fields sit lower than their panel; only overlays cast a shadow.
  */
 html.dark {
     color-scheme: dark;
     --background: #0a0a0b;
+    /* The grey steps, warm like the ink: window chrome (top and status bars), panels, raised bars, sunken fields. */
+    --chrome: #141312;
+    --panel: #1a1918;
+    --raised: #201f1d;
+    --well: #0f0e0e;
+    /* The line between parts, and the 1px light along the top edge of a raised bar. */
+    --line: #050505;
+    --highlight: rgb(255 255 255 / 4%);
+    /* Corners: fields 3.6px (sm), buttons 4.8px (md), popovers 6px (lg). */
+    --radius: 0.375rem;
     --foreground: #eae6dc;
     --card: #101012;
     --card-foreground: #eae6dc;
-    --popover: #151517;
+    --popover: #1d1c1b;
     --popover-foreground: #eae6dc;
     --primary: #eae6dc;
     --primary-foreground: #0b0b0c;
@@ -25,9 +36,9 @@ html.dark {
     --muted-foreground: rgb(234 230 220 / 55%);
     --accent: #1e1e21;
     --accent-foreground: #eae6dc;
-    /* One hairline everywhere, 1px of ink at 10%: the same as the component library's own outlines. */
-    --border: rgb(234 230 220 / 10%);
-    --input: rgb(234 230 220 / 11%);
+    /* One line everywhere, 1px near-black between parts, as Resolve's: dark lines read as machined edges. */
+    --border: var(--line);
+    --input: var(--line);
     --ring: rgb(245 205 138 / 55%);
     --destructive: #e0483e;
     --live: oklch(0.72 0.17 150);
@@ -43,6 +54,12 @@ html.dark {
     --color-gold: var(--gold);
     --color-gold-dim: var(--gold-dim);
     --color-canvas: var(--canvas);
+    --color-chrome: var(--chrome);
+    --color-panel: var(--panel);
+    --color-raised: var(--raised);
+    --color-well: var(--well);
+    --color-line: var(--line);
+    --color-highlight: var(--highlight);
     /* One face everywhere, as the site sets its running text: Public Sans, with tabular figures for numbers. */
     --font-mono: var(--font-sans);
 }
@@ -76,16 +93,44 @@ svg[stroke='currentColor'][fill='none'] * {
 }
 
 /*
- * One light for the current choice, as on darkgrade.com: the selected tab or segment and a switched-on
- * switch take the gold, with a faint gold wash and hairline, not a grey pill.
+ * One light for the current choice: the selected tab or segment is gold text in a 1px gold outline on the
+ * raised grey, as Resolve outlines its selection in its red, rather than a filled wash.
  */
 [data-slot='tabs-trigger'][data-active],
 [data-slot='toggle-group-item'][data-pressed] {
     color: var(--gold) !important;
-    background-color: var(--gold-dim) !important;
-    box-shadow: inset 0 0 0 1px rgb(245 205 138 / 22%);
+    background-color: var(--raised) !important;
+    box-shadow:
+        inset 0 0 0 1px rgb(245 205 138 / 50%),
+        inset 0 1px 0 var(--highlight);
     /* The site's lamp, at the size of a label: a faint warm halo round the lit word. */
     text-shadow: 0 0 8px rgb(246 185 97 / 35%);
+}
+
+/* A segmented control is a sunken well, its segments 3.6px inside it. */
+.segmented {
+    border-radius: var(--radius-md);
+    background: var(--well);
+    box-shadow: inset 0 0 0 1px var(--line);
+    padding: 2px;
+}
+
+/* A raised bar (top bar, status bar, toolbars): its own grey, with 1px of light along its top edge. */
+.raised-bar {
+    background: var(--chrome);
+    box-shadow: inset 0 1px 0 var(--highlight);
+}
+
+/* Only what floats casts a shadow: menus, popovers and tips, each on a dark line with a highlight inside it. */
+[data-slot='popover-content'],
+[data-slot='select-content'],
+[data-slot='combobox-content'],
+[data-slot='tooltip-content'],
+[data-slot='dropdown-menu-content'] {
+    box-shadow:
+        0 0 0 1px var(--line),
+        inset 0 1px 0 rgb(255 255 255 / 6%),
+        0 12px 32px -8px rgb(0 0 0 / 70%) !important;
 }
 [data-slot='switch'][data-checked] {
     background-color: var(--gold) !important;
@@ -197,7 +242,7 @@ img {
 }
 .voice-panel[data-expanded='true'] {
     height: var(--voice-height, clamp(200px, 38%, 380px));
-    border-top-color: var(--border);
+    border-top-color: var(--line);
 }
 .transcript-paragraph {
     margin-bottom: 0.75em;

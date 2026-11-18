@@ -35,7 +35,7 @@ function exposureProgramFor(target: ShootingMode, current: string, options: stri
 }
 
 const SEGMENT_CLASS =
-    'flex-1 rounded-md! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground'
+    'flex-1 rounded-sm! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground'
 
 /** Counts up from when recording started, as a timecode-style clock. */
 export function useRecordingClock(recording: boolean): string | null {
@@ -77,7 +77,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                 <div className="flex flex-col gap-3">
                     {controls.exposureProgram?.value && shootingModeOf(controls.exposureProgram.value) && (
                         <ToggleGroup
-                            className="w-full rounded-lg bg-foreground/6 p-0.5"
+                            className="segmented w-full"
                             spacing={0}
                             size="sm"
                             value={[shootingModeOf(controls.exposureProgram.value) as ShootingMode]}
