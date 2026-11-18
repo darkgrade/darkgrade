@@ -50,7 +50,7 @@ const FRAME_RATE_WINDOW_MS = 10_000
 
 export function App(): React.JSX.Element {
     const api = window.studio
-    const sidebar = useResizable('studio.sidebar-width', SIDEBAR_WIDTH, SIDEBAR_MIN, sidebarMax, 'left')
+    const sidebar = useResizable('studio.sidebar-width', SIDEBAR_WIDTH, SIDEBAR_MIN, sidebarMax, 'right')
 
     const [cameraState, setCameraState] = useState<CameraState>(INITIAL_STATE)
     const [logs, setLogs] = useState<LogEntry[]>([])
