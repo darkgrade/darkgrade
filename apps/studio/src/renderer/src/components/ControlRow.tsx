@@ -34,7 +34,7 @@ export function ControlRow({
     const choices = options.map(option => ({ value: option, label: format(option) }))
     const unavailable = disabled || !control.enabled || options.length < 2
     return (
-        <div className="flex min-h-7 items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
             <span className="text-muted-foreground">{label}</span>
             <Combobox<{ value: string; label: string }>
                 items={choices}

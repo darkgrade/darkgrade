@@ -201,7 +201,7 @@ export function SettingsPanel({
                         />
                     </div>
                     {cameraState.controls && (
-                        <div className="flex flex-col">
+                        <div className="flex flex-col gap-1.75">
                             <ControlRow
                                 label="White balance"
                                 control={cameraState.controls.whiteBalance}

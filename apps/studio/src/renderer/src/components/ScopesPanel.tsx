@@ -66,7 +66,7 @@ interface PreviewAssistProps {
 function PreviewAssist(props: PreviewAssistProps): React.JSX.Element {
     return (
         <div className="flex flex-col gap-1">
-            <label className="flex h-7 items-center justify-between gap-2" title={props.description}>
+            <label className="flex items-center justify-between gap-2 leading-none" title={props.description}>
                 <span className="text-muted-foreground">
                     {props.label}
                     {props.enabled && <span className="text-[11px] tabular-nums"> · {props.format(props.value)}</span>}
@@ -130,7 +130,7 @@ export function ScopesPanel({ active, connected, assists, onAssistsChange }: Sco
                     <Vectorscope active={active} />
                 </div>
             )}
-            <div className="flex flex-col">
+            <div className="flex flex-col gap-1.75">
                 <PreviewAssist
                     label="Zebras"
                     description="Stripes over areas at or above this brightness"
