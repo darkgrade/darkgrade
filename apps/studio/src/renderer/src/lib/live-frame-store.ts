@@ -1,3 +1,5 @@
+import { createStore } from '@renderer/lib/external-store'
+import { readJpegSize } from '@renderer/lib/jpeg-size'
 import type { FocusFrame } from '@shared/ipc'
 import { useSyncExternalStore } from 'react'
 
@@ -17,7 +19,25 @@ let current: LiveFrame | null = null
 const retired: string[] = []
 const RETIRED_URLS_KEPT = 4
 
+/** Live view's frame rate (averaged over this window) and frame size, for the preview's details only. */
+const FRAME_RATE_WINDOW_MS = 10_000
+let frameTimes: number[] = []
+export const liveFrameRate = createStore<number | null>(null)
+export const liveFrameSize = createStore<{ width: number; height: number } | null>(null)
+setInterval(() => {
+    const now = performance.now()
+    frameTimes = frameTimes.filter(time => now - time <= FRAME_RATE_WINDOW_MS)
+    const spanSeconds = Math.min(Math.max((now - (frameTimes[0] ?? now)) / 1000, 1), FRAME_RATE_WINDOW_MS / 1000)
+    // Rounded as shown, so a steady rate doesn't re-render its readout every second.
+    const rate = frameTimes.length < 2 ? null : Math.round((frameTimes.length / spanSeconds) * 10) / 10
+    if (rate !== liveFrameRate.get()) liveFrameRate.set(rate)
+}, 1000)
+
 export function publishLiveFrame(jpeg: Uint8Array): void {
+    frameTimes.push(performance.now())
+    const size = readJpegSize(jpeg)
+    const shown = liveFrameSize.get()
+    if (size && (shown?.width !== size.width || shown.height !== size.height)) liveFrameSize.set(size)
     const blob = new Blob([jpeg as BlobPart], { type: 'image/jpeg' })
     if (current) retired.push(current.url)
     while (retired.length > RETIRED_URLS_KEPT) URL.revokeObjectURL(retired.shift()!)
@@ -28,6 +48,11 @@ export function publishLiveFrame(jpeg: Uint8Array): void {
 function subscribe(listener: () => void): () => void {
     listeners.add(listener)
     return () => listeners.delete(listener)
+}
+
+/** Every new frame, outside React (the GPU uploads it as it arrives). */
+export function subscribeToLiveFrames(listener: (frame: LiveFrame | null) => void): () => void {
+    return subscribe(() => listener(current))
 }
 
 export function useLiveFrame(): LiveFrame | null {

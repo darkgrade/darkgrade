@@ -134,6 +134,7 @@
         "@types/react-dom": "^19",
         "@types/w3c-web-usb": "^1.0.13",
         "@vitejs/plugin-react": "^5.0.0",
+        "@webgpu/types": "0.1.74",
         "electron": "^43.1.0",
         "electron-builder": "^26.18.0",
         "electron-vite": "^5.0.0",

@@ -347,7 +347,10 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 return
             }
             const { response, data } = await call('/v2/installation', 'DELETE', undefined, key)
-            if (!response.ok || data.revoked !== true) throw new Error('Withdrawal must be retried')
+            if (!response.ok || data.revoked !== true)
+                throw new Error(
+                    `Deletion didn't finish (${typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`}); it retries every ${Math.round(interval / 1000)} seconds`
+                )
             const next = { ...state, withdrawalPending: data.deletionPending !== false }
             if (!next.withdrawalPending) {
                 delete next.installKey
@@ -359,7 +362,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             lastError = state.withdrawalPending ? 'Deletion pending; the service will retry' : null
         })()
             .catch(error => {
-                lastError = 'Withdrawal must be retried'
+                lastError = error instanceof Error ? error.message : 'Deletion must be retried'
                 throw error
             })
             .finally(() => {
@@ -374,10 +377,12 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     const contactCall = async (method: string, body?: unknown) => {
         // Explicit contact enrollment need not wait for the first camera operation.
         if (method === 'POST' && !state.installKey && enabled()) await enroll(epoch)
-        if (closed || !state.installKey || state.withdrawalPending)
-            throw new Error('No active diagnostics installation')
+        if (closed || !state.installKey || state.withdrawalPending) throw new Error('Turn on sharing to link an email')
         const { response, data } = await call('/v2/contact', method, body, state.installKey)
-        if (!response.ok) throw new Error('Contact request failed; retry in the diagnostics settings')
+        if (!response.ok)
+            throw new Error(
+                typeof data?.error === 'string' ? data.error : `Email request failed (HTTP ${response.status})`
+            )
         return data
     }
     const append = (camera: CameraContext, entry: DiagnosticEntry) => {
@@ -577,7 +582,10 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         async contactStatus() {
             if (!state.installKey || closed) return null
             const { response, data } = await call('/v2/installation', 'GET', undefined, state.installKey)
-            if (!response.ok) throw new Error('Contact status unavailable')
+            if (!response.ok)
+                throw new Error(
+                    typeof data?.error === 'string' ? data.error : `Email status unavailable (HTTP ${response.status})`
+                )
             return data.contact as {
                 email: string
                 verified: true

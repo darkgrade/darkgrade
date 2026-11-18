@@ -50,9 +50,16 @@ export const IPC = {
     AssistantWarmUp: 'assistant:warm-up',
     ViewReportState: 'view:report-state',
     VoiceDiagnostic: 'voice:diagnostic',
+    PerfSampleProcesses: 'perf:sample-processes',
+    PerfOpen: 'perf:open',
+    PerfReport: 'perf:report',
+    PerfIsOpen: 'perf:is-open',
+    PerfTrace: 'perf:trace',
 } as const
 
 export const IPC_EVENTS = {
+    PerfEnabled: 'evt:perf-enabled',
+    PerfReport: 'evt:perf-report',
     State: 'evt:state',
     Log: 'evt:log',
     LiveViewFrame: 'evt:liveview-frame',
@@ -331,7 +338,31 @@ export interface Preferences {
     mcpServerPort: number
     /** Which Bark model voice uses; switching unloads the old one and loads the new one. */
     speechModel: SpeechModelId
+    /** Developer tools in the main window (the Activity log); off by default, toggled from the app menu. */
+    developerMode: boolean
+    /** The macOS material behind the window (View › Window Material); switches live. */
+    windowMaterial: WindowMaterial
+    /** Let the material go flat while Studio is in the background, as Finder and Messages do; from the next launch. */
+    dimWhenInactive: boolean
 }
+
+/** The macOS vibrancy materials worth offering, as Electron names them, in the order the menu lists them. */
+export const WINDOW_MATERIALS = [
+    ['sidebar', 'Sidebar'],
+    ['hud', 'HUD'],
+    ['under-window', 'Under Window'],
+    ['under-page', 'Under Page'],
+    ['window', 'Window'],
+    ['content', 'Content'],
+    ['header', 'Header'],
+    ['titlebar', 'Title Bar'],
+    ['sheet', 'Sheet'],
+    ['popover', 'Popover'],
+    ['menu', 'Menu'],
+    ['fullscreen-ui', 'Full Screen UI'],
+    ['tooltip', 'Tooltip'],
+] as const
+export type WindowMaterial = (typeof WINDOW_MATERIALS)[number][0]
 
 export interface McpServerStatus {
     running: boolean
@@ -341,6 +372,51 @@ export interface McpServerStatus {
 }
 
 /** API surface exposed on `window.studio` by the preload script. */
+/** One of Studio's processes in Developer Mode's performance monitor; 100% CPU is one full core. */
+export interface ProcessSample {
+    pid: number
+    kind:
+        | 'main'
+        | 'gpu'
+        | 'studio'
+        | 'settings'
+        | 'monitor'
+        | 'utility'
+        | 'speech'
+        | 'assistant'
+        | 'windowserver'
+        | 'other'
+    name: string
+    /** What the process does, in a few words. */
+    role: string
+    /** Not Studio's own: WindowServer, shown because it composites Studio's windows. */
+    outside: boolean
+    cpuPercent: number
+    /** % of the GPU's time, from the time macOS records per process. */
+    gpuPercent: number
+    memoryMegabytes: number
+}
+
+/** What a few seconds of Chromium's trace says each process spent its time on, task by task. */
+export interface PerfTrace {
+    seconds: number
+    /** True where every task had CPU time recorded; otherwise some figures are time spent, waits included. */
+    cpuTimed: boolean
+    tasks: { process: string; thread: string; task: string; percent: number }[]
+}
+
+/** The Studio window's own breakdown, once a second while the monitor window is open. */
+export interface PerfReport {
+    fps: number
+    subsystems: {
+        label: string
+        detail?: string
+        cpuPercent: number
+        /** null for work with no GPU passes of its own. */
+        gpuPercent: number | null
+    }[]
+}
+
 export interface StudioApi {
     connect(): Promise<IpcResult<CameraState>>
     disconnect(): Promise<IpcResult<CameraState>>
@@ -393,7 +469,14 @@ export interface StudioApi {
     /** Adds a line to the speech engine's log file. */
     voiceDiagnostic(message: string): Promise<IpcResult<void>>
     onVoiceStatus(callback: (status: VoiceEngineStatus) => void): () => void
-    diagnosticsBenchmark(): Promise<IpcResult<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }>>
+    diagnosticsBenchmark(): Promise<
+        IpcResult<{
+            passed: boolean
+            checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }>
+            /** Where the profile was saved on this Mac. */
+            path: string
+        }>
+    >
     getDiagnosticsStatus(): Promise<IpcResult<DiagnosticsStatus>>
     changeDiagnostics(action: 'sharing' | 'withdraw' | 'retry', value?: boolean): Promise<IpcResult<DiagnosticsStatus>>
     diagnosticsContact(
@@ -405,6 +488,20 @@ export interface StudioApi {
     setPreferences(change: Partial<Preferences>): Promise<IpcResult<Preferences>>
     onPreferences(callback: (preferences: Preferences) => void): () => void
     getMcpServerStatus(): Promise<IpcResult<McpServerStatus>>
+    /** Every process Studio runs, with the CPU each used since the last call (Developer Mode's monitor). */
+    perfSampleProcesses(): Promise<IpcResult<ProcessSample[]>>
+    /** Each event channel's count, bytes and handler time since the last call (Developer Mode's monitor). */
+    perfTakeIpc(): { channel: string; count: number; milliseconds: number; bytes: number }[]
+    /** Records a trace for a few seconds and returns its busiest tasks. */
+    perfTrace(seconds: number): Promise<IpcResult<PerfTrace>>
+    /** Opens the performance monitor's window. */
+    perfOpen(): Promise<IpcResult<void>>
+    perfIsOpen(): Promise<IpcResult<boolean>>
+    /** The Studio window sends its breakdown here; the monitor window receives it. */
+    perfReport(report: PerfReport): Promise<IpcResult<void>>
+    onPerfReport(callback: (report: PerfReport) => void): () => void
+    /** Whether the monitor window is open, so the Studio window times its subsystems. */
+    onPerfEnabled(callback: (enabled: boolean) => void): () => void
     onMcpServerStatus(callback: (status: McpServerStatus) => void): () => void
     assistantGetStatus(): Promise<IpcResult<LocalModelStatus>>
     /** Hands a stretch of live transcript to the assistant to find and carry out camera requests. */

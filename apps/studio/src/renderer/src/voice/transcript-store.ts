@@ -7,6 +7,18 @@ export const microphoneLevel = createStore(0)
  * the utterance's final words and never goes to the assistant.
  */
 export const transcriptPartial = createStore('')
+/** Whether the words still being heard will start a new paragraph once confirmed, so they're shown there already. */
+export const transcriptPartialNewParagraph = createStore(false)
+
+/**
+ * Whether an utterance starts a new paragraph: whenever speaking starts again after a real pause, and after a
+ * finished sentence where the speech model marked a paragraph. Decided once, when the utterance is first heard, so
+ * its words never move between paragraphs when they're confirmed.
+ */
+export function startsNewParagraph(previous: string[], paused: boolean, paragraphPending: boolean): boolean {
+    const sentenceEnded = /[.?!]["'”’)]?\s*$/.test(previous.at(-1) ?? '')
+    return previous.length > 0 && (paused || (sentenceEnded && paragraphPending))
+}
 
 /** A request heard in the transcript: where its words are, and how far the assistant has got with it. */
 export interface IntentHighlight {

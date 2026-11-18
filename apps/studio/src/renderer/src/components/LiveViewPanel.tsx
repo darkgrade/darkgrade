@@ -1,4 +1,3 @@
-import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import {
     Button,
     Empty,
@@ -9,17 +8,20 @@ import {
     EmptyTitle,
     Kbd,
     Spinner,
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
 } from '@kevinschaich/components'
-import { TallyComet } from '@renderer/components/TallyComet'
-import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
+import { HoverTip } from '@renderer/components/HoverTip'
+import { PreviewQuality, type PreviewQualityProps } from '@renderer/components/PreviewQuality'
+import { useRecordingClock } from '@renderer/components/RecordingPanel'
+import type { PreviewAssistSettings } from '@renderer/gpu/assists'
+import { LivePicture } from '@renderer/gpu/LivePicture'
+import { useFocusFrames, useHasLiveFrame } from '@renderer/lib/live-frame-store'
 import type { CameraState, FocusFrame } from '@shared/ipc'
-import { Camera, Focus, Square, Video, VideoOff } from 'lucide-react'
+import { Camera, Crosshair, Mic, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 interface LiveViewPanelProps {
+    /** Floats over the top of the picture (the camera pill), as the toolbar floats over its bottom. */
+    header: React.ReactNode
     cameraState: CameraState
     busy: boolean
     capturing: boolean
@@ -31,14 +33,17 @@ interface LiveViewPanelProps {
     onFocus: () => void
     /** Focus on a point of the picture (0–1 from the top left); resolves true when the camera focused. */
     onFocusAt: ((x: number, y: number) => Promise<boolean>) | null
-    /** The frames the camera draws over live view; empty when it shows none (Wide at rest). */
-    /** The camera's on-screen display, drawn over the picture while the overlay is on. */
-    osdFrameUrl: string | null
     /** Zebras and focus peaking drawn over the picture by Studio. */
     previewAssists: PreviewAssistSettings
     onCapture: () => void
     onStartRecording: () => void
     onStopRecording: () => void
+    /** The voice panel opens under the picture from the toolbar's microphone; open is listening. */
+    voiceOpen: boolean
+    voiceListening: boolean
+    onToggleVoice: () => void
+    /** The live preview's quality switch and details, shown in the toolbar. */
+    preview: PreviewQualityProps
 }
 
 function ViewportPlaceholder(
@@ -96,26 +101,44 @@ interface CameraControlsProps extends LiveViewPanelProps {
     disabled: boolean
 }
 
-/** Focus, shutter and record, floating over the bottom of the picture. */
+/**
+ * Focus, shutter, record and voice as icons in a small floating toolbar under the picture, on white at 5% opacity, with no edge.
+ */
 function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const { cameraState, disabled } = props
+    const tool =
+        'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
-        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3">
-            <Tooltip>
-                <TooltipTrigger render={<Button variant="ghost" disabled={disabled} onClick={props.onFocus} />}>
-                    <Focus aria-hidden /> Focus
-                </TooltipTrigger>
-                <TooltipContent>
-                    Autofocus <Kbd>F</Kbd>
-                </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-                <TooltipTrigger
+        <div className="flex shrink-0 justify-center">
+            <div className="flex items-center gap-1 rounded-xl bg-black/70 p-1">
+                <HoverTip
+                    tip={
+                        <>
+                            Autofocus <Kbd>F</Kbd>
+                        </>
+                    }
                     render={
                         <Button
                             variant="ghost"
-                            className="size-11 rounded-full border-2 border-foreground/85 p-0 hover:border-foreground hover:bg-transparent active:scale-95"
+                            className={tool}
+                            disabled={disabled}
+                            onClick={props.onFocus}
+                            aria-label="Autofocus"
+                        />
+                    }
+                >
+                    <Crosshair aria-hidden />
+                </HoverTip>
+                <HoverTip
+                    tip={
+                        <>
+                            Take photo <Kbd>Return</Kbd>
+                        </>
+                    }
+                    render={
+                        <Button
+                            variant="ghost"
+                            className={tool}
                             disabled={disabled}
                             onClick={props.onCapture}
                             aria-label="Take photo"
@@ -123,25 +146,70 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
                     }
                 >
                     {props.capturing ? (
-                        <Spinner className="size-5" />
+                        <Spinner />
                     ) : (
-                        <span className="size-8 rounded-full bg-foreground" aria-hidden />
+                        <span
+                            className="flex size-[15px] items-center justify-center rounded-full border-[1.5px] border-current"
+                            aria-hidden
+                        >
+                            <span className="size-[7px] rounded-full bg-current" />
+                        </span>
                     )}
-                </TooltipTrigger>
-                <TooltipContent>
-                    Take photo <Kbd>Return</Kbd>
-                </TooltipContent>
-            </Tooltip>
-
-            {cameraState.recording ? (
-                <Button variant="destructive" disabled={!cameraState.connected} onClick={props.onStopRecording}>
-                    <Square aria-hidden className="fill-current" /> Stop
-                </Button>
-            ) : (
-                <Button variant="ghost" disabled={disabled} onClick={props.onStartRecording}>
-                    <Video aria-hidden /> Record
-                </Button>
-            )}
+                </HoverTip>
+                {cameraState.recording ? (
+                    <HoverTip
+                        tip="Stop recording"
+                        render={
+                            <Button
+                                variant="ghost"
+                                className={`${tool} text-rec hover:text-rec`}
+                                disabled={!cameraState.connected}
+                                onClick={props.onStopRecording}
+                                aria-label="Stop recording"
+                            />
+                        }
+                    >
+                        <span className="size-[13px] rounded-[3px] bg-rec" aria-hidden />
+                    </HoverTip>
+                ) : (
+                    <HoverTip
+                        tip="Record video"
+                        render={
+                            <Button
+                                variant="ghost"
+                                className={tool}
+                                disabled={disabled}
+                                onClick={props.onStartRecording}
+                                aria-label="Record video"
+                            />
+                        }
+                    >
+                        <span className="size-[15px] rounded-full bg-rec" aria-hidden />
+                    </HoverTip>
+                )}
+                <span className="mx-1 h-5 w-px bg-foreground/10" aria-hidden />
+                {cameraState.connected && <PreviewQuality {...props.preview} className={tool} />}
+                <HoverTip
+                    tip={props.voiceOpen ? 'Stop voice' : 'Voice'}
+                    render={
+                        <Button
+                            variant="ghost"
+                            className={`${tool} ${props.voiceOpen ? 'bg-gold-dim text-gold hover:bg-gold-dim hover:text-gold' : ''}`}
+                            onClick={props.onToggleVoice}
+                            aria-pressed={props.voiceOpen}
+                            aria-controls="voice-panel"
+                            aria-label="Voice"
+                        />
+                    }
+                >
+                    <span className="relative flex">
+                        <Mic aria-hidden />
+                        {props.voiceListening && (
+                            <span className="voice-live-dot absolute -top-0.5 -right-1 size-1.5!" aria-hidden />
+                        )}
+                    </span>
+                </HoverTip>
+            </div>
         </div>
     )
 }
@@ -195,127 +263,134 @@ const DEFAULT_FOCUS_FRAME: FocusFrame = {
 
 const FOCUS_RING_LINGER_MS = 1800
 
-/** The picture itself; the only part of the panel that re-renders with each frame. */
-function LiveFrameImage({ dimmed, onAspect }: { dimmed: boolean; onAspect: (aspect: number) => void }) {
-    const frame = useLiveFrame()
-    if (!frame) return null
+/** REC with how long the take has run, in the picture's corner: a monitor's tally and timecode. */
+function RecordingBadge(): React.JSX.Element {
+    const elapsed = useRecordingClock(true)
     return (
-        <img
-            onLoad={event => {
-                const image = event.currentTarget
-                const aspect = image.naturalWidth / image.naturalHeight
-                if (Number.isFinite(aspect)) onAspect(aspect)
-            }}
-            className={`size-full object-contain transition-opacity duration-300 ${dimmed ? 'opacity-40' : ''}`}
-            src={frame.url}
-            alt="Live view from the camera"
-        />
+        <span className="absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold tracking-[0.06em] text-rec tabular-nums">
+            <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden />
+            REC
+            {elapsed && <span className="font-medium tracking-normal text-foreground/85">{elapsed}</span>}
+        </span>
+    )
+}
+/**
+ * The camera's focus, face and eye frames over the picture. They can move every frame, so they subscribe here, on
+ * their own, and only this small layer re-renders as they move, never the viewer or its toolbar.
+ */
+function FocusFrames({
+    focusArea,
+    marker,
+    lastFocusFrame,
+}: {
+    focusArea: string | null
+    marker: FocusMarker | null
+    /** The current focus frame, kept for a click's marker to take its size. */
+    lastFocusFrame: React.RefObject<FocusFrame>
+}): React.JSX.Element {
+    const focusFrames = useFocusFrames()
+    const currentFocusFrame = focusFrames.find(frame => frame.kind === 'focus')
+    if (currentFocusFrame) lastFocusFrame.current = currentFocusFrame
+    if (marker) return <CameraFocusFrame frame={lastFocusFrame.current} marker={marker} />
+    // The camera reports faces and eyes in every area, but in a Flexible Spot it focuses on the spot:
+    // only show them where the camera picks the subject itself.
+    const cameraPicksSubject = !/flexible spot/i.test(focusArea ?? '')
+    const shownFrames = cameraPicksSubject ? focusFrames : focusFrames.filter(frame => frame.kind === 'focus')
+    return (
+        <>
+            {shownFrames.map((frame, index) => (
+                <CameraFocusFrame key={index} frame={frame} />
+            ))}
+        </>
     )
 }
 
 export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const { cameraState } = props
     const hasLiveFrame = useHasLiveFrame()
-    const focusFrames = useFocusFrames()
     // Fill the panel at the frame's own shape, scaling past its native resolution if needed.
     const [frameAspect, setFrameAspect] = useState(3 / 2)
     const [focusMarker, setFocusMarker] = useState<FocusMarker | null>(null)
     const focusRingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     // The focus frame's size is kept when a click moves it, even while the camera switches areas.
     const lastFocusFrame = useRef<FocusFrame>(DEFAULT_FOCUS_FRAME)
-    const currentFocusFrame = focusFrames.find(frame => frame.kind === 'focus')
-    // The camera reports faces and eyes in every area, but in a Flexible Spot it focuses on the spot:
-    // only show them where the camera picks the subject itself.
-    const cameraPicksSubject = !/flexible spot/i.test(cameraState.controls?.focusArea?.value ?? '')
-    const shownFrames = cameraPicksSubject
-        ? focusFrames
-        : focusFrames.filter(frame => frame.kind === 'focus')
-    if (currentFocusFrame) lastFocusFrame.current = currentFocusFrame
     const disabled = !cameraState.connected || props.busy || props.locked
     const canFocusAt = props.onFocusAt !== null && !disabled && !props.readingCard
     // While the card is read, live view is paused: keep the last frame, dimmed and labelled, rather than flash.
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
 
     return (
-        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/55 [container-type:size]">
-            {showFrame ? (
-                <div
-                    className={`relative overflow-hidden rounded-md ${canFocusAt ? 'cursor-crosshair!' : ''}`}
-                    style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
-                    onClick={event => {
-                        if (!canFocusAt || !props.onFocusAt) return
-                        if ((event.target as HTMLElement).closest('button')) return
-                        const bounds = event.currentTarget.getBoundingClientRect()
-                        const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
-                        const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
-                        if (focusRingTimer.current) clearTimeout(focusRingTimer.current)
-                        setFocusMarker({ x, y, status: 'focusing' })
-                        void props.onFocusAt(x, y).then(focused => {
-                            setFocusMarker(marker =>
-                                marker && marker.x === x && marker.y === y
-                                    ? { ...marker, status: focused ? 'focused' : 'failed' }
-                                    : marker
-                            )
-                            focusRingTimer.current = setTimeout(() => setFocusMarker(null), FOCUS_RING_LINGER_MS)
-                        })
-                    }}
-                    title={canFocusAt ? 'Click to focus there' : undefined}
-                >
-                    <LiveFrameImage
-                        dimmed={props.readingCard}
-                        onAspect={aspect => {
-                            if (Math.abs(aspect - frameAspect) > 0.01) setFrameAspect(aspect)
-                        }}
-                    />
-                    {props.readingCard && (
-                        <span className="absolute top-3 right-3 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[11px] text-muted-foreground">
-                            <Spinner className="size-3" /> Live view paused while the card is read
-                        </span>
-                    )}
-                    {(props.previewAssists.zebras || props.previewAssists.focusPeaking) && !props.readingCard && (
-                        <PreviewAssistsOverlay settings={props.previewAssists} />
-                    )}
-                    {props.osdFrameUrl && (
-                        <img
-                            className="pointer-events-none absolute inset-0 size-full object-fill"
-                            src={props.osdFrameUrl}
-                            alt=""
-                            draggable={false}
+        // The picture, 6px inside the card and as large as its shape allows, its 8px corners concentric with the card's.
+        // The camera pill and the toolbar float over it, 12px from its top and bottom; clicks around them still focus.
+        <div className="flex min-h-0 flex-1 items-center justify-center p-1.5 [container-type:size]">
+            <div
+                className={`relative rounded-[8px] ${showFrame ? '' : 'overflow-hidden bg-black/40'} ${canFocusAt ? 'cursor-crosshair!' : ''}`}
+                style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
+                onClick={event => {
+                    if (!showFrame || !canFocusAt || !props.onFocusAt) return
+                    if ((event.target as HTMLElement).closest('button')) return
+                    const bounds = event.currentTarget.getBoundingClientRect()
+                    const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
+                    const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height))
+                    if (focusRingTimer.current) clearTimeout(focusRingTimer.current)
+                    setFocusMarker({ x, y, status: 'focusing' })
+                    void props.onFocusAt(x, y).then(focused => {
+                        setFocusMarker(marker =>
+                            marker && marker.x === x && marker.y === y
+                                ? { ...marker, status: focused ? 'focused' : 'failed' }
+                                : marker
+                        )
+                        focusRingTimer.current = setTimeout(() => setFocusMarker(null), FOCUS_RING_LINGER_MS)
+                    })
+                }}
+                title={showFrame && canFocusAt ? 'Click to focus there' : undefined}
+            >
+                {showFrame ? (
+                    <>
+                        <LivePicture
+                            assists={
+                                props.readingCard
+                                    ? { ...props.previewAssists, zebras: false, focusPeaking: false }
+                                    : props.previewAssists
+                            }
+                            recording={cameraState.recording}
+                            cameraDisplay={cameraState.osdOverlay === true}
+                            dimmed={props.readingCard}
+                            onAspect={aspect => {
+                                if (Math.abs(aspect - frameAspect) > 0.01) setFrameAspect(aspect)
+                            }}
                         />
-                    )}
-                    {cameraState.recording && (
-                        <span className="absolute top-3 left-3 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold tracking-wide text-rec">
-                            <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden /> REC
-                        </span>
-                    )}
-                    {focusMarker ? (
-                        <CameraFocusFrame frame={lastFocusFrame.current} marker={focusMarker} />
-                    ) : (
-                        shownFrames.map((frame, index) => <CameraFocusFrame key={index} frame={frame} />)
-                    )}
+                        {props.readingCard && (
+                            <span className="absolute top-3 right-3 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[11px] text-muted-foreground">
+                                <Spinner className="size-3" /> Live view paused while the card is read
+                            </span>
+                        )}
+                        {cameraState.recording && <RecordingBadge />}
+                        <FocusFrames
+                            focusArea={cameraState.controls?.focusArea?.value ?? null}
+                            marker={focusMarker}
+                            lastFocusFrame={lastFocusFrame}
+                        />
+                    </>
+                ) : (
+                    <div className="absolute inset-0 flex items-center justify-center p-16">
+                        <ViewportPlaceholder
+                            cameraState={cameraState}
+                            readingCard={props.readingCard}
+                            onRetryLiveView={props.onRetryLiveView}
+                        />
+                    </div>
+                )}
+                <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center *:pointer-events-auto">
+                    {props.header}
+                </div>
+                <div
+                    className="absolute inset-x-0 bottom-3 flex justify-center"
+                    onClick={event => event.stopPropagation()}
+                >
                     <CameraControls {...props} disabled={disabled} />
                 </div>
-            ) : null}
-            {showFrame && cameraState.recording && (
-                // Tally: a neon tube around the picture, outside its clipped corners so the glow can spill.
-                <span
-                    className="tally pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-                    style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
-                    aria-hidden
-                >
-                    <TallyComet />
-                </span>
-            )}
-            {showFrame ? null : (
-                <>
-                    <ViewportPlaceholder
-                        cameraState={cameraState}
-                        readingCard={props.readingCard}
-                        onRetryLiveView={props.onRetryLiveView}
-                    />
-                    {cameraState.connected && <CameraControls {...props} disabled={disabled} />}
-                </>
-            )}
+            </div>
         </div>
     )
 }

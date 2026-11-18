@@ -1,16 +1,12 @@
 import { Button } from '@kevinschaich/components'
+import { activityLog } from '@renderer/lib/activity-store'
 import type { LogEntry } from '@shared/ipc'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 interface EventLogProps {
-    logs: LogEntry[]
     expanded: boolean
     onToggle: () => void
-    /** Shown at the left end of the bar, before the activity log (the voice button). */
-    leading?: React.ReactNode
-    /** Shown at the right end of the bar (live view stats). */
-    trailing?: React.ReactNode
 }
 
 /** Paths read better relative to the home folder, as Finder shows them. */
@@ -22,13 +18,16 @@ function formatTime(timestampMs: number): string {
     return new Date(timestampMs).toLocaleTimeString(undefined, { hour12: false })
 }
 
+/** Who said each line, in the palette's own lights: the camera gold, voice the live green, the app quiet ink. */
 const SOURCE_COLORS: Record<LogEntry['source'], string> = {
-    camera: 'text-sky-400',
+    camera: 'text-gold/80',
     system: 'text-muted-foreground',
-    voice: 'text-violet-400',
+    voice: 'text-live/80',
 }
 
-export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventLogProps): React.JSX.Element {
+/** Developer Mode's activity log, along the bottom of the main card: the latest line, opening to the whole log. */
+export function EventLog({ expanded, onToggle }: EventLogProps): React.JSX.Element {
+    const logs = activityLog.use()
     const scrollRef = useRef<HTMLDivElement>(null)
     const latest = logs.at(-1)
     const errorCount = logs.filter(entry => entry.level === 'error').length
@@ -39,10 +38,16 @@ export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventL
     }, [logs, expanded])
 
     return (
-        <div className="flex shrink-0 flex-col bg-black/55">
-            <div className="flex h-8 items-center gap-3 px-3 text-xs">
-                {leading}
-                <Button variant="ghost" size="xs" onClick={onToggle} aria-expanded={expanded} aria-controls="event-log">
+        <div className="flex shrink-0 flex-col border-t border-border">
+            <div className="relative flex h-8 items-center gap-3 px-3 text-xs">
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    className="quiet-control"
+                    onClick={onToggle}
+                    aria-expanded={expanded}
+                    aria-controls="event-log"
+                >
                     {expanded ? <ChevronDown /> : <ChevronUp />} Activity
                     <span className="text-muted-foreground tabular-nums">{logs.length}</span>
                     {errorCount > 0 && (
@@ -51,22 +56,19 @@ export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventL
                         </span>
                     )}
                 </Button>
-                {!expanded && latest ? (
+                {!expanded && latest && (
                     <span
                         className={`min-w-0 flex-1 truncate ${latest.level === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
                     >
                         {shortenPaths(latest.message)}
                     </span>
-                ) : (
-                    <span className="flex-1" />
                 )}
-                {trailing}
             </div>
             {expanded && (
                 <div
                     id="event-log"
                     ref={scrollRef}
-                    className="selectable h-44 overflow-y-auto px-3 pb-2 font-mono text-xs leading-5"
+                    className="selectable relative flex h-48 flex-col gap-1.75 overflow-y-auto px-3 pt-1 pb-2.5 text-xs leading-4 tabular-nums"
                     role="log"
                     aria-live="polite"
                 >

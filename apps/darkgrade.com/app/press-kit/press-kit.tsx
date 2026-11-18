@@ -48,11 +48,11 @@ const PRESS_KIT = {
         { name: 'Images', value: `${ASSET_FORMATS.length} sizes` },
         { name: 'Format', value: 'PNG, exact pixels' },
         { name: 'The name', value: 'Darkgrade, one word' },
-        { name: 'Questions', value: LINKS.contactEmail, href: `mailto:${LINKS.contactEmail}` },
+        { name: 'Questions', value: 'Discord', href: LINKS.discord },
     ],
     closing: {
         line: 'Writing something about us?',
-        detail: 'Tell us what you need and a person will send it: a quote, a photograph of the team, or an image at a size that isn’t on this page.',
+        detail: 'Tell us in Discord what you need and a person will send it: a quote, a photograph of the team, or an image at a size that isn’t on this page.',
     },
 } as const
 
@@ -300,8 +300,8 @@ export function PressKit() {
             </SheetSection>
 
             <SheetClosing line={PRESS_KIT.closing.line} detail={PRESS_KIT.closing.detail}>
-                <a className={BTN_SOLID} href={`mailto:${LINKS.contactEmail}`}>
-                    {LINKS.contactEmail}
+                <a className={BTN_SOLID} href={LINKS.discord} target="_blank" rel="noopener">
+                    Join the Discord
                 </a>
                 <a className={BTN_GHOST} href="/about">
                     About Darkgrade

@@ -1,10 +1,10 @@
 import { Slider, Switch, ToggleGroup, ToggleGroupItem } from '@kevinschaich/components'
 import { InspectorSection } from '@renderer/components/InspectorSection'
+import type { PreviewAssistSettings } from '@renderer/gpu/assists'
+import { createStore } from '@renderer/lib/external-store'
 import { Histogram } from '@renderer/scopes/Histogram'
-import type { PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import { Vectorscope } from '@renderer/scopes/Vectorscope'
 import { Waveform } from '@renderer/scopes/Waveform'
-import { createStore } from '@renderer/lib/external-store'
 import { SCOPE_IDS, type ScopeId } from '@shared/ipc'
 
 const SCOPES: { id: ScopeId; label: string }[] = [
@@ -43,6 +43,8 @@ export function chooseScope(next: ScopeId): void {
 interface ScopesPanelProps {
     /** Live view is running, so the scopes have frames to read. */
     active: boolean
+    /** Whether a camera is connected, for what to say when there is no picture to measure. */
+    connected: boolean
     /** Zebras and focus peaking, drawn over the preview by Studio rather than the camera. */
     assists: PreviewAssistSettings
     onAssistsChange: (assists: PreviewAssistSettings) => void
@@ -63,8 +65,8 @@ interface PreviewAssistProps {
 /** A switch for one preview assist, with its slider underneath while it is on. */
 function PreviewAssist(props: PreviewAssistProps): React.JSX.Element {
     return (
-        <div className="flex flex-col gap-1.5">
-            <label className="flex h-8 items-center justify-between gap-2" title={props.description}>
+        <div className="flex flex-col gap-1">
+            <label className="flex items-center justify-between gap-2 leading-none" title={props.description}>
                 <span className="text-muted-foreground">
                     {props.label}
                     {props.enabled && <span className="text-[11px] tabular-nums"> · {props.format(props.value)}</span>}
@@ -86,8 +88,17 @@ function PreviewAssist(props: PreviewAssistProps): React.JSX.Element {
 }
 
 /** One scope of the live feed at a time, chosen like Resolve's scope menu and remembered. */
-export function ScopesPanel({ active, assists, onAssistsChange }: ScopesPanelProps): React.JSX.Element {
+export function ScopesPanel({ active, connected, assists, onAssistsChange }: ScopesPanelProps): React.JSX.Element {
     const scope = scopeChoice.use()
+    // No picture, no scopes: a line saying so, not empty graphs and switches with nothing to act on.
+    if (!active)
+        return (
+            <InspectorSection title="Scopes" collapsible defaultOpen>
+                <p className="text-muted-foreground">
+                    {connected ? 'Scopes appear while live view runs.' : 'Connect a camera to see its scopes.'}
+                </p>
+            </InspectorSection>
+        )
 
     return (
         <InspectorSection title="Scopes" collapsible defaultOpen>
@@ -106,7 +117,7 @@ export function ScopesPanel({ active, assists, onAssistsChange }: ScopesPanelPro
                     <ToggleGroupItem
                         key={option.id}
                         value={option.id}
-                        className="flex-1 rounded-md! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground"
+                        className="min-w-0 flex-1 rounded-md! px-0.5! text-[12px]! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground"
                     >
                         {option.label}
                     </ToggleGroupItem>
@@ -119,28 +130,30 @@ export function ScopesPanel({ active, assists, onAssistsChange }: ScopesPanelPro
                     <Vectorscope active={active} />
                 </div>
             )}
-            <PreviewAssist
-                label="Zebras"
-                description="Stripes over areas at or above this brightness"
-                enabled={assists.zebras}
-                onEnabledChange={zebras => onAssistsChange({ ...assists, zebras })}
-                value={assists.zebraLevelPercent}
-                min={70}
-                max={100}
-                format={value => `${value}%`}
-                onValueChange={zebraLevelPercent => onAssistsChange({ ...assists, zebraLevelPercent })}
-            />
-            <PreviewAssist
-                label="Focus peaking"
-                description="Outlines sharp edges in red; higher marks softer edges too"
-                enabled={assists.focusPeaking}
-                onEnabledChange={focusPeaking => onAssistsChange({ ...assists, focusPeaking })}
-                value={assists.peakingSensitivity}
-                min={1}
-                max={100}
-                format={value => `${value}`}
-                onValueChange={peakingSensitivity => onAssistsChange({ ...assists, peakingSensitivity })}
-            />
+            <div className="flex flex-col gap-1.75">
+                <PreviewAssist
+                    label="Zebras"
+                    description="Stripes over areas at or above this brightness"
+                    enabled={assists.zebras}
+                    onEnabledChange={zebras => onAssistsChange({ ...assists, zebras })}
+                    value={assists.zebraLevelPercent}
+                    min={70}
+                    max={100}
+                    format={value => `${value}%`}
+                    onValueChange={zebraLevelPercent => onAssistsChange({ ...assists, zebraLevelPercent })}
+                />
+                <PreviewAssist
+                    label="Focus peaking"
+                    description="Outlines sharp edges in red; higher marks softer edges too"
+                    enabled={assists.focusPeaking}
+                    onEnabledChange={focusPeaking => onAssistsChange({ ...assists, focusPeaking })}
+                    value={assists.peakingSensitivity}
+                    min={1}
+                    max={100}
+                    format={value => `${value}`}
+                    onValueChange={peakingSensitivity => onAssistsChange({ ...assists, peakingSensitivity })}
+                />
+            </div>
         </InspectorSection>
     )
 }

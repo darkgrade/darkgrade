@@ -58,8 +58,8 @@ export const FIRST_CUT_COPY = {
     sequence: 'Seq 01 · 24 fps',
     status: 'On the way',
     title: 'First cut',
-    tagline: 'Your footage edits itself.',
-    does: 'A first cut is waiting the moment you stop recording, made on your own machine. You take it from there.',
+    tagline: 'A first cut, made for you.',
+    does: 'A first cut is ready soon after you stop recording, made on your own machine. You take it from there.',
     /** What Studio does to the takes, in the order the picture shows it. */
     steps: ['Silences trimmed', 'Titles and captions added', 'Music mixed in'],
     take: 'Take',

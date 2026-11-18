@@ -7,7 +7,7 @@ import {
     ComboboxList,
     ComboboxTrigger,
 } from '@kevinschaich/components'
-import { ControlRow } from '@renderer/components/ControlRow'
+import { CONTROL_TRIGGER_CLASS, ControlRow, SEARCH_FROM } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
 import {
     APERTURE_VALUES,
@@ -79,44 +79,41 @@ function ExposureDial({
     }
 
     return (
-        <Combobox<{ value: string; label: string }>
-            items={options}
-            value={options.find(option => option.value === selected) ?? null}
-            disabled={disabled}
-            itemToStringLabel={option => option.label}
-            itemToStringValue={option => option.value}
-            isItemEqualToValue={(item, current) => item.value === current.value}
-            onValueChange={option => {
-                if (option && option.value !== selected) onApply(option.value)
-            }}
-        >
-            <ComboboxTrigger
-                aria-label={`${label}: ${currentValue ? format(currentValue) : 'unknown'}`}
-                render={
-                    <button
-                        type="button"
-                        className="flex w-full flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 transition-colors outline-none hover:bg-foreground/6 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 disabled:hover:bg-transparent data-popup-open:bg-foreground/10 [&>svg]:hidden"
-                        onWheel={onWheel}
-                    />
-                }
+        <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+            <Combobox<{ value: string; label: string }>
+                items={options}
+                value={options.find(option => option.value === selected) ?? null}
+                disabled={disabled}
+                itemToStringLabel={option => option.label}
+                itemToStringValue={option => option.value}
+                isItemEqualToValue={(item, current) => item.value === current.value}
+                onValueChange={option => {
+                    if (option && option.value !== selected) onApply(option.value)
+                }}
             >
-                <span className="text-[11px] text-muted-foreground">{label}</span>
-                <span className="text-[19px] leading-none font-semibold tracking-tight text-foreground tabular-nums">
-                    {currentValue ? format(currentValue) : '—'}
-                </span>
-            </ComboboxTrigger>
-            <ComboboxContent className="min-w-32">
-                <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
-                <ComboboxEmpty>No matches</ComboboxEmpty>
-                <ComboboxList>
-                    {(option: { value: string; label: string }) => (
-                        <ComboboxItem key={option.value} value={option} className="tabular-nums">
-                            {option.label}
-                        </ComboboxItem>
+                <ComboboxTrigger
+                    aria-label={label}
+                    render={<button type="button" className={CONTROL_TRIGGER_CLASS} onWheel={onWheel} />}
+                >
+                    <span className="truncate tabular-nums">{currentValue ? format(currentValue) : '—'}</span>
+                </ComboboxTrigger>
+                <ComboboxContent className="min-w-32">
+                    {/* Search only a list long enough to need it (ISO, shutter), not a handful of choices. */}
+                    {options.length > SEARCH_FROM && (
+                        <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
                     )}
-                </ComboboxList>
-            </ComboboxContent>
-        </Combobox>
+                    <ComboboxEmpty>No matches</ComboboxEmpty>
+                    <ComboboxList>
+                        {(option: { value: string; label: string }) => (
+                            <ComboboxItem key={option.value} value={option} className="tabular-nums">
+                                {option.label}
+                            </ComboboxItem>
+                        )}
+                    </ComboboxList>
+                </ComboboxContent>
+            </Combobox>
+        </div>
     )
 }
 
@@ -156,50 +153,64 @@ export function SettingsPanel({
     const disabled = !cameraState.connected || locked
     return (
         <InspectorSection title="Exposure" collapsible defaultOpen>
-            <div className="grid grid-cols-3 gap-1">
-                <ExposureDial
-                    label="Shutter"
-                    currentValue={cameraState.settings.shutterSpeed}
-                    values={allowedStops(SHUTTER_VALUES, cameraState.controls?.shutterSpeed ?? null, shutterToNumber)}
-                    toNumber={shutterToNumber}
-                    format={formatShutter}
-                    disabled={disabled}
-                    onApply={onSetShutterSpeed}
-                />
-                <ExposureDial
-                    label="Aperture"
-                    currentValue={cameraState.settings.aperture}
-                    values={allowedStops(APERTURE_VALUES, cameraState.controls?.aperture ?? null, apertureToNumber)}
-                    toNumber={apertureToNumber}
-                    format={formatAperture}
-                    disabled={disabled}
-                    onApply={onSetAperture}
-                />
-                <ExposureDial
-                    label="ISO"
-                    currentValue={cameraState.settings.iso}
-                    values={allowedStops(ISO_VALUES, cameraState.controls?.iso ?? null, isoToNumber)}
-                    toNumber={isoToNumber}
-                    format={formatIso}
-                    disabled={disabled}
-                    onApply={onSetIso}
-                />
-            </div>
-            {cameraState.controls && (
-                <div className="flex flex-col gap-1">
-                    <ControlRow
-                        label="White balance"
-                        control={cameraState.controls.whiteBalance}
-                        disabled={disabled}
-                        onChange={value => onChangeControl('whiteBalance', value)}
-                    />
-                    <ControlRow
-                        label="Temperature"
-                        control={cameraState.controls.colorTemperature}
-                        disabled={disabled}
-                        onChange={value => onChangeControl('colorTemperature', value)}
-                        format={value => `${value} K`}
-                    />
+            {!cameraState.connected ? (
+                <p className="text-muted-foreground">Connect a camera to set exposure.</p>
+            ) : (
+                <div className="flex flex-col gap-1.75">
+                    <div className="contents">
+                        <ExposureDial
+                            label="Shutter"
+                            currentValue={cameraState.settings.shutterSpeed}
+                            values={allowedStops(
+                                SHUTTER_VALUES,
+                                cameraState.controls?.shutterSpeed ?? null,
+                                shutterToNumber
+                            )}
+                            toNumber={shutterToNumber}
+                            format={formatShutter}
+                            disabled={disabled}
+                            onApply={onSetShutterSpeed}
+                        />
+                        <ExposureDial
+                            label="Aperture"
+                            currentValue={cameraState.settings.aperture}
+                            values={allowedStops(
+                                APERTURE_VALUES,
+                                cameraState.controls?.aperture ?? null,
+                                apertureToNumber
+                            )}
+                            toNumber={apertureToNumber}
+                            format={formatAperture}
+                            disabled={disabled}
+                            onApply={onSetAperture}
+                        />
+                        <ExposureDial
+                            label="ISO"
+                            currentValue={cameraState.settings.iso}
+                            values={allowedStops(ISO_VALUES, cameraState.controls?.iso ?? null, isoToNumber)}
+                            toNumber={isoToNumber}
+                            format={formatIso}
+                            disabled={disabled}
+                            onApply={onSetIso}
+                        />
+                    </div>
+                    {cameraState.controls && (
+                        <div className="contents">
+                            <ControlRow
+                                label="White balance"
+                                control={cameraState.controls.whiteBalance}
+                                disabled={disabled}
+                                onChange={value => onChangeControl('whiteBalance', value)}
+                            />
+                            <ControlRow
+                                label="Temperature"
+                                control={cameraState.controls.colorTemperature}
+                                disabled={disabled}
+                                onChange={value => onChangeControl('colorTemperature', value)}
+                                format={value => `${value} K`}
+                            />
+                        </div>
+                    )}
                 </div>
             )}
         </InspectorSection>

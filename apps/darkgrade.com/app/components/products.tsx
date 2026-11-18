@@ -23,9 +23,9 @@ export const STUDIO: Product = {
     does: 'An app that sets your lights and camera, takes orders by voice and, soon, hands you a first cut.',
     features: [
         today('Lights and camera, set in one tap'),
-        today('Works with the gear you already own'),
-        today('Voice control for the whole studio'),
-        next('A first cut the moment you stop recording'),
+        today('Works with the Sony, Nikon and Canon cameras you already own'),
+        today('Voice control for your lights and camera'),
+        next('A first cut soon after you stop recording'),
     ],
 }
 
@@ -33,10 +33,10 @@ export const LINK: Product = {
     name: 'Link',
     kind: 'Open-source library',
     tagline: 'Your camera takes requests now.',
-    does: 'A library that lets any app, script or local model run your camera.',
+    does: 'A library that lets your app, script or local model run your camera.',
     lit: true,
     features: [
-        today('Control your camera from any app'),
+        today('Control your camera from your own app'),
         today('Sony, Nikon and Canon through one API'),
         today('Local models drive it over MCP'),
         next('More camera brands'),

@@ -1,6 +1,5 @@
 import {
     Camera,
-    runCameraBenchmark,
     identifyCamera,
     isMovableFocusArea,
     PTPDisconnectedError,
@@ -8,6 +7,7 @@ import {
     PTPResponseError,
     PTPTimeoutError,
     readCameraPower,
+    runCameraBenchmark,
     VendorIDs,
     type GenericCamera,
     type SonyContent,
@@ -337,19 +337,28 @@ export class CameraService {
      * inside an enqueued operation — that deadlocks.
      */
     private benchmarkRunning = false
-    async benchmarkDiagnostics(): Promise<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }> {
-        if (!this.camera || this.recording || this.benchmarkRunning) throw new Error('Connect an idle camera before benchmarking')
+    async benchmarkDiagnostics(): Promise<{
+        passed: boolean
+        checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }>
+        path: string
+    }> {
+        if (!this.camera || this.recording || this.benchmarkRunning)
+            throw new Error('Connect an idle camera before benchmarking')
         this.benchmarkRunning = true
-        return this.withLiveViewPaused(() => this.enqueue(async () => {
-            if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
-            const diagnostics = await import('@darkgrade/contribute/settings')
-            const result = await runCameraBenchmark(this.camera, {
-                flushEvidence: async () => (await diagnostics.nodeDiagnostics()).flush(),
+        return this.withLiveViewPaused(() =>
+            this.enqueue(async () => {
+                if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
+                const diagnostics = await import('@darkgrade/contribute/settings')
+                const result = await runCameraBenchmark(this.camera, {
+                    flushEvidence: async () => (await diagnostics.nodeDiagnostics()).flush(),
+                })
+                const path = diagnostics.saveDiagnosticProfile(result.profile)
+                await diagnostics.nodeDiagnostics().then(client => client.flush())
+                return { ...result, path }
             })
-            diagnostics.saveDiagnosticProfile(result.profile)
-            await diagnostics.nodeDiagnostics().then(client => client.flush())
-            return result
-        })).finally(() => { this.benchmarkRunning = false })
+        ).finally(() => {
+            this.benchmarkRunning = false
+        })
     }
 
     private operationQueue: Promise<unknown> = Promise.resolve()

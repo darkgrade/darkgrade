@@ -15,7 +15,7 @@ export function FocusPanel({ cameraState, locked, onChange }: FocusPanelProps): 
     return (
         <InspectorSection title="Focus" collapsible defaultOpen>
             {controls ? (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1.75">
                     <ControlRow
                         label="Mode"
                         control={controls.focusMode}
@@ -29,7 +29,7 @@ export function FocusPanel({ cameraState, locked, onChange }: FocusPanelProps): 
                         onChange={value => onChange('focusArea', value)}
                     />
                     {controls.subjectRecognition && (
-                        <label className="flex h-8 items-center justify-between gap-2">
+                        <label className="flex items-center justify-between gap-2 leading-none">
                             <span className="text-muted-foreground">Eye tracking</span>
                             <Switch
                                 checked={controls.subjectRecognition.value === 'On'}
@@ -55,8 +55,8 @@ export function FocusPanel({ cameraState, locked, onChange }: FocusPanelProps): 
                         </>
                     )}
                     <p className="pt-1 text-[11px] text-muted-foreground">
-                        Click the picture to move the focus area there. In Wide, Zone or Center it switches to your last
-                        Flexible Spot until you press Focus.
+                        Click the picture to focus there. Wide, Zone and Center switch to your last Flexible Spot until
+                        you press Focus.
                     </p>
                 </div>
             ) : (

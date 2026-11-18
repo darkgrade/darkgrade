@@ -1,9 +1,28 @@
-import { Button, Field, FieldContent, FieldDescription, FieldLabel, Input, Switch } from '@kevinschaich/components'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+    Button,
+    Input,
+    Switch,
+    toast,
+} from '@kevinschaich/components'
+import { CopyableValue, SETTING_BUTTON_CLASS, SettingRow, SettingsGroup } from '@renderer/components/SettingsRows'
 import type { DiagnosticsStatus } from '@shared/ipc'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+/** Paths read better relative to the home folder, as Finder shows them. */
+const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~')
 
 export function DiagnosticsSettings() {
     const [status, setStatus] = useState<DiagnosticsStatus | null>(null)
+    const wasDeleting = useRef(false)
     const [busy, setBusy] = useState(false)
     const [message, setMessage] = useState('')
     const [email, setEmail] = useState('')
@@ -12,8 +31,13 @@ export function DiagnosticsSettings() {
         const refresh = async () => {
             try {
                 const result = await window.studio.getDiagnosticsStatus()
-                if (active && result.ok) setStatus(result.data)
-                else if (active && !result.ok) setMessage(result.error)
+                if (active && result.ok) {
+                    // A deletion finishes on its own after the first request; say so when it does.
+                    if (wasDeleting.current && !result.data.withdrawalPending)
+                        setMessage("Deleted from Darkgrade's servers. You can turn sharing back on.")
+                    wasDeleting.current = result.data.withdrawalPending
+                    setStatus(result.data)
+                } else if (active && !result.ok) setMessage(result.error)
             } catch {
                 if (active) setMessage('Telemetry settings could not be loaded.')
             }
@@ -25,13 +49,21 @@ export function DiagnosticsSettings() {
             clearInterval(timer)
         }
     }, [])
+    const [confirmingDelete, setConfirmingDelete] = useState(false)
     const change = async (action: 'sharing' | 'withdraw' | 'retry', value?: boolean) => {
         setBusy(true)
         setMessage('')
         try {
             const result = await window.studio.changeDiagnostics(action, value)
-            if (result.ok) setStatus(result.data)
-            else setMessage(result.error)
+            if (!result.ok) return setMessage(result.error)
+            setStatus(result.data)
+            wasDeleting.current = result.data.withdrawalPending
+            if (action === 'withdraw' || action === 'retry')
+                setMessage(
+                    result.data.withdrawalPending
+                        ? "Deleting what this Mac shared from Darkgrade's servers. It finishes on its own; this updates when it's done."
+                        : "Deleted from Darkgrade's servers. You can turn sharing back on."
+                )
         } catch {
             setMessage('Could not update telemetry. Try again.')
         } finally {
@@ -43,11 +75,14 @@ export function DiagnosticsSettings() {
         setMessage('Reading camera profile… This can take up to three minutes.')
         try {
             const result = await window.studio.diagnosticsBenchmark()
-            setMessage(
-                result.ok
-                    ? `${result.data.passed ? '✅ Profile exported' : '⚠️ Partial profile exported'} · ${result.data.checks.filter(check => check.passed).length}/${result.data.checks.length} reads passed. Saved locally; upload follows your sharing setting.`
-                    : result.error
-            )
+            if (!result.ok) return setMessage(result.error)
+            const { passed, checks, path } = result.data
+            setMessage('')
+            toast.add({
+                title: passed ? 'Camera profile exported' : 'Partial camera profile exported',
+                description: `${checks.filter(check => check.passed).length} of ${checks.length} reads passed · ${shortPath(path)}`,
+                actionProps: { children: 'Show in Finder', onClick: () => void window.studio.revealPath(path) },
+            })
         } catch {
             setMessage('Camera check failed. Try again.')
         } finally {
@@ -61,12 +96,12 @@ export function DiagnosticsSettings() {
             setMessage(
                 result.ok
                     ? action === 'request'
-                        ? 'Check your email to confirm this installation.'
+                        ? `Sent to ${email}. Open the link in that email to confirm this Mac.`
                         : action === 'remove'
-                          ? 'Email association removed.'
+                          ? 'Email unlinked from this Mac.'
                           : result.data
-                            ? `Verified: ${result.data.email}`
-                            : 'No verified email linked.'
+                            ? `Linked and confirmed: ${result.data.email}`
+                            : 'No email is linked to this Mac yet.'
                     : result.error
             )
             if (result.ok && action !== 'status') setEmail('')
@@ -77,67 +112,76 @@ export function DiagnosticsSettings() {
         }
     }
     if (!status) return message ? <p role="status">{message}</p> : null
+    const footer = message || status.error
     return (
-        <section className="mt-8 space-y-3 border-t border-foreground/10 pt-5">
-            <Field orientation="horizontal">
-                <FieldContent>
-                    <FieldLabel htmlFor="camera-diagnostics">Share camera diagnostics</FieldLabel>
-                    <FieldDescription>
-                        {status.configured
-                            ? 'Help improve Link and Matrix with camera capabilities and safe numeric settings. No images or raw serial numbers.'
-                            : (status.error ?? 'Sharing is off until a collector is configured.')}
-                    </FieldDescription>
-                </FieldContent>
-                <Switch
-                    id="camera-diagnostics"
-                    checked={status.sharingEnabled ?? status.enabled}
-                    disabled={busy || !status.installationId || status.withdrawalPending}
-                    onCheckedChange={value => void change('sharing', value)}
-                />
-            </Field>
+        <SettingsGroup title="Diagnostics" footer={footer && <span role="status">{footer}</span>}>
+            <SettingRow
+                title="Share camera diagnostics"
+                htmlFor="camera-diagnostics"
+                description={
+                    !status.configured
+                        ? (status.error ?? 'Sharing is off until a collector is configured.')
+                        : status.withdrawalPending
+                          ? "Deleting what this Mac shared. Sharing can be turned back on once that's done."
+                          : 'Camera capabilities and numeric settings, to improve Link and Matrix. No images or raw serial numbers.'
+                }
+                control={
+                    <Switch
+                        id="camera-diagnostics"
+                        checked={status.sharingEnabled ?? status.enabled}
+                        disabled={busy || !status.installationId || status.withdrawalPending}
+                        onCheckedChange={value => void change('sharing', value)}
+                    />
+                }
+            />
             {status.installationId && (
-                <div className="flex flex-wrap items-center gap-2">
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void benchmark()}>
-                        Export camera profile
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy || !status.installationId}
-                        onClick={() =>
-                            void navigator.clipboard
-                                .writeText(status.installationId!)
-                                .then(() => setMessage('Diagnostic ID copied.'))
-                                .catch(() => setMessage('Could not copy ID.'))
+                <>
+                    <SettingRow
+                        title="Camera profile"
+                        description="Reads what the connected camera reports and saves it to a file."
+                        control={
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                className={SETTING_BUTTON_CLASS}
+                                disabled={busy}
+                                onClick={() => void benchmark()}
+                            >
+                                Export…
+                            </Button>
                         }
-                    >
-                        Copy diagnostic ID
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy || !status.configured}
-                        onClick={() => void change(status.withdrawalPending ? 'retry' : 'withdraw')}
-                    >
-                        {status.withdrawalPending ? 'Retry deletion' : 'Delete cloud data'}
-                    </Button>
-                </div>
+                    />
+                    <SettingRow
+                        title="Diagnostic ID"
+                        description="Quote it when you report a problem."
+                        control={
+                            <div className="w-44">
+                                <CopyableValue label="diagnostic ID" value={status.installationId} />
+                            </div>
+                        }
+                    />
+                </>
             )}
             {status.configured && (
-                <details>
-                    <summary className="cursor-pointer text-sm">Link an email (optional)</summary>
+                <SettingRow
+                    title="Email"
+                    htmlFor="telemetry-email"
+                    description={
+                        status.enabled
+                            ? 'Optional. A link sent to it confirms this Mac.'
+                            : 'Optional. Turn on sharing to link an email.'
+                    }
+                >
                     <form
-                        className="mt-2 flex flex-wrap items-center gap-2"
+                        className="flex items-center gap-2"
                         onSubmit={event => {
                             event.preventDefault()
                             void contact('request')
                         }}
                     >
-                        <label className="sr-only" htmlFor="telemetry-email">
-                            Email address
-                        </label>
                         <Input
                             id="telemetry-email"
+                            className="h-7 min-w-0 flex-1 border-0 text-[13px] bg-foreground/5 dark:bg-foreground/5"
                             type="email"
                             autoComplete="email"
                             required
@@ -145,37 +189,98 @@ export function DiagnosticsSettings() {
                             value={email}
                             onChange={event => setEmail(event.target.value)}
                             placeholder="you@example.com"
-                            disabled={busy}
+                            disabled={busy || !status.enabled}
                         />
-                        <Button size="sm" type="submit" disabled={busy || !email || status.withdrawalPending}>
-                            Send confirmation
-                        </Button>
                         <Button
                             size="sm"
-                            type="button"
-                            variant="ghost"
-                            disabled={busy}
-                            onClick={() => void contact('status')}
+                            variant="secondary"
+                            className={SETTING_BUTTON_CLASS}
+                            type="submit"
+                            disabled={busy || !email || !status.enabled}
                         >
-                            Check status
+                            Send link
                         </Button>
-                        <Button
-                            size="sm"
-                            type="button"
-                            variant="ghost"
-                            disabled={busy}
-                            onClick={() => void contact('remove')}
-                        >
-                            Unlink
-                        </Button>
+                        {status.enrolled && (
+                            <>
+                                <Button
+                                    size="sm"
+                                    type="button"
+                                    variant="ghost"
+                                    disabled={busy}
+                                    onClick={() => void contact('status')}
+                                >
+                                    Check
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    type="button"
+                                    variant="ghost"
+                                    disabled={busy}
+                                    onClick={() => void contact('remove')}
+                                >
+                                    Unlink
+                                </Button>
+                            </>
+                        )}
                     </form>
-                </details>
+                </SettingRow>
             )}
-            {(message || status.error) && (
-                <p role="status" className="text-xs text-muted-foreground">
-                    {message || status.error}
-                </p>
+            {status.installationId && (
+                <SettingRow
+                    title="Delete shared data"
+                    description="Removes everything this Mac has shared from Darkgrade's servers."
+                    control={
+                        status.withdrawalPending ? (
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                className={SETTING_BUTTON_CLASS}
+                                disabled={busy}
+                                onClick={() => void change('retry')}
+                            >
+                                Retry deletion
+                            </Button>
+                        ) : (
+                            // Deleting what this Mac has shared can't be undone: ask first.
+                            <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+                                <AlertDialogTrigger
+                                    render={
+                                        <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            className={`${SETTING_BUTTON_CLASS} text-destructive hover:text-destructive`}
+                                            disabled={busy || !status.configured}
+                                        />
+                                    }
+                                >
+                                    Delete…
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Delete this Mac's camera diagnostics?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Everything this installation has shared is removed from Darkgrade's servers.
+                                            This can't be undone.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                            variant="destructive"
+                                            onClick={() => {
+                                                setConfirmingDelete(false)
+                                                void change('withdraw')
+                                            }}
+                                        >
+                                            Delete
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        )
+                    }
+                />
             )}
-        </section>
+        </SettingsGroup>
     )
 }

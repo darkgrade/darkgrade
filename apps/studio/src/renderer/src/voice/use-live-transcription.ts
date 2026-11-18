@@ -1,9 +1,17 @@
+import { perf } from '@renderer/lib/perf'
 import type { LocalModelStatus, VoiceEngineStatus } from '@shared/ipc'
 import { describeMicrophoneError } from '@shared/microphone-errors'
 import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
 import { IntentFollower } from '@voice/intent-follower'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
-import { microphoneLevel, transcriptParagraphs, transcriptPartial } from '@voice/transcript-store'
+import type { ListeningState } from '@voice/panel-switch'
+import {
+    microphoneLevel,
+    startsNewParagraph,
+    transcriptParagraphs,
+    transcriptPartial,
+    transcriptPartialNewParagraph,
+} from '@voice/transcript-store'
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import TranscriptionWorker from '@voice/transcription.worker?worker'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -13,12 +21,14 @@ export interface Microphone {
     label: string
 }
 
-export type ListeningState = 'off' | 'preparing' | 'listening' | 'stopping'
+export type { ListeningState } from '@voice/panel-switch'
 
 const SAMPLE_RATE = 16_000
 const MICROPHONE_STORAGE_KEY = 'voice.microphoneId'
 /** A pause this long starts a new paragraph. */
 const PARAGRAPH_PAUSE_MS = 1400
+/** A session that hasn't wound down this long after Stop is ended anyway, so voice never sticks between sessions. */
+const STOP_TIMEOUT_MS = 8000
 
 function readStoredMicrophone(): string {
     try {
@@ -68,6 +78,8 @@ interface Capture {
 export function useLiveTranscription() {
     const api = window.studio
     const [engine, setEngine] = useState<VoiceEngineStatus | null>(null)
+    /** The open microphone, for what draws it live (the voice glow reads it every frame, not in 80 ms blocks). */
+    const [stream, setStream] = useState<MediaStream | null>(null)
     const [assistant, setAssistant] = useState<LocalModelStatus | null>(null)
     const [listening, setListening] = useState<ListeningState>('off')
     const [error, setError] = useState<string | null>(null)
@@ -111,6 +123,8 @@ export function useLiveTranscription() {
     }, [refreshMicrophones])
 
     const lastWordAtRef = useRef(0)
+    /** The paragraph decided for the utterance being heard (see startsNewParagraph); null between utterances. */
+    const partialDecisionRef = useRef<boolean | null>(null)
 
     /**
      * A new paragraph starts after a real pause between words, and only once the last sentence has
@@ -121,8 +135,9 @@ export function useLiveTranscription() {
         const now = performance.now()
         const paused = lastWordAtRef.current > 0 && now - lastWordAtRef.current > PARAGRAPH_PAUSE_MS
         lastWordAtRef.current = now
-        const sentenceEnded = /[.?!]["'”’)]?\s*$/.test(previous.at(-1) ?? '')
-        const startNew = (paragraphPendingRef.current || paused) && sentenceEnded && previous.length > 0
+        // The paragraph was decided when this utterance was first heard, if it was; else decide now.
+        const startNew = partialDecisionRef.current ?? startsNewParagraph(previous, paused, paragraphPendingRef.current)
+        partialDecisionRef.current = null
         paragraphPendingRef.current = false
         if (startNew || previous.length === 0) {
             transcriptParagraphs.set([...previous, text.trimStart()])
@@ -143,6 +158,7 @@ export function useLiveTranscription() {
         captureRef.current = null
         if (!capture) return
         capture.stream.getTracks().forEach(track => track.stop())
+        setStream(null)
         await capture.context.close()
         microphoneLevel.set(0)
     }, [])
@@ -159,6 +175,7 @@ export function useLiveTranscription() {
             const channel = new MessageChannel()
             node.port.postMessage({ audioPort: channel.port1 }, [channel.port1])
             captureRef.current = { context, node, source, stream }
+            setStream(stream)
             void refreshMicrophones()
             return channel.port2
         },
@@ -176,12 +193,21 @@ export function useLiveTranscription() {
                 followerRef.current?.flush()
             }
             if (message.type === 'partial') {
+                // A new utterance: decide its paragraph now, from the pause before it, and keep to that.
+                if (!transcriptPartial.get()) {
+                    const previous = transcriptParagraphs.get()
+                    const paused =
+                        lastWordAtRef.current > 0 && performance.now() - lastWordAtRef.current > PARAGRAPH_PAUSE_MS
+                    partialDecisionRef.current = startsNewParagraph(previous, paused, paragraphPendingRef.current)
+                    transcriptPartialNewParagraph.set(partialDecisionRef.current)
+                }
                 transcriptPartial.set(message.text)
                 followerRef.current?.warmUpPartial(message.text)
             }
             if (message.type === 'paragraph') paragraphPendingRef.current = true
             if (message.type === 'error') setError(message.message)
             if (message.type === 'diagnostic') void api.voiceDiagnostic(message.message)
+            if (message.type === 'perf') perf.cpu('Voice detector (worker thread)', message.detectorMs)
             if (message.type === 'session-audio') void api.voiceSaveSessionAudio(new Uint8Array(message.pcm))
             if (message.type !== 'stopped') return
             transcriptPartial.set('')
@@ -230,7 +256,14 @@ export function useLiveTranscription() {
         await stopCapture()
         const command: TranscriptionCommand = { type: 'stop' }
         worker.postMessage(command)
-    }, [stopCapture])
+        // The worker answers 'stopped' once its last words are transcribed; an engine that never answers would
+        // otherwise leave the session stopping forever. Its last words are dropped, the session ends.
+        setTimeout(() => {
+            if (workerRef.current !== worker) return
+            void api.voiceDiagnostic(`stop timed out after ${STOP_TIMEOUT_MS} ms; ended the session`)
+            handleWorkerEvent(new MessageEvent('message', { data: { type: 'stopped' } }))
+        }, STOP_TIMEOUT_MS)
+    }, [api, handleWorkerEvent, stopCapture])
 
     /** Switches the input; while listening, audio keeps flowing into the same session. */
     const chooseMicrophone = useCallback(async (deviceId: string) => {
@@ -245,6 +278,7 @@ export function useLiveTranscription() {
             capture.stream.getTracks().forEach(track => track.stop())
             source.connect(capture.node)
             captureRef.current = { ...capture, source, stream }
+            setStream(stream)
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught))
         }
@@ -310,6 +344,7 @@ export function useLiveTranscription() {
         microphoneBlocked,
         microphones,
         microphoneId: selectedMicrophone,
+        stream,
         start,
         stop,
         chooseMicrophone,

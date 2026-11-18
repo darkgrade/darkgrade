@@ -26,6 +26,9 @@ export function LensPanel({
 }: LensPanelProps): React.JSX.Element {
     const lens = cameraState.lens
     const disabled = !cameraState.connected || locked
+    // With the zoom mode at optical only, a lens without power zoom has nothing for these buttons to drive.
+    const opticalOnly = /^optical( zoom)?( only)?$/i.test(cameraState.controls?.zoomMode?.value ?? '')
+    const zoomDisabled = disabled || opticalOnly
     return (
         <InspectorSection title="Lens" collapsible defaultOpen>
             {cameraState.connected ? (
@@ -43,7 +46,8 @@ export function LensPanel({
                             <Button
                                 variant="ghost"
                                 size="icon-sm"
-                                disabled={disabled}
+                                disabled={zoomDisabled}
+                                title={opticalOnly ? 'Zoom mode is optical only' : undefined}
                                 aria-label="Zoom out (hold)"
                                 onPointerDown={event => {
                                     event.currentTarget.setPointerCapture(event.pointerId)
@@ -58,7 +62,8 @@ export function LensPanel({
                             <Button
                                 variant="ghost"
                                 size="icon-sm"
-                                disabled={disabled}
+                                disabled={zoomDisabled}
+                                title={opticalOnly ? 'Zoom mode is optical only' : undefined}
                                 aria-label="Zoom in (hold)"
                                 onPointerDown={event => {
                                     event.currentTarget.setPointerCapture(event.pointerId)

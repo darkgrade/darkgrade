@@ -4,25 +4,107 @@
 @source '../../../node_modules/@kevinschaich/components/dist';
 
 /*
- * Studio is a desktop app, not a page: black like a monitor, an arrow cursor everywhere, and no
- * text selection except in logs.
+ * Studio is a desktop app, not a page: dark like a monitor, an arrow cursor everywhere, and no
+ * text selection except in logs. Its palette is darkgrade.com's: warm ink on near-black, hairlines
+ * of that ink, and one gold light for whatever is selected or switched on. Surfaces are solid, so
+ * menus never show what is under them.
  */
 html.dark {
     color-scheme: dark;
-    --background: oklch(0 0 0);
-    --card: oklch(0.13 0 0);
-    --popover: oklch(0.18 0 0);
-    --border: oklch(1 0 0 / 8%);
-    --input: oklch(1 0 0 / 10%);
+    /* Screen Studio's flat near-black, a touch cool, everywhere: window, top bar, status bar, viewer. */
+    --background: #07090b;
+    /* Floating panels a step or two above it: the inspector card and the capture dock. */
+    --float: #0f1014;
+    --float-raised: #18191e;
+    --foreground: #eae6dc;
+    --card: #101012;
+    --card-foreground: #eae6dc;
+    --popover: #151517;
+    --popover-foreground: #eae6dc;
+    --primary: #eae6dc;
+    --primary-foreground: #0b0b0c;
+    --secondary: #1a1a1c;
+    --secondary-foreground: #eae6dc;
+    --muted: #18181a;
+    --muted-foreground: rgb(234 230 220 / 55%);
+    --accent: #1e1e21;
+    --accent-foreground: #eae6dc;
+    /* One hairline everywhere, 1px of ink at 10%: the same as the component library's own outlines. */
+    --border: rgb(234 230 220 / 10%);
+    --input: rgb(234 230 220 / 11%);
+    --ring: rgb(245 205 138 / 55%);
+    --destructive: #e0483e;
     --live: oklch(0.72 0.17 150);
-    --rec: oklch(0.64 0.23 25);
-    --canvas: oklch(0.08 0 0);
+    --rec: #e0483e;
+    --gold: #f5cd8a;
+    --gold-dim: rgb(245 205 138 / 13%);
+    --canvas: #070708;
 }
 
 @theme inline {
     --color-live: var(--live);
     --color-rec: var(--rec);
+    --color-gold: var(--gold);
+    --color-gold-dim: var(--gold-dim);
     --color-canvas: var(--canvas);
+    --color-float: var(--float);
+    --color-float-raised: var(--float-raised);
+    /* One face everywhere, as the site sets its running text: Public Sans, with tabular figures for numbers. */
+    --font-mono: var(--font-sans);
+}
+
+/*
+ * Every icon is Lucide (stroke="currentColor", fill="none"). Lucide's stroke scales with the icon, so a 12px chevron
+ * drew 1px lines and an 18px toolbar icon 1.5px; one 1.5px line at any size makes them read as one set.
+ */
+svg[stroke='currentColor'][fill='none'] {
+    stroke-width: 1.5px;
+}
+svg[stroke='currentColor'][fill='none'] * {
+    vector-effect: non-scaling-stroke;
+}
+
+/*
+ * Menus (selects and comboboxes) on the inspector's rhythm: as wide as their longest choice rather than their button,
+ * rows 28px tall at 13px with 8px in, and the popover's 4px inset.
+ */
+[data-slot='select-content'],
+[data-slot='combobox-content'] {
+    width: max-content;
+    min-width: max(var(--anchor-width), 11rem);
+    max-width: min(24rem, var(--available-width));
+}
+[data-slot='select-item'],
+[data-slot='combobox-item'] {
+    min-height: 28px;
+    padding: 4px 32px 4px 8px;
+    font-size: 13px;
+}
+
+/*
+ * One light for the current choice, as on darkgrade.com: the selected tab or segment and a switched-on
+ * switch take the gold, with a faint gold wash and hairline, not a grey pill.
+ */
+[data-slot='tabs-trigger'][data-active],
+[data-slot='toggle-group-item'][data-pressed] {
+    color: var(--gold) !important;
+    background-color: var(--gold-dim) !important;
+    box-shadow: inset 0 0 0 1px rgb(245 205 138 / 22%);
+    /* The site's lamp, at the size of a label: a faint warm halo round the lit word. */
+    text-shadow: 0 0 8px rgb(246 185 97 / 35%);
+}
+[data-slot='switch'][data-checked] {
+    background-color: var(--gold) !important;
+}
+
+/* Every small-caps label (inspector sections, readout names, the voice panel's title, Preferences' headings):
+   Public Sans, semibold, lightly tracked, in the quietest ink. */
+.slate-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(234 230 220 / 40%);
 }
 
 html,
@@ -35,6 +117,19 @@ body,
 
 body {
     background: var(--background);
+}
+/*
+ * On macOS the window is vibrancy (the system's Sidebar material by default); the page lays a tint of its own over it,
+ * as Arc does, and the main card sits on that. The tint and the card are tunable live in Developer Mode › Appearance.
+ */
+:root {
+    --window-tint: rgb(0 0 0 / 50%);
+    --card-surface: rgb(7 9 11 / 30%);
+}
+html[data-vibrancy] body {
+    background: var(--window-tint);
+}
+body {
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 13px;
@@ -98,43 +193,10 @@ img {
     background-clip: padding-box;
 }
 .is-scrolling {
-    scrollbar-color: oklch(1 0 0 / 35%) transparent;
+    scrollbar-color: rgb(234 230 220 / 30%) transparent;
 }
 .is-scrolling::-webkit-scrollbar-thumb {
-    background-color: oklch(1 0 0 / 35%);
-}
-
-/*
- * Recording tally: a neon tube around the picture. A thin near-white core, a tight red glow either side of
- * it, a wide bloom spilling outward, and hot spots where the tube catches the light at top and bottom.
- */
-@keyframes tally-start {
-    0% { opacity: 0; filter: brightness(2.5); }
-    30% { opacity: 1; filter: brightness(1.8); }
-    100% { opacity: 1; filter: brightness(1); }
-}
-@keyframes tally-breathe {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(0.72); }
-}
-.tally {
-    --tube: var(--color-rec);
-    border-radius: 10px;
-    border: 2px solid color-mix(in oklab, var(--color-rec) 70%, transparent);
-    /* A quieter tube, so the travelling comet is the brightest thing on screen. */
-    box-shadow:
-        0 0 1px 1px color-mix(in oklab, var(--color-rec) 60%, transparent),
-        0 0 6px 1px color-mix(in oklab, var(--tube) 60%, transparent),
-        0 0 22px 4px color-mix(in oklab, var(--tube) 25%, transparent),
-        inset 0 0 6px 1px color-mix(in oklab, var(--tube) 45%, transparent),
-        inset 0 0 20px 4px color-mix(in oklab, var(--tube) 18%, transparent);
-    animation:
-        tally-start 700ms ease-out,
-        tally-breathe 2.6s ease-in-out 700ms infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-    .tally { animation: none; }
-    .tally-comet { display: none; }
+    background-color: rgb(234 230 220 / 30%);
 }
 
 /*
@@ -144,14 +206,13 @@ img {
  */
 .voice-panel {
     height: 0;
-    border-top-color: transparent;
-    transition:
-        height 280ms cubic-bezier(0.32, 0.72, 0, 1),
-        border-color 280ms;
+    transition: height 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.voice-panel[data-dragging] {
+    transition: none;
 }
 .voice-panel[data-expanded='true'] {
-    height: clamp(200px, 38%, 380px);
-    border-top-color: var(--border);
+    height: var(--voice-height, clamp(200px, 38%, 380px));
 }
 .transcript-paragraph {
     margin-bottom: 0.75em;
@@ -166,28 +227,62 @@ img {
         opacity: 0;
     }
 }
+/*
+ * A word fades in once, when it is first heard, and keeps its element from then on: grey while still being heard,
+ * fading to white when confirmed, and to a request's colour as the assistant works on it.
+ */
 .transcript-word {
     display: inline;
     white-space: pre-wrap;
-    animation: transcript-word-in 200ms ease-out backwards;
+    animation: transcript-word-in 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    transition: color 400ms ease;
 }
+.transcript-word-heard {
+    color: var(--muted-foreground);
+}
+.transcript-word > span {
+    transition:
+        color 400ms ease,
+        background-color 400ms ease,
+        text-decoration-color 400ms ease;
+}
+/*
+ * The text fades evenly from the last line (fully opaque, with the padding under it) to nothing at the top, as a
+ * teleprompter's does. The mask is on the text's own scroller, so the voice glow behind it is untouched.
+ */
+.transcript-scroll {
+    mask-image: linear-gradient(to top, black 0, black 3.5rem, transparent 100%);
+}
+.transcript-placeholder {
+    color: rgb(234 230 220 / 32%);
+}
+/*
+ * The caret: a slim gold bar that blinks in two steps, as macOS's text caret does. A smooth fade (or a glow) here
+ * made the whole masked transcript re-composite every frame while listening; two steps a second cost nothing.
+ */
 @keyframes transcript-caret {
-    0%, 100% { opacity: 0.15; }
-    50% { opacity: 0.7; }
+    50% {
+        opacity: 0.15;
+    }
 }
 .transcript-caret {
     display: inline-block;
     width: 2px;
-    height: 1.1em;
-    margin-left: 3px;
-    vertical-align: -0.2em;
+    height: 1.15em;
+    margin: 0 4px 0 2px;
+    vertical-align: -0.22em;
     border-radius: 1px;
-    background: var(--color-live);
-    animation: transcript-caret 1.1s ease-in-out infinite;
+    background: var(--gold);
+    animation: transcript-caret 1.1s step-end infinite;
 }
 @keyframes voice-live-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-live) 55%, transparent); }
-    50% { box-shadow: 0 0 0 4px transparent; }
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-live) 55%, transparent);
+    }
+    50% {
+        box-shadow: 0 0 0 4px transparent;
+    }
 }
 .voice-live-dot {
     width: 7px;
@@ -197,10 +292,16 @@ img {
     animation: voice-live-pulse 1.6s ease-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-    .voice-panel { transition: none; }
-    .transcript-word { animation-duration: 1ms; }
+    .voice-panel {
+        transition: none;
+    }
+    .transcript-word {
+        animation-duration: 1ms;
+    }
     .transcript-caret,
-    .voice-live-dot { animation: none; }
+    .voice-live-dot {
+        animation: none;
+    }
 }
 
 /*
@@ -208,18 +309,23 @@ img {
  * done, red if it failed. Colour and a soft underline fade between states.
  */
 .transcript-intent {
-    border-radius: 4px;
-    padding: 1px 3px;
-    margin: 0 -3px;
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
+    padding: 1px 0;
     text-decoration-line: underline;
     text-decoration-thickness: 2px;
     text-underline-offset: 4px;
-    transition:
-        color 300ms ease,
-        background-color 300ms ease,
-        text-decoration-color 300ms ease;
+}
+/* A request's words are one block: rounded and padded only at its ends. */
+.transcript-intent-first {
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+    padding-left: 3px;
+    margin-left: -3px;
+}
+.transcript-intent-last {
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    padding-right: 3px;
+    margin-right: -3px;
 }
 .transcript-intent-recognized,
 .transcript-intent-running {
@@ -227,9 +333,7 @@ img {
     background-color: oklch(0.65 0.15 240 / 14%);
     text-decoration-color: oklch(0.7 0.15 240 / 60%);
 }
-.transcript-intent-running {
-    animation: transcript-intent-working 1.2s ease-in-out infinite;
-}
+
 .transcript-intent-done {
     color: oklch(0.82 0.15 150);
     background-color: oklch(0.7 0.16 150 / 12%);
@@ -240,13 +344,7 @@ img {
     background-color: oklch(0.64 0.2 25 / 14%);
     text-decoration-color: oklch(0.68 0.2 25 / 60%);
 }
-@keyframes transcript-intent-working {
-    0%, 100% { background-color: oklch(0.65 0.15 240 / 10%); }
-    50% { background-color: oklch(0.65 0.15 240 / 24%); }
-}
-@media (prefers-reduced-motion: reduce) {
-    .transcript-intent-running { animation: none; }
-}
+
 
 /* The assistant's answer, tucked under the paragraph that asked, in the colour of its highlight. */
 .transcript-reply {
@@ -257,7 +355,8 @@ img {
     padding-left: 0.1rem;
     font-size: 0.8125rem;
     line-height: 1.45;
-    animation: transcript-word-in 200ms ease-out backwards;
+    animation: transcript-word-in 400ms ease-out backwards;
+    transition: color 400ms ease;
 }
 .transcript-reply > svg {
     flex-shrink: 0;
@@ -272,4 +371,107 @@ img {
 }
 .transcript-reply-failed {
     color: oklch(0.74 0.14 25);
+}
+
+/*
+ * Behind a dialog the window dims flat, as Resolve's do: no backdrop blur, which would re-blur the
+ * whole window, live video included, every frame.
+ */
+[data-slot='dialog-overlay'],
+[data-slot='alert-dialog-overlay'] {
+    backdrop-filter: none !important;
+    background-color: rgb(7 7 8 / 72%) !important;
+}
+
+/*
+ * scroll-fade-y, copied from shadcn's tailwind.css (shadcn 4.23.0, MIT): a scroll that runs past an
+ * edge fades out at that edge, and only there, driven by the scroll position itself (scroll-driven
+ * animations), so a list at its top shows no top fade.
+ */
+@property --scroll-fade-t {
+    syntax: '<length-percentage>';
+    inherits: false;
+    initial-value: 0px;
+}
+@property --scroll-fade-b {
+    syntax: '<length-percentage>';
+    inherits: false;
+    initial-value: 0px;
+}
+@property --scroll-fade-mask {
+    syntax: '*';
+    inherits: false;
+}
+
+@theme inline {
+    @keyframes scroll-fade-reveal-t {
+        from {
+            --scroll-fade-t: 0px;
+        }
+        to {
+            --scroll-fade-t: var(--_scroll-fade-size-t, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+        }
+    }
+    @keyframes scroll-fade-reveal-b {
+        from {
+            --scroll-fade-b: var(--_scroll-fade-size-b, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+        }
+        to {
+            --scroll-fade-b: 0px;
+        }
+    }
+}
+
+@utility scroll-fade-y {
+    --_scroll-fade-size-t: var(--scroll-fade-t-size, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+    --_scroll-fade-size-b: var(--scroll-fade-b-size, var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10))));
+    --scroll-fade-block: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 var(--scroll-fade-t, 0px),
+        #000 calc(100% - var(--scroll-fade-b, 0px)),
+        transparent 100%
+    );
+    -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
+    mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+
+    @supports (animation-timeline: scroll()) {
+        animation:
+            scroll-fade-reveal-t 1ms ease-in-out,
+            scroll-fade-reveal-b 1ms ease-in-out;
+        animation-timeline: scroll(self y), scroll(self y);
+        animation-range:
+            0 var(--scroll-fade-reveal, calc(var(--spacing) * 24)),
+            calc(100% - var(--scroll-fade-reveal, calc(var(--spacing) * 24))) 100%;
+        animation-fill-mode: both;
+    }
+
+    @supports not (animation-timeline: scroll()) {
+        --scroll-fade-t: var(--_scroll-fade-size-t);
+        --scroll-fade-b: var(--_scroll-fade-size-b);
+    }
+}
+
+/*
+ * Quiet controls (the status bar's Voice, Activity and Preview, the top bar's Disconnect): text the way the
+ * site's header links are, muted ink that brightens on hover, with no pill behind it. A panel it has opened
+ * lights it gold, as the selected scope or segment is lit.
+ */
+.quiet-control {
+    background-color: transparent !important;
+    color: rgb(234 230 220 / 62%);
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    transition: color 150ms ease;
+}
+.quiet-control:hover {
+    color: var(--foreground);
+}
+.quiet-control[aria-expanded='true'] {
+    color: var(--gold);
+    text-shadow: 0 0 8px rgb(246 185 97 / 30%);
 }

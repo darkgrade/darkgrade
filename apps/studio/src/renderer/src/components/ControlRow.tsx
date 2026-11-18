@@ -18,6 +18,13 @@ interface ControlRowProps {
     format?: (value: string) => string
 }
 
+/** A setting's menu button: the same everywhere in the inspector. */
+export const CONTROL_TRIGGER_CLASS =
+    'flex h-6 w-[55%] shrink-0 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-1.5 pl-2 outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12'
+
+/** Menus with more choices than this get a search field. */
+export const SEARCH_FROM = 8
+
 /** A camera setting as a label on the left and its allowed values in a combobox on the right. */
 export function ControlRow({
     label,
@@ -31,8 +38,8 @@ export function ControlRow({
     const choices = options.map(option => ({ value: option, label: format(option) }))
     const unavailable = disabled || !control.enabled || options.length < 2
     return (
-        <div className="flex min-h-8 items-center justify-between gap-3">
-            <span className="text-muted-foreground">{label}</span>
+        <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-muted-foreground">{label}</span>
             <Combobox<{ value: string; label: string }>
                 items={choices}
                 value={choices.find(option => option.value === control.value) ?? null}
@@ -44,19 +51,14 @@ export function ControlRow({
                     if (option && option.value !== control.value) onChange(option.value)
                 }}
             >
-                <ComboboxTrigger
-                    aria-label={label}
-                    render={
-                        <button
-                            type="button"
-                            className="flex h-7 w-40 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-2 pl-2.5 text-sm outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12"
-                        />
-                    }
-                >
+                <ComboboxTrigger aria-label={label} render={<button type="button" className={CONTROL_TRIGGER_CLASS} />}>
                     <span className="truncate">{control.value ? format(control.value) : '—'}</span>
                 </ComboboxTrigger>
                 <ComboboxContent className="min-w-44">
-                    <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
+                    {/* Search only a list long enough to need it, not a handful of choices. */}
+                    {choices.length > SEARCH_FROM && (
+                        <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
+                    )}
                     <ComboboxEmpty>No matches</ComboboxEmpty>
                     <ComboboxList>
                         {(option: { value: string; label: string }) => (

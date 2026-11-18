@@ -1,25 +1,32 @@
 import { toast, Toaster, TooltipProvider } from '@kevinschaich/components'
-import { AmbientBackdrop } from '@renderer/components/AmbientBackdrop'
+import { AppearanceTuner } from '@renderer/components/AppearanceTuner'
+import { CameraPill } from '@renderer/components/CameraPill'
 import { EventLog } from '@renderer/components/EventLog'
 import { FilesPanel } from '@renderer/components/FilesPanel'
 import { FocusPanel } from '@renderer/components/FocusPanel'
 import { LensPanel } from '@renderer/components/LensPanel'
 import { LiveViewPanel } from '@renderer/components/LiveViewPanel'
-import { LiveViewStats } from '@renderer/components/LiveViewStats'
+import { PerfCard } from '@renderer/components/PerfMonitor'
 import { PreviewDialog, type PreviewState } from '@renderer/components/PreviewDialog'
 import { RecordingPanel } from '@renderer/components/RecordingPanel'
+import { Resizer } from '@renderer/components/Resizer'
 import { chooseScope, scopeChoice, ScopesPanel } from '@renderer/components/ScopesPanel'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
-import { TopBar } from '@renderer/components/TopBar'
-import { VoicePanel, VoiceStatusButton } from '@renderer/components/VoicePanel'
-import { readJpegSize } from '@renderer/lib/jpeg-size'
+import { VoicePanel } from '@renderer/components/VoicePanel'
+import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/gpu/assists'
+import { publishOsdFrame } from '@renderer/gpu/device'
+import { appendLog, downloadProgress } from '@renderer/lib/activity-store'
 import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
-import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
-import type { CameraState, DownloadProgress, FileEntry, LogEntry } from '@shared/ipc'
+import { useResizable } from '@renderer/lib/use-resizable'
+import type { CameraState, FileEntry, LogEntry } from '@shared/ipc'
 import { useLiveTranscription } from '@voice/use-live-transcription'
+import { Unplug } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const MAX_LOG_ENTRIES = 500
+/** The camera controls sidebar: 320px to start, dragged between these, never more than 45% of the window. */
+const SIDEBAR_WIDTH = 320
+const SIDEBAR_MIN = 260
+const sidebarMax = (): number => Math.min(560, window.innerWidth * 0.45)
 const VOICE_RELEASE_DELAY_MS = 60_000
 
 const INITIAL_STATE: CameraState = {
@@ -40,30 +47,30 @@ const INITIAL_STATE: CameraState = {
     platform: '',
 }
 
-/** Live view's frame rate is averaged over this window. */
-const FRAME_RATE_WINDOW_MS = 10_000
-
 export function App(): React.JSX.Element {
     const api = window.studio
+    const sidebar = useResizable('studio.sidebar-width', SIDEBAR_WIDTH, SIDEBAR_MIN, sidebarMax, 'right')
 
     const [cameraState, setCameraState] = useState<CameraState>(INITIAL_STATE)
-    const [logs, setLogs] = useState<LogEntry[]>([])
     const [files, setFiles] = useState<FileEntry[] | null>(null)
     const [filesUpdating, setFilesUpdating] = useState(false)
-    const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
+    // Only whether a download runs: its progress re-renders the Card panel alone.
+    const downloading = downloadProgress.useSelect(progress => progress !== null)
     const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
     // A slow card read can finish after its preview closed or another opened: only the open one may show.
     const previewEntryRef = useRef<FileEntry | null>(null)
     previewEntryRef.current = previewEntry
     const [previewState, setPreviewState] = useState<PreviewState>({ status: 'loading' })
-    const [osdFrameUrl, setOsdFrameUrl] = useState<string | null>(null)
     const [previewAssists, setPreviewAssists] = useState<PreviewAssistSettings>(DEFAULT_PREVIEW_ASSISTS)
-    const liveFrameTimes = useRef<number[]>([])
-    const [liveFrameSize, setLiveFrameSize] = useState<{ width: number; height: number } | null>(null)
-    const [liveFramesPerSecond, setLiveFramesPerSecond] = useState<number | null>(null)
     const [busy, setBusy] = useState(false)
     const [capturing, setCapturing] = useState(false)
     const [logExpanded, setLogExpanded] = useState(false)
+    // The Activity log is a developer tool, shown only with Developer Mode on in the app menu.
+    const [developerMode, setDeveloperMode] = useState(false)
+    useEffect(() => {
+        void api.getPreferences().then(result => result.ok && setDeveloperMode(result.data.developerMode))
+        return api.onPreferences(current => setDeveloperMode(current.developerMode))
+    }, [])
 
     const zoomingRef = useRef(false)
 
@@ -77,10 +84,6 @@ export function App(): React.JSX.Element {
         window.addEventListener('blur', stopZoom)
         return () => window.removeEventListener('blur', stopZoom)
     }, [api])
-
-    const appendLog = useCallback((entry: LogEntry) => {
-        setLogs(previous => [...previous.slice(-(MAX_LOG_ENTRIES - 1)), entry])
-    }, [])
 
     const log = useCallback(
         (source: LogEntry['source'], message: string, level: LogEntry['level'] = 'info') => {
@@ -105,33 +108,13 @@ export function App(): React.JSX.Element {
             setFilesUpdating(update.updating)
             if (update.files) setFiles([...update.files].reverse())
         })
-        const unsubscribeFrame = api.onLiveViewFrame(jpeg => {
-            liveFrameTimes.current.push(performance.now())
-            const size = readJpegSize(jpeg)
-            if (size)
-                setLiveFrameSize(previous =>
-                    previous?.width === size.width && previous.height === size.height ? previous : size
-                )
-            publishLiveFrame(jpeg)
-        })
+        // Frames go straight to their store (and the GPU); they never re-render the app.
+        const unsubscribeFrame = api.onLiveViewFrame(publishLiveFrame)
         const unsubscribeFocusFrames = api.onFocusFrames(publishFocusFrames)
-        const frameRateTimer = setInterval(() => {
-            const now = performance.now()
-            const recent = liveFrameTimes.current.filter(time => now - time <= FRAME_RATE_WINDOW_MS)
-            liveFrameTimes.current = recent
-            if (recent.length < 2) return setLiveFramesPerSecond(null)
-            const spanSeconds = Math.max((now - recent[0]) / 1000, 1)
-            setLiveFramesPerSecond(recent.length / Math.min(spanSeconds, FRAME_RATE_WINDOW_MS / 1000))
-        }, 1000)
-        const unsubscribeOsd = api.onOsdFrame(png => {
-            const url = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }))
-            setOsdFrameUrl(previous => {
-                if (previous) URL.revokeObjectURL(previous)
-                return url
-            })
-        })
+        // The camera's own display goes straight to the GPU; it never re-renders the app.
+        const unsubscribeOsd = api.onOsdFrame(png => void publishOsdFrame(png))
         const unsubscribeProgress = api.onFilesProgress(progress => {
-            setDownloadProgress(progress.total > 0 && progress.completed < progress.total ? progress : null)
+            downloadProgress.set(progress.total > 0 && progress.completed < progress.total ? progress : null)
         })
         return () => {
             unsubscribeState()
@@ -140,7 +123,6 @@ export function App(): React.JSX.Element {
             unsubscribeFrame()
             unsubscribeProgress()
             unsubscribeFocusFrames()
-            clearInterval(frameRateTimer)
             unsubscribeOsd()
             unsubscribeFiles()
         }
@@ -214,12 +196,12 @@ export function App(): React.JSX.Element {
     useEffect(() => {
         if (cameraState.connected) return
         setFiles(null)
-        setDownloadProgress(null)
+        downloadProgress.set(null)
         setPreviewEntry(null)
     }, [cameraState.connected])
 
     const previewLoading = previewEntry !== null && previewState.status === 'loading'
-    const cardBusy = filesUpdating || downloadProgress !== null || previewLoading
+    const cardBusy = filesUpdating || downloading || previewLoading
 
     // Return takes a photo and F focuses, like a tethering app; ignored while typing.
     useEffect(() => {
@@ -275,122 +257,137 @@ export function App(): React.JSX.Element {
     return (
         <TooltipProvider delay={400}>
             <Toaster>
-                <div className="relative flex h-full flex-col">
-                    <AmbientBackdrop active={cameraState.connected} />
-                    <TopBar
-                        cameraState={cameraState}
-                        busy={busy}
-                        onConnect={() => void run(() => api.connect())}
-                        onDisconnect={() => void run(() => api.disconnect())}
-                        onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
-                    />
-                    <div className="flex min-h-0 flex-1">
-                        <main className="flex min-w-0 flex-1 flex-col">
-                            <LiveViewPanel
-                                cameraState={cameraState}
-                                previewAssists={previewAssists}
-                                osdFrameUrl={cameraState.osdOverlay ? osdFrameUrl : null}
-                                busy={busy}
-                                capturing={capturing}
-                                locked={cardBusy}
-                                readingCard={cardBusy}
-                                onRetryLiveView={() => void run(() => api.liveViewStart())}
-                                onFocus={focus}
-                                onFocusAt={
-                                    cameraState.vendor === 'Sony' || cameraState.vendor === 'Nikon'
-                                        ? async (x, y) => (await run(() => api.focusAt(x, y))) !== null
-                                        : null
-                                }
-                                onCapture={() => void capture()}
-                                onStartRecording={() => void run(() => api.recordStart())}
-                                onStopRecording={() => void run(() => api.recordStop())}
-                            />
-                            <VoicePanel
-                                voice={voice}
-                                expanded={voiceExpanded}
-                                onCollapse={() => setVoiceExpanded(false)}
-                            />
-                        </main>
-                        <aside
-                            className="flex w-80 shrink-0 flex-col overflow-y-auto bg-black/55"
-                            aria-label="Camera controls"
-                        >
-                            <ScopesPanel
-                                active={cameraState.connected && cameraState.liveView}
-                                assists={previewAssists}
-                                onAssistsChange={setPreviewAssists}
-                            />
-                            <SettingsPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onSetIso={value => void run(() => api.setIso(value))}
-                                onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
-                                onSetAperture={value => void run(() => api.setAperture(value))}
-                                onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <FocusPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <LensPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onZoomStart={direction => {
-                                    zoomingRef.current = true
-                                    void api.zoomStart(direction)
-                                }}
-                                onZoomStop={() => {
-                                    if (!zoomingRef.current) return
-                                    zoomingRef.current = false
-                                    void api.zoomStop()
-                                }}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <RecordingPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <FilesPanel
-                                cameraState={cameraState}
-                                files={files}
-                                updating={filesUpdating}
-                                downloadProgress={downloadProgress}
-                                previewing={previewEntry}
-                                onPreview={entry => void openPreview(entry)}
-                                onDownload={entry => void run(() => api.downloadFile(entry))}
-                                onDownloadAll={() =>
-                                    void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
-                                }
-                                onChooseDir={() => void run(() => api.chooseDownloadDir())}
-                                onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
-                            />
-                        </aside>
-                    </div>
-                    <EventLog
-                        logs={logs}
-                        expanded={logExpanded}
-                        onToggle={() => setLogExpanded(previous => !previous)}
-                        leading={
-                            <VoiceStatusButton
-                                voice={voice}
-                                expanded={voiceExpanded}
-                                onToggle={() => setVoiceExpanded(previous => !previous)}
-                            />
-                        }
-                        trailing={
-                            cameraState.connected && (
-                                <LiveViewStats
-                                    framesPerSecond={cameraState.liveView ? liveFramesPerSecond : null}
-                                    frameSize={cameraState.liveView ? liveFrameSize : null}
-                                    quality={cameraState.controls?.liveViewQuality ?? null}
-                                    disabled={busy}
-                                    onQualityChange={value => void run(() => api.setControl('liveViewQuality', value))}
+                {/* The window is macOS's own material (vibrancy) with a tint over it; the inspector sits on it full height at
+                    the left, and the rest is one dark card 6px from the window's top, right and bottom edges. The picture sits
+                    6px inside the card, its corners concentric with the card's (14px - 6px = 8px), with the camera pill
+                    and toolbar floating over it. */}
+                <div className="relative flex h-full">
+                    <aside
+                        className="relative flex shrink-0 flex-col"
+                        style={{ width: sidebar.size }}
+                        aria-label="Camera controls"
+                    >
+                        <Resizer
+                            edge="right"
+                            label="Resize the camera controls"
+                            size={sidebar.size}
+                            min={SIDEBAR_MIN}
+                            max={sidebarMax()}
+                            dragging={sidebar.dragging}
+                            onPointerDown={sidebar.startDrag}
+                            onKeyDown={sidebar.onKeyDown}
+                        />
+                        {/* The traffic lights sit here, on a strip that drags the window. */}
+                        <div className="titlebar-drag h-11 shrink-0" />
+                        {/* The controls scroll and fade at an edge they run past. */}
+                        <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
+                            {developerMode && <AppearanceTuner />}
+                            {/* With no camera there is nothing to set: one line for the whole sidebar, not one per section. */}
+                            {!cameraState.connected ? (
+                                <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 pb-16 text-center">
+                                    <Unplug className="size-5 text-foreground/30" aria-hidden />
+                                    <p className="text-muted-foreground">Connect a camera to see its settings.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <ScopesPanel
+                                        active={cameraState.connected && cameraState.liveView}
+                                        connected={cameraState.connected}
+                                        assists={previewAssists}
+                                        onAssistsChange={setPreviewAssists}
+                                    />
+                                    <SettingsPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onSetIso={value => void run(() => api.setIso(value))}
+                                        onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
+                                        onSetAperture={value => void run(() => api.setAperture(value))}
+                                        onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <FocusPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <LensPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onZoomStart={direction => {
+                                            zoomingRef.current = true
+                                            void api.zoomStart(direction)
+                                        }}
+                                        onZoomStop={() => {
+                                            if (!zoomingRef.current) return
+                                            zoomingRef.current = false
+                                            void api.zoomStop()
+                                        }}
+                                        onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <RecordingPanel
+                                        cameraState={cameraState}
+                                        locked={cardBusy}
+                                        onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                    />
+                                    <FilesPanel
+                                        cameraState={cameraState}
+                                        files={files}
+                                        updating={filesUpdating}
+                                        previewing={previewEntry}
+                                        onPreview={entry => void openPreview(entry)}
+                                        onDownload={entry => void run(() => api.downloadFile(entry))}
+                                        onDownloadAll={() =>
+                                            void run(() => api.downloadAll()).finally(() => downloadProgress.set(null))
+                                        }
+                                        onChooseDir={() => void run(() => api.chooseDownloadDir())}
+                                        onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
+                                    />
+                                </>
+                            )}
+                        </div>
+                        {developerMode && <PerfCard />}
+                    </aside>
+                    <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] bg-(--card-surface)">
+                        <LiveViewPanel
+                            header={
+                                <CameraPill
+                                    cameraState={cameraState}
+                                    busy={busy}
+                                    onConnect={() => void run(() => api.connect())}
+                                    onDisconnect={() => void run(() => api.disconnect())}
+                                    onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
                                 />
-                            )
-                        }
-                    />
+                            }
+                            cameraState={cameraState}
+                            previewAssists={previewAssists}
+                            busy={busy}
+                            capturing={capturing}
+                            locked={cardBusy}
+                            readingCard={cardBusy}
+                            onRetryLiveView={() => void run(() => api.liveViewStart())}
+                            onFocus={focus}
+                            onFocusAt={
+                                cameraState.vendor === 'Sony' || cameraState.vendor === 'Nikon'
+                                    ? async (x, y) => (await run(() => api.focusAt(x, y))) !== null
+                                    : null
+                            }
+                            onCapture={() => void capture()}
+                            onStartRecording={() => void run(() => api.recordStart())}
+                            onStopRecording={() => void run(() => api.recordStop())}
+                            voiceOpen={voiceExpanded}
+                            voiceListening={voice.listening === 'listening'}
+                            onToggleVoice={() => setVoiceExpanded(previous => !previous)}
+                            preview={{
+                                live: cameraState.liveView,
+                                quality: cameraState.controls?.liveViewQuality ?? null,
+                                disabled: busy,
+                                onQualityChange: value => void run(() => api.setControl('liveViewQuality', value)),
+                            }}
+                        />
+                        <VoicePanel voice={voice} expanded={voiceExpanded} />
+                        {developerMode && (
+                            <EventLog expanded={logExpanded} onToggle={() => setLogExpanded(previous => !previous)} />
+                        )}
+                    </main>
                 </div>
                 <PreviewDialog
                     entry={previewEntry}

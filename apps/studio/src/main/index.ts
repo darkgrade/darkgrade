@@ -4,10 +4,11 @@ import { closeDiagnostics, initializeDiagnostics } from '@main/diagnostics'
 import { registerIpcHandlers } from '@main/ipc-handlers'
 import { startCameraDaemonKillerLoop, stopCameraDaemonKillerLoop } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
+import { preferences } from '@main/preferences'
 import { installApplicationMenu } from '@main/preferences-window'
 import { protectRenderer, rendererDocumentUrl, isTrustedRendererDocument } from '@main/renderer-security'
 import { voiceService } from '@main/voice/voice-service'
-import { app, BrowserWindow, powerMonitor, session, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, nativeTheme, powerMonitor, session, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -18,16 +19,28 @@ const rendererUrl = rendererDocumentUrl(pathToFileURL(join(currentDir, '../rende
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+    // Studio is dark only; the window's vibrancy and the system's menus and dialogs follow.
+    nativeTheme.themeSource = 'dark'
     mainWindow = new BrowserWindow({
         width: 1440,
         height: 900,
         minWidth: 1080,
         minHeight: 680,
         title: 'Darkgrade Studio',
-        backgroundColor: '#000000',
+        // On macOS the window is the system's sidebar material (vibrancy, as Messages and Maps use); the page paints
+        // only the main card on it, so the window itself is clear.
+        ...(process.platform === 'darwin'
+            ? {
+                  vibrancy: preferences.get().windowMaterial,
+                  visualEffectState: preferences.get().dimWhenInactive
+                      ? ('followWindow' as const)
+                      : ('active' as const),
+                  backgroundColor: '#00000000',
+              }
+            : { backgroundColor: '#07090b' }),
         titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
-        // Centered in the 52px header: macOS traffic lights are 14px tall
-        trafficLightPosition: { x: 20, y: 19 },
+        // Centered in the sidebar's 44px drag strip: macOS traffic lights are 14px tall
+        trafficLightPosition: { x: 18, y: 15 },
         webPreferences: {
             preload: join(currentDir, '../preload/index.cjs'),
             contextIsolation: true,
@@ -36,11 +49,17 @@ function createWindow(): void {
         },
     })
 
-    // A desktop app doesn't zoom its own chrome with Cmd +/-.
-    void mainWindow.webContents.setVisualZoomLevelLimits(1, 1)
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-        if ((input.meta || input.control) && ['=', '+', '-', '0'].includes(input.key)) event.preventDefault()
+    // Developer Mode › Appearance picks the window's material; it switches live, with a short fade.
+    let material = preferences.get().windowMaterial
+    const stopFollowingMaterial = preferences.onChange(current => {
+        if (process.platform !== 'darwin' || current.windowMaterial === material) return
+        material = current.windowMaterial
+        mainWindow?.setVibrancy(material, { animationDuration: 200 })
     })
+    mainWindow.on('closed', stopFollowingMaterial)
+
+    // Trackpad pinch doesn't zoom the window; Cmd + / Cmd - / Cmd 0 do, from the View menu.
+    void mainWindow.webContents.setVisualZoomLevelLimits(1, 1)
 
     mainWindow.on('closed', () => {
         mainWindow = null
@@ -89,7 +108,7 @@ if (!hasSingleInstanceLock) {
             void systemPreferences.askForMediaAccess('microphone')
         }
         session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-            callback(permission === 'media' && details.isMainFrame === true &&
+            callback((permission === 'media' || permission === 'clipboard-sanitized-write') && details.isMainFrame === true &&
                 Boolean(webContents) && isTrustedRendererDocument(webContents!.getURL(), rendererUrl))
         })
 

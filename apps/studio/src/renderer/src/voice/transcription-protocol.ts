@@ -15,4 +15,6 @@ export type TranscriptionEvent =
     | { type: 'diagnostic'; message: string }
     /** Every block sent this session, as PCM16 at 16 kHz, so a bad transcript can be replayed. */
     | { type: 'session-audio'; pcm: ArrayBuffer }
+    /** The worker's own CPU time over the last second, for Developer Mode's performance monitor. */
+    | { type: 'perf'; detectorMs: number; windows: number }
     | { type: 'stopped' }

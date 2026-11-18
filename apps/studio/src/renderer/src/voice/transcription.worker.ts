@@ -47,7 +47,10 @@ async function requestTranscript(samples: Int16Array): Promise<string> {
     const pcm = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength)
     const form = new FormData()
     form.append('file', new Blob([wavFile(pcm)], { type: 'audio/wav' }), 'utterance.wav')
-    const response = await fetch(`http://127.0.0.1:${enginePort}/v1/audio/transcriptions`, { method: 'POST', body: form })
+    const response = await fetch(`http://127.0.0.1:${enginePort}/v1/audio/transcriptions`, {
+        method: 'POST',
+        body: form,
+    })
     const body = (await response.json()) as { text?: string; error?: string }
     if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
     return body.text?.trim() ?? ''
@@ -59,14 +62,17 @@ async function transcribeFinal(utterance: Utterance): Promise<void> {
         const text = await requestTranscript(utterance.samples)
         const waitMilliseconds = Math.round(performance.now() - sentMilliseconds)
         const durationSeconds = utterance.samples.length / SPEECH_SAMPLE_RATE
-        diagnostic(`utterance at ${utterance.startSeconds.toFixed(2)} s (${durationSeconds.toFixed(2)} s) in ${waitMilliseconds} ms: ${JSON.stringify(text)}`)
+        diagnostic(
+            `utterance at ${utterance.startSeconds.toFixed(2)} s (${durationSeconds.toFixed(2)} s) in ${waitMilliseconds} ms: ${JSON.stringify(text)}`
+        )
         if (text) emit({ type: 'delta', text: ` ${text}` })
         else emit({ type: 'partial', text: '' })
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         diagnostic(`engine error: ${message}`)
         emit({ type: 'partial', text: '' })
-        emit({ type: 'error', message: `The speech engine couldn't transcribe that: ${message}` })
+        // A sentence for the person; the engine's own words go to the diagnostics log above.
+        emit({ type: 'error', message: "Missed a few words: the speech engine didn't answer." })
     }
 }
 
@@ -106,10 +112,23 @@ function requestPartialWhenDue(): void {
     void transcribePartial(utterance)
 }
 
+/** The voice detector's time, reported once a second for the performance monitor (cheap: two numbers). */
+let detectorMs = 0
+let detectorWindows = 0
+setInterval(() => {
+    if (!detectorWindows) return
+    emit({ type: 'perf', detectorMs, windows: detectorWindows })
+    detectorMs = 0
+    detectorWindows = 0
+}, 1000)
+
 async function detectWindow(window: Int16Array): Promise<void> {
     if (!detector) return
+    const started = performance.now()
     const floatWindow = Float32Array.from(window, sample => sample / 32768)
     const probability = await detector.speechProbability(floatWindow)
+    detectorMs += performance.now() - started
+    detectorWindows++
     cutter.addWindow(window, probability)
     if (cutter.speaking) samplesSincePartial += window.length
     requestPartialWhenDue()
@@ -164,7 +183,8 @@ async function start(command: Extract<TranscriptionCommand, { type: 'start' }>):
         detector ??= await SileroVoiceDetector.create(enginePort)
         detector.reset()
     } catch (error) {
-        emit({ type: 'error', message: `Couldn't start listening: ${error instanceof Error ? error.message : String(error)}` })
+        diagnostic(`start failed: ${error instanceof Error ? error.message : String(error)}`)
+        emit({ type: 'error', message: "Couldn't reach the speech engine." })
         emit({ type: 'stopped' })
         return
     }

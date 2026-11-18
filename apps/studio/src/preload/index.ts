@@ -2,9 +2,25 @@ import type { StudioApi } from '@shared/ipc'
 import { IPC, IPC_EVENTS } from '@shared/ipc'
 import { contextBridge, ipcRenderer } from 'electron'
 
+/** Each event channel's traffic and handler time since the last take, for Developer Mode's performance monitor. */
+const ipcStats = new Map<string, { count: number; milliseconds: number; bytes: number }>()
+
+function payloadBytes(payload: unknown): number {
+    if (payload instanceof Uint8Array || payload instanceof ArrayBuffer) return payload.byteLength
+    return 0
+}
+
 function subscribe<T>(channel: string) {
     return (callback: (payload: T) => void): (() => void) => {
-        const listener = (_event: Electron.IpcRendererEvent, payload: T): void => callback(payload)
+        const listener = (_event: Electron.IpcRendererEvent, payload: T): void => {
+            const started = performance.now()
+            callback(payload)
+            const stats = ipcStats.get(channel) ?? { count: 0, milliseconds: 0, bytes: 0 }
+            stats.count++
+            stats.milliseconds += performance.now() - started
+            stats.bytes += payloadBytes(payload)
+            ipcStats.set(channel, stats)
+        }
         ipcRenderer.on(channel, listener)
         return () => ipcRenderer.removeListener(channel, listener)
     }
@@ -56,6 +72,18 @@ const studioApi: StudioApi = {
     setPreferences: change => ipcRenderer.invoke(IPC.PreferencesSet, change),
     onPreferences: subscribe(IPC_EVENTS.Preferences),
     getMcpServerStatus: () => ipcRenderer.invoke(IPC.McpServerGetStatus),
+    perfSampleProcesses: () => ipcRenderer.invoke(IPC.PerfSampleProcesses),
+    perfTakeIpc: () => {
+        const taken = [...ipcStats].map(([channel, stats]) => ({ channel, ...stats }))
+        ipcStats.clear()
+        return taken
+    },
+    perfOpen: () => ipcRenderer.invoke(IPC.PerfOpen),
+    perfTrace: seconds => ipcRenderer.invoke(IPC.PerfTrace, seconds),
+    perfIsOpen: () => ipcRenderer.invoke(IPC.PerfIsOpen),
+    perfReport: report => ipcRenderer.invoke(IPC.PerfReport, report),
+    onPerfReport: subscribe(IPC_EVENTS.PerfReport),
+    onPerfEnabled: subscribe(IPC_EVENTS.PerfEnabled),
     onMcpServerStatus: subscribe(IPC_EVENTS.McpServerStatus),
     assistantGetStatus: () => ipcRenderer.invoke(IPC.AssistantGetStatus),
     assistantProcessTranscript: segment => ipcRenderer.invoke(IPC.AssistantProcessTranscript, segment),
