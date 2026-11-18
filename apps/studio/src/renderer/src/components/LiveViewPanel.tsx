@@ -100,7 +100,7 @@ interface CameraControlsProps extends LiveViewPanelProps {
 }
 
 /**
- * Focus, shutter, record and voice as icons in a small floating toolbar under the picture, on white at 10% opacity, with no edge.
+ * Focus, shutter, record and voice as icons in a small floating toolbar under the picture, on white at 5% opacity, with no edge.
  */
 function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const { cameraState, disabled } = props
@@ -108,7 +108,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
         <div className="flex shrink-0 justify-center px-4 pb-4">
-            <div className="flex items-center gap-1 rounded-xl bg-white/10 p-1">
+            <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
                 <HoverTip
                     tip={
                         <>
