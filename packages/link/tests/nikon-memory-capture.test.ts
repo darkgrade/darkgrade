@@ -77,6 +77,58 @@ describe('Nikon event-identified SDRAM capture', () => {
             await result
         } finally { vi.useRealTimers() }
     })
+    it.each(['card', 'memory'] as const)('waits for silent capture processing before RAW and video restoration (%s)', async destination => {
+        const { camera, send } = fixture()
+        let selector = 'VIDEO', compression = 3, released = false, silentPolls = 0, ready = false
+        camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector
+            : property.name === 'NikonRawCompression' ? compression : 'OFF') as any
+        camera.getVendorPropertyCodes = vi.fn(async () => [0xd016])
+        camera.set = vi.fn(async (property, value) => {
+            if (property.name === 'LiveViewSelector') {
+                if (value === 'VIDEO') expect(ready).toBe(true)
+                selector = String(value)
+            }
+            if (property.name === 'NikonRawCompression') {
+                if (released) expect(ready).toBe(true)
+                expect(selector).toBe('PHOTO')
+                compression = Number(value)
+            }
+        }) as any
+        const original = send.getMockImplementation()!
+        send.mockImplementation(async (...args) => {
+            if (args[0].name === 'GetDevicePropDescEx') return { code: 0x2001, data: {
+                formFlag: 2, getSet: 'GET_SET', currentValueRaw: compression, supportedValuesRaw: [0, 3, 4],
+            } } as any
+            if (args[0].name === 'InitiateCaptureRecInMedia') released = true
+            if (args[0].name === 'DeviceReady' && released) {
+                if (silentPolls++ < 2) return { code: 0xa201 } as any
+                ready = true
+            }
+            return original(...args)
+        })
+        await camera.captureImage({ destination, autofocus: false, rawCompression: 'lossless' })
+        expect(silentPolls).toBeGreaterThanOrEqual(3)
+        expect(compression).toBe(3)
+        expect(selector).toBe('VIDEO')
+        expect(send.mock.calls.filter(([operation]) => operation.name === 'InitiateCaptureRecInMedia')).toHaveLength(1)
+    })
+    it('bounds a silent capture that never becomes ready without releasing the shutter twice', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, send } = fixture()
+            const original = send.getMockImplementation()!
+            let released = false
+            send.mockImplementation(async (...args) => {
+                if (args[0].name === 'InitiateCaptureRecInMedia') released = true
+                if (released && args[0].name === 'DeviceReady') return { code: 0xa201 } as any
+                return original(...args)
+            })
+            const result = expect(camera.captureImage({ autofocus: false })).rejects.toThrow('timed out')
+            await vi.advanceTimersByTimeAsync(30100)
+            await result
+            expect(send.mock.calls.filter(([operation]) => operation.name === 'InitiateCaptureRecInMedia')).toHaveLength(1)
+        } finally { vi.useRealTimers() }
+    })
     it('preserves a transfer failure when restoring the video pipeline also fails', async () => {
         const { camera, send } = fixture()
         let selector = 'VIDEO'

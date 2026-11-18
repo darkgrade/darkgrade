@@ -12,7 +12,7 @@ import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { ISOAutoControl } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
-import { HardwareError, NotLiveView, OutOfFocus } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
+import { HardwareError, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { createNikonRegistry, type NikonRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
 import { EventDefinition } from '@ptp/types/event'
@@ -332,7 +332,9 @@ export class NikonCamera extends GenericCamera {
                 data = captured.data
                 if (options.includeInfo !== false) info = captured.info
             }
-            await this.waitForDeviceReady()
+            // A successful silent release may still be processing the exposure.
+            // Do not restore RAW compression or the photo/video mode until it is ready.
+            await this.pollDeviceReady(30000, [], [SilentReleaseBusy.code])
             if (!memory && waitForBuffer) await this.waitForImageBufferReady(30000)
         }
         const capture = (waitForBuffer = true) => withNikonRawCompression(this, options.rawCompression, async () => {
@@ -395,8 +397,12 @@ export class NikonCamera extends GenericCamera {
         const deadline = Date.now() + 15000
         while (Date.now() < deadline) {
             const ready = await this.send(this.registry.operations.DeviceReady, {})
-            if (ready.code !== OK.code && ready.code !== DeviceBusy.code)
+            if (ready.code !== OK.code && ready.code !== DeviceBusy.code && ready.code !== SilentReleaseBusy.code)
                 this.assertNikonResponse(ready.code, 'DeviceReady during memory capture')
+            if (ready.code === SilentReleaseBusy.code) {
+                await this.waitMs(10)
+                continue
+            }
             const events = await this.pollEvents()
             const added = events.find(event => event.code === this.registry.events.ObjectAddedInSdram.code)
             const handle = added?.parameters[0]
@@ -940,12 +946,16 @@ export class NikonCamera extends GenericCamera {
         return `${name || 'UnknownResponse'} (0x${code.toString(16)})`
     }
 
-    private async pollDeviceReady(timeoutMilliseconds = 5000, acceptedResponses: readonly number[] = []): Promise<number> {
+    private async pollDeviceReady(
+        timeoutMilliseconds = 5000,
+        acceptedResponses: readonly number[] = [],
+        pendingResponses: readonly number[] = [],
+    ): Promise<number> {
         const deadline = Date.now() + timeoutMilliseconds
         while (Date.now() < deadline) {
             const response = await this.send(this.registry.operations.DeviceReady, {})
             if (response.code === OK.code || acceptedResponses.includes(response.code)) return response.code
-            if (response.code !== DeviceBusy.code)
+            if (response.code !== DeviceBusy.code && !pendingResponses.includes(response.code))
                 throw new PTPResponseError(
                     response.code,
                     `Nikon DeviceReady failed: ${this.responseDescription(response.code)}`,

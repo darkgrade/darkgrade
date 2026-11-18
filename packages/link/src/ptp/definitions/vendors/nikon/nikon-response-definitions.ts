@@ -19,6 +19,13 @@ export const NotLiveView = {
     description: 'The camera is not in live view mode.',
 } as const satisfies ResponseDefinition
 
+/** libgphoto2 PTP_RC_NIKON_Silent_Release_Busy: a still exposure is processing. */
+export const SilentReleaseBusy = {
+    code: 0xa201,
+    name: 'SilentReleaseBusy',
+    description: 'Silent still-image capture is still processing; wait before restoring settings.',
+} as const satisfies ResponseDefinition
+
 export const ChangeCameraModeFailed = {
     code: 0xa003,
     name: 'ChangeCameraModeFailed',
@@ -45,6 +52,7 @@ export const MfDriveStepInsufficiency = {
 
 export const nikonResponseRegistry = {
     HardwareError,
+    SilentReleaseBusy,
     OutOfFocus,
     MfDriveStepEnd,
     MfDriveStepInsufficiency,
