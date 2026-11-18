@@ -221,10 +221,10 @@ function LiveFrameImage({ dimmed, onAspect }: { dimmed: boolean; onAspect: (aspe
 function RecordingBadge(): React.JSX.Element {
     const elapsed = useRecordingClock(true)
     return (
-        <span className="absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1 font-mono text-[11px] tracking-[0.12em] text-rec tabular-nums">
+        <span className="absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold tracking-[0.06em] text-rec tabular-nums">
             <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden />
             REC
-            {elapsed && <span className="text-foreground/85">{elapsed}</span>}
+            {elapsed && <span className="font-medium tracking-normal text-foreground/85">{elapsed}</span>}
         </span>
     )
 }

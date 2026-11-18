@@ -20,7 +20,7 @@ function CopyableValue({ label, value }: { label: string; value: string }): Reac
     const [copied, setCopied] = useState(false)
     return (
         <div className="flex items-center gap-2 rounded-md bg-foreground/5 py-1 pr-1 pl-3">
-            <code className="selectable min-w-0 flex-1 truncate font-mono text-xs text-foreground/85">{value}</code>
+            <code className="selectable min-w-0 flex-1 truncate text-xs text-foreground/85">{value}</code>
             <Tooltip>
                 <TooltipTrigger
                     render={

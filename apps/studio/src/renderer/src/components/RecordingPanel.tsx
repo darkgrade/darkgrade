@@ -67,7 +67,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
             defaultOpen
             action={
                 elapsed ? (
-                    <span className="flex items-center gap-1.5 font-mono text-[12px] text-rec tabular-nums">
+                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-rec tabular-nums">
                         <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden /> {elapsed}
                     </span>
                 ) : undefined

@@ -33,7 +33,7 @@ export function LensPanel({
                     <div className="flex items-center justify-between gap-3">
                         <div className="flex min-w-0 flex-col">
                             <span className="truncate font-medium">{lens?.name ?? 'Unknown lens'}</span>
-                            <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                            <span className="text-[11px] text-muted-foreground tabular-nums">
                                 {lens?.focalLengthMillimetres != null
                                     ? formatFocalLength(lens.focalLengthMillimetres)
                                     : 'Focal length not reported'}

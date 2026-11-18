@@ -198,13 +198,13 @@ export function TopBar({
                         </span>
                     )}
                     {cameraState.connected && cameraState.battery && (
-                        <span className="flex items-center gap-1 font-mono text-[12px] text-muted-foreground tabular-nums [&_svg]:size-4">
+                        <span className="flex items-center gap-1 text-muted-foreground tabular-nums [&_svg]:size-4">
                             <BatteryIcon battery={cameraState.battery} />
                             {batteryLabel(cameraState.battery)}
                         </span>
                     )}
                     {cameraState.connected && cardSpaceLabel(cameraState) && (
-                        <span className="flex items-center gap-1 font-mono text-[12px] text-muted-foreground tabular-nums [&_svg]:size-4">
+                        <span className="flex items-center gap-1 text-muted-foreground tabular-nums [&_svg]:size-4">
                             <CardSim aria-hidden />
                             {cardSpaceLabel(cameraState)}
                         </span>
@@ -233,7 +233,7 @@ export function TopBar({
 
             <div className="flex items-center justify-end">
                 {cameraState.connected ? (
-                    <Button variant="ghost" size="sm" disabled={busy} onClick={onDisconnect}>
+                    <Button variant="ghost" size="sm" className="quiet-control" disabled={busy} onClick={onDisconnect}>
                         Disconnect
                     </Button>
                 ) : (

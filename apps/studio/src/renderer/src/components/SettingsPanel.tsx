@@ -101,7 +101,7 @@ function ExposureDial({
                 }
             >
                 <span className="slate-label text-[10px]!">{label}</span>
-                <span className="font-mono text-[20px] leading-none text-foreground tabular-nums">
+                <span className="text-[20px] leading-none font-medium tracking-tight text-foreground tabular-nums">
                     {currentValue ? format(currentValue) : '—'}
                 </span>
             </ComboboxTrigger>

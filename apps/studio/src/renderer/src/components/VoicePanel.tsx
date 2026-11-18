@@ -53,9 +53,30 @@ const VOICE_GLOW_SCALE = 1.5
 const VOICE_GLOW_PRESET_WIDTHS = { rangeWidth: 1.25, glowWidth: 1.15, lobeSpacing: 1.35 }
 /** How far the glow fades out before the panel's right edge, where the sidebar begins. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
+/**
+ * Darkgrade's gold (darkgrade.com's --color-gold) as the site's lamp halo carries it: saturated amber golds, out of
+ * order so neighbouring lobes differ. The lobes drift sideways with the voice, so each is dim somewhere, and a pale
+ * yellow dimmed against near-black reads olive; the pale gold is kept for the bright ridge.
+ */
+const VOICE_GLOW_GOLDS = [
+    'rgb(240, 175, 90)',
+    'rgb(226, 148, 62)',
+    'rgb(234, 164, 78)',
+    'rgb(214, 124, 50)',
+    'rgb(230, 156, 70)',
+    'rgb(206, 114, 46)',
+    'rgb(236, 170, 84)',
+]
+/** The band: a warm near-white ridge, its fringes in the golds rather than red, green and blue. */
+const VOICE_GLOW_BAND = {
+    core: 'rgb(255, 238, 210)',
+    above: 'rgb(240, 170, 80)',
+    mid: 'rgb(245, 205, 138)',
+    below: 'rgb(214, 120, 48)',
+}
 
 /**
- * Voice (libraries.dev's voice glow), in its ice palette, across the whole panel, behind its contents and on down behind the status bar
+ * Voice (libraries.dev's voice glow), in Darkgrade's gold, across the whole panel, behind its contents and on down behind the status bar
  * to the bottom of the window: it rises and blooms from there with the microphone's level while listening.
  */
 function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
@@ -92,8 +113,14 @@ function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
                 rangeWidth={VOICE_GLOW_PRESET_WIDTHS.rangeWidth * widen}
                 glowWidth={VOICE_GLOW_PRESET_WIDTHS.glowWidth * widen}
                 lobeSpacing={VOICE_GLOW_PRESET_WIDTHS.lobeSpacing * widen}
-                // The library's ice palette as it comes: its own lobe and band colours and colour drift.
-                colorVariant="ice"
+                // The library's gold palette, recoloured to Darkgrade's own golds.
+                colorVariant="gold"
+                colors={VOICE_GLOW_GOLDS}
+                bandColors={VOICE_GLOW_BAND}
+                // Held still and only lightly saturated: drift, the mobile preset's 1.5 saturation and the dark
+                // theme's +5° hue lean the golds toward yellow-green.
+                staticColors
+                saturation={1.1}
                 active={active}
                 // The level the old meter read: the microphone's RMS, lifted so speech fills the range. It is already
                 // lifted, so no further gain (the library's default of 3.1 pinned it at full on every syllable).
@@ -108,7 +135,7 @@ function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
                 // rise cuts its warped copy flat, a sliver at the peak. Off, the peak stays smooth.
                 distortion={0}
                 borderRadius={0}
-                style={{ position: 'absolute', inset: 0 }}
+                style={{ position: 'absolute', inset: 0, ['--voice-hue-base' as string]: '-10deg' }}
             >
                 <div className="size-full" />
             </VoiceBeam>
@@ -320,7 +347,14 @@ export function VoiceStatusButton({
 }): React.JSX.Element {
     const listening = voice.listening === 'listening'
     return (
-        <Button variant="ghost" size="xs" onClick={onToggle} aria-expanded={expanded} aria-controls="voice-panel">
+        <Button
+            variant="ghost"
+            size="xs"
+            className="quiet-control"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls="voice-panel"
+        >
             {listening ? <span className="voice-live-dot" aria-hidden /> : <Mic />}
             Voice
             {listening && <span className="text-muted-foreground">Listening</span>}

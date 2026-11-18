@@ -3,15 +3,6 @@
 @import '@kevinschaich/components/styles.css';
 @source '../../../node_modules/@kevinschaich/components/dist';
 
-/* The site's mono (darkgrade.com): numbers, readouts and the small uppercase labels. OFL. */
-@font-face {
-    font-family: 'Fragment Mono';
-    src: url('./assets/FragmentMono-Regular.woff2') format('woff2');
-    font-weight: 400;
-    font-style: normal;
-    font-display: block;
-}
-
 /*
  * Studio is a desktop app, not a page: dark like a monitor, an arrow cursor everywhere, and no
  * text selection except in logs. Its palette is darkgrade.com's: warm ink on near-black, hairlines
@@ -51,7 +42,8 @@ html.dark {
     --color-gold: var(--gold);
     --color-gold-dim: var(--gold-dim);
     --color-canvas: var(--canvas);
-    --font-mono: 'Fragment Mono', 'JetBrains Mono Variable', ui-monospace, monospace;
+    /* One face everywhere, as the site sets its running text: Public Sans, with tabular figures for numbers. */
+    --font-mono: var(--font-sans);
 }
 
 /*
@@ -70,11 +62,11 @@ html.dark {
     background-color: var(--gold) !important;
 }
 
-/* The inspector's small uppercase labels, set like the site's slate: mono, wide tracking, quiet ink. */
+/* Small uppercase labels (inspector sections, readout names): Public Sans, semibold, lightly tracked, quiet ink. */
 .slate-label {
-    font-family: var(--font-mono);
     font-size: 10.5px;
-    letter-spacing: 0.2em;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: rgb(234 230 220 / 55%);
 }
@@ -405,4 +397,24 @@ img {
     --scroll-fade-t: var(--_scroll-fade-size-t);
     --scroll-fade-b: var(--_scroll-fade-size-b);
   }
+}
+
+/*
+ * Quiet controls (the status bar's Voice, Activity and Preview, the top bar's Disconnect): text the way the
+ * site's header links are, muted ink that brightens on hover, with no pill behind it. A panel it has opened
+ * lights it gold, as the selected scope or segment is lit.
+ */
+.quiet-control {
+    background-color: transparent !important;
+    color: rgb(234 230 220 / 62%);
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    transition: color 150ms ease;
+}
+.quiet-control:hover {
+    color: var(--foreground);
+}
+.quiet-control[aria-expanded='true'] {
+    color: var(--gold);
+    text-shadow: 0 0 8px rgb(246 185 97 / 30%);
 }
