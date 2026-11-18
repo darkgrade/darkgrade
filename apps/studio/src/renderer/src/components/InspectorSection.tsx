@@ -11,7 +11,7 @@ interface InspectorSectionProps {
 }
 
 const SECTION_CLASS = 'flex flex-col border-b border-border px-3 py-2.5 last:border-b-0'
-const TITLE_CLASS = 'slate-label'
+const TITLE_CLASS = 'text-[14px] font-semibold text-foreground'
 
 /** One titled group in the inspector. Groups are separated by a faint hairline, not boxes. */
 export function InspectorSection({
