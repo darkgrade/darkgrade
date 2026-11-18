@@ -1,0 +1,21 @@
+{
+    "name": "@darkgrade/testbench-demo",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Browser-only Test Bench UI with simulated cameras",
+    "scripts": {
+        "dev": "vite --host localhost",
+        "build": "tsc --noEmit && vite build",
+        "preview": "vite preview --host localhost",
+        "typecheck": "tsc --noEmit",
+        "test": "bun test tests/demo.test.ts tests/dev-boundary.test.ts",
+        "test:e2e": "playwright test"
+    },
+    "devDependencies": {
+        "@playwright/test": "1.55.1",
+        "@types/bun": "^1.3.14",
+        "typescript": "^5.9.2",
+        "vite": "^7.3.7"
+    }
+}

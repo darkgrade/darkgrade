@@ -5,12 +5,15 @@ import { registerIpcHandlers } from '@main/ipc-handlers'
 import { startCameraDaemonKillerLoop, stopCameraDaemonKillerLoop } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
 import { installApplicationMenu } from '@main/preferences-window'
+import { protectRenderer, rendererDocumentUrl, isTrustedRendererDocument } from '@main/renderer-security'
 import { voiceService } from '@main/voice/voice-service'
 import { app, BrowserWindow, powerMonitor, session, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const currentDir = fileURLToPath(new URL('.', import.meta.url))
+const rendererUrl = rendererDocumentUrl(pathToFileURL(join(currentDir, '../renderer/index.html')).href,
+    app.isPackaged, process.env.ELECTRON_RENDERER_URL)
 
 let mainWindow: BrowserWindow | null = null
 
@@ -26,9 +29,10 @@ function createWindow(): void {
         // Centered in the 52px header: macOS traffic lights are 14px tall
         trafficLightPosition: { x: 20, y: 19 },
         webPreferences: {
-            preload: join(currentDir, '../preload/index.mjs'),
+            preload: join(currentDir, '../preload/index.cjs'),
             contextIsolation: true,
-            sandbox: false,
+            nodeIntegration: false,
+            sandbox: true,
         },
     })
 
@@ -42,17 +46,8 @@ function createWindow(): void {
         mainWindow = null
     })
 
-    // Open external links in the default browser, never inside the app
-    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        void shell.openExternal(url)
-        return { action: 'deny' }
-    })
-
-    if (process.env.ELECTRON_RENDERER_URL) {
-        void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-    } else {
-        void mainWindow.loadFile(join(currentDir, '../renderer/index.html'))
-    }
+    protectRenderer(mainWindow.webContents, rendererUrl, url => shell.openExternal(url))
+    void mainWindow.loadURL(rendererUrl)
 }
 
 app.setName('Darkgrade Studio')
@@ -93,8 +88,9 @@ if (!hasSingleInstanceLock) {
         if (process.platform === 'darwin') {
             void systemPreferences.askForMediaAccess('microphone')
         }
-        session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-            callback(permission === 'media')
+        session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+            callback(permission === 'media' && details.isMainFrame === true &&
+                Boolean(webContents) && isTrustedRendererDocument(webContents!.getURL(), rendererUrl))
         })
 
         installApplicationMenu()
