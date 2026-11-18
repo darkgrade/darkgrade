@@ -14,8 +14,14 @@ export type DemoCamera = {
     transport: { mode: 'usb' }
     battery: number
     settings: Record<Setting, string>
+    connected?: boolean
+    controls?: Partial<Record<Setting, { value: string; choices: string[]; enabled: boolean }>>
+    error?: string
+    previewUrl?: string
+    recordingState?: 'idle' | 'recording' | 'uncertain'
+    canRecord?: boolean
 }
-export type DemoTake = { id: number; seconds: number; cameras: string[]; simulated: true }
+export type DemoTake = { id: number; seconds?: number; cameras: string[]; simulated: boolean }
 
 function initialCameras(): DemoCamera[] {
     return ['Cinema camera', 'Mirrorless camera', 'Hybrid camera'].map((displayName, index) => ({
@@ -47,8 +53,8 @@ export class Demo {
         this.listeners.add(listener)
         return () => { this.listeners.delete(listener) }
     }
-    private notify() { for (const listener of this.listeners) listener() }
-    private idle() {
+    protected notify() { for (const listener of this.listeners) listener() }
+    protected idle() {
         if (this.checking || this.recording) throw Error('Finish the current simulated operation first')
     }
     camera(label: string) {

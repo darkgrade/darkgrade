@@ -40,6 +40,12 @@ export function scanSecurityFile(file: string, text: string): SecurityFinding[] 
         if (isIP(match[0]) === 6)
             findings.push({ file, line: text.slice(0, match.index).split('\n').length, rule: 'network-address' })
     }
-    if (file.startsWith(demoRoot + 'src/')) find('browser-hardware-or-network-capability', browserCapabilities)
+    if (file.startsWith(demoRoot + 'src/')) {
+        // The explicit USB client may call this origin's local API; native USB stays in the server.
+        const pattern = file === demoRoot + 'src/live.ts'
+            ? new RegExp(browserCapabilities.source.replace('\\bfetch\\s*\\(|', ''), browserCapabilities.flags)
+            : browserCapabilities
+        find('browser-hardware-or-network-capability', pattern)
+    }
     return findings
 }

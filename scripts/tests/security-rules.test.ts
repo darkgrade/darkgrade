@@ -33,4 +33,9 @@ describe('Leak and migration checks', () => {
         expect(scanSecurityFile('apps/testbench/tests/negative.test.ts', "fetch('/controller')")).toEqual([])
         expect(scanSecurityFile('.env.local', 'anything').some(f => f.rule === 'tracked-environment-file')).toBe(true)
     })
+    test('allows the reviewed local API client but keeps native transports and other network clients out', () => {
+        expect(scanSecurityFile('apps/testbench/src/live.ts', "fetch('/api/state')")).toEqual([])
+        for (const text of ["import { Camera } from '@darkgrade/link'", "new WebSocket('/stream')"])
+            expect(scanSecurityFile('apps/testbench/src/live.ts', text).some(f => f.rule === 'browser-hardware-or-network-capability')).toBe(true)
+    })
 })

@@ -7,8 +7,8 @@ test('runs the simulated shoot and never calls a controller', async ({ page }, i
         if (new URL(request.url()).pathname.startsWith('/api/')) apiCalls.push(request.url())
     })
     page.on('pageerror', error => pageErrors.push(error.message))
-    const response = await page.goto('/')
-    expect(response?.headers()['content-security-policy']).toContain("connect-src 'none'")
+    const response = await page.goto('/?mode=demo')
+    expect(response?.headers()['content-security-policy']).toContain("connect-src 'self'")
     await expect(page.getByText('Simulated cameras', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Record simulated take', exact: true })).toBeDisabled()
     await page.getByRole('button', { name: 'Check cameras', exact: true }).click()
@@ -25,7 +25,7 @@ test('runs the simulated shoot and never calls a controller', async ({ page }, i
 })
 
 test('control changes use the existing console, escape names, and support search', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?mode=demo')
     await page.getByRole('button', { name: 'Controls', exact: true }).first().click()
     const dialog = page.getByRole('dialog')
     await dialog.getByLabel('ISO', { exact: true }).selectOption('800')
@@ -43,7 +43,7 @@ test('control changes use the existing console, escape names, and support search
 })
 
 test('offline/busy scenarios block selected cameras and reset clears session state', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?mode=demo')
     await page.getByRole('tab', { name: 'Demo setup', exact: true }).click()
     await page.getByLabel('Scenario', { exact: true }).selectOption('offline')
     await page.getByRole('tab', { name: 'Your shoot', exact: true }).click()
@@ -60,9 +60,9 @@ test('offline/busy scenarios block selected cameras and reset clears session sta
 
 test('network access is denied and the phone layout remains usable', async ({ page }, info) => {
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.goto('/')
+    await page.goto('/?mode=demo')
     const blocked = await page.evaluate(async () => {
-        try { await fetch('/api/cameras/demo-camera-1/controls'); return false }
+        try { await fetch('https://example.invalid/blocked'); return false }
         catch { return true }
     })
     expect(blocked).toBe(true)

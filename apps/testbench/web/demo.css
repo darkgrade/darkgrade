@@ -36,4 +36,11 @@ main { padding-top:12px; }
 .demo-controls-dialog .demo-name { margin-top:20px; }
 #demo-feedback:not(:empty) { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--panel-raised); padding:14px 20px; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); z-index:1000; max-width:calc(100vw - 32px); }
 #demo-feedback[data-failed=true] { border-color:var(--red); }
+.usb-empty { grid-column:1/-1; padding:32px; }
+.usb-empty p { color:var(--muted); max-width:640px; line-height:1.7; }
+.usb-preview { display:block; width:100%; aspect-ratio:16/10; object-fit:contain; background:#080a0b; }
+.usb-preview-empty { display:grid; place-items:center; min-height:180px; padding:24px; color:var(--muted); background:#111617; text-align:center; }
+.usb-error { color:var(--red); font-size:12px; padding:0 18px 12px; overflow-wrap:anywhere; }
+.usb-actions { margin:18px 0; }
+#scenario-field { margin-top:18px; }
 @media(max-width:900px) { .demo-shoot-grid { grid-template-columns:1fr; } .demo-take-bar { align-items:stretch; flex-direction:column; } .demo-controls-dialog .camera-control-workspace { grid-template-columns:1fr; } .demo-banner { flex-wrap:wrap; } }

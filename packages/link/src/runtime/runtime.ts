@@ -93,6 +93,10 @@ const readActions = new Set<ControlAction>(['status', 'live-view-status'])
 export class CameraRuntime implements CameraClient {
     private readonly operations = new Map<string, Promise<unknown>>()
     constructor(private readonly provider: CameraProvider) {}
+    /** Owning hosts use the same queue for connection lifecycle and recording operations. */
+    runExclusive<T>(camera: string, operation: () => Promise<T>): Promise<T> {
+        return this.run(camera, operation)
+    }
     benchmark(camera: string): Promise<unknown> {
         return this.run(camera, async () => {
             if (!this.provider.benchmark) throw new Error('This host does not expose profile benchmarks')

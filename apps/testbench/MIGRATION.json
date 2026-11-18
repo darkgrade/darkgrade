@@ -2,7 +2,7 @@
   "sourceRepository": "darkgrade/test-bench",
   "sourceRevision": "6af023d20a040cb66e68faa4babcbbae7d6ee59c",
   "historyImported": false,
-  "scope": "Browser UI snapshot for simulated camera demo",
+  "scope": "Browser UI snapshot reused by a new basic local USB bench and optional simulator; no fleet backend imported",
   "files": [
     {
       "source": "web/styles.css",

@@ -57,6 +57,13 @@ export interface CameraOptions {
 }
 
 export class Camera {
+    /** Enumerate USB PTP devices without opening a camera session. */
+    static async discover() {
+        const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
+        const devices = await transport.discover({ usb: { filters: [{ classCode: 6, subclassCode: 1 }] } })
+        return devices.map(({ vendorId, productId, serialNumber, model }) => ({ vendorId, productId, serialNumber, model }))
+    }
+
     private instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera | VendorExtensionCamera
     private deviceDescriptor?: DeviceDescriptor
     private logger: Logger

@@ -4,9 +4,10 @@
 
 > **Note:** Link is in alpha and APIs may change without backwards compatibility.
 
-Explore the camera console without hardware in the [Test Bench UI demo](apps/testbench/README.md):
+Connect your own USB cameras with the [basic Test Bench](apps/testbench/README.md):
 `bun install --frozen-lockfile --ignore-scripts`, then `bun run testbench`.
-All cameras, previews, settings and takes in that demo are simulated. Development uses
+It runs locally without managed power, a special USB hub or a second Wi-Fi access point.
+An optional simulation mode lets you explore the console without hardware. Development uses
 Node.js 22.18 or newer and Bun 1.4.3.
 The [security review](SECURITY_REVIEW.md) records the migration checklist, audit scope and CI checks.
 

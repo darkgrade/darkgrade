@@ -145,8 +145,11 @@
       },
     },
     "apps/testbench": {
-      "name": "@darkgrade/testbench-demo",
+      "name": "@darkgrade/testbench",
       "version": "0.1.0",
+      "dependencies": {
+        "@darkgrade/link": "workspace:*",
+      },
       "devDependencies": {
         "@playwright/test": "1.55.1",
         "@types/bun": "^1.3.14",
@@ -342,7 +345,7 @@
 
     "@darkgrade/studio": ["@darkgrade/studio@workspace:apps/studio"],
 
-    "@darkgrade/testbench-demo": ["@darkgrade/testbench-demo@workspace:apps/testbench"],
+    "@darkgrade/testbench": ["@darkgrade/testbench@workspace:apps/testbench"],
 
     "@darkgrade/typescript-config": ["@darkgrade/typescript-config@workspace:packages/typescript-config"],
 

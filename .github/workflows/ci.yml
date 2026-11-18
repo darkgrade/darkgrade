@@ -39,14 +39,15 @@ jobs:
               run: bun run security:check && bun run security:test
             - name: Dependency security audit
               run: bun audit
-            - name: Test Bench simulated UI
+            - run: npm run build --prefix packages/contribute && npm run test --prefix packages/contribute
+            - run: npm run build --prefix packages/link
+            - name: Test Bench host and UI
               run: |
                   bun run --cwd apps/testbench build
                   bun run --cwd apps/testbench test
                   cd apps/testbench
                   node node_modules/@playwright/test/cli.js install --with-deps chromium
                   bun run test:e2e
-            - run: npm run build --prefix packages/contribute && npm run test --prefix packages/contribute
             - run: npm run test --prefix apps/contribution-collector
               env:
                   DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry
