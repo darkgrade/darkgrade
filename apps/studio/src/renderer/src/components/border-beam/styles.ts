@@ -534,7 +534,7 @@ function tintedPatchGradients(tint: string, alpha: number, sizeScale: number, id
 
 /**
  * The tinted beam's motion: the oscillators' registrations, keyframes and animations, and a spin whose speed
- * rises and falls in three waves a lap, its fastest 50% faster than its slowest. Returns the CSS to add and the
+ * rises and falls in three waves a lap, its fastest twice as fast as its slowest. Returns the CSS to add and the
  * animations to run beside the spin, and the spin's own keyframes.
  */
 function tintedMotionCSS(id: string): { css: string; animations: string; spinKeyframes: string } {
@@ -550,9 +550,9 @@ function tintedMotionCSS(id: string): { css: string; animations: string; spinKey
         ({ seconds, delay }, index) => `beam-o${index}-${id} ${seconds}s ease-in-out ${delay}s infinite alternate`
     ).join(',\n    ')
     // angle(t) = 360 * (t + A * sin(2*pi*n*t) / (2*pi*n)): speed 1 + A*cos(2*pi*n*t), so fastest / slowest =
-    // (1 + A) / (1 - A) = 1.5 at A = 0.2. Sampled finely enough that the linear steps between keys are smooth.
+    // (1 + A) / (1 - A) = 2 at A = 0.33. Sampled finely enough that the linear steps between keys are smooth.
     const waves = 3
-    const swing = 0.2
+    const swing = 0.33
     const steps = 60
     const spinKeyframes = Array.from({ length: steps + 1 }, (_, step) => {
         const t = step / steps
@@ -1806,9 +1806,9 @@ function generateBorderVariantCSS(options: GenerateStylesOptions): string {
     // Mono variant gets 50% lower opacity
     const monoOpacityMultiplier = colorVariant === 'mono' && !tinted ? 0.5 : 1.0
     // A tinted beam is a tally, so it reads stronger than the card preset; the patches keep it uneven.
-    const finalStrokeOpacity = tinted ? 1 : strokeOpacity * monoOpacityMultiplier
-    const finalInnerOpacity = tinted ? 0.75 : innerOpacity * monoOpacityMultiplier
-    const finalBloomOpacity = tinted ? 0.65 : bloomOpacity * monoOpacityMultiplier
+    const finalStrokeOpacity = tinted ? 0.85 : strokeOpacity * monoOpacityMultiplier
+    const finalInnerOpacity = tinted ? 0.6 : innerOpacity * monoOpacityMultiplier
+    const finalBloomOpacity = tinted ? 0.5 : bloomOpacity * monoOpacityMultiplier
 
     const hueShiftAnimation = staticColors
         ? `filter: brightness(${brightness.toFixed(2)}) saturate(${saturation.toFixed(2)});`

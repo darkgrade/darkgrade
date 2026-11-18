@@ -304,10 +304,10 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                             colorVariant="mono"
                             tint={RECORDING_RED}
                             hueRange={5}
-                            duration={5}
+                            duration={4}
                             borderWidth={2}
-                            spread={1}
-                            brightness={1.5}
+                            spread={0.7}
+                            brightness={1.25}
                             // The segmented controls' rounded-lg (10px); the frame above matches.
                             borderRadius={10}
                             className="pointer-events-none"
