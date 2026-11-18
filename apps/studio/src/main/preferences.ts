@@ -8,6 +8,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     mcpServerEnabled: false,
     mcpServerPort: 7461,
     speechModel: DEFAULT_SPEECH_MODEL,
+    developerMode: false,
 }
 
 /** Studio's settings, kept as JSON in Application Support and read once at launch. */

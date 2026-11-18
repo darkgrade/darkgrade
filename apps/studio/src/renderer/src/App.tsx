@@ -71,6 +71,12 @@ export function App(): React.JSX.Element {
     const [busy, setBusy] = useState(false)
     const [capturing, setCapturing] = useState(false)
     const [logExpanded, setLogExpanded] = useState(false)
+    // The Activity log is a developer tool, shown only with Developer Mode on in the app menu.
+    const [developerMode, setDeveloperMode] = useState(false)
+    useEffect(() => {
+        void api.getPreferences().then(result => result.ok && setDeveloperMode(result.data.developerMode))
+        return api.onPreferences(current => setDeveloperMode(current.developerMode))
+    }, [])
 
     const zoomingRef = useRef(false)
 
@@ -392,6 +398,7 @@ export function App(): React.JSX.Element {
                     </div>
                     <EventLog
                         logs={logs}
+                        showActivity={developerMode}
                         expanded={logExpanded}
                         onToggle={() => setLogExpanded(previous => !previous)}
                         leading={

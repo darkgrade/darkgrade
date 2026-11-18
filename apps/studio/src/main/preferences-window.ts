@@ -1,3 +1,4 @@
+import { preferences } from '@main/preferences'
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,11 +33,12 @@ export function openPreferences(): void {
     preferencesWindow.on('closed', () => {
         preferencesWindow = null
     })
-    if (process.env.ELECTRON_RENDERER_URL) void preferencesWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}#preferences`)
+    if (process.env.ELECTRON_RENDERER_URL)
+        void preferencesWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}#preferences`)
     else void preferencesWindow.loadFile(join(currentDir, '../renderer/index.html'), { hash: 'preferences' })
 }
 
-/** The standard macOS menus, with Settings… (⌘,) in the app menu. */
+/** The standard macOS menus, with Settings… (⌘,) and Developer Mode in the app menu. */
 export function installApplicationMenu(): void {
     const template: MenuItemConstructorOptions[] = [
         {
@@ -45,6 +47,12 @@ export function installApplicationMenu(): void {
                 { role: 'about' },
                 { type: 'separator' },
                 { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => openPreferences() },
+                {
+                    label: 'Developer Mode',
+                    type: 'checkbox',
+                    checked: preferences.get().developerMode,
+                    click: item => preferences.set({ developerMode: item.checked }),
+                },
                 { type: 'separator' },
                 { role: 'services' },
                 { type: 'separator' },

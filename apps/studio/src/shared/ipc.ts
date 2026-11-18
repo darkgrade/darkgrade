@@ -331,6 +331,8 @@ export interface Preferences {
     mcpServerPort: number
     /** Which Bark model voice uses; switching unloads the old one and loads the new one. */
     speechModel: SpeechModelId
+    /** Developer tools in the main window (the Activity log); off by default, toggled from the app menu. */
+    developerMode: boolean
 }
 
 export interface McpServerStatus {
@@ -393,7 +395,9 @@ export interface StudioApi {
     /** Adds a line to the speech engine's log file. */
     voiceDiagnostic(message: string): Promise<IpcResult<void>>
     onVoiceStatus(callback: (status: VoiceEngineStatus) => void): () => void
-    diagnosticsBenchmark(): Promise<IpcResult<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }>>
+    diagnosticsBenchmark(): Promise<
+        IpcResult<{ passed: boolean; checks: Array<{ name: string; passed: boolean; durationMilliseconds: number }> }>
+    >
     getDiagnosticsStatus(): Promise<IpcResult<DiagnosticsStatus>>
     changeDiagnostics(action: 'sharing' | 'withdraw' | 'retry', value?: boolean): Promise<IpcResult<DiagnosticsStatus>>
     diagnosticsContact(

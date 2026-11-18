@@ -15,7 +15,7 @@ import { RecordingTally } from '@renderer/components/RecordingTally'
 import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
-import { Camera, Circle, Focus, Square, VideoOff } from 'lucide-react'
+import { Camera, Crosshair, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 interface LiveViewPanelProps {
@@ -118,7 +118,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
                     />
                 }
             >
-                <Focus aria-hidden />
+                <Crosshair aria-hidden />
             </HoverTip>
             <HoverTip
                 tip={
@@ -140,10 +140,10 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
                     <Spinner />
                 ) : (
                     <span
-                        className="flex size-[22px] items-center justify-center rounded-full border-2 border-current"
+                        className="flex size-[15px] items-center justify-center rounded-full border-[1.5px] border-current"
                         aria-hidden
                     >
-                        <span className="size-3 rounded-full bg-current" />
+                        <span className="size-[7px] rounded-full bg-current" />
                     </span>
                 )}
             </HoverTip>
@@ -160,7 +160,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
                         />
                     }
                 >
-                    <Square aria-hidden className="size-3.5! fill-current" />
+                    <span className="size-[13px] rounded-[3px] bg-rec" aria-hidden />
                 </HoverTip>
             ) : (
                 <HoverTip
@@ -175,7 +175,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
                         />
                     }
                 >
-                    <Circle aria-hidden className="size-3.5! fill-rec text-rec" />
+                    <span className="size-[15px] rounded-full bg-rec" aria-hidden />
                 </HoverTip>
             )}
         </div>
