@@ -22,7 +22,8 @@ import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
-import { GenericCamera } from './generic-camera'
+import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from './generic-camera'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 
 const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
 export interface CanonPropertyState {
@@ -197,6 +198,29 @@ export class CanonCamera extends GenericCamera {
         }
         this.clearCachedState()
         if (failure) throw failure
+    }
+
+    override async recover(device?: DeviceDescriptor, options: CameraRecoveryOptions = {}): Promise<CameraRecoveryReport> {
+        if (this.propertyCache.get(this.registry.properties.CanonRecordingDestination)?.current === 'CARD')
+            throw new Error('Stop the Canon recording before recovering its session')
+        await this.stopPolling()
+        // Release the owned EOS mode before opening a replacement PTP session.
+        // An unresponsive connection still reaches the bounded recovery steps.
+        try { await this.disconnect() } catch { /* Recovery verifies the replacement session. */ }
+        try { return await super.recover(device, options) }
+        finally { this.clearCachedState() }
+    }
+
+    protected override async verifyRecoveryState(_information: DeviceInfo): Promise<void> {
+        // GetDeviceInfo can answer while EOS controls still report SessionNotOpen.
+        try {
+            await this.enableRemoteMode()
+            await this.enableEventMode()
+            await this.refreshEventProperties()
+        } finally {
+            await this.disableRemoteMode()
+            await this.disableEventMode()
+        }
     }
 
     private clearCachedState(): void {
