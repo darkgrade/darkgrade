@@ -146,9 +146,23 @@ function EngineMessage({
         return (
             <div className="flex max-w-xl flex-col items-center gap-3 text-center">
                 <p className="text-sm text-pretty text-destructive">{voice.error}</p>
-                {voice.microphoneBlocked && (
-                    <Button size="sm" variant="secondary" onClick={() => window.open(MICROPHONE_SETTINGS_URL)}>
+                {voice.microphoneBlocked ? (
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        className="bg-foreground/8 hover:bg-foreground/12"
+                        onClick={() => window.open(MICROPHONE_SETTINGS_URL)}
+                    >
                         Open Microphone Settings
+                    </Button>
+                ) : (
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        className="bg-foreground/8 hover:bg-foreground/12"
+                        onClick={() => void voice.start()}
+                    >
+                        Try again
                     </Button>
                 )}
             </div>
@@ -157,19 +171,15 @@ function EngineMessage({
     // The setup view is for the one-time download only; an engine that's set up just starts, in the transcript.
     const settingUp = engine?.phase === 'downloading'
     if (settingUp) {
-        return (
-            <div className="flex flex-col items-center gap-6">
-                <VoiceSetupProgress summary={summary} />
-                <ModelLicenseNotice speechModelId={voice.speechModelId} />
-            </div>
-        )
+        // The licence was agreed to with Set up voice; the progress alone fits the panel at its smallest.
+        return <VoiceSetupProgress summary={summary} />
     }
     if (engine?.phase === 'not-downloaded') {
         return (
             <div className="flex flex-col items-center gap-5 text-center">
                 <div className="flex flex-col items-center gap-2.5">
                     <p className="text-sm text-pretty">
-                        Enabling local voice features requires a one-time download of about{' '}
+                        Voice runs on this Mac. It needs a one-time download of about{' '}
                         {formatDownloadSize(summary.totalBytes)}.
                     </p>
                     <ModelLicenseNotice speechModelId={voice.speechModelId} />
@@ -252,7 +262,18 @@ export function VoicePanel({ voice, expanded }: VoicePanelProps): React.JSX.Elem
                         </div>
                     )}
                     {hasText && voice.error && (
-                        <p className="shrink-0 px-5 pb-2 text-xs text-destructive">{voice.error}</p>
+                        <p className="flex shrink-0 items-center gap-2 px-5 pb-2 text-xs text-destructive">
+                            {voice.error}
+                            {!listening && !voice.microphoneBlocked && (
+                                <button
+                                    type="button"
+                                    className="text-foreground underline-offset-2 hover:underline"
+                                    onClick={() => void voice.start()}
+                                >
+                                    Try again
+                                </button>
+                            )}
+                        </p>
                     )}
                     {listening && <AssistantSetupNotice summary={summary} />}
                 </div>
