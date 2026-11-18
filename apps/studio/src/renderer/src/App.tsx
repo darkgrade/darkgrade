@@ -283,8 +283,9 @@ export function App(): React.JSX.Element {
         <TooltipProvider delay={400}>
             <Toaster>
                 {/* The window is macOS's own material (vibrancy) with a tint over it; the inspector sits on it full height at
-                    the left, and the picture fills the rest, 6px from the top, right and bottom edges, with the camera
-                    pill and toolbar floating over it. */}
+                    the left, and the rest is one dark card 6px from the window's top, right and bottom edges. The picture sits
+                    6px inside the card, its corners concentric with the card's (14px - 6px = 8px), with the camera pill
+                    and toolbar floating over it. */}
                 <div className="relative flex h-full">
                     <aside
                         className="relative flex shrink-0 flex-col"
@@ -360,7 +361,7 @@ export function App(): React.JSX.Element {
                             />
                         </div>
                     </aside>
-                    <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col">
+                    <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] bg-(--card-surface)">
                         <LiveViewPanel
                             header={
                                 <CameraPill

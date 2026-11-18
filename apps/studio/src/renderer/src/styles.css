@@ -120,10 +120,11 @@ body {
 }
 /*
  * On macOS the window is vibrancy (the system's HUD material by default); the page lays a tint of its own over it,
- * as Arc does, and the picture sits on that. The tint is tunable live in Developer Mode › Appearance.
+ * as Arc does, and the main card sits on that. The tint is tunable live in Developer Mode › Appearance.
  */
 :root {
     --window-tint: rgb(0 0 0 / 50%);
+    --card-surface: rgb(7 9 11 / 30%);
 }
 html[data-vibrancy] body {
     background: var(--window-tint);

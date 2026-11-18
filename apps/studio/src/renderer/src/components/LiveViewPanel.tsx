@@ -320,11 +320,11 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
 
     return (
-        // The picture alone, as large as its shape allows, rounded like the window's corners. The camera pill and the
-        // toolbar float over it, 12px from its top and bottom; clicks around them still focus.
-        <div className="flex min-h-0 flex-1 items-center justify-center [container-type:size]">
+        // The picture, 6px inside the card and as large as its shape allows, its 8px corners concentric with the card's.
+        // The camera pill and the toolbar float over it, 12px from its top and bottom; clicks around them still focus.
+        <div className="flex min-h-0 flex-1 items-center justify-center p-1.5 [container-type:size]">
             <div
-                className={`relative overflow-hidden rounded-xl ${showFrame ? '' : 'bg-black/40'} ${canFocusAt ? 'cursor-crosshair!' : ''}`}
+                className={`relative overflow-hidden rounded-[8px] ${showFrame ? '' : 'bg-black/40'} ${canFocusAt ? 'cursor-crosshair!' : ''}`}
                 style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
                 onClick={event => {
                     if (!showFrame || !canFocusAt || !props.onFocusAt) return
