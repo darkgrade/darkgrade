@@ -17,7 +17,7 @@ Both repositories have squash merging enabled. Use squash-and-merge for reviewed
 
 Run `bun run testbench` to connect your own USB cameras. The browser talks only to the localhost host, which serializes camera actions through Link's shared runtime queue. Optional simulation is explicitly labelled and performs no camera operations.
 
-The host checks the exact local Host, same-origin requests, a required API header and an ephemeral bearer token. It does not expose USB serials or upload telemetry. Its CSP permits only same-origin connections and local/blob preview images, and denies frames and embedded media. Browser device permissions are disabled; native USB access belongs to the host. Static file serving is restricted to the built UI.
+The host checks the exact local Host, same-origin requests, a required API header and an ephemeral bearer token. USB serials stay out of the browser and media transfers remain local. Link's shared diagnostics follow the operator's existing opt-in. Its CSP permits only same-origin connections and local/blob preview images, and denies frames and embedded media. Browser device permissions are disabled; native USB access belongs to the host. Static file serving is restricted to the built UI.
 
 CI tests the local host, actual HTTP boundary and browser UI with explicit fixtures, plus the optional simulator. Negative tests cover uncertain recording starts, shutdown during pending connection, duplicate USB identities, failed setting readback, unsupported controls, HTML injection and cross-origin requests. Browser sources cannot import native transports; the reviewed same-origin API client is the sole fetch entry point. Physical runs remain a separate qualification step.
 
