@@ -1,8 +1,8 @@
-import { investigate } from '#collector/investigate'
 import { admissionLimit } from '#collector/abuse-limits'
+import { investigate } from '#collector/investigate'
 import { operatorApi } from '#collector/operator'
 import { postgresDatabase } from '#collector/postgres'
-import { cleanupWithdrawals, createTelemetry, resendContactSender } from '#collector/telemetry'
+import { cleanupWithdrawals, createTelemetry, DAILY_BATCH_LIMIT, resendContactSender } from '#collector/telemetry'
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 
@@ -10,6 +10,7 @@ const database = await postgresDatabase(process.env.DATABASE_URL ?? '', { deferS
 const handle = createTelemetry(database, {
     publicUrl: process.env.TELEMETRY_PUBLIC_URL ?? '',
     allowedOrigins: JSON.parse(process.env.TELEMETRY_ALLOWED_ORIGINS ?? '[]'),
+    dailyBatchLimit: Number(process.env.TELEMETRY_DAILY_BATCH_LIMIT ?? DAILY_BATCH_LIMIT),
     ...(process.env.TELEMETRY_EMAIL_API_KEY && {
         sendContact: resendContactSender(process.env.TELEMETRY_EMAIL_API_KEY, process.env.TELEMETRY_EMAIL_FROM ?? ''),
     }),

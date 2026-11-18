@@ -1,5 +1,5 @@
-import type { Database, Transaction } from '#collector/database'
 import { allowBurst } from '#collector/abuse-limits'
+import type { Database, Transaction } from '#collector/database'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
 import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/contribute/batch'
 import { MAXIMUM_BODY_BYTES } from '@darkgrade/contribute/schema'
@@ -61,6 +61,8 @@ export interface TelemetryOptions {
     now?: () => Date
     /** Bounds anonymous enrollment cost across instances; this is not per-person identity verification. */
     dailyEnrollmentLimit?: number
+    /** Explicit service budget for authenticated uploads; burst and body limits remain independent. */
+    dailyBatchLimit?: number
     enrollmentBurstLimit?: number
     uploadBurstLimit?: number
     installationBurstLimit?: number
@@ -106,6 +108,9 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
         throw new Error('A public HTTPS origin is required')
     const enrollmentLimit = options.dailyEnrollmentLimit ?? 1000
     if (!Number.isSafeInteger(enrollmentLimit) || enrollmentLimit < 1) throw new Error('Invalid enrollment limit')
+    const dailyBatchLimit = options.dailyBatchLimit ?? DAILY_BATCH_LIMIT
+    if (!Number.isSafeInteger(dailyBatchLimit) || dailyBatchLimit < 1 || dailyBatchLimit > 65536)
+        throw new Error('Invalid daily batch limit')
     const now = options.now ?? (() => new Date())
     const burstLimits = {
         enrollment: options.enrollmentBurstLimit ?? 30,
@@ -261,7 +266,19 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                 }
                 const quotaPath = `uploadQuotas/${installId}_${dateKey(date)}`
                 const quota = await transaction.get(quotaPath)
-                if ((quota?.count ?? 0) >= DAILY_BATCH_LIMIT) fail(429, 'Daily batch limit reached')
+                if ((quota?.count ?? 0) >= dailyBatchLimit)
+                    throw new TelemetryError(
+                        429,
+                        'Daily batch limit reached',
+                        Math.max(
+                            1,
+                            Math.ceil(
+                                (Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1) -
+                                    date.getTime()) /
+                                    1000
+                            )
+                        )
+                    )
                 transaction.set(quotaPath, {
                     installId,
                     count: (quota?.count ?? 0) + 1,
@@ -368,9 +385,11 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
             } catch (error) {
                 response = Response.json(
                     { error: error instanceof TelemetryError ? error.message : 'Telemetry temporarily unavailable' },
-                    { status: error instanceof TelemetryError ? error.status : 503,
-                        ...(error instanceof TelemetryError && error.status === 429 &&
-                            { headers: { 'retry-after': String(error.retryAfterSeconds) } }) }
+                    {
+                        status: error instanceof TelemetryError ? error.status : 503,
+                        ...(error instanceof TelemetryError &&
+                            error.status === 429 && { headers: { 'retry-after': String(error.retryAfterSeconds) } }),
+                    }
                 )
             }
         response.headers.set('cache-control', 'no-store')
@@ -418,7 +437,14 @@ export async function cleanupInstallation(database: Database, installId: string,
     const install = await database.get(`installations/${installId}`)
     if (!install?.revoked) throw new Error('Cannot clean an active installation')
     let complete = true
-    for (const collection of ['diagnostics', 'contacts', 'contactChallenges', 'reviewedPatterns', 'protocolFindings', 'uploadQuotas'])
+    for (const collection of [
+        'diagnostics',
+        'contacts',
+        'contactChallenges',
+        'reviewedPatterns',
+        'protocolFindings',
+        'uploadQuotas',
+    ])
         if (!(await removeRows(database, collection, installId, maximumPages))) complete = false
     if (complete)
         await database.transaction(async transaction => {

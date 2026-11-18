@@ -4,6 +4,56 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { batch, enroll, memoryDatabase, request } from './telemetry-fixture.ts'
 
+test('daily quota retains accepted duplicates and resets at UTC midnight with a precise retry deadline', async () => {
+    const { database } = memoryDatabase()
+    let now = new Date('2026-11-17T23:59:58.100Z')
+    const handle = createTelemetry(database, {
+        publicUrl: 'https://telemetry.example',
+        now: () => now,
+        dailyBatchLimit: 1,
+    })
+    const { installKey } = await enroll(handle),
+        original = batch()
+    assert.equal((await handle(request('/v2/batches', 'POST', installKey, original))).status, 202)
+    assert.equal((await handle(request('/v2/batches', 'POST', installKey, original))).status, 202)
+    const limited = await handle(request('/v2/batches', 'POST', installKey, batch()))
+    assert.equal(limited.status, 429)
+    assert.equal(limited.headers.get('retry-after'), '2')
+    assert.equal((await limited.json()).error, 'Daily batch limit reached')
+    now = new Date('2026-11-18T00:00:00.000Z')
+    assert.equal((await handle(request('/v2/batches', 'POST', installKey, batch()))).status, 202)
+})
+
+test('an explicit larger service budget preserves existing quota counts and does not replace installation identity', async () => {
+    const { database, records } = memoryDatabase(),
+        now = new Date('2026-11-17T23:00:00Z')
+    const handle = createTelemetry(database, {
+        publicUrl: 'https://telemetry.example',
+        now: () => now,
+        dailyBatchLimit: 16384,
+    })
+    const { installKey, installId } = await enroll(handle)
+    const key = `uploadQuotas/${installId}_2026-11-17`
+    records.set(key, { count: DAILY_BATCH_LIMIT })
+    assert.equal((await handle(request('/v2/batches', 'POST', installKey, batch()))).status, 202)
+    assert.equal(records.get(key).count, DAILY_BATCH_LIMIT + 1)
+    records.set(key, { count: 16384 })
+    assert.equal((await handle(request('/v2/batches', 'POST', installKey, batch()))).status, 429)
+    assert.equal((await handle(request('/v2/installation', 'DELETE', installKey))).status, 200)
+})
+
+test('invalid daily upload budgets fail before serving requests', () => {
+    for (const limit of [0, -1, 1.5, NaN, Infinity, 65537])
+        assert.throws(
+            () =>
+                createTelemetry(memoryDatabase().database, {
+                    publicUrl: 'https://telemetry.example',
+                    dailyBatchLimit: limit,
+                }),
+            /daily batch limit/
+        )
+})
+
 test('anonymous enrollment, atomic duplicate uploads, 90-day retention and no credentials in diagnostic records', async () => {
     const { database, records } = memoryDatabase()
     const now = new Date('2026-11-11T00:00:00Z')
