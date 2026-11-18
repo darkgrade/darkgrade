@@ -7,7 +7,7 @@ const currentDir = fileURLToPath(new URL('.', import.meta.url))
 let preferencesWindow: BrowserWindow | null = null
 /** Settings opens at this size, or the display's working area if that's smaller; it can be resized. */
 const SETTINGS_WIDTH = 760
-const SETTINGS_HEIGHT = 720
+const SETTINGS_HEIGHT = 940
 
 /** Opens the Preferences window, or brings it forward if it's already open. */
 export function openPreferences(): void {
@@ -31,7 +31,16 @@ export function openPreferences(): void {
         minimizable: false,
         fullscreenable: false,
         title: 'Settings',
-        backgroundColor: '#141414',
+        // The same material and dimming as Studio's main window, so the page's tint reads the same over it.
+        ...(process.platform === 'darwin'
+            ? {
+                  vibrancy: preferences.get().windowMaterial,
+                  visualEffectState: preferences.get().dimWhenInactive
+                      ? ('followWindow' as const)
+                      : ('active' as const),
+                  backgroundColor: '#00000000',
+              }
+            : { backgroundColor: '#07090b' }),
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         show: false,
         webPreferences: {
@@ -41,7 +50,14 @@ export function openPreferences(): void {
         },
     })
     preferencesWindow.once('ready-to-show', () => preferencesWindow?.show())
+    let material = preferences.get().windowMaterial
+    const stopFollowingMaterial = preferences.onChange(current => {
+        if (process.platform !== 'darwin' || current.windowMaterial === material) return
+        material = current.windowMaterial
+        preferencesWindow?.setVibrancy(material, { animationDuration: 200 })
+    })
     preferencesWindow.on('closed', () => {
+        stopFollowingMaterial()
         preferencesWindow = null
     })
     if (process.env.ELECTRON_RENDERER_URL)

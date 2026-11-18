@@ -28,9 +28,8 @@ function watchScrolling(): void {
 
 watchScrolling()
 
-// The main window on macOS is vibrancy: the page leaves its background clear so the system material shows.
-if (window.location.hash !== '#preferences' && navigator.userAgent.includes('Macintosh'))
-    document.documentElement.dataset.vibrancy = ''
+// Studio's windows on macOS are vibrancy: the page leaves its background clear so the system material shows.
+if (navigator.userAgent.includes('Macintosh')) document.documentElement.dataset.vibrancy = ''
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>{window.location.hash === '#preferences' ? <PreferencesWindow /> : <App />}</StrictMode>

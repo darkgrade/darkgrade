@@ -55,8 +55,15 @@ function save(value: Appearance): void {
     }
 }
 
-// Tuned colours apply from launch, whether or not Developer Mode shows the tuner.
+// Tuned colours apply from launch, whether or not Developer Mode shows the tuner, and follow a change made in
+// another of Studio's windows (Settings takes the same tint as the main window).
 apply(appearance.get())
+window.addEventListener('storage', event => {
+    if (event.key !== STORAGE_KEY) return
+    const next = load()
+    appearance.set(next)
+    apply(next)
+})
 
 function ColorRow(props: {
     label: string
