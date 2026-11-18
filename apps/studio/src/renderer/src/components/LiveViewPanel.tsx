@@ -110,7 +110,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
         'size-9 rounded-lg p-0 text-foreground/80 hover:bg-foreground/8 hover:text-foreground [&_svg]:size-[18px]'
     return (
         <div className="flex shrink-0 justify-center">
-            <div className="flex items-center gap-1 rounded-xl bg-black/55 p-1 backdrop-blur-sm">
+            <div className="flex items-center gap-1 rounded-xl bg-black/70 p-1">
                 <HoverTip
                     tip={
                         <>
@@ -324,7 +324,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
         // The camera pill and the toolbar float over it, 12px from its top and bottom; clicks around them still focus.
         <div className="flex min-h-0 flex-1 items-center justify-center p-1.5 [container-type:size]">
             <div
-                className={`relative overflow-hidden rounded-[8px] ${showFrame ? '' : 'bg-black/40'} ${canFocusAt ? 'cursor-crosshair!' : ''}`}
+                className={`relative rounded-[8px] ${showFrame ? '' : 'overflow-hidden bg-black/40'} ${canFocusAt ? 'cursor-crosshair!' : ''}`}
                 style={{ aspectRatio: frameAspect, width: `min(100cqw, calc(100cqh * ${frameAspect}))` }}
                 onClick={event => {
                     if (!showFrame || !canFocusAt || !props.onFocusAt) return

@@ -112,7 +112,11 @@ async function measure(): Promise<ProcessSample[]> {
 
     const next = new Map<number, Counters>()
     const samples = all
-        .filter(entry => ours.has(entry.pid) || entry.pid === windowServer?.pid)
+        // The monitor's own ps and ioreg are Studio's children for a moment; they're not Studio's work.
+        .filter(
+            entry =>
+                (ours.has(entry.pid) && !/^\(?(ps|ioreg)\)?(\s|$)/.test(entry.args)) || entry.pid === windowServer?.pid
+        )
         .map(entry => {
             const counters = { cpuSeconds: cpuSeconds(entry.time), gpuNanoseconds: gpu.get(entry.pid) ?? 0, at: now }
             const before = previous.get(entry.pid)

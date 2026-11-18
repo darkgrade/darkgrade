@@ -107,7 +107,9 @@ function usePerfReporter(fps: number): void {
         const enable = (enabled: boolean): void => {
             perf.enabled = enabled
             clearInterval(timer)
+            // Start every count from now: events counted before were never measured over a second.
             takePerf()
+            window.studio.perfTakeIpc()
             if (enabled)
                 timer = setInterval(() => {
                     // Each IPC event type on its own: how often it arrives, how much it carries, and its handler.

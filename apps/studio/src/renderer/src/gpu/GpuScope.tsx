@@ -4,8 +4,13 @@ import { useEffect, useRef } from 'react'
 
 /** Fraction of the remaining distance each drawn frame moves toward the latest measurement. */
 const EASING_PER_FRAME = 0.22
-/** Scopes redraw at most this often, a little under 30 fps so no live frame is missed. */
+/** Scopes redraw at most this often, a little under 30 fps, easing smoothly between measurements. */
 const DRAW_INTERVAL_MS = 30
+/**
+ * Scopes measure a new frame at most this often (15 a second): measuring every live frame cost the GPU process about
+ * 3% of a core and the GPU 2%, and the easing hides the difference.
+ */
+const MEASURE_INTERVAL_MS = 66
 
 /** One shared look for every scope: a rounded dark panel with no border. */
 export const SCOPE_CANVAS_CLASS = 'w-full rounded-lg bg-black/50'
@@ -73,6 +78,7 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
             let measuredVersion = -1
             let wasActive = true
             let lastDrawMs = 0
+            let lastMeasureMs = 0
             const values = new Float32Array(4)
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
             const timer = passTimer(gpu, `Scope: ${label}`)
@@ -95,7 +101,8 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
                 if (!activeRef.current) {
                     if (wasActive) encoder.clearBuffer(goal)
                     wasActive = false
-                } else if (frame && frame.version !== measuredVersion) {
+                } else if (frame && frame.version !== measuredVersion && now - lastMeasureMs >= MEASURE_INTERVAL_MS) {
+                    lastMeasureMs = now
                     wasActive = true
                     measuredVersion = frame.version
                     if (groups?.texture !== frame.texture) {
