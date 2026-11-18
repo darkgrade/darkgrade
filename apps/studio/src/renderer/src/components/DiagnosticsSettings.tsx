@@ -97,7 +97,7 @@ export function DiagnosticsSettings() {
     }
     if (!status) return message ? <p role="status">{message}</p> : null
     return (
-        <section className="mt-8 space-y-3 border-t border-foreground/10 pt-5">
+        <section className="mt-8 space-y-3 border-t border-border pt-5">
             <Field orientation="horizontal">
                 <FieldContent>
                     <FieldLabel htmlFor="camera-diagnostics">Share camera diagnostics</FieldLabel>

@@ -11,6 +11,7 @@ import {
     TooltipTrigger,
 } from '@kevinschaich/components'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
+import { Resizer } from '@renderer/components/Resizer'
 import { VoiceBeam } from '@renderer/components/voice-glow'
 import {
     AssistantSetupNotice,
@@ -18,6 +19,7 @@ import {
     ModelLicenseNotice,
     VoiceSetupProgress,
 } from '@renderer/components/VoiceSetupProgress'
+import { useResizable } from '@renderer/lib/use-resizable'
 import type { VoiceEngineStatus } from '@shared/ipc'
 import { MICROPHONE_SETTINGS_URL } from '@shared/microphone-errors'
 import { summarizeSetup, type SetupSummary } from '@shared/setup-progress'
@@ -280,8 +282,14 @@ function ListenButton({ voice }: { voice: LiveTranscription }): React.JSX.Elemen
     )
 }
 
+/** The voice panel's height: 300px to start, dragged by its top edge between these, at most 65% of the window. */
+const VOICE_PANEL_HEIGHT = 300
+const VOICE_PANEL_MIN = 160
+const voicePanelMax = (): number => window.innerHeight * 0.65
+
 /** Live transcription, opened from the status bar; grows up from the bottom of the preview column. */
 export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): React.JSX.Element {
+    const height = useResizable('studio.voice-panel-height', VOICE_PANEL_HEIGHT, VOICE_PANEL_MIN, voicePanelMax, 'top')
     const listening = voice.listening === 'listening'
     const paragraphs = transcriptParagraphs.use()
     const hasText = paragraphs.some(paragraph => paragraph.trim())
@@ -290,10 +298,24 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
         <section
             id="voice-panel"
             className="voice-panel relative shrink-0 border-t border-border bg-black/55"
+            style={{ ['--voice-height' as string]: `${height.size}px` }}
             data-expanded={expanded}
+            data-dragging={height.dragging || undefined}
             aria-label="Voice"
             inert={!expanded}
         >
+            {expanded && (
+                <Resizer
+                    edge="top"
+                    label="Resize the voice panel"
+                    size={height.size}
+                    min={VOICE_PANEL_MIN}
+                    max={voicePanelMax()}
+                    dragging={height.dragging}
+                    onPointerDown={height.startDrag}
+                    onKeyDown={height.onKeyDown}
+                />
+            )}
             <VoiceGlow active={listening && expanded} stream={voice.stream} />
             {/* Clips the panel's contents to its height as it opens; the glow behind them runs on past its bottom. */}
             <div className="absolute inset-0 flex flex-col overflow-hidden">

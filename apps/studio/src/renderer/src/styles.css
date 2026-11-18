@@ -25,7 +25,8 @@ html.dark {
     --muted-foreground: rgb(234 230 220 / 55%);
     --accent: #1e1e21;
     --accent-foreground: #eae6dc;
-    --border: rgb(234 230 220 / 9%);
+    /* One hairline everywhere, 1px of ink at 10%: the same as the component library's own outlines. */
+    --border: rgb(234 230 220 / 10%);
     --input: rgb(234 230 220 / 11%);
     --ring: rgb(245 205 138 / 55%);
     --destructive: #e0483e;
@@ -162,8 +163,11 @@ img {
         height 280ms cubic-bezier(0.32, 0.72, 0, 1),
         border-color 280ms;
 }
+.voice-panel[data-dragging] {
+    transition: none;
+}
 .voice-panel[data-expanded='true'] {
-    height: clamp(200px, 38%, 380px);
+    height: var(--voice-height, clamp(200px, 38%, 380px));
     border-top-color: var(--border);
 }
 .transcript-paragraph {

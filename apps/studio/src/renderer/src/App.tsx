@@ -8,18 +8,24 @@ import { LiveViewPanel } from '@renderer/components/LiveViewPanel'
 import { LiveViewStats } from '@renderer/components/LiveViewStats'
 import { PreviewDialog, type PreviewState } from '@renderer/components/PreviewDialog'
 import { RecordingPanel } from '@renderer/components/RecordingPanel'
+import { Resizer } from '@renderer/components/Resizer'
 import { chooseScope, scopeChoice, ScopesPanel } from '@renderer/components/ScopesPanel'
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
 import { TopBar } from '@renderer/components/TopBar'
 import { VoicePanel, VoiceStatusButton } from '@renderer/components/VoicePanel'
 import { readJpegSize } from '@renderer/lib/jpeg-size'
 import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
+import { useResizable } from '@renderer/lib/use-resizable'
 import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import type { CameraState, DownloadProgress, FileEntry, LogEntry } from '@shared/ipc'
 import { useLiveTranscription } from '@voice/use-live-transcription'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const MAX_LOG_ENTRIES = 500
+/** The camera controls sidebar: 320px to start, dragged between these, never more than 45% of the window. */
+const SIDEBAR_WIDTH = 320
+const SIDEBAR_MIN = 260
+const sidebarMax = (): number => Math.min(560, window.innerWidth * 0.45)
 const VOICE_RELEASE_DELAY_MS = 60_000
 
 const INITIAL_STATE: CameraState = {
@@ -45,6 +51,7 @@ const FRAME_RATE_WINDOW_MS = 10_000
 
 export function App(): React.JSX.Element {
     const api = window.studio
+    const sidebar = useResizable('studio.sidebar-width', SIDEBAR_WIDTH, SIDEBAR_MIN, sidebarMax, 'left')
 
     const [cameraState, setCameraState] = useState<CameraState>(INITIAL_STATE)
     const [logs, setLogs] = useState<LogEntry[]>([])
@@ -311,7 +318,21 @@ export function App(): React.JSX.Element {
                                 onCollapse={() => setVoiceExpanded(false)}
                             />
                         </main>
-                        <aside className="flex w-80 shrink-0 flex-col bg-black/55" aria-label="Camera controls">
+                        <aside
+                            className="relative flex shrink-0 flex-col border-l border-border bg-black/55"
+                            style={{ width: sidebar.size }}
+                            aria-label="Camera controls"
+                        >
+                            <Resizer
+                                edge="left"
+                                label="Resize the camera controls"
+                                size={sidebar.size}
+                                min={SIDEBAR_MIN}
+                                max={sidebarMax()}
+                                dragging={sidebar.dragging}
+                                onPointerDown={sidebar.startDrag}
+                                onKeyDown={sidebar.onKeyDown}
+                            />
                             {/* The controls scroll and fade at an edge they run past; the panel itself stays solid. */}
                             <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
                                 <ScopesPanel
