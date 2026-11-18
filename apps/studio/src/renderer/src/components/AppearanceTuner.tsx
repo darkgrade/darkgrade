@@ -5,15 +5,19 @@ import { createStore } from '@renderer/lib/external-store'
 import { WINDOW_MATERIALS, type Preferences, type WindowMaterial } from '@shared/ipc'
 import { useEffect, useState } from 'react'
 
-/** The tint laid over the window's vibrancy: a colour and an opacity (0–100). */
+/** The tint laid over the window's vibrancy and the main card's surface, each a colour and an opacity (0–100). */
 export interface Appearance {
     windowColor: string
     windowOpacity: number
+    cardColor: string
+    cardOpacity: number
 }
 
 const DEFAULT_APPEARANCE: Appearance = {
     windowColor: '#000000',
     windowOpacity: 50,
+    cardColor: '#07090b',
+    cardOpacity: 30,
 }
 const STORAGE_KEY = 'studio.appearance'
 
@@ -36,6 +40,7 @@ function rgba(hex: string, opacity: number): string {
 function apply(value: Appearance): void {
     const root = document.documentElement.style
     root.setProperty('--window-tint', rgba(value.windowColor, value.windowOpacity))
+    root.setProperty('--card-surface', rgba(value.cardColor, value.cardOpacity))
 }
 
 /** The appearance as tuned: applied and kept in this window as it changes, read by the viewer for its layout. */
@@ -86,7 +91,8 @@ function ColorRow(props: {
 }
 
 /**
- * Developer Mode's live appearance tuning: the window's macOS material and the tint laid over it.
+ * Developer Mode's live appearance tuning: the window's macOS material, the tint laid over it, and the main card's
+ * colour and opacity.
  * Changes show at once and are kept in this window; the values read out so they can be made the defaults.
  */
 export function AppearanceTuner(): React.JSX.Element {
@@ -154,6 +160,14 @@ export function AppearanceTuner(): React.JSX.Element {
                     opacity={tuned.windowOpacity}
                     onChange={(windowColor, windowOpacity) =>
                         setAppearance(previous => ({ ...previous, windowColor, windowOpacity }))
+                    }
+                />
+                <ColorRow
+                    label="Card"
+                    color={tuned.cardColor}
+                    opacity={tuned.cardOpacity}
+                    onChange={(cardColor, cardOpacity) =>
+                        setAppearance(previous => ({ ...previous, cardColor, cardOpacity }))
                     }
                 />
                 <p className="text-[11px] text-muted-foreground">

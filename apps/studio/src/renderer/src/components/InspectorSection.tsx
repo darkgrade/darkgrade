@@ -34,13 +34,14 @@ export function InspectorSection({
     }
     return (
         <Collapsible defaultOpen={defaultOpen} render={<section className={SECTION_CLASS} />}>
+            {/* The title sits on the content's left edge; its chevron shows only while the header is hovered or focused. */}
             <header className="flex min-h-6 items-center justify-between gap-2">
-                <CollapsibleTrigger className="group -ml-1 flex flex-1 items-center gap-1.5 rounded-sm px-1 text-left focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                <CollapsibleTrigger className="group flex flex-1 items-center gap-1.5 rounded-sm text-left focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                    <h2 className={TITLE_CLASS}>{title}</h2>
                     <ChevronRight
-                        className="size-3.5 text-foreground/40 transition-transform duration-200 group-data-[panel-open]:rotate-90"
+                        className="size-3.5 text-foreground/40 opacity-0 transition-[opacity,transform] duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[panel-open]:rotate-90"
                         aria-hidden
                     />
-                    <h2 className={TITLE_CLASS}>{title}</h2>
                 </CollapsibleTrigger>
                 {action}
             </header>
