@@ -363,7 +363,7 @@ export function App(): React.JSX.Element {
                             />
                         </div>
                     </aside>
-                    <main className="my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background shadow-[0_0_0_1px_rgb(255_255_255/6%)]">
+                    <main className="my-1.5 mr-1.5 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background/50 shadow-[0_0_0_1px_rgb(255_255_255/6%)]">
                         <div className="titlebar-drag relative flex h-12 shrink-0 items-center justify-center px-3">
                             <CameraPill
                                 cameraState={cameraState}
