@@ -10,6 +10,7 @@ import {
     Spinner,
 } from '@kevinschaich/components'
 import { HoverTip } from '@renderer/components/HoverTip'
+import { PreviewQuality, type PreviewQualityProps } from '@renderer/components/PreviewQuality'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
 import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { LivePicture } from '@renderer/gpu/LivePicture'
@@ -42,6 +43,8 @@ interface LiveViewPanelProps {
     voiceOpen: boolean
     voiceListening: boolean
     onToggleVoice: () => void
+    /** The live preview's quality switch and details, shown in the toolbar. */
+    preview: PreviewQualityProps
 }
 
 function ViewportPlaceholder(
@@ -186,6 +189,7 @@ function CameraControls(props: CameraControlsProps): React.JSX.Element {
                     </HoverTip>
                 )}
                 <span className="mx-1 h-5 w-px bg-foreground/10" aria-hidden />
+                {cameraState.connected && <PreviewQuality {...props.preview} className={tool} />}
                 <HoverTip
                     tip={props.voiceOpen ? 'Stop voice' : 'Voice'}
                     render={

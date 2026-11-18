@@ -6,7 +6,6 @@ import { FilesPanel } from '@renderer/components/FilesPanel'
 import { FocusPanel } from '@renderer/components/FocusPanel'
 import { LensPanel } from '@renderer/components/LensPanel'
 import { LiveViewPanel } from '@renderer/components/LiveViewPanel'
-import { LiveViewStats } from '@renderer/components/LiveViewStats'
 import { PreviewDialog, type PreviewState } from '@renderer/components/PreviewDialog'
 import { RecordingPanel } from '@renderer/components/RecordingPanel'
 import { Resizer } from '@renderer/components/Resizer'
@@ -374,19 +373,6 @@ export function App(): React.JSX.Element {
                                 onDisconnect={() => void run(() => api.disconnect())}
                                 onOsdOverlayChange={enabled => void run(() => api.setOsdOverlay(enabled))}
                             />
-                            {cameraState.connected && (
-                                <div className="absolute right-3">
-                                    <LiveViewStats
-                                        framesPerSecond={cameraState.liveView ? liveFramesPerSecond : null}
-                                        frameSize={cameraState.liveView ? liveFrameSize : null}
-                                        quality={cameraState.controls?.liveViewQuality ?? null}
-                                        disabled={busy}
-                                        onQualityChange={value =>
-                                            void run(() => api.setControl('liveViewQuality', value))
-                                        }
-                                    />
-                                </div>
-                            )}
                         </div>
                         <LiveViewPanel
                             cameraState={cameraState}
@@ -409,6 +395,13 @@ export function App(): React.JSX.Element {
                             voiceOpen={voiceExpanded}
                             voiceListening={voice.listening === 'listening'}
                             onToggleVoice={() => setVoiceExpanded(previous => !previous)}
+                            preview={{
+                                framesPerSecond: cameraState.liveView ? liveFramesPerSecond : null,
+                                frameSize: cameraState.liveView ? liveFrameSize : null,
+                                quality: cameraState.controls?.liveViewQuality ?? null,
+                                disabled: busy,
+                                onQualityChange: value => void run(() => api.setControl('liveViewQuality', value)),
+                            }}
                         />
                         <VoicePanel voice={voice} expanded={voiceExpanded} />
                         {developerMode && (
