@@ -352,6 +352,74 @@ it('bounds Canon movie-switch busy and rejects other errors immediately',async()
  await expect(camera.enterMovieMode()).rejects.toThrow('0x2005');expect(attempts).toBe(1)
 })
 
+it('waits for movie finalization before releasing movie mode without repeating Record', async () => {
+    vi.useFakeTimers()
+    try {
+        const { camera } = testCamera()
+        let requests = 0
+        camera.send = (async operation => {
+            expect(operation.name).toBe('CanonMovieSelectSwitchOff')
+            return { code: ++requests < 3 ? 0x2019 : 0x2001 }
+        }) as typeof camera.send
+        const result = camera.leaveMovieMode().catch(error => error)
+        await vi.runAllTimersAsync()
+        expect(await result).toBeUndefined()
+        expect(requests).toBe(3)
+    } finally { vi.useRealTimers() }
+})
+
+it.each([
+    { code: 0x2019, requests: 4 },
+    { code: 0x2005, requests: 1 },
+])('rejects movie release code $code after $requests bounded requests', async ({ code, requests }) => {
+    vi.useFakeTimers()
+    try {
+        const { camera } = testCamera()
+        let attempts = 0
+        camera.send = (async operation => {
+            expect(operation.name).toBe('CanonMovieSelectSwitchOff')
+            attempts++
+            return { code }
+        }) as typeof camera.send
+        const result = camera.leaveMovieMode().catch(error => error)
+        await vi.runAllTimersAsync()
+        expect(await result).toMatchObject({ code })
+        expect(attempts).toBe(requests)
+    } finally { vi.useRealTimers() }
+})
+
+it.each(['delayed', 'missing'] as const)('requires idle readback after an acknowledged Stop with %s telemetry', async telemetry => {
+    vi.useFakeTimers()
+    try {
+        const { camera } = testCamera()
+        const cache = (camera as any).propertyCache
+        const property = camera.registry.properties.CanonRecordingDestination
+        cache.set(property, { current: 'CARD' })
+        let reads = 0, writes = 0
+        camera.send = (async operation => {
+            expect(operation.name).toBe('CanonGetEventData')
+            if (++reads === 3 && telemetry === 'delayed')
+                cache.set(property, { current: 'SDRAM' })
+            return { code: 0x2001, data: [] }
+        }) as typeof camera.send
+        camera.set = (async (target, value) => {
+            expect(target).toBe(property)
+            expect(value).toBe('NONE')
+            writes++
+        }) as typeof camera.set
+        const stop = camera.stopRecording().catch(error => error)
+        await vi.runAllTimersAsync()
+        const result = await stop
+        if (telemetry === 'delayed') expect(result).toBeUndefined()
+        else {
+            expect(result).toBeInstanceOf(Error)
+            expect(result.message).toContain('did not confirm recording stopped')
+        }
+        expect(writes).toBe(1)
+        expect(reads).toBeGreaterThanOrEqual(3)
+    } finally { vi.useRealTimers() }
+})
+
 it('an unrecognized Canon value cannot discard later exposure properties and choices',async()=>{
  const {camera}=testCamera(),instance=camera as any
  instance.processEvents([
