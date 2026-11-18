@@ -84,6 +84,46 @@ async function upload(blob: Blob): Promise<void> {
     }
 }
 
+/** The camera's own on-screen display (a PNG, about 4 a second while shown), as a texture over the picture. */
+let osd: { texture: GPUTexture; version: number } | null = null
+let osdDecoding = false
+
+export function currentOsdTexture(): { texture: GPUTexture; version: number } | null {
+    return osd
+}
+
+export async function publishOsdFrame(png: Uint8Array): Promise<void> {
+    if (osdDecoding) return
+    osdDecoding = true
+    try {
+        const gpu = await getGpu()
+        if (!gpu) return
+        const bitmap = await createImageBitmap(new Blob([png as BlobPart], { type: 'image/png' }), {
+            premultiplyAlpha: 'premultiply',
+        })
+        if (!osd || osd.texture.width !== bitmap.width || osd.texture.height !== bitmap.height) {
+            osd?.texture.destroy()
+            const texture = gpu.device.createTexture({
+                size: [bitmap.width, bitmap.height],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+            })
+            osd = { texture, version: osd?.version ?? 0 }
+        }
+        gpu.device.queue.copyExternalImageToTexture(
+            { source: bitmap },
+            { texture: osd.texture, premultipliedAlpha: true },
+            [bitmap.width, bitmap.height]
+        )
+        bitmap.close()
+        osd = { ...osd, version: osd.version + 1 }
+    } catch {
+        // An undecodable display frame is skipped.
+    } finally {
+        osdDecoding = false
+    }
+}
+
 subscribeToLiveFrames(live => {
     if (live) void upload(live.blob)
 })

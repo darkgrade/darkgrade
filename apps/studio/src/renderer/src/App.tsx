@@ -13,6 +13,7 @@ import { chooseScope, scopeChoice, ScopesPanel } from '@renderer/components/Scop
 import { SettingsPanel } from '@renderer/components/SettingsPanel'
 import { VoicePanel } from '@renderer/components/VoicePanel'
 import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/gpu/assists'
+import { publishOsdFrame } from '@renderer/gpu/device'
 import { readJpegSize } from '@renderer/lib/jpeg-size'
 import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
 import { useResizable } from '@renderer/lib/use-resizable'
@@ -62,7 +63,6 @@ export function App(): React.JSX.Element {
     const previewEntryRef = useRef<FileEntry | null>(null)
     previewEntryRef.current = previewEntry
     const [previewState, setPreviewState] = useState<PreviewState>({ status: 'loading' })
-    const [osdFrameUrl, setOsdFrameUrl] = useState<string | null>(null)
     const [previewAssists, setPreviewAssists] = useState<PreviewAssistSettings>(DEFAULT_PREVIEW_ASSISTS)
     const liveFrameTimes = useRef<number[]>([])
     const [liveFrameSize, setLiveFrameSize] = useState<{ width: number; height: number } | null>(null)
@@ -135,13 +135,8 @@ export function App(): React.JSX.Element {
             const spanSeconds = Math.max((now - recent[0]) / 1000, 1)
             setLiveFramesPerSecond(recent.length / Math.min(spanSeconds, FRAME_RATE_WINDOW_MS / 1000))
         }, 1000)
-        const unsubscribeOsd = api.onOsdFrame(png => {
-            const url = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }))
-            setOsdFrameUrl(previous => {
-                if (previous) URL.revokeObjectURL(previous)
-                return url
-            })
-        })
+        // The camera's own display goes straight to the GPU; it never re-renders the app.
+        const unsubscribeOsd = api.onOsdFrame(png => void publishOsdFrame(png))
         const unsubscribeProgress = api.onFilesProgress(progress => {
             setDownloadProgress(progress.total > 0 && progress.completed < progress.total ? progress : null)
         })
@@ -377,7 +372,6 @@ export function App(): React.JSX.Element {
                         <LiveViewPanel
                             cameraState={cameraState}
                             previewAssists={previewAssists}
-                            osdFrameUrl={cameraState.osdOverlay ? osdFrameUrl : null}
                             busy={busy}
                             capturing={capturing}
                             locked={cardBusy}

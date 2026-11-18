@@ -42,8 +42,8 @@ const VOICE_TRIGGER_CLASS =
 /** The strands rest just above the panel's control row along its bottom; their glow spills softly below it. */
 const VOICE_GLOW_REST_INSET = 44
 
-/** How far the glow fades out before the card's right edge. */
-const VOICE_GLOW_RIGHT_FADE = '12rem'
+/** How far the glow fades out before the card's right edge, in CSS px (the ribbons shader does the fade). */
+const VOICE_GLOW_RIGHT_FADE = 192
 
 /**
  * The voice card's glow: VoiceRibbons behind the card's contents, running on down to the window's bottom edge. The
@@ -65,18 +65,13 @@ function VoiceGlow({ active, stream }: { active: boolean; stream: MediaStream | 
         observer.observe(document.documentElement)
         return () => observer.disconnect()
     }, [])
-    const fade = `linear-gradient(to right, black calc(100% - ${VOICE_GLOW_RIGHT_FADE}), transparent)`
     return (
-        <div
-            ref={ref}
-            className="pointer-events-none absolute inset-x-0 top-0"
-            style={{ bottom: -below, isolation: 'isolate', maskImage: fade, WebkitMaskImage: fade }}
-            aria-hidden
-        >
+        <div ref={ref} className="pointer-events-none absolute inset-x-0 top-0" style={{ bottom: -below }} aria-hidden>
             <VoiceRibbons
                 stream={stream}
                 active={active}
                 restOffset={below + VOICE_GLOW_REST_INSET}
+                rightFade={VOICE_GLOW_RIGHT_FADE}
                 style={{ position: 'absolute', inset: 0 }}
             />
         </div>

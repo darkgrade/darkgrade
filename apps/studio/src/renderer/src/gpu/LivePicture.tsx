@@ -3,6 +3,7 @@ import {
     animate,
     configureCanvas,
     currentFrameTexture,
+    currentOsdTexture,
     fitCanvas,
     getGpu,
     onFrameTexture,
@@ -15,6 +16,8 @@ import { useEffect, useRef, useState } from 'react'
 interface LivePictureProps {
     assists: PreviewAssistSettings
     recording: boolean
+    /** Show the camera's own on-screen display over the picture. */
+    cameraDisplay: boolean
     dimmed: boolean
     onAspect: (aspect: number) => void
 }
@@ -42,15 +45,21 @@ const NOISE_MULTIPLE_LEAST = 14
 const NOISE_MULTIPLE_MOST = 6
 
 /**
- * The live picture on the GPU: the frame from its shared texture, with zebras, focus peaking and the recording
- * tally drawn in the same pass. Redraws only for a new frame, unless the stripes or the tally are moving.
+ * The live picture on the GPU: the frame from its shared texture, with zebras, focus peaking, the camera's own
+ * display and the recording tally drawn in the same pass. Redraws only for a new frame, unless the stripes or the tally are moving.
  * Where WebGPU isn't available it falls back to a plain image without the overlays.
  */
-export function LivePicture({ assists, recording, dimmed, onAspect }: LivePictureProps): React.JSX.Element {
+export function LivePicture({
+    assists,
+    recording,
+    cameraDisplay,
+    dimmed,
+    onAspect,
+}: LivePictureProps): React.JSX.Element {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [unavailable, setUnavailable] = useState(false)
-    const live = useRef({ assists, recording, onAspect })
-    live.current = { assists, recording, onAspect }
+    const live = useRef({ assists, recording, cameraDisplay, onAspect })
+    live.current = { assists, recording, cameraDisplay, onAspect }
     const recordingSince = useRef<number | null>(null)
     if (recording && recordingSince.current === null) recordingSince.current = performance.now()
     if (!recording) recordingSince.current = null
@@ -87,17 +96,30 @@ export function LivePicture({ assists, recording, dimmed, onAspect }: LivePictur
             const noise = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE })
             const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' })
             const values = new Float32Array(20)
-            let bound: { frame: GPUTexture; picture: GPUBindGroup; bin: GPUBindGroup; median: GPUBindGroup } | null =
-                null
+            // Until the camera sends its display, the shader reads a clear 1x1 texture in its place.
+            const noDisplay = device.createTexture({
+                size: [1, 1],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            })
+            let bound: {
+                frame: GPUTexture
+                display: GPUTexture
+                picture: GPUBindGroup
+                bin: GPUBindGroup
+                median: GPUBindGroup
+            } | null = null
+            let drawnDisplay = -1
             let drawnVersion = -1
             let drawnSize = ''
             let lastZebraPhase = -1
 
-            const bind = (frame: FrameTexture): NonNullable<typeof bound> => {
-                if (bound?.frame === frame.texture) return bound
+            const bind = (frame: FrameTexture, display: GPUTexture): NonNullable<typeof bound> => {
+                if (bound?.frame === frame.texture && bound.display === display) return bound
                 const view = frame.texture.createView()
                 bound = {
                     frame: frame.texture,
+                    display,
                     picture: device.createBindGroup({
                         layout: pipeline.getBindGroupLayout(0),
                         entries: [
@@ -105,6 +127,7 @@ export function LivePicture({ assists, recording, dimmed, onAspect }: LivePictur
                             { binding: 1, resource: view },
                             { binding: 2, resource: sampler },
                             { binding: 3, resource: { buffer: noise } },
+                            { binding: 4, resource: display.createView() },
                         ],
                     }),
                     bin: device.createBindGroup({
@@ -129,18 +152,22 @@ export function LivePicture({ assists, recording, dimmed, onAspect }: LivePictur
             stop = animate(now => {
                 const frame = currentFrameTexture()
                 if (!frame) return
-                const { assists: settings, recording: tallyOn } = live.current
+                const { assists: settings, recording: tallyOn, cameraDisplay: showDisplay } = live.current
+                const display = showDisplay ? currentOsdTexture() : null
+                const displayVersion = display?.version ?? -1
                 const seconds = now / 1000
                 const zebraPhase = reduceMotion ? 0 : Math.floor(seconds * ZEBRA_STEPS_PER_SECOND) % 8
                 const { width, height } = fitCanvas(canvas)
                 const size = `${width}x${height}`
                 const moving = tallyOn || (settings.zebras && zebraPhase !== lastZebraPhase)
-                if (frame.version === drawnVersion && size === drawnSize && !moving) return
+                if (frame.version === drawnVersion && size === drawnSize && displayVersion === drawnDisplay && !moving)
+                    return
+                drawnDisplay = displayVersion
                 const newFrame = frame.version !== drawnVersion
                 drawnVersion = frame.version
                 drawnSize = size
                 lastZebraPhase = zebraPhase
-                const groups = bind(frame)
+                const groups = bind(frame, display?.texture ?? noDisplay)
 
                 const since = recordingSince.current
                 const t = reduceMotion || since === null ? 0 : (now - since) / 1000
@@ -163,7 +190,7 @@ export function LivePicture({ assists, recording, dimmed, onAspect }: LivePictur
                     360 * (lap + (SWING * Math.sin(swell * lap)) / swell),
                     -HUE_SWAY * Math.cos((2 * Math.PI * t) / HUE_SECONDS),
                     RADIUS,
-                    0,
+                    display ? 1 : 0,
                     0,
                     ...DRIFTS.map(([period, head]) => 0.5 - 0.5 * Math.cos((Math.PI * (t + head)) / period)),
                 ])
@@ -205,6 +232,7 @@ export function LivePicture({ assists, recording, dimmed, onAspect }: LivePictur
                 previous()
                 unsubscribe()
                 uniforms.destroy()
+                noDisplay.destroy()
                 bins.destroy()
                 noise.destroy()
             }

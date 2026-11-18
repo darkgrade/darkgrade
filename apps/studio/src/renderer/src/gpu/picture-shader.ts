@@ -53,6 +53,7 @@ function ramp(name: string, stops: Array<[number, number]>): string {
  * - focus peaking: a preview pixel whose two-pixel change is well above the frame's noise (its median one-pixel
  *   change, measured on the GPU) and at least 1.5 times its four-pixel change is marked red;
  * - zebras: diagonal black and white stripes, 4 preview pixels wide and moving, over pixels at or above the level;
+ * - the camera's own on-screen display, stretched over the picture, when it's shown;
  * - the recording tally: a beam running round the frame's rounded edge, uncovering a 2px stroke (a white streak
  *   over red), a soft red glow inside it from fourteen drifting patches, and a white bloom along the stroke.
  */
@@ -72,7 +73,8 @@ struct Uniforms {
     tallyAngle: f32,        // degrees
     tallyHue: f32,          // degrees
     radius: f32,            // CSS px
-    _pad: vec2f,
+    osd: f32,               // the camera's own display over the picture
+    _pad: f32,
     drift: vec4f,
 }
 
@@ -80,6 +82,7 @@ struct Uniforms {
 @group(0) @binding(1) var frameTexture: texture_2d<f32>;
 @group(0) @binding(2) var frameSampler: sampler;
 @group(0) @binding(3) var<storage, read> noise: array<f32, 1>;
+@group(0) @binding(4) var osdTexture: texture_2d<f32>;
 
 fn lumaAt(texel: vec2i) -> f32 {
     let size = vec2i(u.frameSize);
@@ -171,6 +174,7 @@ fn over(top: vec4f, bottom: vec4f) -> vec4f { return top + bottom * (1.0 - top.a
 
 @fragment fn fragmentMain(v: Varyings) -> @location(0) vec4f {
     var colour = vec4f(textureSample(frameTexture, frameSampler, v.uv).rgb, 1.0);
+    let display = textureSample(osdTexture, frameSampler, v.uv);
     let texel = vec2i(floor(v.uv * u.frameSize));
 
     if (u.peaking > 0.5) {
@@ -183,6 +187,8 @@ fn over(top: vec4f, bottom: vec4f) -> vec4f { return top + bottom * (1.0 - top.a
         let shade = select(1.0, 0.0, (u32(floor((f32(texel.x + texel.y) + u.zebraPhase) / 4.0)) % 2u) == 0u);
         colour = over(vec4f(vec3f(shade), 1.0) * (200.0 / 255.0), colour);
     }
+
+    if (u.osd > 0.5) { colour = over(display, colour); }
 
     if (u.tally > 0.0) {
         let p = v.uv * u.canvasSize;

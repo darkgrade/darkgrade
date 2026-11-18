@@ -14,6 +14,8 @@ interface VoiceRibbonsProps {
     active: boolean
     /** How far above the canvas's bottom edge the strands rest, in CSS px; their glow fades out below it. */
     restOffset: number
+    /** The glow fades out over this many CSS px before the right edge. */
+    rightFade?: number
     style?: React.CSSProperties
 }
 
@@ -58,7 +60,7 @@ struct Uniforms {
     size: vec2f, pixelRatio: f32, clock: f32,
     base: f32, centre: f32, spread: f32, amplitude: f32,
     voice: f32, presence: f32, bandLow: f32, bandMid: f32,
-    bandHigh: f32, pad0: f32, pad1: f32, pad2: f32,
+    bandHigh: f32, rightFade: f32, pad1: f32, pad2: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 const COLORS = array<vec3f, 5>(${COLORS.map(rgb).join(', ')});
@@ -121,6 +123,7 @@ fn stroke(distance: f32, width: f32) -> f32 { return clamp(width * 0.5 - distanc
     else if (r < 1.0) { light += vec3f(1.0, 0.863, 0.627) * 0.18 * (1.0 - (r - 0.35) / 0.65) * hot; }
     // No hard edges: below the resting line everything fades out by the bottom edge, and the top edge fades in.
     if (p.y > u.base) { light *= 1.0 - (p.y - u.base) / max(1.0, u.size.y - u.base); }
+    if (u.rightFade > 0.0) { light *= clamp((u.size.x - p.x) / u.rightFade, 0.0, 1.0); }
     let top = min(48.0, u.size.y * 0.2);
     if (p.y < top) { light *= p.y / top; }
     light = min(light, vec3f(1.0));
@@ -136,10 +139,16 @@ interface Heard {
 const follow = (previous: number, target: number, dt: number): number =>
     previous + (target - previous) * (1 - Math.exp(-dt / (target > previous ? ATTACK_SECONDS : RELEASE_SECONDS)))
 
-export function VoiceRibbons({ stream, active, restOffset, style }: VoiceRibbonsProps): React.JSX.Element {
+export function VoiceRibbons({
+    stream,
+    active,
+    restOffset,
+    rightFade = 0,
+    style,
+}: VoiceRibbonsProps): React.JSX.Element {
     const canvasRef = useRef<HTMLCanvasElement>(null)
-    const live = useRef({ active, restOffset })
-    live.current = { active, restOffset }
+    const live = useRef({ active, restOffset, rightFade })
+    live.current = { active, restOffset, rightFade }
 
     const analyserRef = useRef<AnalyserNode | null>(null)
     useEffect(() => {
@@ -238,7 +247,7 @@ export function VoiceRibbons({ stream, active, restOffset, style }: VoiceRibbons
                     voice,
                     presence,
                     ...heard.bands,
-                    0,
+                    live.current.rightFade,
                 ])
                 device.queue.writeBuffer(uniforms, 0, values)
                 const encoder = device.createCommandEncoder()

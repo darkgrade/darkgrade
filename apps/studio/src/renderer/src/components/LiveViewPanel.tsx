@@ -31,9 +31,6 @@ interface LiveViewPanelProps {
     onFocus: () => void
     /** Focus on a point of the picture (0–1 from the top left); resolves true when the camera focused. */
     onFocusAt: ((x: number, y: number) => Promise<boolean>) | null
-    /** The frames the camera draws over live view; empty when it shows none (Wide at rest). */
-    /** The camera's on-screen display, drawn over the picture while the overlay is on. */
-    osdFrameUrl: string | null
     /** Zebras and focus peaking drawn over the picture by Studio. */
     previewAssists: PreviewAssistSettings
     onCapture: () => void
@@ -275,22 +272,46 @@ function RecordingBadge(): React.JSX.Element {
         </span>
     )
 }
+/**
+ * The camera's focus, face and eye frames over the picture. They can move every frame, so they subscribe here, on
+ * their own, and only this small layer re-renders as they move, never the viewer or its toolbar.
+ */
+function FocusFrames({
+    focusArea,
+    marker,
+    lastFocusFrame,
+}: {
+    focusArea: string | null
+    marker: FocusMarker | null
+    /** The current focus frame, kept for a click's marker to take its size. */
+    lastFocusFrame: React.RefObject<FocusFrame>
+}): React.JSX.Element {
+    const focusFrames = useFocusFrames()
+    const currentFocusFrame = focusFrames.find(frame => frame.kind === 'focus')
+    if (currentFocusFrame) lastFocusFrame.current = currentFocusFrame
+    if (marker) return <CameraFocusFrame frame={lastFocusFrame.current} marker={marker} />
+    // The camera reports faces and eyes in every area, but in a Flexible Spot it focuses on the spot:
+    // only show them where the camera picks the subject itself.
+    const cameraPicksSubject = !/flexible spot/i.test(focusArea ?? '')
+    const shownFrames = cameraPicksSubject ? focusFrames : focusFrames.filter(frame => frame.kind === 'focus')
+    return (
+        <>
+            {shownFrames.map((frame, index) => (
+                <CameraFocusFrame key={index} frame={frame} />
+            ))}
+        </>
+    )
+}
+
 export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const { cameraState } = props
     const hasLiveFrame = useHasLiveFrame()
-    const focusFrames = useFocusFrames()
     // Fill the panel at the frame's own shape, scaling past its native resolution if needed.
     const [frameAspect, setFrameAspect] = useState(3 / 2)
     const [focusMarker, setFocusMarker] = useState<FocusMarker | null>(null)
     const focusRingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     // The focus frame's size is kept when a click moves it, even while the camera switches areas.
     const lastFocusFrame = useRef<FocusFrame>(DEFAULT_FOCUS_FRAME)
-    const currentFocusFrame = focusFrames.find(frame => frame.kind === 'focus')
-    // The camera reports faces and eyes in every area, but in a Flexible Spot it focuses on the spot:
-    // only show them where the camera picks the subject itself.
-    const cameraPicksSubject = !/flexible spot/i.test(cameraState.controls?.focusArea?.value ?? '')
-    const shownFrames = cameraPicksSubject ? focusFrames : focusFrames.filter(frame => frame.kind === 'focus')
-    if (currentFocusFrame) lastFocusFrame.current = currentFocusFrame
     const disabled = !cameraState.connected || props.busy || props.locked
     const canFocusAt = props.onFocusAt !== null && !disabled && !props.readingCard
     // While the card is read, live view is paused: keep the last frame, dimmed and labelled, rather than flash.
@@ -329,6 +350,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                                     : props.previewAssists
                             }
                             recording={cameraState.recording}
+                            cameraDisplay={cameraState.osdOverlay === true}
                             dimmed={props.readingCard}
                             onAspect={aspect => {
                                 if (Math.abs(aspect - frameAspect) > 0.01) setFrameAspect(aspect)
@@ -339,20 +361,12 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                                 <Spinner className="size-3" /> Live view paused while the card is read
                             </span>
                         )}
-                        {props.osdFrameUrl && (
-                            <img
-                                className="pointer-events-none absolute inset-0 size-full object-fill"
-                                src={props.osdFrameUrl}
-                                alt=""
-                                draggable={false}
-                            />
-                        )}
                         {cameraState.recording && <RecordingBadge />}
-                        {focusMarker ? (
-                            <CameraFocusFrame frame={lastFocusFrame.current} marker={focusMarker} />
-                        ) : (
-                            shownFrames.map((frame, index) => <CameraFocusFrame key={index} frame={frame} />)
-                        )}
+                        <FocusFrames
+                            focusArea={cameraState.controls?.focusArea?.value ?? null}
+                            marker={focusMarker}
+                            lastFocusFrame={lastFocusFrame}
+                        />
                     </div>
                 ) : null}
                 {showFrame ? null : (
