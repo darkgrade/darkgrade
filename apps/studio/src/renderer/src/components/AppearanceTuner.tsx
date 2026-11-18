@@ -1,15 +1,20 @@
 import { Button, Slider, Switch } from '@kevinschaich/components'
 import { ControlRow } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
+import { createStore } from '@renderer/lib/external-store'
 import { WINDOW_MATERIALS, type Preferences, type WindowMaterial } from '@shared/ipc'
 import { useEffect, useState } from 'react'
 
-/** The tint laid over the window's vibrancy and the main card's surface, each a colour and an opacity (0–100). */
+/**
+ * The tint laid over the window's vibrancy and the main card's surface, each a colour and an opacity (0–100), and
+ * whether the camera pill and toolbar float over a picture that fills the card rather than taking rows of their own.
+ */
 export interface Appearance {
     windowColor: string
     windowOpacity: number
     cardColor: string
     cardOpacity: number
+    overlayControls: boolean
 }
 
 const DEFAULT_APPEARANCE: Appearance = {
@@ -17,6 +22,7 @@ const DEFAULT_APPEARANCE: Appearance = {
     windowOpacity: 50,
     cardColor: '#07090b',
     cardOpacity: 30,
+    overlayControls: false,
 }
 const STORAGE_KEY = 'studio.appearance'
 
@@ -36,14 +42,26 @@ function rgba(hex: string, opacity: number): string {
     return `rgb(${(value >> 16) & 255} ${(value >> 8) & 255} ${value & 255} / ${opacity}%)`
 }
 
-function apply(appearance: Appearance): void {
+function apply(value: Appearance): void {
     const root = document.documentElement.style
-    root.setProperty('--window-tint', rgba(appearance.windowColor, appearance.windowOpacity))
-    root.setProperty('--card-surface', rgba(appearance.cardColor, appearance.cardOpacity))
+    root.setProperty('--window-tint', rgba(value.windowColor, value.windowOpacity))
+    root.setProperty('--card-surface', rgba(value.cardColor, value.cardOpacity))
+}
+
+/** The appearance as tuned: applied and kept in this window as it changes, read by the viewer for its layout. */
+export const appearance = createStore<Appearance>(load())
+
+function save(value: Appearance): void {
+    apply(value)
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+    } catch {
+        // Not kept; the colours still apply for this session.
+    }
 }
 
 // Tuned colours apply from launch, whether or not Developer Mode shows the tuner.
-apply(load())
+apply(appearance.get())
 
 function ColorRow(props: {
     label: string
@@ -83,21 +101,18 @@ function ColorRow(props: {
  * Changes show at once and are kept in this window; the values read out so they can be made the defaults.
  */
 export function AppearanceTuner(): React.JSX.Element {
-    const [appearance, setAppearance] = useState(load)
+    const tuned = appearance.use()
+    const setAppearance = (change: Appearance | ((previous: Appearance) => Appearance)): void => {
+        const next = typeof change === 'function' ? change(appearance.get()) : change
+        appearance.set(next)
+        save(next)
+    }
     // The window's material and its dimming are saved with Studio's settings: the main process applies them.
     const [preferences, setPreferences] = useState<Preferences | null>(null)
     useEffect(() => {
         void window.studio.getPreferences().then(result => result.ok && setPreferences(result.data))
         return window.studio.onPreferences(setPreferences)
     }, [])
-    useEffect(() => {
-        apply(appearance)
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(appearance))
-        } catch {
-            // Not kept; the colours still apply for this session.
-        }
-    }, [appearance])
     return (
         <InspectorSection
             title="Appearance"
@@ -144,18 +159,27 @@ export function AppearanceTuner(): React.JSX.Element {
                         </label>
                     </div>
                 )}
+                <label className="flex items-center justify-between gap-2 leading-none">
+                    <span className="text-muted-foreground">Controls over the picture</span>
+                    <Switch
+                        checked={tuned.overlayControls}
+                        onCheckedChange={overlayControls =>
+                            setAppearance(previous => ({ ...previous, overlayControls }))
+                        }
+                    />
+                </label>
                 <ColorRow
                     label="Window tint"
-                    color={appearance.windowColor}
-                    opacity={appearance.windowOpacity}
+                    color={tuned.windowColor}
+                    opacity={tuned.windowOpacity}
                     onChange={(windowColor, windowOpacity) =>
                         setAppearance(previous => ({ ...previous, windowColor, windowOpacity }))
                     }
                 />
                 <ColorRow
                     label="Card"
-                    color={appearance.cardColor}
-                    opacity={appearance.cardOpacity}
+                    color={tuned.cardColor}
+                    opacity={tuned.cardOpacity}
                     onChange={(cardColor, cardOpacity) =>
                         setAppearance(previous => ({ ...previous, cardColor, cardOpacity }))
                     }

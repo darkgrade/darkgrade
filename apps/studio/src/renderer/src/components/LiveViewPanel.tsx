@@ -9,6 +9,7 @@ import {
     Kbd,
     Spinner,
 } from '@kevinschaich/components'
+import { appearance } from '@renderer/components/AppearanceTuner'
 import { HoverTip } from '@renderer/components/HoverTip'
 import { PreviewQuality, type PreviewQualityProps } from '@renderer/components/PreviewQuality'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
@@ -321,19 +322,21 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const canFocusAt = props.onFocusAt !== null && !disabled && !props.readingCard
     // While the card is read, live view is paused: keep the last frame, dimmed and labelled, rather than flash.
     const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
+    // Developer Mode › Appearance can float the pill and toolbar over a picture that fills the card.
+    const overlay = appearance.use().overlayControls && showFrame
 
     return (
         // One column, 12px apart and 12px from the card's edges: the pill, the picture and the toolbar, the picture as
         // large as its shape allows between them (the space they take is PICTURE_CHROME_PX).
         <div className="flex min-h-0 flex-1 flex-col p-3 [container-type:size]">
             <div className="flex size-full flex-col items-center justify-center gap-3">
-                <div className="titlebar-drag flex w-full shrink-0 justify-center">{props.header}</div>
+                {!overlay && <div className="titlebar-drag flex w-full shrink-0 justify-center">{props.header}</div>}
                 {showFrame ? (
                     <div
                         className={`relative overflow-hidden rounded-lg ${canFocusAt ? 'cursor-crosshair!' : ''}`}
                         style={{
                             aspectRatio: frameAspect,
-                            width: `min(100cqw, calc((100cqh - ${PICTURE_CHROME_PX}px) * ${frameAspect}))`,
+                            width: `min(100cqw, calc((100cqh - ${overlay ? 0 : PICTURE_CHROME_PX}px) * ${frameAspect}))`,
                         }}
                         onClick={event => {
                             if (!canFocusAt || !props.onFocusAt) return
@@ -378,6 +381,20 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                             marker={focusMarker}
                             lastFocusFrame={lastFocusFrame}
                         />
+                        {overlay && (
+                            <>
+                                {/* Floating over the picture: only the controls take clicks, the rest still focuses. */}
+                                <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center *:pointer-events-auto">
+                                    {props.header}
+                                </div>
+                                <div
+                                    className="absolute inset-x-0 bottom-3 flex justify-center"
+                                    onClick={event => event.stopPropagation()}
+                                >
+                                    <CameraControls {...props} disabled={disabled} />
+                                </div>
+                            </>
+                        )}
                     </div>
                 ) : null}
                 {showFrame ? null : (
@@ -389,7 +406,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                         />
                     </div>
                 )}
-                <CameraControls {...props} disabled={disabled} />
+                {!overlay && <CameraControls {...props} disabled={disabled} />}
             </div>
         </div>
     )
