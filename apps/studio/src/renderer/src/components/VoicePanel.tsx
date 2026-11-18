@@ -54,25 +54,25 @@ const VOICE_GLOW_PRESET_WIDTHS = { rangeWidth: 1.25, glowWidth: 1.15, lobeSpacin
 /** How far the glow fades out before the panel's right edge, where the sidebar begins. */
 const VOICE_GLOW_RIGHT_FADE = '12rem'
 /**
- * Darkgrade's gold (darkgrade.com's --color-gold) as the site's lamp halo carries it: saturated amber golds, out of
- * order so neighbouring lobes differ. The lobes drift sideways with the voice, so each is dim somewhere, and a pale
- * yellow dimmed against near-black reads olive; the pale gold is kept for the bright ridge.
+ * Darkgrade's gold as the site's lamp halo carries it: amber golds with its reds and oranges among them (the halo's
+ * outer layers, 239 141 64 and 229 91 33), out of order so neighbouring lobes differ. All are saturated: the lobes
+ * drift sideways with the voice, so each is dim somewhere, and a pale yellow dimmed against near-black reads olive.
  */
 const VOICE_GLOW_GOLDS = [
     'rgb(240, 175, 90)',
-    'rgb(226, 148, 62)',
+    'rgb(229, 104, 44)',
     'rgb(234, 164, 78)',
     'rgb(214, 124, 50)',
-    'rgb(230, 156, 70)',
-    'rgb(206, 114, 46)',
+    'rgb(239, 141, 64)',
+    'rgb(206, 84, 40)',
     'rgb(236, 170, 84)',
 ]
-/** The band: a warm near-white ridge, its fringes in the golds rather than red, green and blue. */
+/** The band: a warm gold ridge over the glow, its fringes in golds and red-orange rather than red, green and blue. */
 const VOICE_GLOW_BAND = {
-    core: 'rgb(255, 238, 210)',
-    above: 'rgb(240, 170, 80)',
-    mid: 'rgb(245, 205, 138)',
-    below: 'rgb(214, 120, 48)',
+    core: 'rgb(250, 222, 172)',
+    above: 'rgb(240, 160, 70)',
+    mid: 'rgb(245, 196, 120)',
+    below: 'rgb(220, 100, 45)',
 }
 
 /**
@@ -121,6 +121,18 @@ function VoiceGlow({ active }: { active: boolean }): React.JSX.Element {
                 // theme's +5° hue lean the golds toward yellow-green.
                 staticColors
                 saturation={1.1}
+                // A defined peak, not a dome fading top to bottom: a narrower, cusp-like bell set higher, a thin gold
+                // ridge along it that doesn't curl up at the edges, crisper lobes, and fringes that barely split.
+                bandSpread={0.5}
+                bandCurve={1.45}
+                bandPosition={0.55}
+                bandStrength={1.3}
+                bandWidth={1.3}
+                bandOffset={-36}
+                bandTail={0.15}
+                bandAberration={0.4}
+                bend={80}
+                softness={0.95}
                 active={active}
                 // The level the old meter read: the microphone's RMS, lifted so speech fills the range. It is already
                 // lifted, so no further gain (the library's default of 3.1 pinned it at full on every syllable).
