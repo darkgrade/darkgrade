@@ -5,6 +5,7 @@ import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
 import { preferences } from '@main/preferences'
 import { studioView } from '@main/studio-view'
+import { isTrustedRendererFrame, rendererDocumentUrl } from '@main/renderer-security'
 import { voiceService } from '@main/voice/voice-service'
 import type {
     CameraControlName,
@@ -16,15 +17,24 @@ import type {
     TranscriptSegment,
 } from '@shared/ipc'
 import { IPC, IPC_EVENTS } from '@shared/ipc'
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const rendererUrl = rendererDocumentUrl(
+    pathToFileURL(join(fileURLToPath(new URL('.', import.meta.url)), '../renderer/index.html')).href,
+    app.isPackaged, process.env.ELECTRON_RENDERER_URL,
+)
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
 }
 
 function handle<T>(channel: string, operation: (...args: never[]) => Promise<T> | T): void {
-    ipcMain.handle(channel, async (_event, ...args): Promise<IpcResult<T>> => {
+    ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<T>> => {
         try {
+            if (!isTrustedRendererFrame(event.senderFrame, rendererUrl))
+                throw new Error('Untrusted renderer frame')
             const data = await operation(...(args as never[]))
             return { ok: true, data }
         } catch (error) {

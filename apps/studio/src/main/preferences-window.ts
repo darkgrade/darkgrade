@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const currentDir = fileURLToPath(new URL('.', import.meta.url))
 let preferencesWindow: BrowserWindow | null = null
@@ -23,17 +24,22 @@ export function openPreferences(): void {
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         show: false,
         webPreferences: {
-            preload: join(currentDir, '../preload/index.mjs'),
+            preload: join(currentDir, '../preload/index.cjs'),
             contextIsolation: true,
-            sandbox: false,
+            nodeIntegration: false,
+            sandbox: true,
         },
     })
     preferencesWindow.once('ready-to-show', () => preferencesWindow?.show())
     preferencesWindow.on('closed', () => {
         preferencesWindow = null
     })
-    if (process.env.ELECTRON_RENDERER_URL) void preferencesWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}#preferences`)
-    else void preferencesWindow.loadFile(join(currentDir, '../renderer/index.html'), { hash: 'preferences' })
+    const rendererUrl = rendererDocumentUrl(pathToFileURL(join(currentDir, '../renderer/index.html')).href,
+        app.isPackaged, process.env.ELECTRON_RENDERER_URL)
+    protectRenderer(preferencesWindow.webContents, rendererUrl, url => shell.openExternal(url))
+    const preferencesUrl = new URL(rendererUrl)
+    preferencesUrl.hash = 'preferences'
+    void preferencesWindow.loadURL(preferencesUrl.href)
 }
 
 /** The standard macOS menus, with Settings… (⌘,) in the app menu. */
