@@ -119,6 +119,31 @@ test('Sony Auto ISO can return to an advertised manual sensitivity through the g
     expect(camera.value).toBe('ISO 100')
     await bench.close()
 })
+test('Sony ISO restoration survives an Auto mode that hides its manual list within the owned session', async () => {
+    const { adapter, camera } = fixtureBench()
+    delete adapter.controls
+    camera.value = 'ISO 200'
+    adapter.discover = async () => [{ vendorId: 0x054c, productId: 1, model: 'USB camera' }]
+    camera.getSonyPropertyStates = async () => [
+        { name: 'Iso', value: camera.value,
+            allowedValues: camera.value === 'ISO AUTO' ? [] : ['ISO AUTO', 'ISO 100', 'ISO 200'],
+            writable: camera.value !== 'ISO AUTO', enabled: camera.value !== 'ISO AUTO' },
+        { name: 'GainControlSetting', value: camera.value === 'ISO AUTO' ? 'Auto' : 'Manual',
+            allowedValues: ['Auto', 'Manual'], writable: true, enabled: true },
+    ] as any
+    const bench = new LocalBench(adapter, 'fixture')
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    await bench.action(id, 'setting', 'iso', 'ISO AUTO')
+    await expect(bench.action(id, 'setting', 'iso', 'ISO 800')).rejects.toThrow('advertised')
+    await bench.action(id, 'setting', 'iso', 'ISO 200')
+    expect(camera.value).toBe('ISO 200')
+    await bench.action(id, 'setting', 'iso', 'ISO AUTO')
+    await bench.action(id, 'disconnect')
+    await bench.action(id, 'connect')
+    expect(bench.state().cameras[0].controls.iso?.enabled).toBe(false)
+    await bench.close()
+})
 test('recording mode stays owned until stop, and failed restoration retries without another stop command', async () => {
     const { bench, camera } = fixtureBench()
     const { id } = (await bench.scan()).cameras[0]

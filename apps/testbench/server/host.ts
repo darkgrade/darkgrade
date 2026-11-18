@@ -25,7 +25,7 @@ export interface LocalCamera {
     recover(options: { allowPortReset: boolean }): Promise<{ recovered: boolean }>
 }
 type Entry = { identity: USBIdentity; view: BenchCamera; camera?: LocalCamera; ambiguous?: boolean;
-    recordingMode?: { restore(): Promise<void> }; stopAcknowledged?: boolean }
+    recordingMode?: { restore(): Promise<void> }; stopAcknowledged?: boolean; sonyManualIsoChoices?: string[] }
 export type CameraAdapter = {
     discover(): Promise<USBIdentity[]>
     create(identity: USBIdentity): LocalCamera
@@ -105,7 +105,7 @@ export class LocalBench {
             const property = states.find(state => aliases[setting].includes(state.name))
             try {
                 const value = String(await camera[methods[setting][0]]())
-                const choices = (property?.allowedValues ?? []).map(String).slice(0, 512)
+                let choices = (property?.allowedValues ?? []).map(String).slice(0, 512)
                 // Never invent writable choices when a body/transport does not advertise them.
                 controls[setting] = { value, choices,
                     enabled: property?.enabled !== false &&
@@ -113,10 +113,19 @@ export class LocalBench {
                             Array.isArray(property?.access) && property.access.includes('Set')) && choices.length > 0 }
                 if (setting === 'iso' && entry.identity.vendorId === 0x054c) {
                     const mode = states.find(state => state.name === 'GainControlSetting')
+                    if (controls.iso!.enabled && !/^iso\s*auto$/i.test(value))
+                        entry.sonyManualIsoChoices = [...choices]
                     // Link's ISO setter switches the separately advertised gain mode first.
                     if (mode?.enabled && mode.writable && mode.allowedValues?.includes('Manual') &&
-                        mode.allowedValues.includes('Auto') && choices.length)
-                        controls.iso!.enabled = true
+                        mode.allowedValues.includes('Auto')) {
+                        // FX2 hides its ISO list in Auto. Preserve only choices observed
+                        // in this owned manual session; Link validates them again after
+                        // switching gain mode and restores Auto if the ISO write fails.
+                        if (!choices.length && /^iso\s*auto$/i.test(value) && entry.sonyManualIsoChoices?.length)
+                            choices = [...new Set([value, ...entry.sonyManualIsoChoices])].slice(0, 512)
+                        controls.iso!.choices = choices
+                        if (choices.length) controls.iso!.enabled = true
+                    }
                 }
             } catch { /* Unsupported controls stay absent. */ }
         }
@@ -133,6 +142,7 @@ export class LocalBench {
                 if (action === 'connect') {
                     if (!entry.camera) {
                         if (entry.ambiguous) throw Error('These cameras have no unique USB identity; connect one at a time')
+                        entry.sonyManualIsoChoices = undefined
                         const camera = this.adapter.create(entry.identity)
                         try { await camera.connect() }
                         catch (error) {
@@ -149,6 +159,7 @@ export class LocalBench {
                     if (action === 'disconnect') {
                         await camera.disconnect()
                         entry.camera = undefined
+                        entry.sonyManualIsoChoices = undefined
                         view.connected = false
                         view.controls = {}
                     } else if (action === 'refresh') {
