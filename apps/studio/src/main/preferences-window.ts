@@ -1,10 +1,13 @@
 import { preferences } from '@main/preferences'
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, screen, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const currentDir = fileURLToPath(new URL('.', import.meta.url))
 let preferencesWindow: BrowserWindow | null = null
+/** Settings opens at this size, or the display's working area if that's smaller; it can be resized. */
+const SETTINGS_WIDTH = 760
+const SETTINGS_HEIGHT = 720
 
 /** Opens the Preferences window, or brings it forward if it's already open. */
 export function openPreferences(): void {
@@ -13,10 +16,18 @@ export function openPreferences(): void {
         preferencesWindow.focus()
         return
     }
+    // Open centred on the display Studio is on (macOS otherwise picks the display with the menu bar's focus).
+    const studio = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const area = screen.getDisplayMatching(studio?.getBounds() ?? screen.getPrimaryDisplay().bounds).workArea
+    const width = Math.min(SETTINGS_WIDTH, area.width)
+    const height = Math.min(SETTINGS_HEIGHT, area.height)
     preferencesWindow = new BrowserWindow({
-        width: 620,
-        height: 460,
-        resizable: false,
+        width,
+        height,
+        x: Math.round(area.x + (area.width - width) / 2),
+        y: Math.round(area.y + (area.height - height) / 2),
+        minWidth: 560,
+        minHeight: 420,
         minimizable: false,
         fullscreenable: false,
         title: 'Settings',
