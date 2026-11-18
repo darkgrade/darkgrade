@@ -54,6 +54,7 @@ export const IPC = {
     PerfOpen: 'perf:open',
     PerfReport: 'perf:report',
     PerfIsOpen: 'perf:is-open',
+    PerfTrace: 'perf:trace',
 } as const
 
 export const IPC_EVENTS = {
@@ -396,6 +397,14 @@ export interface ProcessSample {
     memoryMegabytes: number
 }
 
+/** What a few seconds of Chromium's trace says each process spent its time on, task by task. */
+export interface PerfTrace {
+    seconds: number
+    /** True where every task had CPU time recorded; otherwise some figures are time spent, waits included. */
+    cpuTimed: boolean
+    tasks: { process: string; thread: string; task: string; percent: number }[]
+}
+
 /** The Studio window's own breakdown, once a second while the monitor window is open. */
 export interface PerfReport {
     fps: number
@@ -483,6 +492,8 @@ export interface StudioApi {
     perfSampleProcesses(): Promise<IpcResult<ProcessSample[]>>
     /** Each event channel's count, bytes and handler time since the last call (Developer Mode's monitor). */
     perfTakeIpc(): { channel: string; count: number; milliseconds: number; bytes: number }[]
+    /** Records a trace for a few seconds and returns its busiest tasks. */
+    perfTrace(seconds: number): Promise<IpcResult<PerfTrace>>
     /** Opens the performance monitor's window. */
     perfOpen(): Promise<IpcResult<void>>
     perfIsOpen(): Promise<IpcResult<boolean>>

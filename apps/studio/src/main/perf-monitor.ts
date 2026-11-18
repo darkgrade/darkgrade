@@ -1,8 +1,9 @@
 import { preferences } from '@main/preferences'
-import type { PerfReport, ProcessSample } from '@shared/ipc'
+import type { PerfReport, PerfTrace, ProcessSample } from '@shared/ipc'
 import { IPC_EVENTS } from '@shared/ipc'
-import { app, BrowserWindow, screen, webContents } from 'electron'
+import { app, BrowserWindow, contentTracing, screen, webContents } from 'electron'
 import { execFile } from 'node:child_process'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -144,6 +145,147 @@ export function sampleProcesses(): Promise<ProcessSample[]> {
     return latest.samples
 }
 
+/**
+ * Measures for a few seconds, for MCP clients: every process's CPU and GPU over the whole span, and the Studio
+ * window's own breakdown averaged over it (the window times its parts while this runs, as with the monitor open).
+ */
+export async function measurePerf(seconds: number): Promise<{
+    seconds: number
+    processes: Omit<ProcessSample, 'pid'>[]
+    studioWindow: { fps: number; parts: PerfReport['subsystems'] } | null
+}> {
+    collecting = []
+    announce(true)
+    await sampleProcesses()
+    latest = null
+    await new Promise(resolve => setTimeout(resolve, seconds * 1000))
+    const processes = await sampleProcesses()
+    const reports = collecting
+    collecting = null
+    announce(perfWindow !== null)
+    const parts = new Map<string, { detail?: string; cpu: number; gpu: number | null; n: number }>()
+    for (const report of reports)
+        for (const part of report.subsystems) {
+            const entry = parts.get(part.label) ?? {
+                detail: part.detail,
+                cpu: 0,
+                gpu: part.gpuPercent === null ? null : 0,
+                n: 0,
+            }
+            entry.cpu += part.cpuPercent
+            if (entry.gpu !== null) entry.gpu += part.gpuPercent ?? 0
+            entry.n++
+            parts.set(part.label, entry)
+        }
+    const round = (value: number): number => Math.round(value * 10) / 10
+    return {
+        seconds,
+        processes: processes.map(({ pid: _pid, ...rest }) => ({
+            ...rest,
+            cpuPercent: round(rest.cpuPercent),
+            gpuPercent: round(rest.gpuPercent),
+            memoryMegabytes: Math.round(rest.memoryMegabytes),
+        })),
+        studioWindow: reports.length
+            ? {
+                  fps: Math.round(reports.reduce((total, report) => total + report.fps, 0) / reports.length),
+                  parts: [...parts]
+                      .map(([label, entry]) => ({
+                          label,
+                          detail: entry.detail,
+                          cpuPercent: round(entry.cpu / reports.length),
+                          gpuPercent: entry.gpu === null ? null : round(entry.gpu / reports.length),
+                      }))
+                      .sort((a, b) => b.cpuPercent + (b.gpuPercent ?? 0) - a.cpuPercent - (a.gpuPercent ?? 0)),
+              }
+            : null,
+    }
+}
+
+// ---------- a trace of what Studio's processes spend their time on
+
+interface TraceEvent {
+    ph: string
+    name: string
+    pid: number
+    tid: number
+    ts: number
+    dur?: number
+    tdur?: number
+    args?: { name?: string; src_func?: string }
+}
+
+/**
+ * Records Chromium's own trace for a few seconds and adds up each task's self time (its time less the tasks inside
+ * it) per process: CPU time where the trace has it, else time spent. Tasks are named by the code that posted them.
+ */
+export async function tracePerf(seconds: number): Promise<PerfTrace> {
+    await contentTracing.startRecording({
+        included_categories: ['toplevel', 'viz', 'gpu', 'cc', 'skia', 'ipc', 'blink', 'v8'],
+    })
+    await new Promise(resolve => setTimeout(resolve, seconds * 1000))
+    const path = await contentTracing.stopRecording()
+    const events = (JSON.parse(await readFile(path, 'utf8')) as { traceEvents: TraceEvent[] }).traceEvents
+    await rm(path, { force: true })
+    const processNames = new Map<number, string>()
+    const threadNames = new Map<string, string>()
+    for (const event of events) {
+        if (event.ph === 'M' && event.name === 'process_name') processNames.set(event.pid, event.args?.name ?? '')
+        if (event.ph === 'M' && event.name === 'thread_name')
+            threadNames.set(`${event.pid}:${event.tid}`, event.args?.name ?? '')
+    }
+    const studioPid = webContents
+        .getAllWebContents()
+        .find(contents => !contents.getURL().includes('#'))
+        ?.getOSProcessId()
+    const label = (pid: number): string | null => {
+        const name = processNames.get(pid) ?? ''
+        if (/GPU/i.test(name)) return 'GPU process'
+        if (/Browser/i.test(name)) return 'Main process'
+        if (pid === studioPid) return 'Studio window'
+        return null
+    }
+    const totals = new Map<string, { process: string; thread: string; task: string; microseconds: number }>()
+    const byThread = new Map<string, TraceEvent[]>()
+    for (const event of events)
+        if (event.ph === 'X' && event.dur !== undefined && label(event.pid))
+            byThread.set(`${event.pid}:${event.tid}`, [...(byThread.get(`${event.pid}:${event.tid}`) ?? []), event])
+    let cpuTimed = true
+    for (const [thread, list] of byThread) {
+        list.sort((a, b) => a.ts - b.ts || (b.dur ?? 0) - (a.dur ?? 0))
+        const stack: { end: number; key: string }[] = []
+        for (const event of list) {
+            while (stack.length && stack.at(-1)!.end <= event.ts) stack.pop()
+            if (event.tdur === undefined) cpuTimed = false
+            const time = event.tdur ?? event.dur ?? 0
+            const process = label(event.pid)!
+            const threadName = threadNames.get(thread) ?? 'thread'
+            const task = event.args?.src_func ?? event.name
+            const key = `${process}|${threadName}|${task}`
+            const entry = totals.get(key) ?? { process, thread: threadName, task, microseconds: 0 }
+            entry.microseconds += time
+            totals.set(key, entry)
+            const parent = stack.at(-1)
+            if (parent) totals.get(parent.key)!.microseconds -= time
+            stack.push({ end: event.ts + (event.dur ?? 0), key })
+        }
+    }
+    return {
+        seconds,
+        cpuTimed,
+        tasks: [...totals.values()]
+            .filter(entry => entry.microseconds > 0)
+            .sort((a, b) => b.microseconds - a.microseconds)
+            .slice(0, 40)
+            .map(entry => ({
+                process: entry.process,
+                thread: entry.thread,
+                task: entry.task,
+                percent: (entry.microseconds / (seconds * 1e6)) * 100,
+            })),
+    }
+}
+
 // ---------- the monitor's own window
 
 const currentDir = fileURLToPath(new URL('.', import.meta.url))
@@ -158,8 +300,12 @@ function announce(open: boolean): void {
     for (const window of studioWindows()) window.webContents.send(IPC_EVENTS.PerfEnabled, open)
 }
 
+/** Reports gathered for an MCP measurement, while one runs. */
+let collecting: PerfReport[] | null = null
+
 export function receivePerfReport(report: PerfReport): void {
     lastReport = report
+    collecting?.push(report)
     if (perfWindow && !perfWindow.isDestroyed()) perfWindow.webContents.send(IPC_EVENTS.PerfReport, report)
 }
 

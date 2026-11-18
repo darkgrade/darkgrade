@@ -1,6 +1,6 @@
 import { HoverTip } from '@renderer/components/HoverTip'
 import { perf, takePerf } from '@renderer/lib/perf'
-import type { PerfReport, ProcessSample } from '@shared/ipc'
+import type { PerfReport, PerfTrace, ProcessSample } from '@shared/ipc'
 import { Activity } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
@@ -284,6 +284,82 @@ function Table(props: { title: string; note: string; rows: Row[]; order: string[
                         </li>
                     ))}
             </ol>
+        </section>
+    )
+}
+
+/**
+ * A few seconds of Chromium's own trace, on demand: the busiest tasks in the GPU process, the main process and the
+ * Studio window, for what the per-feature rows can't see inside (compositing, above all).
+ */
+function TraceSection(): React.JSX.Element {
+    const [state, setState] = useState<{ running: boolean; trace: PerfTrace | null; error: string | null }>({
+        running: false,
+        trace: null,
+        error: null,
+    })
+    const run = async (): Promise<void> => {
+        setState(previous => ({ ...previous, running: true, error: null }))
+        const result = await window.studio.perfTrace(3)
+        setState(
+            result.ok
+                ? { running: false, trace: result.data, error: null }
+                : { running: false, trace: null, error: result.error }
+        )
+    }
+    const groups = new Map<string, PerfTrace['tasks']>()
+    for (const task of state.trace?.tasks ?? []) groups.set(task.process, [...(groups.get(task.process) ?? []), task])
+    return (
+        <section className="flex flex-col gap-2">
+            <header className="flex items-center justify-between gap-6 px-1">
+                <div className="flex min-w-0 items-baseline gap-2">
+                    <h2 className="text-[14px] font-semibold text-foreground">Inside the processes</h2>
+                    <span className="truncate text-[11px] text-muted-foreground">
+                        Chromium's own trace: the busiest tasks, by the code that ran them
+                    </span>
+                </div>
+                <button
+                    type="button"
+                    disabled={state.running}
+                    onClick={() => void run()}
+                    className="shrink-0 rounded-md bg-foreground/8 px-2.5 py-1 text-[12px] text-foreground hover:bg-foreground/12 disabled:opacity-60"
+                >
+                    {state.running ? 'Tracing…' : state.trace ? 'Trace again' : 'Trace 3 seconds'}
+                </button>
+            </header>
+            {state.error && <p className="px-1 text-[12px] text-destructive">{state.error}</p>}
+            {state.trace && (
+                <>
+                    {[...groups].map(([process, tasks]) => (
+                        <div key={process} className="flex flex-col rounded-xl bg-(--card-surface) py-1">
+                            <div className="px-4 pt-2 pb-1 text-[12px] font-semibold text-foreground">{process}</div>
+                            {tasks.slice(0, 10).map(task => (
+                                <div
+                                    key={`${task.thread}|${task.task}`}
+                                    className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-6 px-4 py-1"
+                                >
+                                    <div className="flex min-w-0 flex-col">
+                                        <span className="truncate font-mono text-[12px] text-foreground">
+                                            {task.task}
+                                        </span>
+                                        <span className="truncate text-[11px] text-muted-foreground">
+                                            {task.thread}
+                                        </span>
+                                    </div>
+                                    <span className="w-14 text-right font-mono text-[12px] text-foreground tabular-nums">
+                                        {percent(task.percent)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                    <p className="px-1 text-[11px] text-muted-foreground">
+                        % of a core over the {state.trace.seconds} s traced, each task less the tasks inside it.
+                        {!state.trace.cpuTimed &&
+                            ' Some tasks had no CPU time recorded: theirs is time spent, waits included.'}
+                    </p>
+                </>
+            )}
         </section>
     )
 }

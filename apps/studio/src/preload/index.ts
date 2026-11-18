@@ -79,6 +79,7 @@ const studioApi: StudioApi = {
         return taken
     },
     perfOpen: () => ipcRenderer.invoke(IPC.PerfOpen),
+    perfTrace: seconds => ipcRenderer.invoke(IPC.PerfTrace, seconds),
     perfIsOpen: () => ipcRenderer.invoke(IPC.PerfIsOpen),
     perfReport: report => ipcRenderer.invoke(IPC.PerfReport, report),
     onPerfReport: subscribe(IPC_EVENTS.PerfReport),

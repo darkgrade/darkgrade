@@ -1,3 +1,4 @@
+import { measurePerf, tracePerf } from '@main/perf-monitor'
 import { STUDIO_TOOLS, type ToolResult } from '@main/tools/studio-tools'
 import { localhostHostValidation, localhostOriginValidation, toNodeHandler } from '@modelcontextprotocol/node'
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
@@ -5,6 +6,7 @@ import type { McpServerStatus } from '@shared/ipc'
 import { SHOOTING_GUIDANCE } from '@shared/shooting-guidance'
 import { app } from 'electron'
 import { createServer, type Server } from 'node:http'
+import * as z from 'zod/v4'
 
 const INSTRUCTIONS = `Darkgrade Studio controls the camera connected to this Mac. Tools adapt to whatever camera is plugged in: read get_camera_status first to see what it offers.\n\n${SHOOTING_GUIDANCE}`
 
@@ -17,7 +19,10 @@ function toContent(result: ToolResult) {
 }
 
 function buildServer(): McpServer {
-    const server = new McpServer({ name: 'darkgrade-studio', title: 'Darkgrade Studio', version: app.getVersion() }, { instructions: INSTRUCTIONS })
+    const server = new McpServer(
+        { name: 'darkgrade-studio', title: 'Darkgrade Studio', version: app.getVersion() },
+        { instructions: INSTRUCTIONS }
+    )
     for (const tool of STUDIO_TOOLS) {
         server.registerTool(
             tool.name,
@@ -31,11 +36,41 @@ function buildServer(): McpServer {
                 try {
                     return { content: toContent(await tool.run(input ?? {})) }
                 } catch (error) {
-                    return { content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }], isError: true }
+                    return {
+                        content: [
+                            { type: 'text' as const, text: error instanceof Error ? error.message : String(error) },
+                        ],
+                        isError: true,
+                    }
                 }
             }
         )
     }
+    // Studio's own performance, for diagnosing it from outside (not offered to the voice assistant).
+    const readOnly = (title: string) => ({ title, readOnlyHint: true, openWorldHint: false })
+    const asText = (data: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] })
+    server.registerTool(
+        'get_performance',
+        {
+            title: 'Performance',
+            description:
+                "Measures Studio for a few seconds: every process's CPU (100% is one core) and GPU (100% is the whole GPU), WindowServer for context (it composites every app, not just Studio), and the Studio window's own parts (draw loops with their GPU time, frame decode, React, each IPC event type). Read-only.",
+            inputSchema: z.object({ seconds: z.number().min(1).max(10).default(3) }),
+            annotations: readOnly('Performance'),
+        },
+        async (input: { seconds?: number }) => asText(await measurePerf(input.seconds ?? 3))
+    )
+    server.registerTool(
+        'trace_performance',
+        {
+            title: 'Trace performance',
+            description:
+                "Records Chromium's own trace for a few seconds and returns the busiest tasks in the GPU process, the main process and the Studio window, by self time (CPU time where recorded). Use it to see inside compositing. Read-only.",
+            inputSchema: z.object({ seconds: z.number().min(1).max(10).default(3) }),
+            annotations: readOnly('Trace performance'),
+        },
+        async (input: { seconds?: number }) => asText(await tracePerf(input.seconds ?? 3))
+    )
     return server
 }
 
@@ -75,7 +110,14 @@ class StudioMcpServer {
         })
         await new Promise<void>(resolve => {
             server.once('error', error => {
-                this.setStatus({ running: false, url: null, error: (error as NodeJS.ErrnoException).code === 'EADDRINUSE' ? `Port ${port} is already in use` : error.message })
+                this.setStatus({
+                    running: false,
+                    url: null,
+                    error:
+                        (error as NodeJS.ErrnoException).code === 'EADDRINUSE'
+                            ? `Port ${port} is already in use`
+                            : error.message,
+                })
                 resolve()
             })
             server.listen(port, '127.0.0.1', () => {
