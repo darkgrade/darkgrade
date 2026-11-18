@@ -100,7 +100,7 @@ export function FilesPanel(props: FilesPanelProps): React.JSX.Element {
                             <li key={`${entry.storageId}-${entry.objectHandle}`} className="group relative">
                                 <button
                                     type="button"
-                                    className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? 'bg-primary/15' : 'hover:bg-foreground/6'}`}
+                                    className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? 'bg-primary/15' : 'hover:bg-foreground/6'}`}
                                     onClick={() => props.onPreview(entry)}
                                     aria-label={`Preview ${entry.filename}`}
                                 >

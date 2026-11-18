@@ -65,8 +65,8 @@ interface PreviewAssistProps {
 /** A switch for one preview assist, with its slider underneath while it is on. */
 function PreviewAssist(props: PreviewAssistProps): React.JSX.Element {
     return (
-        <div className="flex flex-col gap-1.5">
-            <label className="flex h-8 items-center justify-between gap-2" title={props.description}>
+        <div className="flex flex-col gap-1">
+            <label className="flex h-7 items-center justify-between gap-2" title={props.description}>
                 <span className="text-muted-foreground">
                     {props.label}
                     {props.enabled && <span className="text-[11px] tabular-nums"> · {props.format(props.value)}</span>}
@@ -130,28 +130,30 @@ export function ScopesPanel({ active, connected, assists, onAssistsChange }: Sco
                     <Vectorscope active={active} />
                 </div>
             )}
-            <PreviewAssist
-                label="Zebras"
-                description="Stripes over areas at or above this brightness"
-                enabled={assists.zebras}
-                onEnabledChange={zebras => onAssistsChange({ ...assists, zebras })}
-                value={assists.zebraLevelPercent}
-                min={70}
-                max={100}
-                format={value => `${value}%`}
-                onValueChange={zebraLevelPercent => onAssistsChange({ ...assists, zebraLevelPercent })}
-            />
-            <PreviewAssist
-                label="Focus peaking"
-                description="Outlines sharp edges in red; higher marks softer edges too"
-                enabled={assists.focusPeaking}
-                onEnabledChange={focusPeaking => onAssistsChange({ ...assists, focusPeaking })}
-                value={assists.peakingSensitivity}
-                min={1}
-                max={100}
-                format={value => `${value}`}
-                onValueChange={peakingSensitivity => onAssistsChange({ ...assists, peakingSensitivity })}
-            />
+            <div className="flex flex-col">
+                <PreviewAssist
+                    label="Zebras"
+                    description="Stripes over areas at or above this brightness"
+                    enabled={assists.zebras}
+                    onEnabledChange={zebras => onAssistsChange({ ...assists, zebras })}
+                    value={assists.zebraLevelPercent}
+                    min={70}
+                    max={100}
+                    format={value => `${value}%`}
+                    onValueChange={zebraLevelPercent => onAssistsChange({ ...assists, zebraLevelPercent })}
+                />
+                <PreviewAssist
+                    label="Focus peaking"
+                    description="Outlines sharp edges in red; higher marks softer edges too"
+                    enabled={assists.focusPeaking}
+                    onEnabledChange={focusPeaking => onAssistsChange({ ...assists, focusPeaking })}
+                    value={assists.peakingSensitivity}
+                    min={1}
+                    max={100}
+                    format={value => `${value}`}
+                    onValueChange={peakingSensitivity => onAssistsChange({ ...assists, peakingSensitivity })}
+                />
+            </div>
         </InspectorSection>
     )
 }

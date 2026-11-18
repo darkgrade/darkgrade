@@ -95,7 +95,7 @@ function ExposureDial({
                 render={
                     <button
                         type="button"
-                        className="flex w-full flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 transition-colors outline-none hover:bg-foreground/6 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 disabled:hover:bg-transparent data-popup-open:bg-foreground/10 [&>svg]:hidden"
+                        className="flex w-full flex-col items-center justify-center gap-1 rounded-lg px-2 py-1.5 transition-colors outline-none hover:bg-foreground/6 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 disabled:hover:bg-transparent data-popup-open:bg-foreground/10 [&>svg]:hidden"
                         onWheel={onWheel}
                     />
                 }
@@ -201,7 +201,7 @@ export function SettingsPanel({
                         />
                     </div>
                     {cameraState.controls && (
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col">
                             <ControlRow
                                 label="White balance"
                                 control={cameraState.controls.whiteBalance}

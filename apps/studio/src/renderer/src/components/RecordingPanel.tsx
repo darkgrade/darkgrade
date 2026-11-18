@@ -74,7 +74,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
             }
         >
             {controls ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
                     {controls.exposureProgram?.value && shootingModeOf(controls.exposureProgram.value) && (
                         <ToggleGroup
                             className="w-full rounded-lg bg-foreground/6 p-0.5"
@@ -99,7 +99,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                             </ToggleGroupItem>
                         </ToggleGroup>
                     )}
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col">
                         <span className="text-[11px] font-medium text-muted-foreground">Photo</span>
                         <ControlRow
                             label="Format"
@@ -126,7 +126,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                             onChange={value => onChange('jpegQuality', value)}
                         />
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col">
                         <span className="text-[11px] font-medium text-muted-foreground">Video</span>
                         <ControlRow
                             label="Format"

@@ -34,7 +34,7 @@ export function ControlRow({
     const choices = options.map(option => ({ value: option, label: format(option) }))
     const unavailable = disabled || !control.enabled || options.length < 2
     return (
-        <div className="flex min-h-8 items-center justify-between gap-3">
+        <div className="flex min-h-7 items-center justify-between gap-3">
             <span className="text-muted-foreground">{label}</span>
             <Combobox<{ value: string; label: string }>
                 items={choices}
@@ -52,7 +52,7 @@ export function ControlRow({
                     render={
                         <button
                             type="button"
-                            className="flex h-7 w-40 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-2 pl-2.5 text-sm outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12"
+                            className="flex h-6 w-36 items-center justify-between gap-1.5 rounded-md bg-foreground/5 pr-1.5 pl-2 outline-none hover:bg-foreground/9 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 data-popup-open:bg-foreground/12"
                         />
                     }
                 >
