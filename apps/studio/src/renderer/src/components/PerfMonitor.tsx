@@ -122,9 +122,12 @@ function usePerfReporter(fps: number): void {
                     void window.studio.perfReport({
                         fps: fpsRef.current,
                         subsystems: [
-                            ...takePerf().map(({ label, cpuPercent, gpuPercent }) => ({
+                            ...takePerf().map(({ label, cpuPercent, gpuPercent, perSecond }) => ({
                                 label,
-                                detail: SUBSYSTEM_DETAILS[label],
+                                detail:
+                                    label === 'React rendering'
+                                        ? `${Math.round(perSecond)} renders a second (development builds only)`
+                                        : SUBSYSTEM_DETAILS[label],
                                 cpuPercent,
                                 gpuPercent,
                             })),

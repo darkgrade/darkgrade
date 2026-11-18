@@ -1,10 +1,10 @@
 import { Button } from '@kevinschaich/components'
+import { activityLog } from '@renderer/lib/activity-store'
 import type { LogEntry } from '@shared/ipc'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 interface EventLogProps {
-    logs: LogEntry[]
     expanded: boolean
     onToggle: () => void
 }
@@ -26,7 +26,8 @@ const SOURCE_COLORS: Record<LogEntry['source'], string> = {
 }
 
 /** Developer Mode's activity log, along the bottom of the main card: the latest line, opening to the whole log. */
-export function EventLog({ logs, expanded, onToggle }: EventLogProps): React.JSX.Element {
+export function EventLog({ expanded, onToggle }: EventLogProps): React.JSX.Element {
+    const logs = activityLog.use()
     const scrollRef = useRef<HTMLDivElement>(null)
     const latest = logs.at(-1)
     const errorCount = logs.filter(entry => entry.level === 'error').length

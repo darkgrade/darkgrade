@@ -1,6 +1,7 @@
 import { Button, Progress, Spinner } from '@kevinschaich/components'
 import { CardThumbnail } from '@renderer/components/CardThumbnail'
 import { InspectorSection } from '@renderer/components/InspectorSection'
+import { downloadProgress } from '@renderer/lib/activity-store'
 import type { CameraState, DownloadProgress, FileEntry } from '@shared/ipc'
 import { Download, FolderOpen } from 'lucide-react'
 
@@ -37,7 +38,6 @@ interface FilesPanelProps {
     cameraState: CameraState
     files: FileEntry[] | null
     updating: boolean
-    downloadProgress: DownloadProgress | null
     previewing: FileEntry | null
     onPreview: (entry: FileEntry) => void
     onDownload: (entry: FileEntry) => void
@@ -60,7 +60,7 @@ function CardStatus(props: FilesPanelProps): React.JSX.Element {
 
 export function FilesPanel(props: FilesPanelProps): React.JSX.Element {
     const connected = props.cameraState.connected
-    const progress = props.downloadProgress
+    const progress = downloadProgress.use()
     const files = props.files ?? []
 
     return (

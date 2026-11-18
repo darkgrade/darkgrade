@@ -18,5 +18,8 @@ export function createStore<Value>(initial: Value) {
             listeners.forEach(listener => listener())
         },
         use: (): Value => useSyncExternalStore(subscribe, () => current),
+        /** Only part of the value (it must be a primitive or stable): re-renders only when that part changes. */
+        useSelect: <Selected>(select: (value: Value) => Selected): Selected =>
+            useSyncExternalStore(subscribe, () => select(current)),
     }
 }

@@ -15,15 +15,14 @@ import { SettingsPanel } from '@renderer/components/SettingsPanel'
 import { VoicePanel } from '@renderer/components/VoicePanel'
 import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/gpu/assists'
 import { publishOsdFrame } from '@renderer/gpu/device'
-import { readJpegSize } from '@renderer/lib/jpeg-size'
+import { appendLog, downloadProgress } from '@renderer/lib/activity-store'
 import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
 import { useResizable } from '@renderer/lib/use-resizable'
-import type { CameraState, DownloadProgress, FileEntry, LogEntry } from '@shared/ipc'
+import type { CameraState, FileEntry, LogEntry } from '@shared/ipc'
 import { useLiveTranscription } from '@voice/use-live-transcription'
 import { Unplug } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const MAX_LOG_ENTRIES = 500
 /** The camera controls sidebar: 320px to start, dragged between these, never more than 45% of the window. */
 const SIDEBAR_WIDTH = 320
 const SIDEBAR_MIN = 260
@@ -48,27 +47,21 @@ const INITIAL_STATE: CameraState = {
     platform: '',
 }
 
-/** Live view's frame rate is averaged over this window. */
-const FRAME_RATE_WINDOW_MS = 10_000
-
 export function App(): React.JSX.Element {
     const api = window.studio
     const sidebar = useResizable('studio.sidebar-width', SIDEBAR_WIDTH, SIDEBAR_MIN, sidebarMax, 'right')
 
     const [cameraState, setCameraState] = useState<CameraState>(INITIAL_STATE)
-    const [logs, setLogs] = useState<LogEntry[]>([])
     const [files, setFiles] = useState<FileEntry[] | null>(null)
     const [filesUpdating, setFilesUpdating] = useState(false)
-    const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
+    // Only whether a download runs: its progress re-renders the Card panel alone.
+    const downloading = downloadProgress.useSelect(progress => progress !== null)
     const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
     // A slow card read can finish after its preview closed or another opened: only the open one may show.
     const previewEntryRef = useRef<FileEntry | null>(null)
     previewEntryRef.current = previewEntry
     const [previewState, setPreviewState] = useState<PreviewState>({ status: 'loading' })
     const [previewAssists, setPreviewAssists] = useState<PreviewAssistSettings>(DEFAULT_PREVIEW_ASSISTS)
-    const liveFrameTimes = useRef<number[]>([])
-    const [liveFrameSize, setLiveFrameSize] = useState<{ width: number; height: number } | null>(null)
-    const [liveFramesPerSecond, setLiveFramesPerSecond] = useState<number | null>(null)
     const [busy, setBusy] = useState(false)
     const [capturing, setCapturing] = useState(false)
     const [logExpanded, setLogExpanded] = useState(false)
@@ -91,10 +84,6 @@ export function App(): React.JSX.Element {
         window.addEventListener('blur', stopZoom)
         return () => window.removeEventListener('blur', stopZoom)
     }, [api])
-
-    const appendLog = useCallback((entry: LogEntry) => {
-        setLogs(previous => [...previous.slice(-(MAX_LOG_ENTRIES - 1)), entry])
-    }, [])
 
     const log = useCallback(
         (source: LogEntry['source'], message: string, level: LogEntry['level'] = 'info') => {
@@ -119,28 +108,13 @@ export function App(): React.JSX.Element {
             setFilesUpdating(update.updating)
             if (update.files) setFiles([...update.files].reverse())
         })
-        const unsubscribeFrame = api.onLiveViewFrame(jpeg => {
-            liveFrameTimes.current.push(performance.now())
-            const size = readJpegSize(jpeg)
-            if (size)
-                setLiveFrameSize(previous =>
-                    previous?.width === size.width && previous.height === size.height ? previous : size
-                )
-            publishLiveFrame(jpeg)
-        })
+        // Frames go straight to their store (and the GPU); they never re-render the app.
+        const unsubscribeFrame = api.onLiveViewFrame(publishLiveFrame)
         const unsubscribeFocusFrames = api.onFocusFrames(publishFocusFrames)
-        const frameRateTimer = setInterval(() => {
-            const now = performance.now()
-            const recent = liveFrameTimes.current.filter(time => now - time <= FRAME_RATE_WINDOW_MS)
-            liveFrameTimes.current = recent
-            if (recent.length < 2) return setLiveFramesPerSecond(null)
-            const spanSeconds = Math.max((now - recent[0]) / 1000, 1)
-            setLiveFramesPerSecond(recent.length / Math.min(spanSeconds, FRAME_RATE_WINDOW_MS / 1000))
-        }, 1000)
         // The camera's own display goes straight to the GPU; it never re-renders the app.
         const unsubscribeOsd = api.onOsdFrame(png => void publishOsdFrame(png))
         const unsubscribeProgress = api.onFilesProgress(progress => {
-            setDownloadProgress(progress.total > 0 && progress.completed < progress.total ? progress : null)
+            downloadProgress.set(progress.total > 0 && progress.completed < progress.total ? progress : null)
         })
         return () => {
             unsubscribeState()
@@ -149,7 +123,6 @@ export function App(): React.JSX.Element {
             unsubscribeFrame()
             unsubscribeProgress()
             unsubscribeFocusFrames()
-            clearInterval(frameRateTimer)
             unsubscribeOsd()
             unsubscribeFiles()
         }
@@ -223,12 +196,12 @@ export function App(): React.JSX.Element {
     useEffect(() => {
         if (cameraState.connected) return
         setFiles(null)
-        setDownloadProgress(null)
+        downloadProgress.set(null)
         setPreviewEntry(null)
     }, [cameraState.connected])
 
     const previewLoading = previewEntry !== null && previewState.status === 'loading'
-    const cardBusy = filesUpdating || downloadProgress !== null || previewLoading
+    const cardBusy = filesUpdating || downloading || previewLoading
 
     // Return takes a photo and F focuses, like a tethering app; ignored while typing.
     useEffect(() => {
@@ -359,12 +332,11 @@ export function App(): React.JSX.Element {
                                         cameraState={cameraState}
                                         files={files}
                                         updating={filesUpdating}
-                                        downloadProgress={downloadProgress}
                                         previewing={previewEntry}
                                         onPreview={entry => void openPreview(entry)}
                                         onDownload={entry => void run(() => api.downloadFile(entry))}
                                         onDownloadAll={() =>
-                                            void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
+                                            void run(() => api.downloadAll()).finally(() => downloadProgress.set(null))
                                         }
                                         onChooseDir={() => void run(() => api.chooseDownloadDir())}
                                         onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
@@ -405,8 +377,7 @@ export function App(): React.JSX.Element {
                             voiceListening={voice.listening === 'listening'}
                             onToggleVoice={() => setVoiceExpanded(previous => !previous)}
                             preview={{
-                                framesPerSecond: cameraState.liveView ? liveFramesPerSecond : null,
-                                frameSize: cameraState.liveView ? liveFrameSize : null,
+                                live: cameraState.liveView,
                                 quality: cameraState.controls?.liveViewQuality ?? null,
                                 disabled: busy,
                                 onQualityChange: value => void run(() => api.setControl('liveViewQuality', value)),
@@ -414,11 +385,7 @@ export function App(): React.JSX.Element {
                         />
                         <VoicePanel voice={voice} expanded={voiceExpanded} />
                         {developerMode && (
-                            <EventLog
-                                logs={logs}
-                                expanded={logExpanded}
-                                onToggle={() => setLogExpanded(previous => !previous)}
-                            />
+                            <EventLog expanded={logExpanded} onToggle={() => setLogExpanded(previous => !previous)} />
                         )}
                     </main>
                 </div>

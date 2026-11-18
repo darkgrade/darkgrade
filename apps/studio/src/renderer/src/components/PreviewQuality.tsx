@@ -1,11 +1,22 @@
 import { Button } from '@kevinschaich/components'
 import { HoverTip } from '@renderer/components/HoverTip'
+import { liveFrameRate, liveFrameSize } from '@renderer/lib/live-frame-store'
 import type { CameraControl } from '@shared/ipc'
 
+/** The readouts subscribe on their own, so a new rate re-renders these words alone, not the toolbar. */
+function FrameRate(): React.JSX.Element {
+    const rate = liveFrameRate.use()
+    return <>{rate !== null ? `${rate.toFixed(1)} fps` : '—'}</>
+}
+
+function FrameSize(): React.JSX.Element {
+    const size = liveFrameSize.use()
+    return <>{size ? `${size.width}×${size.height}` : '—'}</>
+}
+
 export interface PreviewQualityProps {
-    /** Average frames per second over the last ten seconds; null before any frame. */
-    framesPerSecond: number | null
-    frameSize: { width: number; height: number } | null
+    /** Live view is running: the details show its frame rate and size. */
+    live: boolean
     /** Sony's Live View Image Quality (LOW / HIGH); null when the camera has none. */
     quality: CameraControl | null
     disabled: boolean
@@ -34,13 +45,9 @@ export function PreviewQuality(props: PreviewQualityProps & { className: string 
                         <dt className="text-muted-foreground">Quality</dt>
                         <dd className="text-right">{high ? 'HQ' : 'LQ'}</dd>
                         <dt className="text-muted-foreground">Frame rate</dt>
-                        <dd className="text-right">
-                            {props.framesPerSecond !== null ? `${props.framesPerSecond.toFixed(1)} fps` : '—'}
-                        </dd>
+                        <dd className="text-right">{props.live ? <FrameRate /> : '—'}</dd>
                         <dt className="text-muted-foreground">Resolution</dt>
-                        <dd className="text-right">
-                            {props.frameSize ? `${props.frameSize.width}×${props.frameSize.height}` : '—'}
-                        </dd>
+                        <dd className="text-right">{props.live ? <FrameSize /> : '—'}</dd>
                     </dl>
                     <p className="text-[11px] text-muted-foreground">
                         Frame rate is averaged over the last 10 seconds.
