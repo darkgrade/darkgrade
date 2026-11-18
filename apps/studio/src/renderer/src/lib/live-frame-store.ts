@@ -30,6 +30,11 @@ function subscribe(listener: () => void): () => void {
     return () => listeners.delete(listener)
 }
 
+/** Every new frame, outside React (the GPU uploads it as it arrives). */
+export function subscribeToLiveFrames(listener: (frame: LiveFrame | null) => void): () => void {
+    return subscribe(() => listener(current))
+}
+
 export function useLiveFrame(): LiveFrame | null {
     return useSyncExternalStore(subscribe, () => current)
 }

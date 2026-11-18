@@ -11,9 +11,9 @@ import {
 } from '@kevinschaich/components'
 import { HoverTip } from '@renderer/components/HoverTip'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
-import { RecordingTally } from '@renderer/components/RecordingTally'
-import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
-import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
+import { LivePicture } from '@renderer/gpu/LivePicture'
+import { useFocusFrames, useHasLiveFrame } from '@renderer/lib/live-frame-store'
+import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
 import { Camera, Crosshair, Mic, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -261,24 +261,6 @@ const DEFAULT_FOCUS_FRAME: FocusFrame = {
 
 const FOCUS_RING_LINGER_MS = 1800
 
-/** The picture itself; the only part of the panel that re-renders with each frame. */
-function LiveFrameImage({ dimmed, onAspect }: { dimmed: boolean; onAspect: (aspect: number) => void }) {
-    const frame = useLiveFrame()
-    if (!frame) return null
-    return (
-        <img
-            onLoad={event => {
-                const image = event.currentTarget
-                const aspect = image.naturalWidth / image.naturalHeight
-                if (Number.isFinite(aspect)) onAspect(aspect)
-            }}
-            className={`size-full object-contain transition-opacity duration-300 ${dimmed ? 'opacity-40' : ''}`}
-            src={frame.url}
-            alt="Live view from the camera"
-        />
-    )
-}
-
 /** REC with how long the take has run, in the picture's corner: a monitor's tally and timecode. */
 function RecordingBadge(): React.JSX.Element {
     const elapsed = useRecordingClock(true)
@@ -337,7 +319,13 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                         }}
                         title={canFocusAt ? 'Click to focus there' : undefined}
                     >
-                        <LiveFrameImage
+                        <LivePicture
+                            assists={
+                                props.readingCard
+                                    ? { ...props.previewAssists, zebras: false, focusPeaking: false }
+                                    : props.previewAssists
+                            }
+                            recording={cameraState.recording}
                             dimmed={props.readingCard}
                             onAspect={aspect => {
                                 if (Math.abs(aspect - frameAspect) > 0.01) setFrameAspect(aspect)
@@ -348,9 +336,6 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                                 <Spinner className="size-3" /> Live view paused while the card is read
                             </span>
                         )}
-                        {(props.previewAssists.zebras || props.previewAssists.focusPeaking) && !props.readingCard && (
-                            <PreviewAssistsOverlay settings={props.previewAssists} />
-                        )}
                         {props.osdFrameUrl && (
                             <img
                                 className="pointer-events-none absolute inset-0 size-full object-fill"
@@ -359,8 +344,6 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                                 draggable={false}
                             />
                         )}
-                        {/* Inside the picture's edge, beneath the badge and controls drawn after it. */}
-                        {cameraState.recording && <RecordingTally />}
                         {cameraState.recording && <RecordingBadge />}
                         {focusMarker ? (
                             <CameraFocusFrame frame={lastFocusFrame.current} marker={focusMarker} />

@@ -4,7 +4,7 @@
     "version": "0.1.0",
     "private": true,
     "type": "module",
-    "description": "Darkgrade Studio \u2014 desktop camera control with local live transcription",
+    "description": "Darkgrade Studio — desktop camera control with local live transcription",
     "main": "out/main/index.js",
     "scripts": {
         "build:link": "bun run --cwd ../../packages/contribute build && bun run --cwd ../../packages/link build",
@@ -40,6 +40,7 @@
         "@types/react-dom": "^19",
         "@types/w3c-web-usb": "^1.0.13",
         "@vitejs/plugin-react": "^5.0.0",
+        "@webgpu/types": "0.1.74",
         "electron": "^43.1.0",
         "electron-builder": "^26.0.0",
         "electron-vite": "^5.0.0",

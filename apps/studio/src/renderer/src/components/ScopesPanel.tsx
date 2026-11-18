@@ -2,7 +2,7 @@ import { Slider, Switch, ToggleGroup, ToggleGroupItem } from '@kevinschaich/comp
 import { InspectorSection } from '@renderer/components/InspectorSection'
 import { createStore } from '@renderer/lib/external-store'
 import { Histogram } from '@renderer/scopes/Histogram'
-import type { PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
+import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { Vectorscope } from '@renderer/scopes/Vectorscope'
 import { Waveform } from '@renderer/scopes/Waveform'
 import { SCOPE_IDS, type ScopeId } from '@shared/ipc'
