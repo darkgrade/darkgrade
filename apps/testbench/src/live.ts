@@ -55,6 +55,11 @@ export class USBBench extends Demo {
         if (action !== 'frame' && action !== 'photo') this.apply(await response.json())
         return response
     }
+    async restoreHostState() {
+        this.checking = true; this.notify()
+        try { this.apply(await (await this.request('/api/state')).json()) }
+        finally { this.checking = false; this.notify() }
+    }
     async scan() {
         this.idle()
         this.checking = true; this.notify()

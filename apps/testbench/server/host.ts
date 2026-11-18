@@ -118,6 +118,8 @@ export class LocalBench {
             if (!entry) throw Error('Unknown camera; scan USB cameras first')
             const view = entry.view
             try {
+                if (action !== 'stop' && action !== 'refresh' && view.recording !== 'idle')
+                    throw Error('Stop and confirm the current recording before another camera operation')
                 if (action === 'connect') {
                     if (!entry.camera) {
                         if (entry.ambiguous) throw Error('These cameras have no unique USB identity; connect one at a time')
@@ -134,8 +136,6 @@ export class LocalBench {
                 } else {
                     if (!entry.camera) throw Error('Connect the camera first')
                     const camera = entry.camera
-                    if (action !== 'stop' && action !== 'refresh' && view.recording !== 'idle')
-                        throw Error('Stop and confirm the current recording before another camera operation')
                     if (action === 'disconnect') {
                         await camera.disconnect()
                         entry.camera = undefined

@@ -19,7 +19,7 @@ test('ambiguous recording start cannot be retried, reset or disconnected before 
     camera.failStart = true
     await expect(bench.action(id, 'start')).rejects.toThrow('reply lost')
     expect(bench.state().cameras[0].recording).toBe('uncertain')
-    for (const action of ['start', 'disconnect', 'recover', 'photo'] as const)
+    for (const action of ['connect', 'start', 'disconnect', 'recover', 'photo'] as const)
         await expect(bench.action(id, action)).rejects.toThrow('Stop and confirm')
     expect(camera.calls.filter(call => call === 'start')).toHaveLength(1)
     await bench.action(id, 'stop')

@@ -55,3 +55,17 @@ test('an ambiguous start remains stoppable and is never sent twice by the UI', a
     await page.getByRole('button', { name: 'Stop cameras', exact: true }).click()
     await page.getByRole('button', { name: 'Disconnect cameras', exact: true }).click()
 })
+
+test('reloading during recording restores the owned session and stop control', async ({ page }) => {
+    await page.goto('http://localhost:5232/')
+    await page.getByRole('button', { name: 'Scan USB cameras', exact: true }).click()
+    await page.getByRole('button', { name: 'Connect cameras', exact: true }).click()
+    await page.getByRole('button', { name: 'Record cameras', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Stop cameras', exact: true })).toBeEnabled()
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Stop cameras', exact: true })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Disconnect cameras', exact: true })).toBeDisabled()
+    await page.getByRole('button', { name: 'Stop cameras', exact: true }).click()
+    await expect(page.getByText('Duration unavailable after page refresh', { exact: false })).toBeVisible()
+    await page.getByRole('button', { name: 'Disconnect cameras', exact: true }).click()
+})
