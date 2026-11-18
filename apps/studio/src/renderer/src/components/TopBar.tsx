@@ -10,9 +10,10 @@ import {
     Switch,
 } from '@kevinschaich/components'
 import brandMark from '@renderer/assets/darkgrade_icon_dark.svg'
+import { HoverTip } from '@renderer/components/HoverTip'
 import { formatFocalLength } from '@renderer/components/LensPanel'
 import type { CameraBattery, CameraState } from '@shared/ipc'
-import { BatteryFull, BatteryLow, BatteryMedium, BatteryWarning, CardSim, PlugZap } from 'lucide-react'
+import { BatteryFull, BatteryLow, BatteryMedium, BatteryWarning, CardSim, PlugZap, Unplug } from 'lucide-react'
 
 interface TopBarProps {
     cameraState: CameraState
@@ -233,9 +234,22 @@ export function TopBar({
 
             <div className="flex items-center justify-end">
                 {cameraState.connected ? (
-                    <Button variant="ghost" size="sm" className="quiet-control" disabled={busy} onClick={onDisconnect}>
-                        Disconnect
-                    </Button>
+                    <HoverTip
+                        side="bottom"
+                        tip="Disconnect camera"
+                        render={
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="quiet-control"
+                                disabled={busy}
+                                onClick={onDisconnect}
+                                aria-label="Disconnect camera"
+                            />
+                        }
+                    >
+                        <Unplug />
+                    </HoverTip>
                 ) : (
                     <Button variant="secondary" size="sm" disabled={busy || connecting} onClick={onConnect}>
                         Connect

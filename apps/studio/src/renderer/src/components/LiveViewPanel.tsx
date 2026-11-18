@@ -8,16 +8,14 @@ import {
     EmptyTitle,
     Kbd,
     Spinner,
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
 } from '@kevinschaich/components'
+import { HoverTip } from '@renderer/components/HoverTip'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
 import { RecordingTally } from '@renderer/components/RecordingTally'
 import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
-import { Camera, Focus, Square, Video, VideoOff } from 'lucide-react'
+import { Camera, Circle, Focus, Square, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 interface LiveViewPanelProps {
@@ -97,51 +95,88 @@ interface CameraControlsProps extends LiveViewPanelProps {
     disabled: boolean
 }
 
-/** Focus, shutter and record, floating over the bottom of the picture. */
+/** Focus, shutter and record as icons on one pill floating over the bottom of the picture, like the camera pill above. */
 function CameraControls(props: CameraControlsProps): React.JSX.Element {
     const { cameraState, disabled } = props
+    const tool =
+        'size-9 rounded-full p-0 text-foreground/80 hover:bg-foreground/10 hover:text-foreground [&_svg]:size-[18px]'
     return (
-        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3">
-            <Tooltip>
-                <TooltipTrigger render={<Button variant="ghost" disabled={disabled} onClick={props.onFocus} />}>
-                    <Focus aria-hidden /> Focus
-                </TooltipTrigger>
-                <TooltipContent>
-                    Autofocus <Kbd>F</Kbd>
-                </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-                <TooltipTrigger
+        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 p-1 ring-1 ring-foreground/10">
+            <HoverTip
+                tip={
+                    <>
+                        Autofocus <Kbd>F</Kbd>
+                    </>
+                }
+                render={
+                    <Button
+                        variant="ghost"
+                        className={tool}
+                        disabled={disabled}
+                        onClick={props.onFocus}
+                        aria-label="Autofocus"
+                    />
+                }
+            >
+                <Focus aria-hidden />
+            </HoverTip>
+            <HoverTip
+                tip={
+                    <>
+                        Take photo <Kbd>Return</Kbd>
+                    </>
+                }
+                render={
+                    <Button
+                        variant="ghost"
+                        className={tool}
+                        disabled={disabled}
+                        onClick={props.onCapture}
+                        aria-label="Take photo"
+                    />
+                }
+            >
+                {props.capturing ? (
+                    <Spinner />
+                ) : (
+                    <span
+                        className="flex size-[22px] items-center justify-center rounded-full border-2 border-current"
+                        aria-hidden
+                    >
+                        <span className="size-3 rounded-full bg-current" />
+                    </span>
+                )}
+            </HoverTip>
+            {cameraState.recording ? (
+                <HoverTip
+                    tip="Stop recording"
                     render={
                         <Button
                             variant="ghost"
-                            className="size-11 rounded-full border-2 border-foreground/85 p-0 hover:border-foreground hover:bg-transparent active:scale-95"
-                            disabled={disabled}
-                            onClick={props.onCapture}
-                            aria-label="Take photo"
+                            className={`${tool} text-rec hover:text-rec`}
+                            disabled={!cameraState.connected}
+                            onClick={props.onStopRecording}
+                            aria-label="Stop recording"
                         />
                     }
                 >
-                    {props.capturing ? (
-                        <Spinner className="size-5" />
-                    ) : (
-                        <span className="size-8 rounded-full bg-foreground" aria-hidden />
-                    )}
-                </TooltipTrigger>
-                <TooltipContent>
-                    Take photo <Kbd>Return</Kbd>
-                </TooltipContent>
-            </Tooltip>
-
-            {cameraState.recording ? (
-                <Button variant="destructive" disabled={!cameraState.connected} onClick={props.onStopRecording}>
-                    <Square aria-hidden className="fill-current" /> Stop
-                </Button>
+                    <Square aria-hidden className="size-3.5! fill-current" />
+                </HoverTip>
             ) : (
-                <Button variant="ghost" disabled={disabled} onClick={props.onStartRecording}>
-                    <Video aria-hidden /> Record
-                </Button>
+                <HoverTip
+                    tip="Record video"
+                    render={
+                        <Button
+                            variant="ghost"
+                            className={tool}
+                            disabled={disabled}
+                            onClick={props.onStartRecording}
+                            aria-label="Record video"
+                        />
+                    }
+                >
+                    <Circle aria-hidden className="size-3.5! fill-rec text-rec" />
+                </HoverTip>
             )}
         </div>
     )
