@@ -13,6 +13,7 @@ import {
     TooltipTrigger,
 } from '@kevinschaich/components'
 import { BorderBeam } from '@renderer/components/border-beam'
+import { useRecordingClock } from '@renderer/components/RecordingPanel'
 import { useFocusFrames, useHasLiveFrame, useLiveFrame } from '@renderer/lib/live-frame-store'
 import { PreviewAssistsOverlay, type PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import type { CameraState, FocusFrame } from '@shared/ipc'
@@ -216,6 +217,17 @@ function LiveFrameImage({ dimmed, onAspect }: { dimmed: boolean; onAspect: (aspe
     )
 }
 
+/** REC with how long the take has run, in the picture's corner: a monitor's tally and timecode. */
+function RecordingBadge(): React.JSX.Element {
+    const elapsed = useRecordingClock(true)
+    return (
+        <span className="absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2 py-1 font-mono text-[11px] tracking-[0.12em] text-rec tabular-nums">
+            <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden />
+            REC
+            {elapsed && <span className="text-foreground/85">{elapsed}</span>}
+        </span>
+    )
+}
 export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     const { cameraState } = props
     const hasLiveFrame = useHasLiveFrame()
@@ -305,11 +317,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                             <span className="block size-full" />
                         </BorderBeam>
                     )}
-                    {cameraState.recording && (
-                        <span className="absolute top-3 left-3 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold tracking-wide text-rec">
-                            <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden /> REC
-                        </span>
-                    )}
+                    {cameraState.recording && <RecordingBadge />}
                     {focusMarker ? (
                         <CameraFocusFrame frame={lastFocusFrame.current} marker={focusMarker} />
                     ) : (

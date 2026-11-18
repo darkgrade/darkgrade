@@ -257,7 +257,7 @@ export function VoicePanel({ voice, expanded, onCollapse }: VoicePanelProps): Re
             {/* Clips the panel's contents to its height as it opens; the glow behind them runs on past its bottom. */}
             <div className="absolute inset-0 flex flex-col overflow-hidden">
                 <header className="relative flex h-10 shrink-0 items-center gap-2 px-3">
-                    <span className="text-sm font-medium">Live transcript</span>
+                    <span className="slate-label">Live transcript</span>
                     <span className="flex-1" />
                     <SpeechModelPicker voice={voice} />
                     <MicrophonePicker voice={voice} />

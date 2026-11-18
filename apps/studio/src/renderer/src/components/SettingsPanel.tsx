@@ -7,7 +7,7 @@ import {
     ComboboxList,
     ComboboxTrigger,
 } from '@kevinschaich/components'
-import { ControlRow } from '@renderer/components/ControlRow'
+import { ControlRow, SEARCH_FROM } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
 import {
     APERTURE_VALUES,
@@ -100,13 +100,16 @@ function ExposureDial({
                     />
                 }
             >
-                <span className="text-[11px] text-muted-foreground">{label}</span>
-                <span className="text-[19px] leading-none font-semibold tracking-tight text-foreground tabular-nums">
+                <span className="slate-label text-[10px]!">{label}</span>
+                <span className="font-mono text-[20px] leading-none text-foreground tabular-nums">
                     {currentValue ? format(currentValue) : '—'}
                 </span>
             </ComboboxTrigger>
             <ComboboxContent className="min-w-32">
-                <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
+                {/* Search only a list long enough to need it (ISO, shutter), not a handful of choices. */}
+                {options.length > SEARCH_FROM && (
+                    <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
+                )}
                 <ComboboxEmpty>No matches</ComboboxEmpty>
                 <ComboboxList>
                     {(option: { value: string; label: string }) => (
@@ -156,51 +159,65 @@ export function SettingsPanel({
     const disabled = !cameraState.connected || locked
     return (
         <InspectorSection title="Exposure" collapsible defaultOpen>
-            <div className="grid grid-cols-3 gap-1">
-                <ExposureDial
-                    label="Shutter"
-                    currentValue={cameraState.settings.shutterSpeed}
-                    values={allowedStops(SHUTTER_VALUES, cameraState.controls?.shutterSpeed ?? null, shutterToNumber)}
-                    toNumber={shutterToNumber}
-                    format={formatShutter}
-                    disabled={disabled}
-                    onApply={onSetShutterSpeed}
-                />
-                <ExposureDial
-                    label="Aperture"
-                    currentValue={cameraState.settings.aperture}
-                    values={allowedStops(APERTURE_VALUES, cameraState.controls?.aperture ?? null, apertureToNumber)}
-                    toNumber={apertureToNumber}
-                    format={formatAperture}
-                    disabled={disabled}
-                    onApply={onSetAperture}
-                />
-                <ExposureDial
-                    label="ISO"
-                    currentValue={cameraState.settings.iso}
-                    values={allowedStops(ISO_VALUES, cameraState.controls?.iso ?? null, isoToNumber)}
-                    toNumber={isoToNumber}
-                    format={formatIso}
-                    disabled={disabled}
-                    onApply={onSetIso}
-                />
-            </div>
-            {cameraState.controls && (
-                <div className="flex flex-col gap-1">
-                    <ControlRow
-                        label="White balance"
-                        control={cameraState.controls.whiteBalance}
-                        disabled={disabled}
-                        onChange={value => onChangeControl('whiteBalance', value)}
-                    />
-                    <ControlRow
-                        label="Temperature"
-                        control={cameraState.controls.colorTemperature}
-                        disabled={disabled}
-                        onChange={value => onChangeControl('colorTemperature', value)}
-                        format={value => `${value} K`}
-                    />
-                </div>
+            {!cameraState.connected ? (
+                <p className="text-muted-foreground">Connect a camera to set exposure.</p>
+            ) : (
+                <>
+                    <div className="grid grid-cols-3 gap-1">
+                        <ExposureDial
+                            label="Shutter"
+                            currentValue={cameraState.settings.shutterSpeed}
+                            values={allowedStops(
+                                SHUTTER_VALUES,
+                                cameraState.controls?.shutterSpeed ?? null,
+                                shutterToNumber
+                            )}
+                            toNumber={shutterToNumber}
+                            format={formatShutter}
+                            disabled={disabled}
+                            onApply={onSetShutterSpeed}
+                        />
+                        <ExposureDial
+                            label="Aperture"
+                            currentValue={cameraState.settings.aperture}
+                            values={allowedStops(
+                                APERTURE_VALUES,
+                                cameraState.controls?.aperture ?? null,
+                                apertureToNumber
+                            )}
+                            toNumber={apertureToNumber}
+                            format={formatAperture}
+                            disabled={disabled}
+                            onApply={onSetAperture}
+                        />
+                        <ExposureDial
+                            label="ISO"
+                            currentValue={cameraState.settings.iso}
+                            values={allowedStops(ISO_VALUES, cameraState.controls?.iso ?? null, isoToNumber)}
+                            toNumber={isoToNumber}
+                            format={formatIso}
+                            disabled={disabled}
+                            onApply={onSetIso}
+                        />
+                    </div>
+                    {cameraState.controls && (
+                        <div className="flex flex-col gap-1">
+                            <ControlRow
+                                label="White balance"
+                                control={cameraState.controls.whiteBalance}
+                                disabled={disabled}
+                                onChange={value => onChangeControl('whiteBalance', value)}
+                            />
+                            <ControlRow
+                                label="Temperature"
+                                control={cameraState.controls.colorTemperature}
+                                disabled={disabled}
+                                onChange={value => onChangeControl('colorTemperature', value)}
+                                format={value => `${value} K`}
+                            />
+                        </div>
+                    )}
+                </>
             )}
         </InspectorSection>
     )

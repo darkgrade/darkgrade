@@ -317,6 +317,7 @@ export function App(): React.JSX.Element {
                         >
                             <ScopesPanel
                                 active={cameraState.connected && cameraState.liveView}
+                                connected={cameraState.connected}
                                 assists={previewAssists}
                                 onAssistsChange={setPreviewAssists}
                             />

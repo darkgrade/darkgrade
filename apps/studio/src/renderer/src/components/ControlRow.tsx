@@ -18,6 +18,9 @@ interface ControlRowProps {
     format?: (value: string) => string
 }
 
+/** Menus with more choices than this get a search field. */
+export const SEARCH_FROM = 8
+
 /** A camera setting as a label on the left and its allowed values in a combobox on the right. */
 export function ControlRow({
     label,
@@ -56,7 +59,10 @@ export function ControlRow({
                     <span className="truncate">{control.value ? format(control.value) : '—'}</span>
                 </ComboboxTrigger>
                 <ComboboxContent className="min-w-44">
-                    <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
+                    {/* Search only a list long enough to need it, not a handful of choices. */}
+                    {choices.length > SEARCH_FROM && (
+                        <ComboboxInput showTrigger={false} placeholder={`Search ${label.toLowerCase()}`} />
+                    )}
                     <ComboboxEmpty>No matches</ComboboxEmpty>
                     <ComboboxList>
                         {(option: { value: string; label: string }) => (

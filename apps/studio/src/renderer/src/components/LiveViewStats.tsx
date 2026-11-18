@@ -29,7 +29,7 @@ const QUALITY_ITEM_CLASS =
 export function LiveViewStats(props: LiveViewStatsProps): React.JSX.Element | null {
     if (props.framesPerSecond === null && !props.quality) return null
     return (
-        <div className="flex shrink-0 items-center gap-3 text-muted-foreground tabular-nums">
+        <div className="flex shrink-0 items-center gap-3 font-mono text-[11.5px] text-muted-foreground tabular-nums">
             <Popover>
                 <PopoverTrigger
                     render={<Button variant="ghost" size="xs" className="-mr-1 gap-1 text-muted-foreground" />}

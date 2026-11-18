@@ -22,10 +22,11 @@ function formatTime(timestampMs: number): string {
     return new Date(timestampMs).toLocaleTimeString(undefined, { hour12: false })
 }
 
+/** Who said each line, in the palette's own lights: the camera gold, voice the live green, the app quiet ink. */
 const SOURCE_COLORS: Record<LogEntry['source'], string> = {
-    camera: 'text-sky-400',
+    camera: 'text-gold/80',
     system: 'text-muted-foreground',
-    voice: 'text-violet-400',
+    voice: 'text-live/80',
 }
 
 export function EventLog({ logs, expanded, onToggle, leading, trailing }: EventLogProps): React.JSX.Element {

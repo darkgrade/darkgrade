@@ -38,7 +38,7 @@ const SEGMENT_CLASS =
     'flex-1 rounded-md! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground'
 
 /** Counts up from when recording started, as a timecode-style clock. */
-function useRecordingClock(recording: boolean): string | null {
+export function useRecordingClock(recording: boolean): string | null {
     const [startedAtMs, setStartedAtMs] = useState<number | null>(null)
     const [, setTick] = useState(0)
     useEffect(() => {
@@ -67,7 +67,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
             defaultOpen
             action={
                 elapsed ? (
-                    <span className="flex items-center gap-1.5 text-[12px] font-medium text-rec tabular-nums">
+                    <span className="flex items-center gap-1.5 font-mono text-[12px] text-rec tabular-nums">
                         <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden /> {elapsed}
                     </span>
                 ) : undefined

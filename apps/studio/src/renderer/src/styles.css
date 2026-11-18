@@ -3,26 +3,80 @@
 @import '@kevinschaich/components/styles.css';
 @source '../../../node_modules/@kevinschaich/components/dist';
 
+/* The site's mono (darkgrade.com): numbers, readouts and the small uppercase labels. OFL. */
+@font-face {
+    font-family: 'Fragment Mono';
+    src: url('./assets/FragmentMono-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: block;
+}
+
 /*
- * Studio is a desktop app, not a page: black like a monitor, an arrow cursor everywhere, and no
- * text selection except in logs.
+ * Studio is a desktop app, not a page: dark like a monitor, an arrow cursor everywhere, and no
+ * text selection except in logs. Its palette is darkgrade.com's: warm ink on near-black, hairlines
+ * of that ink, and one gold light for whatever is selected or switched on. Surfaces are solid, so
+ * menus never show what is under them.
  */
 html.dark {
     color-scheme: dark;
-    --background: oklch(0 0 0);
-    --card: oklch(0.13 0 0);
-    --popover: oklch(0.18 0 0);
-    --border: oklch(1 0 0 / 8%);
-    --input: oklch(1 0 0 / 10%);
+    --background: #0a0a0b;
+    --foreground: #eae6dc;
+    --card: #101012;
+    --card-foreground: #eae6dc;
+    --popover: #151517;
+    --popover-foreground: #eae6dc;
+    --primary: #eae6dc;
+    --primary-foreground: #0b0b0c;
+    --secondary: #1a1a1c;
+    --secondary-foreground: #eae6dc;
+    --muted: #18181a;
+    --muted-foreground: rgb(234 230 220 / 55%);
+    --accent: #1e1e21;
+    --accent-foreground: #eae6dc;
+    --border: rgb(234 230 220 / 9%);
+    --input: rgb(234 230 220 / 11%);
+    --ring: rgb(245 205 138 / 55%);
+    --destructive: #e0483e;
     --live: oklch(0.72 0.17 150);
-    --rec: oklch(0.64 0.23 25);
-    --canvas: oklch(0.08 0 0);
+    --rec: #e0483e;
+    --gold: #f5cd8a;
+    --gold-dim: rgb(245 205 138 / 13%);
+    --canvas: #070708;
 }
 
 @theme inline {
     --color-live: var(--live);
     --color-rec: var(--rec);
+    --color-gold: var(--gold);
+    --color-gold-dim: var(--gold-dim);
     --color-canvas: var(--canvas);
+    --font-mono: 'Fragment Mono', 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+/*
+ * One light for the current choice, as on darkgrade.com: the selected tab or segment and a switched-on
+ * switch take the gold, with a faint gold wash and hairline, not a grey pill.
+ */
+[data-slot='tabs-trigger'][data-active],
+[data-slot='toggle-group-item'][data-pressed] {
+    color: var(--gold) !important;
+    background-color: var(--gold-dim) !important;
+    box-shadow: inset 0 0 0 1px rgb(245 205 138 / 22%);
+    /* The site's lamp, at the size of a label: a faint warm halo round the lit word. */
+    text-shadow: 0 0 8px rgb(246 185 97 / 35%);
+}
+[data-slot='switch'][data-checked] {
+    background-color: var(--gold) !important;
+}
+
+/* The inspector's small uppercase labels, set like the site's slate: mono, wide tracking, quiet ink. */
+.slate-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgb(234 230 220 / 55%);
 }
 
 html,
@@ -98,10 +152,10 @@ img {
     background-clip: padding-box;
 }
 .is-scrolling {
-    scrollbar-color: oklch(1 0 0 / 35%) transparent;
+    scrollbar-color: rgb(234 230 220 / 30%) transparent;
 }
 .is-scrolling::-webkit-scrollbar-thumb {
-    background-color: oklch(1 0 0 / 35%);
+    background-color: rgb(234 230 220 / 30%);
 }
 
 /*
@@ -262,4 +316,14 @@ img {
 }
 .transcript-reply-failed {
     color: oklch(0.74 0.14 25);
+}
+
+/*
+ * Behind a dialog the window dims flat, as Resolve's do: no backdrop blur, which would re-blur the
+ * whole window, live video included, every frame.
+ */
+[data-slot='dialog-overlay'],
+[data-slot='alert-dialog-overlay'] {
+    backdrop-filter: none !important;
+    background-color: rgb(7 7 8 / 72%) !important;
 }

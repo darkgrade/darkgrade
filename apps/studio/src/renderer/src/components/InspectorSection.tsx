@@ -10,8 +10,8 @@ interface InspectorSectionProps {
     children: React.ReactNode
 }
 
-const SECTION_CLASS = 'flex flex-col px-4 py-3'
-const TITLE_CLASS = 'text-[13px] font-semibold tracking-tight'
+const SECTION_CLASS = 'flex flex-col border-b border-border px-4 py-3 last:border-b-0'
+const TITLE_CLASS = 'slate-label'
 
 /** One titled group in the inspector. Groups are separated by a faint hairline, not boxes. */
 export function InspectorSection({

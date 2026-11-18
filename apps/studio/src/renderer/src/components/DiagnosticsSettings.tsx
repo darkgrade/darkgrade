@@ -1,5 +1,23 @@
-import { Button, Field, FieldContent, FieldDescription, FieldLabel, Input, Switch } from '@kevinschaich/components'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+    Button,
+    Field,
+    FieldContent,
+    FieldDescription,
+    FieldLabel,
+    Input,
+    Switch,
+} from '@kevinschaich/components'
 import type { DiagnosticsStatus } from '@shared/ipc'
+import { ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 export function DiagnosticsSettings() {
@@ -25,6 +43,7 @@ export function DiagnosticsSettings() {
             clearInterval(timer)
         }
     }, [])
+    const [confirmingDelete, setConfirmingDelete] = useState(false)
     const change = async (action: 'sharing' | 'withdraw' | 'retry', value?: boolean) => {
         setBusy(true)
         setMessage('')
@@ -102,7 +121,7 @@ export function DiagnosticsSettings() {
                     </Button>
                     <Button
                         size="sm"
-                        variant="ghost"
+                        variant="outline"
                         disabled={busy || !status.installationId}
                         onClick={() =>
                             void navigator.clipboard
@@ -113,19 +132,59 @@ export function DiagnosticsSettings() {
                     >
                         Copy diagnostic ID
                     </Button>
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy || !status.configured}
-                        onClick={() => void change(status.withdrawalPending ? 'retry' : 'withdraw')}
-                    >
-                        {status.withdrawalPending ? 'Retry deletion' : 'Delete cloud data'}
-                    </Button>
+                    {status.withdrawalPending ? (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => void change('retry')}>
+                            Retry deletion
+                        </Button>
+                    ) : (
+                        // Deleting what this Mac has shared can't be undone: ask first.
+                        <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+                            <AlertDialogTrigger
+                                render={
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-destructive hover:text-destructive"
+                                        disabled={busy || !status.configured}
+                                    />
+                                }
+                            >
+                                Delete cloud data
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete this Mac's camera diagnostics?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Everything this installation has shared is removed from Darkgrade's servers.
+                                        This can't be undone.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        variant="destructive"
+                                        onClick={() => {
+                                            setConfirmingDelete(false)
+                                            void change('withdraw')
+                                        }}
+                                    >
+                                        Delete
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    )}
                 </div>
             )}
             {status.configured && (
-                <details>
-                    <summary className="cursor-pointer text-sm">Link an email (optional)</summary>
+                <details className="group">
+                    <summary className="flex w-fit list-none items-center gap-1 text-sm [&::-webkit-details-marker]:hidden">
+                        <ChevronRight
+                            className="size-3.5 text-muted-foreground transition-transform duration-200 group-open:rotate-90"
+                            aria-hidden
+                        />
+                        Link an email (optional)
+                    </summary>
                     <form
                         className="mt-2 flex flex-wrap items-center gap-2"
                         onSubmit={event => {

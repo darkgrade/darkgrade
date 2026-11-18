@@ -73,7 +73,7 @@ export function FilesPanel(props: FilesPanelProps): React.JSX.Element {
                         {props.updating && ' · Updating'}
                     </span>
                     <Button variant="ghost" size="xs" disabled={progress !== null} onClick={props.onDownloadAll}>
-                        Download All
+                        Download all
                     </Button>
                 </div>
             )}

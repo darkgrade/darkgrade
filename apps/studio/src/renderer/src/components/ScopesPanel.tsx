@@ -1,10 +1,10 @@
 import { Slider, Switch, ToggleGroup, ToggleGroupItem } from '@kevinschaich/components'
 import { InspectorSection } from '@renderer/components/InspectorSection'
+import { createStore } from '@renderer/lib/external-store'
 import { Histogram } from '@renderer/scopes/Histogram'
 import type { PreviewAssistSettings } from '@renderer/scopes/PreviewAssists'
 import { Vectorscope } from '@renderer/scopes/Vectorscope'
 import { Waveform } from '@renderer/scopes/Waveform'
-import { createStore } from '@renderer/lib/external-store'
 import { SCOPE_IDS, type ScopeId } from '@shared/ipc'
 
 const SCOPES: { id: ScopeId; label: string }[] = [
@@ -43,6 +43,8 @@ export function chooseScope(next: ScopeId): void {
 interface ScopesPanelProps {
     /** Live view is running, so the scopes have frames to read. */
     active: boolean
+    /** Whether a camera is connected, for what to say when there is no picture to measure. */
+    connected: boolean
     /** Zebras and focus peaking, drawn over the preview by Studio rather than the camera. */
     assists: PreviewAssistSettings
     onAssistsChange: (assists: PreviewAssistSettings) => void
@@ -86,8 +88,17 @@ function PreviewAssist(props: PreviewAssistProps): React.JSX.Element {
 }
 
 /** One scope of the live feed at a time, chosen like Resolve's scope menu and remembered. */
-export function ScopesPanel({ active, assists, onAssistsChange }: ScopesPanelProps): React.JSX.Element {
+export function ScopesPanel({ active, connected, assists, onAssistsChange }: ScopesPanelProps): React.JSX.Element {
     const scope = scopeChoice.use()
+    // No picture, no scopes: a line saying so, not empty graphs and switches with nothing to act on.
+    if (!active)
+        return (
+            <InspectorSection title="Scopes" collapsible defaultOpen>
+                <p className="text-muted-foreground">
+                    {connected ? 'Scopes appear while live view runs.' : 'Connect a camera to see its scopes.'}
+                </p>
+            </InspectorSection>
+        )
 
     return (
         <InspectorSection title="Scopes" collapsible defaultOpen>

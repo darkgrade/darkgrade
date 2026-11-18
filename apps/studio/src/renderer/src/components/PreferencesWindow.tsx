@@ -117,9 +117,7 @@ export function PreferencesWindow(): React.JSX.Element | null {
                     Settings
                 </header>
                 <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-8">
-                    <h2 className="mb-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                        Integrations
-                    </h2>
+                    <h2 className="slate-label mb-4">Integrations</h2>
                     <McpServerSection
                         preferences={preferences}
                         status={status}
