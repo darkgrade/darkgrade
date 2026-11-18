@@ -233,8 +233,12 @@ export class GenericCamera {
         }
     }
 
+    protected createSessionId(): number {
+        return randomSessionId()
+    }
+
     private async openFreshSession(): Promise<void> {
-        this.sessionId = randomSessionId()
+        this.sessionId = this.createSessionId()
         try {
             let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
             if (openResult.code === SessionAlreadyOpen.code) {
@@ -654,7 +658,7 @@ export class GenericCamera {
     /** A Device Reset may or may not end the session; reopen it, keeping one the camera still holds. */
     private async reopenSessionAfterReset(previousSessionId: number): Promise<void> {
         const openSession = this.registry.operations.OpenSession
-        const sessionId = randomSessionId()
+        const sessionId = this.createSessionId()
         this.sessionId = sessionId
         const params = { SessionID: sessionId }
         const response = await this.runTransaction(openSession, params, this.encodeParameters(openSession, params))

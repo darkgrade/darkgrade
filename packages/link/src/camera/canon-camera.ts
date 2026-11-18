@@ -151,7 +151,7 @@ export class CanonCamera extends GenericCamera {
         this.clearCachedState()
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
-        this.sessionId = 1
+        this.sessionId = this.createSessionId()
         try {
             let opened = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
             if (opened.code === SessionAlreadyOpen.code) {
@@ -198,6 +198,11 @@ export class CanonCamera extends GenericCamera {
         }
         this.clearCachedState()
         if (failure) throw failure
+    }
+
+    protected override createSessionId(): number {
+        // EOS control sessions must use the same convention during connect and recovery.
+        return 1
     }
 
     override async recover(device?: DeviceDescriptor, options: CameraRecoveryOptions = {}): Promise<CameraRecoveryReport> {

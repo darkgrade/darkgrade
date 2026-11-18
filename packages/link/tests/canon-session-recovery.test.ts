@@ -52,3 +52,18 @@ it('a readable identity cannot hide Canon remote-control failure during recovery
     expect(report.steps.every(step => !step.ok)).toBe(true)
     expect(resets).toEqual(['device'])
 })
+
+it('recovery preserves the Canon session convention used by normal connection', async () => {
+    const { camera, resets } = fixture()
+    const send = camera.send.bind(camera)
+    const sessions: number[] = []
+    camera.send = (async (operation, parameters, ...rest) => {
+        if (operation.name === 'OpenSession') sessions.push((parameters as { SessionID: number }).SessionID)
+        if (operation.name.startsWith('Canon') && camera.sessionId !== 1) return { code: 0x2003 }
+        return send(operation, parameters, ...rest)
+    }) as typeof camera.send
+    const report = await camera.recover(undefined, { allowPortReset: false })
+    expect(report.recovered).toBe(true)
+    expect(sessions).toEqual([1])
+    expect(resets).toEqual([])
+})
