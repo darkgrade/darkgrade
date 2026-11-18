@@ -311,62 +311,62 @@ export function App(): React.JSX.Element {
                                 onCollapse={() => setVoiceExpanded(false)}
                             />
                         </main>
-                        <aside
-                            className="flex w-80 shrink-0 flex-col overflow-y-auto bg-black/55"
-                            aria-label="Camera controls"
-                        >
-                            <ScopesPanel
-                                active={cameraState.connected && cameraState.liveView}
-                                connected={cameraState.connected}
-                                assists={previewAssists}
-                                onAssistsChange={setPreviewAssists}
-                            />
-                            <SettingsPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onSetIso={value => void run(() => api.setIso(value))}
-                                onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
-                                onSetAperture={value => void run(() => api.setAperture(value))}
-                                onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <FocusPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <LensPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onZoomStart={direction => {
-                                    zoomingRef.current = true
-                                    void api.zoomStart(direction)
-                                }}
-                                onZoomStop={() => {
-                                    if (!zoomingRef.current) return
-                                    zoomingRef.current = false
-                                    void api.zoomStop()
-                                }}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <RecordingPanel
-                                cameraState={cameraState}
-                                locked={cardBusy}
-                                onChange={(name, value) => void run(() => api.setControl(name, value))}
-                            />
-                            <FilesPanel
-                                cameraState={cameraState}
-                                files={files}
-                                updating={filesUpdating}
-                                downloadProgress={downloadProgress}
-                                previewing={previewEntry}
-                                onPreview={entry => void openPreview(entry)}
-                                onDownload={entry => void run(() => api.downloadFile(entry))}
-                                onDownloadAll={() =>
-                                    void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
-                                }
-                                onChooseDir={() => void run(() => api.chooseDownloadDir())}
-                                onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
-                            />
+                        <aside className="flex w-80 shrink-0 flex-col bg-black/55" aria-label="Camera controls">
+                            {/* The controls scroll and fade at an edge they run past; the panel itself stays solid. */}
+                            <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
+                                <ScopesPanel
+                                    active={cameraState.connected && cameraState.liveView}
+                                    connected={cameraState.connected}
+                                    assists={previewAssists}
+                                    onAssistsChange={setPreviewAssists}
+                                />
+                                <SettingsPanel
+                                    cameraState={cameraState}
+                                    locked={cardBusy}
+                                    onSetIso={value => void run(() => api.setIso(value))}
+                                    onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
+                                    onSetAperture={value => void run(() => api.setAperture(value))}
+                                    onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
+                                />
+                                <FocusPanel
+                                    cameraState={cameraState}
+                                    locked={cardBusy}
+                                    onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                />
+                                <LensPanel
+                                    cameraState={cameraState}
+                                    locked={cardBusy}
+                                    onZoomStart={direction => {
+                                        zoomingRef.current = true
+                                        void api.zoomStart(direction)
+                                    }}
+                                    onZoomStop={() => {
+                                        if (!zoomingRef.current) return
+                                        zoomingRef.current = false
+                                        void api.zoomStop()
+                                    }}
+                                    onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                />
+                                <RecordingPanel
+                                    cameraState={cameraState}
+                                    locked={cardBusy}
+                                    onChange={(name, value) => void run(() => api.setControl(name, value))}
+                                />
+                                <FilesPanel
+                                    cameraState={cameraState}
+                                    files={files}
+                                    updating={filesUpdating}
+                                    downloadProgress={downloadProgress}
+                                    previewing={previewEntry}
+                                    onPreview={entry => void openPreview(entry)}
+                                    onDownload={entry => void run(() => api.downloadFile(entry))}
+                                    onDownloadAll={() =>
+                                        void run(() => api.downloadAll()).finally(() => setDownloadProgress(null))
+                                    }
+                                    onChooseDir={() => void run(() => api.chooseDownloadDir())}
+                                    onRevealDir={() => void api.revealPath(cameraState.downloadDir)}
+                                />
+                            </div>
                         </aside>
                     </div>
                     <EventLog
