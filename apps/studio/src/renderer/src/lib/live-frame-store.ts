@@ -45,6 +45,19 @@ export function publishLiveFrame(jpeg: Uint8Array): void {
     listeners.forEach(listener => listener())
 }
 
+/**
+ * A frame that reached the GPU without a JPEG (the Metal decoder's): counted for the frame rate and size, and the
+ * first one marks the picture as live. Its stand-in blob is never decoded: the GPU already has the frame.
+ */
+export function noteLiveFrame(width: number, height: number): void {
+    frameTimes.push(performance.now())
+    const shown = liveFrameSize.get()
+    if (shown?.width !== width || shown.height !== height) liveFrameSize.set({ width, height })
+    if (current) return
+    current = { blob: new Blob(), url: '' }
+    listeners.forEach(listener => listener())
+}
+
 function subscribe(listener: () => void): () => void {
     listeners.add(listener)
     return () => listeners.delete(listener)

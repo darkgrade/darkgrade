@@ -12,6 +12,11 @@ extraResources:
     # The Bark speech sidecar: server script and pinned requirements (the model and its code are downloaded)
     - from: resources/bark-sidecar
       to: bark-sidecar
+    # The Metal live-view decoder (macOS, Developer Mode), built by scripts/build-native.mjs; optional at runtime
+    - from: native/build
+      to: native
+      filter:
+          - '*.node'
 asarUnpack:
     # node-usb ships native prebuilds that must live outside the asar
     - '**/node_modules/usb/**'

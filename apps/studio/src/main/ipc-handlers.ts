@@ -3,10 +3,11 @@ import { cameraService } from '@main/camera-service'
 import { changeDiagnostics, diagnosticsContact, diagnosticsStatus } from '@main/diagnostics'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
+import { sendLiveFrame } from '@main/metal-frames'
 import { openPerfWindow, perfMonitorOpen, receivePerfReport, sampleProcesses, tracePerf } from '@main/perf-monitor'
 import { preferences } from '@main/preferences'
-import { studioView } from '@main/studio-view'
 import { isTrustedRendererFrame, rendererDocumentUrl } from '@main/renderer-security'
+import { studioView } from '@main/studio-view'
 import { voiceService } from '@main/voice/voice-service'
 import type {
     CameraControlName,
@@ -25,7 +26,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const rendererUrl = rendererDocumentUrl(
     pathToFileURL(join(fileURLToPath(new URL('.', import.meta.url)), '../renderer/index.html')).href,
-    app.isPackaged, process.env.ELECTRON_RENDERER_URL,
+    app.isPackaged,
+    process.env.ELECTRON_RENDERER_URL
 )
 
 function errorMessage(error: unknown): string {
@@ -35,8 +37,7 @@ function errorMessage(error: unknown): string {
 function handle<T>(channel: string, operation: (...args: never[]) => Promise<T> | T): void {
     ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<T>> => {
         try {
-            if (!isTrustedRendererFrame(event.senderFrame, rendererUrl))
-                throw new Error('Untrusted renderer frame')
+            if (!isTrustedRendererFrame(event.senderFrame, rendererUrl)) throw new Error('Untrusted renderer frame')
             const data = await operation(...(args as never[]))
             return { ok: true, data }
         } catch (error) {
@@ -48,7 +49,10 @@ function handle<T>(channel: string, operation: (...args: never[]) => Promise<T> 
 export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
     const broadcast = (channel: string, payload: unknown): void => {
         const window = getWindow()
-        if (window && !window.isDestroyed()) window.webContents.send(channel, payload)
+        if (!window || window.isDestroyed()) return
+        const contents = window.webContents
+        if (channel !== IPC_EVENTS.LiveViewFrame) return contents.send(channel, payload)
+        sendLiveFrame(contents, payload as Uint8Array, jpeg => contents.send(channel, jpeg))
     }
     /** Settings are shown in more than one window, so their updates go to all of them. */
     const broadcastToAll = (channel: string, payload: unknown): void => {

@@ -27,6 +27,9 @@ captured_images/
 # local probes and captured test data
 .scratch/
 
+# Studio's native add-ons, built by apps/studio/scripts/build-native.mjs
+apps/studio/native/build/
+
 # electron-vite's temporary bundled configs
 electron.vite.config.*.mjs
 

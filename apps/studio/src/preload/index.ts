@@ -1,6 +1,6 @@
 import type { StudioApi } from '@shared/ipc'
-import { IPC, IPC_EVENTS } from '@shared/ipc'
-import { contextBridge, ipcRenderer } from 'electron'
+import { DECODED_FRAMES, IPC, IPC_EVENTS } from '@shared/ipc'
+import { contextBridge, ipcRenderer, sharedTexture } from 'electron'
 
 /** Each event channel's traffic and handler time since the last take, for Developer Mode's performance monitor. */
 const ipcStats = new Map<string, { count: number; milliseconds: number; bytes: number }>()
@@ -73,6 +73,23 @@ const studioApi: StudioApi = {
     onPreferences: subscribe(IPC_EVENTS.Preferences),
     getMcpServerStatus: () => ipcRenderer.invoke(IPC.McpServerGetStatus),
     perfSampleProcesses: () => ipcRenderer.invoke(IPC.PerfSampleProcesses),
+    onDecodedFrame: callback => {
+        let consecutiveFailures = 0
+        sharedTexture.setSharedTextureReceiver(async ({ importedSharedTexture }) => {
+            try {
+                await callback(importedSharedTexture)
+                consecutiveFailures = 0
+            } catch {
+                consecutiveFailures++
+                if (consecutiveFailures === DECODED_FRAMES.failuresBeforeJpeg)
+                    ipcRenderer.send(DECODED_FRAMES.Unavailable)
+            } finally {
+                // Released after the page's GPU work on it is queued; Electron waits for that work to finish.
+                importedSharedTexture.release()
+            }
+        })
+        ipcRenderer.send(DECODED_FRAMES.Ready)
+    },
     perfTakeIpc: () => {
         const taken = [...ipcStats].map(([channel, stats]) => ({ channel, ...stats }))
         ipcStats.clear()

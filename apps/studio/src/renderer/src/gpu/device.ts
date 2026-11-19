@@ -1,5 +1,5 @@
 /// <reference types="@webgpu/types" />
-import { subscribeToLiveFrames } from '@renderer/lib/live-frame-store'
+import { noteLiveFrame, subscribeToLiveFrames } from '@renderer/lib/live-frame-store'
 import { perf } from '@renderer/lib/perf'
 
 /**
@@ -53,6 +53,95 @@ export function onFrameTexture(listener: (frame: FrameTexture | null) => void): 
     return () => listeners.delete(listener)
 }
 
+/** The shared frame texture at this size, made anew when the size changes. */
+function frameTarget(gpu: Gpu, width: number, height: number): FrameTexture {
+    if (!frame || frame.width !== width || frame.height !== height) {
+        frame?.texture.destroy()
+        const texture = gpu.device.createTexture({
+            size: [width, height],
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        })
+        frame = { texture, width, height, version: frame?.version ?? 0 }
+    }
+    return frame
+}
+
+function publishFrame(target: FrameTexture): void {
+    frame = { ...target, version: target.version + 1 }
+    listeners.forEach(listener => listener(frame))
+}
+
+/**
+ * A frame the Metal decoder decoded arrives as a GPU texture (an IOSurface the main process filled). A small render
+ * pass draws it into the shared frame texture, converting the camera's YCbCr to RGB on the GPU, so the picture, its
+ * assists and the scopes read it as they read a frame decoded here.
+ */
+let decodedFramePipeline: { pipeline: GPURenderPipeline; sampler: GPUSampler } | null = null
+let decodedFramePipelineChecked = false
+let decodedFramesFailed = false
+async function drawDecodedFrame(source: { getVideoFrame(): unknown }): Promise<void> {
+    const gpu = await getGpu()
+    // Throwing reports that this frame wasn't drawn: after a few in a row, the main process sends JPEGs instead.
+    if (!gpu || decodedFramesFailed) throw new Error('Decoded frames cannot be drawn in this window')
+    const { device } = gpu
+    const started = performance.now()
+    const videoFrame = source.getVideoFrame() as VideoFrame
+    try {
+        if (!decodedFramePipeline) device.pushErrorScope('validation')
+        decodedFramePipeline ??= (() => {
+            const module = device.createShaderModule({
+                code: /* wgsl */ `${FULLSCREEN_VERTEX}
+@group(0) @binding(0) var camera: texture_external;
+@group(0) @binding(1) var linearSampler: sampler;
+@fragment fn fragmentMain(in: Varyings) -> @location(0) vec4f {
+    return textureSampleBaseClampToEdge(camera, linearSampler, in.uv);
+}`,
+            })
+            return {
+                pipeline: device.createRenderPipeline({
+                    layout: 'auto',
+                    vertex: { module, entryPoint: 'vertexMain' },
+                    fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: 'rgba8unorm' }] },
+                }),
+                sampler: device.createSampler({ magFilter: 'linear', minFilter: 'linear' }),
+            }
+        })()
+        if (!decodedFramePipelineChecked) {
+            decodedFramePipelineChecked = true
+            // A pipeline that didn't build turns this path off for good: the JPEGs are decoded here instead.
+            if (await device.popErrorScope()) {
+                decodedFramesFailed = true
+                throw new Error('Decoded frames cannot be drawn in this window')
+            }
+        }
+        const target = frameTarget(gpu, videoFrame.displayWidth, videoFrame.displayHeight)
+        const group = device.createBindGroup({
+            layout: decodedFramePipeline.pipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: device.importExternalTexture({ source: videoFrame }) },
+                { binding: 1, resource: decodedFramePipeline.sampler },
+            ],
+        })
+        const encoder = device.createCommandEncoder()
+        const pass = encoder.beginRenderPass({
+            colorAttachments: [
+                { view: target.texture.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] },
+            ],
+        })
+        pass.setPipeline(decodedFramePipeline.pipeline)
+        pass.setBindGroup(0, group)
+        pass.draw(3)
+        pass.end()
+        device.queue.submit([encoder.finish()])
+        perf.cpu('Live frame from the Metal decoder', performance.now() - started)
+        noteLiveFrame(target.width, target.height)
+        publishFrame(target)
+    } finally {
+        videoFrame.close()
+    }
+}
+
 /** Decodes the newest JPEG into the texture; a frame that arrives mid-decode waits, and only the newest is kept. */
 async function upload(blob: Blob): Promise<void> {
     if (decoding) {
@@ -68,20 +157,11 @@ async function upload(blob: Blob): Promise<void> {
         perf.cpu('Live frame decode', performance.now() - decodeStarted)
         const uploadStarted = performance.now()
         const { width, height } = bitmap
-        if (!frame || frame.width !== width || frame.height !== height) {
-            frame?.texture.destroy()
-            const texture = gpu.device.createTexture({
-                size: [width, height],
-                format: 'rgba8unorm',
-                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-            })
-            frame = { texture, width, height, version: frame?.version ?? 0 }
-        }
-        gpu.device.queue.copyExternalImageToTexture({ source: bitmap }, { texture: frame.texture }, [width, height])
+        const target = frameTarget(gpu, width, height)
+        gpu.device.queue.copyExternalImageToTexture({ source: bitmap }, { texture: target.texture }, [width, height])
         bitmap.close()
         perf.cpu('Live frame upload to the GPU', performance.now() - uploadStarted)
-        frame = { ...frame, version: frame.version + 1 }
-        listeners.forEach(listener => listener(frame))
+        publishFrame(target)
     } catch {
         // A frame that can't be decoded is skipped; the next one replaces it.
     } finally {
@@ -133,8 +213,10 @@ export async function publishOsdFrame(png: Uint8Array): Promise<void> {
 }
 
 subscribeToLiveFrames(live => {
-    if (live) void upload(live.blob)
+    // The stand-in for a frame that arrived as a texture holds no JPEG.
+    if (live && live.blob.size > 0) void upload(live.blob)
 })
+window.studio?.onDecodedFrame?.(drawDecodedFrame)
 
 /**
  * Calls draw on every display frame until the returned function stops it. While the performance monitor is open, the

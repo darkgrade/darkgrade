@@ -1,6 +1,6 @@
-import { app, BrowserWindow, Menu, screen, shell, type MenuItemConstructorOptions } from 'electron'
-import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
 import { preferences } from '@main/preferences'
+import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
+import { app, BrowserWindow, Menu, screen, shell, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -62,8 +62,11 @@ export function openPreferences(): void {
         stopFollowingMaterial()
         preferencesWindow = null
     })
-    const rendererUrl = rendererDocumentUrl(pathToFileURL(join(currentDir, '../renderer/index.html')).href,
-        app.isPackaged, process.env.ELECTRON_RENDERER_URL)
+    const rendererUrl = rendererDocumentUrl(
+        pathToFileURL(join(currentDir, '../renderer/index.html')).href,
+        app.isPackaged,
+        process.env.ELECTRON_RENDERER_URL
+    )
     protectRenderer(preferencesWindow.webContents, rendererUrl, url => shell.openExternal(url))
     const preferencesUrl = new URL(rendererUrl)
     preferencesUrl.hash = 'preferences'
@@ -71,7 +74,19 @@ export function openPreferences(): void {
 }
 
 /** The standard macOS menus, with Settings… (⌘,) and Developer Mode in the app menu, and zoom (⌘ = / ⌘ − / ⌘ 0). */
+let rebuildsWithDeveloperMode = false
+
 export function installApplicationMenu(): void {
+    // Developer Mode shows and hides its own items, so the menu is rebuilt when it changes.
+    if (!rebuildsWithDeveloperMode) {
+        rebuildsWithDeveloperMode = true
+        let developerMode = preferences.get().developerMode
+        preferences.onChange(current => {
+            if (current.developerMode === developerMode) return
+            developerMode = current.developerMode
+            installApplicationMenu()
+        })
+    }
     const template: MenuItemConstructorOptions[] = [
         {
             label: app.name,
@@ -84,6 +99,14 @@ export function installApplicationMenu(): void {
                     type: 'checkbox',
                     checked: preferences.get().developerMode,
                     click: item => preferences.set({ developerMode: item.checked }),
+                },
+                {
+                    // Live frames decoded on the GPU in the main process (src/main/metal-frames.ts); applies at once.
+                    label: 'Metal Live View Decoder (Experimental)',
+                    type: 'checkbox',
+                    visible: process.platform === 'darwin' && preferences.get().developerMode,
+                    checked: preferences.get().metalLiveViewDecoder,
+                    click: item => preferences.set({ metalLiveViewDecoder: item.checked }),
                 },
                 { type: 'separator' },
                 { role: 'services' },

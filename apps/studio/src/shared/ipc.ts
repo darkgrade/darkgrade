@@ -57,6 +57,18 @@ export const IPC = {
     PerfTrace: 'perf:trace',
 } as const
 
+/**
+ * Live frames decoded on the GPU by the Metal decoder (Developer Mode) reach a window as textures, not JPEGs. A
+ * window says when it can take them, and again if it finds it can't draw them (the main process isn't told when a
+ * window's receiver fails), after which it is sent JPEGs.
+ */
+export const DECODED_FRAMES = {
+    Ready: 'decoded-frames:ready',
+    Unavailable: 'decoded-frames:unavailable',
+    /** Frames in a row that may fail before JPEGs replace them. */
+    failuresBeforeJpeg: 3,
+} as const
+
 export const IPC_EVENTS = {
     PerfEnabled: 'evt:perf-enabled',
     PerfReport: 'evt:perf-report',
@@ -340,6 +352,11 @@ export interface Preferences {
     speechModel: SpeechModelId
     /** Developer tools in the main window (the Activity log); off by default, toggled from the app menu. */
     developerMode: boolean
+    /**
+     * Developer Mode's Metal live-view decoder (experimental, macOS): live frames are decoded on the GPU in the main
+     * process and drawn by the window's WebGPU as textures. Off: the window decodes each JPEG itself.
+     */
+    metalLiveViewDecoder: boolean
     /** The macOS material behind the window (View › Window Material); switches live. */
     windowMaterial: WindowMaterial
     /** Let the material go flat while Studio is in the background, as Finder and Messages do; from the next launch. */
@@ -492,6 +509,11 @@ export interface StudioApi {
     perfSampleProcesses(): Promise<IpcResult<ProcessSample[]>>
     /** Each event channel's count, bytes and handler time since the last call (Developer Mode's monitor). */
     perfTakeIpc(): { channel: string; count: number; milliseconds: number; bytes: number }[]
+    /**
+     * Live frames the Metal decoder decoded arrive here as GPU textures. Registering tells the main process this
+     * window takes them; each frame's VideoFrame is used before the callback resolves.
+     */
+    onDecodedFrame(callback: (frame: { getVideoFrame(): unknown }) => Promise<void>): void
     /** Records a trace for a few seconds and returns its busiest tasks. */
     perfTrace(seconds: number): Promise<IpcResult<PerfTrace>>
     /** Opens the performance monitor's window. */
