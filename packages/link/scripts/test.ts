@@ -12,4 +12,5 @@ run('vitest', ['run', ...filters])
 if (!filters.length) {
     run('bun', ['run', 'test:runtime'])
     run('node', ['--test', ...globSync('tests/contribute/*.test.ts')])
+    run('node', ['--test', ...globSync('tests/cli/*.test.ts')])
 }

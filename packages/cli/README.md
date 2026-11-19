@@ -3,6 +3,11 @@
 Alpha releases: `npx darkgrade@alpha telemetry …`.
 For local development, build Link and CLI and run `node packages/cli/dist/main.js`.
 
+This package is a thin executable wrapper. Command parsing, preference actions and camera
+benchmark orchestration live in Link and are also available to Node consumers through
+`runDarkgradeCli` from `@darkgrade/link/cli`. The published executable bundles that runner,
+preserving standalone `npx darkgrade` installation.
+
 - `whoami`: print the persistent random diagnostic ID, never its secret.
 - `status`: show the sharing preference and endpoint configuration.
 - `opt-out`: stop future cloud uploads; retain bounded sanitized local diagnostics.

@@ -56,8 +56,11 @@ function operationName(bytes: Uint8Array, manufacturer: string): string | undefi
     const fields = header(bytes)
     if (fields.kind !== 'command') return
     if (/^sony(?:\b|$)/i.test(manufacturer)) {
-        if (fields.code === 0x1009 && bytes.byteLength === 16 &&
-            new DataView(bytes.buffer, bytes.byteOffset + 12, 4).getUint32(0, true) === 0xffffc002)
+        if (
+            fields.code === 0x1009 &&
+            bytes.byteLength === 16 &&
+            new DataView(bytes.buffer, bytes.byteOffset + 12, 4).getUint32(0, true) === 0xffffc002
+        )
             return 'sony_live_view_frame'
         return SONY_OPERATION_NAMES[fields.code ?? 0] ?? STANDARD_OPERATION_NAMES[fields.code ?? 0]
     }
@@ -101,9 +104,12 @@ export function observeTransport<Device, Kind extends string>(
             const result = await run()
             if (collecting && epoch === generation()) {
                 const completed = result instanceof Uint8Array ? header(result) : fields
-                const label = bytes && fields.kind === 'command' ? operationName(bytes, camera().manufacturer) :
-                    pending.get(completed.transactionId ?? -1)?.generation === epoch
-                        ? pending.get(completed.transactionId ?? -1)?.operation : undefined
+                const label =
+                    bytes && fields.kind === 'command'
+                        ? operationName(bytes, camera().manufacturer)
+                        : pending.get(completed.transactionId ?? -1)?.generation === epoch
+                          ? pending.get(completed.transactionId ?? -1)?.operation
+                          : undefined
                 if (bytes && fields.kind === 'command' && fields.transactionId !== undefined && label) {
                     if (pending.size >= 128) pending.delete(pending.keys().next().value!)
                     pending.set(fields.transactionId, { operation: label, generation: epoch })
@@ -147,9 +153,14 @@ export function observeTransport<Device, Kind extends string>(
                 source.on?.(onEvent)
                 return source.connect(device)
             }),
-        disconnect: () => operation('lifecycle', 'disconnect', async () => {
-            try { await source.disconnect() } finally { pending.clear() }
-        }),
+        disconnect: () =>
+            operation('lifecycle', 'disconnect', async () => {
+                try {
+                    await source.disconnect()
+                } finally {
+                    pending.clear()
+                }
+            }),
         classRequestReset: () =>
             operation('lifecycle', 'reset', async () => {
                 try {

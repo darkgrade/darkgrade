@@ -18,13 +18,22 @@ function fixture(manufacturer = 'Sony Corporation') {
     const incoming: Uint8Array[] = []
     let generation = 0
     const source: CameraTransport = {
-        connect: async () => {}, disconnect: async () => {}, send: async () => {},
+        connect: async () => {},
+        disconnect: async () => {},
+        send: async () => {},
         receive: async () => incoming.shift()!,
         classRequestReset: async () => {},
-        isConnected: () => true, isLittleEndian: () => true, getType: () => 'usb',
+        isConnected: () => true,
+        isLittleEndian: () => true,
+        getType: () => 'usb',
     }
-    const observed = observeTransport(source, () => true, entry => entries.push(entry),
-        () => generation, () => ({ manufacturer }))
+    const observed = observeTransport(
+        source,
+        () => true,
+        entry => entries.push(entry),
+        () => generation,
+        () => ({ manufacturer })
+    )
     return { entries, incoming, source, observed, nextGeneration: () => generation++ }
 }
 
@@ -43,11 +52,21 @@ describe('Sony telemetry transaction context', () => {
         ])
         expect(JSON.stringify(f.entries)).not.toMatch(/4294950914|0xffffc002|parameters|payload|filename/)
         validateContribution({
-            schema: 'darkgrade.diagnostics/v1', disclosure: 'protocol-metadata-only/v1',
-            id: crypto.randomUUID(), camera: {
-                manufacturer: 'Sony', model: 'ILCE-7M5', firmware: '1.00', revision: '1234567',
-                dirty: false, transport: 'usb', backend: 'ptp', evidence: 'synthetic',
-            }, entries: f.entries, droppedEntries: 0,
+            schema: 'darkgrade.diagnostics/v1',
+            disclosure: 'protocol-metadata-only/v1',
+            id: crypto.randomUUID(),
+            camera: {
+                manufacturer: 'Sony',
+                model: 'ILCE-7M5',
+                firmware: '1.00',
+                revision: '1234567',
+                dirty: false,
+                transport: 'usb',
+                backend: 'ptp',
+                evidence: 'synthetic',
+            },
+            entries: f.entries,
+            droppedEntries: 0,
         })
     })
 
@@ -58,12 +77,18 @@ describe('Sony telemetry transaction context', () => {
         f.incoming.push(packet(2, 0x1005, 2), packet(3, 0x200f, 2), packet(3, 0x2001, 1), packet(3, 0x200f, 1))
         for (let i = 0; i < 4; i++) await f.observed.transport.receive(12, 1, 0)
         expect(f.entries.slice(-4).map(entry => entry.operation)).toEqual([
-            'get_storage_info', 'get_storage_info', 'sony_live_view_frame', undefined,
+            'get_storage_info',
+            'get_storage_info',
+            'sony_live_view_frame',
+            undefined,
         ])
     })
 
     it('does not label an ordinary card object or another vendor as a Sony live frame', async () => {
-        for (const [vendor, handle] of [['Canon', 0xffffc002], ['Sony', 7]] as const) {
+        for (const [vendor, handle] of [
+            ['Canon', 0xffffc002],
+            ['Sony', 7],
+        ] as const) {
             const f = fixture(vendor)
             await f.observed.transport.send(packet(1, 0x1009, 1, handle), 1, 1)
             expect(f.entries[0].operation).toBe('get_object')

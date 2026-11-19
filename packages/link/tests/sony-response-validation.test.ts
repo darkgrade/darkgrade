@@ -1,5 +1,5 @@
-import { SonyCamera } from '@camera/sony-camera'
 import { Camera } from '@camera/index'
+import { SonyCamera } from '@camera/sony-camera'
 import { Logger } from '@core/logger'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
@@ -24,14 +24,30 @@ describe('Sony incremental property boundaries', () => {
             { isLittleEndian: () => true } as unknown as TransportInterface,
             new Logger({ captureConsole: false, renderInTerminal: false })
         )
-        let raw = 0, writes = 0
+        let raw = 0,
+            writes = 0
         vi.spyOn(camera, 'send').mockImplementation(async (operation, parameters, data) => {
-            if (operation.code === 0x9209) return { code: 0x2001, data: { properties: [{
-                devicePropertyCode: 0x5010, dataType: 3, currentValueRaw: raw, currentValueDecoded: `${raw / 1000}`,
-                sonyGetSetFlag: 0, sonyEnabledFlag: scenario === 'disabled' && writes ? 0 : 1,
-                vendorExtensions: { enabled: scenario !== 'disabled' || writes === 0 }, getSet: 'GET',
-                minimumValue: 0, maximumValue: scenario === 'range-changed' && writes ? 500 : 1000, stepSize: 10,
-            }] } } as any
+            if (operation.code === 0x9209)
+                return {
+                    code: 0x2001,
+                    data: {
+                        properties: [
+                            {
+                                devicePropertyCode: 0x5010,
+                                dataType: 3,
+                                currentValueRaw: raw,
+                                currentValueDecoded: `${raw / 1000}`,
+                                sonyGetSetFlag: 0,
+                                sonyEnabledFlag: scenario === 'disabled' && writes ? 0 : 1,
+                                vendorExtensions: { enabled: scenario !== 'disabled' || writes === 0 },
+                                getSet: 'GET',
+                                minimumValue: 0,
+                                maximumValue: scenario === 'range-changed' && writes ? 500 : 1000,
+                                stepSize: 10,
+                            },
+                        ],
+                    },
+                } as any
             expect(operation.code).toBe(0x9207)
             expect(parameters).toMatchObject({ sdiControlCode: 0x5010 })
             expect(data).toEqual(Uint8Array.of(1))
@@ -55,18 +71,36 @@ describe('Sony session response validation', () => {
     it('opens facade observation through the native session without rewriting camera settings', async () => {
         const descriptor = { usb: { filters: [{ vendorId: 0x054c, productId: 0x0e78, serialNumber: 'test-body' }] } }
         const transport = { isLittleEndian: () => true, isConnected: () => true } as unknown as TransportInterface
-        const facade = new Camera({ device: descriptor, transport, logger: { captureConsole: false, renderInTerminal: false } })
+        const facade = new Camera({
+            device: descriptor,
+            transport,
+            logger: { captureConsole: false, renderInTerminal: false },
+        })
         const camera = facade.getInstance() as SonyCamera
         const sent: string[] = []
-        camera.send = (async operation => { sent.push(operation.name); return { code: 0x2001 } }) as typeof camera.send
+        camera.send = (async operation => {
+            sent.push(operation.name)
+            return { code: 0x2001 }
+        }) as typeof camera.send
         camera.refreshPropertyStates = async () => []
         camera.set = vi.fn(async () => undefined)
         const connect = vi.spyOn(camera, 'connect')
         await facade.connectSonyObservationSession()
         expect(connect).toHaveBeenCalledWith(descriptor, { configure: false })
-        expect(sent).toEqual(['SDIO_OpenSession', 'SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo', 'SDIO_Connect', 'GetDeviceInfo'])
+        expect(sent).toEqual([
+            'SDIO_OpenSession',
+            'SDIO_Connect',
+            'SDIO_Connect',
+            'SDIO_GetExtDeviceInfo',
+            'SDIO_Connect',
+            'GetDeviceInfo',
+        ])
         expect(camera.set).not.toHaveBeenCalled()
-        const other = new Camera({ vendorId: 0x04a9, transport, logger: { captureConsole: false, renderInTerminal: false } })
+        const other = new Camera({
+            vendorId: 0x04a9,
+            transport,
+            logger: { captureConsole: false, renderInTerminal: false },
+        })
         await expect(other.connectSonyObservationSession()).rejects.toThrow('require a Sony camera')
     })
 
@@ -145,10 +179,23 @@ describe('Sony authoritative property refresh', () => {
         const { camera, replies, sent } = cameraFixture()
         Object.assign(camera, { liveViewPostViewEnabled: true })
         const property = camera.registry.properties.ContentTransferEnable
-        replies.push({ code: 0x2001 }, { code: 0x2001, data: { properties: [{
-            devicePropertyCode: property.code, currentValueRaw: 1, currentValueDecoded: 'ENABLE',
-            vendorExtensions: { enabled: true }, getSet: 'GET',
-        }] } })
+        replies.push(
+            { code: 0x2001 },
+            {
+                code: 0x2001,
+                data: {
+                    properties: [
+                        {
+                            devicePropertyCode: property.code,
+                            currentValueRaw: 1,
+                            currentValueDecoded: 'ENABLE',
+                            vendorExtensions: { enabled: true },
+                            getSet: 'GET',
+                        },
+                    ],
+                },
+            }
+        )
         await camera.prepareStorageRead()
         expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.SetLiveViewEnable, 'DISABLE')
         expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.SetPostViewEnable, 'DISABLE')
@@ -169,10 +216,20 @@ describe('Sony authoritative property refresh', () => {
         const { camera, replies, sent } = cameraFixture()
         const property = camera.registry.properties.ContentTransferEnable
         Object.assign(camera, { contentTransferModeEnabled: true })
-        replies.push({ code: 0x2001, data: { properties: [{
-            devicePropertyCode: property.code, currentValueRaw: 1, currentValueDecoded: 'ENABLE',
-            vendorExtensions: { enabled: true }, getSet: 'GET',
-        }] } })
+        replies.push({
+            code: 0x2001,
+            data: {
+                properties: [
+                    {
+                        devicePropertyCode: property.code,
+                        currentValueRaw: 1,
+                        currentValueDecoded: 'ENABLE',
+                        vendorExtensions: { enabled: true },
+                        getSet: 'GET',
+                    },
+                ],
+            },
+        })
         expect(await camera.get(property)).toBe('ENABLE')
         expect(sent).toEqual(['SDIO_GetAllExtDevicePropInfo'])
         replies.push({ code: 0x2001, data: { properties: [] } })
@@ -201,10 +258,14 @@ describe('Sony authoritative property refresh', () => {
 describe('Sony preview results', () => {
     it('waits for advertised live-view readiness before requesting the image', async () => {
         const { camera, replies, sent } = cameraFixture()
-        const status = (value: number) => ({
-            devicePropertyCode: 0xd221, currentValueRaw: value, currentValueDecoded: value,
-            vendorExtensions: { enabled: true }, getSet: 'GET',
-        } as SonyDevicePropDesc)
+        const status = (value: number) =>
+            ({
+                devicePropertyCode: 0xd221,
+                currentValueRaw: value,
+                currentValueDecoded: value,
+                vendorExtensions: { enabled: true },
+                getSet: 'GET',
+            }) as SonyDevicePropDesc
         replies.push({ code: 0x2001, data: { properties: [status(0)] } })
         await camera.refreshPropertyStates()
         const bytes = new Uint8Array(28)
@@ -218,7 +279,12 @@ describe('Sony preview results', () => {
 
     it('does not request an image when the camera reports live view unsupported', async () => {
         const { camera, replies, sent } = cameraFixture()
-        const status = { devicePropertyCode: 0xd221, currentValueRaw: 2, vendorExtensions: { enabled: true }, getSet: 'GET' } as SonyDevicePropDesc
+        const status = {
+            devicePropertyCode: 0xd221,
+            currentValueRaw: 2,
+            vendorExtensions: { enabled: true },
+            getSet: 'GET',
+        } as SonyDevicePropDesc
         replies.push({ code: 0x2001, data: { properties: [status] } })
         await camera.refreshPropertyStates()
         replies.push({ code: 0x2001, data: { properties: [status] } })
@@ -244,17 +310,16 @@ describe('Sony preview results', () => {
         expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
     })
 
-    it.each([
-        { code: 0x2019 },
-        { code: 0x2001 },
-        { code: 0x2001, data: new Uint8Array(16) },
-    ])('does not count an unsuccessful image as a frame', async reply => {
-        const { camera, replies } = cameraFixture()
-        replies.push(reply)
-        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow()
-        expect(camera.takeLiveViewStatistics()).toEqual({ requests: 1, refusals: 0, frames: 0 })
-        expect(camera.millisecondsUntilNextLiveViewFrame()).toBe(0)
-    })
+    it.each([{ code: 0x2019 }, { code: 0x2001 }, { code: 0x2001, data: new Uint8Array(16) }])(
+        'does not count an unsuccessful image as a frame',
+        async reply => {
+            const { camera, replies } = cameraFixture()
+            replies.push(reply)
+            await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow()
+            expect(camera.takeLiveViewStatistics()).toEqual({ requests: 1, refusals: 0, frames: 0 })
+            expect(camera.millisecondsUntilNextLiveViewFrame()).toBe(0)
+        }
+    )
 
     it('bounds polling for a delayed frame without treating the card as unavailable', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] })
@@ -278,9 +343,13 @@ describe('Sony preview results', () => {
             expect(requestTimes.at(-1)).toBeLessThanOrEqual(41)
             expect(sent.every(name => name === 'GetObject')).toBe(true)
             expect(camera.takeLiveViewStatistics()).toEqual({
-                requests: requestTimes.length, refusals: requestTimes.length - 1, frames: 1,
+                requests: requestTimes.length,
+                refusals: requestTimes.length - 1,
+                frames: 1,
             })
-        } finally { vi.useRealTimers() }
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it('keeps a persistent refusal terminal and stops polling at the deadline', async () => {
@@ -293,16 +362,22 @@ describe('Sony preview results', () => {
                 requestTimes.push(Date.now() - started)
                 return { code: 0x200f }
             }) as typeof camera.send
-            const rejected = expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
+            const rejected = expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({
+                code: 0x200f,
+            })
             await vi.runAllTimersAsync()
             await rejected
             expect(Date.now() - started).toBe(150)
             expect(requestTimes.length).toBeLessThanOrEqual(22)
             expect(requestTimes.every(time => time < 150)).toBe(true)
             expect(camera.takeLiveViewStatistics()).toEqual({
-                requests: requestTimes.length, refusals: requestTimes.length, frames: 0,
+                requests: requestTimes.length,
+                refusals: requestTimes.length,
+                frames: 0,
             })
-        } finally { vi.useRealTimers() }
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it.each([undefined, new Uint8Array(), new Uint8Array(16)])(
@@ -352,7 +427,9 @@ describe('Canon shutter results', () => {
         const { assertCanonCaptureResult } = await import('@vendors/canon/capture-result')
         expect(() => assertCanonCaptureResult([0], 'release')).not.toThrow()
         expect(() => assertCanonCaptureResult(undefined, 'release')).not.toThrow()
-        expect(() => assertCanonCaptureResult([1], 'AF focus press')).toThrow('Canon AF focus press rejected capture with shutter result 0x1: the camera could not focus (low contrast or too dark)')
+        expect(() => assertCanonCaptureResult([1], 'AF focus press')).toThrow(
+            'Canon AF focus press rejected capture with shutter result 0x1: the camera could not focus (low contrast or too dark)'
+        )
         expect(() => assertCanonCaptureResult([12], 'release')).toThrow(/movie configuration prevents still capture/)
         expect(() => assertCanonCaptureResult([14], 'release')).toThrow(/the camera is in movie mode/)
         expect(() => assertCanonCaptureResult([2], 'release')).toThrow(/shutter result 0x2$/)
