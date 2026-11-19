@@ -1,0 +1,40 @@
+name: Publish CLI
+# Publishes packages/cli as `darkgrade` through npm trusted publishing (OIDC), so each
+# release carries provenance from this repository instead of a personal token.
+on:
+    push:
+        tags: ['cli-v*']
+    workflow_dispatch:
+concurrency:
+    group: publish-cli
+    cancel-in-progress: false
+permissions:
+    contents: read
+    id-token: write
+jobs:
+    publish:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: '1.4.3'
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+                  registry-url: 'https://registry.npmjs.org'
+            - name: npm with trusted publishing support
+              run: npm install -g npm@latest
+            - run: bun install --frozen-lockfile --ignore-scripts
+            - run: npm run build --prefix packages/contribute
+            - run: npm run build --prefix packages/link
+            - name: Tag matches package version
+              if: startsWith(github.ref, 'refs/tags/cli-v')
+              run: test "cli-v$(node -p "require('./packages/cli/package.json').version")" = "${GITHUB_REF_NAME}"
+            - name: Publish
+              working-directory: packages/cli
+              run: |
+                  version=$(node -p "require('./package.json').version")
+                  case "$version" in *-*) tag=alpha ;; *) tag=latest ;; esac
+                  npm publish --provenance --access public --tag "$tag"

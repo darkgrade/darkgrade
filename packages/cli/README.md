@@ -1,6 +1,6 @@
 # Darkgrade CLI
 
-After publication: `npx darkgrade telemetry …`. This workspace has not published the package.
+Alpha releases: `npx darkgrade@alpha telemetry …`.
 For local development, build Link/contribute/CLI and run `node packages/cli/dist/main.js`.
 
 - `whoami`: print the persistent random diagnostic ID, never its secret.
