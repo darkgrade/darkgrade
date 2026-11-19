@@ -11,11 +11,13 @@ keep its current directory and package name. Test harnesses consume these module
 independent fixtures; they must not introduce production packages in the Darkgrade repo.
 Read these rules regardless of the agent harness (Codex, Claude, Gemini or another agent).
 
-Physical CI may skip a camera only when it remains absent from USB after one guarded
-startup recovery and a fresh ownership/inventory check. Keep the scoped recovery/absence
-receipt and report skipped cameras separately from passes. USB-present camera failures,
-unknown state, lost ownership and uncertain cleanup remain failures; an all-skipped run
-cannot pass. Preserve prior failed runs when the harness or operator policy changes.
+Physical CI powers on an off mapped supply and attempts one guarded startup recovery for
+absent or unresponsive cameras before candidate tests. Fresh verified USB absence or
+PTP unresponsiveness after completed recovery may produce an explicit preparation skip.
+Keep scoped recovery/availability receipts and report skipped cameras separately from passes.
+Failures after candidate testing starts, unknown state, lost ownership and uncertain cleanup
+remain failures; an all-skipped run cannot pass. Preserve prior failed runs when the harness
+or operator policy changes.
 
 Diagnostics live in `packages/link/src/contribute` and are exported as
 `@darkgrade/link/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
