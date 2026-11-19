@@ -3,6 +3,7 @@
     "version": "0.1.0-alpha.1",
     "description": "Darkgrade camera diagnostics and telemetry preferences",
     "type": "module",
+    "repository": { "type": "git", "url": "git+https://github.com/darkgrade/darkgrade.git", "directory": "packages/cli" },
     "bin": { "darkgrade": "dist/main.js" },
     "files": ["dist", "README.md"],
     "publishConfig": { "tag": "alpha", "access": "public" },
