@@ -49,6 +49,8 @@ export interface CameraOptions {
     logger?: Partial<LoggerConfig>
     device?: DeviceDescriptor
     transport?: TransportInterface
+    /** A WebUSB implementation for the built-in USB transport to use under Node (see USBTransportOptions.usb). */
+    usb?: USB
     /** Timeouts and DeviceBusy retries for every transaction (see DEFAULT_TRANSACTION_POLICY). */
     transactionPolicy?: Partial<TransactionPolicy>
     /** Default true: send the advertised Canon session heartbeat without changing saved body settings. */
@@ -71,7 +73,7 @@ export class Camera {
 
     constructor(options?: CameraOptions) {
         this.logger = new Logger(options?.logger)
-        this.transport = options?.transport ?? new USBTransport(this.logger)
+        this.transport = options?.transport ?? new USBTransport(this.logger, options?.usb ? { usb: options.usb } : {})
         this.deviceDescriptor = options?.device
 
         const vendorId = options?.vendorId ?? options?.device?.usb?.filters?.[0]?.vendorId

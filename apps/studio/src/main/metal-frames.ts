@@ -1,4 +1,5 @@
 import { preferences } from '@main/preferences'
+import type { DecodedSurface } from '@main/usb-experiments'
 import { DECODED_FRAMES } from '@shared/ipc'
 import { app, ipcMain, sharedTexture, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
@@ -71,25 +72,49 @@ async function sendAsTexture(decoder: MetalJpeg, contents: WebContents, jpeg: Ui
     try {
         const decoded = await decoder.decode(jpeg)
         if (!decoded || contents.isDestroyed()) return false
-        const imported = sharedTexture.importSharedTexture({
-            textureInfo: {
-                // The camera's own 4:2:2 chroma, in the video-range layout Chromium's shared images take.
-                pixelFormat: 'nv16',
-                codedSize: { width: decoded.width, height: decoded.height },
-                colorSpace: { primaries: 'bt709', transfer: 'srgb', matrix: 'smpte170m', range: 'limited' },
-                handle: { ioSurface: decoded.surface },
-            },
-        })
-        try {
-            // Resolves when the window's receiver has finished with the frame, whether or not it could draw it.
-            await sharedTexture.sendSharedTexture({ frame: contents.mainFrame, importedSharedTexture: imported })
-        } finally {
-            imported.release()
-        }
-        return true
+        return await sendSurface(contents, decoded)
     } catch {
         return false
     } finally {
         inFlight = false
     }
+}
+
+/**
+ * EXPERIMENT(usb-transport): a frame the Swift live-view loop already decoded goes to the window as a texture. Where
+ * the window can't take it, `sendJpeg` sends the frame the usual way instead.
+ */
+export function sendDecodedSurface(contents: WebContents, decoded: DecodedSurface, sendJpeg: () => void): void {
+    if (!ready.has(contents)) return sendJpeg()
+    if (inFlight) return
+    inFlight = true
+    void sendSurface(contents, decoded)
+        .catch(() => false)
+        .then(sent => {
+            inFlight = false
+            if (!sent && !contents.isDestroyed()) sendJpeg()
+        })
+}
+
+/** Hands a decoded surface to the window; true once the window's receiver has finished with it. */
+async function sendSurface(
+    contents: WebContents,
+    decoded: { surface: Buffer; width: number; height: number }
+): Promise<boolean> {
+    const imported = sharedTexture.importSharedTexture({
+        textureInfo: {
+            // The camera's own 4:2:2 chroma, in the video-range layout Chromium's shared images take.
+            pixelFormat: 'nv16',
+            codedSize: { width: decoded.width, height: decoded.height },
+            colorSpace: { primaries: 'bt709', transfer: 'srgb', matrix: 'smpte170m', range: 'limited' },
+            handle: { ioSurface: decoded.surface },
+        },
+    })
+    try {
+        // Resolves when the window's receiver has finished with the frame, whether or not it could draw it.
+        await sharedTexture.sendSharedTexture({ frame: contents.mainFrame, importedSharedTexture: imported })
+    } finally {
+        imported.release()
+    }
+    return true
 }

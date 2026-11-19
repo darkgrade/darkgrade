@@ -343,6 +343,18 @@ export interface StudioViewState {
     peakingSensitivity: number
 }
 
+/**
+ * EXPERIMENT(usb-transport): what carries the camera's USB connection (Developer Mode › USB Transport). Everything
+ * this choice adds is marked EXPERIMENT(usb-transport); src/main/usb-experiments.ts lists the pieces.
+ */
+export const USB_TRANSPORT_CHOICES = [
+    { id: 'node-usb', label: 'Link on node-usb (default)' },
+    { id: 'node-usb-rs', label: 'Link on node-usb-rs' },
+    { id: 'swift-transport', label: 'Link on a Swift USB transport' },
+    { id: 'swift-live-view', label: 'Swift USB transport and Swift live-view loop' },
+] as const
+export type UsbTransportChoice = (typeof USB_TRANSPORT_CHOICES)[number]['id']
+
 /** Studio's saved settings (Preferences window). */
 export interface Preferences {
     /** Serve Studio's camera tools to MCP clients on this Mac. Off by default. */
@@ -357,6 +369,8 @@ export interface Preferences {
      * process and drawn by the window's WebGPU as textures. Off: the window decodes each JPEG itself.
      */
     metalLiveViewDecoder: boolean
+    /** EXPERIMENT(usb-transport): Developer Mode's USB transport choice; applies from the next connection. */
+    usbTransport: UsbTransportChoice
     /** The macOS material behind the window (View › Window Material); switches live. */
     windowMaterial: WindowMaterial
     /** Let the material go flat while Studio is in the background, as Finder and Messages do; from the next launch. */

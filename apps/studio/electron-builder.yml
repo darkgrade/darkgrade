@@ -20,6 +20,9 @@ extraResources:
 asarUnpack:
     # node-usb ships native prebuilds that must live outside the asar
     - '**/node_modules/usb/**'
+    # EXPERIMENT(usb-transport): node-usb-rs (the usb package, version 3) and its prebuilt add-ons
+    - '**/node_modules/usb-rs/**'
+    - '**/node_modules/@node-usb/**'
 mac:
     category: public.app-category.photography
     icon: build/icon.icns

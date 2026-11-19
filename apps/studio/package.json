@@ -21,6 +21,7 @@
         "package": "bun run build && electron-builder --mac"
     },
     "dependencies": {
+        "@darkgrade/contribute": "workspace:*",
         "@darkgrade/link": "workspace:*",
         "@kevinschaich/components": "0.7.0",
         "@modelcontextprotocol/node": "2.1.2",
@@ -30,8 +31,8 @@
         "react": "^19",
         "react-dom": "^19",
         "usb": "^2.11.0",
-        "zod": "^4.2.0",
-        "@darkgrade/contribute": "workspace:*"
+        "usb-rs": "npm:usb@3.2.1",
+        "zod": "^4.2.0"
     },
     "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",

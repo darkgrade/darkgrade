@@ -41,6 +41,11 @@ export interface USBTransportOptions extends TransportOptions {
     interfaceNumber?: number
     alternateInterface?: number
     claimInterface?: boolean
+    /**
+     * A WebUSB implementation to use under Node in place of the one this package makes from node-usb, for example
+     * `new WebUSB({ allowAllDevices: true })` from another USB library. Browsers always use `navigator.usb`.
+     */
+    usb?: USB
 }
 
 export interface IPTransportOptions extends TransportOptions {

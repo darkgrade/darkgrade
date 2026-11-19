@@ -3,11 +3,12 @@ import { cameraService } from '@main/camera-service'
 import { changeDiagnostics, diagnosticsContact, diagnosticsStatus } from '@main/diagnostics'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import { studioMcpServer } from '@main/mcp/mcp-server'
-import { sendLiveFrame } from '@main/metal-frames'
+import { sendDecodedSurface, sendLiveFrame } from '@main/metal-frames'
 import { openPerfWindow, perfMonitorOpen, receivePerfReport, sampleProcesses, tracePerf } from '@main/perf-monitor'
 import { preferences } from '@main/preferences'
 import { isTrustedRendererFrame, rendererDocumentUrl } from '@main/renderer-security'
 import { studioView } from '@main/studio-view'
+import { SWIFT_LIVE_VIEW_SURFACE, swiftLiveViewJpeg, type DecodedSurface } from '@main/usb-experiments'
 import { voiceService } from '@main/voice/voice-service'
 import type {
     CameraControlName,
@@ -51,6 +52,12 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
         const window = getWindow()
         if (!window || window.isDestroyed()) return
         const contents = window.webContents
+        // EXPERIMENT(usb-transport): a frame the Swift live-view loop decoded goes to the window as a texture.
+        if (channel === SWIFT_LIVE_VIEW_SURFACE)
+            return sendDecodedSurface(contents, payload as DecodedSurface, () => {
+                const jpeg = swiftLiveViewJpeg()
+                if (jpeg) contents.send(IPC_EVENTS.LiveViewFrame, jpeg)
+            })
         if (channel !== IPC_EVENTS.LiveViewFrame) return contents.send(channel, payload)
         sendLiveFrame(contents, payload as Uint8Array, jpeg => contents.send(channel, jpeg))
     }

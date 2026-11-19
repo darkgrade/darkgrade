@@ -16,6 +16,13 @@ import {
     type TransactionPolicy,
 } from '@darkgrade/link'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
+// EXPERIMENT(usb-transport): Developer Mode's USB transport choice.
+import {
+    experimentalCameraOptions,
+    runSwiftLiveView,
+    stopSwiftLiveView,
+    swiftLiveViewJpeg,
+} from '@main/usb-experiments'
 import type {
     CameraBattery,
     CameraCard,
@@ -456,6 +463,8 @@ export class CameraService {
             logger: { expanded: false, renderInTerminal: false, captureConsole: false },
             device,
             transactionPolicy: TRANSACTION_POLICY,
+            // EXPERIMENT(usb-transport): the chosen transport's options; none by default.
+            ...experimentalCameraOptions(discovered?.vendorId, message => this.log('system', message)),
         })
         try {
             await camera.connect()
@@ -997,6 +1006,8 @@ export class CameraService {
         this.broadcastState()
 
         this.liveViewLoopDone = (async () => {
+            // EXPERIMENT(usb-transport): the Swift live-view loop fetches the frames itself when it is the choice.
+            if (await this.runSwiftLiveViewIfChosen()) return
             let consecutiveErrors = 0
             let statisticsStartedMs = performance.now()
             let captureMs = 0
@@ -1025,7 +1036,7 @@ export class CameraService {
                         captureMs = 0
                     }
                     if (data && !this.liveViewStopRequested) {
-                        this.latestLiveViewFrame = data
+                        this.latestNodeFrame = data
                         this.broadcast(IPC_EVENTS.LiveViewFrame, data)
                         this.broadcastFocusFrames(sonyFocalFrames ?? [])
                         await this.refreshOsdFrame(camera)
@@ -1067,11 +1078,40 @@ export class CameraService {
 
     private liveViewLoopDone: Promise<void> | null = null
     /** The newest live-view JPEG, for tools that look at or measure the picture. */
-    latestLiveViewFrame: Uint8Array | null = null
+    get latestLiveViewFrame(): Uint8Array | null {
+        // EXPERIMENT(usb-transport): the Swift loop keeps its frames to itself until one is asked for.
+        return swiftLiveViewJpeg() ?? this.latestNodeFrame
+    }
+    private latestNodeFrame: Uint8Array | null = null
+
+    /** EXPERIMENT(usb-transport): true once the Swift live-view loop has run and ended; false when it isn't chosen. */
+    private async runSwiftLiveViewIfChosen(): Promise<boolean> {
+        const camera = this.camera
+        if (!camera) return false
+        try {
+            const ran = await runSwiftLiveView({
+                camera,
+                enqueue: operation => this.enqueue(operation),
+                broadcast: (channel, payload) => this.broadcast(channel, payload),
+                broadcastFocusFrames: frames => this.broadcastFocusFrames(frames),
+                refreshOsdFrame: () => this.refreshOsdFrame(camera),
+                stopRequested: () => this.liveViewStopRequested,
+                stillConnected: () => this.connected && this.camera === camera,
+                log: (message, isError) => this.log('system', message, isError ? 'error' : undefined),
+            })
+            if (!ran) return false
+        } catch (error) {
+            this.log('system', `The Swift live-view loop failed: ${errorMessage(error)}`, 'error')
+        }
+        this.liveViewRunning = false
+        this.broadcastState()
+        return true
+    }
 
     async stopLiveView(): Promise<CameraState> {
         if (this.liveViewRunning) {
             this.liveViewStopRequested = true
+            stopSwiftLiveView() // EXPERIMENT(usb-transport)
             this.log('system', 'Live view stopped')
         }
         // Wait for the frame loop to actually exit so no live-view operation

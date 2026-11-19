@@ -105,6 +105,8 @@ export class USBTransport implements TransportInterface {
     private readonly bulkInReaders = new Set<(error: Error) => void>()
 
     private readonly maxBulkReadBytes: number
+    /** The caller's own WebUSB implementation (USBTransportOptions.usb), used as it is. */
+    private readonly suppliedUsb: USB | null
 
     constructor(private logger: Logger, options: USBTransportOptions = {}) {
         // A receive limit bounds a complete PTP dataset, not one libusb allocation.
@@ -113,6 +115,7 @@ export class USBTransport implements TransportInterface {
         if (!Number.isInteger(limit) || limit < 1024 || limit > USB_LIMITS.MAX_USB_TRANSFER || limit % 1024 !== 0)
             throw new Error('maxBulkReadBytes must be a multiple of 1024 between 1024 and 1073741824')
         this.maxBulkReadBytes = limit
+        this.suppliedUsb = options.usb ?? null
     }
 
     public isConnected() {
@@ -134,6 +137,7 @@ export class USBTransport implements TransportInterface {
 
     private async getUSB(filters: USBDeviceFilter[]): Promise<USB> {
         if (typeof navigator !== 'undefined' && 'usb' in navigator) return navigator.usb
+        if (this.suppliedUsb) return this.suppliedUsb
 
         const scope = JSON.stringify(filters)
         if (this.usb && this.usbScope === scope) return this.usb
@@ -609,6 +613,9 @@ export class USBTransport implements TransportInterface {
             } catch (error) {
                 // halt will be cleared when device is disconnected, ignore
                 if (!this.connected || this.handleDeviceLoss(error)) return
+                // A WebUSB implementation that times its reads out (node-usb-rs) cancels this one about once a second
+                // while the camera has nothing to report: there is no event yet, so read again.
+                if (error instanceof Error && error.message === 'Cancelled') continue
 
                 console.error('Error listening for interrupt: ', error)
             }

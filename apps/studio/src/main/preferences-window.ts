@@ -1,5 +1,6 @@
 import { preferences } from '@main/preferences'
 import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
+import { USB_TRANSPORT_CHOICES } from '@shared/ipc'
 import { app, BrowserWindow, Menu, screen, shell, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -107,6 +108,17 @@ export function installApplicationMenu(): void {
                     visible: process.platform === 'darwin' && preferences.get().developerMode,
                     checked: preferences.get().metalLiveViewDecoder,
                     click: item => preferences.set({ metalLiveViewDecoder: item.checked }),
+                },
+                {
+                    // EXPERIMENT(usb-transport): what carries the camera's USB connection; from the next connection.
+                    label: 'USB Transport (Experimental)',
+                    visible: preferences.get().developerMode,
+                    submenu: USB_TRANSPORT_CHOICES.map(choice => ({
+                        label: choice.label,
+                        type: 'radio' as const,
+                        checked: preferences.get().usbTransport === choice.id,
+                        click: () => preferences.set({ usbTransport: choice.id }),
+                    })),
                 },
                 { type: 'separator' },
                 { role: 'services' },

@@ -10,6 +10,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     speechModel: DEFAULT_SPEECH_MODEL,
     developerMode: false,
     metalLiveViewDecoder: false,
+    usbTransport: 'node-usb', // EXPERIMENT(usb-transport)
     windowMaterial: 'sidebar',
     dimWhenInactive: true,
 }

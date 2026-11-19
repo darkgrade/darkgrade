@@ -78,3 +78,62 @@ try {
 } catch {
     console.warn('[native] build failed; the Metal live-view decoder is unavailable')
 }
+
+// EXPERIMENT(usb-transport): Developer Mode's Swift USB transport and Swift live-view loop (native/swift-usb). The
+// loop decodes its frames itself, so the Metal decoder's source is compiled into this add-on as well.
+try {
+    const architecture = process.arch === 'arm64' ? 'arm64' : 'x86_64'
+    const swiftUsb = join(root, 'native', 'swift-usb')
+    const glue = join(out, 'swift-usb-addon.o')
+    execFileSync(
+        'xcrun',
+        [
+            'clang',
+            '-O2',
+            '-arch',
+            architecture,
+            '-mmacosx-version-min=13.0',
+            '-DNODE_GYP_MODULE_NAME=swift_usb',
+            `-I${headers}`,
+            '-c',
+            join(swiftUsb, 'addon.c'),
+            '-o',
+            glue,
+        ],
+        { stdio: 'inherit' }
+    )
+    execFileSync(
+        'xcrun',
+        [
+            'swiftc',
+            '-O',
+            '-parse-as-library',
+            '-emit-library',
+            '-module-name',
+            'SwiftUsb',
+            '-target',
+            `${architecture}-apple-macos13`,
+            join(swiftUsb, 'SwiftUsbTransport.swift'),
+            join(swiftUsb, 'SwiftLiveView.swift'),
+            join(source, 'MetalJpegDecoder.swift'),
+            glue,
+            '-Xlinker',
+            '-undefined',
+            '-Xlinker',
+            'dynamic_lookup',
+            '-framework',
+            'IOUSBHost',
+            '-framework',
+            'Metal',
+            '-framework',
+            'CoreVideo',
+            '-framework',
+            'IOSurface',
+            '-o',
+            join(out, 'swift-usb.node'),
+        ],
+        { stdio: 'inherit' }
+    )
+} catch {
+    console.warn('[native] swift-usb build failed; the Swift USB transport choices are unavailable')
+}
