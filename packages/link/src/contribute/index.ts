@@ -1,4 +1,4 @@
-import { observeTransport, type CameraTransport } from '#contribute/observe'
+import { observeTransport, type CameraTransport } from '@contribute/observe'
 import {
     DISCLOSURE,
     MAXIMUM_BODY_BYTES,
@@ -8,9 +8,9 @@ import {
     type CameraContext,
     type Contribution,
     type DiagnosticEntry,
-} from '#contribute/schema'
-export type { CameraTransport } from '#contribute/observe'
-export type { CameraContext, Contribution, DiagnosticEntry } from '#contribute/schema'
+} from '@contribute/schema'
+export type { CameraTransport } from '@contribute/observe'
+export type { CameraContext, Contribution, DiagnosticEntry } from '@contribute/schema'
 
 export interface ConsentStore {
     read(): Promise<boolean | null>

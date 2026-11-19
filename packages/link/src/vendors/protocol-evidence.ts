@@ -4,7 +4,7 @@ import {
     type ProtocolCategory,
     type ProtocolEvidence,
     type StatePhase,
-} from '@darkgrade/contribute/protocol'
+} from '@contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { createCanonRegistry, createNikonRegistry, createSonyRegistry, type Registry } from '@ptp/registry'
 

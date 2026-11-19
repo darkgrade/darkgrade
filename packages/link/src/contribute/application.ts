@@ -5,8 +5,8 @@ import {
     NOTICE_VERSION,
     validateBatch,
     type DiagnosticBatch,
-} from '#contribute/batch'
-import { observeTransport, type CameraTransport } from '#contribute/observe'
+} from '@contribute/batch'
+import { observeTransport, type CameraTransport } from '@contribute/observe'
 import {
     DISCLOSURE,
     MAXIMUM_BODY_BYTES,
@@ -16,7 +16,7 @@ import {
     type CameraContext,
     type Contribution,
     type DiagnosticEntry,
-} from '#contribute/schema'
+} from '@contribute/schema'
 
 export interface InstallationState {
     enabled: boolean

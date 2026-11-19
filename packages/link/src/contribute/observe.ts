@@ -1,4 +1,4 @@
-import type { DiagnosticEntry } from '#contribute/schema'
+import type { DiagnosticEntry } from '@contribute/schema'
 
 export interface CameraEvent {
     code: number

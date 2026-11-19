@@ -1,6 +1,6 @@
 import { createTelemetry } from '#collector/telemetry'
-import { createApplicationDiagnostics, type InstallationState } from '@darkgrade/contribute/application'
-import { NOTICE_VERSION } from '@darkgrade/contribute/batch'
+import { createApplicationDiagnostics, type InstallationState } from '@darkgrade/link/contribute/application'
+import { NOTICE_VERSION } from '@darkgrade/link/contribute/batch'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { camera, memoryDatabase } from './telemetry-fixture.ts'

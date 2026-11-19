@@ -1,7 +1,7 @@
 # Darkgrade CLI
 
 Alpha releases: `npx darkgrade@alpha telemetry …`.
-For local development, build Link/contribute/CLI and run `node packages/cli/dist/main.js`.
+For local development, build Link and CLI and run `node packages/cli/dist/main.js`.
 
 - `whoami`: print the persistent random diagnostic ID, never its secret.
 - `status`: show the sharing preference and endpoint configuration.

@@ -12,10 +12,21 @@ export default defineConfig({
     plugins: [
         // Emits dist/index.d.ts (+ tree) with @camera/@core/... aliases
         // rewritten to relative paths so consumers can resolve them.
-        dts({ include: ['src'], entryRoot: 'src' }),
+        dts({
+            include: ['src'],
+            entryRoot: 'src',
+            beforeWriteFile(filePath, content) {
+                // Diagnostics also serve NodeNext consumers such as the collector.
+                if (filePath.includes('/contribute/') && filePath.endsWith('.d.ts'))
+                    content = content.replace(/((?:from\s+|import\()['"])(\.[^'"]+)(['"])/g,
+                        (_, prefix, path, quote) => `${prefix}${/\.[cm]?[jt]s$/.test(path) ? path : path + '.js'}${quote}`)
+                return { filePath, content }
+            },
+        }),
     ],
     resolve: {
         alias: {
+            '@contribute': resolve(__dirname, './src/contribute'),
             '@workflows': resolve(__dirname, './src/workflows'),
             '@vendors': resolve(__dirname, './src/vendors'),
             '@camera': resolve(__dirname, './src/camera'),
@@ -39,6 +50,14 @@ export default defineConfig({
                 'runtime/browser': resolve(__dirname, 'src/runtime/browser.ts'),
                 'runtime/mcp': resolve(__dirname, 'src/runtime/mcp.ts'),
                 'runtime/ownership': resolve(__dirname, 'src/runtime/ownership.ts'),
+                'contribute/index': resolve(__dirname, 'src/contribute/index.ts'),
+                'contribute/application': resolve(__dirname, 'src/contribute/application.ts'),
+                'contribute/batch': resolve(__dirname, 'src/contribute/batch.ts'),
+                'contribute/installation-store': resolve(__dirname, 'src/contribute/installation-store.ts'),
+                'contribute/node': resolve(__dirname, 'src/contribute/node.ts'),
+                'contribute/protocol': resolve(__dirname, 'src/contribute/protocol.ts'),
+                'contribute/schema': resolve(__dirname, 'src/contribute/schema.ts'),
+                'contribute/settings': resolve(__dirname, 'src/contribute/settings.ts'),
             },
             name: 'Fuse',
             formats: ['es', 'cjs'],
@@ -46,7 +65,6 @@ export default defineConfig({
         },
         rollupOptions: {
             external: [
-                /^@darkgrade\/contribute(?:\/|$)/,
                 /^@modelcontextprotocol\//,
                 /^zod(?:\/|$)/,
                 'fs',

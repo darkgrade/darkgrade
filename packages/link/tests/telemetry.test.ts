@@ -1,5 +1,5 @@
 import { configureLinkTelemetry, linkTelemetry, sdkTelemetry } from '@core/telemetry'
-import { createApplicationDiagnostics } from '@darkgrade/contribute/application'
+import { createApplicationDiagnostics } from '@contribute/application'
 import { afterEach, expect, test, vi } from 'vitest'
 
 afterEach(() => {

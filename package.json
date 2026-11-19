@@ -14,7 +14,7 @@
         "format": "turbo format",
         "studio": "bun run --cwd apps/studio dev",
         "studio:bundle": "bun run --cwd apps/studio package && open apps/studio/release",
-        "testbench": "bun run --cwd packages/contribute build && bun run --cwd packages/link build && bun run --cwd apps/testbench build && bun run --cwd apps/testbench start",
+        "testbench": "bun run --cwd packages/link build && bun run --cwd apps/testbench build && bun run --cwd apps/testbench start",
         "security:check": "bun run scripts/security-check.ts",
         "security:test": "bun test scripts/tests"
     },

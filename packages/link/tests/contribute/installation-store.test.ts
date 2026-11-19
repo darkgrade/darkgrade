@@ -1,5 +1,5 @@
-import { NOTICE_VERSION } from '@darkgrade/contribute/batch'
-import { installationFileStore } from '@darkgrade/contribute/installation-store'
+import { NOTICE_VERSION } from '@darkgrade/link/contribute/batch'
+import { installationFileStore } from '@darkgrade/link/contribute/installation-store'
 import assert from 'node:assert/strict'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'

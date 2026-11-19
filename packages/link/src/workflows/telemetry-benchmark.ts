@@ -2,7 +2,7 @@ import { CanonCamera } from '@camera/canon-camera'
 import type { Camera } from '@camera/index'
 import { SonyCamera } from '@camera/sony-camera'
 import { linkBuildMetadata } from '@core/telemetry'
-import { type ProtocolEvidence } from '@darkgrade/contribute/protocol'
+import { type ProtocolEvidence } from '@contribute/protocol'
 import { createNikonRegistry } from '@ptp/registry'
 import { capturePropertyCodes } from '@vendors/capture-properties'
 

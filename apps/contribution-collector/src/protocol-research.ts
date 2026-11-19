@@ -1,6 +1,6 @@
 import type { Database } from '#collector/database'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
-import { validateBatch } from '@darkgrade/contribute/batch'
+import { validateBatch } from '@darkgrade/link/contribute/batch'
 
 export interface ProtocolFinding {
     scope: {

@@ -1,3 +1,30 @@
+# Package boundaries
+
+New Darkgrade product code belongs in `packages/link`, `apps/studio`, or `packages/cli`.
+Link owns camera drivers, shared runtimes, diagnostics/contributions, schemas and reusable
+services; Studio owns desktop UI/integrations; CLI owns command-line entry points.
+Use modules and explicit exports within these locations, not additional workspace packages
+or apps. Do not create `packages/contribute`, `packages/runtime`, or another shared package.
+Existing infrastructure, sites and shared build/UI tooling may be maintained in place.
+Only an explicit user request can change these boundaries. Link's possible rename is pending;
+keep its current directory and package name. Test harnesses consume these modules and keep
+independent fixtures; they must not introduce production packages in the Darkgrade repo.
+Read these rules regardless of the agent harness (Codex, Claude, Gemini or another agent).
+
+Physical CI powers on an off mapped supply and attempts one guarded startup recovery for
+absent or unresponsive cameras before candidate tests. Fresh verified USB absence or
+PTP unresponsiveness after completed recovery may produce an explicit preparation skip.
+Keep scoped recovery/availability receipts and report skipped cameras separately from passes.
+Failures after candidate testing starts, unknown state, lost ownership and uncertain cleanup
+remain failures; an all-skipped run cannot pass. Preserve prior failed runs when the harness
+or operator policy changes.
+
+Diagnostics live in `packages/link/src/contribute` and are exported as
+`@darkgrade/link/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
+Use `@contribute/*` for imports inside Link. Node settings stay separate from browser clients.
+The Node diagnostics tests live in `packages/link/tests/contribute` and run in Link's full
+test suite or with `bun run --cwd packages/link test:contribute`.
+
 The shared camera runtime (operation ordering, leases, the common MCP tools) lives in
 `packages/link/src/runtime` and is imported as `@darkgrade/link/runtime` (`/browser`, `/mcp`,
 `/ownership`). There is no `packages/runtime`: put new camera code in Link. Its tests run under
@@ -285,7 +312,7 @@ build constants are absent. Normal Node/Bun process exit attempts a bounded fina
 exit preserves buffered local metadata but cannot promise cloud delivery. Keep these lifecycle
 checks alongside transport attribution tests.
 
-Node applications and packages/cli share packages/contribute/settings: one random installation
+Node applications and packages/cli share packages/link/src/contribute/settings: one random installation
 ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Installation identity stays random; camera-body fingerprints are separate versioned hashes of manufacturer/model/serial. Never retain the raw serial in telemetry. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI
 retention-age blurb. The built-in hosted collector is used when no endpoint override is supplied. Opt-out stops
 cloud uploads but keeps bounded sanitized local logs. Delete disables sharing first and

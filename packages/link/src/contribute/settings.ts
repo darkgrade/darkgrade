@@ -3,9 +3,9 @@ import {
     validateInstallationState,
     type InstallationState,
     type InstallationStore,
-} from '#contribute/application'
-import { NOTICE_VERSION } from '#contribute/batch'
-import type { CameraContext, DiagnosticEntry } from '#contribute/schema'
+} from '@contribute/application'
+import { NOTICE_VERSION } from '@contribute/batch'
+import type { CameraContext, DiagnosticEntry } from '@contribute/schema'
 import { randomBytes, randomUUID } from 'node:crypto'
 import {
     appendFileSync,

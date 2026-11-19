@@ -1,4 +1,4 @@
-import { validateProtocol, type ProtocolEvidence } from '#contribute/protocol'
+import { validateProtocol, type ProtocolEvidence } from '@contribute/protocol'
 export const SCHEMA = 'darkgrade.diagnostics/v1'
 export const DISCLOSURE = 'protocol-metadata-only/v1'
 export const MAXIMUM_ENTRIES = 1000

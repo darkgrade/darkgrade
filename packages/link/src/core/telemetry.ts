@@ -1,6 +1,6 @@
-import type { createApplicationDiagnostics } from '@darkgrade/contribute/application'
-import type { ProtocolEvidence } from '@darkgrade/contribute/protocol'
-import { cameraHardwareFingerprint, type CameraContext } from '@darkgrade/contribute/schema'
+import type { createApplicationDiagnostics } from '@contribute/application'
+import type { ProtocolEvidence } from '@contribute/protocol'
+import { cameraHardwareFingerprint, type CameraContext } from '@contribute/schema'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 declare const __LINK_TELEMETRY_REVISION__: string
@@ -45,7 +45,7 @@ let knownStore: KnownCameraStore | null | undefined
 async function knownCameraStore() {
     if (knownStore !== undefined) return knownStore ?? undefined
     if (typeof process === 'undefined' || !process.versions?.node || process.env.NODE_ENV === 'test') return undefined
-    knownStore = await import('@darkgrade/contribute/settings').then(settings => settings.sharedKnownCameras(), () => null)
+    knownStore = await import('@contribute/settings').then(settings => settings.sharedKnownCameras(), () => null)
     return knownStore ?? undefined
 }
 /** Supply or clear the record of which camera each USB identity last reported itself as. */
@@ -59,7 +59,7 @@ export function resetReportedFacts() {
 }
 async function diagnosticsClient() {
     const node = typeof process !== 'undefined' && !!process.versions?.node
-    return configured ?? (node ? await (await import('@darkgrade/contribute/settings')).nodeDiagnostics() : undefined)
+    return configured ?? (node ? await (await import('@contribute/settings')).nodeDiagnostics() : undefined)
 }
 
 /** Browser applications can supply their own persistent store using contribute/application. */
@@ -187,7 +187,7 @@ export function linkTelemetry(source: TransportInterface) {
                         // A fingerprint is one body. Keep it only when the host asked for that exact body.
                         ...(hardwareFingerprint && requested.serialNumber && { hardwareFingerprint }) })
                 if (factScope && !configured && persistentFacts === undefined && typeof process !== 'undefined' && process.env.NODE_ENV !== 'test')
-                    persistentFacts = await import('@darkgrade/contribute/settings').then(settings => settings.sharedReportedFacts(), () => null)
+                    persistentFacts = await import('@contribute/settings').then(settings => settings.sharedReportedFacts(), () => null)
             } catch {
                 // A failed replacement must restore native events even after the old observer detached.
                 observed?.detach()

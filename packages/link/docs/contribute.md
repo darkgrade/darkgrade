@@ -1,10 +1,10 @@
-# @darkgrade/contribute
+# Link diagnostics (`@darkgrade/link/contribute`)
 
 The shared diagnostics queue behind Darkgrade Link, CLI and native Studio. On first use,
 sharing defaults on. There is no required first-run notice or prompt. Imports and npm
 installation do not open cameras, write settings or contact a collector.
 
-On Node, `nodeDiagnostics()` from `@darkgrade/contribute/settings` owns one queue across
+On Node, `nodeDiagnostics()` from `@darkgrade/link/contribute/settings` owns one queue across
 cameras. Link's ordinary USB/PTP-IP camera path attaches it to the existing connection
 before connection, then replaces Unknown model/firmware with the GetDeviceInfo result. It does not create a
 second camera session. Custom transports need explicit configuration; loopback PTP/IP
@@ -24,7 +24,7 @@ Node clients use the hosted collector by default; `DARKGRADE_TELEMETRY_URL` over
 the HTTPS origin. `DARKGRADE_CONTRIBUTIONS=0` or `DO_NOT_TRACK=1` overrides cloud
 sharing. Saved opt-outs survive updates and Studio migrates its earlier encrypted state.
 
-`createApplicationDiagnostics` from `@darkgrade/contribute/application` is the portable
+`createApplicationDiagnostics` from `@darkgrade/link/contribute/application` is the portable
 entry point for custom/browser hosts. Supply an endpoint and persistent store. Optional
 `presentNotice` is an embedding-product hook, not a requirement. `observe(transport,
 context)` retains the same connection. `configureLinkTelemetry(client)` installs that
@@ -62,7 +62,7 @@ installation's upload/deletion; the service stores only its hash. Optional legac
 methods remain available to hosts that explicitly configure email, but the current CLI
 and Studio use a diagnostic ID instead. Full encrypted transport recordings are separate.
 
-The package root retains the previous single-camera observer API for compatibility. New
+The `@darkgrade/link/contribute` entry retains the previous single-camera observer API. New
 integrations should use the shared application/settings entry points. The old signed-grant
 collector is not part of the current deployment.
 

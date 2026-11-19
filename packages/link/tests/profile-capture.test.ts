@@ -15,7 +15,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { configureLinkTelemetry } from '@core/telemetry'
-import { createApplicationDiagnostics } from '@darkgrade/contribute/application'
+import { createApplicationDiagnostics } from '@contribute/application'
 
 const codecs = createPTPRegistry(true).codecs
 it('retains numeric Canon write intent and rejection without inventing a readback or retaining opaque bytes', () => {

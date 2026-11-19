@@ -1,4 +1,4 @@
-import { protocolProperties } from '#contribute/protocol-properties'
+import { protocolProperties } from '@contribute/protocol-properties'
 
 export type ProtocolCategory = 'operation' | 'event' | 'property' | 'response'
 export type ProtocolNumber = number | string
