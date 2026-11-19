@@ -106,7 +106,8 @@ const SONY_LIVE_VIEW_NEXT_FRAME_TIMEOUT_MS = 150
 /** Ask for the next frame this long before it's due, so a frame never waits for us. */
 const SONY_LIVE_VIEW_EARLY_MS = 1.5
 /** Between "not ready" answers; keeps a camera that refuses instantly from being asked in a tight loop. */
-const SONY_LIVE_VIEW_RETRY_MS = 1
+const SONY_LIVE_VIEW_RETRY_MS = 2
+const SONY_LIVE_VIEW_MAX_RETRY_MS = 8
 /** Frame intervals averaged to predict the next frame (about a third of a second at 30 fps). */
 const SONY_LIVE_VIEW_INTERVAL_SAMPLES = 9
 /** Intervals outside this range (pauses, focus moves) say nothing about the camera's frame rate. */
@@ -944,6 +945,7 @@ export class SonyCamera extends GenericCamera {
             if (!objectResponse.data?.length) throw new Error('Sony live-view response contained no dataset')
             const liveViewData = parseLiveViewDataset(objectResponse.data, this.registry)
             if (!liveViewData.liveViewImage.length) throw new Error('Sony live-view dataset contained no image')
+            this.recordLiveViewFrame(objectResponse.requestStartedMs)
             data = liveViewData.liveViewImage
             const focalFrameData = liveViewData.focalFrameInfo?.data
             sonyFocalFrames = focalFrameData ? parseSonyFocalFrameInfo(focalFrameData).frames : []
@@ -975,8 +977,8 @@ export class SonyCamera extends GenericCamera {
      * The camera makes a new live-view frame every frame interval (33 ms at 30 fps) and answers
      * Access Denied (0x200F) when asked before it's ready. Rather than asking constantly, wait until
      * just before the next frame is due, measured from when the last frame was requested, then ask
-     * every millisecond until it arrives. That costs one or two requests a frame and adds at most a
-     * request's round trip of delay.
+     * again with a short bounded backoff until it arrives. A temporarily unavailable frame must
+     * not cause a tight request loop or count as a delivered image.
      */
     /**
      * Milliseconds until the next live-view frame is due (0 when it may already be). Callers that
@@ -989,23 +991,24 @@ export class SonyCamera extends GenericCamera {
         return Math.max(0, dueMs - performance.now())
     }
 
-    private async nextLiveViewObject(): Promise<{ code: number; data?: Uint8Array }> {
+    private async nextLiveViewObject(): Promise<{ code: number; data?: Uint8Array; requestStartedMs: number }> {
         const waitMs = this.millisecondsUntilNextLiveViewFrame()
         if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs))
         const deadline = Date.now() + SONY_LIVE_VIEW_NEXT_FRAME_TIMEOUT_MS
+        let retryMs = SONY_LIVE_VIEW_RETRY_MS
         for (;;) {
             const requestStartedMs = performance.now()
             const response = await this.send(this.registry.operations.GetObject, {
                 ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
             })
             this.liveViewCounters.requests++
-            if (response.code !== SONY_ACCESS_DENIED) {
-                this.recordLiveViewFrame(requestStartedMs)
-                return response
-            }
+            if (response.code !== SONY_ACCESS_DENIED) return { ...response, requestStartedMs }
             this.liveViewCounters.refusals++
-            if (Date.now() >= deadline) return response
-            await new Promise(resolve => setTimeout(resolve, SONY_LIVE_VIEW_RETRY_MS))
+            const remainingMs = deadline - Date.now()
+            if (remainingMs <= 0) return { ...response, requestStartedMs }
+            await new Promise(resolve => setTimeout(resolve, Math.min(retryMs, remainingMs)))
+            if (Date.now() >= deadline) return { ...response, requestStartedMs }
+            retryMs = Math.min(retryMs * 2, SONY_LIVE_VIEW_MAX_RETRY_MS)
         }
     }
 

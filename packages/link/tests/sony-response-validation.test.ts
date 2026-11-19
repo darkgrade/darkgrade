@@ -244,6 +244,67 @@ describe('Sony preview results', () => {
         expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
     })
 
+    it.each([
+        { code: 0x2019 },
+        { code: 0x2001 },
+        { code: 0x2001, data: new Uint8Array(16) },
+    ])('does not count an unsuccessful image as a frame', async reply => {
+        const { camera, replies } = cameraFixture()
+        replies.push(reply)
+        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow()
+        expect(camera.takeLiveViewStatistics()).toEqual({ requests: 1, refusals: 0, frames: 0 })
+        expect(camera.millisecondsUntilNextLiveViewFrame()).toBe(0)
+    })
+
+    it('bounds polling for a delayed frame without treating the card as unavailable', async () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] })
+        try {
+            const { camera, sent } = cameraFixture()
+            const bytes = new Uint8Array(28)
+            new DataView(bytes.buffer).setUint32(0, 24, true)
+            new DataView(bytes.buffer).setUint32(4, 4, true)
+            bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
+            const started = Date.now()
+            const requestTimes: number[] = []
+            camera.send = (async operation => {
+                sent.push(operation.name)
+                requestTimes.push(Date.now() - started)
+                return Date.now() - started < 33 ? { code: 0x200f } : { code: 0x2001, data: bytes }
+            }) as typeof camera.send
+            const result = camera.captureLiveView({ includeInfo: false })
+            await vi.runAllTimersAsync()
+            expect((await result).data).toEqual(bytes.slice(24))
+            expect(requestTimes.length).toBeLessThanOrEqual(8)
+            expect(requestTimes.at(-1)).toBeLessThanOrEqual(41)
+            expect(sent.every(name => name === 'GetObject')).toBe(true)
+            expect(camera.takeLiveViewStatistics()).toEqual({
+                requests: requestTimes.length, refusals: requestTimes.length - 1, frames: 1,
+            })
+        } finally { vi.useRealTimers() }
+    })
+
+    it('keeps a persistent refusal terminal and stops polling at the deadline', async () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] })
+        try {
+            const { camera } = cameraFixture()
+            const started = Date.now()
+            const requestTimes: number[] = []
+            camera.send = (async () => {
+                requestTimes.push(Date.now() - started)
+                return { code: 0x200f }
+            }) as typeof camera.send
+            const rejected = expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
+            await vi.runAllTimersAsync()
+            await rejected
+            expect(Date.now() - started).toBe(150)
+            expect(requestTimes.length).toBeLessThanOrEqual(22)
+            expect(requestTimes.every(time => time < 150)).toBe(true)
+            expect(camera.takeLiveViewStatistics()).toEqual({
+                requests: requestTimes.length, refusals: requestTimes.length, frames: 0,
+            })
+        } finally { vi.useRealTimers() }
+    })
+
     it.each([undefined, new Uint8Array(), new Uint8Array(16)])(
         'rejects successful responses without image bytes',
         async data => {
