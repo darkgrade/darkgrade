@@ -18,10 +18,20 @@ const migration = [
 const browserCapabilities = /\bfetch\s*\(|new\s+(?:WebSocket|EventSource|XMLHttpRequest)\s*\(|navigator\.(?:usb|bluetooth|mediaDevices)|\bfrom\s*['"](?!\.)|\bimport\s*['"](?!\.)|\bimport\s*\(/g
 const demoRoot = 'apps/testbench/'
 const allowedDemoExtensions = new Set(['ts', 'css', 'html', 'json', 'md', 'svg'])
+// Product code belongs in Link, Studio or CLI; these existing ancillary workspaces may stay.
+const workspaceManifests = new Set([
+    'packages/link/package.json', 'packages/cli/package.json',
+    'packages/ui/package.json', 'packages/typescript-config/package.json',
+    'apps/studio/package.json', 'apps/testbench/package.json',
+    'apps/contribution-collector/package.json', 'apps/docs/package.json',
+    'apps/example-web/package.json', 'apps/darkgrade.com/package.json', 'apps/drkgrd.co/package.json',
+])
 
 /** Findings expose locations and categories, never the credential or personal data. */
 export function scanSecurityFile(file: string, text: string): SecurityFinding[] {
     const findings: SecurityFinding[] = []
+    if (/^(?:packages|apps)\/[^/]+\/package\.json$/.test(file) && !workspaceManifests.has(file))
+        findings.push({ file, line: 1, rule: 'unapproved-workspace-package' })
     const find = (rule: string, expression: RegExp) => {
         const pattern = new RegExp(expression.source, expression.flags)
         for (const match of text.matchAll(pattern))

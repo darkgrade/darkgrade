@@ -11,7 +11,7 @@ import {
 } from '@core/ptp-errors'
 import { linkTelemetry } from '@core/telemetry'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
-import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@darkgrade/contribute/protocol'
+import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'

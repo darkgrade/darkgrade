@@ -4,6 +4,15 @@ Darkgrade Link package
 
 [darkgrade.com/docs](https://darkgrade.com/docs)
 
+## Shared diagnostics
+
+Diagnostics are part of Link. Node hosts use `@darkgrade/link/contribute/settings`;
+browser/custom hosts use `@darkgrade/link/contribute/application`. Schemas and protocol
+validation are available from `/contribute/schema`, `/contribute/batch`, and
+`/contribute/protocol` without importing camera transports or Node settings.
+See [diagnostics and privacy](docs/contribute.md) for enrollment, opt-out,
+withdrawal, local logging and integration details.
+
 ## Canon EOS R6 Mark III
 
 Canon USB live-view JPEG capture, preview magnification, color temperature and live-view autofocus area controls are verified on the EOS R6 Mark III. Property setters wait for event readback, and live view restores the previous camera/host output. See the [SDK comparison and hardware evidence](docs/canon-r6-iii-sdk-audit.md) for the API, tested capabilities, retained traces and remaining gaps.

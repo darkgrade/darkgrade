@@ -1,6 +1,6 @@
 import type { Database } from '#collector/database'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
-import { validateBatch } from '@darkgrade/contribute/batch'
+import { validateBatch } from '@darkgrade/link/contribute/batch'
 import { createHash } from 'node:crypto'
 import type { ProtocolFinding } from '#collector/protocol-research'
 import {cameraConnection} from '#collector/transport'
@@ -69,7 +69,7 @@ export function diagnosticPattern(
         sourceHash: record.sha256,
         noticeVersion: record.noticeVersion,
         reviewedAt,
-        source: '@darkgrade/contribute',
+        source: '@darkgrade/contribute', // Stable pattern/v1 identifier used by existing Matrix installations.
         credit,
         patterns,
         ...(findings.length && { findings }),

@@ -1,4 +1,4 @@
-import type { StatePhase } from '@darkgrade/contribute/protocol'
+import type { StatePhase } from '@contribute/protocol'
 /** The existing event cache is the only input; no extra USB commands, waits or cloud calls. */
 function diagnosticState(camera:any,phase:StatePhase){
  try{camera.getInstance?.().recordStateSnapshot?.('recording',phase)}catch{}

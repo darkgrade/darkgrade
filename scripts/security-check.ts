@@ -22,5 +22,5 @@ if (findings.length) {
         console.error(`${finding.file}:${finding.line}: ${finding.rule}`)
     process.exitCode = 1
 } else {
-    console.log(`Leak check passed: ${files.length} tracked/new files; Test Bench migration and browser capability checks passed`)
+    console.log(`Leak check passed: ${files.length} tracked/new files; workspace boundaries, Test Bench migration and browser capability checks passed`)
 }

@@ -1,4 +1,4 @@
-import { validateContribution, type Contribution } from '#contribute/schema'
+import { validateContribution, type Contribution } from '@contribute/schema'
 
 export const BATCH_SCHEMA = 'darkgrade.diagnostic-batch/v2'
 export const NOTICE_VERSION = 'camera-diagnostics-90d/v1'

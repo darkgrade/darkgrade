@@ -7,7 +7,7 @@ required. This replaces the undeployed project 18 infrastructure.
 
 ## Local development
 
-Build `packages/contribute` and this app, then run a local Postgres 17 database. Set
+Build `packages/link` and this app, then run a local Postgres 17 database. Set
 `DATABASE_URL` to its connection string and `TELEMETRY_PUBLIC_URL` to the intended HTTPS
 origin. `npm start` starts the service on port 8080. `npm test` includes real Postgres
 integration tests when `DATABASE_URL` is set. `npm run smoke` uses `TELEMETRY_SMOKE_URL`

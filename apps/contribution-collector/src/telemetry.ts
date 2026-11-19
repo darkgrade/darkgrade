@@ -1,8 +1,8 @@
 import { allowBurst } from '#collector/abuse-limits'
 import type { Database, Transaction } from '#collector/database'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
-import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/contribute/batch'
-import { MAXIMUM_BODY_BYTES } from '@darkgrade/contribute/schema'
+import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/link/contribute/batch'
+import { MAXIMUM_BODY_BYTES } from '@darkgrade/link/contribute/schema'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 export const RETENTION_DAYS = 90
@@ -297,7 +297,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     receivedAt: date,
                     expiresAt: new Date(+date + RETENTION_DAYS * DAY),
                     review: 'unreviewed',
-                    source: '@darkgrade/contribute',
+                    source: '@darkgrade/contribute', // Stable pattern/v1 identifier used by existing Matrix installations.
                 })
                 return false
             })

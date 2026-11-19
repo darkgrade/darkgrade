@@ -1,4 +1,4 @@
-import type {CameraContext, DiagnosticEntry} from '@darkgrade/contribute/schema'
+import type {CameraContext, DiagnosticEntry} from '@darkgrade/link/contribute/schema'
 
 /** Normalize the query/export projection; the integrity-checked source payload stays immutable. */
 export function cameraConnection(camera:CameraContext,entries:DiagnosticEntry[]):CameraContext {

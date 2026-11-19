@@ -5,7 +5,7 @@ import {
     settingsDirectory,
     saveDiagnosticProfile,
     sharedSettings,
-} from '@darkgrade/contribute/settings'
+} from '@darkgrade/link/contribute/settings'
 import { randomUUID } from 'node:crypto'
 
 const [group, action, ...args] = process.argv.slice(2)

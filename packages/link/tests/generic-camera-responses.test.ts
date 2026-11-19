@@ -1,4 +1,4 @@
-import { createContributions } from '@darkgrade/contribute'
+import { createContributions } from '@darkgrade/link/contribute'
 import { GenericCamera } from '@camera/generic-camera'
 import { Logger } from '@core/logger'
 import type { OperationDefinition } from '@ptp/types/operation'

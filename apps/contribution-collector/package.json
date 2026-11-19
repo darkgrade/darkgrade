@@ -18,8 +18,8 @@
         "test:postgres": "npm run build && node --test tests/postgres.test.ts"
     },
     "dependencies": {
-        "@darkgrade/contribute": "workspace:*",
-        "pg": "8.16.3"
+        "pg": "8.16.3",
+        "@darkgrade/link": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "20.19.43",

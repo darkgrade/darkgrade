@@ -1,4 +1,4 @@
-import type { ConsentStore } from '#contribute/index'
+import type { ConsentStore } from '@contribute/index'
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'

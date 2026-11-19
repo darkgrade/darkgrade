@@ -27,7 +27,7 @@ Browser tests exercise the HTTP host with an explicitly labelled camera fixture,
 
 ## Local access
 
-The host binds to localhost. API calls require an exact local Host, same-origin requests and an ephemeral session token. Camera serial numbers stay out of the browser and media transfers remain local. Link honours your existing diagnostics opt-in; manage sharing with the [shared contribution settings](../../packages/contribute/README.md). Do not expose or proxy this service to a network; it is intended for one trusted local operator.
+The host binds to localhost. API calls require an exact local Host, same-origin requests and an ephemeral session token. Camera serial numbers stay out of the browser and media transfers remain local. Link honours your existing diagnostics opt-in; manage sharing with the [shared contribution settings](../../packages/link/docs/contribute.md). Do not expose or proxy this service to a network; it is intended for one trusted local operator.
 
 ## Migration boundary
 

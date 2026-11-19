@@ -1,4 +1,4 @@
-import { validateInstallationState, type InstallationState, type InstallationStore } from '#contribute/application'
+import { validateInstallationState, type InstallationState, type InstallationStore } from '@contribute/application'
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
