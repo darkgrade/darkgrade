@@ -15,9 +15,7 @@ import { ISOAutoControl } from '@ptp/definitions/vendors/nikon/nikon-operation-d
 import { HardwareError, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { createNikonRegistry, type NikonRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
-import { EventDefinition } from '@ptp/types/event'
 import type { PropertyDefinition } from '@ptp/types/property'
-import { EventParams } from '@ptp/types/type-helpers'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { GenericCamera } from './generic-camera'
@@ -246,17 +244,7 @@ export class NikonCamera extends GenericCamera {
         }
     }
 
-    on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
-        this.emitter.on<EventParams<E>>(event.name, handler)
-    }
 
-    off<E extends EventDefinition>(event: E, handler?: (params: EventParams<E>) => void): void {
-        if (handler) {
-            this.emitter.off<EventParams<E>>(event.name, handler)
-        } else {
-            this.emitter.removeAllListeners(event.name)
-        }
-    }
 
     /** Drain one event batch explicitly; opening a camera does not start a background poll. */
     async pollEvents(): Promise<NikonQueuedEvent[]> {
@@ -717,17 +705,7 @@ export class NikonCamera extends GenericCamera {
     ): Promise<Uint8Array> {
         if (!Number.isSafeInteger(objectSize) || objectSize < 0)
             throw new Error('Nikon object size must be a nonnegative safe integer')
-        // Start transfer tracking
-        this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObjectEx', objectSize)
-
-        const chunks: Uint8Array[] = []
-        let offset = 0
-
-        while (offset < objectSize) {
-            // Aborting between chunks leaves no transaction in flight: the camera stays usable.
-            signal?.throwIfAborted()
-            const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
-
+        return this.downloadObjectChunks(objectHandle, objectSize, 'GetPartialObjectEx', async (offset, bytesToRead) => {
             // Split offset and size into lower/upper 32-bit values
             const offsetLower = offset & 0xffffffff
             const offsetUpper = Math.floor(offset / 0x100000000)
@@ -748,31 +726,8 @@ export class NikonCamera extends GenericCamera {
             )
 
             this.assertNikonResponse(chunkResponse.code, 'GetPartialObjectEx')
-            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead) {
-                throw new Error('GetPartialObjectEx returned an empty or oversized chunk')
-            }
-
-            // Update transfer progress
-            this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())
-
-            chunks.push(chunkResponse.data)
-            offset += chunkResponse.data.length
-            onProgress?.(offset, objectSize)
-        }
-
-        // Complete transfer tracking
-        this.logger.completeTransfer(objectHandle)
-
-        // Combine all chunks
-        const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-        const completeFile = new Uint8Array(totalBytes)
-        let writeOffset = 0
-        for (const chunk of chunks) {
-            completeFile.set(chunk, writeOffset)
-            writeOffset += chunk.length
-        }
-
-        return completeFile
+            return chunkResponse.data
+        }, onProgress, signal)
     }
 
     private async enableRemoteMode(): Promise<void> {

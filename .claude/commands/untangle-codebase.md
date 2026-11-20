@@ -11,9 +11,12 @@ Read AGENTS.md and packages/link/docs/pre-release-audit.md first.
 3. Measure the available history window and changes before attributing complexity.
    Separate generated catalogs, tests, necessary vendor encodings and duplicated
    application behavior.
-4. Reuse the smallest existing primitive. Map camera controls in Link, preserve
+4. Trace reachability from exports, manifest commands, app/worker entrypoints and
+   private harnesses; inspect unreachable cycles and test-only consumers. Separate
+   generated-data counts from code and retain useful independent regression fixtures.
+5. Reuse the smallest existing primitive. Map camera controls in Link, preserve
    vendor units/mode/availability guards, and update all consumers together.
-5. Test different vendors/modes, absent/read-only/empty/ambiguous choices, failed
+6. Test different vendors/modes, absent/read-only/empty/ambiguous choices, failed
    readback and genuine package consumers. Preserve failed evidence.
-6. Record decisions and prevention rules in the existing audit/AGENTS guidance.
+7. Record decisions and prevention rules in the existing audit/AGENTS guidance.
    Keep the requested work on one branch and one PR; do not merge without authorization.

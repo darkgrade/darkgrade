@@ -13,9 +13,7 @@ import { randomSessionId } from '@ptp/definitions/session'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { createSonyRegistry, type SonyRegistry } from '@ptp/registry'
 import type { CodecType } from '@ptp/types/codec'
-import { EventDefinition } from '@ptp/types/event'
 import type { PropertyDefinition } from '@ptp/types/property'
-import { EventParams } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
@@ -162,6 +160,7 @@ export class SonyCamera extends GenericCamera {
     private contentTransferModeEnabled = false
     private osdImageModeEnabled = false
     private propertyCache = new Map<number, SonyDevicePropDesc>()
+    private manualIsoChoices?: SonyPropertyState['allowedValues']
     vendorId = VendorIDs.SONY
     declare public registry: SonyRegistry
 
@@ -172,6 +171,7 @@ export class SonyCamera extends GenericCamera {
     }
 
     async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus'; configure?: boolean } = {}): Promise<void> {
+        this.manualIsoChoices = undefined
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
@@ -210,6 +210,7 @@ export class SonyCamera extends GenericCamera {
     }
 
     async disconnect(): Promise<void> {
+        this.manualIsoChoices = undefined
         if (!this.transport.isConnected()) return super.disconnect()
         let cleanupError: unknown
         try {
@@ -315,7 +316,31 @@ export class SonyCamera extends GenericCamera {
         }
         // The inventory is authoritative. Probing absent legacy properties can
         // stall newer bodies (FX2 hangs on unadvertised CompressionSetting).
-        return this.listPropertyStates()
+        const states = this.listPropertyStates()
+        const iso = states.find(state => state.name === 'Iso')
+        const gain = states.find(state => state.name === 'GainControlSetting')
+        if (iso?.writable && iso.enabled && gain?.value !== 'Auto')
+            this.manualIsoChoices = iso.allowedValues ? [...iso.allowedValues] : undefined
+        return states
+    }
+
+    /** Application ISO includes the advertised gain-mode switch. Raw descriptors stay unchanged.
+     * Retained manual choices belong to this session only; setIso revalidates after switching mode.
+     */
+    isoControlState(states: SonyPropertyState[]): SonyPropertyState | undefined {
+        const iso = states.find(state => state.name === 'Iso')
+        if (!iso) return undefined
+        const gain = states.find(state => state.name === 'GainControlSetting')
+        const automatic = gain?.enabled && gain.value === 'Auto'
+        const choices = iso.allowedValues?.length ? iso.allowedValues : automatic ? this.manualIsoChoices : undefined
+        const switchable = gain?.enabled && gain.writable &&
+            gain.allowedValues?.includes('Manual') && gain.allowedValues.includes('Auto')
+        if (!switchable || !choices?.length || !automatic && (!iso.enabled || !iso.writable))
+            return automatic ? { ...iso, value: 'ISO AUTO' } : iso
+        return {
+            ...iso, value: automatic ? 'ISO AUTO' : iso.value, enabled: true, writable: true,
+            allowedValues: choices.includes('ISO AUTO') ? [...choices] : ['ISO AUTO', ...choices],
+        }
     }
 
     listPropertyStates(): SonyPropertyState[] {
@@ -346,17 +371,7 @@ export class SonyCamera extends GenericCamera {
             .sort((left, right) => left.code - right.code)
     }
 
-    on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
-        this.emitter.on<EventParams<E>>(event.name, handler)
-    }
 
-    off<E extends EventDefinition>(event: E, handler?: (params: EventParams<E>) => void): void {
-        if (handler) {
-            this.emitter.off<EventParams<E>>(event.name, handler)
-        } else {
-            this.emitter.removeAllListeners(event.name)
-        }
-    }
 
     async getAperture(): Promise<string> {
         return this.get(this.registry.properties.Aperture)
@@ -1063,17 +1078,7 @@ export class SonyCamera extends GenericCamera {
             throw new Error('Sony object size must be a non-negative safe integer')
         await this.enableContentTransferMode()
 
-        // Start transfer tracking
-        this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'SDIO_GetPartialLargeObject', objectSize)
-
-        const chunks: Uint8Array[] = []
-        let offset = 0
-
-        while (offset < objectSize) {
-            // Aborting between chunks leaves no transaction in flight: the camera stays usable.
-            signal?.throwIfAborted()
-            const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
-
+        return this.downloadObjectChunks(objectHandle, objectSize, 'SDIO_GetPartialLargeObject', async (offset, bytesToRead) => {
             // Split 64-bit offset into two 32-bit values
             const offsetLower = offset >>> 0
             const offsetUpper = Math.floor(offset / 0x100000000)
@@ -1091,30 +1096,8 @@ export class SonyCamera extends GenericCamera {
             )
 
             this.assertOk(chunkResponse.code, 'Sony partial object download')
-            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead)
-                throw new Error('Sony partial object download returned an empty or oversized chunk')
-
-            // Update transfer progress
-            this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())
-
-            chunks.push(chunkResponse.data)
-            offset += chunkResponse.data.length
-            onProgress?.(offset, objectSize)
-        }
-
-        // Complete transfer tracking
-        this.logger.completeTransfer(objectHandle)
-
-        // Combine all chunks
-        const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-        const completeFile = new Uint8Array(totalBytes)
-        let writeOffset = 0
-        for (const chunk of chunks) {
-            completeFile.set(chunk, writeOffset)
-            writeOffset += chunk.length
-        }
-
-        return completeFile
+            return chunkResponse.data
+        }, onProgress, signal)
     }
 
     protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>, requireObject = true): Promise<number> {

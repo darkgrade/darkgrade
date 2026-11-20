@@ -97,19 +97,11 @@ export class Logger {
     private config: LoggerConfig
     private nextId: number = 1
     private changeListeners: Array<() => void> = []
-    private static exitHandlerInstalled = false
     private notifyTimeout: NodeJS.Timeout | null = null
     private activeTransfers: Map<number, number> = new Map()
     /** Which transaction each log id belongs to, so updates find their log without a scan. */
     private logKeys: Map<number, string> = new Map()
     private registry: Registry | null = null
-    private originalConsole = {
-        log: console.log.bind(console),
-        error: console.error.bind(console),
-        info: console.info.bind(console),
-        warn: console.warn.bind(console),
-    }
-
     constructor(config: Partial<LoggerConfig> = {}) {
         this.config = { ...defaultLoggerConfig, ...config }
 
@@ -117,7 +109,6 @@ export class Logger {
             if (this.config.captureConsole) this.captureConsole()
             if (this.config.renderInTerminal) {
                 this.setupInkRenderer()
-                this.setupExitHandler()
             }
         }
     }
@@ -150,38 +141,12 @@ export class Logger {
         })
     }
 
-    private setupExitHandler() {
-        // Process-wide handlers: one set no matter how many terminal loggers are created.
-        if (Logger.exitHandlerInstalled) return
-        Logger.exitHandlerInstalled = true
-        const flush = async () => {
-            if (this.notifyTimeout) {
-                clearTimeout(this.notifyTimeout)
-                this.notifyTimeout = null
-            }
-            for (const listener of this.changeListeners) {
-                listener()
-            }
-            await new Promise(resolve => setTimeout(resolve, 100))
-        }
-        // Handle exceptions by delaying slightly to let Ink render
-        process.on('uncaughtException', async error => {
-            await flush()
-
-            console.error(`${error.message}\n\n${error.stack}`)
-            // throw error
-        })
-
-        process.on('unhandledRejection', async reason => {
-            await flush()
-            const error = reason instanceof Error ? reason : new Error(String(reason))
-            console.error(`${error.message}\n\n${error.stack}`)
-            // throw error
-        })
-    }
-
     onChange(listener: () => void) {
         this.changeListeners.push(listener)
+        return () => {
+            const index = this.changeListeners.indexOf(listener)
+            if (index >= 0) this.changeListeners.splice(index, 1)
+        }
     }
 
     private notifyChange() {
@@ -189,7 +154,7 @@ export class Logger {
             clearTimeout(this.notifyTimeout)
         }
         this.notifyTimeout = setTimeout(() => {
-            for (const listener of this.changeListeners) {
+            for (const listener of [...this.changeListeners]) {
                 listener()
             }
             this.notifyTimeout = null
@@ -326,18 +291,20 @@ export class Logger {
         this.activeTransfers.set(objectHandle, logId)
     }
 
-    completeTransfer(objectHandle: number): void {
+    completeTransfer(objectHandle: number, code = 0x2001): void {
         const logId = this.activeTransfers.get(objectHandle)
         if (logId !== undefined) {
             // Add response phase to mark transfer as complete
             this.updateLog(logId, {
+                level: code === 0x2001 ? 'info' : 'error',
                 responsePhase: {
                     timestamp: Date.now(),
-                    code: 0x2001, // OK
+                    code,
                 },
             })
         }
         this.activeTransfers.delete(objectHandle)
+        this.trimIfNeeded()
     }
 
     startTransfer(

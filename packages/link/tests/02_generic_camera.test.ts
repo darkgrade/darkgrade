@@ -1,8 +1,4 @@
 import { Logger } from '@core/logger'
-import { formatRegistry } from '@ptp/definitions/format-definitions'
-import { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
-import { genericPropertyRegistry } from '@ptp/definitions/property-definitions'
-import { responseRegistry } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
@@ -10,10 +6,6 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { GenericCamera } from '@camera/generic-camera'
 import {WebUSB} from 'usb'
 
-const operationDefinitions = Object.values(genericOperationRegistry)
-const propertyDefinitions = Object.values(genericPropertyRegistry)
-const responseDefinitions = Object.values(responseRegistry)
-const formatDefinitions = Object.values(formatRegistry)
 const hardwareOperationTimeoutMilliseconds = 15_000
 
 const canonConnected=(await new WebUSB({allowAllDevices:true}).getDevices()).some(device=>device.vendorId===VendorIDs.CANON)

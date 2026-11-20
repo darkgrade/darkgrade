@@ -86,7 +86,7 @@ export interface NikonLiveViewDataset {
 }
 
 export class NikonLiveViewDatasetCodec extends CustomCodec<NikonLiveViewDataset> {
-    encode(value: NikonLiveViewDataset): Uint8Array {
+    encode(_value: NikonLiveViewDataset): Uint8Array {
         throw new Error('Encoding NikonLiveViewDataset is not yet implemented')
     }
 

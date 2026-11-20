@@ -31,7 +31,7 @@ export interface OsdImageDataset {
 const META_INFO_FIELDS = 9
 
 export class OsdImageDatasetCodec extends CustomCodec<OsdImageDataset> {
-    encode(value: OsdImageDataset): Uint8Array {
+    encode(_value: OsdImageDataset): Uint8Array {
         throw new Error('Encoding OsdImageDataset is not yet implemented')
     }
 

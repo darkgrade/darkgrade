@@ -1,5 +1,5 @@
 import { Logger } from '@core/logger'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 function quietLogger(maxTransactions: number): Logger {
     return new Logger({ captureConsole: false, renderInTerminal: false, maxTransactions })
@@ -16,6 +16,20 @@ function logOperation(logger: Logger, transactionId: number): number {
 }
 
 describe('Logger retention', () => {
+    it('releases an observer when its renderer is disposed', async () => {
+        vi.useFakeTimers()
+        try {
+            const logger = quietLogger(100), listener = vi.fn()
+            const dispose = logger.onChange(listener)
+            logOperation(logger, 1)
+            await vi.runAllTimersAsync()
+            expect(listener).toHaveBeenCalledTimes(1)
+            dispose(); dispose()
+            logOperation(logger, 2)
+            await vi.runAllTimersAsync()
+            expect(listener).toHaveBeenCalledTimes(1)
+        } finally { vi.useRealTimers() }
+    })
     it('keeps only the most recent transactions, so a long live view cannot grow without bound', () => {
         const logger = quietLogger(100)
         for (let transactionId = 1; transactionId <= 5000; transactionId++) logOperation(logger, transactionId)
@@ -41,5 +55,16 @@ describe('Logger retention', () => {
         logger.completeTransfer(42)
         for (let transactionId = 1001; transactionId <= 1200; transactionId++) logOperation(logger, transactionId)
         expect(logger.getLogById(transferId)).toBeUndefined()
+    })
+    it('releases failed transfers without reporting success or pinning their log entries forever', () => {
+        const logger = quietLogger(100)
+        let lastId = 0
+        for (let handle = 1; handle <= 500; handle++) {
+            lastId = logger.startTransfer(handle, 1, handle, 'GetPartialObject', 12)
+            logger.completeTransfer(handle, 0x2007)
+            expect(logger.getActiveTransfer(handle)).toBeUndefined()
+        }
+        expect(logger.getOrderedTransactions().length).toBeLessThanOrEqual(110)
+        expect(logger.getLogById(lastId)).toMatchObject({ level: 'error', responsePhase: { code: 0x2007 } })
     })
 })

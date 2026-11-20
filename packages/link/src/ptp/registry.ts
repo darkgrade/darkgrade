@@ -8,8 +8,8 @@ import { canonOperationRegistry } from '@ptp/definitions/vendors/canon/canon-ope
 import { canonPropertyRegistry } from '@ptp/definitions/vendors/canon/canon-property-definitions'
 import { fujifilmOperationRegistry } from '@ptp/definitions/vendors/fujifilm/fujifilm-operation-definitions'
 import { leicaOperationRegistry } from '@ptp/definitions/vendors/leica/leica-operation-definitions'
-import { nikonOperationRegistry } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import { nikonEventRegistry } from '@ptp/definitions/vendors/nikon/nikon-event-definitions'
+import { nikonOperationRegistry } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import { nikonPropertyRegistry } from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
 import { nikonResponseRegistry } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
 import { olympusOperationRegistry } from '@ptp/definitions/vendors/olympus/olympus-operation-definitions'
@@ -20,11 +20,63 @@ import { sonyFormatRegistry } from '@ptp/definitions/vendors/sony/sony-format-de
 import { sonyOperationRegistry } from '@ptp/definitions/vendors/sony/sony-operation-definitions'
 import { sonyPropertyRegistry } from '@ptp/definitions/vendors/sony/sony-property-definitions'
 import { sonyResponseRegistry } from '@ptp/definitions/vendors/sony/sony-response-definitions'
-import { createBaseCodecs } from '@ptp/types/codec'
+import { createBaseCodecs, type BaseCodecRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { fujifilmPropertyRegistry } from '@vendors/fujifilm/properties'
 
-export const createPTPRegistry = (littleEndian: boolean) =>
+// Name the shared shapes once: inferred spread returns duplicated every definition in .d.ts.
+// Omit preserves the runtime spread's last-definition-wins semantics without widening codecs.
+type Override<Standard, Vendor> = Omit<Standard, keyof Vendor> & Vendor
+
+export type PTPRegistry = {
+    readonly codecs: BaseCodecRegistry
+    readonly operations: typeof genericOperationRegistry
+    readonly properties: typeof genericPropertyRegistry
+    readonly events: typeof genericEventRegistry
+    readonly formats: typeof formatRegistry
+    readonly responses: typeof responseRegistry
+}
+
+type ExtendedRegistry<
+    Operations,
+    Properties = typeof genericPropertyRegistry,
+    Events = typeof genericEventRegistry,
+    Formats = typeof formatRegistry,
+    Responses = typeof responseRegistry,
+> = {
+    readonly codecs: BaseCodecRegistry
+    readonly operations: Override<typeof genericOperationRegistry, Operations>
+    readonly properties: Properties
+    readonly events: Events
+    readonly formats: Formats
+    readonly responses: Responses
+}
+
+export type SonyRegistry = ExtendedRegistry<
+    typeof sonyOperationRegistry,
+    Override<typeof genericPropertyRegistry, typeof sonyPropertyRegistry>,
+    Override<typeof genericEventRegistry, typeof sonyEventRegistry>,
+    Override<typeof formatRegistry, typeof sonyFormatRegistry>,
+    Override<typeof responseRegistry, typeof sonyResponseRegistry>
+>
+export type NikonRegistry = ExtendedRegistry<
+    typeof nikonOperationRegistry,
+    Override<typeof genericPropertyRegistry, typeof nikonPropertyRegistry>,
+    Override<typeof genericEventRegistry, typeof nikonEventRegistry>,
+    typeof formatRegistry,
+    Override<typeof responseRegistry, typeof nikonResponseRegistry>
+>
+export type CanonRegistry = ExtendedRegistry<
+    typeof canonOperationRegistry,
+    Override<typeof genericPropertyRegistry, typeof canonPropertyRegistry>,
+    Override<typeof genericEventRegistry, typeof canonEventRegistry>
+>
+type FujifilmRegistry = ExtendedRegistry<
+    typeof fujifilmOperationRegistry,
+    Override<typeof genericPropertyRegistry, typeof fujifilmPropertyRegistry>
+>
+
+export const createPTPRegistry = (littleEndian: boolean): PTPRegistry =>
     ({
         codecs: createBaseCodecs(littleEndian),
         operations: genericOperationRegistry,
@@ -34,7 +86,7 @@ export const createPTPRegistry = (littleEndian: boolean) =>
         responses: responseRegistry,
     }) as const
 
-export const createSonyRegistry = (littleEndian: boolean) =>
+export const createSonyRegistry = (littleEndian: boolean): SonyRegistry =>
     ({
         codecs: createBaseCodecs(littleEndian),
         operations: { ...genericOperationRegistry, ...sonyOperationRegistry },
@@ -44,7 +96,7 @@ export const createSonyRegistry = (littleEndian: boolean) =>
         responses: { ...responseRegistry, ...sonyResponseRegistry },
     }) as const
 
-export const createNikonRegistry = (littleEndian: boolean) =>
+export const createNikonRegistry = (littleEndian: boolean): NikonRegistry =>
     ({
         codecs: createBaseCodecs(littleEndian),
         operations: { ...genericOperationRegistry, ...nikonOperationRegistry },
@@ -54,7 +106,7 @@ export const createNikonRegistry = (littleEndian: boolean) =>
         responses: { ...responseRegistry, ...nikonResponseRegistry },
     }) as const
 
-export const createCanonRegistry = (littleEndian: boolean) =>
+export const createCanonRegistry = (littleEndian: boolean): CanonRegistry =>
     ({
         codecs: createBaseCodecs(littleEndian),
         operations: { ...genericOperationRegistry, ...canonOperationRegistry },
@@ -71,7 +123,7 @@ export const createCanonRegistry = (littleEndian: boolean) =>
 const createVendorOperationRegistry = <Operations extends Record<string, OperationDefinition>>(
     littleEndian: boolean,
     operations: Operations
-) =>
+): ExtendedRegistry<Operations> =>
     ({
         codecs: createBaseCodecs(littleEndian),
         operations: { ...genericOperationRegistry, ...operations },
@@ -81,24 +133,19 @@ const createVendorOperationRegistry = <Operations extends Record<string, Operati
         responses: responseRegistry,
     }) as const
 
-export const createFujifilmRegistry = (littleEndian: boolean) =>
+export const createFujifilmRegistry = (littleEndian: boolean): FujifilmRegistry =>
     ({
         ...createVendorOperationRegistry(littleEndian, fujifilmOperationRegistry),
         properties: { ...genericPropertyRegistry, ...fujifilmPropertyRegistry },
     }) as const
-export const createPanasonicRegistry = (littleEndian: boolean) =>
+export const createPanasonicRegistry = (littleEndian: boolean): ExtendedRegistry<typeof panasonicOperationRegistry> =>
     createVendorOperationRegistry(littleEndian, panasonicOperationRegistry)
-export const createOlympusRegistry = (littleEndian: boolean) =>
+export const createOlympusRegistry = (littleEndian: boolean): ExtendedRegistry<typeof olympusOperationRegistry> =>
     createVendorOperationRegistry(littleEndian, olympusOperationRegistry)
-export const createLeicaRegistry = (littleEndian: boolean) =>
+export const createLeicaRegistry = (littleEndian: boolean): ExtendedRegistry<typeof leicaOperationRegistry> =>
     createVendorOperationRegistry(littleEndian, leicaOperationRegistry)
-export const createSigmaRegistry = (littleEndian: boolean) =>
+export const createSigmaRegistry = (littleEndian: boolean): ExtendedRegistry<typeof sigmaOperationRegistry> =>
     createVendorOperationRegistry(littleEndian, sigmaOperationRegistry)
-
-export type PTPRegistry = ReturnType<typeof createPTPRegistry>
-export type SonyRegistry = ReturnType<typeof createSonyRegistry>
-export type NikonRegistry = ReturnType<typeof createNikonRegistry>
-export type CanonRegistry = ReturnType<typeof createCanonRegistry>
 
 export type VendorOperationRegistry =
     | ReturnType<typeof createFujifilmRegistry>

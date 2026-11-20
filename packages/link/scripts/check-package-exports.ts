@@ -1,4 +1,4 @@
-import {execFileSync} from 'node:child_process'
+import {execFileSync, spawnSync} from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, symlinkSync, realpathSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -88,7 +88,7 @@ try {
         join(isolated, 'node_modules/usb'), 'dir')
     const consumer = `
         import { Camera, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
-            type CameraCapabilities, type ExposureTime, type CameraControlSession, SonyWifiCamera } from '@darkgrade/link'
+            type CameraCapabilities, type ExposureTime, type CameraControlSession, SonyWifiCamera, SonyCamera } from '@darkgrade/link'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/link/controls'
         const camera = new Camera()
         const device: Promise<{code: number; data: DeviceInfo}> = camera.send(genericOperationRegistry.GetDeviceInfo, {})
@@ -103,6 +103,20 @@ try {
         camera.setExposureTime({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
         camera.setControl('colorTemperature', 5600)
         camera.setControl('iso', 'ISO 800')
+        const sony = null! as SonyCamera
+        sony.set(sony.registry.properties.S1S2Button, 'DOWN')
+        // @ts-expect-error Named registry shapes retain Sony's exact enum values.
+        sony.set(sony.registry.properties.S1S2Button, 'INVALID')
+        sony.get(sony.registry.properties.FocusIndication).then(focus => {
+            // @ts-expect-error The result must retain the focus-state union.
+            const invalid: typeof focus = 'INVALID_STATUS'
+            void invalid
+        })
+        sony.on(sony.registry.events.SDIE_AFStatus, params => {
+            // @ts-expect-error Event parameter codecs retain enum inference too.
+            const invalid: typeof params.Status = 'INVALID_STATUS'
+            void invalid
+        })
         // @ts-expect-error Operation parameters have concrete numeric types.
         camera.send(genericOperationRegistry.OpenSession, {SessionID: 'one'})
         // @ts-expect-error Required operation parameters cannot be omitted.
@@ -145,6 +159,18 @@ try {
             `new api.Camera(); if(console.log!==log||process.listenerCount('uncaughtException')!==handlers)throw Error('Library constructor changes the host');` +
             `if(api.parseExposureTime('180°').kind!=='angle')throw Error('Packed exposure API is missing');`],
             { cwd: isolated, stdio: 'inherit' })
+        for (const trigger of [
+            "throw new Error('packed-logger-fatal')",
+            "Promise.reject(new Error('packed-logger-fatal'))",
+        ]) {
+            const result = spawnSync('node', [
+                '--unhandled-rejections=strict', ...(format === 'esm' ? ['--input-type=module'] : []), '-e',
+                `const api=${load};new api.Camera({logger:{renderInTerminal:true,captureConsole:false}});` +
+                `setTimeout(()=>{${trigger}},50)`,
+            ], { cwd: isolated, encoding: 'utf8', timeout: 10_000 })
+            if (result.error || result.status !== 1 || !result.stderr.includes('packed-logger-fatal'))
+                throw new Error('Terminal logging must preserve fatal process exits: ' + format, { cause: result.error })
+        }
     }
     console.log('Packed camera runtime imports passed using only declared runtime dependencies')
 } finally {

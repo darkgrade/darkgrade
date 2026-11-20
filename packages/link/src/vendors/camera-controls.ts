@@ -138,10 +138,9 @@ export async function readCameraCapabilities(camera: GenericCamera): Promise<Cam
     let states: PropertyState[]
     let mappings: Partial<Record<CameraControlId, readonly string[]>>
     if (camera instanceof SonyCamera) {
-        states = await camera.refreshPropertyStates()
-        const gain = states.find(state => state.name === 'GainControlSetting')
-        const iso = states.find(state => state.name === 'Iso')
-        if (iso && gain?.enabled && gain.value === 'Auto') iso.value = 'ISO AUTO'
+        const observed = await camera.refreshPropertyStates()
+        const iso = camera.isoControlState(observed)
+        states = observed.map(state => state.name === 'Iso' && iso ? iso : state)
         mappings = sonyControlProperties
     } else if (camera instanceof CanonCamera) {
         await camera.refreshEventProperties()

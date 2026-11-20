@@ -93,10 +93,17 @@ reuse the owned-session shot controller and its idle checks. Automatic exposure
 preparation, physical mode changes, transport recovery and camera ownership remain
 explicit host/workflow responsibilities.
 
-Movie ISO under Auto ISO is reported as Auto rather than as a dormant fixed value.
-Fixed ISO writes through the generic control API are unavailable until the current
+Nikon movie ISO under Auto ISO is reported as Auto rather than as a dormant fixed value.
+Its fixed ISO writes through the generic control API are unavailable until the current
 manual/Auto-ISO state supports them. Existing specialized preparation/ISO APIs can
 be used explicitly; capability discovery never turns Auto ISO off.
+
+On native Sony bodies with an advertised writable Auto/Manual gain switch, an explicit
+ISO write may use that switch. Link retains only manual sensitivities actually observed
+in this owned session when Auto hides the ISO enum; disconnect/reconnect clears them.
+Starting directly in Auto with no manual choices observed stays read-only. After switching,
+the setter validates the fresh manual enum and restores Auto if the ISO write is refused.
+Capability discovery itself never switches gain mode or writes a sensitivity.
 
 Supported mappings cover Sony native USB controls, Nikon photo/movie extensions,
 Canon common exposure/focus/white-balance and structured formats, and standard PTP.
@@ -123,3 +130,6 @@ by `bun run test:package`.
 browser-safe. The main camera export uses Node USB/network/SDK services.
 Browser applications use the shared browser runtime with a host-provided client.
 There is no claim that the complete main export bundles for an arbitrary browser.
+
+Terminal logging is opt-in and never suppresses uncaught exceptions or unhandled
+promise rejections. Packed Node checks require fatal errors to retain a nonzero exit.

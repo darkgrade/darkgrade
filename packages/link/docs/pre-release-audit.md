@@ -92,10 +92,11 @@ the documented diagnostics exports provide tested browser boundaries. During thi
 audit an intermediate build's root ESM entry alone measured 211,136 bytes / 62,028
 gzip bytes, before its shared chunks and dependencies; its packed package measured
 729,150 compressed / 4,517,612 unpacked bytes across 401 entries. These are dated
-measurements, not a future size guarantee. `dist/ptp/registry.d.ts` was 872,829 bytes:
-inferred registry types are large, and that deserves a separate measured optimization
-if consumer/compiler performance proves problematic. Do not weaken type inference
-with `any` to make the declaration smaller.
+measurements, not a future size guarantee. `dist/ptp/registry.d.ts` was 872,829 bytes. The follow-up replaces repeated inferred
+spread returns with named shapes referencing the existing registries; it now measures
+5,370 bytes, retaining exact operation/property/event codecs and last-definition-wins
+merge semantics. Packed enum and parameter assertions verify that the reduction does
+not widen values to `any` or arbitrary strings.
 
 ## Verification and remaining limits
 
@@ -110,9 +111,9 @@ Auto ISO, absent/read-only controls, busy/malformed replies, failed readback,
 recording guards, USB vendor selection, SDK angle conversion/readback, Canon
 structured formats, Sony display-only descriptors and inert library construction. Studio
 checks preserve native choices, reject fallback/ambiguous values and keep angle
-and duration units separate. Final local validation passed 1,052 Link tests (54 existing skips), 28 runtime
+and duration units separate. Follow-up local validation passed 1,076 Link tests (54 existing skips), 28 runtime
 tests, 28 diagnostics tests, two Link command tests, 66 Studio tests, the CLI
-wrapper smoke, 20 basic Test Bench tests, strict package/type checks and seven
+wrapper smoke, 21 basic Test Bench tests, strict package/type checks and seven
 security checks. Studio's main/preload/renderer bundles and the basic Test Bench
 build passed. The initial Studio bundle command used the wrong working directory;
 the corrected check used the installed project binary and passed.
@@ -125,3 +126,58 @@ tests. Failed prior hardware runs are not converted into passes by this refactor
 AGENTS.md and the repository's `/untangle-codebase` workflow require an existing-code
 audit before another primitive, update consumers with the shared implementation,
 and tie README promises to actual package/host validation.
+
+
+## Deeper dead-code and duplication pass
+
+The first pass was an API correction and targeted consolidation, not an exhaustive
+reachability audit. This follow-up examines tracked TypeScript/JavaScript import and
+re-export edges, literal dynamic imports and worker URLs across the workspace. Roots
+include public package entries, Studio main/preload/renderer and workers, Test Bench,
+MCP stdio and manifest-backed maintenance commands. TypeScript unused-local/parameter
+checks and token comparisons identify internal leftovers and repeated implementations.
+A file referenced only by its own tests is not thereby production code.
+
+| Confirmed finding | Removal or consolidation |
+| --- | --- |
+| Full Linux USB name database and supplemental ids have no reader after the formatter removal | Remove 101,315 JSON lines (3,010,289 bytes), its unused generator/class labels and the orphan `usb-ids` command; retain the cited camera identity catalog used by discovery |
+| Eight numbered experiments are neither tests nor supported commands | Remove `06_storage`, `07_nikon`, `10_capture`, `11_protocol`, `12_canon`, `13_canon`, `15_nikon_photo_video_mode`, `16_nikon_photo_video_test`; current profile/media commands and executable wire/consumer tests supersede their behavior |
+| Native Sony control helper has only its own test as a consumer | Remove the helper/test after checking current core, Outpost, Fleet Bench and Matrix references; snapshot copies in Matrix are not callers and remain independent |
+| Standard, Nikon and Sony drivers duplicate the entire chunk transfer loop | Keep native requests/offsets, preparation and response checks in each driver; share assembly, short-chunk progress, cancellation and size checks in the existing driver |
+| Failed/cancelled downloads leave logger transfers active forever | Complete aggregate transfer logs as failed and release retention pins; preserve the original failure and never label an incomplete download successful |
+| Sony/Nikon repeat identical subscription methods; live listener mutation skips observers | Inherit the existing generic methods and dispatch a snapshot; test listener removal/addition while delivering actual camera events |
+| Terminal exception handlers suppress fatal exits (isolated Node probes returned 0 for both a throw and a rejection) | Remove those handlers; packed ESM/CommonJS terminal-logging consumers must report the actual error and exit nonzero |
+| Terminal renderer keeps a second unbounded history after logger eviction | Render the logger's current retained items, release observers on unmount, and remove unused console/stdout state |
+| Root/nested array formatting and Sony enum decoding repeat loops | Share each existing module's implementation, preserve formatter output and raw fallback behavior |
+| Nikon shot labels repeatedly reconstruct registries/codecs per enum value | Resolve the registry and codecs once per observation and decode each distinct raw value once |
+| Test Bench independently selects vendor property names and caches Sony ISO choices | Consume Link capabilities and generic writes; keep session-scoped Sony gain-mode/choice handling in Link, with fresh write validation and rollback |
+| Build/test aliases are maintained as copies; three dev dependencies are unused | Read aliases from the existing TypeScript paths; remove `glob`, `string-similarity`, and the empty `@types/usb` stub; keep the frozen lockfile reproducible |
+| Codec type extraction lists concrete/custom fallbacks already matched by `CodecInstance` | Use the two structural builder/instance cases and retain strict packed enum assertions |
+| An abandoned `nukeDevice` reset method remains behind a commented call | Delete it; preserve the guarded recovery path and its existing tests |
+
+Manual classification matters: seven modules outside library/app roots are reached by
+the manifest-backed profile/recording commands. Their encrypted private traces,
+sanitization, explicit capture and qualification contracts differ from the shared
+telemetry benchmark; they remain. SDK/vendor catalogs, USB matching, mode/session
+ownership, recovery guards, generated camera identities and independent parser fixtures
+also remain. Public escapes are not deleted just because this repository lacks an
+application caller: external consumers can use exported APIs.
+
+The packed check exposed directory imports ending in several `..` segments after
+registry types started referencing named definitions. Fix declaration rewriting for
+those roots as well as simple `.`/`..`, and retain strict ESM/CommonJS consumer checks.
+Sony's previously test-only enum assertions now run against packed declarations.
+Source compiler checks alone did not catch this packaging failure.
+
+The prevention gate now enables `noUnusedLocals` and `noUnusedParameters` for Link,
+including its source/tests and runtime typecheck. It catches unused local state, imports
+and parameters; it does not prove that an exported API, dynamic entry or a cycle of
+modules is unused. Future sweeps must follow roots and inspect external harnesses before
+deleting them, and report generated data separately from executable-code savings.
+
+
+Follow-up validation includes the full Link/runtime/diagnostics/CLI suite, Studio types
+and 66 tests, its actual main/preload/renderer bundles, the basic Test Bench build and
+21 host tests, seven Chrome fixture HTTP/UI checks, strict packed ESM/CommonJS types,
+fatal-exit injection checks, and security checks. Existing physical-test skips remain
+explicit; fixture browser runs and type checks do not establish hardware reliability.

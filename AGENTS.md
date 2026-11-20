@@ -16,6 +16,15 @@ round a requested control to the nearest enum, or treat registry presence as ava
 Preserve Bulb/Time/flash-sync, current read-only/empty/ambiguous choices, idle/session guards
 and failed readbacks. Different transports must not claim parity without adapter evidence.
 
+For dead-code work, trace imports/re-exports, dynamic imports, worker URLs, package
+exports, manifest scripts and independent/private harness callers before deletion.
+An exported declaration or a module's own test is not evidence of a product caller.
+Review unreachable cycles as well as files with no importers. Report generated-data
+removals separately from executable code and tests; deletion counts alone are not proof
+of simplification. Keep Link's unused-local/parameter compiler checks enabled and preserve
+packed enum inference. Hosts consume the generic control API rather than maintaining
+another property alias map, vendor switch, session cache or setter registry.
+
 Verify README promises with built/packed exports. Run `packages/link`'s `test:package`
 for strict ESM/CommonJS NodeNext consumer types, including negative input checks, with
 `skipLibCheck:false`. Source-only typechecking does not establish package type safety.
@@ -23,6 +32,8 @@ Update README and docs together; do not publish fixed size/dependency counts wit
 measurement. Keep pure browser controls in `@darkgrade/link/controls`; importing the main
 camera entry is not a generic browser integration. Library construction must not take over
 the embedding application's console or process exception handlers by default.
+Opt-in terminal logging must preserve nonzero exits for uncaught errors and unhandled
+promise rejections; verify this in isolated Node consumers, not by swallowing a failure.
 
 Keep the requested task on one branch and one PR. Historical PR numbers in technical
 notes are evidence, not instructions to append new work to an old branch or to merge.
