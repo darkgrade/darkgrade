@@ -11,8 +11,8 @@ import { Camera } from '@darkgrade/link'
 import { resolveCameraControl } from '@darkgrade/link/controls'
 
 const camera = new Camera()
-await camera.connect()
 try {
+    await camera.connect()
     const { controls } = await camera.getCapabilities()
     for (const control of Object.values(controls)) {
         console.log(control.id, control.value, control.allowedValues, control.writable)

@@ -271,6 +271,19 @@ describe('Nikon capabilities from real descriptor codecs', () => {
 })
 
 describe('library construction and vendor dispatch', () => {
+    it('keeps partial vendor initialization caller-owned for standard diagnostic probes', async () => {
+        const camera = new Camera({vendorId: 0x04a9, transport: transport()})
+        const driver = camera.getInstance() as CanonCamera
+        vi.spyOn(driver, 'connect').mockRejectedValue(new Error('Vendor remote mode refused'))
+        const close = vi.spyOn(driver, 'disconnect').mockResolvedValue(undefined)
+        vi.spyOn(driver, 'send').mockResolvedValue({code: 0x2001, data: info(camera, [], [0x1001])} as never)
+        try {
+            await expect(camera.connect()).rejects.toThrow('remote mode refused')
+            expect(close).not.toHaveBeenCalled()
+            expect((await camera.send(driver.registry.operations.GetDeviceInfo, {})).data.model).toBe('Fixture')
+        } finally { await camera.disconnect() }
+        expect(close).toHaveBeenCalledOnce()
+    })
     it('keeps console and process exception handlers owned by the embedding application', () => {
         const log = console.log,
             handlers = process.listeners('uncaughtException')

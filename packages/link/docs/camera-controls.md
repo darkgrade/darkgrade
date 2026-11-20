@@ -8,8 +8,8 @@ import { Camera } from '@darkgrade/link'
 import { resolveCameraControl } from '@darkgrade/link/controls'
 
 const camera = new Camera()
-await camera.connect() // Requires one matching USB body, or an explicit device filter.
 try {
+    await camera.connect() // Requires one matching USB body, or an explicit device filter.
     const { controls } = await camera.getCapabilities()
     const iso = controls.iso
     if (iso?.writable && iso.allowedValues?.length) {
@@ -27,6 +27,12 @@ An alias resolves a name; it does not change units, choose a camera mode or bypa
 write guard. Native property names/codes remain in each observation's `source`
 for debugging. Low-level vendor classes and raw `get`/`set` are retained for
 protocol work; their presence is not a capability advertisement.
+Existing `getShutterSpeed()`/`setShutterSpeed()` keep their compact native protocol
+requests for compatibility with scoped camera profiles. Use `getExposureTime()`/
+`setExposureTime()` or `setControl('exposureTime', ...)` for unit conversion and
+native angle mode; the old methods do not infer a capture frame rate.
+When vendor initialization is refused, a partial session stays caller-owned for
+standard diagnostics. Always close the attempt with `disconnect()` in `finally`.
 
 ## Exposure time
 

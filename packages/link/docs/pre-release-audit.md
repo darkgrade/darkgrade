@@ -61,8 +61,9 @@ controllers and setters. Raw protocol registries remain the source of wire codes
 
 The stable application vocabulary is in `src/camera/controls.ts`. `exposureTime`
 unifies shutter speed and shutter angle. Aliases make names searchable without
-creating another primitive or changing units. Shutter convenience methods use
-the same control path. A required frame-rate context handles cross-unit conversion;
+creating another primitive or changing units. Existing shutter convenience methods
+retain their compact native protocol path; the new control contract provides
+duration/angle conversion. A required frame-rate context handles cross-unit conversion;
 Bulb, Time and flash-sync stay distinct.
 
 `getCapabilities()` is a current observation, not a permanent camera-model trait.

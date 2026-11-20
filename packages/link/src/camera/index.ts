@@ -171,13 +171,9 @@ export class Camera {
                 this.instance.on(subscription.event, subscription.handler as never)
         }
         this.deviceDescriptor = descriptor
-        try { await this.instance.connect(descriptor) }
-        catch (error) {
-            try { await this.instance.disconnect() }
-            catch (cleanup) { throw new AggregateError([error, cleanup], 'Camera connection and cleanup failed') }
-            this.subscriptions.clear()
-            throw error
-        }
+        // Preserve the caller-owned partial session for standard protocol diagnostics when
+        // vendor initialization is refused. The caller closes it with disconnect() in finally.
+        return this.instance.connect(descriptor)
     }
 
     /** Opens a Sony contents-transfer session for body-menu controls. */
@@ -288,13 +284,11 @@ export class Camera {
     }
 
     async getShutterSpeed(): Promise<string> {
-        const state = (await this.getCapabilities()).controls.exposureTime
-        if (!state) throw new Error('The current camera mode does not expose exposure time')
-        return state.value
+        return this.instance.getShutterSpeed()
     }
 
     async setShutterSpeed(value: string): Promise<void> {
-        return this.setExposureTime(value)
+        return this.instance.setShutterSpeed(value)
     }
 
     async getIso(): Promise<string> {
