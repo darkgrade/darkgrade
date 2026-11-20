@@ -16,9 +16,12 @@ export class TransportFactory {
         return new IPTransport(options)
     }
 
+    create(type: TransportType.USB, options?: USBTransportOptions): Promise<TransportInterface>
+    create(type: TransportType.IP, options: IPTransportOptions): Promise<TransportInterface>
     async create(type: TransportType, options?: USBTransportOptions | IPTransportOptions): Promise<TransportInterface> {
         switch (type) {
             case TransportType.USB:
+                if (options && 'address' in options) throw new Error('IP options require an IP transport')
                 return await this.createUSBTransport(options)
             case TransportType.IP:
                 if (!options || !('address' in options)) throw new Error('IP transport requires address')

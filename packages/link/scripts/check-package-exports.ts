@@ -89,7 +89,7 @@ try {
     const consumer = `
         import { Camera, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, SonyWifiCamera, SonyCamera,
-            TransportFactory } from '@darkgrade/link'
+            TransportFactory, TransportType } from '@darkgrade/link'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/link/controls'
         const camera = new Camera()
         const device: Promise<{code: number; data: DeviceInfo}> = camera.send(genericOperationRegistry.GetDeviceInfo, {})
@@ -107,6 +107,12 @@ try {
         const factory = new TransportFactory()
         factory.createIPTransport({ address: '127.0.0.1', timeout: 1000, telemetryEvidence: 'synthetic' })
         factory.createUSBTransport({ maxBulkReadBytes: 16384 })
+        factory.create(TransportType.USB, { maxBulkReadBytes: 16384 })
+        factory.create(TransportType.IP, { address: '127.0.0.1' })
+        // @ts-expect-error IP creation requires an address-bearing option object.
+        factory.create(TransportType.IP)
+        // @ts-expect-error A USB transport cannot silently ignore IP options.
+        factory.create(TransportType.USB, { address: '127.0.0.1' })
         // @ts-expect-error USB claim selection was never an implemented option.
         factory.createUSBTransport({ claimInterface: false })
         // @ts-expect-error Retry policy belongs to Camera transactions, not the transport factory.
@@ -172,6 +178,10 @@ try {
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
             `const api=${load};(async()=>{const log=console.log;const factory=new api.TransportFactory();` +
             `await factory.createUSBTransport();await factory.createIPTransport({address:'127.0.0.1'});` +
+            `if((await factory.create(api.TransportType.USB)).getType()!=='usb')throw Error('Wrong USB dispatch');` +
+            `if((await factory.create(api.TransportType.IP,{address:'127.0.0.1'})).getType()!=='ip')throw Error('Wrong IP dispatch');` +
+            `for(const [type,options] of [[api.TransportType.USB,{address:'127.0.0.1'}],[api.TransportType.IP,undefined]])` +
+            `if(!await factory.create(type,options).then(()=>false,()=>true))throw Error('Invalid factory options were accepted');` +
             `if(console.log!==log)throw Error('Transport factory changes the host console');})()` +
             `.catch(error=>{console.error(error);process.exitCode=1})`],
             { cwd: isolated, stdio: 'inherit' })
