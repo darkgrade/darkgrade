@@ -6,7 +6,6 @@ import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.in
 import type { USBTransportOptions } from '@transport/transport-factory'
 import { InEndpoint, Interface, usb } from 'usb'
 import { USBContainerBuilder, USBContainerType } from './usb-container'
-import { formatDeviceTable } from './usb-device-table'
 
 export enum EndpointType {
     BULK_IN = 'bulk_in',
@@ -190,13 +189,8 @@ export class USBTransport implements TransportInterface {
         }
 
         if (availableDevices.length === 0) {
-            console.error('[USB] No USB devices found. Make sure camera is connected and in PTP/MTP mode.')
             throw new Error('No USB devices available')
         }
-
-        console.log(JSON.stringify(availableDevices, null, 2))
-
-        console.log(formatDeviceTable(availableDevices))
 
         // Discovery is scoped by the descriptor's filters; a physical mapping must still select one body.
         const matching = availableDevices.filter(matches)
@@ -207,9 +201,10 @@ export class USBTransport implements TransportInterface {
             throw new Error('No matching device found in discovered devices')
         }
         this.device = matchingDevice.device as USBDevice
-        console.log(
-            `[USB] Selected device: VID:PID 0x${matchingDevice.vendorId?.toString(16).padStart(4, '0')}:0x${matchingDevice.productId?.toString(16).padStart(4, '0')} - ${matchingDevice.manufacturer || 'Unknown'} ${matchingDevice.model || 'Unknown'}`
-        )
+        this.logger.addLog({
+            type: 'console', level: 'info', consoleLevel: 'info',
+            args: [`Selected USB camera 0x${matchingDevice.vendorId.toString(16)}:0x${matchingDevice.productId.toString(16)}`],
+        })
 
         try {
             await this.device.open()
@@ -229,7 +224,6 @@ export class USBTransport implements TransportInterface {
             this.endpoints = this.findEndpoints(alternate)
             this.connected = true
             this.deviceLost = false
-            // await this.nukeDevice()
 
             this.startInterruptListener()
         } catch (error) {
@@ -240,6 +234,13 @@ export class USBTransport implements TransportInterface {
             }
             throw error
         }
+    }
+
+    /** Identity of the uniquely selected, opened USB body; no PTP operation is needed. */
+    getDeviceIdentity(): { vendorId: number; productId: number } | undefined {
+        return this.connected && this.device
+            ? { vendorId: this.device.vendorId, productId: this.device.productId }
+            : undefined
     }
 
     async resetPort(): Promise<void> {
@@ -286,32 +287,6 @@ export class USBTransport implements TransportInterface {
         }
         if (failures.length === 1) throw failures[0]
         if (failures.length > 1) throw new AggregateError(failures, 'USB disconnect cleanup failed')
-    }
-
-    private async nukeDevice(): Promise<void> {
-        try {
-            await this.classRequestReset()
-        } catch (error) {
-            console.error('classRequestReset error:', error)
-        }
-
-        try {
-            await this.clearHalt(EndpointType.BULK_IN)
-        } catch (error) {
-            console.error('clearHalt BULK_IN error:', error)
-        }
-
-        try {
-            await this.clearHalt(EndpointType.BULK_OUT)
-        } catch (error) {
-            console.error('clearHalt BULK_OUT error:', error)
-        }
-
-        try {
-            await this.clearHalt(EndpointType.INTERRUPT)
-        } catch (error) {
-            console.error('clearHalt INTERRUPT error:', error)
-        }
     }
 
     private findPTPInterface(configuration: USBConfiguration): USBInterface | undefined {
@@ -475,7 +450,7 @@ export class USBTransport implements TransportInterface {
         this.eventHandler = handler
     }
 
-    public off(handler: (event: PTPEvent) => void) {
+    public off(_handler: (event: PTPEvent) => void) {
         this.eventHandler = null
     }
 

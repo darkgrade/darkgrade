@@ -1,4 +1,5 @@
 import {spawn} from 'node:child_process'
+import {exposureSeconds} from '@camera/exposure-time'
 export interface ShotMetrics {median:number;p95:number;clipped:number;dark:number;detail:number;neutralPixels:number;redBlueRatio:number}
 export interface ShotAnalysis {metrics:ShotMetrics;effectiveIso?:number;exposure:'balanced'|'bright'|'dark';focus:'detail-visible'|'soft';colour:'neutral'|'cast'|'unknown';method:string;durationMilliseconds:number;scene?:{subject:string;focus:boolean;colour:boolean;confidence:number}}
 
@@ -10,11 +11,7 @@ export function subjectFocusVerified(analysis:ShotAnalysis,cameraAcquired=false)
 }
 
 function shutterSeconds(value:string):number|undefined{
- const text=value.replace(/\s+\(raw [^)]+\)$/,'').trim()
- const fraction=text.match(/^1\s*\/\s*(\d+(?:\.\d+)?)\s*(?:s|sec)?$/i)
- const seconds=text.match(/^(\d+(?:\.\d+)?)\s*(?:s|sec|")$/i)
- const result=fraction?1/Number(fraction[1]):seconds?Number(seconds[1]):NaN
- return Number.isFinite(result)&&result>0?result:undefined
+ try{return exposureSeconds(value)}catch{return undefined}
 }
 
 /** Choose the closest advertised shutter to a 180-degree shutter angle. */

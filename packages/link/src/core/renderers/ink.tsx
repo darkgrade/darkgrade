@@ -1,4 +1,4 @@
-import { Box, useStdout } from 'ink'
+import { Box } from 'ink'
 import React from 'react'
 import { ConsoleLog, Logger, PTPEventLog, PTPOperationLog, PTPTransferLog, USBTransferLog } from '../logger'
 import { ConsoleLogEntry } from './components/ConsoleLogEntry'
@@ -12,13 +12,12 @@ interface InkLoggerProps {
 
 export function InkLogger({ logger }: InkLoggerProps) {
     const [logsVersion, setLogsVersion] = React.useState(0)
-    const { stdout } = useStdout()
 
     React.useEffect(() => {
         const listener = () => {
             setLogsVersion(v => v + 1)
         }
-        logger.onChange(listener)
+        return logger.onChange(listener)
     }, [logger])
 
     const allGroups = React.useMemo(() => {

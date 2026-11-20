@@ -11,20 +11,18 @@ An optional simulation mode lets you explore the console without hardware. Devel
 Node.js 22.18 or newer and Bun 1.4.3.
 The [security review](SECURITY_REVIEW.md) records the migration checklist, audit scope and CI checks.
 
-This library is a comprehensive TypeScript implementation of [ISO-15740:2013](https://www.iso.org/standard/63602.html) which most camera manufacturers from the last 2 decades have used under the hood to accept commands and transmit information. It also contains a partial implementation of various vendor specifications. [`libgphoto2`](https://github.com/gphoto/libgphoto2) and its command line tool [`gphoto2`](https://github.com/gphoto/gphoto2) also use these libraries under the hood.
+Link implements core [ISO-15740:2013](https://www.iso.org/standard/63602.html) PTP operations and partial vendor extensions in TypeScript. It is an independent implementation; [`libgphoto2`](https://github.com/gphoto/libgphoto2) is a protocol reference, not a consumer of Link. Control availability depends on the attached body, firmware, transport and current mode.
 
 [![npm version](https://img.shields.io/npm/v/@darkgrade/link)](https://www.npmjs.com/package/@darkgrade/link)
-[![Bundle Size](https://img.shields.io/badge/bundle%20size-55kB-green)](https://bundlephobia.com/package/@darkgrade/link)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue.svg)](https://www.typescriptlang.org/)
-[![Dependencies](https://img.shields.io/badge/dependencies-1-brightgreen)](https://www.npmjs.com/package/@darkgrade/link)
+[![TypeScript](https://img.shields.io/badge/TypeScript-blue.svg)](https://www.typescriptlang.org/)
 
 ## ✨ Highlights
 
-- [x] **🚀 Zero Configuration** - Automatic camera detection and vendor-specific features
-- [x] **📦 55kB Bundled** - Lightweight and tree-shakable
-- [x] **🔥 1 major dependency** - just `usb` for Node.js
-- [x] **🌐 Runs anywhere** - Works in both browser & Node.js
-- [x] **🎯 Pure TypeScript** - Full type safety and modern DX
+- [x] **🚀 USB vendor selection** - Automatically selects the uniquely matched body's driver; multiple cameras require a device filter
+- [x] **📦 Separate exports** - Camera, terminal, runtime, controls and diagnostics entries; installed dependencies are listed in `packages/link/package.json`
+- [x] **🌐 Explicit host boundaries** - Node.js camera APIs; browser-safe `/controls`, `/runtime/browser` and diagnostics exports
+- [x] **🎯 Typed library API** - Concrete protocol definitions infer parameters and decoded values; packed declarations are checked under strict NodeNext
+- [x] **🎛️ Shared controls** - One current capability model across Sony, Nikon, Canon and standard PTP controls
 - [x] **✨ Simple API** - Connect and control your camera with minimal code
 - [x] **📷 Vendor Extensions** - Extended features for Sony, Nikon & Canon
     - **Sony ⍺ Series** - Live view, video recording, SDIO operations
@@ -84,6 +82,35 @@ const { data } = await camera.captureImage()
 
 await camera.disconnect()
 ```
+
+### One camera control vocabulary
+
+Build controls from the current camera instead of importing vendor classes:
+
+```typescript
+const { controls } = await camera.getCapabilities()
+for (const control of Object.values(controls)) {
+    console.log(control.id, control.value, control.allowedValues, control.writable)
+}
+
+// Exact advertised values only; no rounding to a nearby setting.
+if (controls.exposureTime?.allowedValues?.includes('1/250') && controls.exposureTime.writable) {
+    await camera.setExposureTime({ kind: 'duration', seconds: 1 / 250 })
+}
+```
+
+`exposureTime` is the canonical control. “Shutter speed,” “shutter angle” and
+“exposure time” resolve to it through `resolveCameraControl()`. Native angle mode
+stays in angle mode. Converting an angle to duration (or the reverse) requires the
+actual frame rate, for example `setExposureTime('180°', { framesPerSecond: 24000 / 1001 })`.
+Bulb, Time and flash-sync remain distinct states.
+
+Capability observations report active properties, allowed values and current write
+guards. They do not certify a model or prove that an advertised operation is implemented.
+Re-read after mode changes; setters re-check before writing. Concrete protocol types
+cannot encode the attached body's changing value list.
+See the [control contract](packages/link/docs/camera-controls.md) and
+[release audit](packages/link/docs/pre-release-audit.md).
 
 ### Sony α USB controls
 
@@ -320,12 +347,9 @@ The `Camera` class automatically detects your connected camera's brand and uses 
 - **Canon EOS R Series** → Automatically uses `CanonCamera` with Canon extensions
 - **Other PTP Cameras** → Falls back to `GenericCamera` with standard PTP operations
 
-You can also import and use vendor-specific camera classes directly:
-
-```typescript
-import { SonyCamera } from '@darkgrade/link'
-// or NikonCamera, CanonCamera, GenericCamera
-```
+Use `Camera` and its capability API for application controls. Vendor classes,
+registries and `getInstance()` remain advanced protocol escape hatches; do not
+build an application control map from their presence:
 
 Or specify a device descriptor when initializing the `Camera` constructor:
 

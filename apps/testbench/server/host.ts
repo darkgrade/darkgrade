@@ -1,22 +1,13 @@
+import type { CameraCapabilities, CameraControlInputs, CameraControlId } from '@darkgrade/link/controls'
 import { CameraRuntime } from '@darkgrade/link/runtime'
 import { settingNames, type BenchAction, type BenchCamera, type BenchControl, type BenchState, type SettingName } from '../src/contracts'
 
 export type USBIdentity = { vendorId: number; productId: number; serialNumber?: string; model?: string }
-type PropertyState = { name: string; value: unknown; allowedValues?: unknown[]; writable?: boolean; enabled?: boolean; access?: string | readonly string[] }
 export interface LocalCamera {
     connect(): Promise<void>
     disconnect(): Promise<void>
-    getIso(): Promise<string>
-    getAperture(): Promise<string>
-    getShutterSpeed(): Promise<string>
-    getWhiteBalance(): Promise<string>
-    setIso(value: string): Promise<void>
-    setAperture(value: string): Promise<void>
-    setShutterSpeed(value: string): Promise<void>
-    setWhiteBalance(value: string): Promise<void>
-    getStandardPropertyStates(): Promise<PropertyState[]>
-    getSonyPropertyStates(): Promise<PropertyState[]>
-    getCanonPropertyStates(): Promise<PropertyState[]>
+    getCapabilities(): Promise<CameraCapabilities>
+    setControl<Id extends CameraControlId>(id: Id, value: CameraControlInputs[Id]): Promise<void>
     captureLiveView(options: { includeInfo: boolean; includeData: boolean }): Promise<{ data?: Uint8Array }>
     captureImage(options: { includeInfo: boolean; includeData: boolean; autofocus: boolean; destination?: 'memory' }): Promise<{ data?: Uint8Array; info?: { filename?: string } }>
     startRecording(): Promise<void>
@@ -25,23 +16,13 @@ export interface LocalCamera {
     recover(options: { allowPortReset: boolean }): Promise<{ recovered: boolean }>
 }
 type Entry = { identity: USBIdentity; view: BenchCamera; camera?: LocalCamera; ambiguous?: boolean;
-    recordingMode?: { restore(): Promise<void> }; stopAcknowledged?: boolean; sonyManualIsoChoices?: string[] }
+    recordingMode?: { restore(): Promise<void> }; stopAcknowledged?: boolean }
 export type CameraAdapter = {
     discover(): Promise<USBIdentity[]>
     create(identity: USBIdentity): LocalCamera
-    controls?(camera: LocalCamera, identity: USBIdentity): Promise<Partial<Record<SettingName, BenchControl>>>
 }
 export type MediaResult = { bytes: Uint8Array; filename: string; contentType: string }
-const methods = {
-    iso: ['getIso', 'setIso'], aperture: ['getAperture', 'setAperture'],
-    shutterSpeed: ['getShutterSpeed', 'setShutterSpeed'], whiteBalance: ['getWhiteBalance', 'setWhiteBalance'],
-} as const
-const aliases = {
-    iso: ['Iso', 'CanonIso', 'ExposureIndex'],
-    aperture: ['Aperture', 'CanonAperture', 'FNumber'],
-    shutterSpeed: ['ShutterSpeed', 'CanonShutterSpeed', 'ExposureTime'],
-    whiteBalance: ['WhiteBalance', 'CanonWhiteBalance'],
-}
+const controlIds = { iso: 'iso', aperture: 'aperture', shutterSpeed: 'exposureTime', whiteBalance: 'whiteBalance' } as const
 const message = (error: unknown) => error instanceof Error ? error.message : 'Camera operation failed'
 const identityKey = (identity: USBIdentity) => JSON.stringify([identity.vendorId, identity.productId, identity.serialNumber ?? ''])
 
@@ -93,41 +74,14 @@ export class LocalBench {
     }
     private async read(entry: Entry) {
         const camera = entry.camera!
-        if (this.adapter.controls) {
-            entry.view.controls = await this.adapter.controls(camera, entry.identity)
-            return
-        }
-        const states = await (entry.identity.vendorId === 0x054c ? camera.getSonyPropertyStates()
-            : entry.identity.vendorId === 0x04a9 ? camera.getCanonPropertyStates()
-            : camera.getStandardPropertyStates())
+        const { controls: observed } = await camera.getCapabilities()
         const controls: Partial<Record<SettingName, BenchControl>> = {}
         for (const setting of settingNames) {
-            const property = states.find(state => aliases[setting].includes(state.name))
-            try {
-                const value = String(await camera[methods[setting][0]]())
-                let choices = (property?.allowedValues ?? []).map(String).slice(0, 512)
-                // Never invent writable choices when a body/transport does not advertise them.
-                controls[setting] = { value, choices,
-                    enabled: property?.enabled !== false &&
-                        (property?.writable === true || property?.access === 'GetSet' ||
-                            Array.isArray(property?.access) && property.access.includes('Set')) && choices.length > 0 }
-                if (setting === 'iso' && entry.identity.vendorId === 0x054c) {
-                    const mode = states.find(state => state.name === 'GainControlSetting')
-                    if (controls.iso!.enabled && !/^iso\s*auto$/i.test(value))
-                        entry.sonyManualIsoChoices = [...choices]
-                    // Link's ISO setter switches the separately advertised gain mode first.
-                    if (mode?.enabled && mode.writable && mode.allowedValues?.includes('Manual') &&
-                        mode.allowedValues.includes('Auto')) {
-                        // FX2 hides its ISO list in Auto. Preserve only choices observed
-                        // in this owned manual session; Link validates them again after
-                        // switching gain mode and restores Auto if the ISO write fails.
-                        if (!choices.length && /^iso\s*auto$/i.test(value) && entry.sonyManualIsoChoices?.length)
-                            choices = [...new Set([value, ...entry.sonyManualIsoChoices])].slice(0, 512)
-                        controls.iso!.choices = choices
-                        if (choices.length) controls.iso!.enabled = true
-                    }
-                }
-            } catch { /* Unsupported controls stay absent. */ }
+            const state = observed[controlIds[setting]]
+            if (!state) continue
+            const choices = state.allowedValues?.slice(0, 512) ?? []
+            controls[setting] = { value: state.value, choices,
+                enabled: state.enabled && state.writable && choices.length > 0 }
         }
         entry.view.controls = controls
     }
@@ -142,7 +96,6 @@ export class LocalBench {
                 if (action === 'connect') {
                     if (!entry.camera) {
                         if (entry.ambiguous) throw Error('These cameras have no unique USB identity; connect one at a time')
-                        entry.sonyManualIsoChoices = undefined
                         const camera = this.adapter.create(entry.identity)
                         try { await camera.connect() }
                         catch (error) {
@@ -159,7 +112,6 @@ export class LocalBench {
                     if (action === 'disconnect') {
                         await camera.disconnect()
                         entry.camera = undefined
-                        entry.sonyManualIsoChoices = undefined
                         view.connected = false
                         view.controls = {}
                     } else if (action === 'refresh') {
@@ -171,7 +123,7 @@ export class LocalBench {
                         const control = view.controls[setting]
                         if (!control?.enabled || !control.choices.includes(value))
                             throw Error('This value is not currently advertised and writable')
-                        await camera[methods[setting][1]](value)
+                        await camera.setControl(controlIds[setting], value)
                         try {
                             await this.read(entry)
                             if (view.controls[setting]?.value !== value) throw Error('Camera readback differs from the requested value')

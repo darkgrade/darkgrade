@@ -1,21 +1,15 @@
 import { resolve } from 'path'
 import { configDefaults, defineConfig } from 'vitest/config'
+import tsconfig from './tsconfig.json' with { type: 'json' }
 
 export default defineConfig({
     resolve: {
-        alias: {
-            '@contribute': resolve(__dirname, './src/contribute'),
-            '@workflows': resolve(__dirname, './src/workflows'),
-            '@vendors': resolve(__dirname, './src/vendors'),
-            '@camera': resolve(__dirname, './src/camera'),
-            '@core': resolve(__dirname, './src/core'),
-            '@transport': resolve(__dirname, './src/transport'),
-            '@factories': resolve(__dirname, './src/factories'),
-            '@api': resolve(__dirname, './src/api'),
-            '@constants': resolve(__dirname, './src/constants'),
-            '@ptp': resolve(__dirname, './src/ptp'),
-            '@runtime': resolve(__dirname, './src/runtime'),
-        },
+        alias: Object.fromEntries(
+            Object.entries(tsconfig.compilerOptions.paths).map(([name, [source]]) => [
+                name.replace(/\/\*$/, ''),
+                resolve(import.meta.dirname, source.replace(/\/\*$/, '')),
+            ])
+        ),
     },
     test: {
         // The runtime's tests check package resolution with Bun's bundler: `bun run test:runtime`.

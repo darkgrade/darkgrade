@@ -39,7 +39,8 @@ export class EventEmitter {
     emit<T = EventData>(event: string, data: T): boolean {
         const listeners = this.events.get(event)
         if (listeners) {
-            listeners.forEach(listener => {
+            // A capture handler may remove itself; every listener present at dispatch still receives this event.
+            listeners.slice().forEach(listener => {
                 listener(data)
             })
             return true

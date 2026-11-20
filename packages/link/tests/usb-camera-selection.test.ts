@@ -26,6 +26,7 @@ describe('physical USB camera selection', () => {
         )
         expect(close).toHaveBeenCalledOnce()
         expect(transport.isConnected()).toBe(false)
+        expect(console.log).not.toHaveBeenCalled()
         await transport.disconnect()
         expect(close).toHaveBeenCalledOnce()
     })

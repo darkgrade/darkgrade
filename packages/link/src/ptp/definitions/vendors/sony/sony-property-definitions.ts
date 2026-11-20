@@ -3,13 +3,11 @@ import { baseCodecs, createEnumCodec, CustomCodec, EnumCodec, PTPRegistry } from
 import { PropertyDefinition } from '@ptp/types/property'
 import { sonyIsoLabel, sonyIsoRaw } from '@vendors/sony/iso-value'
 
-const UNDEF = getDatatypeByName('UNDEF')!.code
 const INT8 = getDatatypeByName('INT8')!.code
 const UINT8 = getDatatypeByName('UINT8')!.code
 const UINT16 = getDatatypeByName('UINT16')!.code
 const INT16 = getDatatypeByName('INT16')!.code
 const UINT32 = getDatatypeByName('UINT32')!.code
-const STRING = getDatatypeByName('STR')!.code
 
 const parseAperture = (v: string | number): number => {
     const s = String(v)

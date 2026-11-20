@@ -6,6 +6,8 @@
         "types": ["w3c-web-usb", "node"],
         "declaration": true,
         "declarationMap": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
         "outDir": "./dist",
         "rootDir": ".",
         "baseUrl": ".",
@@ -15,9 +17,6 @@
             "@camera/*": ["src/camera/*"],
             "@core/*": ["src/core/*"],
             "@transport/*": ["src/transport/*"],
-            "@constants/*": ["src/constants/*"],
-            "@api/*": ["src/api/*"],
-            "@factories/*": ["src/factories/*"],
             "@ptp/*": ["src/ptp/*"],
             "@vendors/*": ["src/vendors/*"],
             "@runtime/*": ["src/runtime/*"]

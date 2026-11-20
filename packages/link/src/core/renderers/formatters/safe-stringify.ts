@@ -5,7 +5,7 @@ export function safeStringify(
         return value.toString()
     }
     if (typeof value === 'object' && value !== null) {
-        return JSON.stringify(value, (key, val) => (typeof val === 'bigint' ? val.toString() : val))
+        return JSON.stringify(value, (_key, val) => (typeof val === 'bigint' ? val.toString() : val))
     }
     return JSON.stringify(value)
 }

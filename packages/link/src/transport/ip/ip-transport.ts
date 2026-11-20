@@ -204,7 +204,7 @@ export class IPTransport implements TransportInterface {
      */
     constructor(
         options: IPTransportOptions,
-        private logger = new Logger({ renderInTerminal: false, captureConsole: false })
+        _logger?: Logger
     ) {
         this.telemetryEvidence = options.telemetryEvidence ??
             (/^(?:localhost\.?|127\.\d+\.\d+\.\d+|\[?::1\]?)$/i.test(options.address) ? 'synthetic' : 'hardware')

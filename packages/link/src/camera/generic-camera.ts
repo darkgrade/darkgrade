@@ -16,7 +16,7 @@ import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
-import { DeviceBusy, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
+import { DeviceBusy, IncompleteTransfer, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
 import { createPTPRegistry, Registry } from '@ptp/registry'
 import type { CodecDefinition, CodecInstance, CodecType } from '@ptp/types/codec'
@@ -194,7 +194,8 @@ export class GenericCamera {
         }
     }
 
-    protected async connectTransport(device?: DeviceDescriptor): Promise<void> {
+    /** @internal The façade uses this same lifecycle before selecting the opened USB body's driver. */
+    async connectTransport(device?: DeviceDescriptor): Promise<void> {
         await this.telemetry.prepare()
         if (this.recovery?.status === 'pending')
             throw new PTPRecoveryRequiredError('Transport recovery is still running', this.lastFailure)
@@ -1085,6 +1086,8 @@ export class GenericCamera {
                 if (!response.data) continue
                 states.push(this.standardPropertyState(response.data))
             } catch (error) {
+                if (error instanceof PTPTimeoutError || error instanceof PTPDisconnectedError ||
+                    error instanceof PTPProtocolError || error instanceof PTPRecoveryRequiredError) throw error
                 this.logger.addLog({
                     type: 'console',
                     level: 'warn',
@@ -1321,18 +1324,8 @@ export class GenericCamera {
     ): Promise<Uint8Array> {
         if (!Number.isSafeInteger(objectSize) || objectSize < 0)
             throw new Error('Object size must be a nonnegative safe integer')
-        // Start transfer tracking
-        this.logger.startTransfer(objectHandle, this.sessionId!, 0, 'GetPartialObject', objectSize)
-
-        const chunks: Uint8Array[] = []
-        let offset = 0
-
-        while (offset < objectSize) {
-            // Aborting between chunks leaves no transaction in flight: the camera stays usable.
-            signal?.throwIfAborted()
-            const bytesToRead = Math.min(this.defaultChunkSize, objectSize - offset)
-
-            const chunkResponse = await this.send(
+        return this.downloadObjectChunks(objectHandle, objectSize, 'GetPartialObject', async (offset, bytesToRead) => {
+            const response = await this.send(
                 this.registry.operations.GetPartialObject,
                 {
                     ObjectHandle: objectHandle,
@@ -1343,32 +1336,49 @@ export class GenericCamera {
                 bytesToRead + 12
             )
 
-            if (chunkResponse.code !== OK.code)
-                throw new Error(`GetPartialObject returned 0x${chunkResponse.code.toString(16)}`)
-            if (!chunkResponse.data?.length || chunkResponse.data.length > bytesToRead)
-                throw new Error('GetPartialObject returned an empty or oversized chunk')
+            if (response.code !== OK.code)
+                throw new Error(`GetPartialObject returned 0x${response.code.toString(16)}`)
+            return response.data
+        }, onProgress, signal)
+    }
 
-            // Update transfer progress
-            this.logger.updateTransferProgress(objectHandle, chunkResponse.data.length, this.getCurrentTransactionId())
-
-            chunks.push(chunkResponse.data)
-            offset += chunkResponse.data.length
-            onProgress?.(offset, objectSize)
+    /** One transfer loop for all drivers; each driver retains its wire request and response validation. */
+    protected async downloadObjectChunks(
+        objectHandle: number,
+        objectSize: number,
+        operation: string,
+        readChunk: (offset: number, bytes: number) => Promise<Uint8Array | undefined>,
+        onProgress?: (receivedBytes: number, totalBytes: number) => void,
+        signal?: AbortSignal
+    ): Promise<Uint8Array> {
+        this.logger.startTransfer(objectHandle, this.sessionId!, 0, operation, objectSize)
+        try {
+            const chunks: Uint8Array[] = []
+            let offset = 0
+            while (offset < objectSize) {
+                // Cancellation between chunks leaves no abandoned transaction in flight.
+                signal?.throwIfAborted()
+                const bytes = Math.min(this.defaultChunkSize, objectSize - offset)
+                const chunk = await readChunk(offset, bytes)
+                if (!chunk?.length || chunk.length > bytes)
+                    throw new Error(`${operation} returned an empty or oversized chunk`)
+                this.logger.updateTransferProgress(objectHandle, chunk.length, this.getCurrentTransactionId())
+                chunks.push(chunk)
+                offset += chunk.length
+                onProgress?.(offset, objectSize)
+            }
+            const completeFile = new Uint8Array(offset)
+            offset = 0
+            for (const chunk of chunks) {
+                completeFile.set(chunk, offset)
+                offset += chunk.length
+            }
+            this.logger.completeTransfer(objectHandle)
+            return completeFile
+        } catch (error) {
+            this.logger.completeTransfer(objectHandle, error instanceof PTPResponseError ? error.code : IncompleteTransfer.code)
+            throw error
         }
-
-        // Complete transfer tracking
-        this.logger.completeTransfer(objectHandle)
-
-        // Combine all chunks
-        const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-        const completeFile = new Uint8Array(totalBytes)
-        let writeOffset = 0
-        for (const chunk of chunks) {
-            completeFile.set(chunk, writeOffset)
-            writeOffset += chunk.length
-        }
-
-        return completeFile
     }
 
     public resolveCodec<T>(codec: CodecDefinition<T> | CodecDefinition<any>): CodecInstance<T> {

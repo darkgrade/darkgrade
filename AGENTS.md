@@ -1,3 +1,50 @@
+# Audit before adding code
+
+Before adding a primitive, command, property map, parser, retry loop, package or helper,
+search its canonical name, aliases and existing consumers. State in the PR which existing
+implementation was reused and why a new abstraction is necessary. Consolidate an existing
+primitive and its callers together; do not add a parallel implementation for a new harness.
+Use the workflow in `.claude/commands/untangle-codebase.md` regardless of agent harness.
+Read `packages/link/docs/pre-release-audit.md` for the measured audit and decisions.
+
+Application controls use `Camera.getCapabilities()` and `Camera.setControl()`. Canonical
+ids/labels/search aliases are in `packages/link/src/camera/controls.ts`; vendor property
+preference is in `src/vendors/control-properties.ts`. Studio and test harnesses consume
+Link rather than adding vendor tables. `exposureTime` covers shutter speed and angle;
+conversion requires the actual frame rate. Never guess units, switch modes implicitly,
+round a requested control to the nearest enum, or treat registry presence as availability.
+Preserve Bulb/Time/flash-sync, current read-only/empty/ambiguous choices, idle/session guards
+and failed readbacks. Different transports must not claim parity without adapter evidence.
+
+For dead-code work, trace imports/re-exports, dynamic imports, worker URLs, package
+exports, manifest scripts and independent/private harness callers before deletion.
+An exported declaration or a module's own test is not evidence of a product caller.
+Review unreachable cycles as well as files with no importers. Report generated-data
+removals separately from executable code and tests; deletion counts alone are not proof
+of simplification. Keep Link's unused-local/parameter compiler checks enabled and preserve
+packed enum inference. Hosts consume the generic control API rather than maintaining
+another property alias map, vendor switch, session cache or setter registry.
+The Camera façade must open USB through the driver's existing `connectTransport` lifecycle.
+Opening the raw transport bypasses event subscription, channel reset and per-connection
+diagnostic/identity cleanup. Test disconnect/connect and recover/connect on the same Camera,
+not only fresh objects. Nikon control writes refresh the requested descriptor and its live
+mode/availability guards; do not reread unrelated descriptors or admit writes from a cache.
+Studio preserves last observations after a failed refresh with choices disabled, clears them
+on disconnect, and replaces them only after a successful inventory.
+
+Verify README promises with built/packed exports. Run `packages/link`'s `test:package`
+for strict ESM/CommonJS NodeNext consumer types, including negative input checks, with
+`skipLibCheck:false`. Source-only typechecking does not establish package type safety.
+Update README and docs together; do not publish fixed size/dependency counts without dated
+measurement. Keep pure browser controls in `@darkgrade/link/controls`; importing the main
+camera entry is not a generic browser integration. Library construction must not take over
+the embedding application's console or process exception handlers by default.
+Opt-in terminal logging must preserve nonzero exits for uncaught errors and unhandled
+promise rejections; verify this in isolated Node consumers, not by swallowing a failure.
+
+Keep the requested task on one branch and one PR. Historical PR numbers in technical
+notes are evidence, not instructions to append new work to an old branch or to merge.
+
 # Package boundaries
 
 New Darkgrade product code belongs in `packages/link`, `apps/studio`, or `packages/cli`.
@@ -101,7 +148,6 @@ idle movie/buffer state, advertised operations and fresh clearing readback. Othe
 hardware errors remain errors. SDK documents stay private; attribution in the workspace
 camera-keepalive-2026-11-13 report must remain. Physical user actions can race warning
 reads; recovery may release a shutter if someone clears the warning first.
-Keep all changes on PR #58; no merge.
 
 Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
 failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
@@ -109,14 +155,14 @@ writes never update this cache; reconnect/disconnect clear it. Snapshotting adds
 waits or cloud calls. Canon FixedMovie is allowlisted as a numeric readback using the supplied
 EDSDK/libgphoto2 references; SDK and PTP property IDs are different. Deploy collector and Matrix
 schema support before candidate Link clients upload snapshots. Missing settings stay unknown;
-no snapshot implies that recording or independent media validation passed. Keep PR #58 open.
+no snapshot implies that recording or independent media validation passed.
 
 Canon movie workflows prepare a camera-advertised card destination before movie selection,
 restoring prior host routing after safe cleanup. This follows the Canon EDSDK sample and
 libgphoto2 card-target enumeration; it is not proof of the R8 Mark II failure's root cause.
 Numeric Canon property-write telemetry retains intent, transaction and response separately
 from observed state. Deploy the matching collector and Matrix contract before rolling out
-this Link candidate. Keep PR #58 open and preserve real versus simulated evidence.
+this Link candidate. Preserve real versus simulated evidence.
 
 Telemetry benchmark now exports a deep sanitized camera profile through Link's existing
 camera session. Keep inventories and allowlisted numeric descriptors separate from media,
@@ -269,8 +315,8 @@ completeness describes preservation of evidence, not camera compatibility. Never
 Outpost's private recording utility archives/restores these bundles through the existing Drive
 connector. Keep contributor/source attribution attached, and do not infer a lender or person.
 
-Keep this work on one ongoing branch/PR until the user requests a merge; the current batch is
-`feat/runtime-browser-core`. Do not create a separate PR per small follow-up fix.
+Keep follow-up work in its requested ongoing branch/PR until the user requests a merge.
+Do not create a separate PR per small follow-up fix.
 
 Run `bun run --cwd packages/link test:fuzz` for reproducible PTP input mutation checks.
 The fixed seed `0x4d415452` covers standard/Sony descriptors and Canon/Nikon event records,
@@ -289,8 +335,8 @@ Terraform now includes encrypted-only SQL connections, server-side deletion prot
 minimal health/CPU/disk monitoring. Notification delivery requires verified channel IDs;
 email requires a configured sender. Do not claim live email delivery from a mock sender test.
 
-The user replaced project 18 with one HTTPS service and Postgres. Keep this on PR #58,
-`feat/runtime-browser-core`; do not merge. `apps/contribution-collector/src/postgres.ts`
+The ingestion implementation replaced project 18 with one HTTPS service and Postgres.
+`apps/contribution-collector/src/postgres.ts`
 stores flat telemetry_events plus operational state; main.ts performs its own cleanup and
 serves an operator-authenticated /internal timeline. Firestore/GCS/grant collector deployment
 code and the separate cleanup job were removed. Terraform provisions Cloud Run + Cloud SQL

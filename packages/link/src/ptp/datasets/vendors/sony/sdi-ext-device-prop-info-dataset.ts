@@ -157,45 +157,18 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
                 currentValueDecoded = decodedResult.value
             } catch (e) {}
 
-            if (enumValuesSet.length > 0) {
-                enumValuesSetDecoded = enumValuesSet.map(rawVal => {
-                    try {
-                        const datatypeDefinition = getDatatypeByCode(dataType)
-                        if (!datatypeDefinition?.codec) return rawVal
-
-                        const datatypeCodec =
-                            typeof datatypeDefinition.codec === 'function'
-                                ? datatypeDefinition.codec(this.registry)
-                                : datatypeDefinition.codec
-
-                        const bytes = datatypeCodec.encode(rawVal)
-                        const decoded = codecInstance.decode(bytes, 0)
-                        return decoded.value
-                    } catch (e) {
-                        return rawVal
-                    }
-                })
+            const decodeEnumValue = (rawValue: number | bigint | string) => {
+                try {
+                    const definition = getDatatypeByCode(dataType)
+                    if (!definition?.codec) return rawValue
+                    const wire = typeof definition.codec === 'function' ? definition.codec(this.registry) : definition.codec
+                    return codecInstance.decode(wire.encode(rawValue), 0).value
+                } catch {
+                    return rawValue
+                }
             }
-
-            if (enumValuesGetSet.length > 0) {
-                enumValuesGetSetDecoded = enumValuesGetSet.map(rawVal => {
-                    try {
-                        const datatypeDefinition = getDatatypeByCode(dataType)
-                        if (!datatypeDefinition?.codec) return rawVal
-
-                        const datatypeCodec =
-                            typeof datatypeDefinition.codec === 'function'
-                                ? datatypeDefinition.codec(this.registry)
-                                : datatypeDefinition.codec
-
-                        const bytes = datatypeCodec.encode(rawVal)
-                        const decoded = codecInstance.decode(bytes, 0)
-                        return decoded.value
-                    } catch (e) {
-                        return rawVal
-                    }
-                })
-            }
+            enumValuesSetDecoded = enumValuesSet.map(decodeEnumValue)
+            enumValuesGetSetDecoded = enumValuesGetSet.map(decodeEnumValue)
         }
 
         return {

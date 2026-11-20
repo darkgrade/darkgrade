@@ -41,6 +41,9 @@ import {
     type SonyZoomResult,
 } from './sony-camera'
 import { VendorExtensionCamera } from './vendor-extension-camera'
+import type { CameraCapabilities, CameraControlId, CameraControlInputs } from '@camera/controls'
+import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
+import { readCameraCapabilities, writeCameraControl } from '@vendors/camera-controls'
 
 const SONY_CAMERA_OPERATING_MODE = 0xd0bc
 const SONY_OPERATING_MODE_PLAYBACK = 2
@@ -58,6 +61,11 @@ export interface CameraOptions {
     vendorId?: number
 }
 
+function descriptorVendor(device?: DeviceDescriptor): number | undefined {
+    const vendors = new Set(device?.usb?.filters.map(filter => filter.vendorId))
+    return vendors.size === 1 ? [...vendors][0] : undefined
+}
+
 export class Camera {
     /** Enumerate USB PTP devices without opening a camera session. */
     static async discover() {
@@ -70,22 +78,28 @@ export class Camera {
     private deviceDescriptor?: DeviceDescriptor
     private logger: Logger
     private transport: TransportInterface
+    private readonly subscriptions = new Set<{ event: EventDefinition; handler: (params: never) => void }>()
 
-    constructor(options?: CameraOptions) {
-        this.logger = new Logger(options?.logger)
+    constructor(private readonly options: CameraOptions = {}) {
+        // Library construction must not replace the host's console or exception handlers.
+        this.logger = new Logger({ captureConsole: false, renderInTerminal: false, ...options.logger })
         this.transport = options?.transport ?? new USBTransport(this.logger, options?.usb ? { usb: options.usb } : {})
         this.deviceDescriptor = options?.device
 
-        const vendorId = options?.vendorId ?? options?.device?.usb?.filters?.[0]?.vendorId
+        this.instance = this.createInstance(options.vendorId ?? descriptorVendor(options.device))
+    }
+
+    private createInstance(vendorId?: number) {
+        let instance: GenericCamera | SonyCamera | NikonCamera | CanonCamera | VendorExtensionCamera
         switch (vendorId) {
             case VendorIDs.SONY:
-                this.instance = new SonyCamera(this.transport, this.logger)
+                instance = new SonyCamera(this.transport, this.logger)
                 break
             case VendorIDs.NIKON:
-                this.instance = new NikonCamera(this.transport, this.logger)
+                instance = new NikonCamera(this.transport, this.logger)
                 break
             case VendorIDs.CANON:
-                this.instance = new CanonCamera(this.transport, this.logger)
+                instance = new CanonCamera(this.transport, this.logger)
                 break
             case VendorIDs.FUJIFILM:
             case VendorIDs.PANASONIC:
@@ -93,14 +107,15 @@ export class Camera {
             case VendorIDs.OM_DIGITAL:
             case VendorIDs.LEICA:
             case VendorIDs.SIGMA:
-                this.instance = this.vendorExtensionCamera(vendorId)
+                instance = this.vendorExtensionCamera(vendorId)
                 break
             default:
-                this.instance = new GenericCamera(this.transport, this.logger)
+                instance = new GenericCamera(this.transport, this.logger)
                 break
         }
-        if (options?.transactionPolicy) this.instance.configureTransactions(options.transactionPolicy)
-        if (this.instance instanceof CanonCamera) this.instance.setKeepAliveEnabled(options?.keepAlive ?? true)
+        if (this.options.transactionPolicy) instance.configureTransactions(this.options.transactionPolicy)
+        if (instance instanceof CanonCamera) instance.setKeepAliveEnabled(this.options.keepAlive ?? true)
+        return instance
     }
 
     private vendorExtensionCamera(vendorId: number): VendorExtensionCamera {
@@ -136,7 +151,29 @@ export class Camera {
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
-        return this.instance.connect(device || this.deviceDescriptor)
+        const descriptor = device ?? this.deviceDescriptor
+        let vendorId = this.options.vendorId ?? descriptorVendor(descriptor)
+        if (this.transport instanceof USBTransport) {
+            // Select exactly one body first, then its driver. A broad USB filter is not a vendor identity.
+            await this.instance.connectTransport(descriptor)
+            const identity = this.transport.getDeviceIdentity()
+            if (identity) {
+                if (this.options.vendorId !== undefined && this.options.vendorId !== identity.vendorId) {
+                    await this.transport.disconnect()
+                    throw new Error('Selected USB camera differs from the explicitly requested vendor')
+                }
+                vendorId = identity.vendorId
+            }
+        }
+        if (this.instance.sessionId === null && vendorId !== undefined && this.instance.vendorId !== vendorId) {
+            this.instance = this.createInstance(vendorId)
+            for (const subscription of this.subscriptions)
+                this.instance.on(subscription.event, subscription.handler as never)
+        }
+        this.deviceDescriptor = descriptor
+        // Preserve the caller-owned partial session for standard protocol diagnostics when
+        // vendor initialization is refused. The caller closes it with disconnect() in finally.
+        return this.instance.connect(descriptor)
     }
 
     /** Opens a Sony contents-transfer session for body-menu controls. */
@@ -161,7 +198,8 @@ export class Camera {
     }
 
     async disconnect(): Promise<void> {
-        return this.instance.disconnect()
+        try { await this.instance.disconnect() }
+        finally { if (this.instance.sessionId === null) this.subscriptions.clear() }
     }
 
     async send<Op extends OperationDefinition>(
@@ -185,7 +223,10 @@ export class Camera {
         return this.instance.readValue(property)
     }
 
-    async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
+    async set<P extends PropertyDefinition>(
+        property: P & (P['access'] extends 'Get' ? never : unknown),
+        value: CodecType<P['codec']>
+    ): Promise<void> {
         return this.instance.set(property, value)
     }
 
@@ -193,15 +234,44 @@ export class Camera {
         return this.instance.getStandardPropertyStates()
     }
 
+    async getCapabilities(): Promise<CameraCapabilities> {
+        return readCameraCapabilities(this.instance)
+    }
+
+    /** Uses the active camera property, including native shutter-angle mode without changing modes. */
+    async getExposureTime(): Promise<ExposureTime> {
+        const state = (await this.getCapabilities()).controls.exposureTime
+        if (!state?.exposureTime) throw new Error('The current camera mode does not expose exposure time')
+        return state.exposureTime
+    }
+
+    async setExposureTime(value: ExposureTimeInput, context?: ExposureContext): Promise<void> {
+        return this.setControl('exposureTime', value, context)
+    }
+
+    /**
+     * Read fresh capabilities before writing. Strings use the body's advertised labels;
+     * exposure time additionally accepts duration/angle values. Cross-unit conversion requires context.
+     */
+    async setControl<Id extends CameraControlId>(
+        id: Id, value: CameraControlInputs[Id], context?: ExposureContext
+    ): Promise<void> {
+        return writeCameraControl(this, this.instance, id, value, context)
+    }
+
     async setStandardProperty(propertyNameOrCode: string | number, value: string | number): Promise<void> {
         return this.instance.setStandardProperty(propertyNameOrCode, value)
     }
 
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
+        this.subscriptions.add({ event, handler })
         return this.instance.on(event, handler)
     }
 
     off<E extends EventDefinition>(event: E, handler?: (params: EventParams<E>) => void): void {
+        for (const subscription of this.subscriptions)
+            if (subscription.event.name === event.name && (!handler || subscription.handler === handler))
+                this.subscriptions.delete(subscription)
         return this.instance.off(event, handler)
     }
 

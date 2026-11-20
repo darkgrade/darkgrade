@@ -30,7 +30,7 @@ function connectedCamera(output = 'CAMERA') {
     ;(camera as unknown as { supportedOperations: Set<number> }).supportedOperations = new Set([0x9153, 0x9158])
     const writes: number[] = []
     const jpeg = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)
-    camera.send = (async (operation, parameters, data) => {
+    camera.send = (async (operation, _parameters, data) => {
         if (operation.code === 0x9110 && data) {
             const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
             const code = view.getUint32(4, true)
@@ -368,7 +368,7 @@ describe('Canon live-view lifecycle and controls', () => {
             camera as unknown as { advertisedPropertyData: Map<PropertyDefinition, Uint8Array[]> }
         ).advertisedPropertyData.set(property, [camera.registry.codecs.uint32.encode(0x2b)])
         let written: number | undefined
-        camera.send = (async (operation, parameters, data) => {
+        camera.send = (async (operation, _parameters, data) => {
             if (operation.code === 0x9110 && data)
                 written = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(8, true)
             if (operation.code === 0x9116)

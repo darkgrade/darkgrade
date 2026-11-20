@@ -3,6 +3,7 @@
  * the tools that adjust exposure in stops.
  * One full photographic stop = 3 entries in these tables.
  */
+import { exposureSeconds, parseExposureTime } from '@darkgrade/link/controls'
 
 export const STEPS_PER_STOP = 3
 
@@ -142,20 +143,30 @@ export function isoToNumber(value: string): number | null {
 }
 
 export function shutterToNumber(value: string): number | null {
-    const cleaned = value
-        .toLowerCase()
-        .replace(/["'s]|sec(onds?)?/g, '')
-        .trim()
-    if (cleaned.includes('bulb') || cleaned === 'b') return null
-    if (cleaned.includes('/')) {
-        const [numerator, denominator] = cleaned.split('/')
-        const n = parseFloat(numerator || '1')
-        const d = parseFloat(denominator || '1')
-        if (Number.isFinite(n) && Number.isFinite(d) && d !== 0) return n / d
-        return null
-    }
-    const parsed = parseFloat(cleaned)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+    try { return exposureSeconds(value) ?? null } catch { return null }
+}
+
+/** One dial contains the body's active unit; this never converts angle to seconds. */
+export function shutterDialToNumber(value: string): number | null {
+    try {
+        const exposure = parseExposureTime(value)
+        return exposure.kind === 'angle' ? exposure.degrees : exposure.kind === 'duration' ? exposure.seconds : null
+    } catch { return null }
+}
+
+/** Preserve exact camera labels instead of generating third-stop values the body did not advertise. */
+export function advertisedExposureValues(
+    options: readonly string[] | undefined,
+    toNumber: (value: string) => number | null,
+    descending = false
+): string[] {
+    if (!options || new Set(options).size !== options.length) return []
+    return [...options].sort((left, right) => {
+        const a = toNumber(left), b = toNumber(right)
+        if (a === null) return b === null ? 0 : -1
+        if (b === null) return 1
+        return descending ? b - a : a - b
+    })
 }
 
 export function apertureToNumber(value: string): number | null {

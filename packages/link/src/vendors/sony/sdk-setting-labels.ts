@@ -16,7 +16,7 @@ export const SONY_SDK_SETTING_LABELS: Readonly<Record<number, Readonly<Record<st
         '32770': 'P A',
         '32771': 'P S',
         '32772': 'Sports Action',
-        '32773': '/* Do not use. Will be removed in the next release. */\n\tSunset',
+        '32773': 'Sunset',
         '32774': 'Night',
         '32775': 'Landscape',
         '32776': 'Macro',

@@ -13,6 +13,11 @@ npm install @darkgrade/link
 
 ## Requirements
 
-- **Node.js** 18+ or **Bun** 1.0+
-- **TypeScript** 5.3+ (recommended)
+- **Node.js** 22.18+; repository development uses **Bun** 1.4.3
+- **TypeScript** (strict NodeNext consumer checks run with the repository compiler)
 - A PTP-compatible camera connected via USB
+
+The main camera export requires Node host services. Browser renderers can import
+`@darkgrade/link/controls` and `@darkgrade/link/runtime/browser`; a host provides
+camera access through the runtime client. Dependencies are listed in Link's
+package manifest; the former single-dependency and fixed-size claims are obsolete.

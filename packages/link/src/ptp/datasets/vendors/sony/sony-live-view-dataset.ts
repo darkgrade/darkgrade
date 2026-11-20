@@ -15,7 +15,7 @@ export interface LiveViewDataset {
 }
 
 export class LiveViewDatasetCodec extends CustomCodec<LiveViewDataset> {
-    encode(value: LiveViewDataset): Uint8Array {
+    encode(_value: LiveViewDataset): Uint8Array {
         throw new Error('Encoding LiveViewDataset is not yet implemented')
     }
 

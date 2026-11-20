@@ -2,12 +2,17 @@ import { execFileSync } from 'node:child_process'
 import { resolve } from 'path'
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
+import tsconfig from './tsconfig.json' with { type: 'json' }
 
 export default defineConfig({
     define: {
         global: 'globalThis',
-        __LINK_TELEMETRY_REVISION__: JSON.stringify(process.env.LINK_REVISION || execFileSync('git', ['rev-parse', 'HEAD']).toString().trim()),
-        __LINK_TELEMETRY_DIRTY__: JSON.stringify(execFileSync('git', ['status', '--porcelain', '--untracked-files=no']).toString().trim().length > 0),
+        __LINK_TELEMETRY_REVISION__: JSON.stringify(
+            process.env.LINK_REVISION || execFileSync('git', ['rev-parse', 'HEAD']).toString().trim()
+        ),
+        __LINK_TELEMETRY_DIRTY__: JSON.stringify(
+            execFileSync('git', ['status', '--porcelain', '--untracked-files=no']).toString().trim().length > 0
+        ),
     },
     plugins: [
         // Emits dist/index.d.ts (+ tree) with @camera/@core/... aliases
@@ -16,28 +21,32 @@ export default defineConfig({
             include: ['src'],
             entryRoot: 'src',
             beforeWriteFile(filePath, content) {
-                // Diagnostics also serve NodeNext consumers such as the collector.
-                if ((filePath.includes('/contribute/') || filePath.includes('/cli/')) && filePath.endsWith('.d.ts'))
-                    content = content.replace(/((?:from\s+|import\()['"])(\.[^'"]+)(['"])/g,
-                        (_, prefix, path, quote) => `${prefix}${/\.[cm]?[jt]s$/.test(path) ? path : path + '.js'}${quote}`)
+                // Every public entry serves NodeNext consumers, including the camera library.
+                if (filePath.endsWith('.d.ts'))
+                    content = content.replace(
+                        /((?:from\s+|import\()['"])(\.[^'"]+)(['"])/g,
+                        (_, prefix, path, quote) =>
+                            `${prefix}${
+                                /(?:^|\/)\.{1,2}$/.test(path)
+                                    ? path + '/index.js'
+                                    : /\.[cm]?[jt]s$/.test(path)
+                                      ? path
+                                      : path + '.js'
+                            }${quote}`
+                    )
+                if (filePath.endsWith('/index.d.ts') && !/\/(?:cli|runtime|contribute)\//.test(filePath))
+                    content = '/// <reference types="w3c-web-usb" />\n' + content
                 return { filePath, content }
             },
         }),
     ],
     resolve: {
-        alias: {
-            '@contribute': resolve(__dirname, './src/contribute'),
-            '@workflows': resolve(__dirname, './src/workflows'),
-            '@vendors': resolve(__dirname, './src/vendors'),
-            '@camera': resolve(__dirname, './src/camera'),
-            '@core': resolve(__dirname, './src/core'),
-            '@transport': resolve(__dirname, './src/transport'),
-            '@factories': resolve(__dirname, './src/factories'),
-            '@api': resolve(__dirname, './src/api'),
-            '@constants': resolve(__dirname, './src/constants'),
-            '@ptp': resolve(__dirname, './src/ptp'),
-            '@runtime': resolve(__dirname, './src/runtime'),
-        },
+        alias: Object.fromEntries(
+            Object.entries(tsconfig.compilerOptions.paths).map(([name, [source]]) => [
+                name.replace(/\/\*$/, ''),
+                resolve(import.meta.dirname, source.replace(/\/\*$/, '')),
+            ])
+        ),
     },
     build: {
         lib: {
@@ -46,6 +55,7 @@ export default defineConfig({
             // the Node-only lease coordinator or the USB stack.
             entry: {
                 index: resolve(__dirname, 'src/index.ts'),
+                controls: resolve(__dirname, 'src/controls.ts'),
                 'cli/index': resolve(__dirname, 'src/cli/index.ts'),
                 'runtime/index': resolve(__dirname, 'src/runtime/index.ts'),
                 'runtime/browser': resolve(__dirname, 'src/runtime/browser.ts'),
@@ -60,7 +70,6 @@ export default defineConfig({
                 'contribute/schema': resolve(__dirname, 'src/contribute/schema.ts'),
                 'contribute/settings': resolve(__dirname, 'src/contribute/settings.ts'),
             },
-            name: 'Fuse',
             formats: ['es', 'cjs'],
             fileName: (format, entry) => `${entry}.${format === 'es' ? 'mjs' : 'cjs'}`,
         },
