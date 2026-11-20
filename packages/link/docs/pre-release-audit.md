@@ -152,6 +152,7 @@ A file referenced only by its own tests is not thereby production code.
 | Nikon shot labels repeatedly reconstruct registries/codecs per enum value | Resolve the registry and codecs once per observation and decode each distinct raw value once |
 | Test Bench independently selects vendor property names and caches Sony ISO choices | Consume Link capabilities and generic writes; keep session-scoped Sony gain-mode/choice handling in Link, with fresh write validation and rollback |
 | Build/test aliases are maintained as copies; three dev dependencies are unused | Read aliases from the existing TypeScript paths; remove `glob`, `string-similarity`, and the empty `@types/usb` stub; keep the frozen lockfile reproducible |
+| Transport factories copy IP options and advertise unimplemented USB/retry flags | Reuse the actual IP interface, remove ignored option fields/common bag and construct transports without taking over the console; packed negative option assertions enforce it |
 | Codec type extraction lists concrete/custom fallbacks already matched by `CodecInstance` | Use the two structural builder/instance cases and retain strict packed enum assertions |
 | An abandoned `nukeDevice` reset method remains behind a commented call | Delete it; preserve the guarded recovery path and its existing tests |
 

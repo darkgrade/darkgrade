@@ -133,3 +133,9 @@ There is no claim that the complete main export bundles for an arbitrary browser
 
 Terminal logging is opt-in and never suppresses uncaught exceptions or unhandled
 promise rejections. Packed Node checks require fatal errors to retain a nonzero exit.
+
+Transport construction also stays out of the host console. USB transport options cover
+its implemented WebUSB injection and bulk-read limit; interface/alternate/claim selection,
+USB timeout, buffer size and transport-level retry flags were never implemented and are
+no longer advertised. IP factory options reuse `IPTransportOptions`. Configure PTP retries
+and transaction deadlines through `CameraOptions.transactionPolicy`.

@@ -88,7 +88,8 @@ try {
         join(isolated, 'node_modules/usb'), 'dir')
     const consumer = `
         import { Camera, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
-            type CameraCapabilities, type ExposureTime, type CameraControlSession, SonyWifiCamera, SonyCamera } from '@darkgrade/link'
+            type CameraCapabilities, type ExposureTime, type CameraControlSession, SonyWifiCamera, SonyCamera,
+            TransportFactory } from '@darkgrade/link'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/link/controls'
         const camera = new Camera()
         const device: Promise<{code: number; data: DeviceInfo}> = camera.send(genericOperationRegistry.GetDeviceInfo, {})
@@ -103,6 +104,15 @@ try {
         camera.setExposureTime({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
         camera.setControl('colorTemperature', 5600)
         camera.setControl('iso', 'ISO 800')
+        const factory = new TransportFactory()
+        factory.createIPTransport({ address: '127.0.0.1', timeout: 1000, telemetryEvidence: 'synthetic' })
+        factory.createUSBTransport({ maxBulkReadBytes: 16384 })
+        // @ts-expect-error USB claim selection was never an implemented option.
+        factory.createUSBTransport({ claimInterface: false })
+        // @ts-expect-error Retry policy belongs to Camera transactions, not the transport factory.
+        factory.createIPTransport({ address: '127.0.0.1', maxRetries: 3 })
+        // @ts-expect-error USB timeout was never read by the transport.
+        factory.createUSBTransport({ timeout: 1000 })
         const sony = null! as SonyCamera
         sony.set(sony.registry.properties.S1S2Button, 'DOWN')
         // @ts-expect-error Named registry shapes retain Sony's exact enum values.
@@ -158,6 +168,12 @@ try {
             `const api=${load}; const log=console.log, handlers=process.listenerCount('uncaughtException');` +
             `new api.Camera(); if(console.log!==log||process.listenerCount('uncaughtException')!==handlers)throw Error('Library constructor changes the host');` +
             `if(api.parseExposureTime('180°').kind!=='angle')throw Error('Packed exposure API is missing');`],
+            { cwd: isolated, stdio: 'inherit' })
+        execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
+            `const api=${load};(async()=>{const log=console.log;const factory=new api.TransportFactory();` +
+            `await factory.createUSBTransport();await factory.createIPTransport({address:'127.0.0.1'});` +
+            `if(console.log!==log)throw Error('Transport factory changes the host console');})()` +
+            `.catch(error=>{console.error(error);process.exitCode=1})`],
             { cwd: isolated, stdio: 'inherit' })
         for (const trigger of [
             "throw new Error('packed-logger-fatal')",
