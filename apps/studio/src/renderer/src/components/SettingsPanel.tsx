@@ -10,13 +10,11 @@ import {
 import { CONTROL_TRIGGER_CLASS, ControlRow, SEARCH_FROM } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
 import {
-    APERTURE_VALUES,
+    advertisedExposureValues,
     apertureToNumber,
-    ISO_VALUES,
     isoToNumber,
     nearestIndex,
-    SHUTTER_VALUES,
-    shutterToNumber,
+    shutterDialToNumber,
     stepValue,
 } from '@shared/exposure-stops'
 import type { CameraControl, CameraControlName, CameraState } from '@shared/ipc'
@@ -32,27 +30,6 @@ interface ExposureDialProps {
     format: (value: string) => string
     disabled: boolean
     onApply: (value: string) => void
-}
-
-/**
- * The dial's stops that the camera allows right now (it reports them with each setting, and they change
- * with the lens, focal length and mode). Values are matched by number, so "ISO 1600" and "1600" agree;
- * Auto and Bulb, which have no number, are kept when the camera lists them. Without a list, every stop.
- */
-function allowedStops(
-    values: string[],
-    control: CameraControl | null,
-    toNumber: (value: string) => number | null
-): string[] {
-    if (!control || control.options.length === 0) return values
-    const allowedNumbers = control.options.map(toNumber).filter((number): number is number => number !== null)
-    const allowedWords = control.options.map(option => option.toLowerCase())
-    const allowed = values.filter(value => {
-        const number = toNumber(value)
-        if (number === null) return allowedWords.some(word => word.includes(value.toLowerCase()))
-        return allowedNumbers.some(allowedNumber => Math.abs(allowedNumber - number) <= number * 0.01)
-    })
-    return allowed.length > 0 ? allowed : values
 }
 
 /** A camera-style readout: click for every third-stop, or scroll over it to step one third. */
@@ -119,6 +96,7 @@ function ExposureDial({
 
 function formatShutter(value: string): string {
     if (/bulb/i.test(value)) return 'Bulb'
+    if (/°|time|flash/i.test(value)) return value
     if (value.includes('/')) return value
     return `${value.replace(/["″]/g, '')}″`
 }
@@ -161,36 +139,28 @@ export function SettingsPanel({
                         <ExposureDial
                             label="Shutter"
                             currentValue={cameraState.settings.shutterSpeed}
-                            values={allowedStops(
-                                SHUTTER_VALUES,
-                                cameraState.controls?.shutterSpeed ?? null,
-                                shutterToNumber
-                            )}
-                            toNumber={shutterToNumber}
+                            values={advertisedExposureValues(cameraState.controls?.shutterSpeed?.options, shutterDialToNumber, true)}
+                            toNumber={shutterDialToNumber}
                             format={formatShutter}
-                            disabled={disabled}
+                            disabled={disabled || !cameraState.controls?.shutterSpeed?.enabled || !cameraState.controls.shutterSpeed.options.length}
                             onApply={onSetShutterSpeed}
                         />
                         <ExposureDial
                             label="Aperture"
                             currentValue={cameraState.settings.aperture}
-                            values={allowedStops(
-                                APERTURE_VALUES,
-                                cameraState.controls?.aperture ?? null,
-                                apertureToNumber
-                            )}
+                            values={advertisedExposureValues(cameraState.controls?.aperture?.options, apertureToNumber)}
                             toNumber={apertureToNumber}
                             format={formatAperture}
-                            disabled={disabled}
+                            disabled={disabled || !cameraState.controls?.aperture?.enabled || !cameraState.controls.aperture.options.length}
                             onApply={onSetAperture}
                         />
                         <ExposureDial
                             label="ISO"
                             currentValue={cameraState.settings.iso}
-                            values={allowedStops(ISO_VALUES, cameraState.controls?.iso ?? null, isoToNumber)}
+                            values={advertisedExposureValues(cameraState.controls?.iso?.options, isoToNumber)}
                             toNumber={isoToNumber}
                             format={formatIso}
-                            disabled={disabled}
+                            disabled={disabled || !cameraState.controls?.iso?.enabled || !cameraState.controls.iso.options.length}
                             onApply={onSetIso}
                         />
                     </div>

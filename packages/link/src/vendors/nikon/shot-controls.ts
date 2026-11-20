@@ -5,6 +5,7 @@ import {LiveViewSelector} from '@ptp/definitions/vendors/nikon/nikon-property-de
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 import type {ShotProperty,ShotSetupReport} from '@workflows/shot-setup'
+import {nikonControlLabel} from '@vendors/nikon/control-values'
 
 const properties={iso:0xd1aa,aperture:0xd1a9,shutterSpeed:0xd1a8,shutterMode:0x1d074,shutterAngle:0x1d075,whiteBalance:0xd23a,focusMode:0xd1fa,autoIso:0xd0ad,exposureProgram:0x500e} as const
 type PropertyName=keyof typeof properties
@@ -105,15 +106,8 @@ export class NikonShotControls {
     }
 
     private label(name:PropertyName,value:number):string{
-        if(name==='iso')return `ISO ${value}`
-        if(name==='aperture')return `f/${Number((value/100).toFixed(3))}`
-        if(name==='shutterSpeed'){
-            const numerator=value>>>16,denominator=value&0xffff
-            return numerator===1&&denominator>1?`1/${denominator}`:numerator&&denominator?`${Number((numerator/denominator).toFixed(6))}s`:`Unknown shutter (${value})`
-        }
-        if(name==='whiteBalance')return ({1:'Manual',2:'Auto',3:'One-push auto',4:'Daylight',5:'Fluorescent',6:'Tungsten',7:'Flash',32784:'Cloudy',32785:'Shade',32786:'Color Temperature',32787:'Preset',32788:'Off',32789:'Flash',32790:'Natural light auto'} as Record<number,string>)[value]||`Unknown white balance (${value})`
-        if(name==='focusMode')return ({0:'AF-S',1:'AF-C',2:'AF-F',4:'Manual'} as Record<number,string>)[value]||`Unknown focus (${value})`
-        return String(value)
+        const definition=Object.values(this.instance.registry.properties).find(property=>property.code===properties[name])
+        return definition?nikonControlLabel(definition.name,value):String(value)
     }
 
     private async readControls():Promise<Record<string,ShotProperty>>{

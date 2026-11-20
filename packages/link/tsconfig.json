@@ -15,9 +15,6 @@
             "@camera/*": ["src/camera/*"],
             "@core/*": ["src/core/*"],
             "@transport/*": ["src/transport/*"],
-            "@constants/*": ["src/constants/*"],
-            "@api/*": ["src/api/*"],
-            "@factories/*": ["src/factories/*"],
             "@ptp/*": ["src/ptp/*"],
             "@vendors/*": ["src/vendors/*"],
             "@runtime/*": ["src/runtime/*"]

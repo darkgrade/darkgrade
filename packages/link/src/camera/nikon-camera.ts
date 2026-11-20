@@ -92,7 +92,8 @@ export class NikonCamera extends GenericCamera {
         return (await this.propertyDescriptor(property)).currentValueDecoded as CodecType<P['codec']>
     }
 
-    private async propertyDescriptor(property: PropertyDefinition): Promise<DevicePropDesc> {
+    /** Read one known descriptor. Callers must discover whether the current body advertises it. */
+    async propertyDescriptor(property: PropertyDefinition): Promise<DevicePropDesc> {
         if (!property.access.includes('Get')) {
             throw new Error(`Property ${property.name} is not readable`)
         }

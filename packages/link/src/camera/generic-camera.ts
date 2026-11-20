@@ -1085,6 +1085,8 @@ export class GenericCamera {
                 if (!response.data) continue
                 states.push(this.standardPropertyState(response.data))
             } catch (error) {
+                if (error instanceof PTPTimeoutError || error instanceof PTPDisconnectedError ||
+                    error instanceof PTPProtocolError || error instanceof PTPRecoveryRequiredError) throw error
                 this.logger.addLog({
                     type: 'console',
                     level: 'warn',

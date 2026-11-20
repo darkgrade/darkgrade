@@ -130,6 +130,7 @@ export interface SonyPropertyState {
     enabled: boolean
     sonyEnabledFlag: number
     sonyGetSetFlag: number
+    range?: { minimum: number; maximum: number; step: number }
 }
 
 export interface SonyOsdImage {
@@ -338,6 +339,9 @@ export class SonyCamera extends GenericCamera {
                 enabled: descriptor.vendorExtensions.enabled,
                 sonyEnabledFlag: descriptor.sonyEnabledFlag,
                 sonyGetSetFlag: descriptor.sonyGetSetFlag,
+                ...(descriptor.devicePropertyName === 'ColorTemperature' &&
+                    typeof descriptor.minimumValue === 'number' && typeof descriptor.maximumValue === 'number' && typeof descriptor.stepSize === 'number'
+                    ? { range: { minimum: descriptor.minimumValue, maximum: descriptor.maximumValue, step: descriptor.stepSize } } : {}),
             }))
             .sort((left, right) => left.code - right.code)
     }

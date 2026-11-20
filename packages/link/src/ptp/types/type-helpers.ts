@@ -1,6 +1,6 @@
 import { CodecType } from '@ptp/types/codec'
 
-type BuildParamObject<Params extends readonly any[], Acc = {}> = Params extends readonly []
+type BuildParamObject<Params extends readonly unknown[], Acc = {}> = Params extends readonly []
     ? Acc
     : Params extends readonly [infer Head, ...infer Tail]
       ? Head extends { name: infer N extends string; codec: infer C; required: true }
@@ -10,7 +10,7 @@ type BuildParamObject<Params extends readonly any[], Acc = {}> = Params extends 
             : BuildParamObject<Tail, Acc>
       : Acc
 
-type BuildEventParamObject<Params extends readonly any[], Acc = {}> = Params extends readonly []
+type BuildEventParamObject<Params extends readonly unknown[], Acc = {}> = Params extends readonly []
     ? Acc
     : Params extends readonly [infer Head, ...infer Tail]
       ? Head extends { name: infer N extends string; codec: infer C }
@@ -18,7 +18,7 @@ type BuildEventParamObject<Params extends readonly any[], Acc = {}> = Params ext
           : BuildEventParamObject<Tail, Acc>
       : Acc
 
-export type OperationParams<Op extends { operationParameters: readonly any[] }> =
+export type OperationParams<Op extends { operationParameters: readonly unknown[] }> =
     Op['operationParameters'] extends readonly [] ? Record<string, never> : BuildParamObject<Op['operationParameters']>
 
 export type OperationResponse<Op> = Op extends { dataCodec: infer C }
@@ -27,7 +27,7 @@ export type OperationResponse<Op> = Op extends { dataCodec: infer C }
       ? { code: number; parameters?: number[]; data: Uint8Array }
       : { code: number; parameters?: number[] }
 
-export type EventParams<E extends { parameters: readonly any[] }> = E['parameters'] extends readonly []
+export type EventParams<E extends { parameters: readonly unknown[] }> = E['parameters'] extends readonly []
     ? Record<string, never>
     : BuildEventParamObject<E['parameters']>
 

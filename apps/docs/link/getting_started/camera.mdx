@@ -6,7 +6,7 @@ description: "The Camera class provides a high-level interface for interacting w
 ## Import
 
 ```typescript
-import { Camera } from '@packages/link/src/camera'
+import { Camera } from '@darkgrade/link'
 ```
 
 ## Constructor
@@ -20,10 +20,27 @@ constructor(options?: CameraOptions)
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
 | **options** | `CameraOptions` |  | Optional configuration for the camera instance. |
-| **options.logger** | `Partial&lt;LoggerConfig&gt;` |  | Logger configuration for debugging and logging. |
+| **options.logger** | `Partial&lt;LoggerConfig&gt;` |  | Optional logger configuration; console capture and terminal rendering are off by default for `Camera`. |
 | **options.device** | `DeviceDescriptor` |  | Device descriptor for the camera. If provided, the appropriate vendor-specific implementation will be selected automatically. |
 
 ## Methods
+
+### getCapabilities, getExposureTime, setExposureTime, setControl
+
+Use the [shared control model](/link/getting_started/controls) for application
+settings. It exposes only observed properties and re-checks current choices before
+writes. Shutter speed and shutter angle share the `exposureTime` id; converting
+units requires the actual frame rate. Native angle mode is preserved.
+
+```typescript
+const { controls } = await camera.getCapabilities()
+const exposure = await camera.getExposureTime()
+await camera.setExposureTime('180°', { framesPerSecond: 25 })
+await camera.setControl('colorTemperature', 5600)
+```
+
+These writes require writable, advertised values; the examples do not establish
+support on every camera or in every shooting mode.
 
 ### connect
 
@@ -50,18 +67,18 @@ async disconnect(): Promise&lt;void&gt;
 Send a PTP operation to the camera.
 
 ```typescript
-async send(
-  operation: OperationDefinition,
-  params: any,
+async send<Op extends OperationDefinition>(
+  operation: Op,
+  params: OperationParams<Op>,
   data?: Uint8Array,
   maxDataLength?: number
-): Promise&lt;any&gt;
+): Promise&lt;OperationResponse<Op>&gt;
 ```
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
 | **operation** | `OperationDefinition` | ✓ | The operation definition to send. |
-| **params** | `any` | ✓ | Parameters for the operation. |
+| **params** | `OperationParams&lt;Op&gt;` | ✓ | Parameters inferred from the concrete definition. |
 | **data** | `Uint8Array` |  | Optional data payload. |
 | **maxDataLength** | `number` |  | Optional maximum data length. |
 
@@ -70,7 +87,7 @@ async send(
 Get a camera property value.
 
 ```typescript
-async get(property: PropertyDefinition): Promise&lt;any&gt;
+async get<P extends PropertyDefinition>(property: P): Promise&lt;CodecType<P['codec']>&gt;
 ```
 
 | Parameter | Type | Required | Description |
@@ -82,16 +99,16 @@ async get(property: PropertyDefinition): Promise&lt;any&gt;
 Set a camera property value.
 
 ```typescript
-async set(
-  property: PropertyDefinition,
-  value: any
+async set<P extends PropertyDefinition>(
+  property: P,
+  value: CodecType<P['codec']>
 ): Promise&lt;void&gt;
 ```
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
 | **property** | `PropertyDefinition` | ✓ | The property definition to set. |
-| **value** | `any` | ✓ | The value to set. |
+| **value** | `CodecType&lt;P['codec']&gt;` | ✓ | The concrete property's decoded value type. |
 
 ### getStandardPropertyStates
 

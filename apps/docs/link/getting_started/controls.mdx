@@ -1,0 +1,64 @@
+---
+title: "Camera controls"
+description: "Current camera capabilities, shared setting names, shutter speed and shutter angle."
+---
+
+Use `Camera` for application controls. Link maps vendor properties to common ids;
+applications inspect the current body instead of checking the brand.
+
+```typescript
+import { Camera } from '@darkgrade/link'
+import { resolveCameraControl } from '@darkgrade/link/controls'
+
+const camera = new Camera()
+await camera.connect()
+try {
+    const { controls } = await camera.getCapabilities()
+    for (const control of Object.values(controls)) {
+        console.log(control.id, control.value, control.allowedValues, control.writable)
+    }
+    console.log(resolveCameraControl('shutter speed')) // exposureTime
+    console.log(resolveCameraControl('shutter angle')) // exposureTime
+} finally {
+    await camera.disconnect()
+}
+```
+
+## Exposure time
+
+`exposureTime` is one control with duration, angle, Bulb, Time or flash-sync state.
+`getExposureTime()` returns a discriminated union. Native angle mode stays in angle
+mode; a write never changes the body's shutter-control mode implicitly.
+
+```typescript
+await camera.setExposureTime({ kind: 'duration', seconds: 1 / 50 })
+await camera.setExposureTime('180°', { framesPerSecond: 25 })
+await camera.setExposureTime('180°', { framesPerSecond: 24000 / 1001 })
+```
+
+The exact requested value must be advertised. Converting units requires the actual
+capture frame rate, supplied by the caller; Link does not infer it from a label.
+`180°` at 25 fps is 1/50 second; 24 and 24000/1001 fps differ. A bare `180` means
+seconds. Bulb and Time are not finite durations.
+
+## Availability and types
+
+`setControl('iso', advertisedLabel)` uses the body's current labels.
+`setControl('colorTemperature', 5600)` takes a number. Aliases resolve names, not
+units, modes or writability. Changing a mode can change the available settings:
+re-read capabilities when that happens. Setters perform their own fresh check.
+
+Sony USB flags, Nikon descriptors and Canon events retain their different protocol
+semantics inside Link. Common exposure/focus/white-balance controls and Canon
+structured photo/movie formats share this application model. Empty or ambiguous
+choices cannot become writable. A refusal or failed readback stays a failure.
+
+`advertisedOperations` is the standard DeviceInfo list (or `null` where unavailable); advertisement does not
+prove workflow implementation or physical qualification. Capability reads do not
+acquire a host lease or prepare Manual exposure. Sony's licensed SDK bridge shares
+the connected-session control contract, with its own raw mappings and advanced
+connection API. This does not imply SDK/Wi-Fi parity for pairing, recording or media.
+
+Concrete operation/property definitions infer types in strict library consumers.
+Dynamic camera choices still require runtime validation. The `/controls` export
+is safe for browser renderers; the main camera entry uses Node host services.

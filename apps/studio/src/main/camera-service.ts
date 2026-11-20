@@ -14,7 +14,9 @@ import {
     type SonyContentFile,
     type SonyFocalFrame,
     type TransactionPolicy,
+    type CameraCapabilities,
 } from '@darkgrade/link'
+import { resolveCameraControl } from '@darkgrade/link/controls'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 // EXPERIMENT(usb-transport): Developer Mode's USB transport choice.
 import {
@@ -97,28 +99,6 @@ const KELVIN_MIN = 2500
 const KELVIN_MAX = 9900
 const KELVIN_STEP = 100
 /** Sony property names per setting, newest first: bodies report one or the other. */
-const SONY_CONTROL_PROPERTIES: Record<CameraControlName, string[]> = {
-    whiteBalance: ['WhiteBalance'],
-    colorTemperature: ['ColorTemperature'],
-    imageSize: ['SonyImageSize'],
-    aspectRatio: ['AspectRatio'],
-    jpegQuality: ['JpegQuality'],
-    movieFrameRate: ['MovieRecordingFrameRate'],
-    zoomMode: ['ZoomSetting'],
-    liveViewQuality: ['LiveViewImageQuality'],
-    exposureProgram: ['ExposureProgramMode'],
-    aperture: ['Aperture', 'FNumber'],
-    shutterSpeed: ['ShutterSpeed'],
-    iso: ['Iso'],
-    focusMode: ['FocusMode'],
-    focusArea: ['FocusArea'],
-    subjectRecognition: ['SubjectRecognitionInAF'],
-    recognitionTarget: ['RecognitionTarget'],
-    eyeSelect: ['RightLeftEyeSelect'],
-    stillFormat: ['StillFileFormat', 'CompressionSetting'],
-    movieFormat: ['MovieFileFormat'],
-    movieSetting: ['MovieRecordingSetting'],
-}
 /** Sony's touch-focus coordinates are on a fixed 640×480 grid regardless of the picture size. */
 const SONY_AF_GRID_WIDTH = 640
 const SONY_AF_GRID_HEIGHT = 480
@@ -198,11 +178,8 @@ interface DiscoveredCamera {
 }
 
 /**
- * Finds the connected camera BEFORE constructing Camera. This matters: the
- * Camera class selects its vendor implementation (SonyCamera / NikonCamera /
- * CanonCamera) from the device descriptor passed to the constructor — with no
- * descriptor every camera falls back to GenericCamera and vendor features
- * (Sony live view, recording, correct property codes) are unavailable.
+ * Studio discovers first to present a body identity and select an explicit device.
+ * Link also selects the actual USB vendor itself when Camera.connect() is used alone.
  */
 async function discoverCamera(): Promise<DiscoveredCamera | null> {
     const { webusb } = await import('usb')
@@ -664,23 +641,17 @@ export class CameraService {
     /** Runs on the operation queue — never call from inside another enqueued op. */
     private async refreshSettingsRaw(): Promise<CameraSettings> {
         const camera = this.requireCamera()
-        // Link bounds every transaction; only a dead session should abort the whole read.
-        const readOrNull = async (read: () => Promise<string>): Promise<string | null> => {
-            try {
-                return await read()
-            } catch (error) {
-                if (requiresReconnect(error)) throw error
-                return null
-            }
-        }
-        this.controls = await this.readControls(camera).catch(error => {
+        const capabilities = await camera.getCapabilities().catch(error => {
             if (requiresReconnect(error)) throw error
-            return this.controls
+            this.log('system', `Camera controls unavailable: ${errorMessage(error)}`)
+            return null
         })
+        this.controlProperties.clear()
+        this.controls = capabilities ? await this.readControls(camera, capabilities) : null
         this.settings = {
-            iso: await readOrNull(() => camera.getIso()),
-            shutterSpeed: await readOrNull(() => camera.getShutterSpeed()),
-            aperture: await readOrNull(() => camera.getAperture()),
+            iso: capabilities?.controls.iso?.value ?? null,
+            shutterSpeed: capabilities?.controls.exposureTime?.value ?? null,
+            aperture: capabilities?.controls.aperture?.value ?? null,
         }
         this.broadcastState()
         return this.settings
@@ -690,27 +661,28 @@ export class CameraService {
         return this.enqueue(() => this.refreshSettingsRaw())
     }
 
-    /** Runs on the operation queue. Sony reports every setting with its allowed values in one read. */
-    private async readControls(camera: Camera): Promise<CameraControls | null> {
-        if (this.detectedVendorId !== VendorIDs.SONY) return null
-        const states = await camera.getSonyPropertyStates()
-        this.updateCardFromStates(states)
-        this.updateLensFromStates(states)
+    /** All vendors share Link's control vocabulary; only observed controls reach the sidebar. */
+    private async readControls(camera: Camera, capabilities: CameraCapabilities): Promise<CameraControls> {
         const pick = (name: CameraControlName): CameraControl | null => {
-            const propertyName = SONY_CONTROL_PROPERTIES[name].find(candidate =>
-                states.some(state => state.name === candidate)
-            )
-            if (propertyName) this.controlProperties.set(name, propertyName)
-            const state = states.find(candidate => candidate.name === propertyName)
+            const id = resolveCameraControl(name)
+            const state = id ? capabilities.controls[id] : undefined
             if (!state) return null
+            this.controlProperties.set(name, state.source.name)
             const value = String(state.value)
             const listed = (state.allowedValues ?? []).map(String)
-            const options = name === 'colorTemperature' && listed.length < 2 ? kelvinSteps() : listed
-            const enabled = (state as { enabled?: boolean }).enabled !== false
+            const options = name === 'colorTemperature' && listed.length < 2 && state.range
+                ? kelvinSteps().filter(value => Number(value) >= state.range!.minimum && Number(value) <= state.range!.maximum)
+                : listed
+            const enabled = state.enabled && state.writable
             return { value, options, enabled }
         }
         const controls = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => [name, pick(name)])) as CameraControls
-        await this.showSonyFaceFrames(camera, states, controls.subjectRecognition?.value === 'On')
+        if (this.detectedVendorId === VendorIDs.SONY) {
+            const states = await camera.getSonyPropertyStates()
+            this.updateCardFromStates(states)
+            this.updateLensFromStates(states)
+            await this.showSonyFaceFrames(camera, states, controls.subjectRecognition?.value === 'On')
+        }
         const area = controls.focusArea?.value ?? ''
         if (isMovableFocusArea(area)) this.lastFlexibleSpot = area.replace(/^lock on af /i, '')
         return controls
@@ -786,12 +758,12 @@ export class CameraService {
     async setControl(name: CameraControlName, value: string): Promise<CameraControls | null> {
         if (!CAMERA_CONTROL_NAMES.includes(name)) throw new Error(`Unknown setting ${String(name)}`)
         const camera = this.requireCameraForControl()
-        if (this.detectedVendorId !== VendorIDs.SONY) throw new Error('This setting isn’t available on this camera yet')
         return this.enqueue(async () => {
-            const properties = camera.getInstance().registry.properties as Record<string, unknown>
-            const propertyName = this.controlProperties.get(name) ?? SONY_CONTROL_PROPERTIES[name][0]
+            const id = resolveCameraControl(name)
+            if (!id) throw new Error('Unknown camera control')
             const encoded = name === 'colorTemperature' ? Number(value) : value
-            await camera.set(properties[propertyName] as never, encoded as never)
+            if (id === 'colorTemperature') await camera.setControl(id, Number(encoded))
+            else await camera.setControl(id, String(encoded))
             // Choosing an area by hand replaces any switch click-to-focus made.
             if (name === 'focusArea') this.focusAreaBeforeTouch = null
             if (name === 'subjectRecognition') this.subjectRecognitionBeforeTouch = null
@@ -805,7 +777,7 @@ export class CameraService {
             }
             // A new area or subject setting only takes effect once AF runs again; in PC Remote it doesn't
             // run on its own, so focus once now (e.g. back to Wide finds the eye again).
-            if (REFOCUS_CONTROLS.has(name) && !/^(MF|DMF)/i.test(this.controls?.focusMode?.value ?? '')) {
+            if (this.detectedVendorId === VendorIDs.SONY && REFOCUS_CONTROLS.has(name) && !/^(MF|DMF)/i.test(this.controls?.focusMode?.value ?? '')) {
                 await camera.autofocus(FOCUS_DURATION_MS)
                 this.log('system', 'Refocused')
             }
@@ -814,19 +786,19 @@ export class CameraService {
     }
 
     async setIso(value: string): Promise<CameraSettings> {
-        await this.enqueue(() => this.requireCameraForControl().setIso(value))
+        await this.enqueue(() => this.requireCameraForControl().setControl('iso', value))
         this.log('system', `ISO → ${value}`)
         return this.applyOptimistically('iso', value)
     }
 
     async setShutterSpeed(value: string): Promise<CameraSettings> {
-        await this.enqueue(() => this.requireCameraForControl().setShutterSpeed(value))
+        await this.enqueue(() => this.requireCameraForControl().setExposureTime(value))
         this.log('system', `Shutter → ${value}`)
         return this.applyOptimistically('shutterSpeed', value)
     }
 
     async setAperture(value: string): Promise<CameraSettings> {
-        await this.enqueue(() => this.requireCameraForControl().setAperture(value))
+        await this.enqueue(() => this.requireCameraForControl().setControl('aperture', value))
         this.log('system', `Aperture → ${value}`)
         return this.applyOptimistically('aperture', value)
     }
@@ -909,7 +881,7 @@ export class CameraService {
     private sonySubjectRecognition(camera: Camera): never | null {
         const properties = camera.getInstance().registry.properties as Record<string, unknown>
         const propertyName =
-            this.controlProperties.get('subjectRecognition') ?? SONY_CONTROL_PROPERTIES.subjectRecognition[0]
+            this.controlProperties.get('subjectRecognition') ?? 'SubjectRecognitionInAF'
         return (properties[propertyName] as never) ?? null
     }
 

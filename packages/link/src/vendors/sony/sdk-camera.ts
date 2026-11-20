@@ -1,5 +1,7 @@
 import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@camera/sony-camera'
-import { performSonySdkControl } from '@vendors/sony/sdk-controls'
+import { performSonySdkControl, sonySdkCapabilities, sonySdkControlWireValue } from '@vendors/sony/sdk-controls'
+import type { CameraCapabilities, CameraControlId, CameraControlInputs } from '@camera/controls'
+import { matchExposureTime, type ExposureContext, type ExposureTime, type ExposureTimeInput } from '@camera/exposure-time'
 import { sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 import { SONY_SDK_NAMED_PROPERTIES } from '@vendors/sony/sdk-property-codes'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
@@ -167,6 +169,35 @@ export class SonyWifiCamera {
 
     isConnected(): boolean {
         return this.connected
+    }
+
+    async getCapabilities(): Promise<CameraCapabilities> {
+        return sonySdkCapabilities(await this.getSonyPropertyStates())
+    }
+
+    async getExposureTime(): Promise<ExposureTime> {
+        const state = (await this.getCapabilities()).controls.exposureTime
+        if (!state?.exposureTime) throw new Error('The current SDK camera mode does not expose exposure time')
+        return state.exposureTime
+    }
+
+    async setExposureTime(value: ExposureTimeInput, context?: ExposureContext): Promise<void> {
+        return this.setControl('exposureTime', value, context)
+    }
+
+    async setControl<Id extends CameraControlId>(
+        id: Id, value: CameraControlInputs[Id], context?: ExposureContext
+    ): Promise<void> {
+        const properties = await this.getSonyPropertyStates()
+        const control = sonySdkCapabilities(properties).controls[id]
+        if (!control?.writable) throw new Error(`${id} is not writable in the current SDK camera mode`)
+        if (id !== 'exposureTime' && (id === 'colorTemperature' ? typeof value !== 'number' : typeof value !== 'string'))
+            throw new Error(`Invalid ${id} value`)
+        const requested = id === 'exposureTime'
+            ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context) : String(value)
+        if (!requested || !control.allowedValues?.includes(requested)) throw new Error('Requested SDK control value is not advertised')
+        const wire = sonySdkControlWireValue(properties, id, requested)
+        await this.setSonySetting(wire.code, wire.value)
     }
 
     async connect(

@@ -1,5 +1,5 @@
 import {execFileSync} from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, symlinkSync, realpathSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -50,6 +50,10 @@ try {
         const result = await Bun.build({ entrypoints: [entry], target: 'browser' })
         if (!result.success) throw new AggregateError(result.logs, 'Browser diagnostics import failed: ' + path)
     }
+    const controlsEntry = join(isolated, 'controls-browser.ts')
+    writeFileSync(controlsEntry, "export * from '@darkgrade/link/controls'")
+    const controlsBuild = await Bun.build({ entrypoints: [controlsEntry], target: 'browser' })
+    if (!controlsBuild.success) throw new AggregateError(controlsBuild.logs, 'Browser control vocabulary failed')
     writeFileSync(join(isolated, 'package.json'), JSON.stringify({ type: 'module' }))
     writeFileSync(join(isolated, 'types.ts'), `
         import { createApplicationDiagnostics, type InstallationState } from '@darkgrade/link/contribute/application'
@@ -72,6 +76,77 @@ try {
     execFileSync('node', [createRequire(import.meta.url).resolve('typescript/bin/tsc'), '-p', join(isolated, 'tsconfig.json')],
         { stdio: 'inherit' })
     console.log('Packed ESM/CommonJS, strict NodeNext types and browser diagnostics passed without camera dependencies')
+
+    // A library consumer uses the packed declarations, with no source aliases or skipLibCheck.
+    // Link's declared type/runtime dependencies are resolved independently of workspace sources.
+    const require = createRequire(import.meta.url)
+    mkdirSync(join(isolated, 'node_modules/@types'), { recursive: true })
+    for (const name of ['node', 'w3c-web-usb'])
+        symlinkSync(realpathSync(require.resolve(`@types/${name}/package.json`)).replace(/\/package\.json$/, ''),
+            join(isolated, `node_modules/@types/${name}`), 'dir')
+    symlinkSync(realpathSync(require.resolve('usb/package.json')).replace(/\/package\.json$/, ''),
+        join(isolated, 'node_modules/usb'), 'dir')
+    const consumer = `
+        import { Camera, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
+            type CameraCapabilities, type ExposureTime, type CameraControlSession, SonyWifiCamera } from '@darkgrade/link'
+        import { exposureSeconds, resolveCameraControl } from '@darkgrade/link/controls'
+        const camera = new Camera()
+        const device: Promise<{code: number; data: DeviceInfo}> = camera.send(genericOperationRegistry.GetDeviceInfo, {})
+        const capabilities: Promise<CameraCapabilities> = camera.getCapabilities()
+        const exposure: Promise<ExposureTime> = camera.getExposureTime()
+        const native: CameraControlSession = camera
+        const sdk: CameraControlSession = new SonyWifiCamera({
+            request: async () => ({}), close: async () => {}
+        })
+        camera.send(genericOperationRegistry.OpenSession, {SessionID: 1})
+        camera.set(genericPropertyRegistry.WhiteBalance, 2)
+        camera.setExposureTime({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
+        camera.setControl('colorTemperature', 5600)
+        camera.setControl('iso', 'ISO 800')
+        // @ts-expect-error Operation parameters have concrete numeric types.
+        camera.send(genericOperationRegistry.OpenSession, {SessionID: 'one'})
+        // @ts-expect-error Required operation parameters cannot be omitted.
+        camera.send(genericOperationRegistry.OpenSession, {})
+        // @ts-expect-error A property's codec defines its value type.
+        camera.set(genericPropertyRegistry.WhiteBalance, 'daylight')
+        // @ts-expect-error Known read-only definitions cannot be written through Camera.
+        camera.set(genericPropertyRegistry.BatteryLevel, 40)
+        // @ts-expect-error Controls have their own input types.
+        camera.setControl('colorTemperature', '5600')
+        // @ts-expect-error A numeric control must not widen the inferred id.
+        camera.setControl('iso', {kind: 'angle', degrees: 180})
+        // @ts-expect-error The public vocabulary rejects invented controls.
+        camera.setControl('vendorMagic', 'on')
+        // @ts-expect-error Angle values need a degrees field.
+        camera.setExposureTime({kind: 'angle', seconds: 0.02})
+        void [device, capabilities, exposure, exposureSeconds, resolveCameraControl, native, sdk]
+    `
+    for (const extension of ['ts', 'cts']) {
+        writeFileSync(join(isolated, 'camera.' + extension), consumer)
+        writeFileSync(join(isolated, 'camera-tsconfig.json'), JSON.stringify({
+            compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext',
+                strict: true, noEmit: true, skipLibCheck: false, types: ['node'], lib: ['ES2022', 'DOM'] },
+            files: ['camera.' + extension],
+        }))
+        execFileSync('node', [require.resolve('typescript/bin/tsc'), '-p', join(isolated, 'camera-tsconfig.json')],
+            { stdio: 'inherit' })
+    }
+    console.log('Packed camera ESM/CommonJS strict NodeNext types and rejected invalid inputs passed')
+    const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '../package.json'), 'utf8'))
+    for (const name of Object.keys(manifest.dependencies)) {
+        const target = join(isolated, 'node_modules', name)
+        if (!existsSync(target))
+            symlinkSync(realpathSync(join(import.meta.dirname, '../node_modules', name)), target, 'dir')
+    }
+    for (const format of ['esm', 'commonjs']) {
+        const load = format === 'esm' ? "await import('@darkgrade/link')" : "require('@darkgrade/link')"
+        execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
+            `const api=${load}; const log=console.log, handlers=process.listenerCount('uncaughtException');` +
+            `new api.Camera(); if(console.log!==log||process.listenerCount('uncaughtException')!==handlers)throw Error('Library constructor changes the host');` +
+            `if(api.parseExposureTime('180°').kind!=='angle')throw Error('Packed exposure API is missing');`],
+            { cwd: isolated, stdio: 'inherit' })
+    }
+    console.log('Packed camera runtime imports passed using only declared runtime dependencies')
 } finally {
     rmSync(isolated, { recursive: true, force: true })
 }

@@ -16,10 +16,14 @@ export default defineConfig({
             include: ['src'],
             entryRoot: 'src',
             beforeWriteFile(filePath, content) {
-                // Diagnostics also serve NodeNext consumers such as the collector.
-                if ((filePath.includes('/contribute/') || filePath.includes('/cli/')) && filePath.endsWith('.d.ts'))
+                // Every public entry serves NodeNext consumers, including the camera library.
+                if (filePath.endsWith('.d.ts'))
                     content = content.replace(/((?:from\s+|import\()['"])(\.[^'"]+)(['"])/g,
-                        (_, prefix, path, quote) => `${prefix}${/\.[cm]?[jt]s$/.test(path) ? path : path + '.js'}${quote}`)
+                        (_, prefix, path, quote) => `${prefix}${path === '.' || path === '..'
+                            ? path + '/index.js'
+                            : /\.[cm]?[jt]s$/.test(path) ? path : path + '.js'}${quote}`)
+                if (filePath.endsWith('/index.d.ts') && !/\/(?:cli|runtime|contribute)\//.test(filePath))
+                    content = '/// <reference types="w3c-web-usb" />\n' + content
                 return { filePath, content }
             },
         }),
@@ -32,9 +36,6 @@ export default defineConfig({
             '@camera': resolve(__dirname, './src/camera'),
             '@core': resolve(__dirname, './src/core'),
             '@transport': resolve(__dirname, './src/transport'),
-            '@factories': resolve(__dirname, './src/factories'),
-            '@api': resolve(__dirname, './src/api'),
-            '@constants': resolve(__dirname, './src/constants'),
             '@ptp': resolve(__dirname, './src/ptp'),
             '@runtime': resolve(__dirname, './src/runtime'),
         },
@@ -46,6 +47,7 @@ export default defineConfig({
             // the Node-only lease coordinator or the USB stack.
             entry: {
                 index: resolve(__dirname, 'src/index.ts'),
+                controls: resolve(__dirname, 'src/controls.ts'),
                 'cli/index': resolve(__dirname, 'src/cli/index.ts'),
                 'runtime/index': resolve(__dirname, 'src/runtime/index.ts'),
                 'runtime/browser': resolve(__dirname, 'src/runtime/browser.ts'),

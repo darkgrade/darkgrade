@@ -1,6 +1,8 @@
 import type { SonySdkProperty, SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import { sonyIsoLabel } from '@vendors/sony/iso-value'
+import { cameraControlDefinitions, resolveCameraControl, type CameraCapabilities, type CameraControlId } from '@camera/controls'
+import { parseExposureTime } from '@camera/exposure-time'
 
 const controls: Record<string, { code: number; label: string; values?: Record<string, string> }> = {
     aperture: { code: 256, label: 'Aperture' },
@@ -88,7 +90,7 @@ function findProperty(properties: SonySdkProperty[], key: string): SonySdkProper
     if (key === 'shutterSpeed') {
         const speed = properties.find(property => property.code === 259)
         const angle = properties.find(property => property.code === 378)
-        if (angle?.writable && (!speed?.writable || speed.value === '4294967295')) return angle
+        if (angle && (!speed || speed.value === '4294967295' || angle.writable && !speed.writable)) return angle
         return speed
     }
     if (key === 'jpegQuality')
@@ -121,6 +123,45 @@ export function sonySdkControls(properties: SonySdkProperty[]) {
             ]
         })
     )
+}
+
+/** Reuse the SDK's existing raw/label mapping; SDK ids are never mistaken for PTP ids. */
+export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabilities {
+    const result: CameraCapabilities['controls'] = {}
+    for (const [name, state] of Object.entries(sonySdkControls(properties))) {
+        const id = resolveCameraControl(name)
+        if (!id) continue
+        if (id === 'exposureTime' && state.code === 259 && state.rawValue === '4294967295') continue
+        const definition = cameraControlDefinitions[id]
+        const choices = state.valueForm === 'enum' ? state.allowedValues : undefined
+        const unique = choices !== undefined && choices.length > 0 && new Set(choices).size === choices.length
+        let exposureTime: ReturnType<typeof parseExposureTime> | undefined
+        if (id === 'exposureTime') {
+            try { exposureTime = parseExposureTime(state.value) } catch { /* Unknown wire values stay unknown. */ }
+        }
+        result[id] = {
+            id, label: definition.label, aliases: definition.aliases,
+            value: id === 'exposureTime' && !exposureTime ? `Unknown exposure (${state.value})` : state.value,
+            source: { code: state.code, name: state.name, protocol: 'sony-sdk' },
+            allowedValues: choices, enabled: state.enabled,
+            writable: state.writable && unique && (id !== 'exposureTime' || Boolean(exposureTime)),
+            ...(exposureTime ? { exposureTime } : {}),
+        }
+    }
+    // The SDK does not supply a standard PTP DeviceInfo operation inventory.
+    return { observedAt: Date.now(), controls: result, advertisedOperations: null }
+}
+
+export function sonySdkControlWireValue(
+    properties: SonySdkProperty[], id: CameraControlId, label: string
+): { code: number; value: bigint } {
+    for (const [name, state] of Object.entries(sonySdkControls(properties))) {
+        if (resolveCameraControl(name) !== id || state.valueForm !== 'enum') continue
+        const index = state.allowedValues?.indexOf(label) ?? -1
+        const raw = properties.find(property => property.code === state.code)?.allowedValues?.[index]
+        if (index >= 0 && raw !== undefined) return { code: state.code, value: BigInt(raw) }
+    }
+    throw new Error('Requested SDK control value is not advertised')
 }
 function settingValue(property: SonySdkProperty, key: string, value: string | number): bigint {
     const text = String(value).trim(),

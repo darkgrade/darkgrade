@@ -6,7 +6,6 @@ import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.in
 import type { USBTransportOptions } from '@transport/transport-factory'
 import { InEndpoint, Interface, usb } from 'usb'
 import { USBContainerBuilder, USBContainerType } from './usb-container'
-import { formatDeviceTable } from './usb-device-table'
 
 export enum EndpointType {
     BULK_IN = 'bulk_in',
@@ -190,13 +189,8 @@ export class USBTransport implements TransportInterface {
         }
 
         if (availableDevices.length === 0) {
-            console.error('[USB] No USB devices found. Make sure camera is connected and in PTP/MTP mode.')
             throw new Error('No USB devices available')
         }
-
-        console.log(JSON.stringify(availableDevices, null, 2))
-
-        console.log(formatDeviceTable(availableDevices))
 
         // Discovery is scoped by the descriptor's filters; a physical mapping must still select one body.
         const matching = availableDevices.filter(matches)
@@ -207,9 +201,10 @@ export class USBTransport implements TransportInterface {
             throw new Error('No matching device found in discovered devices')
         }
         this.device = matchingDevice.device as USBDevice
-        console.log(
-            `[USB] Selected device: VID:PID 0x${matchingDevice.vendorId?.toString(16).padStart(4, '0')}:0x${matchingDevice.productId?.toString(16).padStart(4, '0')} - ${matchingDevice.manufacturer || 'Unknown'} ${matchingDevice.model || 'Unknown'}`
-        )
+        this.logger.addLog({
+            type: 'console', level: 'info', consoleLevel: 'info',
+            args: [`Selected USB camera 0x${matchingDevice.vendorId.toString(16)}:0x${matchingDevice.productId.toString(16)}`],
+        })
 
         try {
             await this.device.open()
@@ -240,6 +235,13 @@ export class USBTransport implements TransportInterface {
             }
             throw error
         }
+    }
+
+    /** Identity of the uniquely selected, opened USB body; no PTP operation is needed. */
+    getDeviceIdentity(): { vendorId: number; productId: number } | undefined {
+        return this.connected && this.device
+            ? { vendorId: this.device.vendorId, productId: this.device.productId }
+            : undefined
     }
 
     async resetPort(): Promise<void> {
