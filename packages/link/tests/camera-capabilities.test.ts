@@ -177,6 +177,18 @@ describe('canonical exposure time', () => {
 })
 
 describe('Nikon capabilities from real descriptor codecs', () => {
+    it('refreshes only the requested Nikon control and its mode guards before a write', async () => {
+        const fixture = nikonFixture()
+        const descriptor = vi.spyOn(fixture.driver, 'propertyDescriptor')
+        await fixture.camera.setExposureTime('1/60')
+        const readNames = descriptor.mock.calls.map(([property]) => property.name)
+        expect(readNames).toContain('NikonMovieShutterSpeed')
+        expect(readNames).not.toContain('NikonMovieISO')
+        expect(readNames).not.toContain('ExposureProgramMode')
+        expect(fixture.calls).toContain('GetDeviceInfo')
+        expect(fixture.calls).toContain('GetVendorCodes')
+        expect(fixture.writes).toEqual([0xd1a8])
+    })
     it('uses movie/photo extensions and extended angle ids without mode-changing commands', async () => {
         const fixture = nikonFixture()
         expect((await fixture.camera.getCapabilities()).controls.exposureTime?.source.code).toBe(0xd1a8)

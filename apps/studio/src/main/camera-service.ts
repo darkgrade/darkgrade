@@ -641,17 +641,24 @@ export class CameraService {
     /** Runs on the operation queue — never call from inside another enqueued op. */
     private async refreshSettingsRaw(): Promise<CameraSettings> {
         const camera = this.requireCamera()
-        const capabilities = await camera.getCapabilities().catch(error => {
+        try {
+            const capabilities = await camera.getCapabilities()
+            this.controlProperties.clear()
+            this.controls = await this.readControls(camera, capabilities)
+            this.settings = {
+                iso: capabilities.controls.iso?.value ?? null,
+                shutterSpeed: capabilities.controls.exposureTime?.value ?? null,
+                aperture: capabilities.controls.aperture?.value ?? null,
+            }
+        } catch (error) {
+            // Keep the last observation visible while disabling choices until a fresh read succeeds.
+            if (this.controls) this.controls = Object.fromEntries(
+                CAMERA_CONTROL_NAMES.map(name => [name, this.controls?.[name] ? { ...this.controls[name], enabled: false } : null])
+            ) as CameraControls
+            this.broadcastState()
             if (requiresReconnect(error)) throw error
-            this.log('system', `Camera controls unavailable: ${errorMessage(error)}`)
-            return null
-        })
-        this.controlProperties.clear()
-        this.controls = capabilities ? await this.readControls(camera, capabilities) : null
-        this.settings = {
-            iso: capabilities?.controls.iso?.value ?? null,
-            shutterSpeed: capabilities?.controls.exposureTime?.value ?? null,
-            aperture: capabilities?.controls.aperture?.value ?? null,
+            this.log('system', `Camera controls could not refresh; showing last observations: ${errorMessage(error)}`)
+            return this.settings
         }
         this.broadcastState()
         return this.settings

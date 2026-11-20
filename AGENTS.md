@@ -24,6 +24,13 @@ removals separately from executable code and tests; deletion counts alone are no
 of simplification. Keep Link's unused-local/parameter compiler checks enabled and preserve
 packed enum inference. Hosts consume the generic control API rather than maintaining
 another property alias map, vendor switch, session cache or setter registry.
+The Camera façade must open USB through the driver's existing `connectTransport` lifecycle.
+Opening the raw transport bypasses event subscription, channel reset and per-connection
+diagnostic/identity cleanup. Test disconnect/connect and recover/connect on the same Camera,
+not only fresh objects. Nikon control writes refresh the requested descriptor and its live
+mode/availability guards; do not reread unrelated descriptors or admit writes from a cache.
+Studio preserves last observations after a failed refresh with choices disabled, clears them
+on disconnect, and replaces them only after a successful inventory.
 
 Verify README promises with built/packed exports. Run `packages/link`'s `test:package`
 for strict ESM/CommonJS NodeNext consumer types, including negative input checks, with

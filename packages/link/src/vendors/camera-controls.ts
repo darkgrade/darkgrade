@@ -73,7 +73,12 @@ function descriptorState(descriptor: DevicePropDesc): PropertyState {
     }
 }
 
-async function nikonStates(camera: NikonCamera, advertised: Set<number>, operations: readonly number[]) {
+async function nikonStates(
+    camera: NikonCamera,
+    advertised: Set<number>,
+    operations: readonly number[],
+    requested?: CameraControlId
+) {
     if (operations.includes(camera.registry.operations.GetVendorCodes.code))
         for (const code of await camera.getVendorPropertyCodes()) advertised.add(code)
     let movie: boolean | undefined
@@ -89,16 +94,25 @@ async function nikonStates(camera: NikonCamera, advertised: Set<number>, operati
             : movie === false
               ? nikonPhotoControlProperties
               : standardControlProperties
-    if (movie && advertised.has(camera.registry.properties.MovieShutterMode.code)) {
+    if (
+        movie &&
+        (requested === undefined || requested === 'exposureTime') &&
+        advertised.has(camera.registry.properties.MovieShutterMode.code)
+    ) {
         const mode = await camera.get(camera.registry.properties.MovieShutterMode)
         if (mode === 'SHUTTER_ANGLE') mappings.exposureTime = ['MovieShutterAngle']
         else if (mode !== 'SHUTTER_SPEED') throw new PTPDecodeError('Unknown Nikon shutter control mode')
     }
     const states: PropertyState[] = []
+    const readISO = requested === undefined || requested === 'iso'
     const names = [
         ...new Set([
-            ...Object.values(mappings).flat(),
-            ...(movie === true ? ['NikonMovieAutoISO'] : movie === false ? ['NikonPhotoAutoISO'] : []),
+            ...(requested === undefined ? Object.values(mappings).flat() : (mappings[requested] ?? [])),
+            ...(readISO && movie === true
+                ? ['NikonMovieAutoISO', 'ExposureProgramMode']
+                : readISO && movie === false
+                  ? ['NikonPhotoAutoISO']
+                  : []),
         ]),
     ]
     for (const name of names) {
@@ -131,7 +145,10 @@ async function nikonStates(camera: NikonCamera, advertised: Set<number>, operati
 }
 
 /** Adapt existing observed inventories; a static registry entry alone never becomes a capability. */
-export async function readCameraCapabilities(camera: GenericCamera): Promise<CameraCapabilities> {
+export async function readCameraCapabilities(
+    camera: GenericCamera,
+    requested?: CameraControlId
+): Promise<CameraCapabilities> {
     const response = await camera.send(camera.registry.operations.GetDeviceInfo, {})
     if (response.code !== 0x2001) throw new PTPResponseError(response.code, 'Camera capability inventory refused')
     if (!response.data) throw new PTPDecodeError('Camera capability inventory has no DeviceInfo')
@@ -140,7 +157,7 @@ export async function readCameraCapabilities(camera: GenericCamera): Promise<Cam
     if (camera instanceof SonyCamera) {
         const observed = await camera.refreshPropertyStates()
         const iso = camera.isoControlState(observed)
-        states = observed.map(state => state.name === 'Iso' && iso ? iso : state)
+        states = observed.map(state => (state.name === 'Iso' && iso ? iso : state))
         mappings = sonyControlProperties
     } else if (camera instanceof CanonCamera) {
         await camera.refreshEventProperties()
@@ -160,7 +177,8 @@ export async function readCameraCapabilities(camera: GenericCamera): Promise<Cam
         ;({ states, mappings } = await nikonStates(
             camera,
             new Set(response.data.devicePropertiesSupported),
-            response.data.operationsSupportedRaw
+            response.data.operationsSupportedRaw,
+            requested
         ))
     } else {
         states = (await camera.getStandardPropertyStates()).map(state => ({
@@ -236,7 +254,9 @@ export async function writeCameraControl<Id extends CameraControlId>(
     value: CameraControlInputs[Id],
     context?: ExposureContext
 ): Promise<void> {
-    const state = (await readCameraCapabilities(driver)).controls[id]
+    // Nikon descriptors are separate transactions: refresh this control and its live guards,
+    // rather than reading every unrelated descriptor before each write. No cached admission.
+    const state = (await readCameraCapabilities(driver, id)).controls[id]
     if (!state?.enabled || !state.writable) throw new Error(`${id} is not writable in the current camera mode`)
     let requested: string
     if (id === 'exposureTime') {

@@ -194,7 +194,8 @@ export class GenericCamera {
         }
     }
 
-    protected async connectTransport(device?: DeviceDescriptor): Promise<void> {
+    /** @internal The façade uses this same lifecycle before selecting the opened USB body's driver. */
+    async connectTransport(device?: DeviceDescriptor): Promise<void> {
         await this.telemetry.prepare()
         if (this.recovery?.status === 'pending')
             throw new PTPRecoveryRequiredError('Transport recovery is still running', this.lastFailure)

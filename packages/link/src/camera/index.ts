@@ -155,7 +155,7 @@ export class Camera {
         let vendorId = this.options.vendorId ?? descriptorVendor(descriptor)
         if (this.transport instanceof USBTransport) {
             // Select exactly one body first, then its driver. A broad USB filter is not a vendor identity.
-            if (!this.transport.isConnected()) await this.transport.connect(descriptor)
+            await this.instance.connectTransport(descriptor)
             const identity = this.transport.getDeviceIdentity()
             if (identity) {
                 if (this.options.vendorId !== undefined && this.options.vendorId !== identity.vendorId) {
