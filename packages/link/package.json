@@ -9,6 +9,11 @@
             "import": "./dist/index.mjs",
             "require": "./dist/index.cjs"
         },
+        "./cli": {
+            "types": "./dist/cli/index.d.ts",
+            "import": "./dist/cli/index.mjs",
+            "require": "./dist/cli/index.cjs"
+        },
         "./runtime": {
             "types": "./dist/runtime/index.d.ts",
             "browser": {
@@ -96,7 +101,8 @@
         "mcp": "bun run src/runtime/stdio.ts",
         "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit",
         "bench:recover": "bun run scripts/recover-camera.ts",
-        "test:contribute": "bun run build && node --test tests/contribute/*.test.ts"
+        "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
+        "test:cli": "bun run build && node --test tests/cli/*.test.ts"
     },
     "keywords": [
         "ptp",

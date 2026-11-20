@@ -10,6 +10,10 @@ Diagnostics are part of Link. Node hosts use `@darkgrade/link/contribute/setting
 browser/custom hosts use `@darkgrade/link/contribute/application`. Schemas and protocol
 validation are available from `/contribute/schema`, `/contribute/batch`, and
 `/contribute/protocol` without importing camera transports or Node settings.
+Terminal command behavior is exported separately as `runDarkgradeCli` from
+`@darkgrade/link/cli`. It accepts command arguments and returns an exit code; importing
+it does not open a camera or initialize settings. `packages/cli` supplies the thin
+`darkgrade` executable and bundles this runner for npm.
 See [diagnostics and privacy](docs/contribute.md) for enrollment, opt-out,
 withdrawal, local logging and integration details.
 

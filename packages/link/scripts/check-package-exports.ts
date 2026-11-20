@@ -39,6 +39,10 @@ try {
         }).join(';')
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e', checks],
             { cwd: isolated, stdio: 'inherit' })
+        const cli = format === 'esm' ? "await import('@darkgrade/link/cli')" : "require('@darkgrade/link/cli')"
+        execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
+            `if(typeof (${cli}).runDarkgradeCli !== 'function')throw new Error('CLI runner is missing')`],
+            { cwd: isolated, stdio: 'inherit' })
     }
     for (const path of ['', '/application', '/batch', '/protocol', '/schema']) {
         const entry = join(isolated, 'browser.ts')
@@ -52,11 +56,13 @@ try {
         import { type CameraContext } from '@darkgrade/link/contribute/schema'
         import { type DiagnosticBatch } from '@darkgrade/link/contribute/batch'
         import { nodeDiagnostics } from '@darkgrade/link/contribute/settings'
+        import { runDarkgradeCli } from '@darkgrade/link/cli'
+        const command: (args: readonly string[]) => Promise<number> = runDarkgradeCli
         const context: CameraContext = { manufacturer: 'Test', model: 'Fixture', firmware: '1',
             revision: 'abcdef0', dirty: false, transport: 'usb', evidence: 'synthetic' }
         const batch: DiagnosticBatch = { schema: 'darkgrade.diagnostic-batch/v2', id: 'fixture', contributions: [] }
         const state: InstallationState = { enabled: false, noticeVersion: 'fixture', withdrawalPending: false }
-        void [context, batch, state, createApplicationDiagnostics, nodeDiagnostics]
+        void [context, batch, state, createApplicationDiagnostics, nodeDiagnostics, command]
     `)
     writeFileSync(join(isolated, 'tsconfig.json'), JSON.stringify({
         compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext',

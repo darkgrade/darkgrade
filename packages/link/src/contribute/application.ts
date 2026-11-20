@@ -496,7 +496,8 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 source,
                 () => !closed && !storageError,
                 (entry: DiagnosticEntry) => append(camera, entry),
-                () => epoch
+                () => epoch,
+                () => camera
             )
             return {
                 ...observer,

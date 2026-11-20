@@ -19,7 +19,7 @@ export default defineConfig({
     },
     test: {
         // The runtime's tests check package resolution with Bun's bundler: `bun run test:runtime`.
-        exclude: [...configDefaults.exclude, 'tests/runtime/**', 'tests/contribute/**'],
+        exclude: [...configDefaults.exclude, 'tests/runtime/**', 'tests/contribute/**', 'tests/cli/**'],
         globals: true,
         environment: 'node',
         pool: 'forks',

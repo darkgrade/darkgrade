@@ -204,7 +204,7 @@ export async function createContributions(options: ContributionOptions) {
     return {
         enabled,
         observe<Device, Kind extends string>(source: CameraTransport<Device, Kind>) {
-            return observeTransport(source, enabled, record, () => generation)
+            return observeTransport(source, enabled, record, () => generation, () => camera)
         },
         status: () => ({
             enabled: enabled(),

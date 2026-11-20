@@ -17,7 +17,7 @@ export default defineConfig({
             entryRoot: 'src',
             beforeWriteFile(filePath, content) {
                 // Diagnostics also serve NodeNext consumers such as the collector.
-                if (filePath.includes('/contribute/') && filePath.endsWith('.d.ts'))
+                if ((filePath.includes('/contribute/') || filePath.includes('/cli/')) && filePath.endsWith('.d.ts'))
                     content = content.replace(/((?:from\s+|import\()['"])(\.[^'"]+)(['"])/g,
                         (_, prefix, path, quote) => `${prefix}${/\.[cm]?[jt]s$/.test(path) ? path : path + '.js'}${quote}`)
                 return { filePath, content }
@@ -46,6 +46,7 @@ export default defineConfig({
             // the Node-only lease coordinator or the USB stack.
             entry: {
                 index: resolve(__dirname, 'src/index.ts'),
+                'cli/index': resolve(__dirname, 'src/cli/index.ts'),
                 'runtime/index': resolve(__dirname, 'src/runtime/index.ts'),
                 'runtime/browser': resolve(__dirname, 'src/runtime/browser.ts'),
                 'runtime/mcp': resolve(__dirname, 'src/runtime/mcp.ts'),

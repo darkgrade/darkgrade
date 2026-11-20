@@ -888,9 +888,12 @@ export class NikonCamera extends GenericCamera {
         if (this.transport.getType() !== TransportType.USB) return false
         const information = await this.send(this.registry.operations.GetDeviceInfo, {})
         this.assertNikonResponse(information.code, 'GetDeviceInfo for shutter recovery')
-        if (!information.data?.operationsSupportedRaw.includes(0x9207) ||
-            !information.data?.devicePropertiesSupported.includes(0xd102)) return false
+        if (!information.data?.operationsSupportedRaw.includes(0x9207)) return false
         const warning = this.registry.properties.NikonWarningStatus
+        if (!information.data.devicePropertiesSupported.includes(warning.code)) {
+            if (!information.data.operationsSupportedRaw.includes(this.registry.operations.GetVendorCodes.code)) return false
+            if (!(await this.getVendorPropertyCodes()).includes(warning.code)) return false
+        }
         if (await this.get(warning) !== 1) return false
         const movie = await this.get(this.registry.properties.MovieRecProhibitionCondition)
         if (movie.includes('alreadyRecording') || movie.includes('imagesInBuffer')) return false

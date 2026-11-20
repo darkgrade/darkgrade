@@ -1,4 +1,4 @@
-import type { DiagnosticEntry } from '@contribute/schema'
+import type { CameraContext, DiagnosticEntry } from '@contribute/schema'
 
 export interface CameraEvent {
     code: number
@@ -35,15 +35,49 @@ function header(bytes: Uint8Array): Pick<DiagnosticEntry, 'kind' | 'code' | 'tra
     return kind ? { kind, code: view.getUint16(6, true), transactionId: view.getUint32(8, true) } : { kind: 'unknown' }
 }
 
+const STANDARD_OPERATION_NAMES: Readonly<Record<number, string>> = {
+    0x1001: 'get_device_info',
+    0x1004: 'get_storage_ids',
+    0x1005: 'get_storage_info',
+    0x1007: 'get_object_handles',
+    0x1008: 'get_object_info',
+    0x1009: 'get_object',
+    0x101b: 'get_partial_object',
+}
+const SONY_OPERATION_NAMES: Readonly<Record<number, string>> = {
+    0x9211: 'sony_partial_object',
+    0x9212: 'sony_transfer_mode',
+    0x923c: 'sony_card_index',
+    0x923e: 'sony_card_preview',
+}
+
+/** Fixed labels only: inspect Sony's reserved live-view handle without retaining object IDs or other parameters. */
+function operationName(bytes: Uint8Array, manufacturer: string): string | undefined {
+    const fields = header(bytes)
+    if (fields.kind !== 'command') return
+    if (/^sony(?:\b|$)/i.test(manufacturer)) {
+        if (
+            fields.code === 0x1009 &&
+            bytes.byteLength === 16 &&
+            new DataView(bytes.buffer, bytes.byteOffset + 12, 4).getUint32(0, true) === 0xffffc002
+        )
+            return 'sony_live_view_frame'
+        return SONY_OPERATION_NAMES[fields.code ?? 0] ?? STANDARD_OPERATION_NAMES[fields.code ?? 0]
+    }
+    return STANDARD_OPERATION_NAMES[fields.code ?? 0]
+}
+
 export function observeTransport<Device, Kind extends string>(
     source: CameraTransport<Device, Kind>,
     enabled: () => boolean,
     record: (entry: DiagnosticEntry) => void,
-    generation: () => number
+    generation: () => number,
+    camera: () => Pick<CameraContext, 'manufacturer'> = () => ({ manufacturer: 'Unknown' })
 ) {
     let detached = false
     let sessionId = crypto.randomUUID()
     const listeners = new Set<(event: CameraEvent) => void>()
+    const pending = new Map<number, { operation: string; generation: number }>()
     const save = (entry: DiagnosticEntry) => {
         if (!detached && enabled()) {
             try {
@@ -64,18 +98,34 @@ export function observeTransport<Device, Kind extends string>(
         const epoch = generation()
         const collecting = !detached && enabled()
         const fields = collecting && bytes ? header(bytes) : { kind }
+        if (bytes && fields.kind === 'command' && fields.transactionId !== undefined)
+            pending.delete(fields.transactionId)
         try {
             const result = await run()
-            if (collecting && epoch === generation())
+            if (collecting && epoch === generation()) {
+                const completed = result instanceof Uint8Array ? header(result) : fields
+                const label =
+                    bytes && fields.kind === 'command'
+                        ? operationName(bytes, camera().manufacturer)
+                        : pending.get(completed.transactionId ?? -1)?.generation === epoch
+                          ? pending.get(completed.transactionId ?? -1)?.operation
+                          : undefined
+                if (bytes && fields.kind === 'command' && fields.transactionId !== undefined && label) {
+                    if (pending.size >= 128) pending.delete(pending.keys().next().value!)
+                    pending.set(fields.transactionId, { operation: label, generation: epoch })
+                }
                 save({
                     ...fields,
-                    ...(name ? { operation: name } : {}),
+                    ...((name ?? label) ? { operation: name ?? label } : {}),
                     ...(result instanceof Uint8Array && header(result)),
                     direction,
                     bytes: bytes?.byteLength ?? (result instanceof Uint8Array ? result.byteLength : 0),
                     durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
                     failed: false,
                 })
+                if (completed.kind === 'response' && completed.transactionId !== undefined)
+                    pending.delete(completed.transactionId)
+            }
             return result
         } catch (error) {
             if (collecting && epoch === generation())
@@ -99,10 +149,18 @@ export function observeTransport<Device, Kind extends string>(
         connect: device =>
             operation('lifecycle', 'connect', () => {
                 sessionId = crypto.randomUUID()
+                pending.clear()
                 source.on?.(onEvent)
                 return source.connect(device)
             }),
-        disconnect: () => operation('lifecycle', 'disconnect', () => source.disconnect()),
+        disconnect: () =>
+            operation('lifecycle', 'disconnect', async () => {
+                try {
+                    await source.disconnect()
+                } finally {
+                    pending.clear()
+                }
+            }),
         classRequestReset: () =>
             operation('lifecycle', 'reset', async () => {
                 try {
@@ -136,6 +194,7 @@ export function observeTransport<Device, Kind extends string>(
             detached = true
             source.off?.(onEvent)
             listeners.clear()
+            pending.clear()
         },
     }
 }

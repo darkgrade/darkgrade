@@ -3,6 +3,10 @@
 New Darkgrade product code belongs in `packages/link`, `apps/studio`, or `packages/cli`.
 Link owns camera drivers, shared runtimes, diagnostics/contributions, schemas and reusable
 services; Studio owns desktop UI/integrations; CLI owns command-line entry points.
+Command parsing, settings actions, diagnostics and benchmark orchestration belong in
+`packages/link/src/cli`, exposed as `@darkgrade/link/cli`. Keep `packages/cli` as the thin
+`darkgrade` executable and its packaging, documentation and terminal smoke checks.
+Do not add command behavior to that wrapper or create another CLI/runtime package.
 Use modules and explicit exports within these locations, not additional workspace packages
 or apps. Do not create `packages/contribute`, `packages/runtime`, or another shared package.
 Existing infrastructure, sites and shared build/UI tooling may be maintained in place.
