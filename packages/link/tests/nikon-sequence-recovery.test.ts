@@ -9,13 +9,25 @@ function setup() {
     const camera=new NikonCamera(transport,new Logger({expanded:false,captureConsole:false,renderInTerminal:false}))
     const warnings=[1,1,0],operations:number[]=[],movie:string[]=[]
     let releaseCode=0x2001
+    const vendorProperties=[0xd102]
+    let vendorData:Uint8Array|undefined
+    let vendorResponse=0x2001
     const information={operationsSupportedRaw:[0x9207],devicePropertiesSupported:[0xd102]}
     camera.get=vi.fn(async property=>property.code===0xd102?warnings.shift():movie) as any
     camera.send=vi.fn(async operation=>{
         operations.push(operation.code)
+        if(operation.code===0x9439){
+            const data=new Uint8Array(4+vendorProperties.length*4),view=new DataView(data.buffer)
+            view.setUint32(0,vendorProperties.length,true)
+            vendorProperties.forEach((code,index)=>view.setUint32(4+index*4,code,true))
+            return {code:vendorResponse,data:vendorData??data}
+        }
         return {code:operation.code===0x9207?releaseCode:0x2001,...(operation.code===0x1001?{data:information}:{})}
     }) as any
-    return {camera,transport,warnings,movie,operations,information,setReleaseCode:(value:number)=>releaseCode=value}
+    return {camera,transport,warnings,movie,operations,information,vendorProperties,
+        setReleaseCode:(value:number)=>releaseCode=value,
+        setVendorData:(value:Uint8Array)=>vendorData=value,
+        setVendorResponse:(value:number)=>vendorResponse=value}
 }
 
 describe('Nikon documented sequence-error recovery',()=>{
@@ -24,6 +36,42 @@ describe('Nikon documented sequence-error recovery',()=>{
         expect(await camera.recoverSequenceError()).toBe(true)
         expect(operations).toEqual([0x1001,0x9207,0x90c8])
         expect(camera.send).toHaveBeenCalledWith(camera.registry.operations.InitiateCaptureRecInMedia,{AfMode:0xffffffff,Target:0})
+    })
+    it('uses the advertised vendor property inventory when Z5 II omits WarningStatus from DeviceInfo',async()=>{
+        const {camera,information,operations}=setup()
+        information.devicePropertiesSupported=[]
+        information.operationsSupportedRaw.push(0x9439)
+        expect(await camera.recoverSequenceError()).toBe(true)
+        expect(camera.send).toHaveBeenCalledWith(camera.registry.operations.GetVendorCodes,{Kind:13},undefined,16400)
+        expect(operations.filter(code=>code===0x9207)).toHaveLength(1)
+    })
+    it('does not release when neither property inventory advertises WarningStatus',async()=>{
+        for(const code of [0xd101,0x1d102]){
+            const {camera,information,vendorProperties,operations}=setup()
+            information.devicePropertiesSupported=[]
+            information.operationsSupportedRaw.push(0x9439)
+            vendorProperties.splice(0,1,code)
+            expect(await camera.recoverSequenceError()).toBe(false)
+            expect(operations).not.toContain(0x9207)
+        }
+    })
+    it('does not release after refused vendor enumeration',async()=>{
+        const {camera,information,operations,setVendorResponse}=setup()
+        information.devicePropertiesSupported=[]
+        information.operationsSupportedRaw.push(0x9439)
+        setVendorResponse(0x2005)
+        await expect(camera.recoverSequenceError()).rejects.toThrow('vendor property enumeration failed')
+        expect(operations).not.toContain(0x9207)
+    })
+    it('does not release after truncated or oversized vendor inventories',async()=>{
+        for(const data of [new Uint8Array(3),new Uint8Array([1,0,0,0]),new Uint8Array([1,16,0,0])]){
+            const {camera,information,operations,setVendorData}=setup()
+            information.devicePropertiesSupported=[]
+            information.operationsSupportedRaw.push(0x9439)
+            setVendorData(data)
+            await expect(camera.recoverSequenceError()).rejects.toThrow('vendor property enumeration')
+            expect(operations).not.toContain(0x9207)
+        }
     })
     for(const warning of [0,2,3,256,undefined])it('does not release for warning '+warning,async()=>{
         const {camera,warnings,operations}=setup();warnings.splice(0,3,warning as number)
