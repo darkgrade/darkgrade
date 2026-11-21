@@ -3,7 +3,7 @@ import { performSonySdkControl, sonySdkCapabilities, sonySdkControlWireValue } f
 import type { CameraCapabilities, CameraControlId, CameraControlInputs } from '@camera/controls'
 import { matchExposureTime, type ExposureContext, type ExposureTime, type ExposureTimeInput } from '@camera/exposure-time'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
-import { CameraOperationQueue } from '@runtime/queue'
+import { CameraOperationQueue } from '@core/operation-queue'
 import type { CameraControlState, CameraRecordingState } from '@camera/controls'
 import { sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 import { SONY_SDK_NAMED_PROPERTIES } from '@vendors/sony/sdk-property-codes'

@@ -1,4 +1,4 @@
-import { CameraOperationQueue } from '@runtime/queue'
+import { CameraOperationQueue } from '@core/operation-queue'
 
 export const controlActions = [
     'status',

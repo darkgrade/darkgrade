@@ -44,7 +44,7 @@ import { VendorExtensionCamera } from './vendor-extension-camera'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState, CameraRecordingState } from '@camera/controls'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import { readCameraRecordingState } from '@camera/video-recording'
-import { CameraOperationQueue } from '@runtime/queue'
+import { CameraOperationQueue } from '@core/operation-queue'
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
 import { readCameraCapabilities, writeCameraControl } from '@vendors/camera-controls'
 

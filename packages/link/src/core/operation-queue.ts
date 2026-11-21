@@ -1,4 +1,4 @@
-/** The existing host queue, also used by connected camera control/confirmation workflows. */
+/** Shared host ordering for runtime operations and connected camera confirmation workflows. */
 export class CameraOperationQueue {
     private readonly operations = new Map<string, Promise<unknown>>()
 
