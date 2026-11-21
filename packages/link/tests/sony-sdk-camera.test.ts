@@ -201,6 +201,18 @@ describe('Sony SDK Bluetooth Direct connection', () => {
 })
 
 describe('Sony SDK Wi-Fi camera', () => {
+    it('keeps SDK recording failure distinct from native PTP Starting and never assumes idle', async () => {
+        const state = { code: 1797, type: 2, value: '2', writable: false }
+        const { bridge, requests } = bridgeForProperties([state])
+        const camera = new SonyWifiCamera(bridge)
+        await camera.connectUsb('fixture')
+        expect(await camera.getRecordingState()).toBe('unknown')
+        await expect(camera.startRecording()).rejects.toThrow('idle before starting')
+        expect(requests.some(command => command.cmd === 'command')).toBe(false)
+        state.value = '0'
+        expect(await camera.getRecordingState()).toBe('idle')
+        await camera.disconnect()
+    })
     it('opens official SDK USB preparation by serial without runtime Wi-Fi credentials', async () => {
         const { bridge, requests } = bridgeForProperties()
         const camera = new SonyWifiCamera(bridge)
@@ -311,7 +323,13 @@ describe('Sony SDK Wi-Fi camera', () => {
         ])
     })
     it('uses documented shutter and movie commands, without format/reset commands', async () => {
-        const { bridge, requests } = bridgeForProperties()
+        const state = { code: 1797, type: 2, value: '0', writable: false }
+        const { bridge, requests } = bridgeForProperties([state])
+        const request = bridge.request.bind(bridge)
+        bridge.request = async command => {
+            if (command.cmd === 'command' && command.id === '1') state.value = command.param
+            return request(command)
+        }
         const camera = new SonyWifiCamera(bridge)
         await camera.connect(authentication)
         await camera.captureImage()

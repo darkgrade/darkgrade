@@ -13,9 +13,10 @@ try {
     const { controls } = await camera.getCapabilities()
     const iso = controls.iso
     if (iso?.writable && iso.allowedValues?.length) {
-        await camera.setControl('iso', iso.allowedValues[0]!)
+        const observed = await camera.setControl('iso', iso.allowedValues[0]!)
+        console.log(observed.value) // Display the camera readback, never the requested value.
     }
-    console.log(resolveCameraControl('shutter angle')) // exposureTime
+    console.log(resolveCameraControl('shutter angle')) // shutterSpeed
 } finally {
     await camera.disconnect()
 }
@@ -29,15 +30,17 @@ for debugging. Low-level vendor classes and raw `get`/`set` are retained for
 protocol work; their presence is not a capability advertisement.
 Existing `getShutterSpeed()`/`setShutterSpeed()` keep their compact native protocol
 requests for compatibility with scoped camera profiles. Use `getExposureTime()`/
-`setExposureTime()` or `setControl('exposureTime', ...)` for unit conversion and
+`setExposureTime()` or `setControl('shutterSpeed', ...)` for unit conversion and
 native angle mode; the old methods do not infer a capture frame rate.
 When vendor initialization is refused, a partial session stays caller-owned for
 standard diagnostics. Always close the attempt with `disconnect()` in `finally`.
 
-## Exposure time
+## Shutter speed and angle
 
-The canonical id is `exposureTime`; `shutterSpeed`, “shutter speed,” `shutterAngle`,
-“shutter angle” and “exposure time” are searchable aliases.
+The canonical id and display name are `shutterSpeed` / “Shutter speed.”
+`exposureTime`, “exposure time,” `shutterAngle` and “shutter angle” are searchable
+aliases, not additional control ids. `ExposureTime` describes the physical value
+and its units; `getExposureTime()` is the quantitative accessor.
 
 | Observed value | Meaning |
 | --- | --- |
@@ -84,8 +87,16 @@ flag: the generic API requires a settable definition and current advertised
 choices, so a visible control without choices can remain unavailable for writes.
 Empty or ambiguous lists do not become writable. A failed readback remains failure.
 
-`setControl()` reads capabilities again. Most values use exact advertised labels;
-colour temperature takes a number, and exposure time takes the union above.
+`setControl()` rechecks live availability and returns a confirmed `CameraControlState`.
+Sony and Canon reuse their authoritative bulk property inventories; targeted writes
+do not reread DeviceInfo. Nikon reads the requested descriptor and its current guards;
+standard PTP reads the requested advertised property. Bulk vendor protocols still
+require a bulk refresh. Confirmation polls observations only and never repeats a write.
+An ignored write, disappearing control or changed property produces an error.
+`CameraConfirmationError` includes `operation`, `expected` and `observed`; transport
+and decode failures retain their original error types. Hosts can show the error and
+refresh actual state. Most values use exact advertised labels; colour temperature
+takes a number, and shutter speed takes the union above.
 Canon photo/movie format labels map back to the original advertised structured
 record, not a guessed enum. Duplicate labels disable that write instead of
 selecting an arbitrary raw format. Nikon movie ISO/focus/aperture/white balance
@@ -116,6 +127,26 @@ kind of connected session.
 An absent control is unobserved in this session, not proof the body can never do it.
 The shared setting contract does not claim parity of pairing, recording, media or
 other operations between SDK/Wi-Fi and native PTP.
+
+## Confirmed recording changes
+
+`Camera.getRecordingState()` and the Sony SDK camera return `idle`, `recording`,
+`starting`, `stopping` or `unknown` according to the backend's real observations.
+Native Sony transitional values are distinct from SDK values; SDK recording failure
+does not become proof of idle. Nikon uses its existing movie-status descriptor and
+Canon uses its event-reported recording state. Missing observations stay unknown.
+
+`startRecording()` requires verified idle state, sends Start once, and waits up to
+five seconds for recording. `stopRecording()` waits for verified idle state after
+Stop (up to fifteen seconds); a fresh idle observation makes Stop idempotent.
+These bounds govern observation polling; the configured transport bounds still apply.
+The shared host operation queue serializes rapid control and recording changes within
+one Camera object. Hosts still own physical leases and mode preparation/restoration.
+
+Studio applies state updates inside its queue, displays pending/unconfirmed recording
+separately, and retains Stop and the connection if stop cannot be confirmed.
+Confirmation is not evidence that a playable file was saved. Card file discovery,
+transfer and independent decoding remain separate qualification steps.
 
 ## Types and host boundaries
 

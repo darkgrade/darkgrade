@@ -2,6 +2,12 @@ import {readCameraObjectHandles} from '@camera/storage'
 import type {TakeMedia} from '@workflows/video-take'
 
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
+/** The native PTP state enum is distinct from the SDK's recording-state values. */
+export async function readSonyPtpRecordingState(camera: {getSonyPropertyStates(): Promise<{code:number;rawValue:unknown}[]>}) {
+    const raw = (await camera.getSonyPropertyStates()).find(state => state.code === 0xd21d)?.rawValue
+    const value = typeof raw === 'number' || typeof raw === 'bigint' ? Number(raw) : NaN
+    return Number.isInteger(value) && value >= 0 && value <= 3 ? value : undefined
+}
 /** Native Sony PTP only: observed movie state, card identity and bounded-memory transfer. */
 export class SonyPtpVideoRecording {
     private baseline=new Set<number>()
@@ -11,10 +17,8 @@ export class SonyPtpVideoRecording {
     constructor(private readonly camera:any){}
     private get operations(){return this.camera.getInstance().registry.operations}
     async state(){
-        const state=(await this.camera.getSonyPropertyStates()).find((p:any)=>p.code===0xd21d)
-        const raw=state?.rawValue
-        const value=typeof raw==='number'||typeof raw==='bigint'?Number(raw):NaN
-        if(!Number.isInteger(value)||value<0||value>3)throw new Error('Sony did not report a valid native movie state')
+        const value=await readSonyPtpRecordingState(this.camera)
+        if(value === undefined)throw new Error('Sony did not report a valid native movie state')
         return value
     }
     async prepare(){

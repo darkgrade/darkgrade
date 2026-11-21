@@ -2,6 +2,9 @@ import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@camera/sony-camera'
 import { performSonySdkControl, sonySdkCapabilities, sonySdkControlWireValue } from '@vendors/sony/sdk-controls'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs } from '@camera/controls'
 import { matchExposureTime, type ExposureContext, type ExposureTime, type ExposureTimeInput } from '@camera/exposure-time'
+import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
+import { CameraOperationQueue } from '@runtime/queue'
+import type { CameraControlState, CameraRecordingState } from '@camera/controls'
 import { sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 import { SONY_SDK_NAMED_PROPERTIES } from '@vendors/sony/sdk-property-codes'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
@@ -158,6 +161,7 @@ function validateSonyBluetoothDirectAuthentication(authentication: SonyBluetooth
  * property/command APIs; it does not emulate a raw PTP transport.
  */
 export class SonyWifiCamera {
+    private readonly controlsQueue = new CameraOperationQueue()
     private connected = false
     private connectionTransport: 'usb' | 'wifi' | undefined
     private osdEnabled = false
@@ -176,28 +180,34 @@ export class SonyWifiCamera {
     }
 
     async getExposureTime(): Promise<ExposureTime> {
-        const state = (await this.getCapabilities()).controls.exposureTime
+        const state = (await this.getCapabilities()).controls.shutterSpeed
         if (!state?.exposureTime) throw new Error('The current SDK camera mode does not expose exposure time')
         return state.exposureTime
     }
 
     async setExposureTime(value: ExposureTimeInput, context?: ExposureContext): Promise<void> {
-        return this.setControl('exposureTime', value, context)
+        await this.setControl('shutterSpeed', value, context)
     }
 
     async setControl<Id extends CameraControlId>(
         id: Id, value: CameraControlInputs[Id], context?: ExposureContext
-    ): Promise<void> {
+    ): Promise<CameraControlState> {
+        return this.controlsQueue.run('camera', async () => {
         const properties = await this.getSonyPropertyStates()
         const control = sonySdkCapabilities(properties).controls[id]
         if (!control?.writable) throw new Error(`${id} is not writable in the current SDK camera mode`)
-        if (id !== 'exposureTime' && (id === 'colorTemperature' ? typeof value !== 'number' : typeof value !== 'string'))
+        if (id !== 'shutterSpeed' && (id === 'colorTemperature' ? typeof value !== 'number' : typeof value !== 'string'))
             throw new Error(`Invalid ${id} value`)
-        const requested = id === 'exposureTime'
+        const requested = id === 'shutterSpeed'
             ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context) : String(value)
         if (!requested || !control.allowedValues?.includes(requested)) throw new Error('Requested SDK control value is not advertised')
         const wire = sonySdkControlWireValue(properties, id, requested)
         await this.setSonySetting(wire.code, wire.value)
+        const observed = (await this.getCapabilities()).controls[id]
+        if (!observed || observed.source.code !== control.source.code || observed.value !== requested)
+            throw new CameraConfirmationError(id, requested, observed?.value ?? null)
+        return observed
+        })
     }
 
     async connect(
@@ -548,13 +558,28 @@ export class SonyWifiCamera {
     }
 
     async startRecording(): Promise<void> {
-        this.requireConnection()
-        await this.bridge.request({ cmd: 'command', id: '1', param: '1' })
+        return this.controlsQueue.run('camera', async () => {
+            this.requireConnection()
+            const state = await this.getRecordingState()
+            if (state !== 'idle') throw new CameraConfirmationError('record_start', 'idle before starting', state)
+            await this.bridge.request({ cmd: 'command', id: '1', param: '1' })
+            await confirmCameraValue('record_start', 'recording', () => this.getRecordingState(), 5000)
+        })
     }
 
     async stopRecording(): Promise<void> {
-        this.requireConnection()
-        await this.bridge.request({ cmd: 'command', id: '1', param: '0' })
+        return this.controlsQueue.run('camera', async () => {
+            this.requireConnection()
+            if (await this.getRecordingState() === 'idle') return
+            await this.bridge.request({ cmd: 'command', id: '1', param: '0' })
+            await confirmCameraValue('record_stop', 'idle', () => this.getRecordingState(), 15000)
+        })
+    }
+
+    async getRecordingState(): Promise<CameraRecordingState> {
+        const value = (await this.getSonyProperty('RecordingState')).value
+        // SDK 2 means recording failed, unlike native PTP's Starting state.
+        return value === '0' ? 'idle' : value === '1' ? 'recording' : 'unknown'
     }
 
     /** Completed camera-to-host transfer through Sony's documented download callback. */

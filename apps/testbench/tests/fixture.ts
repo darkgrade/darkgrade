@@ -21,10 +21,14 @@ export class FixtureCamera implements LocalCamera {
                 value: 'f/4', allowedValues: ['f/4'], enabled: true, writable: false } } }
     }
     async setControl<Id extends CameraControlId>(id: Id, value: CameraControlInputs[Id]) {
+        const state = (await this.getCapabilities()).controls[id]
+        if (!state?.enabled || !state.writable || !state.allowedValues?.includes(String(value))) throw Error('This value is not currently advertised and writable')
         this.calls.push(`${id === 'iso' ? 'set' : id}:${String(value)}`)
         await this.wait
         if (id === 'iso') this.value = String(value)
         if (this.failWrite) throw Error('reply lost')
+        try { return (await this.getCapabilities()).controls[id]! }
+        catch { throw Error('The write completed but readback was not confirmed. Refresh before another write') }
     }
     async captureLiveView() { this.calls.push('frame'); return { data: fixtureImage } }
     async captureImage() { this.calls.push('photo'); return { data: fixtureImage, info: { filename: 'FIXTURE.PNG' } } }

@@ -20,6 +20,7 @@ export default defineConfig({
         dts({
             include: ['src'],
             entryRoot: 'src',
+            compilerOptions: { stripInternal: true },
             beforeWriteFile(filePath, content) {
                 // Every public entry serves NodeNext consumers, including the camera library.
                 if (filePath.endsWith('.d.ts'))

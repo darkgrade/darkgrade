@@ -1,4 +1,5 @@
 import { CanonCamera } from '@camera/canon-camera'
+import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import {
     cameraControlDefinitions,
     type CameraCapabilities,
@@ -18,6 +19,7 @@ import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
 import { SonyCamera } from '@camera/sony-camera'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import type { CodecInstance } from '@ptp/types/codec'
@@ -96,11 +98,11 @@ async function nikonStates(
               : standardControlProperties
     if (
         movie &&
-        (requested === undefined || requested === 'exposureTime') &&
+        (requested === undefined || requested === 'shutterSpeed') &&
         advertised.has(camera.registry.properties.MovieShutterMode.code)
     ) {
         const mode = await camera.get(camera.registry.properties.MovieShutterMode)
-        if (mode === 'SHUTTER_ANGLE') mappings.exposureTime = ['MovieShutterAngle']
+        if (mode === 'SHUTTER_ANGLE') mappings.shutterSpeed = ['MovieShutterAngle']
         else if (mode !== 'SHUTTER_SPEED') throw new PTPDecodeError('Unknown Nikon shutter control mode')
     }
     const states: PropertyState[] = []
@@ -149,9 +151,15 @@ export async function readCameraCapabilities(
     camera: GenericCamera,
     requested?: CameraControlId
 ): Promise<CameraCapabilities> {
-    const response = await camera.send(camera.registry.operations.GetDeviceInfo, {})
-    if (response.code !== 0x2001) throw new PTPResponseError(response.code, 'Camera capability inventory refused')
-    if (!response.data) throw new PTPDecodeError('Camera capability inventory has no DeviceInfo')
+    // Sony/Canon publish authoritative live property inventories in one bulk operation.
+    // Standard targeted reads perform their own advertised-property discovery below.
+    let inventory: DeviceInfo | undefined
+    if (requested === undefined || camera instanceof NikonCamera) {
+        const response = await camera.send(camera.registry.operations.GetDeviceInfo, {})
+        if (response.code !== 0x2001) throw new PTPResponseError(response.code, 'Camera capability inventory refused')
+        if (!response.data) throw new PTPDecodeError('Camera capability inventory has no DeviceInfo')
+        inventory = response.data
+    }
     let states: PropertyState[]
     let mappings: Partial<Record<CameraControlId, readonly string[]>>
     if (camera instanceof SonyCamera) {
@@ -176,19 +184,22 @@ export async function readCameraCapabilities(
     } else if (camera instanceof NikonCamera) {
         ;({ states, mappings } = await nikonStates(
             camera,
-            new Set(response.data.devicePropertiesSupported),
-            response.data.operationsSupportedRaw,
+            new Set(inventory!.devicePropertiesSupported),
+            inventory!.operationsSupportedRaw,
             requested
         ))
     } else {
-        states = (await camera.getStandardPropertyStates()).map(state => ({
-            ...state,
-            ...(typeof state.minimumValue === 'number' &&
-            typeof state.maximumValue === 'number' &&
-            typeof state.stepSize === 'number'
-                ? { range: { minimum: state.minimumValue, maximum: state.maximumValue, step: state.stepSize } }
-                : {}),
-        }))
+        const standardMappings: Partial<Record<CameraControlId, readonly string[]>> = standardControlProperties
+        states = (await camera.getStandardPropertyStates(requested ? standardMappings[requested]?.[0] : undefined)).map(
+            state => ({
+                ...state,
+                ...(typeof state.minimumValue === 'number' &&
+                typeof state.maximumValue === 'number' &&
+                typeof state.stepSize === 'number'
+                    ? { range: { minimum: state.minimumValue, maximum: state.maximumValue, step: state.stepSize } }
+                    : {}),
+            })
+        )
         mappings = standardControlProperties
     }
     const controls: CameraCapabilities['controls'] = {}
@@ -201,12 +212,12 @@ export async function readCameraCapabilities(
         const value = label(state.value),
             allowedValues = state.allowedValues?.map(label)
         const knownExposure =
-            id !== 'exposureTime' ||
+            id !== 'shutterSpeed' ||
             typeof state.value === 'string' ||
             (camera instanceof NikonCamera &&
                 ['NikonMovieShutterSpeed', 'NikonPhotoShutterSpeed', 'MovieShutterAngle'].includes(state.name))
         let exposureTime: CameraControlState['exposureTime']
-        if (id === 'exposureTime' && knownExposure) {
+        if (id === 'shutterSpeed' && knownExposure) {
             try {
                 exposureTime = parseExposureTime(value)
             } catch {
@@ -219,19 +230,19 @@ export async function readCameraCapabilities(
             label: definition.label,
             aliases: definition.aliases,
             source: { name: state.name, code: state.code, protocol: 'ptp' },
-            value: id === 'exposureTime' && !exposureTime ? `Unknown exposure (${value})` : value,
+            value: id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${value})` : value,
             ...(allowedValues ? { allowedValues } : {}),
             enabled: state.enabled !== false,
             writable:
                 state.writable &&
                 state.enabled !== false &&
-                (id !== 'exposureTime' || Boolean(exposureTime)) &&
+                (id !== 'shutterSpeed' || Boolean(exposureTime)) &&
                 uniqueChoices &&
                 (allowedValues === undefined || allowedValues.length > 0),
             ...(state.range
                 ? {
                       range:
-                          id === 'exposureTime' && (state.name === 'ExposureTime' || state.name === 'MovieShutterAngle')
+                          id === 'shutterSpeed' && (state.name === 'ExposureTime' || state.name === 'MovieShutterAngle')
                               ? {
                                     minimum: state.range.minimum / (state.name === 'ExposureTime' ? 10000 : 100),
                                     maximum: state.range.maximum / (state.name === 'ExposureTime' ? 10000 : 100),
@@ -243,7 +254,11 @@ export async function readCameraCapabilities(
             ...(exposureTime ? { exposureTime } : {}),
         }
     }
-    return { observedAt: Date.now(), controls, advertisedOperations: [...response.data.operationsSupportedRaw] }
+    return {
+        observedAt: Date.now(),
+        controls,
+        advertisedOperations: inventory ? [...inventory.operationsSupportedRaw] : null,
+    }
 }
 
 /** Application writes share one admission path; vendor encodings stay here. */
@@ -253,13 +268,13 @@ export async function writeCameraControl<Id extends CameraControlId>(
     id: Id,
     value: CameraControlInputs[Id],
     context?: ExposureContext
-): Promise<void> {
+): Promise<CameraControlState> {
     // Nikon descriptors are separate transactions: refresh this control and its live guards,
     // rather than reading every unrelated descriptor before each write. No cached admission.
     const state = (await readCameraCapabilities(driver, id)).controls[id]
     if (!state?.enabled || !state.writable) throw new Error(`${id} is not writable in the current camera mode`)
     let requested: string
-    if (id === 'exposureTime') {
+    if (id === 'shutterSpeed') {
         const choices = state.allowedValues ?? []
         const matched = matchExposureTime(value as ExposureTimeInput, choices, context)
         if (matched) requested = matched
@@ -303,110 +318,125 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 throw new Error(`Requested ${id} value is outside the camera range`)
         }
     }
-    if (driver instanceof NikonCamera) {
-        const expectedMode =
-            state.source.name.startsWith('NikonMovie') || state.source.name === 'MovieShutterAngle'
-                ? 'VIDEO'
-                : state.source.name === 'NikonPhotoShutterSpeed' || state.source.name === 'NikonStillFocusMode'
-                  ? 'PHOTO'
-                  : undefined
-        if (expectedMode && (await driver.get(driver.registry.properties.LiveViewSelector)) !== expectedMode)
-            throw new Error('Nikon photo/movie mode changed before the control write')
-        if (state.source.name === 'MovieShutterAngle') {
-            if ((await driver.get(driver.registry.properties.MovieShutterMode)) !== 'SHUTTER_ANGLE')
-                throw new Error('Nikon shutter mode changed before the control write')
-            const status = await readNikonRecordingStatus(owner)
-            if (!status || status.recording || status.bufferedImages)
-                throw new Error('Nikon must confirm idle before changing shutter angle')
-        }
-        const movieActions = {
-            iso: 'set-iso',
-            aperture: 'set-aperture',
-            whiteBalance: 'set-white-balance',
-            focusMode: 'set-focus-mode',
-        } as const
-        if (state.source.name.startsWith('NikonMovie') && id in movieActions) {
-            await new NikonShotControls(owner).apply(movieActions[id as keyof typeof movieActions], requested)
+    const write = async (): Promise<void> => {
+        if (driver instanceof NikonCamera) {
+            const expectedMode =
+                state.source.name.startsWith('NikonMovie') || state.source.name === 'MovieShutterAngle'
+                    ? 'VIDEO'
+                    : state.source.name === 'NikonPhotoShutterSpeed' || state.source.name === 'NikonStillFocusMode'
+                      ? 'PHOTO'
+                      : undefined
+            if (expectedMode && (await driver.get(driver.registry.properties.LiveViewSelector)) !== expectedMode)
+                throw new Error('Nikon photo/movie mode changed before the control write')
+            if (state.source.name === 'MovieShutterAngle') {
+                if ((await driver.get(driver.registry.properties.MovieShutterMode)) !== 'SHUTTER_ANGLE')
+                    throw new Error('Nikon shutter mode changed before the control write')
+                const status = await readNikonRecordingStatus(owner)
+                if (!status || status.recording || status.bufferedImages)
+                    throw new Error('Nikon must confirm idle before changing shutter angle')
+            }
+            const movieActions = {
+                iso: 'set-iso',
+                aperture: 'set-aperture',
+                whiteBalance: 'set-white-balance',
+                focusMode: 'set-focus-mode',
+            } as const
+            if (state.source.name.startsWith('NikonMovie') && id in movieActions) {
+                await new NikonShotControls(owner).apply(movieActions[id as keyof typeof movieActions], requested)
+                return
+            }
+            if (state.source.name === 'NikonPhotoShutterSpeed' || state.source.name === 'NikonMovieShutterSpeed') {
+                await driver.setShutterSpeed(requested)
+                return
+            }
+            const property = Object.values(driver.registry.properties).find(
+                property => property.code === state.source.code
+            )
+            if (!property) throw new Error('Camera control property disappeared')
+            const descriptor = await driver.propertyDescriptor(property)
+            const index =
+                descriptor.supportedValuesDecoded?.findIndex(
+                    decoded => nikonControlLabel(property.name, decoded) === requested
+                ) ?? -1
+            let target = index >= 0 ? descriptor.supportedValuesRaw?.[index] : undefined
+            let decoded = index >= 0 ? descriptor.supportedValuesDecoded?.[index] : undefined
+            if (
+                target === undefined &&
+                descriptor.formFlag === 1 &&
+                state.range &&
+                (id === 'colorTemperature' || id === 'shutterSpeed')
+            ) {
+                const numeric = property.name === 'MovieShutterAngle' ? parseExposureTime(requested) : undefined
+                const raw =
+                    property.name === 'MovieShutterAngle' && numeric?.kind === 'angle'
+                        ? numeric.degrees * 100
+                        : property.name === 'ExposureTime'
+                          ? Number(requested) * 10000
+                          : Number(requested)
+                if (
+                    typeof descriptor.minimumValue === 'number' &&
+                    typeof descriptor.maximumValue === 'number' &&
+                    typeof descriptor.stepSize === 'number' &&
+                    Number.isSafeInteger(raw) &&
+                    raw >= descriptor.minimumValue &&
+                    raw <= descriptor.maximumValue &&
+                    (descriptor.stepSize === 0 || (raw - descriptor.minimumValue) % descriptor.stepSize === 0)
+                ) {
+                    target = raw
+                    decoded = property.name === 'ExposureTime' ? requested : raw
+                }
+            }
+            if (descriptor.getSet !== 'GET_SET' || target === undefined)
+                throw new Error('Nikon control is no longer writable or advertised')
+            const definition = getDatatypeByCode(descriptor.dataType)?.codec
+            if (!definition) throw new Error('Nikon control datatype is unknown')
+            const wireCodec = typeof definition === 'function' ? definition(driver.registry) : definition
+            const valueCodec: CodecInstance<unknown> =
+                typeof property.codec === 'function' ? property.codec(driver.registry) : property.codec
+            const encoded = valueCodec.encode(decoded)
+            const expected = wireCodec.encode(target)
+            if (encoded.length !== expected.length || encoded.some((byte, index) => byte !== expected[index]))
+                throw new Error('Nikon control cannot be encoded without truncation')
+            await driver.set(property, decoded as never)
+            const observed = await driver.propertyDescriptor(property)
+            if (observed.currentValueRaw !== target) throw new Error('Nikon did not confirm the requested control')
             return
         }
-        if (state.source.name === 'NikonPhotoShutterSpeed' || state.source.name === 'NikonMovieShutterSpeed') {
-            await driver.setShutterSpeed(requested)
+        if (!(driver instanceof SonyCamera) && !(driver instanceof CanonCamera)) {
+            await driver.setStandardProperty(state.source.code, requested)
             return
         }
         const property = Object.values(driver.registry.properties).find(property => property.code === state.source.code)
         if (!property) throw new Error('Camera control property disappeared')
-        const descriptor = await driver.propertyDescriptor(property)
-        const index =
-            descriptor.supportedValuesDecoded?.findIndex(
-                decoded => nikonControlLabel(property.name, decoded) === requested
-            ) ?? -1
-        let target = index >= 0 ? descriptor.supportedValuesRaw?.[index] : undefined
-        let decoded = index >= 0 ? descriptor.supportedValuesDecoded?.[index] : undefined
-        if (
-            target === undefined &&
-            descriptor.formFlag === 1 &&
-            state.range &&
-            (id === 'colorTemperature' || id === 'exposureTime')
-        ) {
-            const numeric = property.name === 'MovieShutterAngle' ? parseExposureTime(requested) : undefined
-            const raw =
-                property.name === 'MovieShutterAngle' && numeric?.kind === 'angle'
-                    ? numeric.degrees * 100
-                    : property.name === 'ExposureTime'
-                      ? Number(requested) * 10000
-                      : Number(requested)
-            if (
-                typeof descriptor.minimumValue === 'number' &&
-                typeof descriptor.maximumValue === 'number' &&
-                typeof descriptor.stepSize === 'number' &&
-                Number.isSafeInteger(raw) &&
-                raw >= descriptor.minimumValue &&
-                raw <= descriptor.maximumValue &&
-                (descriptor.stepSize === 0 || (raw - descriptor.minimumValue) % descriptor.stepSize === 0)
-            ) {
-                target = raw
-                decoded = property.name === 'ExposureTime' ? requested : raw
-            }
+        if (driver instanceof CanonCamera && id === 'movieFormat') {
+            const choices = driver.getPropertyAllowedValues(driver.registry.properties.CanonMovieFormat)
+            const choice = choices?.find(format => format.label === requested)
+            if (!choice) throw new Error('Canon movie format is no longer advertised')
+            await driver.setMovieFormat(choice.key)
+            return
         }
-        if (descriptor.getSet !== 'GET_SET' || target === undefined)
-            throw new Error('Nikon control is no longer writable or advertised')
-        const definition = getDatatypeByCode(descriptor.dataType)?.codec
-        if (!definition) throw new Error('Nikon control datatype is unknown')
-        const wireCodec = typeof definition === 'function' ? definition(driver.registry) : definition
-        const valueCodec: CodecInstance<unknown> =
-            typeof property.codec === 'function' ? property.codec(driver.registry) : property.codec
-        const encoded = valueCodec.encode(decoded)
-        const expected = wireCodec.encode(target)
-        if (encoded.length !== expected.length || encoded.some((byte, index) => byte !== expected[index]))
-            throw new Error('Nikon control cannot be encoded without truncation')
-        await driver.set(property, decoded as never)
-        const observed = await driver.propertyDescriptor(property)
-        if (observed.currentValueRaw !== target) throw new Error('Nikon did not confirm the requested control')
-        return
+        if (driver instanceof CanonCamera && id === 'stillFormat') {
+            const choices = driver
+                .listPropertyStates()
+                .find(property => property.code === state.source.code)?.allowedValues
+            const choice = choices?.find(
+                value => value && typeof value === 'object' && 'label' in value && value.label === requested
+            )
+            if (!choice || typeof choice !== 'object' || !('packed' in choice) || typeof choice.packed !== 'number')
+                throw new Error('Canon photo format is no longer advertised')
+            await driver.setImageFormat(choice.packed)
+            return
+        }
+        if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(requested)
+        else await driver.set(property, (id === 'colorTemperature' ? Number(requested) : requested) as never)
     }
-    if (!(driver instanceof SonyCamera) && !(driver instanceof CanonCamera)) {
-        await driver.setStandardProperty(state.source.code, requested)
-        return
-    }
-    const property = Object.values(driver.registry.properties).find(property => property.code === state.source.code)
-    if (!property) throw new Error('Camera control property disappeared')
-    if (driver instanceof CanonCamera && id === 'movieFormat') {
-        const choices = driver.getPropertyAllowedValues(driver.registry.properties.CanonMovieFormat)
-        const choice = choices?.find(format => format.label === requested)
-        if (!choice) throw new Error('Canon movie format is no longer advertised')
-        await driver.setMovieFormat(choice.key)
-        return
-    }
-    if (driver instanceof CanonCamera && id === 'stillFormat') {
-        const choices = driver.listPropertyStates().find(property => property.code === state.source.code)?.allowedValues
-        const choice = choices?.find(
-            value => value && typeof value === 'object' && 'label' in value && value.label === requested
-        )
-        if (!choice || typeof choice !== 'object' || !('packed' in choice) || typeof choice.packed !== 'number')
-            throw new Error('Canon photo format is no longer advertised')
-        await driver.setImageFormat(choice.packed)
-        return
-    }
-    if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(requested)
-    else await driver.set(property, (id === 'colorTemperature' ? Number(requested) : requested) as never)
+    await write()
+    let observed: CameraControlState | undefined
+    await confirmCameraValue(id, requested, async () => {
+        observed = (await readCameraCapabilities(driver, id)).controls[id]
+        if (observed && observed.source.code !== state.source.code)
+            throw new CameraConfirmationError(id, requested, `control changed to ${observed.source.name}`)
+        return observed?.value ?? null
+    })
+    return observed!
 }

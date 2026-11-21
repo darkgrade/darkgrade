@@ -7,13 +7,16 @@ Darkgrade Link package
 ## Application controls
 
 Instantiate `Camera`, read `getCapabilities()`, and use `setControl()` with its
-canonical ids. `exposureTime` covers shutter speed and native shutter angle;
+canonical ids. `shutterSpeed` covers exposure duration and native shutter angle;
 conversions require the actual frame rate. The browser-safe
 `@darkgrade/link/controls` export shares aliases and conversion types with UI hosts.
 See [camera controls](docs/camera-controls.md) for the contract and
 [pre-release audit](docs/pre-release-audit.md) for measured growth, fixes and limits.
 The main camera export requires Node.js; importing `Camera` no longer replaces
 the embedding application's console or process exception handlers by default.
+Generic `setControl()` writes return the confirmed camera observation. Recording
+start/stop waits for the body to report its new state; `CameraConfirmationError`
+reports an ignored or unconfirmed transition without repeating the command.
 
 ## Shared diagnostics
 

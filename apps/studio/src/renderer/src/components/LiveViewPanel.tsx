@@ -365,7 +365,13 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                                 <Spinner className="size-3" /> Live view paused while the card is read
                             </span>
                         )}
-                        {cameraState.recording && <RecordingBadge />}
+                        {cameraState.recordingState === 'recording' && <RecordingBadge />}
+                        {cameraState.recording && cameraState.recordingState !== 'recording' &&
+                            <span className="absolute bottom-3 left-3 rounded bg-black/70 px-2 py-1 text-xs text-white">
+                                {cameraState.recordingState === 'unknown' ? 'Recording unconfirmed — use Stop'
+                                    : cameraState.recordingState === 'idle' ? 'Recording stopped — retry Stop to restore setup'
+                                    : `Recording ${cameraState.recordingState}`}
+                            </span>}
                         <FocusFrames
                             focusArea={cameraState.controls?.focusArea?.value ?? null}
                             marker={focusMarker}

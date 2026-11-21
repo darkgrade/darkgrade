@@ -59,12 +59,24 @@ controllers and setters. Raw protocol registries remain the source of wire codes
 
 ## Public decisions before launch
 
-The stable application vocabulary is in `src/camera/controls.ts`. `exposureTime`
+The stable application vocabulary is in `src/camera/controls.ts`. `shutterSpeed`
 unifies shutter speed and shutter angle. Aliases make names searchable without
 creating another primitive or changing units. Existing shutter convenience methods
 retain their compact native protocol path; the new control contract provides
 duration/angle conversion. A required frame-rate context handles cross-unit conversion;
 Bulb, Time and flash-sync stay distinct.
+
+Review follow-up makes Shutter speed the public control name, retaining exposure time
+and shutter angle as search aliases and `ExposureTime` as the physical-value type.
+Generic writes return confirmed observations, and recording Start/Stop use existing
+native/SDK state readers. A single bounded read-only confirmation helper raises
+`CameraConfirmationError` for missing/mismatched state; transport errors remain distinct.
+This application-level mismatch has no equivalent among the wire-level PTP errors.
+The existing runtime queue was extracted for reuse by camera/SDK control workflows,
+rather than introducing another ordering implementation. Studio consumes confirmed
+observations and retains pending Stop/setup cleanup; Test Bench no longer duplicates
+Link admission and readback. Discarded drivers detach telemetry, and internal lifecycle
+helpers are excluded from packed declarations.
 
 `getCapabilities()` is a current observation, not a permanent camera-model trait.
 Its `advertisedOperations` is the standard DeviceInfo inventory, not a claim of

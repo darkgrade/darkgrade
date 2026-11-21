@@ -131,20 +131,20 @@ export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabi
     for (const [name, state] of Object.entries(sonySdkControls(properties))) {
         const id = resolveCameraControl(name)
         if (!id) continue
-        if (id === 'exposureTime' && state.code === 259 && state.rawValue === '4294967295') continue
+        if (id === 'shutterSpeed' && state.code === 259 && state.rawValue === '4294967295') continue
         const definition = cameraControlDefinitions[id]
         const choices = state.valueForm === 'enum' ? state.allowedValues : undefined
         const unique = choices !== undefined && choices.length > 0 && new Set(choices).size === choices.length
         let exposureTime: ReturnType<typeof parseExposureTime> | undefined
-        if (id === 'exposureTime') {
+        if (id === 'shutterSpeed') {
             try { exposureTime = parseExposureTime(state.value) } catch { /* Unknown wire values stay unknown. */ }
         }
         result[id] = {
             id, label: definition.label, aliases: definition.aliases,
-            value: id === 'exposureTime' && !exposureTime ? `Unknown exposure (${state.value})` : state.value,
+            value: id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${state.value})` : state.value,
             source: { code: state.code, name: state.name, protocol: 'sony-sdk' },
             allowedValues: choices, enabled: state.enabled,
-            writable: state.writable && unique && (id !== 'exposureTime' || Boolean(exposureTime)),
+            writable: state.writable && unique && (id !== 'shutterSpeed' || Boolean(exposureTime)),
             ...(exposureTime ? { exposureTime } : {}),
         }
     }

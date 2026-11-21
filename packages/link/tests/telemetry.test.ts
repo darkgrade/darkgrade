@@ -1,10 +1,42 @@
 import { configureLinkTelemetry, linkTelemetry, sdkTelemetry } from '@core/telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
 import { afterEach, expect, test, vi } from 'vitest'
+import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 afterEach(() => {
     configureLinkTelemetry(undefined)
     vi.unstubAllGlobals()
+})
+
+test('discarding a driver detaches telemetry without closing USB or stealing the replacement listener', async () => {
+    vi.stubGlobal('__LINK_TELEMETRY_REVISION__', 'abcdef0')
+    vi.stubGlobal('__LINK_TELEMETRY_DIRTY__', false)
+    const entries: unknown[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example', store: { read: async () => null, write: async () => {} },
+        localRecord: (_context, entry) => entries.push(entry),
+    })
+    configureLinkTelemetry(client)
+    let handler: ((event: PTPEvent) => void) | undefined
+    const disconnect = vi.fn(async () => {})
+    const source = { getType: () => 'usb', isConnected: () => true, disconnect,
+        on: (listener: typeof handler) => { handler = listener },
+        off: (listener: typeof handler) => { if (handler === listener) handler = undefined },
+    } as unknown as TransportInterface
+    const previous = linkTelemetry(source), old = vi.fn(), current = linkTelemetry(source), next = vi.fn()
+    try {
+        previous.transport.on?.(old)
+        await previous.identify({ manufacturer: 'Unknown', model: 'Unknown', deviceVersion: 'unknown' })
+        previous.detach()
+        current.transport.on?.(next)
+        await current.identify({ manufacturer: 'Sony', model: 'ILCE-6700', deviceVersion: '1' })
+        previous.detach() // A stale owner must not remove the replacement's handler.
+        handler?.({ code: 0x4002, parameters: [1], transactionId: 0 })
+        expect(old).not.toHaveBeenCalled()
+        expect(next).toHaveBeenCalledOnce()
+        expect(entries).toHaveLength(1)
+        expect(disconnect).not.toHaveBeenCalled()
+    } finally { current.detach(); client.close() }
 })
 
 test('property-write diagnostics preserve each transaction and distinguish a rejected request from readback', async () => {

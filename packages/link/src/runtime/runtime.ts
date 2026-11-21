@@ -1,3 +1,5 @@
+import { CameraOperationQueue } from '@runtime/queue'
+
 export const controlActions = [
     'status',
     'autofocus',
@@ -91,7 +93,7 @@ const readActions = new Set<ControlAction>(['status', 'live-view-status'])
  * Physical cross-process leases remain in the provider's shared ownership store.
  */
 export class CameraRuntime implements CameraClient {
-    private readonly operations = new Map<string, Promise<unknown>>()
+    private readonly operations = new CameraOperationQueue()
     constructor(private readonly provider: CameraProvider) {}
     /** Owning hosts use the same queue for connection lifecycle and recording operations. */
     runExclusive<T>(camera: string, operation: () => Promise<T>): Promise<T> {
@@ -104,16 +106,8 @@ export class CameraRuntime implements CameraClient {
         })
     }
 
-    private async run<T>(camera: string, operation: () => Promise<T>): Promise<T> {
-        if (typeof camera !== 'string' || !camera.trim()) throw new Error('A camera identity is required')
-        const previous = this.operations.get(camera) ?? Promise.resolve()
-        const pending = previous.catch(() => undefined).then(operation)
-        this.operations.set(camera, pending)
-        try {
-            return await pending
-        } finally {
-            if (this.operations.get(camera) === pending) this.operations.delete(camera)
-        }
+    private run<T>(camera: string, operation: () => Promise<T>): Promise<T> {
+        return this.operations.run(camera, operation)
     }
 
     control(camera: string, action: string, value?: string | number, property?: string): Promise<unknown> {

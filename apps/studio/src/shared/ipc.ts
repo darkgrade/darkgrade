@@ -1,5 +1,6 @@
 import type { SpeechModelId } from '@shared/speech-models'
 import { cameraControlDefinitions, resolveCameraControl } from '@darkgrade/link/controls'
+import type { CameraRecordingState } from '@darkgrade/link/controls'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
  * Every camera capability exposed by @darkgrade/link has a channel here.
@@ -190,6 +191,7 @@ export interface CameraState {
     osdOverlay: boolean | null
     liveView: boolean
     recording: boolean
+    recordingState: CameraRecordingState
     settings: CameraSettings
     downloadDir: string
     platform: NodeJS.Platform | ''

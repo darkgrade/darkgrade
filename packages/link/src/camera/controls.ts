@@ -2,9 +2,9 @@ import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/e
 
 /** Canonical application vocabulary. Protocol property names belong to the vendor adapters. */
 export const cameraControlDefinitions = {
-    exposureTime: {
-        label: 'Exposure time',
-        aliases: ['shutterSpeed', 'shutter speed', 'shutter angle', 'shutterAngle', 'exposure time'],
+    shutterSpeed: {
+        label: 'Shutter speed',
+        aliases: ['shutter speed', 'shutter angle', 'shutterAngle', 'exposureTime', 'exposure time'],
     },
     iso: { label: 'ISO', aliases: ['sensitivity', 'exposure index'] },
     aperture: { label: 'Aperture', aliases: ['f number', 'f-stop'] },
@@ -29,7 +29,7 @@ export const cameraControlDefinitions = {
 
 export type CameraControlId = keyof typeof cameraControlDefinitions
 export type CameraControlInputs = {
-    [Id in CameraControlId]: Id extends 'exposureTime'
+    [Id in CameraControlId]: Id extends 'shutterSpeed'
         ? ExposureTimeInput
         : Id extends 'colorTemperature'
           ? number
@@ -67,8 +67,10 @@ export interface CameraControlSession {
         id: Id,
         value: CameraControlInputs[Id],
         context?: ExposureContext
-    ): Promise<void>
+    ): Promise<CameraControlState>
 }
+
+export type CameraRecordingState = 'idle' | 'recording' | 'starting' | 'stopping' | 'unknown'
 
 const normalized = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '')
 

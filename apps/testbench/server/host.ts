@@ -1,4 +1,4 @@
-import type { CameraCapabilities, CameraControlInputs, CameraControlId } from '@darkgrade/link/controls'
+import type { CameraCapabilities, CameraControlInputs, CameraControlId, CameraControlState } from '@darkgrade/link/controls'
 import { CameraRuntime } from '@darkgrade/link/runtime'
 import { settingNames, type BenchAction, type BenchCamera, type BenchControl, type BenchState, type SettingName } from '../src/contracts'
 
@@ -7,7 +7,7 @@ export interface LocalCamera {
     connect(): Promise<void>
     disconnect(): Promise<void>
     getCapabilities(): Promise<CameraCapabilities>
-    setControl<Id extends CameraControlId>(id: Id, value: CameraControlInputs[Id]): Promise<void>
+    setControl<Id extends CameraControlId>(id: Id, value: CameraControlInputs[Id]): Promise<CameraControlState>
     captureLiveView(options: { includeInfo: boolean; includeData: boolean }): Promise<{ data?: Uint8Array }>
     captureImage(options: { includeInfo: boolean; includeData: boolean; autofocus: boolean; destination?: 'memory' }): Promise<{ data?: Uint8Array; info?: { filename?: string } }>
     startRecording(): Promise<void>
@@ -22,7 +22,7 @@ export type CameraAdapter = {
     create(identity: USBIdentity): LocalCamera
 }
 export type MediaResult = { bytes: Uint8Array; filename: string; contentType: string }
-const controlIds = { iso: 'iso', aperture: 'aperture', shutterSpeed: 'exposureTime', whiteBalance: 'whiteBalance' } as const
+const controlIds = { iso: 'iso', aperture: 'aperture', shutterSpeed: 'shutterSpeed', whiteBalance: 'whiteBalance' } as const
 const message = (error: unknown) => error instanceof Error ? error.message : 'Camera operation failed'
 const identityKey = (identity: USBIdentity) => JSON.stringify([identity.vendorId, identity.productId, identity.serialNumber ?? ''])
 
@@ -119,17 +119,9 @@ export class LocalBench {
                     } else if (action === 'setting') {
                         if (!setting || !settingNames.includes(setting) || typeof value !== 'string')
                             throw Error('Choose a supported camera setting')
-                        await this.read(entry)
-                        const control = view.controls[setting]
-                        if (!control?.enabled || !control.choices.includes(value))
-                            throw Error('This value is not currently advertised and writable')
-                        await camera.setControl(controlIds[setting], value)
-                        try {
-                            await this.read(entry)
-                            if (view.controls[setting]?.value !== value) throw Error('Camera readback differs from the requested value')
-                        } catch (error) {
-                            throw Error('The write completed but readback was not confirmed. Refresh before another write: ' + message(error))
-                        }
+                        const observed = await camera.setControl(controlIds[setting], value)
+                        view.controls[setting] = { value: observed.value, choices: observed.allowedValues?.slice(0, 512) ?? [],
+                            enabled: observed.enabled && observed.writable && Boolean(observed.allowedValues?.length) }
                     } else if (action === 'frame' || action === 'photo') {
                         const result: { data?: Uint8Array; info?: { filename?: string } } = action === 'frame'
                             ? await camera.captureLiveView({ includeInfo: false, includeData: true })

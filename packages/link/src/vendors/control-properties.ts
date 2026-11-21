@@ -4,7 +4,7 @@ type ControlProperties = Partial<Record<CameraControlId, readonly string[]>>
 
 /** Preference order is within one vendor and mode, never across vendors. */
 export const sonyControlProperties = {
-    exposureTime: ['ShutterSpeed'],
+    shutterSpeed: ['ShutterSpeed'],
     iso: ['Iso'],
     aperture: ['Aperture', 'FNumber'],
     whiteBalance: ['WhiteBalance'],
@@ -27,7 +27,7 @@ export const sonyControlProperties = {
 } as const satisfies ControlProperties
 
 export const canonControlProperties = {
-    exposureTime: ['CanonShutterSpeed'],
+    shutterSpeed: ['CanonShutterSpeed'],
     iso: ['CanonIso'],
     aperture: ['CanonAperture'],
     whiteBalance: ['CanonWhiteBalance'],
@@ -40,7 +40,7 @@ export const canonControlProperties = {
 } as const satisfies ControlProperties
 
 export const standardControlProperties = {
-    exposureTime: ['ExposureTime'],
+    shutterSpeed: ['ExposureTime'],
     iso: ['ExposureIndex'],
     aperture: ['FNumber'],
     whiteBalance: ['WhiteBalance'],
@@ -51,14 +51,14 @@ export const standardControlProperties = {
 
 export const nikonPhotoControlProperties = {
     ...standardControlProperties,
-    exposureTime: ['NikonPhotoShutterSpeed', 'ExposureTime'],
+    shutterSpeed: ['NikonPhotoShutterSpeed', 'ExposureTime'],
     focusMode: ['NikonStillFocusMode', 'FocusMode'],
     colorTemperature: ['NikonWhiteBalanceKelvin'],
 } as const satisfies ControlProperties
 
 export const nikonMovieControlProperties = {
     ...standardControlProperties,
-    exposureTime: ['NikonMovieShutterSpeed', 'ExposureTime'],
+    shutterSpeed: ['NikonMovieShutterSpeed', 'ExposureTime'],
     iso: ['NikonMovieISO'],
     aperture: ['NikonMovieFNumber'],
     whiteBalance: ['NikonMovieWhiteBalance'],

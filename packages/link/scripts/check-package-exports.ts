@@ -88,7 +88,8 @@ try {
         join(isolated, 'node_modules/usb'), 'dir')
     const consumer = `
         import { Camera, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
-            type CameraCapabilities, type ExposureTime, type CameraControlSession, SonyWifiCamera, SonyCamera,
+            type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
+            type CameraRecordingState, SonyWifiCamera, SonyCamera,
             TransportFactory, TransportType } from '@darkgrade/link'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/link/controls'
         const camera = new Camera()
@@ -104,6 +105,14 @@ try {
         camera.setExposureTime({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
         camera.setControl('colorTemperature', 5600)
         camera.setControl('iso', 'ISO 800')
+        const observed: Promise<CameraControlState> = camera.setControl('shutterSpeed', {kind: 'angle', degrees: 180})
+        const recording: Promise<CameraRecordingState> = camera.getRecordingState()
+        // @ts-expect-error Exposure time is a search alias; shutterSpeed is the sole control id.
+        camera.setControl('exposureTime', '1/60')
+        // @ts-expect-error Internal transport preparation is not a shipped consumer API.
+        camera.getInstance().connectTransport()
+        // @ts-expect-error Discarded-driver telemetry disposal is an internal lifecycle operation.
+        camera.getInstance().detachTransportObserver()
         const factory = new TransportFactory()
         factory.createIPTransport({ address: '127.0.0.1', timeout: 1000, telemetryEvidence: 'synthetic' })
         factory.createUSBTransport({ maxBulkReadBytes: 16384 })
@@ -149,7 +158,7 @@ try {
         camera.setControl('vendorMagic', 'on')
         // @ts-expect-error Angle values need a degrees field.
         camera.setExposureTime({kind: 'angle', seconds: 0.02})
-        void [device, capabilities, exposure, exposureSeconds, resolveCameraControl, native, sdk]
+        void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

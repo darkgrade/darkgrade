@@ -41,7 +41,10 @@ import {
     type SonyZoomResult,
 } from './sony-camera'
 import { VendorExtensionCamera } from './vendor-extension-camera'
-import type { CameraCapabilities, CameraControlId, CameraControlInputs } from '@camera/controls'
+import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState, CameraRecordingState } from '@camera/controls'
+import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
+import { readCameraRecordingState } from '@camera/video-recording'
+import { CameraOperationQueue } from '@runtime/queue'
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
 import { readCameraCapabilities, writeCameraControl } from '@vendors/camera-controls'
 
@@ -79,6 +82,7 @@ export class Camera {
     private logger: Logger
     private transport: TransportInterface
     private readonly subscriptions = new Set<{ event: EventDefinition; handler: (params: never) => void }>()
+    private readonly controlsQueue = new CameraOperationQueue()
 
     constructor(private readonly options: CameraOptions = {}) {
         // Library construction must not replace the host's console or exception handlers.
@@ -166,6 +170,7 @@ export class Camera {
             }
         }
         if (this.instance.sessionId === null && vendorId !== undefined && this.instance.vendorId !== vendorId) {
+            this.instance.detachTransportObserver()
             this.instance = this.createInstance(vendorId)
             for (const subscription of this.subscriptions)
                 this.instance.on(subscription.event, subscription.handler as never)
@@ -240,13 +245,13 @@ export class Camera {
 
     /** Uses the active camera property, including native shutter-angle mode without changing modes. */
     async getExposureTime(): Promise<ExposureTime> {
-        const state = (await this.getCapabilities()).controls.exposureTime
+        const state = (await this.getCapabilities()).controls.shutterSpeed
         if (!state?.exposureTime) throw new Error('The current camera mode does not expose exposure time')
         return state.exposureTime
     }
 
     async setExposureTime(value: ExposureTimeInput, context?: ExposureContext): Promise<void> {
-        return this.setControl('exposureTime', value, context)
+        await this.setControl('shutterSpeed', value, context)
     }
 
     /**
@@ -255,8 +260,8 @@ export class Camera {
      */
     async setControl<Id extends CameraControlId>(
         id: Id, value: CameraControlInputs[Id], context?: ExposureContext
-    ): Promise<void> {
-        return writeCameraControl(this, this.instance, id, value, context)
+    ): Promise<CameraControlState> {
+        return this.controlsQueue.run('camera', () => writeCameraControl(this, this.instance, id, value, context))
     }
 
     async setStandardProperty(propertyNameOrCode: string | number, value: string | number): Promise<void> {
@@ -784,8 +789,18 @@ export class Camera {
         return this.instance
     }
 
+    async getRecordingState(): Promise<CameraRecordingState> {
+        return readCameraRecordingState(this)
+    }
+
     async startRecording(): Promise<void> {
-        return this.instance.startRecording()
+        return this.controlsQueue.run('camera', async () => {
+            const state = await this.getRecordingState()
+            if (state === 'stopping') await confirmCameraValue('record_start', 'idle', () => this.getRecordingState(), 5000)
+            else if (state !== 'idle') throw new CameraConfirmationError('record_start', 'idle before starting', state)
+            await this.instance.startRecording()
+            await confirmCameraValue('record_start', 'recording', () => this.getRecordingState(), 5000)
+        })
     }
 
     /** Hold the camera's required recording mode until a confirmed stop, then restore it. */
@@ -795,7 +810,11 @@ export class Camera {
     }
 
     async stopRecording(): Promise<void> {
-        return this.instance.stopRecording()
+        return this.controlsQueue.run('camera', async () => {
+            if (await this.getRecordingState() === 'idle') return
+            await this.instance.stopRecording()
+            await confirmCameraValue('record_stop', 'idle', () => this.getRecordingState(), 15000)
+        })
     }
 
     async listObjects(): Promise<{

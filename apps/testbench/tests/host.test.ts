@@ -12,6 +12,17 @@ test('scan is passive; connect and advertised settings use the generic camera', 
     expect(camera.calls).toEqual(['connect', 'set:200'])
     await bench.close()
 })
+test('the host consumes the confirmed write result without another capability refresh', async () => {
+    const { bench, camera } = fixtureBench()
+    const { id } = (await bench.scan()).cameras[0]
+    await bench.action(id, 'connect')
+    const capabilities = await camera.getCapabilities()
+    camera.getCapabilities = async () => { throw Error('Host reread the full capability inventory') }
+    camera.setControl = async () => ({ ...capabilities.controls.iso!, value: '200' })
+    await bench.action(id, 'setting', 'iso', '200')
+    expect(bench.state().cameras[0]?.controls.iso?.value).toBe('200')
+    await bench.close()
+})
 test('ambiguous recording start cannot be retried, reset or disconnected before a confirmed stop', async () => {
     const { bench, camera } = fixtureBench()
     const { id } = (await bench.scan()).cameras[0]
@@ -95,8 +106,8 @@ test.each([0x054c, 0x04b0, 0x04a9])('vendor %s uses Link capabilities and preser
     const read = camera.getCapabilities.bind(camera)
     camera.getCapabilities = async () => {
         const capabilities = await read()
-        capabilities.controls.exposureTime = { ...capabilities.controls.iso!, id: 'exposureTime',
-            label: 'Exposure time', value: '180°', allowedValues: ['90°', '180°'],
+        capabilities.controls.shutterSpeed = { ...capabilities.controls.iso!, id: 'shutterSpeed',
+            label: 'Shutter speed', value: '180°', allowedValues: ['90°', '180°'],
             exposureTime: { kind: 'angle', degrees: 180 } }
         return capabilities
     }

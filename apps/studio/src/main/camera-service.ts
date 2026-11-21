@@ -1,5 +1,6 @@
 import {
     Camera,
+    CameraConfirmationError,
     identifyCamera,
     isMovableFocusArea,
     PTPDisconnectedError,
@@ -15,6 +16,8 @@ import {
     type SonyFocalFrame,
     type TransactionPolicy,
     type CameraCapabilities,
+    type CameraControlState,
+    type CameraRecordingState,
 } from '@darkgrade/link'
 import { resolveCameraControl } from '@darkgrade/link/controls'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
@@ -79,7 +82,6 @@ const TRANSACTION_POLICY: Partial<TransactionPolicy> = {
     automaticUSBReset: true,
 }
 const SETTINGS_EVENT_DEBOUNCE_MS = 400
-const SET_APPLY_DELAY_MS = 400
 const STILL_IMAGE_CLASS = 0x06
 const PTP_OK = 0x2001
 const DOWNLOAD_PROGRESS_INTERVAL_MS = 100
@@ -111,8 +113,8 @@ const VENDOR_NAMES: Record<number, string> = {
     [VendorIDs.NIKON]: 'Nikon',
     [VendorIDs.CANON]: 'Canon',
 }
-
 const KNOWN_CAMERA_VENDOR_IDS = new Set<number>([VendorIDs.SONY, VendorIDs.NIKON, VendorIDs.CANON])
+
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
@@ -235,6 +237,9 @@ export class CameraService {
     /** Sony property reads leave content-transfer mode, invalidating object handles mid-transfer. */
     private storageSessionActive = false
     private recording = false
+    private recordingState: CameraRecordingState = 'idle'
+    private recordingMode?: { restore(): Promise<void> }
+    private recordingStopConfirmed = false
     private liveViewRunning = false
     private liveViewStopRequested = false
     private settings: CameraSettings = { iso: null, shutterSpeed: null, aperture: null }
@@ -265,6 +270,7 @@ export class CameraService {
             osdOverlay: this.connected && this.detectedVendorId === VendorIDs.SONY ? this.osdOverlay : null,
             liveView: this.liveViewRunning,
             recording: this.recording,
+            recordingState: this.recordingState,
             settings: this.settings,
             downloadDir: this.downloadDir,
             platform: process.platform,
@@ -392,7 +398,7 @@ export class CameraService {
         if (this.connectPromise) return this.connectPromise
         if (!this.recoveryInProgress) this.phase = 'connecting'
         this.broadcastState()
-        this.connectPromise = this.connectInternal(true)
+        this.connectPromise = this.connectInternal()
             .catch(error => {
                 if (!this.recoveryInProgress) this.phase = 'idle'
                 this.broadcastState()
@@ -419,7 +425,7 @@ export class CameraService {
         return null
     }
 
-    private async connectInternal(allowVendorUpgrade: boolean): Promise<CameraState> {
+    private async connectInternal(): Promise<CameraState> {
         // Discover the device first so Camera instantiates the right vendor
         // implementation (SonyCamera/NikonCamera/CanonCamera) instead of GenericCamera.
         const discovered = await this.discoverWithRetry(DISCOVERY_ATTEMPTS)
@@ -457,19 +463,8 @@ export class CameraService {
             await camera.connect()
         }
 
-        // If discovery failed and we connected generically, the transport now
-        // knows the real vendor. Reconnect with the proper vendor class so
-        // live view / recording / vendor properties actually work.
-        const revealedVendorId = camera.getInstance().vendorId
-        if (!discovered && allowVendorUpgrade && revealedVendorId && KNOWN_CAMERA_VENDOR_IDS.has(revealedVendorId)) {
-            this.log(
-                'system',
-                `Generic probe revealed ${VENDOR_NAMES[revealedVendorId]} camera — reconnecting with vendor support…`
-            )
-            await camera.disconnect().catch(() => {})
-            await delay(CONNECT_RETRY_DELAY_MS)
-            return this.connectInternal(false)
-        }
+        // Link selects the actual opened USB body's driver, including when discovery missed it.
+        this.detectedVendorId ??= camera.getInstance().vendorId ?? null
 
         this.camera = camera
         this.connected = true
@@ -524,14 +519,19 @@ export class CameraService {
 
     async disconnect(): Promise<CameraState> {
         await this.stopLiveView().catch(() => {})
-        if (this.recording) await this.stopRecording().catch(() => {})
+        if (this.recording) await this.stopRecording()
 
         if (this.camera) {
             const camera = this.camera
             try {
-                await this.enqueue(() => camera.disconnect())
+                await this.enqueue(async () => {
+                    if (this.recording || this.recordingMode)
+                        throw new Error('Stop and confirm the recording before disconnecting')
+                    await camera.disconnect()
+                })
             } catch (error) {
                 this.log('system', `Disconnect error: ${errorMessage(error)}`, 'error')
+                if (this.recording || this.recordingMode) throw error
             }
         }
 
@@ -540,6 +540,9 @@ export class CameraService {
         this.connected = false
         if (!this.recoveryInProgress) this.phase = 'idle'
         this.recording = false
+        this.recordingState = 'idle'
+        this.recordingMode = undefined
+        this.recordingStopConfirmed = false
         this.battery = null
         this.controls = null
         this.card = null
@@ -647,7 +650,7 @@ export class CameraService {
             this.controls = await this.readControls(camera, capabilities)
             this.settings = {
                 iso: capabilities.controls.iso?.value ?? null,
-                shutterSpeed: capabilities.controls.exposureTime?.value ?? null,
+                shutterSpeed: capabilities.controls.shutterSpeed?.value ?? null,
                 aperture: capabilities.controls.aperture?.value ?? null,
             }
         } catch (error) {
@@ -675,13 +678,7 @@ export class CameraService {
             const state = id ? capabilities.controls[id] : undefined
             if (!state) return null
             this.controlProperties.set(name, state.source.name)
-            const value = String(state.value)
-            const listed = (state.allowedValues ?? []).map(String)
-            const options = name === 'colorTemperature' && listed.length < 2 && state.range
-                ? kelvinSteps().filter(value => Number(value) >= state.range!.minimum && Number(value) <= state.range!.maximum)
-                : listed
-            const enabled = state.enabled && state.writable
-            return { value, options, enabled }
+            return this.observedControl(name, state)
         }
         const controls = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => [name, pick(name)])) as CameraControls
         if (this.detectedVendorId === VendorIDs.SONY) {
@@ -693,6 +690,14 @@ export class CameraService {
         const area = controls.focusArea?.value ?? ''
         if (isMovableFocusArea(area)) this.lastFlexibleSpot = area.replace(/^lock on af /i, '')
         return controls
+    }
+
+    private observedControl(name: CameraControlName, state: CameraControlState): CameraControl {
+        const listed = (state.allowedValues ?? []).map(String)
+        const options = name === 'colorTemperature' && listed.length < 2 && state.range
+            ? kelvinSteps().filter(value => Number(value) >= state.range!.minimum && Number(value) <= state.range!.maximum)
+            : listed
+        return { value: state.value, options, enabled: state.enabled && state.writable }
     }
 
     /**
@@ -769,18 +774,29 @@ export class CameraService {
             const id = resolveCameraControl(name)
             if (!id) throw new Error('Unknown camera control')
             const encoded = name === 'colorTemperature' ? Number(value) : value
-            if (id === 'colorTemperature') await camera.setControl(id, Number(encoded))
-            else await camera.setControl(id, String(encoded))
+            let observed: CameraControlState
+            try {
+                observed = id === 'colorTemperature'
+                    ? await camera.setControl(id, Number(encoded))
+                    : await camera.setControl(id, String(encoded))
+            } catch (error) {
+                await this.refreshSettingsRaw().catch(() => {})
+                this.log('system', `${CAMERA_CONTROL_LABELS[name]} change unconfirmed: ${errorMessage(error)}`, 'error')
+                throw error
+            }
+            this.controls ??= Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => [name, null])) as CameraControls
+            this.controls = { ...this.controls, [name]: this.observedControl(name, observed) }
+            this.controlProperties.set(name, observed.source.name)
+            if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture')
+                this.settings = { ...this.settings, [name]: observed.value }
+            this.broadcastState()
             // Choosing an area by hand replaces any switch click-to-focus made.
             if (name === 'focusArea') this.focusAreaBeforeTouch = null
             if (name === 'subjectRecognition') this.subjectRecognitionBeforeTouch = null
-            this.log('system', `${CAMERA_CONTROL_LABELS[name]} → ${value}`)
+            this.log('system', `${CAMERA_CONTROL_LABELS[name]} → ${observed.value}`)
             // A mode change reshapes what the other settings allow, so those still read back before returning.
             if (name === 'exposureProgram' || name === 'whiteBalance' || name === 'focusMode') {
-                await delay(SET_APPLY_DELAY_MS)
                 await this.refreshSettingsRaw()
-            } else {
-                this.applyOptimistically(name, value)
             }
             // A new area or subject setting only takes effect once AF runs again; in PC Remote it doesn't
             // run on its own, so focus once now (e.g. back to Wide finds the eye again).
@@ -793,47 +809,18 @@ export class CameraService {
     }
 
     async setIso(value: string): Promise<CameraSettings> {
-        await this.enqueue(() => this.requireCameraForControl().setControl('iso', value))
-        this.log('system', `ISO → ${value}`)
-        return this.applyOptimistically('iso', value)
-    }
-
-    async setShutterSpeed(value: string): Promise<CameraSettings> {
-        await this.enqueue(() => this.requireCameraForControl().setExposureTime(value))
-        this.log('system', `Shutter → ${value}`)
-        return this.applyOptimistically('shutterSpeed', value)
-    }
-
-    async setAperture(value: string): Promise<CameraSettings> {
-        await this.enqueue(() => this.requireCameraForControl().setControl('aperture', value))
-        this.log('system', `Aperture → ${value}`)
-        return this.applyOptimistically('aperture', value)
-    }
-
-    /**
-     * The camera accepted a value: show it now rather than after a fixed wait and a full re-read
-     * (which cost about half a second per change). One re-read follows in the background once
-     * changes settle, so anything the camera did differently still shows up.
-     */
-    private applyOptimistically(name: CameraControlName, value: string): CameraSettings {
-        const control = this.controls?.[name]
-        if (this.controls && control) this.controls = { ...this.controls, [name]: { ...control, value } }
-        if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture')
-            this.settings = { ...this.settings, [name]: value }
-        this.broadcastState()
-        this.scheduleSettingsConfirmation()
+        await this.setControl('iso', value)
         return this.settings
     }
 
-    private settingsConfirmationTimer: ReturnType<typeof setTimeout> | null = null
+    async setShutterSpeed(value: string): Promise<CameraSettings> {
+        await this.setControl('shutterSpeed', value)
+        return this.settings
+    }
 
-    private scheduleSettingsConfirmation(): void {
-        if (this.settingsConfirmationTimer) clearTimeout(this.settingsConfirmationTimer)
-        // Sony applies asynchronously; read back once it has had a moment, after the last of a burst of changes.
-        this.settingsConfirmationTimer = setTimeout(() => {
-            this.settingsConfirmationTimer = null
-            if (this.connected) void this.enqueue(() => this.refreshSettingsRaw()).catch(() => {})
-        }, SET_APPLY_DELAY_MS)
+    async setAperture(value: string): Promise<CameraSettings> {
+        await this.setControl('aperture', value)
+        return this.settings
     }
 
     // ------------------------------------------------------------------ focus
@@ -1113,7 +1100,7 @@ export class CameraService {
         const camera = this.camera
         if (!camera || !this.connected) return
         try {
-            const reopened = await this.enqueue(() => camera.resumeSonyShooting())
+            const reopened = await this.enqueue(async () => this.recording ? false : camera.resumeSonyShooting())
             // A new session may number the card's objects differently.
             if (reopened) {
                 this.knownObjects.clear()
@@ -1149,22 +1136,73 @@ export class CameraService {
 
     async startRecording(): Promise<CameraState> {
         const camera = this.requireCameraForControl()
-        await this.enqueue(() => camera.startRecording())
-        this.recording = true
-        this.log('system', 'Recording started')
-        this.broadcastState()
+        await this.enqueue(async () => {
+            if (this.recording) throw new Error('Stop and confirm the current recording before starting another')
+            this.recordingMode = await camera.prepareRecordingMode()
+            this.recordingStopConfirmed = false
+            this.recording = true
+            this.recordingState = 'starting'
+            this.broadcastState()
+            try {
+                await camera.startRecording()
+                this.recordingState = 'recording'
+                this.log('system', 'Recording confirmed')
+            } catch (error) {
+                const observed = await this.observeFailedRecording(camera, error)
+                if (observed === 'idle') {
+                    this.recordingStopConfirmed = true
+                    this.recording = true
+                    await this.recordingMode?.restore()
+                    this.recordingMode = undefined
+                    this.recordingStopConfirmed = false
+                    this.recording = false
+                }
+                throw error
+            } finally { this.broadcastState() }
+        })
         return this.getState()
     }
 
     async stopRecording(): Promise<CameraState> {
         const camera = this.requireCamera()
-        await this.enqueue(() => camera.stopRecording())
-        this.recording = false
-        this.log('system', 'Recording stopped')
+        await this.enqueue(async () => {
+            this.recordingState = 'stopping'
+            this.broadcastState()
+            try {
+                if (!this.recordingStopConfirmed) {
+                    await camera.stopRecording()
+                    this.recordingStopConfirmed = true
+                }
+                this.recordingState = 'idle'
+                await this.recordingMode?.restore()
+                this.recordingMode = undefined
+                this.recordingStopConfirmed = false
+                this.recording = false
+                this.log('system', 'Recording stop confirmed')
+            } catch (error) {
+                if (this.recordingStopConfirmed) {
+                    this.recordingState = 'idle'
+                    this.recording = true
+                    this.log('system', `Recording stopped; camera setup restoration failed: ${errorMessage(error)}. Retry Stop.`, 'error')
+                } else await this.observeFailedRecording(camera, error)
+                throw error
+            } finally { this.broadcastState() }
+        })
         await this.resumeShooting()
         this.scheduleFilesRefresh()
         this.broadcastState()
         return this.getState()
+    }
+
+    private async observeFailedRecording(camera: Camera, error: unknown): Promise<CameraRecordingState> {
+        this.recordingState = error instanceof CameraConfirmationError &&
+            ['idle', 'recording', 'starting', 'stopping'].includes(error.observed ?? '')
+            ? error.observed as CameraRecordingState
+            : await camera.getRecordingState().catch(() => 'unknown' as const)
+        // Unknown still needs a usable Stop action; it is never displayed as confirmed recording.
+        this.recording = this.recordingState !== 'idle'
+        this.log('system', `Recording change unconfirmed: ${errorMessage(error)}`, 'error')
+        return this.recordingState
     }
 
     // ------------------------------------------------------------------ clock

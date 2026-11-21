@@ -42,6 +42,7 @@ const INITIAL_STATE: CameraState = {
     osdOverlay: null,
     liveView: false,
     recording: false,
+    recordingState: 'idle',
     settings: { iso: null, shutterSpeed: null, aperture: null },
     downloadDir: '',
     platform: '',

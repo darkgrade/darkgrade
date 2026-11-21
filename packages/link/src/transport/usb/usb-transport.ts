@@ -450,8 +450,8 @@ export class USBTransport implements TransportInterface {
         this.eventHandler = handler
     }
 
-    public off(_handler: (event: PTPEvent) => void) {
-        this.eventHandler = null
+    public off(handler: (event: PTPEvent) => void) {
+        if (this.eventHandler === handler) this.eventHandler = null
     }
 
     /**

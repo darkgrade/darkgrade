@@ -212,6 +212,12 @@ export class GenericCamera {
         } else await this.resynchronizeIfNeeded()
     }
 
+    /** @internal Release a discarded driver's instrumentation without closing the selected transport. */
+    detachTransportObserver(): void {
+        this.telemetry.detach()
+        this.emitter.removeAllListeners()
+    }
+
     /**
      * Opens the transport and a session. A camera left mid-transfer by a host that crashed never
      * answers OpenSession; then the USB port is reset, as a replug would, and the open retried once.
@@ -1068,7 +1074,7 @@ export class GenericCamera {
         if (response.code !== OK.code) throw new Error(`SetDevicePropValue returned 0x${response.code.toString(16)}`)
     }
 
-    async getStandardPropertyStates(): Promise<StandardPropertyState[]> {
+    async getStandardPropertyStates(propertyNameOrCode?: string | number): Promise<StandardPropertyState[]> {
         const deviceInfoResponse = await this.send(this.registry.operations.GetDeviceInfo, {})
         if (deviceInfoResponse.code !== OK.code) {
             throw new PTPResponseError(deviceInfoResponse.code, undefined, { operation: 'GetDeviceInfo' })
@@ -1080,6 +1086,10 @@ export class GenericCamera {
         for (const code of deviceInfo.devicePropertiesSupported) {
             const property = Object.values(this.registry.properties).find(candidate => candidate.code === code)
             if (!property) continue
+            if (propertyNameOrCode !== undefined && (typeof propertyNameOrCode === 'number'
+                ? code !== propertyNameOrCode
+                : property.name.toLowerCase() !== propertyNameOrCode.toLowerCase() &&
+                    `0x${code.toString(16).padStart(4, '0')}` !== propertyNameOrCode.toLowerCase())) continue
 
             try {
                 const response = await this.send(this.registry.operations.GetDevicePropDesc, { DevicePropCode: code })
@@ -1103,7 +1113,7 @@ export class GenericCamera {
     }
 
     async setStandardProperty(propertyNameOrCode: string | number, requestedValue: string | number): Promise<void> {
-        const states = await this.getStandardPropertyStates()
+        const states = await this.getStandardPropertyStates(propertyNameOrCode)
         const requestedName = String(propertyNameOrCode).toLowerCase()
         const state = states.find(candidate =>
             typeof propertyNameOrCode === 'number'

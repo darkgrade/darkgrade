@@ -10,7 +10,7 @@ Read `packages/link/docs/pre-release-audit.md` for the measured audit and decisi
 Application controls use `Camera.getCapabilities()` and `Camera.setControl()`. Canonical
 ids/labels/search aliases are in `packages/link/src/camera/controls.ts`; vendor property
 preference is in `src/vendors/control-properties.ts`. Studio and test harnesses consume
-Link rather than adding vendor tables. `exposureTime` covers shutter speed and angle;
+Link rather than adding vendor tables. `shutterSpeed` covers exposure duration and angle;
 conversion requires the actual frame rate. Never guess units, switch modes implicitly,
 round a requested control to the nearest enum, or treat registry presence as availability.
 Preserve Bulb/Time/flash-sync, current read-only/empty/ambiguous choices, idle/session guards
@@ -31,6 +31,14 @@ not only fresh objects. Nikon control writes refresh the requested descriptor an
 mode/availability guards; do not reread unrelated descriptors or admit writes from a cache.
 Studio preserves last observations after a failed refresh with choices disabled, clears them
 on disconnect, and replaces them only after a successful inventory.
+`setControl()` returns confirmed observations; consumers display those values instead of
+optimistically applying requests or repeating admission/readback in each host. Shutter speed
+is the public control name; exposure time and shutter angle resolve to it as search aliases.
+Recording transitions use existing vendor state observations and the shared host queue;
+missing telemetry never proves idle. Confirmation polls reads, never replays a command.
+Keep Stop available and preserve the connection/mode if stopping cannot be confirmed.
+Detach discarded driver telemetry before constructing its replacement. Internal transport
+lifecycle helpers must stay absent from packed public declarations.
 
 Verify README promises with built/packed exports. Run `packages/link`'s `test:package`
 for strict ESM/CommonJS NodeNext consumer types, including negative input checks, with

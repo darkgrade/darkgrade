@@ -123,6 +123,15 @@ export function linkTelemetry(source: TransportInterface) {
     }
     const observer = {
         transport,
+        /** Release instrumentation when vendor selection replaces this driver, without closing USB. */
+        detach() {
+            if (observed) observed.detach()
+            else source.off?.(relay)
+            observed = undefined
+            listener = undefined
+            identity = undefined
+            factScope = undefined
+        },
         /** False when this unchanging fact about the identified body was already shared recently.
          * Before the connection has read identity, every fact counts as new. */
         newFact(key: string, encoded: string) {
