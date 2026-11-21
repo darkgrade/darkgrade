@@ -811,7 +811,8 @@ export class Camera {
 
     async stopRecording(): Promise<void> {
         return this.controlsQueue.run('camera', async () => {
-            if (await this.getRecordingState() === 'idle') return
+            // Sony's movie-button release still belongs to cleanup after an ignored press.
+            if (!(this.instance instanceof SonyCamera) && await this.getRecordingState() === 'idle') return
             await this.instance.stopRecording()
             await confirmCameraValue('record_stop', 'idle', () => this.getRecordingState(), 15000)
         })

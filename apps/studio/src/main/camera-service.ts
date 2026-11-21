@@ -1184,7 +1184,12 @@ export class CameraService {
                     this.recordingState = 'idle'
                     this.recording = true
                     this.log('system', `Recording stopped; camera setup restoration failed: ${errorMessage(error)}. Retry Stop.`, 'error')
-                } else await this.observeFailedRecording(camera, error)
+                } else if (await this.observeFailedRecording(camera, error) === 'idle') {
+                    // A lost Stop reply can still leave verified idle with the prepared mode owned.
+                    this.recordingStopConfirmed = true
+                    this.recording = true
+                    this.log('system', 'Camera is idle; retry Stop to finish restoring camera setup.')
+                }
                 throw error
             } finally { this.broadcastState() }
         })

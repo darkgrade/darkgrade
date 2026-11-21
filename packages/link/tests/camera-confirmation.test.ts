@@ -61,7 +61,8 @@ describe.each([0x054c, 0x04b0, 0x04a9])('vendor %i confirmed recording lifecycle
         })
         expect(f.start).toHaveBeenCalledOnce()
         await f.camera.stopRecording()
-        expect(f.stop).not.toHaveBeenCalled() // Fresh idle readback makes Stop idempotent.
+        if (vendor === 0x054c) expect(f.stop).toHaveBeenCalledOnce() // Release an ignored movie-button press.
+        else expect(f.stop).not.toHaveBeenCalled() // Other idle Stops are idempotent.
     })
     it('retains active recording after an ignored Stop and permits a later explicit Stop', async () => {
         vi.useFakeTimers()

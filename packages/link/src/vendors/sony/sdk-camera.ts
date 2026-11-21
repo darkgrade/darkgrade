@@ -570,7 +570,7 @@ export class SonyWifiCamera {
     async stopRecording(): Promise<void> {
         return this.controlsQueue.run('camera', async () => {
             this.requireConnection()
-            if (await this.getRecordingState() === 'idle') return
+            // Release the SDK movie command even when an ignored Start left the body idle.
             await this.bridge.request({ cmd: 'command', id: '1', param: '0' })
             await confirmCameraValue('record_stop', 'idle', () => this.getRecordingState(), 15000)
         })

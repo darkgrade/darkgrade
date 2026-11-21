@@ -209,7 +209,15 @@ describe('Sony SDK Wi-Fi camera', () => {
         expect(await camera.getRecordingState()).toBe('unknown')
         await expect(camera.startRecording()).rejects.toThrow('idle before starting')
         expect(requests.some(command => command.cmd === 'command')).toBe(false)
-        state.value = '0'
+        const request = bridge.request
+        bridge.request = async command => {
+            if (command.cmd === 'command' && command.id === '1' && command.param === '0') state.value = '0'
+            return request(command)
+        }
+        await camera.stopRecording()
+        expect(requests.filter(command => command.cmd === 'command')).toEqual([
+            { cmd: 'command', id: '1', param: '0' },
+        ])
         expect(await camera.getRecordingState()).toBe('idle')
         await camera.disconnect()
     })
