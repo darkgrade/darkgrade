@@ -1,0 +1,14 @@
+# Developer Mode's vision sidecar (Depth Pro 2 and SAM 3), on PyTorch's Metal (MPS) backend.
+# torch and transformers match Bark 3.0 Pro's (bark-sidecar/requirements-transformers.txt).
+torch==2.15.0
+torchvision==0.29.2
+transformers==5.19.0
+tokenizers==0.23.3
+safetensors==0.8.0
+huggingface-hub==2.4.0
+numpy==2.4.6
+pillow==13.0.0
+# Depth Pro 2's own imports (its package is installed without dependencies, below).
+timm==1.0.31
+av==18.1.1
+pillow-heif==1.8.1

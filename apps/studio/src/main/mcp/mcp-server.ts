@@ -1,5 +1,7 @@
 import { measurePerf, tracePerf } from '@main/perf-monitor'
+import { preferences } from '@main/preferences'
 import { STUDIO_TOOLS, type ToolResult } from '@main/tools/studio-tools'
+import { VISION_TOOLS } from '@main/vision/vision-tools'
 import { localhostHostValidation, localhostOriginValidation, toNodeHandler } from '@modelcontextprotocol/node'
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import type { McpServerStatus } from '@shared/ipc'
@@ -23,7 +25,9 @@ function buildServer(): McpServer {
         { name: 'darkgrade-studio', title: 'Darkgrade Studio', version: app.getVersion() },
         { instructions: INSTRUCTIONS }
     )
-    for (const tool of STUDIO_TOOLS) {
+    // Developer Mode adds the vision models' tools (Depth Pro 2, SAM 3); the server restarts when it changes.
+    const tools = preferences.get().developerMode ? [...STUDIO_TOOLS, ...VISION_TOOLS] : STUDIO_TOOLS
+    for (const tool of tools) {
         server.registerTool(
             tool.name,
             {
