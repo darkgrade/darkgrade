@@ -1,3 +1,4 @@
+import { CanonCamera } from '@camera/canon-camera'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import type { CameraRecordingState } from '@camera/controls'
 import { Camera } from '@camera/index'
@@ -125,4 +126,23 @@ it('canonical recording observation preserves native Sony transitional and unkno
         read.mockResolvedValue([{ code: 0xd21d, rawValue }] as never)
         expect(await camera.getRecordingState()).toBe(expected)
     }
+})
+
+it('Canon recording observation refreshes events instead of confirming a stale cached state', async () => {
+    const camera = new Camera({
+        vendorId: 0x04a9,
+        transport: { isLittleEndian: () => true, on: () => {} } as unknown as TransportInterface,
+    })
+    const driver = camera.getInstance() as CanonCamera
+    let cached = 'CARD'
+    const refresh = vi.spyOn(driver, 'refreshEventProperties').mockImplementation(async () => {
+        cached = 'NONE'
+    })
+    vi.spyOn(driver, 'listPropertyStates').mockImplementation(
+        () => [{ name: 'CanonRecordingDestination', value: cached }] as never
+    )
+    expect(await camera.getRecordingState()).toBe('idle')
+    expect(refresh).toHaveBeenCalledOnce()
+    refresh.mockRejectedValue(new Error('Canon event read failed'))
+    await expect(camera.getRecordingState()).rejects.toThrow('event read failed')
 })

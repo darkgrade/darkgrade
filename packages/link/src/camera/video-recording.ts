@@ -1,3 +1,4 @@
+import { CanonCamera } from '@camera/canon-camera'
 import type { CameraRecordingState } from '@camera/controls'
 import type { Camera } from '@camera/index'
 import { readCameraObjectHandles, readCameraStorages } from '@camera/storage'
@@ -9,7 +10,8 @@ import type { TakeMedia } from '@workflows/video-take'
 
 /** Reuse native movie observations; missing values never prove that recording stopped. */
 export async function readCameraRecordingState(camera: Camera): Promise<CameraRecordingState> {
-    const vendor = camera.getInstance().vendorId
+    const driver = camera.getInstance()
+    const vendor = driver.vendorId
     if (vendor === 0x054c) {
         const state = await readSonyPtpRecordingState(camera)
         return state === 0
@@ -26,10 +28,9 @@ export async function readCameraRecordingState(camera: Camera): Promise<CameraRe
         const state = await readNikonRecordingStatus(camera)
         return !state ? 'unknown' : state.recording ? 'recording' : state.bufferedImages ? 'stopping' : 'idle'
     }
-    if (vendor === 0x04a9) {
-        const state = (await camera.getCanonPropertyStates()).find(
-            state => state.name === 'CanonRecordingDestination'
-        )?.value
+    if (driver instanceof CanonCamera) {
+        await driver.refreshEventProperties()
+        const state = driver.listPropertyStates().find(state => state.name === 'CanonRecordingDestination')?.value
         return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
     }
     return 'unknown'
