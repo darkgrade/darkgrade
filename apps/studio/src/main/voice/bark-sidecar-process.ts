@@ -1,10 +1,10 @@
+import { findFreePort, isHealthy } from '@main/models/local-server'
 import type { PythonDownloadProgress, PythonRuntime } from '@main/voice/python-runtime'
 import type { SpeechModelChoice } from '@shared/speech-models'
 import { app } from 'electron'
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -35,27 +35,6 @@ export interface BarkSidecarOptions {
 export function barkSidecarDirectory(): string {
     const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources')
     return join(base, 'bark-sidecar')
-}
-
-function findFreePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-        const server = createServer()
-        server.once('error', reject)
-        server.listen(0, '127.0.0.1', () => {
-            const address = server.address()
-            const port = typeof address === 'object' && address ? address.port : 0
-            server.close(() => resolve(port))
-        })
-    })
-}
-
-async function isHealthy(port: number): Promise<boolean> {
-    try {
-        const response = await fetch(`http://127.0.0.1:${port}/health`)
-        return response.ok
-    } catch {
-        return false
-    }
 }
 
 function requirementsStamp(paths: string[], pythonIdentity: string): string {

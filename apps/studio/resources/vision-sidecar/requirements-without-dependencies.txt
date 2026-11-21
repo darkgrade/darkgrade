@@ -1,0 +1,3 @@
+# Apple's Depth Pro 2 code, pinned to a commit (an archive, so git isn't needed); its dependencies are pinned in
+# requirements.txt.
+depth_pro_2 @ https://github.com/apple-aiml-research/ml-depth-pro-2/archive/aa389cbb0b74341664ed663a0966c859905cd6c0.zip

@@ -12,6 +12,9 @@ extraResources:
     # The Bark speech sidecar: server script and pinned requirements (the model and its code are downloaded)
     - from: resources/bark-sidecar
       to: bark-sidecar
+    # Developer Mode's vision sidecar (Depth Pro 2, SAM 3): server script and pinned requirements (models are downloaded)
+    - from: resources/vision-sidecar
+      to: vision-sidecar
     # The Metal live-view decoder (macOS, Developer Mode), built by scripts/build-native.mjs; optional at runtime
     - from: native/build
       to: native

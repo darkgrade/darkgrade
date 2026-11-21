@@ -38,6 +38,15 @@ Everything `@darkgrade/link` exposes:
 - **Always listening:** toggle on, then prefix commands with the wake word — *"hey darkgrade, take a photo"*. The wake-word requirement can be disabled.
 - Spoken numbers work: *"ISO sixty four hundred"*, *"shutter to one two-hundred-and-fiftieth of a second"*, *"aperture two point eight"*.
 
+## Vision models (Developer Mode)
+
+App menu › Developer Mode, then **Vision Models**: Apple's **Depth Pro 2** (metric depth, sizes S/B/L/H+, L by default) and Meta's **SAM 3** (finds and outlines every instance of a noun phrase). Each runs in its own Python sidecar (`resources/vision-sidecar`, PyTorch on the GPU through Metal; the same approved exception as Bark's), so both stay loaded beside the speech engine and the assistant: nothing unloads anything else. A model that is ticked loads at launch and stays loaded; using one of its tools ticks it.
+
+- **Tools**: with Developer Mode on, Studio's MCP server adds `estimate_depth` and `segment_objects`. Both take the live-view picture, or `imagePath` (a JPEG or PNG on this Mac), and answer numbers plus a picture (the depth map, red near and blue far; or the instances drawn over the frame). Pictures go to Depth Pro 2 at most 1024 pixels on the long side, since its memory grows with the picture.
+- **Downloads**: Depth Pro 2 (and its shared focal-length estimator) from `apple/DepthPro2-*`, SAM 3 from `facebook/sam3`, each pinned to a revision. SAM 3 is gated: accept Meta's licence on its Hugging Face page, then `hf auth login` (or set `HF_TOKEN`); without access Studio says so and the other models are unaffected.
+- **Licences**: Depth Pro 2's weights are for research use only (Apple Machine Learning Research Model licence); SAM 3 is under Meta's SAM licence.
+- **Memory** (measured on an M5 Max, all four loaded and answering at once: a 1024 × 768 frame for depth and segmentation, a 15 s utterance for Bark 3.0 Plus, a 2.7k-token request with a 768 × 576 frame for Nemotron 3.5 Bolt E4B at Studio's 2 × 16k context): Nemotron about 5.9 GB (2.0 GB plus 3.9 GB of its mapped weights resident), Bark 3.0 Plus 2.6 GB, Depth Pro 2 L 4.9 GB (H+ 8.1 GB), SAM 3 about 4.5 GB (measured on its architecture with random weights, since the real ones are gated here); about 18 GB together with L, 21 GB with H+.
+
 ## Scripts
 
 ```bash

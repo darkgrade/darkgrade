@@ -9,6 +9,7 @@ import { preferences } from '@main/preferences'
 import { isTrustedRendererFrame, rendererDocumentUrl } from '@main/renderer-security'
 import { studioView } from '@main/studio-view'
 import { SWIFT_LIVE_VIEW_SURFACE, swiftLiveViewJpeg, type DecodedSurface } from '@main/usb-experiments'
+import { visionService } from '@main/vision/vision-service'
 import { voiceService } from '@main/voice/voice-service'
 import type {
     CameraControlName,
@@ -95,6 +96,8 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     void studioMcpServer.apply(startup.mcpServerEnabled, startup.mcpServerPort)
     cameraService.setBroadcast(broadcast)
     voiceService.setBroadcast(broadcast)
+    visionService.setBroadcast(broadcast)
+    handle(IPC.VisionGetStatus, () => visionService.getStatus())
     handle(IPC.VoiceGetStatus, () => voiceService.getStatus())
     handle(IPC.VoicePrepare, () => voiceService.prepare())
     handle(IPC.VoiceRelease, () => voiceService.release())

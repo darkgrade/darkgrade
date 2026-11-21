@@ -1,6 +1,7 @@
 import { preferences } from '@main/preferences'
 import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
-import { USB_TRANSPORT_CHOICES } from '@shared/ipc'
+import { USB_TRANSPORT_CHOICES, type Preferences } from '@shared/ipc'
+import { DEPTH_MODEL_SIZES, VISION_MODELS, type VisionModelId } from '@shared/vision-models'
 import { app, BrowserWindow, Menu, screen, shell, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -77,14 +78,50 @@ export function openPreferences(): void {
 /** The standard macOS menus, with Settings… (⌘,) and Developer Mode in the app menu, and zoom (⌘ = / ⌘ − / ⌘ 0). */
 let rebuildsWithDeveloperMode = false
 
+/** What the menu shows that can change from elsewhere: Developer Mode, and the vision models a tool turned on. */
+function menuState(current: Preferences): string {
+    return JSON.stringify([current.developerMode, current.visionModels, current.depthModelSize])
+}
+
+/** Developer Mode › Vision Models: each model kept loaded in its own process, beside voice and the assistant. */
+function visionModelsMenu(): MenuItemConstructorOptions {
+    const current = preferences.get()
+    const toggle = (id: VisionModelId, on: boolean) =>
+        preferences.set({
+            visionModels: on ? [...current.visionModels, id] : current.visionModels.filter(model => model !== id),
+        })
+    return {
+        label: 'Vision Models',
+        visible: current.developerMode,
+        submenu: [
+            ...VISION_MODELS.map(model => ({
+                label: `${model.name} (${model.task})`,
+                type: 'checkbox' as const,
+                checked: current.visionModels.includes(model.id),
+                toolTip: model.licence,
+                click: (item: { checked: boolean }) => toggle(model.id, item.checked),
+            })),
+            {
+                label: 'Depth Pro 2 Size',
+                submenu: DEPTH_MODEL_SIZES.map(size => ({
+                    label: size.label,
+                    type: 'radio' as const,
+                    checked: current.depthModelSize === size.id,
+                    click: () => preferences.set({ depthModelSize: size.id }),
+                })),
+            },
+        ],
+    }
+}
+
 export function installApplicationMenu(): void {
     // Developer Mode shows and hides its own items, so the menu is rebuilt when it changes.
     if (!rebuildsWithDeveloperMode) {
         rebuildsWithDeveloperMode = true
-        let developerMode = preferences.get().developerMode
+        let shown = menuState(preferences.get())
         preferences.onChange(current => {
-            if (current.developerMode === developerMode) return
-            developerMode = current.developerMode
+            if (menuState(current) === shown) return
+            shown = menuState(current)
             installApplicationMenu()
         })
     }
@@ -120,6 +157,7 @@ export function installApplicationMenu(): void {
                         click: () => preferences.set({ usbTransport: choice.id }),
                     })),
                 },
+                visionModelsMenu(),
                 { type: 'separator' },
                 { role: 'services' },
                 { type: 'separator' },
