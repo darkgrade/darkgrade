@@ -22,6 +22,7 @@ import type {
     TranscriptSegment,
 } from '@shared/ipc'
 import { IPC, IPC_EVENTS } from '@shared/ipc'
+import type { VisionModelId } from '@shared/vision-models'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -98,6 +99,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     voiceService.setBroadcast(broadcast)
     visionService.setBroadcast(broadcast)
     handle(IPC.VisionGetStatus, () => visionService.getStatus())
+    handle(IPC.VisionOverlay, (model: VisionModelId, jpeg: Uint8Array | null, prompt: string) => {
+        const picture = jpeg ?? cameraService.latestLiveViewFrame
+        if (!picture) throw new Error('No live picture yet')
+        return visionService.overlay(model, picture, prompt)
+    })
     handle(IPC.VoiceGetStatus, () => voiceService.getStatus())
     handle(IPC.VoicePrepare, () => voiceService.prepare())
     handle(IPC.VoiceRelease, () => voiceService.release())

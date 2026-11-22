@@ -29,7 +29,7 @@ asarUnpack:
 mac:
     category: public.app-category.photography
     icon: build/icon.icns
-    # Without the audio-input entitlement the hardened runtime silently refuses the microphone
+    # Without the audio-input and camera entitlements the hardened runtime silently refuses the microphone and webcam
     hardenedRuntime: true
     entitlements: entitlements.mac.plist
     entitlementsInherit: entitlements.mac.plist
@@ -38,4 +38,5 @@ mac:
         - zip
     extendInfo:
         NSMicrophoneUsageDescription: Darkgrade Studio uses the microphone for live transcription, which runs on this Mac. Audio never leaves your Mac.
+        NSCameraUsageDescription: In Developer Mode, Darkgrade Studio can show this Mac's webcam in place of a connected camera. The picture never leaves your Mac.
 npmRebuild: false

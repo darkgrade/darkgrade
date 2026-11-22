@@ -12,9 +12,11 @@ import {
 import { HoverTip } from '@renderer/components/HoverTip'
 import { PreviewQuality, type PreviewQualityProps } from '@renderer/components/PreviewQuality'
 import { useRecordingClock } from '@renderer/components/RecordingPanel'
+import { VisionOverlayLayer } from '@renderer/components/VisionOverlays'
 import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { LivePicture } from '@renderer/gpu/LivePicture'
 import { useFocusFrames, useHasLiveFrame } from '@renderer/lib/live-frame-store'
+import type { WebcamFeedStatus } from '@renderer/lib/webcam-feed'
 import type { CameraState, FocusFrame } from '@shared/ipc'
 import { Camera, Crosshair, Mic, VideoOff } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -23,6 +25,10 @@ interface LiveViewPanelProps {
     /** Floats over the top of the picture (the camera pill), as the toolbar floats over its bottom. */
     header: React.ReactNode
     cameraState: CameraState
+    /** Developer Mode's webcam feed, when it is the picture instead of the camera's live view. */
+    webcam: WebcamFeedStatus | null
+    /** Developer Mode: the vision overlays switched on in the scopes panel are drawn over the picture. */
+    visionOverlays: boolean
     busy: boolean
     capturing: boolean
     /** The camera is reading its card, so live view is paused on purpose. */
@@ -46,10 +52,31 @@ interface LiveViewPanelProps {
     preview: PreviewQualityProps
 }
 
+function WebcamPlaceholder({ webcam }: { webcam: WebcamFeedStatus }): React.JSX.Element {
+    if (webcam.phase === 'error')
+        return (
+            <Empty>
+                <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                        <VideoOff />
+                    </EmptyMedia>
+                    <EmptyTitle>The webcam didn’t start</EmptyTitle>
+                    <EmptyDescription>{webcam.message}</EmptyDescription>
+                </EmptyHeader>
+            </Empty>
+        )
+    return (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Starting the webcam…
+        </div>
+    )
+}
+
 function ViewportPlaceholder(
-    props: Pick<LiveViewPanelProps, 'cameraState' | 'onRetryLiveView' | 'readingCard'>
+    props: Pick<LiveViewPanelProps, 'cameraState' | 'onRetryLiveView' | 'readingCard' | 'webcam'>
 ): React.JSX.Element {
     const { cameraState } = props
+    if (props.webcam) return <WebcamPlaceholder webcam={props.webcam} />
     if (cameraState.connected && props.readingCard) {
         return (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -315,9 +342,14 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
     // The focus frame's size is kept when a click moves it, even while the camera switches areas.
     const lastFocusFrame = useRef<FocusFrame>(DEFAULT_FOCUS_FRAME)
     const disabled = !cameraState.connected || props.busy || props.locked
-    const canFocusAt = props.onFocusAt !== null && !disabled && !props.readingCard
+    const webcam = props.webcam
+    const canFocusAt = props.onFocusAt !== null && !disabled && !props.readingCard && !webcam
     // While the card is read, live view is paused: keep the last frame, dimmed and labelled, rather than flash.
-    const showFrame = cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
+    const showFrame = webcam
+        ? webcam.phase === 'live' && hasLiveFrame
+        : cameraState.connected && (cameraState.liveView || props.readingCard) && hasLiveFrame
+    // The webcam's picture isn't the camera's: its card, recording and display don't apply to it.
+    const readingCard = props.readingCard && !webcam
 
     return (
         // The picture, 6px inside the card and as large as its shape allows, its 8px corners concentric with the card's.
@@ -349,32 +381,36 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                     <>
                         <LivePicture
                             assists={
-                                props.readingCard
+                                readingCard
                                     ? { ...props.previewAssists, zebras: false, focusPeaking: false }
                                     : props.previewAssists
                             }
-                            recording={cameraState.recording}
-                            cameraDisplay={cameraState.osdOverlay === true}
-                            dimmed={props.readingCard}
+                            recording={cameraState.recording && !webcam}
+                            cameraDisplay={cameraState.osdOverlay === true && !webcam}
+                            dimmed={readingCard}
                             onAspect={aspect => {
                                 if (Math.abs(aspect - frameAspect) > 0.01) setFrameAspect(aspect)
                             }}
                         />
-                        {props.readingCard && (
+                        {props.visionOverlays && <VisionOverlayLayer />}
+                        {readingCard && (
                             <span className="absolute top-3 right-3 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[11px] text-muted-foreground">
                                 <Spinner className="size-3" /> Live view paused while the card is read
                             </span>
                         )}
-                        {cameraState.recording && <RecordingBadge />}
-                        <FocusFrames
-                            focusArea={cameraState.controls?.focusArea?.value ?? null}
-                            marker={focusMarker}
-                            lastFocusFrame={lastFocusFrame}
-                        />
+                        {cameraState.recording && !webcam && <RecordingBadge />}
+                        {!webcam && (
+                            <FocusFrames
+                                focusArea={cameraState.controls?.focusArea?.value ?? null}
+                                marker={focusMarker}
+                                lastFocusFrame={lastFocusFrame}
+                            />
+                        )}
                     </>
                 ) : (
                     <div className="absolute inset-0 flex items-center justify-center p-16">
                         <ViewportPlaceholder
+                            webcam={webcam}
                             cameraState={cameraState}
                             readingCard={props.readingCard}
                             onRetryLiveView={props.onRetryLiveView}

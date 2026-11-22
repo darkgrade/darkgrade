@@ -1,4 +1,4 @@
-import type { Preferences } from '@shared/ipc'
+import { LIVE_FEED_CHOICES, type Preferences } from '@shared/ipc'
 import { DEFAULT_SPEECH_MODEL, speechModel } from '@shared/speech-models'
 import { DEFAULT_DEPTH_MODEL_SIZE, DEPTH_MODEL_SIZES, VISION_MODELS } from '@shared/vision-models'
 import { app } from 'electron'
@@ -14,6 +14,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     usbTransport: 'node-usb', // EXPERIMENT(usb-transport)
     visionModels: [],
     depthModelSize: DEFAULT_DEPTH_MODEL_SIZE,
+    liveFeed: 'camera',
     windowMaterial: 'sidebar',
     dimWhenInactive: true,
 }
@@ -35,13 +36,14 @@ class PreferencesStore {
                 : {}
             this.current = { ...DEFAULT_PREFERENCES, ...saved }
             this.current.speechModel = speechModel(this.current.speechModel).id
-            const { visionModels, depthModelSize } = this.current
+            const { visionModels, depthModelSize, liveFeed } = this.current
             const savedVisionModels = Array.isArray(visionModels) ? visionModels : []
             this.current.visionModels = VISION_MODELS.map(model => model.id).filter(id =>
                 savedVisionModels.includes(id)
             )
             if (!DEPTH_MODEL_SIZES.some(size => size.id === depthModelSize))
                 this.current.depthModelSize = DEFAULT_DEPTH_MODEL_SIZE
+            if (!LIVE_FEED_CHOICES.some(choice => choice.id === liveFeed)) this.current.liveFeed = 'camera'
         } catch {
             this.current = { ...DEFAULT_PREFERENCES }
         }

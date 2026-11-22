@@ -9,6 +9,7 @@ import { installApplicationMenu } from '@main/preferences-window'
 import { protectRenderer, rendererDocumentUrl, isTrustedRendererDocument } from '@main/renderer-security'
 import { visionService } from '@main/vision/vision-service'
 import { voiceService } from '@main/voice/voice-service'
+import { usesWebcamFeed, type Preferences } from '@shared/ipc'
 import { app, BrowserWindow, nativeTheme, powerMonitor, session, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -104,9 +105,16 @@ if (!hasSingleInstanceLock) {
         await initializeDiagnostics()
         cameraService.startAutoDetect()
 
-        // Microphone permission for live transcription
+        // Microphone permission for live transcription, and the camera's once Developer Mode's webcam feed is chosen
         if (process.platform === 'darwin') {
             void systemPreferences.askForMediaAccess('microphone')
+            let webcamChosen = false
+            const askForCameraWhenWebcamChosen = (current: Preferences): void => {
+                if (usesWebcamFeed(current) && !webcamChosen) void systemPreferences.askForMediaAccess('camera')
+                webcamChosen = usesWebcamFeed(current)
+            }
+            askForCameraWhenWebcamChosen(preferences.get())
+            preferences.onChange(askForCameraWhenWebcamChosen)
         }
         session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
             callback((permission === 'media' || permission === 'clipboard-sanitized-write') && details.isMainFrame === true &&

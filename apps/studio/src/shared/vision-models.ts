@@ -50,3 +50,17 @@ export interface VisionEngineStatus {
     totalBytes: number
     message: string | null
 }
+
+/** SAM 3 overlays look for this until another noun phrase is typed. */
+export const DEFAULT_SEGMENTATION_PROMPT = 'person'
+
+/** One overlay over the live picture: a PNG the picture's shape, transparent where there is nothing to show. */
+export interface VisionOverlay {
+    imagePng: string
+    /** The model's own time on the GPU for this frame. */
+    modelMilliseconds: number
+    /** Instances SAM 3 found; absent for depth. */
+    instanceCount?: number
+    /** Depth Pro 2's median depth, in metres. */
+    medianMetres?: number | null
+}

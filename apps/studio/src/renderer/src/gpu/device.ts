@@ -1,5 +1,5 @@
 /// <reference types="@webgpu/types" />
-import { noteLiveFrame, subscribeToLiveFrames } from '@renderer/lib/live-frame-store'
+import { liveFeed, noteLiveFrame, subscribeToLiveFrames } from '@renderer/lib/live-frame-store'
 import { perf } from '@renderer/lib/perf'
 
 /**
@@ -81,6 +81,8 @@ let decodedFramePipeline: { pipeline: GPURenderPipeline; sampler: GPUSampler } |
 let decodedFramePipelineChecked = false
 let decodedFramesFailed = false
 async function drawDecodedFrame(source: { getVideoFrame(): unknown }): Promise<void> {
+    // While the webcam is the feed, the camera's frames are dropped (not failed: that would switch it to JPEGs).
+    if (liveFeed.get() !== 'camera') return
     const gpu = await getGpu()
     // Throwing reports that this frame wasn't drawn: after a few in a row, the main process sends JPEGs instead.
     if (!gpu || decodedFramesFailed) throw new Error('Decoded frames cannot be drawn in this window')
@@ -170,6 +172,22 @@ async function upload(blob: Blob): Promise<void> {
         pending = null
         if (next) void upload(next)
     }
+}
+
+/**
+ * The webcam's current frame (Developer Mode's live feed), copied from its video element into the shared frame
+ * texture, so the picture, its assists, the scopes and the vision overlays read it as they read the camera's.
+ */
+export async function drawWebcamFrame(video: HTMLVideoElement): Promise<void> {
+    const gpu = await getGpu()
+    const { videoWidth: width, videoHeight: height } = video
+    if (!gpu || liveFeed.get() !== 'webcam' || !width || !height) return
+    const started = performance.now()
+    const target = frameTarget(gpu, width, height)
+    gpu.device.queue.copyExternalImageToTexture({ source: video }, { texture: target.texture }, [width, height])
+    perf.cpu('Webcam frame upload to the GPU', performance.now() - started)
+    noteLiveFrame(width, height)
+    publishFrame(target)
 }
 
 /** The camera's own on-screen display (a PNG, about 4 a second while shown), as a texture over the picture. */
