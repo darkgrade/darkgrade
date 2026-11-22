@@ -23,6 +23,7 @@ const SOURCE_COLORS: Record<LogEntry['source'], string> = {
     camera: 'text-gold/80',
     system: 'text-muted-foreground',
     voice: 'text-live/80',
+    vision: 'text-live/80',
 }
 
 /** Developer Mode's activity log, along the bottom of the main card: the latest line, opening to the whole log. */

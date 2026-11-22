@@ -24,7 +24,7 @@ import * as z from 'zod/v4'
 /** What a tool returns: JSON for the model to read, and optionally a picture for one that can see. */
 export interface ToolResult {
     data: unknown
-    image?: { base64: string; mimeType: 'image/jpeg' }
+    image?: { base64: string; mimeType: 'image/jpeg' | 'image/png' }
 }
 
 export interface StudioTool {

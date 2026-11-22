@@ -7,6 +7,7 @@ import { studioMcpServer } from '@main/mcp/mcp-server'
 import { preferences } from '@main/preferences'
 import { installApplicationMenu } from '@main/preferences-window'
 import { protectRenderer, rendererDocumentUrl, isTrustedRendererDocument } from '@main/renderer-security'
+import { visionService } from '@main/vision/vision-service'
 import { voiceService } from '@main/voice/voice-service'
 import { app, BrowserWindow, nativeTheme, powerMonitor, session, shell, systemPreferences } from 'electron'
 import { join } from 'node:path'
@@ -115,6 +116,8 @@ if (!hasSingleInstanceLock) {
         installApplicationMenu()
         registerIpcHandlers(() => mainWindow)
         createWindow()
+        // Developer Mode's vision models that were on stay loaded from launch, beside voice and the assistant.
+        visionService.apply()
 
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -145,6 +148,7 @@ app.on('before-quit', event => {
             cameraService.dispose(),
             voiceService.release(),
             assistantService.release(),
+            visionService.release(),
             studioMcpServer.stop(),
         ]),
         timeout,

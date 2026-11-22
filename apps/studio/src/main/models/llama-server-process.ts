@@ -1,5 +1,5 @@
+import { findFreePort, isHealthy } from '@main/models/local-server'
 import { type ChildProcess, spawn } from 'node:child_process'
-import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { app } from 'electron'
 
@@ -27,27 +27,6 @@ export function llamaServerBinary(): string {
 const HEALTH_POLL_INTERVAL_MS = 250
 const STARTUP_TIMEOUT_MS = 120_000
 const STOP_GRACE_MS = 3000
-
-function findFreePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-        const server = createServer()
-        server.once('error', reject)
-        server.listen(0, '127.0.0.1', () => {
-            const address = server.address()
-            const port = typeof address === 'object' && address ? address.port : 0
-            server.close(() => resolve(port))
-        })
-    })
-}
-
-async function isHealthy(port: number): Promise<boolean> {
-    try {
-        const response = await fetch(`http://127.0.0.1:${port}/health`)
-        return response.ok
-    } catch {
-        return false
-    }
-}
 
 /** Runs one llama-server on a private local port and stops it on request. */
 export class LlamaServerProcess {

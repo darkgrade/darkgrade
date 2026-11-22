@@ -1,6 +1,7 @@
 import type { SpeechModelId } from '@shared/speech-models'
 import { cameraControlDefinitions, resolveCameraControl } from '@darkgrade/link/controls'
 import type { CameraRecordingState } from '@darkgrade/link/controls'
+import type { DepthModelSize, VisionEngineStatus, VisionModelId } from '@shared/vision-models'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
  * Every camera capability exposed by @darkgrade/link has a channel here.
@@ -39,6 +40,7 @@ export const IPC = {
     ChooseDownloadDir: 'system:choose-download-dir',
     RevealPath: 'system:reveal-path',
     VoiceGetStatus: 'voice:get-status',
+    VisionGetStatus: 'vision:get-status',
     VoicePrepare: 'voice:prepare',
     VoiceRelease: 'voice:release',
     VoiceSaveSessionAudio: 'voice:save-session-audio',
@@ -84,6 +86,7 @@ export const IPC_EVENTS = {
     PreviewProgress: 'evt:preview-progress',
     Files: 'evt:files',
     VoiceStatus: 'evt:voice-status',
+    VisionStatus: 'evt:vision-status',
     Preferences: 'evt:preferences',
     McpServerStatus: 'evt:mcp-status',
     AssistantStatus: 'evt:assistant-status',
@@ -199,7 +202,7 @@ export interface CameraState {
 
 export interface LogEntry {
     timestampMs: number
-    source: 'camera' | 'system' | 'voice'
+    source: 'camera' | 'system' | 'voice' | 'vision'
     level: 'info' | 'error'
     message: string
 }
@@ -357,6 +360,13 @@ export interface Preferences {
     metalLiveViewDecoder: boolean
     /** EXPERIMENT(usb-transport): Developer Mode's USB transport choice; applies from the next connection. */
     usbTransport: UsbTransportChoice
+    /**
+     * Developer Mode's vision models kept loaded (app menu › Vision Models), each in its own process beside voice and
+     * the assistant. Off by default.
+     */
+    visionModels: VisionModelId[]
+    /** Which Depth Pro 2 size runs; switching unloads the old one and loads the new one. */
+    depthModelSize: DepthModelSize
     /** The macOS material behind the window (View › Window Material); switches live. */
     windowMaterial: WindowMaterial
     /** Let the material go flat while Studio is in the background, as Finder and Messages do; from the next launch. */
@@ -486,6 +496,9 @@ export interface StudioApi {
     /** Adds a line to the speech engine's log file. */
     voiceDiagnostic(message: string): Promise<IpcResult<void>>
     onVoiceStatus(callback: (status: VoiceEngineStatus) => void): () => void
+    /** Developer Mode's vision models, each loaded in its own process (app menu › Vision Models). */
+    visionGetStatus(): Promise<IpcResult<Record<VisionModelId, VisionEngineStatus>>>
+    onVisionStatus(callback: (status: Record<VisionModelId, VisionEngineStatus>) => void): () => void
     diagnosticsBenchmark(): Promise<
         IpcResult<{
             passed: boolean

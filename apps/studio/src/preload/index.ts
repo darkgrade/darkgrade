@@ -64,6 +64,8 @@ const studioApi: StudioApi = {
     voiceSaveSessionAudio: pcm => ipcRenderer.invoke(IPC.VoiceSaveSessionAudio, pcm),
     voiceDiagnostic: message => ipcRenderer.invoke(IPC.VoiceDiagnostic, message),
     onVoiceStatus: subscribe(IPC_EVENTS.VoiceStatus),
+    visionGetStatus: () => ipcRenderer.invoke(IPC.VisionGetStatus),
+    onVisionStatus: subscribe(IPC_EVENTS.VisionStatus),
     getDiagnosticsStatus: () => ipcRenderer.invoke(IPC.DiagnosticsStatus),
     changeDiagnostics: (action, value) => ipcRenderer.invoke(IPC.DiagnosticsChange, action, value),
     diagnosticsBenchmark: () => ipcRenderer.invoke(IPC.DiagnosticsBenchmark),

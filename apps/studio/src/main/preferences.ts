@@ -1,5 +1,6 @@
 import type { Preferences } from '@shared/ipc'
 import { DEFAULT_SPEECH_MODEL, speechModel } from '@shared/speech-models'
+import { DEFAULT_DEPTH_MODEL_SIZE, DEPTH_MODEL_SIZES, VISION_MODELS } from '@shared/vision-models'
 import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -11,6 +12,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     developerMode: false,
     metalLiveViewDecoder: false,
     usbTransport: 'node-usb', // EXPERIMENT(usb-transport)
+    visionModels: [],
+    depthModelSize: DEFAULT_DEPTH_MODEL_SIZE,
     windowMaterial: 'sidebar',
     dimWhenInactive: true,
 }
@@ -32,6 +35,13 @@ class PreferencesStore {
                 : {}
             this.current = { ...DEFAULT_PREFERENCES, ...saved }
             this.current.speechModel = speechModel(this.current.speechModel).id
+            const { visionModels, depthModelSize } = this.current
+            const savedVisionModels = Array.isArray(visionModels) ? visionModels : []
+            this.current.visionModels = VISION_MODELS.map(model => model.id).filter(id =>
+                savedVisionModels.includes(id)
+            )
+            if (!DEPTH_MODEL_SIZES.some(size => size.id === depthModelSize))
+                this.current.depthModelSize = DEFAULT_DEPTH_MODEL_SIZE
         } catch {
             this.current = { ...DEFAULT_PREFERENCES }
         }
