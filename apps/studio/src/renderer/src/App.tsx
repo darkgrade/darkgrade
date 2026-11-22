@@ -16,9 +16,11 @@ import { VoicePanel } from '@renderer/components/VoicePanel'
 import { DEFAULT_PREVIEW_ASSISTS, type PreviewAssistSettings } from '@renderer/gpu/assists'
 import { publishOsdFrame } from '@renderer/gpu/device'
 import { appendLog, downloadProgress } from '@renderer/lib/activity-store'
-import { publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
+import { chooseLiveFeed, publishFocusFrames, publishLiveFrame } from '@renderer/lib/live-frame-store'
 import { useResizable } from '@renderer/lib/use-resizable'
-import type { CameraState, FileEntry, LogEntry } from '@shared/ipc'
+import { overlaysEnabled, useVisionOverlayLoops } from '@renderer/lib/vision-overlays'
+import { startWebcamFeed, stopWebcamFeed, webcamFeedStatus } from '@renderer/lib/webcam-feed'
+import { usesWebcamFeed, type CameraState, type FileEntry, type LiveFeedChoice, type LogEntry } from '@shared/ipc'
 import { useLiveTranscription } from '@voice/use-live-transcription'
 import { Unplug } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -67,10 +69,28 @@ export function App(): React.JSX.Element {
     const [logExpanded, setLogExpanded] = useState(false)
     // The Activity log is a developer tool, shown only with Developer Mode on in the app menu.
     const [developerMode, setDeveloperMode] = useState(false)
+    // Developer Mode › Live Feed can put this Mac's webcam in the camera's place.
+    const [chosenFeed, setChosenFeed] = useState<LiveFeedChoice>('camera')
     useEffect(() => {
-        void api.getPreferences().then(result => result.ok && setDeveloperMode(result.data.developerMode))
-        return api.onPreferences(current => setDeveloperMode(current.developerMode))
+        const apply = (current: { developerMode: boolean; liveFeed: LiveFeedChoice }): void => {
+            setDeveloperMode(current.developerMode)
+            setChosenFeed(current.liveFeed)
+        }
+        void api.getPreferences().then(result => result.ok && apply(result.data))
+        return api.onPreferences(apply)
     }, [])
+    const webcamFeed = usesWebcamFeed({ developerMode, liveFeed: chosenFeed })
+    const webcamStatus = webcamFeedStatus.use()
+    useEffect(() => {
+        chooseLiveFeed(webcamFeed ? 'webcam' : 'camera')
+        if (!webcamFeed) return
+        void startWebcamFeed()
+        return stopWebcamFeed
+    }, [webcamFeed])
+    // The overlays are Developer Mode's alone: leaving it switches them off, so they don't return unasked.
+    useEffect(() => {
+        if (!developerMode) overlaysEnabled.set({ 'depth-pro-2': false, sam3: false })
+    }, [developerMode])
 
     const zoomingRef = useRef(false)
 
@@ -200,6 +220,25 @@ export function App(): React.JSX.Element {
         setPreviewEntry(null)
     }, [cameraState.connected])
 
+    // The picture the scopes and overlays read: the webcam's while it is the feed, otherwise the camera's live view.
+    const pictureLive = webcamFeed ? webcamStatus.phase === 'live' : cameraState.connected && cameraState.liveView
+    useVisionOverlayLoops(developerMode && pictureLive)
+    const scopesPanel = (
+        <ScopesPanel
+            active={pictureLive}
+            inactiveMessage={
+                webcamFeed
+                    ? (webcamStatus.message ?? 'Scopes appear once the webcam starts.')
+                    : cameraState.connected
+                      ? 'Scopes appear while live view runs.'
+                      : 'Connect a camera to see its scopes.'
+            }
+            developerMode={developerMode}
+            assists={previewAssists}
+            onAssistsChange={setPreviewAssists}
+        />
+    )
+
     const previewLoading = previewEntry !== null && previewState.status === 'loading'
     const cardBusy = filesUpdating || downloading || previewLoading
 
@@ -283,6 +322,8 @@ export function App(): React.JSX.Element {
                         <div className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto">
                             {developerMode && <AppearanceTuner />}
                             {/* With no camera there is nothing to set: one line for the whole sidebar, not one per section. */}
+                            {/* The webcam feed needs no camera, so its scopes show above the line asking for one. */}
+                            {!cameraState.connected && webcamFeed && scopesPanel}
                             {!cameraState.connected ? (
                                 <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 pb-16 text-center">
                                     <Unplug className="size-5 text-foreground/30" aria-hidden />
@@ -290,12 +331,7 @@ export function App(): React.JSX.Element {
                                 </div>
                             ) : (
                                 <>
-                                    <ScopesPanel
-                                        active={cameraState.connected && cameraState.liveView}
-                                        connected={cameraState.connected}
-                                        assists={previewAssists}
-                                        onAssistsChange={setPreviewAssists}
-                                    />
+                                    {scopesPanel}
                                     <SettingsPanel
                                         cameraState={cameraState}
                                         locked={cardBusy}
@@ -358,6 +394,8 @@ export function App(): React.JSX.Element {
                                 />
                             }
                             cameraState={cameraState}
+                            webcam={webcamFeed ? webcamStatus : null}
+                            visionOverlays={developerMode}
                             previewAssists={previewAssists}
                             busy={busy}
                             capturing={capturing}

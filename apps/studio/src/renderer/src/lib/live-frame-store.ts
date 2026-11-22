@@ -1,6 +1,6 @@
 import { createStore } from '@renderer/lib/external-store'
 import { readJpegSize } from '@renderer/lib/jpeg-size'
-import type { FocusFrame } from '@shared/ipc'
+import type { FocusFrame, LiveFeedChoice } from '@shared/ipc'
 import { useSyncExternalStore } from 'react'
 
 /** One live-view JPEG, as a blob for decoding off the main thread and a URL for <img>. */
@@ -33,7 +33,31 @@ setInterval(() => {
     if (rate !== liveFrameRate.get()) liveFrameRate.set(rate)
 }, 1000)
 
+/**
+ * Whose frames the picture shows: the camera's, or the webcam's in Developer Mode. The other feed's frames are
+ * dropped, so the two never take turns in the picture.
+ */
+export const liveFeed = createStore<LiveFeedChoice>('camera')
+
+function notifyFrameListeners(): void {
+    listeners.forEach(listener => listener())
+}
+
+/** Switches feeds, forgetting the last feed's frame, rate and size so nothing of it lingers. */
+export function chooseLiveFeed(feed: LiveFeedChoice): void {
+    if (liveFeed.get() === feed) return
+    liveFeed.set(feed)
+    frameTimes = []
+    liveFrameRate.set(null)
+    liveFrameSize.set(null)
+    if (current?.url) retired.push(current.url)
+    current = null
+    notifyFrameListeners()
+    publishFocusFrames([])
+}
+
 export function publishLiveFrame(jpeg: Uint8Array): void {
+    if (liveFeed.get() !== 'camera') return
     frameTimes.push(performance.now())
     const size = readJpegSize(jpeg)
     const shown = liveFrameSize.get()
@@ -42,12 +66,12 @@ export function publishLiveFrame(jpeg: Uint8Array): void {
     if (current) retired.push(current.url)
     while (retired.length > RETIRED_URLS_KEPT) URL.revokeObjectURL(retired.shift()!)
     current = { blob, url: URL.createObjectURL(blob) }
-    listeners.forEach(listener => listener())
+    notifyFrameListeners()
 }
 
 /**
- * A frame that reached the GPU without a JPEG (the Metal decoder's): counted for the frame rate and size, and the
- * first one marks the picture as live. Its stand-in blob is never decoded: the GPU already has the frame.
+ * A frame that reached the GPU without a JPEG (the Metal decoder's, or the webcam's): counted for the frame rate and
+ * size, and the first one marks the picture as live. Its stand-in blob is never decoded: the GPU already has the frame.
  */
 export function noteLiveFrame(width: number, height: number): void {
     frameTimes.push(performance.now())
@@ -55,7 +79,12 @@ export function noteLiveFrame(width: number, height: number): void {
     if (shown?.width !== width || shown.height !== height) liveFrameSize.set({ width, height })
     if (current) return
     current = { blob: new Blob(), url: '' }
-    listeners.forEach(listener => listener())
+    notifyFrameListeners()
+}
+
+/** The newest frame, outside React (its blob is empty when the frame reached the GPU without a JPEG). */
+export function latestLiveFrame(): LiveFrame | null {
+    return current
 }
 
 function subscribe(listener: () => void): () => void {
@@ -82,6 +111,7 @@ const focusFrameListeners = new Set<() => void>()
 let currentFocusFrames: FocusFrame[] = []
 
 export function publishFocusFrames(frames: FocusFrame[]): void {
+    if (liveFeed.get() !== 'camera' && frames.length) return
     currentFocusFrames = frames
     focusFrameListeners.forEach(listener => listener())
 }

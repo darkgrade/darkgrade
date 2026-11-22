@@ -10,7 +10,13 @@ import { preferences } from '@main/preferences'
 import { ensureVisionEnvironment, VisionSidecarProcess } from '@main/vision/vision-sidecar-process'
 import { PythonRuntime } from '@main/voice/python-runtime'
 import { IPC_EVENTS, type LogEntry, type Preferences } from '@shared/ipc'
-import { visionModel, type VisionEngineStatus, type VisionModelId } from '@shared/vision-models'
+import {
+    DEFAULT_SEGMENTATION_PROMPT,
+    visionModel,
+    type VisionEngineStatus,
+    type VisionModelId,
+    type VisionOverlay,
+} from '@shared/vision-models'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
@@ -216,6 +222,31 @@ class VisionService {
     segment(image: Uint8Array, prompt: string, threshold = 0.5): Promise<VisionResult> {
         this.turnOn('sam3')
         return this.engines.sam3.request('/v1/segment', { prompt, threshold: String(threshold) }, image)
+    }
+
+    /**
+     * One live overlay for Developer Mode's scopes: Depth Pro 2's coloured depth map, or SAM 3's instances of `prompt`
+     * as coloured masks with outlines on a transparent picture. Each model has its own process, so both run at once.
+     */
+    async overlay(id: VisionModelId, image: Uint8Array, prompt: string): Promise<VisionOverlay> {
+        if (!preferences.get().developerMode) throw new Error('Vision overlays need Developer Mode')
+        if (id === 'depth-pro-2') {
+            const result = await this.estimateDepth(image)
+            return {
+                imagePng: result.imagePng,
+                modelMilliseconds: Number(result.milliseconds),
+                medianMetres: typeof result.medianMetres === 'number' ? result.medianMetres : null,
+            }
+        }
+        if (id !== 'sam3') throw new Error(`No vision model called ${String(id)}`)
+        this.turnOn('sam3')
+        const query = { prompt: prompt.trim() || DEFAULT_SEGMENTATION_PROMPT, threshold: '0.5', overlay: '1' }
+        const result = await this.engines.sam3.request('/v1/segment', query, image)
+        return {
+            imagePng: result.imagePng,
+            modelMilliseconds: Number(result.milliseconds),
+            instanceCount: Array.isArray(result.instances) ? result.instances.length : 0,
+        }
     }
 
     /** Using a model turns it on in Developer Mode's menu, so it stays loaded. */

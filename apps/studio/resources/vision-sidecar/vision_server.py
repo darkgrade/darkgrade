@@ -13,7 +13,9 @@ POST /v1/depth        Depth Pro 2. Body: a JPEG or PNG. Query: focal_px (optiona
                       finite depth, a grid of median depths, and a coloured inverse-depth PNG (base64).
 POST /v1/segment      SAM 3. Body: a JPEG or PNG. Query: prompt (a short noun phrase, required) and
                       threshold (0 to 1, default 0.5). Answers each instance's score, box and share of
-                      the picture, and the picture with the instances drawn over it (PNG, base64).
+                      the picture, and the picture with the instances drawn over it (PNG, base64); with
+                      overlay=1, only the instances (tinted masks and outlines) on a transparent PNG, for
+                      Studio to draw over its live picture.
 
 Neither model's folder holds code: Depth Pro 2 runs through the pinned depth_pro_2 package and SAM 3
 through transformers, and the weights are safetensors.
@@ -68,6 +70,29 @@ def turbo(values: np.ndarray) -> np.ndarray:
 def finite_stat(values: np.ndarray, operation) -> float | None:
     finite = values[np.isfinite(values)]
     return round(float(operation(finite)), 3) if finite.size else None
+
+
+# Live overlays: each instance's mask is tinted at this opacity and outlined this many pixels wide, fully opaque.
+OVERLAY_FILL_ALPHA = 110
+OVERLAY_OUTLINE_PIXELS = 2
+
+
+def instance_overlay(masks: list[np.ndarray], height: int, width: int) -> np.ndarray:
+    """The instances alone as RGBA: each mask tinted in its colour and outlined, transparent everywhere else."""
+    overlay = np.zeros((height, width, 4), np.uint8)
+    for index, mask in enumerate(masks):
+        colour = INSTANCE_COLOURS[index % len(INSTANCE_COLOURS)]
+        inner = mask.copy()
+        for _ in range(OVERLAY_OUTLINE_PIXELS):
+            shrunk = inner.copy()
+            shrunk[1:, :] &= inner[:-1, :]
+            shrunk[:-1, :] &= inner[1:, :]
+            shrunk[:, 1:] &= inner[:, :-1]
+            shrunk[:, :-1] &= inner[:, 1:]
+            inner = shrunk
+        overlay[mask] = (*colour, OVERLAY_FILL_ALPHA)
+        overlay[mask & ~inner] = (*colour, 255)
+    return overlay
 
 
 def load_depth_pro_2(path: str, focal_path: str):
@@ -142,7 +167,8 @@ def load_sam3(path: str):
         instances = []
         masks = result["masks"].cpu().numpy().astype(bool)
         found = sorted(zip(masks, result["boxes"].tolist(), result["scores"].tolist()), key=lambda found: -found[2])
-        for index, (mask, box, score) in enumerate(found[:MAXIMUM_INSTANCES]):
+        found = found[:MAXIMUM_INSTANCES]
+        for index, (mask, box, score) in enumerate(found):
             colour = np.array(INSTANCE_COLOURS[index % len(INSTANCE_COLOURS)], np.float32)
             overlay[mask] = overlay[mask] * 0.45 + colour * 0.55
             left, top, right, bottom = box
@@ -151,12 +177,16 @@ def load_sam3(path: str):
                 "box": [round(left / width, 4), round(top / height, 4), round(right / width, 4), round(bottom / height, 4)],
                 "areaFraction": round(float(mask.mean()), 4),
             })
+        if query.get("overlay") == "1":
+            picture = instance_overlay([mask for mask, _, _ in found], height, width)
+        else:
+            picture = overlay.astype(np.uint8)
         return {
             "width": width,
             "height": height,
             "prompt": prompt,
             "instances": instances,
-            "imagePng": png_base64(overlay.astype(np.uint8)),
+            "imagePng": png_base64(picture),
         }
 
     return segment

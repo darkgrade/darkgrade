@@ -1,6 +1,6 @@
 import { preferences } from '@main/preferences'
 import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
-import { USB_TRANSPORT_CHOICES, type Preferences } from '@shared/ipc'
+import { LIVE_FEED_CHOICES, USB_TRANSPORT_CHOICES, type Preferences } from '@shared/ipc'
 import { DEPTH_MODEL_SIZES, VISION_MODELS, type VisionModelId } from '@shared/vision-models'
 import { app, BrowserWindow, Menu, screen, shell, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
@@ -80,7 +80,7 @@ let rebuildsWithDeveloperMode = false
 
 /** What the menu shows that can change from elsewhere: Developer Mode, and the vision models a tool turned on. */
 function menuState(current: Preferences): string {
-    return JSON.stringify([current.developerMode, current.visionModels, current.depthModelSize])
+    return JSON.stringify([current.developerMode, current.visionModels, current.depthModelSize, current.liveFeed])
 }
 
 /** Developer Mode › Vision Models: each model kept loaded in its own process, beside voice and the assistant. */
@@ -155,6 +155,17 @@ export function installApplicationMenu(): void {
                         type: 'radio' as const,
                         checked: preferences.get().usbTransport === choice.id,
                         click: () => preferences.set({ usbTransport: choice.id }),
+                    })),
+                },
+                {
+                    // The webcam's picture in place of the camera's, for working on the picture without a camera.
+                    label: 'Live Feed',
+                    visible: preferences.get().developerMode,
+                    submenu: LIVE_FEED_CHOICES.map(choice => ({
+                        label: choice.label,
+                        type: 'radio' as const,
+                        checked: preferences.get().liveFeed === choice.id,
+                        click: () => preferences.set({ liveFeed: choice.id }),
                     })),
                 },
                 visionModelsMenu(),
