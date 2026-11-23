@@ -1,7 +1,7 @@
 import type { SpeechModelId } from '@shared/speech-models'
 import { cameraControlDefinitions, resolveCameraControl } from '@darkgrade/link/controls'
 import type { CameraRecordingState } from '@darkgrade/link/controls'
-import type { DepthModelSize, VisionEngineStatus, VisionModelId } from '@shared/vision-models'
+import type { DepthModelSize, VisionEngineStatus, VisionModelId, VisionOverlay } from '@shared/vision-models'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
  * Every camera capability exposed by @darkgrade/link has a channel here.
@@ -41,6 +41,7 @@ export const IPC = {
     RevealPath: 'system:reveal-path',
     VoiceGetStatus: 'voice:get-status',
     VisionGetStatus: 'vision:get-status',
+    VisionOverlay: 'vision:overlay',
     VoicePrepare: 'voice:prepare',
     VoiceRelease: 'voice:release',
     VoiceSaveSessionAudio: 'voice:save-session-audio',
@@ -344,6 +345,18 @@ export const USB_TRANSPORT_CHOICES = [
 ] as const
 export type UsbTransportChoice = (typeof USB_TRANSPORT_CHOICES)[number]['id']
 
+/** Where Developer Mode's live picture comes from: the connected camera, or this Mac's webcam (app menu › Live Feed). */
+export const LIVE_FEED_CHOICES = [
+    { id: 'camera', label: 'Camera (default)' },
+    { id: 'webcam', label: "Webcam (this Mac's camera)" },
+] as const
+export type LiveFeedChoice = (typeof LIVE_FEED_CHOICES)[number]['id']
+
+/** The webcam replaces the camera's picture only while Developer Mode is on. */
+export function usesWebcamFeed(current: Pick<Preferences, 'developerMode' | 'liveFeed'>): boolean {
+    return current.developerMode && current.liveFeed === 'webcam'
+}
+
 /** Studio's saved settings (Preferences window). */
 export interface Preferences {
     /** Serve Studio's camera tools to MCP clients on this Mac. Off by default. */
@@ -367,6 +380,8 @@ export interface Preferences {
     visionModels: VisionModelId[]
     /** Which Depth Pro 2 size runs; switching unloads the old one and loads the new one. */
     depthModelSize: DepthModelSize
+    /** Developer Mode's live picture: the camera's live view, or this Mac's webcam in its place. */
+    liveFeed: LiveFeedChoice
     /** The macOS material behind the window (View › Window Material); switches live. */
     windowMaterial: WindowMaterial
     /** Let the material go flat while Studio is in the background, as Finder and Messages do; from the next launch. */
@@ -499,6 +514,11 @@ export interface StudioApi {
     /** Developer Mode's vision models, each loaded in its own process (app menu › Vision Models). */
     visionGetStatus(): Promise<IpcResult<Record<VisionModelId, VisionEngineStatus>>>
     onVisionStatus(callback: (status: Record<VisionModelId, VisionEngineStatus>) => void): () => void
+    /**
+     * One overlay of the live picture from a vision model (Developer Mode's scopes): `jpeg` is the frame, or null for
+     * the camera's latest live-view frame. `prompt` is what SAM 3 looks for.
+     */
+    visionOverlay(model: VisionModelId, jpeg: Uint8Array | null, prompt: string): Promise<IpcResult<VisionOverlay>>
     diagnosticsBenchmark(): Promise<
         IpcResult<{
             passed: boolean

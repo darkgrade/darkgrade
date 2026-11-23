@@ -11,5 +11,5 @@
             "@voice/*": ["./src/renderer/src/voice/*"]
         }
     },
-    "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/index.d.ts"]
+    "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/index.d.ts", "tests/renderer/**/*"]
 }

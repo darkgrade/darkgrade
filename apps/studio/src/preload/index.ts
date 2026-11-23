@@ -66,6 +66,7 @@ const studioApi: StudioApi = {
     onVoiceStatus: subscribe(IPC_EVENTS.VoiceStatus),
     visionGetStatus: () => ipcRenderer.invoke(IPC.VisionGetStatus),
     onVisionStatus: subscribe(IPC_EVENTS.VisionStatus),
+    visionOverlay: (model, jpeg, prompt) => ipcRenderer.invoke(IPC.VisionOverlay, model, jpeg, prompt),
     getDiagnosticsStatus: () => ipcRenderer.invoke(IPC.DiagnosticsStatus),
     changeDiagnostics: (action, value) => ipcRenderer.invoke(IPC.DiagnosticsChange, action, value),
     diagnosticsBenchmark: () => ipcRenderer.invoke(IPC.DiagnosticsBenchmark),

@@ -19,7 +19,9 @@
         "src/renderer/src/voice/transcript-store.ts",
         "src/renderer/src/voice/panel-switch.ts",
         "src/renderer/src/lib/external-store.ts",
+        "src/renderer/src/lib/latest-frame-loop.ts",
         "electron.vite.config.ts",
         "tests/**/*"
-    ]
+    ],
+    "exclude": ["tests/renderer/**/*"]
 }
