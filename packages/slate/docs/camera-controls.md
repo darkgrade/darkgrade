@@ -150,7 +150,10 @@ mode and returns a restoration handle. It checks camera-reported movie capacity,
 without inferring free space from Sony's zero-capacity, read-only host storage.
 A readable zero in an observed movie mode prevents Start and reports no remaining
 recording time; unavailable values and photo-mode zero remain unknown.
-Restoration requires confirmed idle. Sony video-take workflows use this same preparation.
+Restoration requires confirmed idle and polls fresh mode availability for up to
+five seconds while the body finalizes files. It writes the original mode once;
+missing readiness preserves the movie mode and raises a confirmation error.
+Sony video-take workflows use this same preparation.
 These bounds govern observation polling; the configured transport bounds still apply.
 The shared host operation queue serializes rapid control and recording changes within
 one Camera object. Hosts still own physical leases and mode preparation/restoration.

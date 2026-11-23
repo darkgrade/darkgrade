@@ -112,7 +112,7 @@ it('explicit Sony preparation uses advertised controls and restores only after c
     const f = fixture(0x054c)
     let mode = 'Manual'
     vi.spyOn(f.camera, 'getCapabilities').mockImplementation(async () => ({
-        controls: {exposureProgram: {value:mode,writable:true,allowedValues:['Manual','Movie Manual']}},
+        controls: {exposureProgram: {value:mode,enabled:true,writable:true,allowedValues:['Manual','Movie Manual']}},
     }) as any)
     const write = vi.spyOn(f.camera, 'setControl').mockImplementation(async (_id, value) => {
         mode = value as string
@@ -133,15 +133,37 @@ it('explicit Sony preparation uses advertised controls and restores only after c
 it('Sony preparation never guesses an unadvertised movie mode or ignores a failed readback', async () => {
     const f = fixture(0x054c)
     const inventory = vi.spyOn(f.camera, 'getCapabilities').mockResolvedValue({
-        controls:{exposureProgram:{value:'Manual',writable:false,allowedValues:['Manual','Movie Manual']}},
+        controls:{exposureProgram:{value:'Manual',enabled:true,writable:false,allowedValues:['Manual','Movie Manual']}},
     } as any)
     const write = vi.spyOn(f.camera, 'setControl')
     await expect(f.camera.prepareRecordingMode()).rejects.toThrow('no corresponding writable movie mode')
     expect(write).not.toHaveBeenCalled()
-    inventory.mockResolvedValue({controls:{exposureProgram:{value:'Manual',writable:true,allowedValues:['Manual','Movie Manual']}}} as any)
+    inventory.mockResolvedValue({controls:{exposureProgram:{value:'Manual',enabled:true,writable:true,allowedValues:['Manual','Movie Manual']}}} as any)
     write.mockRejectedValueOnce(new CameraConfirmationError('exposureProgram','Movie Manual','Manual'))
         .mockResolvedValueOnce({value:'Manual'} as any)
     await expect(f.camera.prepareRecordingMode()).rejects.toBeInstanceOf(CameraConfirmationError)
+    expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Manual'])
+})
+
+it('Sony restoration polls temporary display-only mode after idle without repeating writes', async () => {
+    vi.useFakeTimers()
+    const f = fixture(0x054c)
+    let mode = 'Manual', writable = true
+    vi.spyOn(f.camera, 'getCapabilities').mockImplementation(async () => ({
+        controls:{exposureProgram:{value:mode,enabled:writable,writable,allowedValues:['Manual','Movie Manual']}},
+    }) as any)
+    const write = vi.spyOn(f.camera, 'setControl').mockImplementation(async (_id, value) => {
+        mode = value as string
+        return {value:mode} as any
+    })
+    const prepared = await f.camera.prepareRecordingMode()
+    writable = false
+    const restored = prepared.restore()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual'])
+    writable = true
+    await vi.advanceTimersByTimeAsync(100)
+    await restored
     expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Manual'])
 })
 

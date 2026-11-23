@@ -1,6 +1,7 @@
 import type { Camera } from '@camera/index'
 import { isSonyMovieExposureProgram } from '@vendors/sony/exposure-program'
 import { readSonyMovieCard } from '@vendors/sony/card-storage'
+import { confirmCameraValue } from '@camera/confirmation'
 
 /** Explicit recording preparation selects only the camera-advertised corresponding movie mode. */
 export async function openSonyRecordingMode(camera: Camera) {
@@ -16,6 +17,15 @@ export async function openSonyRecordingMode(camera: Camera) {
         if (!changed) return
         if (await camera.getRecordingState() !== 'idle')
             throw new Error('Sony recording is not confirmed stopped; preserve its movie mode')
+        // The a6700 reports idle before file finalization makes the mode writable.
+        // Poll admission only; never retry a mode write after an uncertain response.
+        await confirmCameraValue('exposureProgram', 'writable after recording', async () => {
+            if (await camera.getRecordingState() !== 'idle')
+                throw new Error('Sony recording is not confirmed stopped; preserve its movie mode')
+            const mode = (await camera.getCapabilities()).controls.exposureProgram
+            return mode?.enabled && mode.writable && mode.allowedValues?.includes(original as string)
+                ? 'writable after recording' : null
+        }, 5000)
         await camera.setControl('exposureProgram', original as string)
         changed = false
     }
