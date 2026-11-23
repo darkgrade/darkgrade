@@ -227,8 +227,29 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         expect(fixture.writes).toEqual([])
         fixture.properties.get(0x1d075)!.writable = true
         fixture.state.ignoreWrite = true
-        await expect(fixture.camera.setExposureTime('90°')).rejects.toThrow('did not confirm')
+        vi.useFakeTimers()
+        const pending = fixture.camera.setExposureTime('90°').catch(error => error)
+        await vi.advanceTimersByTimeAsync(2100)
+        expect(await pending).toBeInstanceOf(CameraConfirmationError)
         expect(fixture.writes).toEqual([0x1d075])
+    })
+    it('confirms generic-descriptor writes by polling, with a typed mismatch and no replay', async () => {
+        const fixture = nikonFixture()
+        fixture.properties.get(0x1d074)!.value = 2
+        fixture.state.ignoreWrite = true
+        vi.useFakeTimers()
+        const ignored = fixture.camera.setExposureTime('90°').catch(error => error)
+        await vi.advanceTimersByTimeAsync(2100)
+        const error = await ignored
+        expect(error).toBeInstanceOf(CameraConfirmationError)
+        expect(error).toMatchObject({ operation: 'shutterSpeed', expected: '90°', observed: '180°' })
+        expect(fixture.writes).toEqual([0x1d075])
+        // A camera that applies the write a moment later is confirmed by a later read, not a second write.
+        const delayed = fixture.camera.setControl('shutterSpeed', '90°')
+        setTimeout(() => (fixture.properties.get(0x1d075)!.value = 9000), 150)
+        await vi.advanceTimersByTimeAsync(300)
+        expect(await delayed).toMatchObject({ value: '90°', source: { code: 0x1d075 } })
+        expect(fixture.writes).toEqual([0x1d075, 0x1d075])
     })
     it('retains busy and wrong-descriptor failures instead of falling back or hiding them', async () => {
         const fixture = nikonFixture()
@@ -485,6 +506,49 @@ describe('Canon structured format capabilities', () => {
         expect((await camera.getCapabilities()).controls.movieFormat?.writable).toBe(false)
         await expect(camera.setControl('movieFormat', state.value)).rejects.toThrow('not writable')
         expect(write).toHaveBeenCalledOnce()
+    })
+})
+
+describe('standard PTP ranged exposure confirmation', () => {
+    function fixture(applies = true) {
+        const camera = new Camera({ vendorId: 0, transport: transport() })
+        const driver = camera.getInstance()
+        const property = driver.registry.properties.ExposureTime
+        const codec = property.codec(driver.registry)
+        let value = '1/50'
+        vi.spyOn(driver, 'getStandardPropertyStates').mockImplementation(
+            async () =>
+                [
+                    { code: property.code, name: property.name, value, writable: true, enabled: true,
+                      // Ticks of 1/10000 s, as the descriptor reports them.
+                      minimumValue: 1, maximumValue: 300000, stepSize: 1 },
+                ] as never
+        )
+        const write = vi.spyOn(driver, 'setStandardProperty').mockImplementation(async (_code, requested) => {
+            // The real codec reads the written ticks back in its own spelling.
+            if (applies) value = codec.decode(codec.encode(String(requested))).value
+        })
+        return { camera, write }
+    }
+    it('confirms a ranged write read back in the codec spelling (0.01 s as 1/100)', async () => {
+        const f = fixture()
+        expect(await f.camera.setControl('shutterSpeed', { kind: 'duration', seconds: 0.01 })).toMatchObject({
+            value: '1/100',
+            exposureTime: { kind: 'duration', seconds: 0.01 },
+        })
+        expect(f.write).toHaveBeenCalledWith(0x500d, '0.01')
+        // Compared at the wire resolution: 0.3333 s is 3333 ticks, which the codec spells 1/3.
+        expect(await f.camera.setControl('shutterSpeed', '0.3333')).toMatchObject({ value: '1/3' })
+    })
+    it('still throws a typed mismatch when the camera keeps a different exposure', async () => {
+        vi.useFakeTimers()
+        const f = fixture(false)
+        const pending = f.camera.setControl('shutterSpeed', '1/100').catch(error => error)
+        await vi.advanceTimersByTimeAsync(2100)
+        const error = await pending
+        expect(error).toBeInstanceOf(CameraConfirmationError)
+        expect(error).toMatchObject({ operation: 'shutterSpeed', expected: '0.01', observed: '1/50' })
+        expect(f.write).toHaveBeenCalledOnce()
     })
 })
 

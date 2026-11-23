@@ -29,8 +29,9 @@ constructor(options?: CameraOptions)
 
 Use the [shared control model](/slate/getting_started/controls) for application
 settings. It exposes only observed properties and re-checks current choices before
-writes. Shutter speed and shutter angle share the `exposureTime` id; converting
-units requires the actual frame rate. Native angle mode is preserved.
+writes. Shutter speed and shutter angle share the `shutterSpeed` id (`exposureTime`
+is a search alias); converting units requires the actual frame rate. Native angle
+mode is preserved.
 
 ```typescript
 const { controls } = await camera.getCapabilities()

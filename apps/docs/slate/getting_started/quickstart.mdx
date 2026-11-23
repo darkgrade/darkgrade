@@ -25,8 +25,8 @@ await camera.disconnect()
 The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. The example assumes the body advertises those controls and remote capture; camera model, USB mode, and shooting mode can change the available surface.
 
 For application UIs, use the [shared control model](/slate/getting_started/controls):
-`getCapabilities()` exposes current choices across vendors, and `exposureTime`
-covers shutter speed and shutter angle without implicit mode changes. Multiple USB
+`getCapabilities()` exposes current choices across vendors, and `shutterSpeed`
+covers exposure duration and shutter angle without implicit mode changes. Multiple USB
 bodies require an explicit device filter.
 
 For a generic or Olympus body, inspect the live standard-property inventory first:

@@ -1,11 +1,18 @@
 import type { Camera, CameraCapabilities } from '@darkgrade/slate'
-import { PTPDisconnectedError, CameraConfirmationError } from '@darkgrade/slate'
+import { PTPDisconnectedError, CameraConfirmationError, VendorIDs } from '@darkgrade/slate'
 import { CameraService } from '@main/camera-service'
 import { CAMERA_CONTROL_NAMES } from '@shared/ipc'
+import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 
+const hotplug = vi.hoisted(() => ({ usb: null as EventEmitter | null }))
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp', getPathForFile: () => '/tmp' } }))
-vi.mock('@main/usb-experiments', () => ({}))
+vi.mock('@main/usb-experiments', () => ({ stopSwiftLiveView: () => {} }))
+vi.mock('usb', async () => {
+    const { EventEmitter } = await import('node:events')
+    hotplug.usb ??= new EventEmitter()
+    return { usb: hotplug.usb }
+})
 
 function fixture() {
     const capabilities: CameraCapabilities = {
@@ -168,5 +175,50 @@ describe('confirmed controls and recording', () => {
         expect(camera.stopRecording).toHaveBeenCalledOnce()
         expect(restore).toHaveBeenCalledOnce()
         expect(service.getState()).toMatchObject({ recording: false, recordingState: 'idle' })
+    })
+    function unpluggedWhileRecording() {
+        const fixture = recordingFixture()
+        const lost = new PTPDisconnectedError('Camera unplugged')
+        fixture.camera.stopRecording.mockRejectedValue(lost)
+        fixture.camera.getRecordingState.mockRejectedValue(lost)
+        Object.assign(fixture.camera, { disconnect: vi.fn(async () => { throw lost }) })
+        Object.assign(fixture.service, { detectedVendorId: VendorIDs.SONY })
+        const connect = vi.spyOn(fixture.service, 'connect').mockImplementation(async () => fixture.service.getState())
+        return { ...fixture, lost, connect }
+    }
+    const cleared = { connected: false, phase: 'idle', recording: false, recordingState: 'idle', vendor: null }
+    it('clears the session when the camera is unplugged mid-recording so a replug reconnects', async () => {
+        const { service, camera, connect } = unpluggedWhileRecording()
+        await service.startRecording()
+        service.startAutoDetect()
+        await vi.waitFor(() => expect(hotplug.usb?.listenerCount('detach')).toBe(1))
+        const sony = { deviceDescriptor: { idVendor: VendorIDs.SONY } }
+        hotplug.usb!.emit('detach', sony)
+        await vi.waitFor(() => expect(service.getState()).toMatchObject(cleared))
+        expect(camera.stopRecording).toHaveBeenCalledOnce()
+        // Tearing down an unplugged session must not start a reconnect of its own.
+        expect(connect).not.toHaveBeenCalled()
+        vi.useFakeTimers()
+        try {
+            hotplug.usb!.emit('attach', sony)
+            await vi.advanceTimersByTimeAsync(2000)
+            expect(connect).toHaveBeenCalledOnce()
+        } finally {
+            vi.useRealTimers()
+            hotplug.usb!.removeAllListeners()
+        }
+    })
+    it('tears down and reconnects when recovery finds the recording transport gone', async () => {
+        const { service, lost, connect } = unpluggedWhileRecording()
+        await service.startRecording()
+        vi.useFakeTimers()
+        try {
+            ;(service as unknown as { scheduleRecovery(error: unknown): void }).scheduleRecovery(lost)
+            await vi.advanceTimersByTimeAsync(2000)
+            expect(connect).toHaveBeenCalledOnce()
+            expect(service.getState()).toMatchObject(cleared)
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })

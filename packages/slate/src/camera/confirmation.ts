@@ -20,18 +20,22 @@ export class CameraConfirmationError extends Error {
     }
 }
 
-/** Poll observations only. A timed-out or ignored write is never repeated by confirmation. */
+/**
+ * Poll observations only. A timed-out or ignored write is never repeated by confirmation.
+ * `matches` compares a value spelled differently on readback (e.g. 0.01 s read back as 1/100).
+ */
 export async function confirmCameraValue(
     operation: string,
     expected: string,
     observe: () => Promise<string | null>,
-    timeoutMilliseconds = 2000
+    timeoutMilliseconds = 2000,
+    matches: (observed: string, expected: string) => boolean = (observed, expected) => observed === expected
 ): Promise<void> {
     const deadline = Date.now() + timeoutMilliseconds
     let observed: string | null
     do {
         observed = await observe()
-        if (observed === expected) return
+        if (observed !== null && matches(observed, expected)) return
         if (Date.now() >= deadline) break
         await new Promise(resolve => setTimeout(resolve, Math.min(100, deadline - Date.now())))
     } while (true)

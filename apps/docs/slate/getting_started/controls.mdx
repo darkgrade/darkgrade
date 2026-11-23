@@ -17,16 +17,19 @@ try {
     for (const control of Object.values(controls)) {
         console.log(control.id, control.value, control.allowedValues, control.writable)
     }
-    console.log(resolveCameraControl('shutter speed')) // exposureTime
-    console.log(resolveCameraControl('shutter angle')) // exposureTime
+    console.log(resolveCameraControl('shutter speed')) // shutterSpeed
+    console.log(resolveCameraControl('shutter angle')) // shutterSpeed
+    console.log(resolveCameraControl('exposure time')) // shutterSpeed
 } finally {
     await camera.disconnect()
 }
 ```
 
-## Exposure time
+## Shutter speed
 
-`exposureTime` is one control with duration, angle, Bulb, Time or flash-sync state.
+`shutterSpeed` is one control with duration, angle, Bulb, Time or flash-sync state.
+`exposureTime`, `exposure time`, `shutter angle` and `shutterAngle` are search aliases
+that resolve to it; capabilities and writes use the `shutterSpeed` id.
 `getExposureTime()` returns a discriminated union. Native angle mode stays in angle
 mode; a write never changes the body's shutter-control mode implicitly.
 
