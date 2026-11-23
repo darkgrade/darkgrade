@@ -1,6 +1,6 @@
 // EXPERIMENT(usb-transport): the camera's USB connection in Swift, on Apple's IOUSBHost, in place of node-usb.
 // This file is the whole transport: open, close, one container out, one container in, the still-image class reset
-// and the interrupt endpoint's events. Studio hands it to Link as its transport (src/main/usb-experiments.ts); Link's
+// and the interrupt endpoint's events. Studio hands it to Slate as its transport (src/main/usb-experiments.ts); Slate's
 // commands pass through unchanged. Removing the Developer Mode "USB Transport" choice removes this folder.
 import Foundation
 import IOKit
@@ -35,14 +35,14 @@ func sleep(until time: Double) {
 final class SwiftUsbTransport {
     static let shared = SwiftUsbTransport()
 
-    /** Link's transfers run here in order; each takes `pipes` for its own duration. */
+    /** Slate's transfers run here in order; each takes `pipes` for its own duration. */
     private let queue = DispatchQueue(label: "studio.swift-usb", qos: .userInteractive)
     /**
      * Held for every transfer on the bulk pipes, so anything else that uses them (the Swift live-view loop, for a
-     * whole transaction of its own) never interleaves with Link on the wire. Signalled when Link's transaction ends.
+     * whole transaction of its own) never interleaves with Slate on the wire. Signalled when Slate's transaction ends.
      */
     let pipes = NSCondition()
-    /** Link has sent a command and not yet read its response (guarded by `pipes`). */
+    /** Slate has sent a command and not yet read its response (guarded by `pipes`). */
     var transactionOpenSince: Double?
     /** Run before the pipes close, so whatever else uses them can finish the transaction it is in. */
     var beforeClose: (() -> Void)?
@@ -114,7 +114,7 @@ final class SwiftUsbTransport {
         pipes.unlock()
     }
 
-    // MARK: Link's transactions
+    // MARK: Slate's transactions
 
     func send(_ data: Data, context: UnsafeMutableRawPointer?, done: DoneCallback) {
         queue.async {

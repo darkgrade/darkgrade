@@ -1,9 +1,9 @@
-import { LINK, STUDIO } from '@/app/components/products'
+import { SLATE, STUDIO } from '@/app/components/products'
 import { LINKS, NPM_INSTALL } from '@/app/components/site-links'
 
 /* The words of the home page. */
 
-export { LINK, LINKS, NPM_INSTALL, STUDIO }
+export { SLATE, LINKS, NPM_INSTALL, STUDIO }
 
 export const HERO = {
     eyebrow: 'Local-first AI for creative professionals',
@@ -31,7 +31,7 @@ export const PRINCIPLES = [
     {
         index: '/03',
         title: 'Open & fair',
-        body: 'Link is open source and free to use. Studio will be a paid app, and we’ll publish the price before we charge for it.',
+        body: 'Slate is open source and free to use. Studio will be a paid app, and we’ll publish the price before we charge for it.',
         /** A line of its own under the body, all of it a link. */
         link: { label: 'Our code is on GitHub. Read it here.', href: LINKS.github },
     },

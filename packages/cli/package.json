@@ -20,7 +20,7 @@
         "usb": "^2.11.0"
     },
     "devDependencies": {
-        "@darkgrade/link": "workspace:*",
+        "@darkgrade/slate": "workspace:*",
         "@types/node": "20.19.43"
     },
     "engines": { "node": ">=22.18" }

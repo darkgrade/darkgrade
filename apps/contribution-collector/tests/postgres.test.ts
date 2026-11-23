@@ -3,7 +3,7 @@ import { operatorApi } from '#collector/operator'
 import { postgresDatabase } from '#collector/postgres'
 import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
 import { createTelemetry } from '#collector/telemetry'
-import { NOTICE_VERSION } from '@darkgrade/link/contribute/batch'
+import { NOTICE_VERSION } from '@darkgrade/slate/contribute/batch'
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { test } from 'node:test'
@@ -455,7 +455,7 @@ test(
     { skip: !process.env.DATABASE_URL },
     async () => {
         const { exportMatrixPage } = await import('#collector/matrix-pages')
-        const { cameraHardwareFingerprint } = await import('@darkgrade/link/contribute/schema')
+        const { cameraHardwareFingerprint } = await import('@darkgrade/slate/contribute/schema')
         const database = await postgresDatabase(process.env.DATABASE_URL!)
         const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
         const users = await Promise.all([enroll(handle), enroll(handle)])

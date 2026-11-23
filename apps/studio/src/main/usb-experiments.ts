@@ -14,16 +14,16 @@
 //   apps/studio/package.json                   the usb-rs dependency (node-usb-rs: the usb package, version 3)
 //   apps/studio/electron-builder.yml           usb-rs and its prebuilds kept outside the asar
 //
-// Link gained one general option for this (CameraOptions.usb / USBTransportOptions.usb: a WebUSB implementation to
+// Slate gained one general option for this (CameraOptions.usb / USBTransportOptions.usb: a WebUSB implementation to
 // use in place of node-usb's). It is not specific to this experiment and can stay.
 //
-//   node-usb         Link's own transport on the usb package, version 2 (libusb). Nothing here runs.
-//   node-usb-rs      Link's own transport on the usb package, version 3 (Rust, nusb), through CameraOptions.usb.
-//   swift-transport  Link on SwiftUsbTransport (IOUSBHost) as its transport; Link's commands and live view unchanged.
-//   swift-live-view  The same transport, and live view fetched by a Swift thread between Link's transactions. With the
+//   node-usb         Slate's own transport on the usb package, version 2 (libusb). Nothing here runs.
+//   node-usb-rs      Slate's own transport on the usb package, version 3 (Rust, nusb), through CameraOptions.usb.
+//   swift-transport  Slate on SwiftUsbTransport (IOUSBHost) as its transport; Slate's commands and live view unchanged.
+//   swift-live-view  The same transport, and live view fetched by a Swift thread between Slate's transactions. With the
 //                    Metal decoder on, frames are decoded there and reach JavaScript as surfaces. Sony bodies only;
 //                    other bodies get the transport alone.
-import { Camera, parseSonyFocalFrameInfo, TransportType, VendorIDs, type SonyFocalFrame } from '@darkgrade/link'
+import { Camera, parseSonyFocalFrameInfo, TransportType, VendorIDs, type SonyFocalFrame } from '@darkgrade/slate'
 import { preferences } from '@main/preferences'
 import { IPC_EVENTS, type UsbTransportChoice } from '@shared/ipc'
 import { app } from 'electron'
@@ -82,7 +82,7 @@ function loadSwiftAddon(): SwiftUsbAddon | null {
     return swiftAddon
 }
 
-/** Link's transport interface on the Swift add-on: containers in and out, the class reset and the camera's events. */
+/** Slate's transport interface on the Swift add-on: containers in and out, the class reset and the camera's events. */
 class SwiftUsbTransport implements Transport {
     private connected = false
     private handler: ((event: CameraEvent) => void) | null = null
@@ -176,7 +176,7 @@ export function experimentalCameraOptions(
         try {
             const { WebUSB } = require('usb-rs') as { WebUSB: new (options: { allowAllDevices: boolean }) => USB }
             current.choice = choice
-            log('USB transport (experimental): Link on node-usb-rs')
+            log('USB transport (experimental): Slate on node-usb-rs')
             return { usb: new WebUSB({ allowAllDevices: true }) }
         } catch (error) {
             log(
@@ -195,7 +195,7 @@ export function experimentalCameraOptions(
     log(
         choice === 'swift-live-view' && current.sony
             ? 'USB transport (experimental): Swift transport and Swift live-view loop'
-            : 'USB transport (experimental): Link on the Swift transport'
+            : 'USB transport (experimental): Slate on the Swift transport'
     )
     return { transport: current.swift }
 }
@@ -223,7 +223,7 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
     const transport = current.choice === 'swift-live-view' && current.sony ? current.swift : null
     if (!transport) return false
     const { addon } = transport
-    // Link readies the body for live view with one frame of its own.
+    // Slate readies the body for live view with one frame of its own.
     await host.enqueue(() => host.camera.captureLiveView({ includeInfo: false }))
     let last = addon.liveStatistics()
     let lastAtMs = performance.now()

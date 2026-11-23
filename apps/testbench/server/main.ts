@@ -1,4 +1,4 @@
-import { Camera } from '@darkgrade/link'
+import { Camera } from '@darkgrade/slate'
 import { LocalBench } from './host'
 import { serveBench } from './http'
 import { resolve } from 'node:path'

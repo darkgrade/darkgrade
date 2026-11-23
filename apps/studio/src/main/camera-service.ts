@@ -18,8 +18,8 @@ import {
     type CameraCapabilities,
     type CameraControlState,
     type CameraRecordingState,
-} from '@darkgrade/link'
-import { resolveCameraControl } from '@darkgrade/link/controls'
+} from '@darkgrade/slate'
+import { resolveCameraControl } from '@darkgrade/slate/controls'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 // EXPERIMENT(usb-transport): Developer Mode's USB transport choice.
 import {
@@ -61,7 +61,7 @@ type DeviceDescriptor = NonNullable<ConstructorParameters<typeof Camera>[0]>['de
 
 const PREVIEWABLE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp']
 const PREVIEW_MAX_BYTES = 40 * 1024 * 1024
-/** Link waits for each new frame itself (Sony makes up to 30 a second), so only yield between frames. */
+/** Slate waits for each new frame itself (Sony makes up to 30 a second), so only yield between frames. */
 const LIVE_VIEW_FRAME_DELAY_MS = 0
 const LIVE_VIEW_STATISTICS_INTERVAL_MS = 10_000
 const LIVE_VIEW_ERROR_DELAY_MS = 500
@@ -74,8 +74,8 @@ const FOCUS_DURATION_MS = 800
 const BATTERY_POLL_INTERVAL_MS = 60_000
 const RECOVERY_RECONNECT_DELAY_MS = 1200
 /**
- * Link resets the USB pipe itself after a timeout or framing fault. A shorter base timeout than
- * Link's 30s default keeps the UI responsive; large transfers still get throughput-scaled time.
+ * Slate resets the USB pipe itself after a timeout or framing fault. A shorter base timeout than
+ * Slate's 30s default keeps the UI responsive; large transfers still get throughput-scaled time.
  */
 const TRANSACTION_POLICY: Partial<TransactionPolicy> = {
     timeoutMilliseconds: 12_000,
@@ -181,7 +181,7 @@ interface DiscoveredCamera {
 
 /**
  * Studio discovers first to present a body identity and select an explicit device.
- * Link also selects the actual USB vendor itself when Camera.connect() is used alone.
+ * Slate also selects the actual USB vendor itself when Camera.connect() is used alone.
  */
 async function discoverCamera(): Promise<DiscoveredCamera | null> {
     const { webusb } = await import('usb')
@@ -338,7 +338,7 @@ export class CameraService {
         return this.withLiveViewPaused(() =>
             this.enqueue(async () => {
                 if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
-                const diagnostics = await import('@darkgrade/link/contribute/settings')
+                const diagnostics = await import('@darkgrade/slate/contribute/settings')
                 const result = await runCameraBenchmark(this.camera, {
                     flushEvidence: async () => (await diagnostics.nodeDiagnostics()).flush(),
                 })
@@ -363,7 +363,7 @@ export class CameraService {
     }
 
     /**
-     * Link already reset the USB pipe once if it could. When it reports the session is gone or
+     * Slate already reset the USB pipe once if it could. When it reports the session is gone or
      * latched, tear down and reconnect once — the user never has to replug for a stuck transaction.
      */
     private scheduleRecovery(cause: unknown): void {
@@ -463,7 +463,7 @@ export class CameraService {
             await camera.connect()
         }
 
-        // Link selects the actual opened USB body's driver, including when discovery missed it.
+        // Slate selects the actual opened USB body's driver, including when discovery missed it.
         this.detectedVendorId ??= camera.getInstance().vendorId ?? null
 
         this.camera = camera
@@ -671,7 +671,7 @@ export class CameraService {
         return this.enqueue(() => this.refreshSettingsRaw())
     }
 
-    /** All vendors share Link's control vocabulary; only observed controls reach the sidebar. */
+    /** All vendors share Slate's control vocabulary; only observed controls reach the sidebar. */
     private async readControls(camera: Camera, capabilities: CameraCapabilities): Promise<CameraControls> {
         const pick = (name: CameraControlName): CameraControl | null => {
             const id = resolveCameraControl(name)
@@ -825,7 +825,7 @@ export class CameraService {
 
     // ------------------------------------------------------------------ focus
 
-    /** One autofocus cycle via Link (Sony S1 half-press, Canon/Nikon AF drive). */
+    /** One autofocus cycle via Slate (Sony S1 half-press, Canon/Nikon AF drive). */
     /** The camera's own focus area from before the first click-to-focus, restored by focus(). */
     private focusAreaBeforeTouch: string | null = null
     /**

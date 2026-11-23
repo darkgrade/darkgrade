@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Camera, VendorIDs, USBTransport } from '@darkgrade/link'
+    import { Camera, VendorIDs, USBTransport } from '@darkgrade/slate'
     import { BrowserLogger } from '../lib/browser-logger'
     import Button from '../lib/Button.svelte'
     import CameraControls from '../lib/CameraControls.svelte'

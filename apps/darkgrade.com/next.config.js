@@ -9,12 +9,14 @@ const EXPERIMENTS = [
 const nextConfig = {
     // The experiments' canonical URLs end in a slash; Next's default slash-stripping redirect would bounce them.
     skipTrailingSlashRedirect: true,
-    // Link's docs moved under /docs/link/ when Studio's docs arrived; old addresses are still indexed.
+    // Keep indexed documentation addresses working after the Slate rename.
     async redirects() {
         return [
+            { source: '/docs/link', destination: '/docs/slate', permanent: true },
+            { source: '/docs/link/:page*', destination: '/docs/slate/:page*', permanent: true },
             ...['getting_started', 'ptp-reference'].map(section => ({
                 source: `/docs/${section}/:page*`,
-                destination: `/docs/link/${section}/:page*`,
+                destination: `/docs/slate/${section}/:page*`,
                 permanent: true,
             })),
             // The roadmap page is gone; its address is still linked from outside.

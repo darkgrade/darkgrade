@@ -1,5 +1,5 @@
 // EXPERIMENT(usb-transport): Developer Mode's "Swift live-view loop". Live view fetched on a thread of its own,
-// between Link's transactions on SwiftUsbTransport's pipes: one PTP transaction a frame, asked for when the camera's
+// between Slate's transactions on SwiftUsbTransport's pipes: one PTP transaction a frame, asked for when the camera's
 // frame is due, read straight into a kept buffer and decoded on the GPU from that buffer (MetalJpegDecoder). The
 // decoded surface, or the JPEG when GPU decoding is off or fails, goes to JavaScript once a frame. Sony bodies only.
 // Removing the "USB Transport" choice removes this file with the rest of native/swift-usb.
@@ -22,7 +22,7 @@ private var timebaseInfo: mach_timebase_info_data_t = {
     return info
 }()
 
-/** A reply Link never collects (it timed out) stops holding live view back after this long. */
+/** A reply Slate never collects (it timed out) stops holding live view back after this long. */
 private let transactionHoldSeconds = 5.0
 private let getObject: UInt16 = 0x1009
 private let responseOK: UInt16 = 0x2001
@@ -94,7 +94,7 @@ private struct FrameClock {
     mutating func reset() { self = FrameClock() }
 
     /**
-     * The tick interval from the polled requests. Some are more than one tick apart (Link's own commands took the
+     * The tick interval from the polled requests. Some are more than one tick apart (Slate's own commands took the
      * pipe in between), so the ticks between each pair are counted against the shortest spacings before averaging;
      * taking every spacing for one tick put the interval at 38.8 ms for a 33.4 ms camera, which lost four frames a second.
      */

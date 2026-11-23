@@ -1,5 +1,5 @@
-import type { Camera, CameraCapabilities } from '@darkgrade/link'
-import { PTPDisconnectedError, CameraConfirmationError } from '@darkgrade/link'
+import type { Camera, CameraCapabilities } from '@darkgrade/slate'
+import { PTPDisconnectedError, CameraConfirmationError } from '@darkgrade/slate'
 import { CameraService } from '@main/camera-service'
 import { CAMERA_CONTROL_NAMES } from '@shared/ipc'
 import { describe, expect, it, vi } from 'vitest'
@@ -89,7 +89,7 @@ describe('camera settings refresh failures', () => {
 })
 
 describe('confirmed controls and recording', () => {
-    it('shows the observed control returned by Link rather than the requested alias', async () => {
+    it('shows the observed control returned by Slate rather than the requested alias', async () => {
         const { service, capabilities } = fixture()
         const set = vi.fn(async () => ({ ...capabilities.controls.iso!, value: '100' }))
         Object.assign((service as unknown as { camera: object }).camera, { setControl: set })

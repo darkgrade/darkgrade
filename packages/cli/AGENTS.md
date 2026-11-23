@@ -1,10 +1,10 @@
 # Thin executable
 
-All command behavior belongs in `packages/link/src/cli`, exported by `@darkgrade/link/cli`.
+All command behavior belongs in `packages/slate/src/cli`, exported by `@darkgrade/slate/cli`.
 This package contains only the `darkgrade` entry point, npm packaging, documentation and
 executable smoke checks. Do not add command parsing, camera workflows or preference
-logic here. Keep command behavior tests with Link.
+logic here. Keep command behavior tests with Slate.
 
-Build Link before this wrapper. The npm executable bundles the Link runner, so installing
-`darkgrade` does not require an unpublished `@darkgrade/link` npm dependency. Preserve
+Build Slate before this wrapper. The npm executable bundles the Slate runner, so installing
+`darkgrade` does not require an unpublished `@darkgrade/slate` npm dependency. Preserve
 the existing command syntax, exit codes, lazy camera loading and native dependencies.

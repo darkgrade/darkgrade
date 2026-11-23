@@ -1,5 +1,5 @@
-import type { CameraCapabilities, CameraControlInputs, CameraControlId, CameraControlState } from '@darkgrade/link/controls'
-import { CameraRuntime } from '@darkgrade/link/runtime'
+import type { CameraCapabilities, CameraControlInputs, CameraControlId, CameraControlState } from '@darkgrade/slate/controls'
+import { CameraRuntime } from '@darkgrade/slate/runtime'
 import { settingNames, type BenchAction, type BenchCamera, type BenchControl, type BenchState, type SettingName } from '../src/contracts'
 
 export type USBIdentity = { vendorId: number; productId: number; serialNumber?: string; model?: string }
@@ -26,7 +26,7 @@ const controlIds = { iso: 'iso', aperture: 'aperture', shutterSpeed: 'shutterSpe
 const message = (error: unknown) => error instanceof Error ? error.message : 'Camera operation failed'
 const identityKey = (identity: USBIdentity) => JSON.stringify([identity.vendorId, identity.productId, identity.serialNumber ?? ''])
 
-/** Local USB ownership only. All operations share Link's queue; no controller or power hardware is required. */
+/** Local USB ownership only. All operations share Slate's queue; no controller or power hardware is required. */
 export class LocalBench {
     private entries = new Map<string, Entry>()
     private identityIds = new Map<string, string>()
@@ -152,11 +152,11 @@ export class LocalBench {
                         entry.recordingMode = undefined
                         view.recording = 'idle'
                     } else if (action === 'recover') {
-                        // Link recovery verifies identity, then leaves the transport closed.
+                        // Slate recovery verifies identity, then leaves the transport closed.
                         view.connected = false
                         try {
                             const recovery = await camera.recover({ allowPortReset: false })
-                            if (!recovery.recovered) throw Error('Link could not recover the camera session')
+                            if (!recovery.recovered) throw Error('Slate could not recover the camera session')
                             await camera.connect()
                             view.connected = true
                             await this.read(entry)

@@ -2,7 +2,7 @@
 
 **Connect to & control your camera with TypeScript**
 
-> **Note:** Link is in alpha and APIs may change without backwards compatibility.
+> **Note:** Slate is in alpha and APIs may change without backwards compatibility.
 
 Connect your own USB cameras with the [basic Test Bench](apps/testbench/README.md):
 `bun install --frozen-lockfile --ignore-scripts`, then `bun run testbench`.
@@ -11,15 +11,15 @@ An optional simulation mode lets you explore the console without hardware. Devel
 Node.js 22.18 or newer and Bun 1.4.3.
 The [security review](SECURITY_REVIEW.md) records the migration checklist, audit scope and CI checks.
 
-Link implements core [ISO-15740:2013](https://www.iso.org/standard/63602.html) PTP operations and partial vendor extensions in TypeScript. It is an independent implementation; [`libgphoto2`](https://github.com/gphoto/libgphoto2) is a protocol reference, not a consumer of Link. Control availability depends on the attached body, firmware, transport and current mode.
+Slate implements core [ISO-15740:2013](https://www.iso.org/standard/63602.html) PTP operations and partial vendor extensions in TypeScript. It is an independent implementation; [`libgphoto2`](https://github.com/gphoto/libgphoto2) is a protocol reference, not a consumer of Slate. Control availability depends on the attached body, firmware, transport and current mode.
 
-[![npm version](https://img.shields.io/npm/v/@darkgrade/link)](https://www.npmjs.com/package/@darkgrade/link)
+[![npm version](https://img.shields.io/npm/v/@darkgrade/slate)](https://www.npmjs.com/package/@darkgrade/slate)
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue.svg)](https://www.typescriptlang.org/)
 
 ## ✨ Highlights
 
 - [x] **🚀 USB vendor selection** - Automatically selects the uniquely matched body's driver; multiple cameras require a device filter
-- [x] **📦 Separate exports** - Camera, terminal, runtime, controls and diagnostics entries; installed dependencies are listed in `packages/link/package.json`
+- [x] **📦 Separate exports** - Camera, terminal, runtime, controls and diagnostics entries; installed dependencies are listed in `packages/slate/package.json`
 - [x] **🌐 Explicit host boundaries** - Node.js camera APIs; browser-safe `/controls`, `/runtime/browser` and diagnostics exports
 - [x] **🎯 Typed library API** - Concrete protocol definitions infer parameters and decoded values; packed declarations are checked under strict NodeNext
 - [x] **🎛️ Shared controls** - One current capability model across Sony, Nikon, Canon and standard PTP controls
@@ -61,13 +61,13 @@ Transactions are bounded by timeouts, replies are checked against PTP container 
 ### Installation
 
 ```bash
-npm install @darkgrade/link
+npm install @darkgrade/slate
 ```
 
 ### Basic Usage
 
 ```typescript
-import { Camera } from '@darkgrade/link'
+import { Camera } from '@darkgrade/slate'
 
 const camera = new Camera()
 await camera.connect()
@@ -109,8 +109,8 @@ Capability observations report active properties, allowed values and current wri
 guards. They do not certify a model or prove that an advertised operation is implemented.
 Re-read after mode changes; setters re-check before writing. Concrete protocol types
 cannot encode the attached body's changing value list.
-See the [control contract](packages/link/docs/camera-controls.md) and
-[release audit](packages/link/docs/pre-release-audit.md).
+See the [control contract](packages/slate/docs/camera-controls.md) and
+[release audit](packages/slate/docs/pre-release-audit.md).
 
 ### Sony α USB controls
 
@@ -161,7 +161,7 @@ The attached Olympus E-PL5 (`07b4:012f`, firmware 1.00) was physically inventori
 Darkgrade can use the standard PTP/IP command and event channels instead of USB. Bind the socket to a secondary adapter so joining a camera access point cannot move the controller's normal route:
 
 ```typescript
-import { Camera, IPTransport, VendorIDs } from '@darkgrade/link'
+import { Camera, IPTransport, VendorIDs } from '@darkgrade/slate'
 
 const host = '192.168.1.1' // camera address after Wi-Fi pairing
 const localAddress = '192.168.1.2' // address assigned to the isolated adapter
@@ -182,7 +182,7 @@ await camera.disconnect()
 
 The transport pairs separate command and event TCP connections, uses a stable client identity, supports camera-to-host and host-to-camera data phases, responds to PTP/IP ping packets, and handles fragmented or coalesced TCP frames. It is Node.js-only because it uses `node:net`. The camera must first expose its PTP/IP service and may require approval on its body; on the EOS 80D that means **Wi-Fi function → Remote control (EOS Utility) → Easy connection** after physically disconnecting USB.
 
-This standard PTP/IP example is currently validated for the Canon-oriented pairing path, not modern Sony PC Remote. The α6700 documents **Wi-Fi Connect**, **PC Remote Function**, **Wi-Fi Direct Info**, and **Access Authen Info** credentials/fingerprint; Darkgrade has not yet implemented or physically validated that authenticated Sony session. Use USB for the Sony controls above until that boundary is complete. The current negative hardware result and next experiment are recorded in [Sony Wi-Fi WIP](apps/docs/link/getting_started/sony-wifi-wip.mdx).
+This standard PTP/IP example is currently validated for the Canon-oriented pairing path, not modern Sony PC Remote. The α6700 documents **Wi-Fi Connect**, **PC Remote Function**, **Wi-Fi Direct Info**, and **Access Authen Info** credentials/fingerprint; Darkgrade has not yet implemented or physically validated that authenticated Sony session. Use USB for the Sony controls above until that boundary is complete. The current negative hardware result and next experiment are recorded in [Sony Wi-Fi WIP](apps/docs/slate/getting_started/sony-wifi-wip.mdx).
 
 Physical EOS 80D first-pairing validation is still WIP on the reference test bench. On
 2026-08-25, the isolated adapter joined the camera AP and routed the camera host correctly,
@@ -194,7 +194,7 @@ two-channel simulator; they do not constitute a successful physical Wi-Fi sessio
 For a bounded bench command:
 
 ```bash
-bun run --cwd packages/link bench:ptpip -- \
+bun run --cwd packages/slate bench:ptpip -- \
   --host 192.168.1.1 --local-address 192.168.1.2 --action probe
 ```
 
@@ -207,7 +207,7 @@ const network = camera.getCanonNetworkState()
 // { communicationMode, communicationModeChoices, serverRegion, wftStatus }
 ```
 
-`camera.setCanonNetworkCommunicationMode(value)` accepts only a mode advertised by that camera. Passing `true` as its second argument bypasses that guard for controlled reverse-engineering only; it is not a general Wi-Fi switch. On the tested EOS 80D, forcing mode `1` was accepted for the USB session but did not advertise an AP or TCP/15740 endpoint and reset to `0` after reboot. Use `bun run --cwd packages/link bench:canon -- --network-only` to inspect these properties; add `--force-network-mode <uint32>` only while recording the USB exchange and with a recovery path available.
+`camera.setCanonNetworkCommunicationMode(value)` accepts only a mode advertised by that camera. Passing `true` as its second argument bypasses that guard for controlled reverse-engineering only; it is not a general Wi-Fi switch. On the tested EOS 80D, forcing mode `1` was accepted for the USB session but did not advertise an AP or TCP/15740 endpoint and reset to `0` after reboot. Use `bun run --cwd packages/slate bench:canon -- --network-only` to inspect these properties; add `--force-network-mode <uint32>` only while recording the USB exchange and with a recovery path available.
 
 Canon HDMI sensor output can be selected during an open USB session:
 
@@ -266,7 +266,7 @@ await camera.setAperture('f/4.0')
 ### Event Handling
 
 ```typescript
-import { Camera } from '@darkgrade/link'
+import { Camera } from '@darkgrade/slate'
 
 const camera = new Camera()
 await camera.connect()
@@ -354,7 +354,7 @@ build an application control map from their presence:
 Or specify a device descriptor when initializing the `Camera` constructor:
 
 ```typescript
-import { Camera, VendorIDs } from '@darkgrade/link'
+import { Camera, VendorIDs } from '@darkgrade/slate'
 
 // Specify a camera brand for vendor-specific features
 const camera = new Camera({

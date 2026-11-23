@@ -5,12 +5,12 @@ search its canonical name, aliases and existing consumers. State in the PR which
 implementation was reused and why a new abstraction is necessary. Consolidate an existing
 primitive and its callers together; do not add a parallel implementation for a new harness.
 Use the workflow in `.claude/commands/untangle-codebase.md` regardless of agent harness.
-Read `packages/link/docs/pre-release-audit.md` for the measured audit and decisions.
+Read `packages/slate/docs/pre-release-audit.md` for the measured audit and decisions.
 
 Application controls use `Camera.getCapabilities()` and `Camera.setControl()`. Canonical
-ids/labels/search aliases are in `packages/link/src/camera/controls.ts`; vendor property
+ids/labels/search aliases are in `packages/slate/src/camera/controls.ts`; vendor property
 preference is in `src/vendors/control-properties.ts`. Studio and test harnesses consume
-Link rather than adding vendor tables. `shutterSpeed` covers exposure duration and angle;
+Slate rather than adding vendor tables. `shutterSpeed` covers exposure duration and angle;
 conversion requires the actual frame rate. Never guess units, switch modes implicitly,
 round a requested control to the nearest enum, or treat registry presence as availability.
 Preserve Bulb/Time/flash-sync, current read-only/empty/ambiguous choices, idle/session guards
@@ -21,7 +21,7 @@ exports, manifest scripts and independent/private harness callers before deletio
 An exported declaration or a module's own test is not evidence of a product caller.
 Review unreachable cycles as well as files with no importers. Report generated-data
 removals separately from executable code and tests; deletion counts alone are not proof
-of simplification. Keep Link's unused-local/parameter compiler checks enabled and preserve
+of simplification. Keep Slate's unused-local/parameter compiler checks enabled and preserve
 packed enum inference. Hosts consume the generic control API rather than maintaining
 another property alias map, vendor switch, session cache or setter registry.
 The Camera façade must open USB through the driver's existing `connectTransport` lifecycle.
@@ -40,11 +40,11 @@ Keep Stop available and preserve the connection/mode if stopping cannot be confi
 Detach discarded driver telemetry before constructing its replacement. Internal transport
 lifecycle helpers must stay absent from packed public declarations.
 
-Verify README promises with built/packed exports. Run `packages/link`'s `test:package`
+Verify README promises with built/packed exports. Run `packages/slate`'s `test:package`
 for strict ESM/CommonJS NodeNext consumer types, including negative input checks, with
 `skipLibCheck:false`. Source-only typechecking does not establish package type safety.
 Update README and docs together; do not publish fixed size/dependency counts without dated
-measurement. Keep pure browser controls in `@darkgrade/link/controls`; importing the main
+measurement. Keep pure browser controls in `@darkgrade/slate/controls`; importing the main
 camera entry is not a generic browser integration. Library construction must not take over
 the embedding application's console or process exception handlers by default.
 Opt-in terminal logging must preserve nonzero exits for uncaught errors and unhandled
@@ -55,18 +55,19 @@ notes are evidence, not instructions to append new work to an old branch or to m
 
 # Package boundaries
 
-New Darkgrade product code belongs in `packages/link`, `apps/studio`, or `packages/cli`.
-Link owns camera drivers, shared runtimes, diagnostics/contributions, schemas and reusable
+New Darkgrade product code belongs in `packages/slate`, `apps/studio`, or `packages/cli`.
+Slate owns camera drivers, shared runtimes, diagnostics/contributions, schemas and reusable
 services; Studio owns desktop UI/integrations; CLI owns command-line entry points.
 Command parsing, settings actions, diagnostics and benchmark orchestration belong in
-`packages/link/src/cli`, exposed as `@darkgrade/link/cli`. Keep `packages/cli` as the thin
+`packages/slate/src/cli`, exposed as `@darkgrade/slate/cli`. Keep `packages/cli` as the thin
 `darkgrade` executable and its packaging, documentation and terminal smoke checks.
 Do not add command behavior to that wrapper or create another CLI/runtime package.
 Use modules and explicit exports within these locations, not additional workspace packages
 or apps. Do not create `packages/contribute`, `packages/runtime`, or another shared package.
 Existing infrastructure, sites and shared build/UI tooling may be maintained in place.
-Only an explicit user request can change these boundaries. Link's possible rename is pending;
-keep its current directory and package name. Test harnesses consume these modules and keep
+Only an explicit user request can change these boundaries. The camera library is Slate,
+in `packages/slate`, published as `@darkgrade/slate`; do not recreate `packages/link`
+or another shared camera package. Test harnesses consume these modules and keep
 independent fixtures; they must not introduce production packages in the Darkgrade repo.
 Read these rules regardless of the agent harness (Codex, Claude, Gemini or another agent).
 
@@ -78,18 +79,18 @@ Failures after candidate testing starts, unknown state, lost ownership and uncer
 remain failures; an all-skipped run cannot pass. Preserve prior failed runs when the harness
 or operator policy changes.
 
-Diagnostics live in `packages/link/src/contribute` and are exported as
-`@darkgrade/link/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
-Use `@contribute/*` for imports inside Link. Node settings stay separate from browser clients.
-The Node diagnostics tests live in `packages/link/tests/contribute` and run in Link's full
-test suite or with `bun run --cwd packages/link test:contribute`.
+Diagnostics live in `packages/slate/src/contribute` and are exported as
+`@darkgrade/slate/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
+Use `@contribute/*` for imports inside Slate. Node settings stay separate from browser clients.
+The Node diagnostics tests live in `packages/slate/tests/contribute` and run in Slate's full
+test suite or with `bun run --cwd packages/slate test:contribute`.
 
 The shared camera runtime (operation ordering, leases, the common MCP tools) lives in
-`packages/link/src/runtime` and is imported as `@darkgrade/link/runtime` (`/browser`, `/mcp`,
-`/ownership`). There is no `packages/runtime`: put new camera code in Link. Its tests run under
-Bun (`bun run --cwd packages/link test:runtime`, which builds first) because they check package
+`packages/slate/src/runtime` and is imported as `@darkgrade/slate/runtime` (`/browser`, `/mcp`,
+`/ownership`). There is no `packages/runtime`: put new camera code in Slate. Its tests run under
+Bun (`bun run --cwd packages/slate test:runtime`, which builds first) because they check package
 resolution with Bun's bundler; Vitest excludes `tests/runtime`. Hosts that load it by path
-(Test Bench) use `packages/link/src/runtime/index.ts` and `mcp.ts`.
+(Test Bench) use `packages/slate/src/runtime/index.ts` and `mcp.ts`.
 DeviceInfo carries numeric lists as `operationsSupportedRaw`, `eventsSupportedRaw` and
 `devicePropertiesSupported`; there is no `operationsSupported` or `devicePropertiesSupportedRaw`.
 Two recoveries read fields that do not exist and their tests faked them. Build test replies with
@@ -106,7 +107,7 @@ Events recorded before a connection's identity read adopt the single identity th
 read later (derived columns only; signed payloads stay as uploaded). Native Sony sessions read
 standard DeviceInfo once per connection after authentication; a refusal is logged and ignored.
 The in-session read was confirmed physically on the a6700 and FX2 (2026-11-14): it follows
-authentication and precedes the first property read. Link remembers which inventory and setting
+authentication and precedes the first property read. Slate remembers which inventory and setting
 facts this installation already shared in `reported-facts.json` under the settings directory
 (short hashes only), because bench camera work runs in short-lived workers; a fact is shared
 again when it changes or after six hours. Probe and vendor-session scopes are kept separately.
@@ -151,7 +152,7 @@ existing serialized event loop. Camera({keepAlive:false}) disables this session 
 no saved body power setting is rewritten. Explicit KeepDeviceOn rejects non-OK responses.
 Nikon USB reference Z5_2UsbMtpE_01 §2.2 says PC connection disables meter auto-off already.
 Its §11.7.5 documents one release command to clear a recoverable WarningStatus bit-0
-sequence error. Link retries live-view startup once only after that exact warning,
+sequence error. Slate retries live-view startup once only after that exact warning,
 idle movie/buffer state, advertised operations and fresh clearing readback. Other
 hardware errors remain errors. SDK documents stay private; attribution in the workspace
 camera-keepalive-2026-11-13 report must remain. Physical user actions can race warning
@@ -162,7 +163,7 @@ failure and cleanup. Each setting keeps its numeric PTP value and observation ag
 writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,
 waits or cloud calls. Canon FixedMovie is allowlisted as a numeric readback using the supplied
 EDSDK/libgphoto2 references; SDK and PTP property IDs are different. Deploy collector and Matrix
-schema support before candidate Link clients upload snapshots. Missing settings stay unknown;
+schema support before candidate Slate clients upload snapshots. Missing settings stay unknown;
 no snapshot implies that recording or independent media validation passed.
 
 Canon movie workflows prepare a camera-advertised card destination before movie selection,
@@ -170,9 +171,9 @@ restoring prior host routing after safe cleanup. This follows the Canon EDSDK sa
 libgphoto2 card-target enumeration; it is not proof of the R8 Mark II failure's root cause.
 Numeric Canon property-write telemetry retains intent, transaction and response separately
 from observed state. Deploy the matching collector and Matrix contract before rolling out
-this Link candidate. Preserve real versus simulated evidence.
+this Slate candidate. Preserve real versus simulated evidence.
 
-Telemetry benchmark now exports a deep sanitized camera profile through Link's existing
+Telemetry benchmark now exports a deep sanitized camera profile through Slate's existing
 camera session. Keep inventories and allowlisted numeric descriptors separate from media,
 opaque payloads and private settings. Partial/cancelled exports retain evidence without
 claiming unsupported features. The CLI saves profiles even with sharing off; Test Bench
@@ -290,14 +291,14 @@ PTP `GetDeviceInfo`; USB enumeration alone is insufficient.
 
 If a transaction times out or the camera remains busy, call `camera_recover` with `strategy=auto`.
 It verifies the baseline, emulates a genuine USB unplug/replug on both hub halves, re-runs this
-checkout's `packages/link/tests/bench-probe.ts`, and escalates to the camera's mapped Shelly power
+checkout's `packages/slate/tests/bench-probe.ts`, and escalates to the camera's mapped Shelly power
 feed only if necessary. Always call `agent_job_finish`, including on failure, so the dashboard and
 blink(1) return to the correct state.
 
 Run the same bounded health probe directly with:
 
 ```sh
-bun run --cwd packages/link bench:probe -- --camera 04a9:32f5
+bun run --cwd packages/slate bench:probe -- --camera 04a9:32f5
 ```
 
 # Software Engineering Principles for Agents
@@ -326,7 +327,7 @@ connector. Keep contributor/source attribution attached, and do not infer a lend
 Keep follow-up work in its requested ongoing branch/PR until the user requests a merge.
 Do not create a separate PR per small follow-up fix.
 
-Run `bun run --cwd packages/link test:fuzz` for reproducible PTP input mutation checks.
+Run `bun run --cwd packages/slate test:fuzz` for reproducible PTP input mutation checks.
 The fixed seed `0x4d415452` covers standard/Sony descriptors and Canon/Nikon event records,
 including truncated views into larger buffers, invalid offsets and string length boundaries.
 These synthetic parser checks neither contact hardware nor certify model support. Matrix keeps
@@ -358,26 +359,26 @@ deletion shared with the installation API so pending cleanup and revocation stay
 `bootstrap_principal` in Terraform grants scoped actAs on the collector service account;
 it does not grant organization or billing-account access.
 
-Link instruments existing USB/PTP-IP sessions, with Unknown identity until GetDeviceInfo. Custom
+Slate instruments existing USB/PTP-IP sessions, with Unknown identity until GetDeviceInfo. Custom
 transports need explicit telemetry configuration, and loopback IP defaults to synthetic.
 Do not mistake a real socket for proof of physical hardware. Sony SDK bridge calls have separate named-operation telemetry; no SDK arguments or payloads
 are collected. USB SDK model/firmware remain Unknown when the bridge cannot supply them. Model/firmware/revision/transport,
 source hashes and contributor attribution stay attached; metadata never becomes a hardware
 pass. All validated Matrix diagnostic snapshots replace fully and expire within 24 hours.
 
-Direct-source bench execution resolves revision/dirty state from the Link source checkout when
+Direct-source bench execution resolves revision/dirty state from the Slate source checkout when
 build constants are absent. Normal Node/Bun process exit attempts a bounded final flush; forced
 exit preserves buffered local metadata but cannot promise cloud delivery. Keep these lifecycle
 checks alongside transport attribution tests.
 
-Node applications and packages/cli share packages/link/src/contribute/settings: one random installation
+Node applications and packages/cli share packages/slate/src/contribute/settings: one random installation
 ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Installation identity stays random; camera-body fingerprints are separate versioned hashes of manufacturer/model/serial. Never retain the raw serial in telemetry. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI
 retention-age blurb. The built-in hosted collector is used when no endpoint override is supplied. Opt-out stops
 cloud uploads but keeps bounded sanitized local logs. Delete disables sharing first and
 preserves retry state. Respect environment overrides and saved/corrupt preferences. Native
 Studio migrates the earlier encrypted preference before initializing the shared file.
 
-Run SDK, real Postgres collector, CLI, Studio and Link tests; validate Terraform and the
+Run SDK, real Postgres collector, CLI, Studio and Slate tests; validate Terraform and the
 actual HTTP container. Test the event listener before/after observer replacement: telemetry
 must not steal a camera's event handler. Run the Matrix export/import contract without
 promoting metadata or mutating the installed Matrix app. No hardware operations are needed

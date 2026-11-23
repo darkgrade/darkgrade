@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Camera } from '@darkgrade/link'
+    import type { Camera } from '@darkgrade/slate'
     import { store } from './store.svelte'
     import { cameraQueue } from './queue'
 

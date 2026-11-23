@@ -85,7 +85,7 @@ export interface CutPage {
      */
     placeCallout(callout: Callout, x: number, y: number, strength: number, cameraTopAbove: number): void
     setReading(callout: Callout, text: string): void
-    /** A request someone has just typed, and the call Link makes for it, to print side by side. */
+    /** A request someone has just typed, and the call Slate makes for it, to print side by side. */
     logCall(request: string, call: string): void
     /** The camera has done what the last request asked. */
     answerCall(): void
@@ -98,7 +98,7 @@ export interface CutPage {
     /**
      * Where the four corners of the laptop's screen are on the canvas, in CSS pixels from its top
      * left (top left, top right, bottom right, bottom left), how wide the screen is for its
-     * height, and how much shows of each thing that runs on it: Link's requests, and the first cut.
+     * height, and how much shows of each thing that runs on it: Slate's requests, and the first cut.
      */
     placeScreen(corners: number[], widthOverHeight: number, showing: { link: number; cut: number }): void
     /** The same for the monitor on the back of the camera, and how much of the errors piling up on it shows. */
@@ -404,7 +404,7 @@ const INTERVIEW: Arrangement = {
 const LIGHTS = ['softbox', 'parabolicLamp', 'spotlight', 'floorLamp']
 /** The laptop stands on the crate, drawn this many times its size so it reads from across the studio, turned to face the viewer. */
 const LAPTOP = { scale: 2.6, turnRadians: 0.73 + Math.PI }
-/** Beside the camera in the Link chapter the laptop is nearer life size, to the viewer's right of it, turned to face the viewer. */
+/** Beside the camera in the Slate chapter the laptop is nearer life size, to the viewer's right of it, turned to face the viewer. */
 const LAPTOP_BY_CAMERA = { position: new Vector3(352, -160, 236), turnRadians: -0.5, scale: 1.08 }
 /** The laptop gathers out of dust where it will stand, then its drawing comes up through the dust: shares of its arrival. */
 const LAPTOP_ARRIVES = {
@@ -559,7 +559,7 @@ function surfaceOf(piece: ModelPiece, matrix: Matrix4, weight: number, tint: num
     return { positions, triangles: piece.solid.getIndex()!.array, weight, tint }
 }
 
-/** What Link does to the camera in the Link chapter: one call every two seconds, round and round. */
+/** What Slate does to the camera in the Slate chapter: one call every two seconds, round and round. */
 const CALL_SECONDS = 2
 const DRIVEN_CALLS = [
     {
@@ -606,7 +606,7 @@ const SCREEN_WHEN_NARROW = { shareOfWindow: 0.9, shiftDown: -0.14 }
 /**
  * What a narrow window changes of each shot. In every one the subject is in the middle across
  * and up by `NARROW_SHIFT_DOWN`; where a shot says more, it is because what it shows would not
- * otherwise fit, or would leave the window half empty: Link's camera and laptop, one above the
+ * otherwise fit, or would leave the window half empty: Slate's camera and laptop, one above the
  * other, and the studio, nearer and lower so its gear fills the room above the words.
  */
 const NARROW_SHOTS: Partial<Record<Chapter, Partial<Shot>>> = {
@@ -1004,7 +1004,7 @@ export async function buildCutScene(page: CutPage): Promise<ViewportScene> {
     let studioSeconds = 0
 
     /**
-     * Makes the next of Link's calls when its turn comes. The request and its call are printed at
+     * Makes the next of Slate's calls when its turn comes. The request and its call are printed at
      * once and a burst of particles leaves the laptop; the camera answers as they land.
      */
     /** The words of the request made at a step of the round of calls. */

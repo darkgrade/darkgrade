@@ -1,11 +1,11 @@
 # Darkgrade CLI
 
 Alpha releases: `npx darkgrade@alpha telemetry …`.
-For local development, build Link and CLI and run `node packages/cli/dist/main.js`.
+For local development, build Slate and CLI and run `node packages/cli/dist/main.js`.
 
 This package is a thin executable wrapper. Command parsing, preference actions and camera
-benchmark orchestration live in Link and are also available to Node consumers through
-`runDarkgradeCli` from `@darkgrade/link/cli`. The published executable bundles that runner,
+benchmark orchestration live in Slate and are also available to Node consumers through
+`runDarkgradeCli` from `@darkgrade/slate/cli`. The published executable bundles that runner,
 preserving standalone `npx darkgrade` installation.
 
 - `whoami`: print the persistent random diagnostic ID, never its secret.
@@ -17,7 +17,7 @@ preserving standalone `npx darkgrade` installation.
 - Add `--capture` to take/transfer a photo, or `--live` to request a live frame.
   Capture can write a file on the camera. No format/delete/reset/power operation is included.
 
-Benchmarks use Link's existing drivers and bounded transaction deadlines, report each
+Benchmarks use Slate's existing drivers and bounded transaction deadlines, report each
 selected check separately, and always attempt disconnect. A returned media payload proves
 a transfer, not independent image decoding or complete model qualification. The initial
 benchmark does not test every vendor setting or automatically change exposure settings.

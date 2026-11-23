@@ -1,6 +1,6 @@
 import type { Callout } from '@/app/components/home/cut-scene'
 
-/* The four readings pinned to the camera while Link drives it: what each is called, what it says before any call is made, and where its words stand. */
+/* The four readings pinned to the camera while Slate drives it: what each is called, what it says before any call is made, and where its words stand. */
 
 export const CALLOUT_NAMES: Record<Callout, string> = {
     aperture: 'Aperture',

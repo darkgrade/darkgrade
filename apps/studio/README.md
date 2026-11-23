@@ -1,6 +1,6 @@
 # Darkgrade Studio
 
-Desktop app for [`@darkgrade/link`](../../packages/link) — full camera control with **local AI voice**. Electron + React, everything on-device.
+Desktop app for [`@darkgrade/slate`](../../packages/slate) — full camera control with **local AI voice**. Electron + React, everything on-device.
 
 ## Run it
 
@@ -17,7 +17,7 @@ macOS spawns `ptpcamerad` (older: `PTPCamera`, mass-storage: `mscamerad`) the mo
 
 ## What it does
 
-Everything `@darkgrade/link` exposes:
+Everything `@darkgrade/slate` exposes:
 
 | UI | Voice |
 | --- | --- |
@@ -52,7 +52,7 @@ App menu › Developer Mode, then **Vision Models**: Apple's **Depth Pro 2** (me
 ## Scripts
 
 ```bash
-bun run dev        # dev mode with HMR (builds packages/link first)
+bun run dev        # dev mode with HMR (builds packages/slate first)
 bun run build      # production bundle → out/
 bun run typecheck  # tsc over main + renderer
 bun run test       # vitest — intent parser & number-word coverage
@@ -62,7 +62,7 @@ bun run package    # electron-builder → release/ (mac dmg/zip)
 ## Architecture
 
 ```
-src/main/       Electron main — owns the camera (node-usb via @darkgrade/link)
+src/main/       Electron main — owns the camera (node-usb via @darkgrade/slate)
   camera-service.ts        connect/settings/capture/live-view-loop/files/events
   macos-camera-daemon.ts   killall ptpcamerad · PTPCamera · mscamerad
   ipc-handlers.ts          one handler per camera capability

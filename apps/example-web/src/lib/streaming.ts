@@ -1,4 +1,4 @@
-import type { Camera } from '@darkgrade/link'
+import type { Camera } from '@darkgrade/slate'
 import { cameraQueue } from './queue'
 import { store } from './store.svelte'
 

@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
 /**
- * Developer Mode's Metal live-view decoder (macOS): each live JPEG Link delivers is decoded on the GPU by the native
+ * Developer Mode's Metal live-view decoder (macOS): each live JPEG Slate delivers is decoded on the GPU by the native
  * add-on (native/metal-jpeg) and handed to the Studio window as a texture with Electron's sharedTexture, so the
  * window's WebGPU draws it without decoding anything. Off, or where the add-on isn't built or a frame can't be
  * decoded, the window gets the JPEG and decodes it itself, as always.

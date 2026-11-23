@@ -101,7 +101,7 @@ const COLUMNS = [
     {
         head: 'Product',
         links: [
-            { label: 'Link', href: '/#link' },
+            { label: 'Slate', href: '/#link' },
             { label: 'Studio', href: '/#studio' },
             { label: 'Docs', href: LINKS.docs },
             { label: 'Changelog', href: LINKS.changelog },

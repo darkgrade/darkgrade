@@ -18,7 +18,7 @@
       "name": "@darkgrade/contribution-collector",
       "version": "0.2.0",
       "dependencies": {
-        "@darkgrade/link": "workspace:*",
+        "@darkgrade/slate": "workspace:*",
         "pg": "8.16.3",
       },
       "devDependencies": {
@@ -87,10 +87,10 @@
       },
     },
     "apps/example-web": {
-      "name": "@darkgrade/link-web-example",
+      "name": "@darkgrade/slate-web-example",
       "version": "0.1.0",
       "dependencies": {
-        "@darkgrade/link": "workspace:*",
+        "@darkgrade/slate": "workspace:*",
       },
       "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",
@@ -114,7 +114,7 @@
       "name": "@darkgrade/studio",
       "version": "0.1.0",
       "dependencies": {
-        "@darkgrade/link": "workspace:*",
+        "@darkgrade/slate": "workspace:*",
         "@kevinschaich/components": "0.7.0",
         "@modelcontextprotocol/node": "2.1.2",
         "@modelcontextprotocol/server": "2.4.0",
@@ -148,7 +148,7 @@
       "name": "@darkgrade/testbench",
       "version": "0.1.0",
       "dependencies": {
-        "@darkgrade/link": "workspace:*",
+        "@darkgrade/slate": "workspace:*",
       },
       "devDependencies": {
         "@playwright/test": "1.55.1",
@@ -170,12 +170,12 @@
         "usb": "^2.11.0",
       },
       "devDependencies": {
-        "@darkgrade/link": "workspace:*",
+        "@darkgrade/slate": "workspace:*",
         "@types/node": "20.19.43",
       },
     },
-    "packages/link": {
-      "name": "@darkgrade/link",
+    "packages/slate": {
+      "name": "@darkgrade/slate",
       "version": "0.1.0",
       "dependencies": {
         "@types/node": "^20.11.0",
@@ -329,9 +329,9 @@
 
     "@darkgrade/contribution-collector": ["@darkgrade/contribution-collector@workspace:apps/contribution-collector"],
 
-    "@darkgrade/link": ["@darkgrade/link@workspace:packages/link"],
+    "@darkgrade/slate": ["@darkgrade/slate@workspace:packages/slate"],
 
-    "@darkgrade/link-web-example": ["@darkgrade/link-web-example@workspace:apps/example-web"],
+    "@darkgrade/slate-web-example": ["@darkgrade/slate-web-example@workspace:apps/example-web"],
 
     "@darkgrade/studio": ["@darkgrade/studio@workspace:apps/studio"],
 
@@ -2237,9 +2237,9 @@
 
     "@base-ui/utils/reselect": ["reselect@5.3.0", "", {}, "sha512-XGoLeRAVzUTcJ1qkxPQhDJyIZ5d6zzZD9nT7AEZOaaU9UbWclhycElmhO+VD5bFeLuzhPBaOV2oXC8uG35ZSpg=="],
 
-    "@darkgrade/link-web-example/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+    "@darkgrade/slate-web-example/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
-    "@darkgrade/link-web-example/vite": ["vite@8.3.8", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.32", "rolldown": "~1.2.18", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1 || ^0.8.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-LzOn3h9rG/0vhLdXrV4yJ4QFA9eEoqCl+Yx+kGJd7aB9w6nfNgVHKSYwLPZUHrz4ZGa+t+kXjV9itvcHDLQouA=="],
+    "@darkgrade/slate-web-example/vite": ["vite@8.3.8", "", { "dependencies": { "lightningcss": "^1.33.0", "picomatch": "^4.0.7", "postcss": "^8.5.32", "rolldown": "~1.2.18", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1 || ^0.8.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-LzOn3h9rG/0vhLdXrV4yJ4QFA9eEoqCl+Yx+kGJd7aB9w6nfNgVHKSYwLPZUHrz4ZGa+t+kXjV9itvcHDLQouA=="],
 
     "@darkgrade/studio/@modelcontextprotocol/server": ["@modelcontextprotocol/server@2.4.0", "", { "dependencies": { "@modelcontextprotocol/core": "2.4.0", "zod": "^4.2.0" } }, "sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q=="],
 

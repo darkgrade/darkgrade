@@ -1,0 +1,23 @@
+---
+title: "Installation"
+description: "Install Darkgrade Slate in your project"
+---
+
+## Installation
+
+Install Darkgrade Slate using npm:
+
+```bash
+npm install @darkgrade/slate
+```
+
+## Requirements
+
+- **Node.js** 22.18+; repository development uses **Bun** 1.4.3
+- **TypeScript** (strict NodeNext consumer checks run with the repository compiler)
+- A PTP-compatible camera connected via USB
+
+The main camera export requires Node host services. Browser renderers can import
+`@darkgrade/slate/controls` and `@darkgrade/slate/runtime/browser`; a host provides
+camera access through the runtime client. Dependencies are listed in Slate's
+package manifest; the former single-dependency and fixed-size claims are obsolete.

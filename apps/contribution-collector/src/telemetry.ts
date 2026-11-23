@@ -1,8 +1,8 @@
 import { allowBurst } from '#collector/abuse-limits'
 import type { Database, Transaction } from '#collector/database'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
-import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/link/contribute/batch'
-import { MAXIMUM_BODY_BYTES } from '@darkgrade/link/contribute/schema'
+import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/slate/contribute/batch'
+import { MAXIMUM_BODY_BYTES } from '@darkgrade/slate/contribute/schema'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 export const RETENTION_DAYS = 90

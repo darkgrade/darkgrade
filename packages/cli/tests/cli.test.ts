@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { promisify } from 'node:util'
 
-test('the executable delegates to Link and preserves terminal output and exit codes', async () => {
+test('the executable delegates to Slate and preserves terminal output and exit codes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-wrapper-'))
     const env = { ...process.env, DARKGRADE_HOME: directory, DARKGRADE_TELEMETRY_URL: '' }
     try {

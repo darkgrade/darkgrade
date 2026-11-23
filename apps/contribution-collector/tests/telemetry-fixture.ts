@@ -1,5 +1,5 @@
-import { BATCH_SCHEMA, NOTICE_VERSION } from '@darkgrade/link/contribute/batch'
-import { DISCLOSURE, SCHEMA } from '@darkgrade/link/contribute/schema'
+import { BATCH_SCHEMA, NOTICE_VERSION } from '@darkgrade/slate/contribute/batch'
+import { DISCLOSURE, SCHEMA } from '@darkgrade/slate/contribute/schema'
 import { randomUUID } from 'node:crypto'
 import type { Database, Row } from '../src/database.ts'
 

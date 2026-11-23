@@ -29,8 +29,8 @@ export const STUDIO: Product = {
     ],
 }
 
-export const LINK: Product = {
-    name: 'Link',
+export const SLATE: Product = {
+    name: 'Slate',
     kind: 'Open-source library',
     tagline: 'Your camera takes requests now.',
     does: 'A library that lets your app, script or local model run your camera.',

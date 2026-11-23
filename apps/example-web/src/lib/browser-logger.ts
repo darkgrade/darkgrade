@@ -3,8 +3,8 @@
  * Implements the Logger interface without using Ink (which requires Node/terminal)
  */
 
-import type { LoggerConfig } from '@darkgrade/link'
-import { defaultLoggerConfig } from '@darkgrade/link'
+import type { LoggerConfig } from '@darkgrade/slate'
+import { defaultLoggerConfig } from '@darkgrade/slate'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 type DecodedData = number | bigint | string | Uint8Array | object | number[] | null | undefined
