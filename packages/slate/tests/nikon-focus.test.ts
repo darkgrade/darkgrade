@@ -296,6 +296,39 @@ describe('Nikon capability-gated focus', () => {
 })
 
 describe('Nikon recording transition reliability',()=>{
+ it.each(['recording', 'unreadable'] as const)('preserves movie setup after a refused Start leaves state %s',async state=>{
+  const {camera,calls,responses,send}=fixture()
+  let attempted=false
+  const work=send.getMockImplementation()!
+  send.mockImplementation(async(operation,parameters,...rest)=>{
+   const result=await work(operation,parameters,...rest)
+   if(operation.name==='StartMovieRecord')attempted=true
+   return result
+  })
+  responses.set('StartMovieRecord',0xa004)
+  vi.spyOn(camera,'get').mockImplementation(async property=>{
+   if(property.name==='LiveViewStatus')return 'OFF' as never
+   if(property.name==='LiveViewSelector')return 'PHOTO' as never
+   if(attempted&&state==='unreadable')throw new Error('Recording state unavailable')
+   return (attempted?'alreadyRecording':'none') as never
+  })
+  const set=vi.spyOn(camera,'set').mockResolvedValue(undefined)
+  await expect(camera.startRecording()).rejects.toThrow('StartMovieRecord failed with response 0xa004')
+  expect(calls.filter(call=>call.name==='StartMovieRecord')).toHaveLength(1)
+  expect(calls.some(call=>call.name==='EndLiveView'||
+   call.name==='ChangeApplicationMode'&&call.params.Mode==='OFF'||
+   call.name==='ChangeCameraMode'&&call.params.Mode==='PC_CAMERA')).toBe(false)
+  expect(set.mock.calls.map(([,value])=>value)).toEqual(['VIDEO'])
+ })
+ it('discards all session mode assumptions on disconnect',async()=>{
+  const {camera}=fixture()
+  Object.assign(camera,{cameraMode:'REMOTE',liveViewMode:'VIDEO',applicationMode:'ON',
+   liveViewStatus:'ON',liveViewStartPending:false,ownsLiveView:false})
+  await camera.disconnect()
+  for(const name of ['cameraMode','liveViewMode','applicationMode','liveViewStatus'])
+   expect((camera as any)[name]).toBe('UNKNOWN')
+  expect((camera as any).liveViewStartPending).toBe(false)
+ })
  it('accepts denied application mode only when fresh telemetry confirms the requested state',async()=>{
   const {camera,responses}=fixture();responses.set('ChangeApplicationMode',0x200f)
   vi.spyOn(camera,'get').mockResolvedValue('none' as never)

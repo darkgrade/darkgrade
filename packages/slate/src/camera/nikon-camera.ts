@@ -79,7 +79,11 @@ export class NikonCamera extends GenericCamera {
         try {
             if (this.ownsLiveView || this.liveViewStartPending) await this.disableLiveView()
         } finally {
+            this.cameraMode = 'UNKNOWN'
+            this.liveViewMode = 'UNKNOWN'
+            this.applicationMode = 'UNKNOWN'
             this.liveViewStatus = 'UNKNOWN'
+            this.liveViewStartPending = false
             this.ownsLiveView = false
             this.manualVideoExposureRequested = false
             await super.disconnect()
@@ -662,6 +666,12 @@ export class NikonCamera extends GenericCamera {
                     )
             } else throw new Error('Nikon live-view selector is unknown; recording was not started')
         } catch (error) {
+            // A refused Start can still leave the body recording. Preserve its
+            // setup until a fresh observation permits restoration and explicit Stop.
+            let observed: string | undefined
+            try { observed = await this.get(this.registry.properties.MovieRecProhibitionCondition) }
+            catch { /* An unreadable state cannot authorize mode changes. */ }
+            if (observed === undefined || observed.includes('alreadyRecording')) throw error
             const failures: string[] = []
             const restore = async (name: string, operation: () => Promise<void>) => {
                 try { await operation() }
