@@ -17,6 +17,7 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
+import { CameraConfirmationError } from '@camera/confirmation'
 import { GenericCamera } from './generic-camera'
 
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
@@ -297,7 +298,7 @@ export class SonyCamera extends GenericCamera {
                 encodedValue
             )
             this.assertOk(response.code, `Sony property ${property.name}`)
-            await this.waitForPropertyValue(property.code, targetRaw)
+            await this.waitForPropertyValue(property.code, targetRaw, property.code === 0x500e ? String(value) : undefined)
         }
     }
 
@@ -1305,7 +1306,8 @@ export class SonyCamera extends GenericCamera {
 
     private async waitForPropertyValue(
         propertyCode: number,
-        target: number | bigint | string
+        target: number | bigint | string,
+        requestedMode?: string
     ): Promise<SonyDevicePropDesc> {
         const deadline = Date.now() + SONY_CONTROL_SETTLE_TIMEOUT_MS
         while (Date.now() < deadline) {
@@ -1313,6 +1315,10 @@ export class SonyCamera extends GenericCamera {
             const descriptor = this.propertyCache.get(propertyCode)
             if (descriptor?.currentValueRaw === target) return descriptor
             await this.waitMs(100)
+        }
+        if (requestedMode !== undefined) {
+            const observed = this.propertyCache.get(propertyCode)?.currentValueDecoded
+            throw new CameraConfirmationError('exposureProgram', requestedMode, observed === undefined ? null : String(observed))
         }
         throw new Error(
             `Sony property 0x${propertyCode.toString(16)} did not report target ${String(target)} within ${SONY_CONTROL_SETTLE_TIMEOUT_MS} ms`

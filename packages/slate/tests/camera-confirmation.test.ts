@@ -130,7 +130,7 @@ it('explicit Sony preparation uses advertised controls and restores only after c
     expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Manual'])
 })
 
-it('Sony preparation never guesses an unadvertised movie mode or ignores a failed readback', async () => {
+it('Sony preparation refuses unadvertised modes and preserves failed reconciliation', async () => {
     const f = fixture(0x054c)
     const inventory = vi.spyOn(f.camera, 'getCapabilities').mockResolvedValue({
         controls:{exposureProgram:{value:'Manual',enabled:true,writable:false,allowedValues:['Manual','Movie Manual']}},
@@ -139,10 +139,44 @@ it('Sony preparation never guesses an unadvertised movie mode or ignores a faile
     await expect(f.camera.prepareRecordingMode()).rejects.toThrow('no corresponding writable movie mode')
     expect(write).not.toHaveBeenCalled()
     inventory.mockResolvedValue({controls:{exposureProgram:{value:'Manual',enabled:true,writable:true,allowedValues:['Manual','Movie Manual']}}} as any)
-    write.mockRejectedValueOnce(new CameraConfirmationError('exposureProgram','Movie Manual','Manual'))
-        .mockResolvedValueOnce({value:'Manual'} as any)
+    write.mockRejectedValue(new CameraConfirmationError('exposureProgram','Movie Manual','Manual'))
     await expect(f.camera.prepareRecordingMode()).rejects.toBeInstanceOf(CameraConfirmationError)
-    expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Manual'])
+    expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Movie Manual'])
+})
+
+it('Sony explicit preparation reconciles one acknowledged unchanged mode with fresh idle admission', async () => {
+    const f = fixture(0x054c)
+    let mode = 'Manual', attempts = 0
+    vi.spyOn(f.camera, 'getCapabilities').mockImplementation(async () => ({
+        controls:{exposureProgram:{value:mode,enabled:true,writable:true,allowedValues:['Manual','Movie Manual']}},
+    }) as any)
+    const write = vi.spyOn(f.camera, 'setControl').mockImplementation(async (_id, value) => {
+        if (++attempts === 1) throw new CameraConfirmationError('exposureProgram',String(value),mode)
+        mode = value as string
+        return {value:mode} as any
+    })
+    const prepared = await f.camera.prepareRecordingMode()
+    expect(mode).toBe('Movie Manual')
+    expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Movie Manual'])
+    expect(f.start).not.toHaveBeenCalled()
+    await prepared.restore()
+    expect(mode).toBe('Manual')
+})
+
+it.each(['unknown','recording','disabled','transport'])('Sony reconciliation stops on %s instead of replaying a mode selection', async reason => {
+    const f = fixture(0x054c)
+    let writable = true
+    vi.spyOn(f.camera, 'getCapabilities').mockImplementation(async () => ({
+        controls:{exposureProgram:{value:'Manual',enabled:writable,writable,allowedValues:['Manual','Movie Manual']}},
+    }) as any)
+    const write = vi.spyOn(f.camera, 'setControl').mockImplementation(async () => {
+        if (reason === 'recording') f.set('recording')
+        if (reason === 'disabled') writable = false
+        if (reason === 'transport') throw new Error('USB read failed')
+        throw new CameraConfirmationError('exposureProgram','Movie Manual',reason === 'unknown' ? null : 'Manual')
+    })
+    await expect(f.camera.prepareRecordingMode()).rejects.toThrow()
+    expect(write).toHaveBeenCalledOnce()
 })
 
 it('Sony restoration polls temporary display-only mode after idle without repeating writes', async () => {

@@ -153,7 +153,11 @@ recording time; unavailable values and photo-mode zero remain unknown.
 Restoration requires confirmed idle and polls fresh mode availability for up to
 five seconds while the body finalizes files. It writes the original mode once;
 missing readiness preserves the movie mode and raises a confirmation error.
-Sony video-take workflows use this same preparation.
+Sony's explicit mode preparation permits one additional idempotent selection after
+a typed mode-confirmation failure only when fresh observations prove idle, the
+unchanged prior mode, and writable advertised choices. Unknown outcomes and transport
+failures abort. Generic `setControl()`, Record, Stop and capture are never replayed
+by this reconciliation. Sony video-take workflows use this same preparation.
 These bounds govern observation polling; the configured transport bounds still apply.
 The shared host operation queue serializes rapid control and recording changes within
 one Camera object. Hosts still own physical leases and mode preparation/restoration.

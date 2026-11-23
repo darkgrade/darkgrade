@@ -1,7 +1,7 @@
 import type { Camera } from '@camera/index'
 import { isSonyMovieExposureProgram } from '@vendors/sony/exposure-program'
 import { readSonyMovieCard } from '@vendors/sony/card-storage'
-import { confirmCameraValue } from '@camera/confirmation'
+import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 
 /** Explicit recording preparation selects only the camera-advertised corresponding movie mode. */
 export async function openSonyRecordingMode(camera: Camera) {
@@ -13,10 +13,35 @@ export async function openSonyRecordingMode(camera: Camera) {
         (!before?.writable || !before.allowedValues?.includes(target as string)))
         throw new Error('Select Movie mode on the Sony camera; no corresponding writable movie mode was advertised')
     let changed = false
+    const selectMode = async (requested: string) => {
+        const before = (await camera.getCapabilities()).controls.exposureProgram?.value
+        try { await camera.setControl('exposureProgram', requested) }
+        catch (error) {
+            camera.getInstance().recordStateSnapshot('recording', 'failure')
+            // Sony's shipped sample reconciles acknowledged, unapplied mode selections.
+            // Generic writes stay single-attempt; only an unchanged, writable, idle mode
+            // admits one extra idempotent selection. I/O errors and unknown outcomes stop.
+            if (!(error instanceof CameraConfirmationError) || error.operation !== 'exposureProgram' ||
+                error.expected !== requested || error.observed !== before ||
+                await camera.getRecordingState() !== 'idle') throw error
+            const observed = (await camera.getCapabilities()).controls.exposureProgram
+            if (observed?.value !== before || !observed.enabled || !observed.writable ||
+                !observed.allowedValues?.includes(requested)) throw error
+            try { await camera.setControl('exposureProgram', requested) }
+            catch (second) {
+                if (second instanceof Error && second.cause === undefined) second.cause = error
+                throw second
+            }
+        }
+    }
     const restore = async () => {
         if (!changed) return
         if (await camera.getRecordingState() !== 'idle')
             throw new Error('Sony recording is not confirmed stopped; preserve its movie mode')
+        if ((await camera.getCapabilities()).controls.exposureProgram?.value === original) {
+            changed = false
+            return
+        }
         // The a6700 reports idle before file finalization makes the mode writable.
         // Poll admission only; never retry a mode write after an uncertain response.
         await confirmCameraValue('exposureProgram', 'writable after recording', async () => {
@@ -26,14 +51,14 @@ export async function openSonyRecordingMode(camera: Camera) {
             return mode?.enabled && mode.writable && mode.allowedValues?.includes(original as string)
                 ? 'writable after recording' : null
         }, 5000)
-        await camera.setControl('exposureProgram', original as string)
+        await selectMode(original as string)
         changed = false
     }
     try {
         if (target !== original) {
             // Retain restoration even when the write reaches the body but its readback fails.
             changed = true
-            await camera.setControl('exposureProgram', target as string)
+            await selectMode(target as string)
         }
         const card = await readSonyMovieCard(camera)
         if (card.remainingMovieSeconds === 0) throw new Error('No movie recording time remains on the selected Sony memory card')

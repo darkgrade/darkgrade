@@ -44,6 +44,11 @@ mode or during recording; Sony's virtual PTP storage byte capacity is not card f
 Recording preparation uses advertised generic mode controls, keeps the original mode,
 and restores only after confirmed idle. Never format or delete existing footage to
 make tests green; owned test artifacts require complete verified backups and exact targets.
+Sony's shipped exposure-mode sample admits bounded idempotent reconciliation. Explicit
+mode preparation allows one extra mode selection only after typed confirmation failure
+and fresh idle, unchanged old mode, writable status and advertised choices. Generic control
+writes and Record/Stop/capture remain single-attempt. Unknown outcomes and transport errors
+never admit reconciliation; retain the first failure and require observed equality.
 Detach discarded driver telemetry before constructing its replacement. Internal transport
 lifecycle helpers must stay absent from packed public declarations.
 
