@@ -54,9 +54,9 @@ Operations are commands sent from the host to the camera. Common operations incl
 
 - **GetDeviceInfo** - Retrieve information about the camera
 - **GetObject** - Download an image or file from the camera
-- **GetProperty** - Read a camera setting (ISO, aperture, shutter speed, etc.)
-- **SetProperty** - Change a camera setting
-- **CaptureImage** - Trigger the camera to take a photo
+- **GetDevicePropValue** - Read a camera setting (ISO, aperture, shutter speed, etc.)
+- **SetDevicePropValue** - Change a camera setting
+- **InitiateCapture** - Request capture on a body that advertises it
 
 ### Properties
 
@@ -73,7 +73,6 @@ Properties represent camera settings and state. Standard PTP properties include:
 Events allow cameras to notify the host about changes without polling:
 
 - **ObjectAdded** - A new image was captured
-- **PropertyChanged** - A camera setting was modified
 - **DevicePropChanged** - Device property was updated
 
 ## Vendor Extensions

@@ -18,6 +18,27 @@ Generic `setControl()` writes return the confirmed camera observation. Recording
 start/stop waits for the body to report its new state; `CameraConfirmationError`
 reports an ignored or unconfirmed transition without repeating the command.
 
+```typescript
+import { Camera } from '@darkgrade/slate'
+import { resolveCameraControl } from '@darkgrade/slate/controls'
+
+const camera = new Camera()
+await camera.connect()
+try {
+    // Search vocabulary resolves to a single typed application control.
+    const id = resolveCameraControl('exposure time')
+    if (id === 'shutterSpeed') {
+        const control = (await camera.getCapabilities()).controls[id]
+        if (control?.writable && control.allowedValues?.includes('1/250')) {
+            const observed = await camera.setControl(id, '1/250')
+            console.log(observed.value)
+        }
+    }
+} finally {
+    await camera.disconnect()
+}
+```
+
 ## Shared diagnostics
 
 Diagnostics are part of Slate. Node hosts use `@darkgrade/slate/contribute/settings`;

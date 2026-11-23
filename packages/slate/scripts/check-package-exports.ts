@@ -172,6 +172,50 @@ try {
             { stdio: 'inherit' })
     }
     console.log('Packed camera ESM/CommonJS strict NodeNext types and rejected invalid inputs passed')
+    // README fragments share only the documented Camera/fs context. Compile their
+    // actual text against the tarball, so a separately maintained fixture cannot hide drift.
+    const compiler = require('typescript') as typeof import('typescript')
+    const readmeFiles: string[] = []
+    for (const [name, path] of [
+        ['root', join(import.meta.dirname, '../../../README.md')],
+        ['slate', join(import.meta.dirname, '../README.md')],
+        ['quickstart', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/quickstart.mdx')],
+    ] as const) {
+        const markdown = readFileSync(path, 'utf8')
+        let number = 0
+        for (const match of markdown.matchAll(/^```(?:typescript|ts)\s*\n([\s\S]*?)^```/gm)) {
+            const snippet = match[1]!
+            const parsed = compiler.createSourceFile('readme.ts', snippet, compiler.ScriptTarget.Latest, true)
+            const names = new Set<string>()
+            for (const statement of parsed.statements) {
+                if (compiler.isVariableStatement(statement))
+                    for (const declaration of statement.declarationList.declarations)
+                        if (compiler.isIdentifier(declaration.name)) names.add(declaration.name.text)
+                if (!compiler.isImportDeclaration(statement)) continue
+                const clause = statement.importClause
+                if (clause?.name) names.add(clause.name.text)
+                const bindings = clause?.namedBindings
+                if (bindings && compiler.isNamespaceImport(bindings)) names.add(bindings.name.text)
+                if (bindings && compiler.isNamedImports(bindings))
+                    for (const binding of bindings.elements) names.add(binding.name.text)
+            }
+            const file = `readme-${name}-${++number}.mts`
+            const context =
+                (names.has('camera') ? '' : "declare const camera: import('@darkgrade/slate').Camera;\n") +
+                (names.has('fs') ? '' : "declare const fs: typeof import('node:fs');\n")
+            writeFileSync(join(isolated, file), context + snippet + '\nexport {}\n')
+            readmeFiles.push(file)
+        }
+        if (!number) throw new Error('Documentation has no checked TypeScript examples: ' + path)
+    }
+    writeFileSync(join(isolated, 'readme-tsconfig.json'), JSON.stringify({
+        compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext',
+            strict: true, noEmit: true, skipLibCheck: false, types: ['node'], lib: ['ES2022', 'DOM'] },
+        files: readmeFiles,
+    }))
+    execFileSync('node', [require.resolve('typescript/bin/tsc'), '-p', join(isolated, 'readme-tsconfig.json')],
+        { stdio: 'inherit' })
+    console.log(`Packed README TypeScript examples passed (${readmeFiles.length} fragments)`)
     const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '../package.json'), 'utf8'))
     for (const name of Object.keys(manifest.dependencies)) {
         const target = join(isolated, 'node_modules', name)
@@ -180,6 +224,16 @@ try {
     }
     for (const format of ['esm', 'commonjs']) {
         const load = format === 'esm' ? "await import('@darkgrade/slate')" : "require('@darkgrade/slate')"
+        const loadControls = format === 'esm' ? "await import('@darkgrade/slate/controls')" : "require('@darkgrade/slate/controls')"
+        execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
+            `const controls=${loadControls};` +
+            `for(const alias of ['shutterSpeed','shutter speed','shutter angle','shutterAngle','exposure time','exposureTime'])` +
+            `if(controls.resolveCameraControl(alias)!=='shutterSpeed')throw Error('Packed alias drift: '+alias);` +
+            `if(controls.resolveCameraControl('inventedControl')!==undefined)throw Error('Invented control alias was accepted');` +
+            `if(controls.exposureSeconds('180°',{framesPerSecond:24})!==1/48)throw Error('Angle conversion lost its frame context');` +
+            `let refused=false;try{controls.exposureSeconds('180°')}catch{refused=true}` +
+            `if(!refused)throw Error('Angle conversion must require actual frame rate');`],
+            { cwd: isolated, stdio: 'inherit' })
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
             `const api=${load}; const log=console.log, handlers=process.listenerCount('uncaughtException');` +
             `new api.Camera(); if(console.log!==log||process.listenerCount('uncaughtException')!==handlers)throw Error('Library constructor changes the host');` +

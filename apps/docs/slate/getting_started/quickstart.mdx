@@ -10,16 +10,17 @@ import { Camera } from '@darkgrade/slate'
 
 const camera = new Camera()
 await camera.connect()
-
-// Control camera settings
-await camera.setIso('800')
-await camera.setShutterSpeed('1/250')
-await camera.setAperture('f/2.8')
-
-// Capture an image
-const { data } = await camera.captureImage()
-
-await camera.disconnect()
+try {
+    const { controls } = await camera.getCapabilities()
+    if (controls.iso?.writable && controls.iso.allowedValues?.includes('ISO 800')) {
+        const observed = await camera.setControl('iso', 'ISO 800')
+        console.log(observed.value)
+    }
+    const { data } = await camera.captureImage()
+    if (!data) throw new Error('No image data returned')
+} finally {
+    await camera.disconnect()
+}
 ```
 
 The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. The example assumes the body advertises those controls and remote capture; camera model, USB mode, and shooting mode can change the available surface.
@@ -50,7 +51,7 @@ When you call `connect()`, Darkgrade Slate:
    - **Nikon Z Series** → `NikonCamera` with extended properties
    - **Canon EOS R Series** → `CanonCamera` with remote control
    - **Olympus and other PTP cameras** → `GenericCamera` with a capability-driven standard-property inventory
-4. Enables vendor-specific features automatically
+4. Opens that driver's session. Read `getCapabilities()` for current controls and write guards.
 
 ## Common Examples
 
@@ -76,8 +77,8 @@ camera.on(camera.getInstance().registry.events.ObjectAdded, event => {
     console.log('New object added:', event.ObjectHandle)
 })
 
-camera.on(camera.getInstance().registry.events.PropertyChanged, event => {
-    console.log('Property changed:', event.PropertyName)
+camera.on(camera.getInstance().registry.events.DevicePropChanged, event => {
+    console.log('Property changed:', event.DevicePropCode)
 })
 
 // Remove event listeners
@@ -86,16 +87,17 @@ camera.off(camera.getInstance().registry.events.ObjectAdded)
 
 ### Live View
 
-Capture live view frames (Sony & Nikon only):
+Capture live view on supported Sony, Nikon or Canon bodies:
 
 ```typescript
 const { data: liveViewFrame } = await camera.captureLiveView()
+if (!liveViewFrame) throw new Error('No live-view image returned')
 fs.writeFileSync('liveview.jpg', liveViewFrame)
 ```
 
 ### Video Recording
 
-Start and stop video recording (Sony & Canon only):
+Start and stop video recording on supported Sony, Nikon or Canon bodies with usable media:
 
 ```typescript
 await camera.startRecording()
@@ -139,15 +141,22 @@ await camera.set(registry.properties.ExposureIndex, '3200')
 
 ## Advanced Usage
 
-### Using Vendor-Specific Classes
+### Typed protocol access
 
-Import vendor-specific camera classes directly:
+Applications instantiate `Camera` and use its shared control model. Protocol work can
+use the existing typed definitions without maintaining an application vendor map:
 
 ```typescript
-import { SonyCamera, NikonCamera, CanonCamera, GenericCamera } from '@darkgrade/slate'
+import { Camera, genericOperationRegistry } from '@darkgrade/slate'
 
-const camera = new SonyCamera()
+const camera = new Camera()
 await camera.connect()
+try {
+    const reply = await camera.send(genericOperationRegistry.GetDeviceInfo, {})
+    console.log(reply.data)
+} finally {
+    await camera.disconnect()
+}
 ```
 
 ### Manual Configuration
@@ -164,6 +173,8 @@ const camera = new Camera({
         },
     },
     logger: {
+        renderInTerminal: true,
+        captureConsole: false,
         expanded: true, // Show detailed logging
     },
 })
