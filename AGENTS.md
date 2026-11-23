@@ -69,6 +69,16 @@ promise rejections; verify this in isolated Node consumers, not by swallowing a 
 Keep the requested task on one branch and one PR. Historical PR numbers in technical
 notes are evidence, not instructions to append new work to an old branch or to merge.
 
+# Telemetry contact identity
+
+Email linking reuses `requestContact`, `contactStatus`, `removeContact` and the collector's
+existing single-use challenges. Keep Resend credentials in server Secret Manager configuration;
+never put them in Slate, CLI, Studio, diagnostic events, Matrix exports or client preferences.
+Confirmed addresses identify contributors only, without mailing-list signup or provider contacts.
+Plain `telemetry status` stays offline; `status --email` explicitly reads the collector.
+Do not claim email delivery from an HTTP acknowledgement or a fake sender: verify a real
+provider receipt and, when authorized, the recipient's inbox. Sending requires a verified domain.
+
 # Package boundaries
 
 New Darkgrade product code belongs in `packages/slate`, `apps/studio`, or `packages/cli`.

@@ -375,9 +375,11 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     ;(timer as unknown as { unref?: () => void }).unref?.()
     if (state.withdrawalPending) void retryWithdrawal().catch(() => {})
     const contactCall = async (method: string, body?: unknown) => {
+        if (method === 'POST' && !enabled()) throw new Error('Turn on sharing to link an email')
         // Explicit contact enrollment need not wait for the first camera operation.
-        if (method === 'POST' && !state.installKey && enabled()) await enroll(epoch)
-        if (closed || !state.installKey || state.withdrawalPending) throw new Error('Turn on sharing to link an email')
+        if (method === 'POST' && !state.installKey) await enroll(epoch)
+        if (closed || !state.installKey || state.withdrawalPending || (method === 'POST' && !enabled()))
+            throw new Error('Turn on sharing to link an email')
         const { response, data } = await call('/v2/contact', method, body, state.installKey)
         if (!response.ok)
             throw new Error(

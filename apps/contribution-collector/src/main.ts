@@ -6,6 +6,8 @@ import { cleanupWithdrawals, createTelemetry, DAILY_BATCH_LIMIT, resendContactSe
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 
+if (!!process.env.TELEMETRY_EMAIL_API_KEY !== !!process.env.TELEMETRY_EMAIL_FROM)
+    throw new Error('Configure both the Resend key and verified sender, or neither')
 const database = await postgresDatabase(process.env.DATABASE_URL ?? '', { deferSummaryRebuild: true })
 const handle = createTelemetry(database, {
     publicUrl: process.env.TELEMETRY_PUBLIC_URL ?? '',

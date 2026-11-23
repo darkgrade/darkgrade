@@ -57,10 +57,37 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   reference; the label is an operator assertion, not automatic hardware qualification.
   Expired/withdrawn sources disappear from these views immediately, including while
   cleanup is pending. Matrix automatically receives the same source-linked findings.
-- Optional email linking uses a single-use confirmation. CLI `telemetry login EMAIL`
-  can enroll before camera use; `logout` removes the association without changing sharing.
+- Optional email linking uses a single-use confirmation. `darkgrade telemetry login EMAIL`
+  can enroll before camera use; `darkgrade telemetry status --email` reads the verified
+  association (or `contact: null` until confirmed). Ordinary `status` stays offline.
+  `logout` removes the association without changing sharing, including after opting out.
   It stays unavailable until `TELEMETRY_EMAIL_API_KEY` (Resend) and a verified
   `TELEMETRY_EMAIL_FROM` are configured. Anonymous `whoami` works without email.
+  These addresses identify telemetry contributors only: no Resend contact, segment,
+  product-update subscription or public contributor credit is created. Addresses remain
+  separate from camera events, diagnostic batches and Matrix/operator exports.
+  Confirmation links expire after 15 minutes, are single-use, and are invalidated by a
+  replacement request, logout or withdrawal. Requests are limited to five per installation
+  per day and one per minute. Provider rejection and ambiguous acknowledgements fail
+  without reporting an email as sent; the API does not return provider errors or secrets.
+
+## Resend configuration
+
+1. Add and verify the sender's domain in Resend. Add its DKIM and sending DNS records
+   without replacing the domain's existing inbound mail records. A mailbox address alone
+   does not authorize Resend to send from that domain.
+2. Store the key in the collector's Secret Manager configuration using Terraform
+   `email_api_key`; set `email_from` to the verified sender address. Neither value belongs
+   in the CLI or Studio build. Local development uses `TELEMETRY_EMAIL_API_KEY` and
+   `TELEMETRY_EMAIL_FROM`; both must be configured together.
+3. Deploy the collector through the existing telemetry workflow. Updating the image
+   preserves its existing secret references and sender environment configuration.
+4. Run `darkgrade telemetry login you@example.com`, open the received confirmation link,
+   then run `darkgrade telemetry status --email`. Confirm logout removes the association
+   without changing sharing. Provider acceptance alone does not prove inbox delivery.
+
+The tests exercise Resend acceptance/rejection and the actual CLI over a local HTTPS
+collector. They never require a production key or send messages to real people.
 
 ## Investigation and Matrix
 

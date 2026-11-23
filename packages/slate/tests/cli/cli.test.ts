@@ -66,7 +66,13 @@ test('Slate command identity persists, preferences work offline, and delete disa
             },
         })
         assert.equal(JSON.parse(overridden.stdout).effectiveSharing, false)
-        for (const args of [['login'], ['login', 'invalid'], ['opt-out', 'extra']])
+        for (const args of [
+            ['login'],
+            ['login', 'invalid'],
+            ['opt-out', 'extra'],
+            ['status', '--invalid'],
+            ['status', '--email', 'extra'],
+        ])
             await assert.rejects(
                 promisify(execFile)(process.execPath, command('telemetry', ...args), {
                     env: { ...process.env, DARKGRADE_HOME: directory, DARKGRADE_TELEMETRY_URL: '' },

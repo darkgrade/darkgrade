@@ -12,14 +12,15 @@ export async function runDarkgradeCli(argumentsList: readonly string[]): Promise
     const [group, action, ...args] = argumentsList
     let exitCode = 0
     const usage =
-        'darkgrade telemetry <status|whoami|opt-out|opt-in|delete|login EMAIL|logout|benchmark --camera VID:PID [--capture] [--live]>'
+        'darkgrade telemetry <status [--email]|whoami|opt-out|opt-in|delete|login EMAIL|logout|benchmark --camera VID:PID [--capture] [--live]>'
     try {
         if (
             group !== 'telemetry' ||
             !['status', 'whoami', 'opt-out', 'opt-in', 'delete', 'login', 'logout', 'benchmark'].includes(action ?? '')
         )
             throw new Error(usage)
-        if (action !== 'benchmark' && action !== 'login' && args.length) throw new Error(usage)
+        const emailStatus = action === 'status' && args.length === 1 && args[0] === '--email'
+        if (action !== 'benchmark' && action !== 'login' && args.length && !emailStatus) throw new Error(usage)
         if (
             action === 'login' &&
             (args.length !== 1 || args[0].length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(args[0]))
@@ -42,6 +43,7 @@ export async function runDarkgradeCli(argumentsList: readonly string[]): Promise
                     configured: true,
                     deletionPending: saved.withdrawalPending,
                     settings: settingsDirectory(),
+                    ...(emailStatus && { contact: await (await nodeDiagnostics()).contactStatus() }),
                 })
             )
         else if (action === 'opt-out' || action === 'opt-in') {

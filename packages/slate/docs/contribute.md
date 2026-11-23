@@ -58,9 +58,24 @@ and deletes cloud data; interrupted deletion stays pending and can be retried. A
 explicit opt-in after deletion creates a new cloud identity.
 
 Only IDs/status are exposed to Studio's renderer. The local secret authorizes this
-installation's upload/deletion; the service stores only its hash. Optional legacy contact
-methods remain available to hosts that explicitly configure email, but the current CLI
-and Studio use a diagnostic ID instead. Full encrypted transport recordings are separate.
+installation's upload/deletion; the service stores only its hash. Email linking is optional:
+
+```sh
+darkgrade telemetry login you@example.com
+# Open the confirmation link in the email, then:
+darkgrade telemetry status --email
+darkgrade telemetry logout
+```
+
+Resend sends the confirmation from the collector's configured verified sender. The key stays
+on the server. Links expire after 15 minutes and can be used once. `status --email` explicitly
+reads the confirmed association; ordinary `status` remains offline. Email identifies telemetry
+contributors only, without subscribing them to product updates or publishing contributor credit.
+Addresses stay outside camera events, diagnostic batches, client settings and Matrix exports.
+Login requires sharing to be enabled; logout remains available after opting out and does not
+change that preference. Installation withdrawal also removes the association. Hosts can use
+the existing `requestContact`, `contactStatus` and `removeContact` methods for the same flow.
+Full encrypted transport recordings are separate.
 
 The `@darkgrade/slate/contribute` entry retains the previous single-camera observer API. New
 integrations should use the shared application/settings entry points. The old signed-grant
