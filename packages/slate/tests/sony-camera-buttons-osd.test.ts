@@ -3,7 +3,7 @@ import { Logger } from '@core/logger'
 import { parseOsdImageDataset } from '@ptp/datasets/vendors/sony/sony-osd-image-dataset'
 import { createSonyRegistry } from '@ptp/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 // Bytes captured on the darkgrade-testbench from an ILCE-6700: the Camera Remote SDK
 // pressing the body's MENU button (SDIO_ControlDevice 0x9207, control code 0xd309) and
@@ -124,5 +124,55 @@ describe('Sony camera property inventory',()=>{
         const {camera,operations}=sonyCamera()
         expect(await camera.refreshPropertyStates()).toEqual([])
         expect(operations.map(operation=>operation.name)).toEqual(['SDIO_GetAllExtDevicePropInfo'])
+    })
+})
+
+describe('Sony movie-button transitions', () => {
+    function movieCamera(loseStartAcknowledgement = false) {
+        const { camera } = sonyCamera()
+        const transitions: string[] = []
+        let recording = false, previous: number | undefined
+        camera.set = (async (property, value) => {
+            if (property.name !== 'MovieRecButton') return
+            transitions.push(String(value))
+            const now = performance.now()
+            // Captured α6700 behavior: a fast transition is acknowledged but ignored.
+            if (previous === undefined || now - previous >= 1000) recording = value === 'DOWN'
+            previous = now
+            if (value === 'DOWN' && loseStartAcknowledgement) throw new Error('Start acknowledgement lost')
+        }) as typeof camera.set
+        return { camera, transitions, isRecording: () => recording }
+    }
+
+    it('keeps rapid Record/Stop/Record transitions effective without repeating commands', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, transitions, isRecording } = movieCamera()
+            await camera.startRecording()
+            expect(isRecording()).toBe(true)
+            const stopped = camera.stopRecording()
+            await vi.advanceTimersByTimeAsync(1000)
+            await stopped
+            expect(isRecording()).toBe(false)
+            const restarted = camera.startRecording()
+            await vi.advanceTimersByTimeAsync(1000)
+            await restarted
+            expect(isRecording()).toBe(true)
+            expect(transitions).toEqual(['DOWN', 'UP', 'DOWN'])
+        } finally { vi.useRealTimers() }
+    })
+
+    it('releases a received Start whose acknowledgement was lost, without replaying Start', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, transitions, isRecording } = movieCamera(true)
+            await expect(camera.startRecording()).rejects.toThrow('acknowledgement lost')
+            expect(isRecording()).toBe(true)
+            const cleanup = camera.stopRecording()
+            await vi.advanceTimersByTimeAsync(1000)
+            await cleanup
+            expect(isRecording()).toBe(false)
+            expect(transitions).toEqual(['DOWN', 'UP'])
+        } finally { vi.useRealTimers() }
     })
 })

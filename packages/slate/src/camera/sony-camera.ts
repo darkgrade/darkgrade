@@ -114,6 +114,9 @@ const SONY_LIVE_VIEW_INTERVAL_MAX_MS = 70
 const SONY_AF_AREA_Y_MAX = 479
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
+// α6700 acknowledged but ignored movie-button transitions 170–650 ms apart
+// on the bench. A one-second interval preserves rapid Record/Stop commands.
+const SONY_MOVIE_BUTTON_INTERVAL_MS = 1_000
 
 export interface SonyPropertyState {
     code: number
@@ -161,6 +164,7 @@ export class SonyCamera extends GenericCamera {
     private osdImageModeEnabled = false
     private propertyCache = new Map<number, SonyDevicePropDesc>()
     private manualIsoChoices?: SonyPropertyState['allowedValues']
+    private movieButtonAttemptedAt?: number
     vendorId = VendorIDs.SONY
     declare public registry: SonyRegistry
 
@@ -1042,12 +1046,23 @@ export class SonyCamera extends GenericCamera {
 
     async startRecording(): Promise<void> {
         await this.disableContentTransferMode()
-        await this.set(this.registry.properties.MovieRecButton, 'DOWN')
+        await this.setMovieButton('DOWN')
     }
 
     async stopRecording(): Promise<void> {
         await this.disableContentTransferMode()
-        await this.set(this.registry.properties.MovieRecButton, 'UP')
+        await this.setMovieButton('UP')
+    }
+
+    private async setMovieButton(value: 'DOWN' | 'UP'): Promise<void> {
+        if (this.movieButtonAttemptedAt !== undefined) {
+            const remaining = SONY_MOVIE_BUTTON_INTERVAL_MS - (performance.now() - this.movieButtonAttemptedAt)
+            if (remaining > 0) await this.waitMs(remaining)
+        }
+        // An acknowledgement can be lost after the body receives DOWN. Its
+        // cleanup release needs the same interval even when the write throws.
+        this.movieButtonAttemptedAt = performance.now()
+        await this.set(this.registry.properties.MovieRecButton, value)
     }
 
     async listObjects(): Promise<{

@@ -66,7 +66,7 @@ Use modules and explicit exports within these locations, not additional workspac
 or apps. Do not create `packages/contribute`, `packages/runtime`, or another shared package.
 Existing infrastructure, sites and shared build/UI tooling may be maintained in place.
 Only an explicit user request can change these boundaries. The camera library is Slate,
-in `packages/slate`, published as `@darkgrade/slate`; do not recreate `packages/link`
+in `packages/slate`, named `@darkgrade/slate` (publishing is pending); do not recreate `packages/link`
 or another shared camera package. Test harnesses consume these modules and keep
 independent fixtures; they must not introduce production packages in the Darkgrade repo.
 Read these rules regardless of the agent harness (Codex, Claude, Gemini or another agent).

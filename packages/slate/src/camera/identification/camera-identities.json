@@ -8012,7 +8012,7 @@
       "sources": [
         "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
         "darkgrade/test-bench@2db7a28:docs/camera-compatibility.md",
-        "darkgrade/darkgrade:packages/link/docs/evidence/darkgrade01-2026-10-28.json#sony-ilce-6700"
+        "darkgrade/darkgrade@9defcfc753e72309ec09351d1ee58a082ddcb9a0:packages/link/docs/evidence/darkgrade01-2026-10-28.json#sony-ilce-6700"
       ]
     }
   ],
