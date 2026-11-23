@@ -141,6 +141,9 @@ five seconds for recording. `stopRecording()` waits for verified idle state afte
 Stop (up to fifteen seconds); a fresh idle observation makes Nikon/Canon Stop idempotent.
 Sony still sends one movie-button release, so an ignored Start does not leave a pressed
 control behind. This release is an explicit Stop action, not a replay of Start.
+Native Sony movie-button transitions are spaced at least one second apart: a body can
+acknowledge an earlier release or press while ignoring it. The driver delays that single
+command; readback still determines success and a refusal still raises an error.
 These bounds govern observation polling; the configured transport bounds still apply.
 The shared host operation queue serializes rapid control and recording changes within
 one Camera object. Hosts still own physical leases and mode preparation/restoration.
