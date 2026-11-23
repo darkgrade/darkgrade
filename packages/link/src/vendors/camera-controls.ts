@@ -397,9 +397,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
             const expected = wireCodec.encode(target)
             if (encoded.length !== expected.length || encoded.some((byte, index) => byte !== expected[index]))
                 throw new Error('Nikon control cannot be encoded without truncation')
+            // Confirmed below by the shared polled readback of this descriptor, like every other write.
             await driver.set(property, decoded as never)
-            const observed = await driver.propertyDescriptor(property)
-            if (observed.currentValueRaw !== target) throw new Error('Nikon did not confirm the requested control')
             return
         }
         if (!(driver instanceof SonyCamera) && !(driver instanceof CanonCamera)) {
@@ -432,11 +431,40 @@ export async function writeCameraControl<Id extends CameraControlId>(
     }
     await write()
     let observed: CameraControlState | undefined
-    await confirmCameraValue(id, requested, async () => {
-        observed = (await readCameraCapabilities(driver, id)).controls[id]
-        if (observed && observed.source.code !== state.source.code)
-            throw new CameraConfirmationError(id, requested, `control changed to ${observed.source.name}`)
-        return observed?.value ?? null
-    })
+    await confirmCameraValue(
+        id,
+        requested,
+        async () => {
+            observed = (await readCameraCapabilities(driver, id)).controls[id]
+            if (observed && observed.source.code !== state.source.code)
+                throw new CameraConfirmationError(id, requested, `control changed to ${observed.source.name}`)
+            return observed?.value ?? null
+        },
+        undefined,
+        id === 'shutterSpeed' && state.source.name === 'ExposureTime'
+            ? sameExposureTicks(driver, state.source.code)
+            : undefined
+    )
     return observed!
+}
+
+/**
+ * A ranged ExposureTime write is spelled in seconds (0.01) while the codec reads the same ticks back
+ * as a fraction (1/100). Compare at the property's own wire resolution, not as display strings.
+ */
+function sameExposureTicks(driver: GenericCamera, code: number): (observed: string, expected: string) => boolean {
+    const property = Object.values(driver.registry.properties).find(property => property.code === code)
+    const codec: CodecInstance<unknown> | undefined =
+        property && (typeof property.codec === 'function' ? property.codec(driver.registry) : property.codec)
+    return (observed, expected) => {
+        if (observed === expected) return true
+        if (!codec) return false
+        try {
+            const actual = codec.encode(observed),
+                requested = codec.encode(expected)
+            return actual.length === requested.length && actual.every((byte, index) => byte === requested[index])
+        } catch {
+            return false
+        }
+    }
 }
