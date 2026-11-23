@@ -4,6 +4,42 @@ Baseline: main `445ca938a78410059f5314d319babf2df69bbd9b`.
 Scope: README/docs promises, packed library types, public camera controls,
 vendor mappings, Studio consumers, history and agent guidance. One branch/PR.
 
+## README contract recheck — 2026-11-23
+
+Rechecked the built Slate package after the hardware fixes on `9026c1c`.
+The existing packed ESM/CommonJS consumers still pass strict NodeNext with
+`skipLibCheck:false`, including rejected operation parameters, known read-only
+property writes, control ids, exposure unions and internal lifecycle methods.
+That established declaration correctness, but did not protect copied README examples.
+
+Extending the existing `test:package` checker to compile the actual documentation
+reproduced four TypeScript errors: the removed `controls.exposureTime` id appeared
+twice, `PropertyChanged` was not a registry event, and the live-view example passed
+optional image bytes directly to `writeFileSync`. The corrected root/package README
+and quickstart now pass all 26 fragments against the tarball. Fragments inherit only
+typed Camera/filesystem context; the checker never executes their hardware operations.
+Packed runtime checks also resolve shutter speed/angle/exposure-time aliases to the
+single `shutterSpeed` id in both module formats and reject angle conversion without
+the actual frame-rate context.
+
+| Promise | Result and boundary |
+| --- | --- |
+| Typed library consumers | Strict packed declarations, positive inference and negative assertions pass. The connected body's value lists and mode remain runtime facts. |
+| Shared controls and searchable aliases | Existing `cameraControlDefinitions`, `resolveCameraControl` and vendor property preferences supply one application vocabulary; wire names/codes remain vendor-scoped. |
+| Browser support | Pure controls and documented browser diagnostics/runtime boundaries bundle; the main camera export requires Node services. |
+| Automatic vendor selection | One uniquely matched USB body is selected. Multiple matches require filtering; recognition does not enable unsupported features. |
+| Recording and live view | Implementations cover supported Sony/Nikon/Canon bodies. Examples and capability tables now retain body/mode/media and physical-evidence limits. |
+| Inert library construction | Existing packed Node checks retain the host console and fatal-error behavior by default. Terminal rendering is explicit. |
+| Installation and size/dependencies | Registry check on this date returned 404 for `@darkgrade/slate`; publishing is pending. The `darkgrade` executable is published separately. Manifest dependencies replace fixed-size/single-dependency claims. |
+| Hardware stability | The separate `9026c1c` qualification passed 33 checks across the three darkgrade01 bodies, with independently decoded media. This documentation/type check does not extend that evidence to other bodies, transports, the desktop GUI or >99% reliability. |
+
+The root README, package README, installation, quickstart, PTP introduction and
+feature-compatibility docs now agree on publication, `shutterSpeed`, standard event
+names and support boundaries. The root AGENTS and existing `/untangle-codebase`
+workflow require the same search/consumer audit before adding a primitive and require
+these documentation copies to change together. No camera implementation, wire
+protocol, package or new alias registry was introduced by this recheck.
+
 The library was named Link and lived in `packages/link` at this historical baseline.
 Current instructions and import examples use Slate (`packages/slate`, `@darkgrade/slate`);
 recorded revisions, source attribution and wire schema identifiers retain their original values.

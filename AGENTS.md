@@ -7,6 +7,21 @@ primitive and its callers together; do not add a parallel implementation for a n
 Use the workflow in `.claude/commands/untangle-codebase.md` regardless of agent harness.
 Read `packages/slate/docs/pre-release-audit.md` for the measured audit and decisions.
 
+Before naming another setting, search `cameraControlDefinitions`, `resolveCameraControl`,
+the vendor property preferences, protocol definitions and the hosts that consume them.
+`shutterSpeed` is the sole application id; exposure time and shutter angle are search aliases.
+Aliases share semantics, retain native units and require actual frame rate for conversion.
+Keep wire operation/property/event names and vendor namespaces intact; equal numeric codes
+across vendors do not establish equivalent operations. An alias cannot create implementation
+support, writable choices or hardware qualification.
+
+On an API/name change, update the root README, package README and getting-started docs together.
+The existing `test:package` check compiles their actual TypeScript fragments from the tarball
+under strict NodeNext; fragments inherit only typed Camera/filesystem context and never run
+hardware. Preserve its negative type assertions, ESM/CommonJS and browser-boundary checks.
+Keep static parameter/value types separate from runtime body choices and physical evidence.
+Check current publication state before adding installation badges or claiming npm availability.
+
 Application controls use `Camera.getCapabilities()` and `Camera.setControl()`. Canonical
 ids/labels/search aliases are in `packages/slate/src/camera/controls.ts`; vendor property
 preference is in `src/vendors/control-properties.ts`. Studio and test harnesses consume
