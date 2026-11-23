@@ -37,6 +37,10 @@ is the public control name; exposure time and shutter angle resolve to it as sea
 Recording transitions use existing vendor state observations and the shared host queue;
 missing telemetry never proves idle. Confirmation polls reads, never replays a command.
 Keep Stop available and preserve the connection/mode if stopping cannot be confirmed.
+On Nikon reconnect, a fresh recording observation preserves the known interrupted PTP
+session. Closing that session first restores photo/application modes and can make Stop
+hang. Reuse the existing recording-status parser; unreadable or unknown ownership must
+preserve the session and report an error rather than closing it or inventing its id.
 Sony native movie states 2 and 3 mean recording failure and interval-recording waiting,
 not starting/stopping or idle. Card-present status does not prove free movie capacity.
 Interpret a readable zero remaining-movie-time only in an observed recognized movie

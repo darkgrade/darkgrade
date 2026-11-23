@@ -1,6 +1,7 @@
 import { Logger } from '@core/logger'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
+import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 import {matchesNikonShutter, nikonShutterLabel} from '@vendors/nikon/shutter-values'
 import type {DevicePropDesc} from '@ptp/datasets/device-prop-desc-dataset'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
@@ -49,6 +50,7 @@ export class NikonCamera extends GenericCamera {
     private liveViewStartPending = false
     private ownsLiveView = false
     private manualVideoExposureRequested = false
+    private lostSessionId?: number
 
     vendorId = VendorIDs.NIKON
     declare public registry: NikonRegistry
@@ -69,7 +71,20 @@ export class NikonCamera extends GenericCamera {
             throw new Error('Nikon advertises file transfer without camera controls; inspect camera power and mode')
     }
 
+    /** @internal Closing a recording session restores Nikon's photo/application modes before Stop. */
+    protected async existingRecordingSession(previousSessionId: number | null): Promise<number | undefined> {
+        const status = await readNikonRecordingStatus(this)
+        if (!status) throw new Error('Nikon existing session state is unreadable; its session was preserved')
+        if (!status.recording) return undefined
+        const existing = previousSessionId ?? this.lostSessionId
+        if (existing === undefined)
+            throw new Error('Nikon is recording in an unknown session; its session was preserved')
+        this.lostSessionId = undefined
+        return existing
+    }
+
     async disconnect(): Promise<void> {
+        this.lostSessionId = !this.transport.isConnected() ? this.sessionId ?? this.lostSessionId : undefined
         if (!this.transport.isConnected()) {
             // A vanished transport cannot end live view; only local state is cleared.
             this.liveViewStatus = 'UNKNOWN'

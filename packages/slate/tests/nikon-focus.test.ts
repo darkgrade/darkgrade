@@ -296,6 +296,44 @@ describe('Nikon capability-gated focus', () => {
 })
 
 describe('Nikon recording transition reliability',()=>{
+ it.each([true,false])('handles an existing Nikon session with recording=%s after USB transport loss',async recording=>{
+  const {camera,calls,send,transport}=fixture()
+  let connected=false,opens=0
+  transport.isConnected=()=>connected
+  transport.connect.mockImplementation(async()=>{connected=true})
+  transport.disconnect.mockImplementation(async()=>{connected=false})
+  camera.sessionId=37
+  await camera.disconnect()
+  const work=send.getMockImplementation()!
+  send.mockImplementation(async(operation,parameters,...rest)=>{
+   const result=await work(operation,parameters,...rest)
+   if(operation.name==='OpenSession')return {code:++opens===1?0x201e:0x2001} as any
+   if(operation.name==='GetDevicePropDescEx')return {code:0x2001,data:{
+    devicePropertyCode:0xd0a4,currentValueRaw:recording?0x400:0,
+   }} as any
+   return result
+  })
+  await camera.connect()
+  expect(opens).toBe(recording?1:2)
+  expect(calls.filter(call=>call.name==='CloseSession')).toHaveLength(recording?0:1)
+  if(recording)expect(camera.sessionId).toBe(37)
+  expect(calls.some(call=>['StartMovieRecord','EndMovieRecord','ChangeApplicationMode'].includes(call.name))).toBe(false)
+ })
+ it.each(['unreadable','unknown-owner'] as const)('preserves an existing recording session with %s admission',async scenario=>{
+  const {camera,calls,send}=fixture()
+  const work=send.getMockImplementation()!
+  send.mockImplementation(async(operation,parameters,...rest)=>{
+   const result=await work(operation,parameters,...rest)
+   if(operation.name==='OpenSession')return {code:0x201e} as any
+   if(operation.name==='GetDevicePropDescEx')return {code:0x2001,data:{
+    devicePropertyCode:0xd0a4,currentValueRaw:scenario==='unreadable'?undefined:0x400,
+   }} as any
+   return result
+  })
+  await expect(camera.connect()).rejects.toThrow('its session was preserved')
+  expect(calls.filter(call=>call.name==='OpenSession')).toHaveLength(1)
+  expect(calls.some(call=>['CloseSession','StartMovieRecord','EndMovieRecord'].includes(call.name))).toBe(false)
+ })
  it.each(['recording', 'unreadable'] as const)('preserves movie setup after a refused Start leaves state %s',async state=>{
   const {camera,calls,responses,send}=fixture()
   let attempted=false

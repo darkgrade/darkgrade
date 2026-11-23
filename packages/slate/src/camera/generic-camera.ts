@@ -244,11 +244,22 @@ export class GenericCamera {
         return randomSessionId()
     }
 
+    /** @internal Vendor admission may preserve an observed active session after transport loss. */
+    protected async existingRecordingSession(_previousSessionId: number | null): Promise<number | undefined> {
+        return undefined
+    }
+
     private async openFreshSession(): Promise<void> {
+        const previousSessionId = this.sessionId
         this.sessionId = this.createSessionId()
         try {
             let openResult = await this.send(this.registry.operations.OpenSession, { SessionID: this.sessionId })
             if (openResult.code === SessionAlreadyOpen.code) {
+                const existing = await this.existingRecordingSession(previousSessionId)
+                if (existing !== undefined) {
+                    this.sessionId = existing
+                    return
+                }
                 const closed = await this.send(this.registry.operations.CloseSession, {})
                 if (closed.code !== OK.code)
                     throw new PTPResponseError(closed.code, `CloseSession failed: 0x${closed.code.toString(16)}`)
