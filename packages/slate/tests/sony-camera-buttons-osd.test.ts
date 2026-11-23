@@ -137,7 +137,7 @@ describe('Sony movie-button transitions', () => {
             transitions.push(String(value))
             const now = performance.now()
             // Captured α6700 behavior: a fast transition is acknowledged but ignored.
-            if (previous === undefined || now - previous >= 1000) recording = value === 'DOWN'
+            if (previous === undefined || now - previous >= 1500) recording = value === 'DOWN'
             previous = now
             if (value === 'DOWN' && loseStartAcknowledgement) throw new Error('Start acknowledgement lost')
         }) as typeof camera.set
@@ -151,11 +151,11 @@ describe('Sony movie-button transitions', () => {
             await camera.startRecording()
             expect(isRecording()).toBe(true)
             const stopped = camera.stopRecording()
-            await vi.advanceTimersByTimeAsync(1000)
+            await vi.advanceTimersByTimeAsync(1500)
             await stopped
             expect(isRecording()).toBe(false)
             const restarted = camera.startRecording()
-            await vi.advanceTimersByTimeAsync(1000)
+            await vi.advanceTimersByTimeAsync(1500)
             await restarted
             expect(isRecording()).toBe(true)
             expect(transitions).toEqual(['DOWN', 'UP', 'DOWN'])
@@ -169,10 +169,31 @@ describe('Sony movie-button transitions', () => {
             await expect(camera.startRecording()).rejects.toThrow('acknowledgement lost')
             expect(isRecording()).toBe(true)
             const cleanup = camera.stopRecording()
-            await vi.advanceTimersByTimeAsync(1000)
+            await vi.advanceTimersByTimeAsync(1500)
             await cleanup
             expect(isRecording()).toBe(false)
             expect(transitions).toEqual(['DOWN', 'UP'])
+        } finally { vi.useRealTimers() }
+    })
+
+    it('does not count slow command transmission toward the body interval', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera } = sonyCamera()
+            const received: Array<{ value: unknown; at: number }> = []
+            camera.set = (async (property, value) => {
+                if (property.name !== 'MovieRecButton') return
+                if (!received.length) await new Promise(resolve => setTimeout(resolve, 300))
+                received.push({ value, at: performance.now() })
+            }) as typeof camera.set
+            const started = camera.startRecording()
+            await vi.advanceTimersByTimeAsync(300)
+            await started
+            const stopped = camera.stopRecording()
+            await vi.advanceTimersByTimeAsync(1500)
+            await stopped
+            expect(received.map(command => command.value)).toEqual(['DOWN', 'UP'])
+            expect(received[1]!.at - received[0]!.at).toBeGreaterThanOrEqual(1500)
         } finally { vi.useRealTimers() }
     })
 })

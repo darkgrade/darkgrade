@@ -114,9 +114,9 @@ const SONY_LIVE_VIEW_INTERVAL_MAX_MS = 70
 const SONY_AF_AREA_Y_MAX = 479
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
-// α6700 acknowledged but ignored movie-button transitions 170–650 ms apart
-// on the bench. A one-second interval preserves rapid Record/Stop commands.
-const SONY_MOVIE_BUTTON_INTERVAL_MS = 1_000
+// α6700 can acknowledge but ignore early movie-button transitions, including
+// a release one second after the press. Allow the body to finish the transition.
+const SONY_MOVIE_BUTTON_INTERVAL_MS = 1_500
 
 export interface SonyPropertyState {
     code: number
@@ -1057,12 +1057,17 @@ export class SonyCamera extends GenericCamera {
     private async setMovieButton(value: 'DOWN' | 'UP'): Promise<void> {
         if (this.movieButtonAttemptedAt !== undefined) {
             const remaining = SONY_MOVIE_BUTTON_INTERVAL_MS - (performance.now() - this.movieButtonAttemptedAt)
-            if (remaining > 0) await this.waitMs(remaining)
+            if (remaining > 0) await this.waitMs(Math.ceil(remaining))
         }
         // An acknowledgement can be lost after the body receives DOWN. Its
         // cleanup release needs the same interval even when the write throws.
-        this.movieButtonAttemptedAt = performance.now()
-        await this.set(this.registry.properties.MovieRecButton, value)
+        try {
+            await this.set(this.registry.properties.MovieRecButton, value)
+        } finally {
+            // Include time spent transmitting the command, rather than counting
+            // it toward the body's interval before the next press or release.
+            this.movieButtonAttemptedAt = performance.now()
+        }
     }
 
     async listObjects(): Promise<{
