@@ -234,6 +234,7 @@ export class CameraService {
     private controlProperties = new Map<CameraControlName, string>()
     private batteryTimer: ReturnType<typeof setInterval> | null = null
     private recoveryInProgress = false
+    private disconnecting = false
     /** Sony property reads leave content-transfer mode, invalidating object handles mid-transfer. */
     private storageSessionActive = false
     private recording = false
@@ -367,7 +368,8 @@ export class CameraService {
      * latched, tear down and reconnect once — the user never has to replug for a stuck transaction.
      */
     private scheduleRecovery(cause: unknown): void {
-        if (this.recoveryInProgress || !this.connected) return
+        // A disconnect already in progress is tearing the session down; it must not reconnect.
+        if (this.recoveryInProgress || this.disconnecting || !this.connected) return
         this.recoveryInProgress = true
         this.phase = 'recovering'
         this.log('system', `Camera session lost (${errorMessage(cause)}) — reconnecting…`, 'error')
@@ -509,7 +511,7 @@ export class CameraService {
                     const vendorId = device?.deviceDescriptor?.idVendor
                     if (!this.connected || !vendorId || vendorId !== this.detectedVendorId) return
                     this.log('system', 'Camera unplugged', 'error')
-                    void this.disconnect().catch(() => {})
+                    void this.disconnect({ transportLost: true }).catch(() => {})
                 })
             } catch (error) {
                 this.log('system', `USB hotplug watch unavailable: ${errorMessage(error)}`, 'error')
@@ -517,22 +519,17 @@ export class CameraService {
         })()
     }
 
-    async disconnect(): Promise<CameraState> {
-        await this.stopLiveView().catch(() => {})
-        if (this.recording) await this.stopRecording()
-
-        if (this.camera) {
-            const camera = this.camera
-            try {
-                await this.enqueue(async () => {
-                    if (this.recording || this.recordingMode)
-                        throw new Error('Stop and confirm the recording before disconnecting')
-                    await camera.disconnect()
-                })
-            } catch (error) {
-                this.log('system', `Disconnect error: ${errorMessage(error)}`, 'error')
-                if (this.recording || this.recordingMode) throw error
-            }
+    /**
+     * While the camera is still reachable, an unconfirmed Stop keeps the connection so Stop stays
+     * available. Once the transport is gone (unplugged, or Link reports the session lost) there is
+     * nothing left to stop or restore, so the session is torn down and a replug can reconnect.
+     */
+    async disconnect(options: { transportLost?: boolean } = {}): Promise<CameraState> {
+        this.disconnecting = true
+        try {
+            await this.disconnectSession(options.transportLost === true)
+        } finally {
+            this.disconnecting = false
         }
 
         this.stopBatteryPolling()
@@ -561,6 +558,34 @@ export class CameraService {
         this.log('system', 'Disconnected')
         this.broadcastState()
         return this.getState()
+    }
+
+    private async disconnectSession(transportLost: boolean): Promise<void> {
+        await this.stopLiveView().catch(() => {})
+        if (this.recording) {
+            try {
+                await this.stopRecording()
+            } catch (error) {
+                if (!transportLost && !requiresReconnect(error)) throw error
+                transportLost = true
+            }
+        }
+        if (transportLost && (this.recording || this.recordingMode))
+            this.log('system', 'Camera lost while recording; its recording and setup could not be confirmed', 'error')
+
+        if (this.camera) {
+            const camera = this.camera
+            try {
+                await this.enqueue(async () => {
+                    if (!transportLost && (this.recording || this.recordingMode))
+                        throw new Error('Stop and confirm the recording before disconnecting')
+                    await camera.disconnect()
+                })
+            } catch (error) {
+                this.log('system', `Disconnect error: ${errorMessage(error)}`, 'error')
+                if (!transportLost && (this.recording || this.recordingMode)) throw error
+            }
+        }
     }
 
     /** Turns the camera's on-screen display over live view on or off (Sony). */
