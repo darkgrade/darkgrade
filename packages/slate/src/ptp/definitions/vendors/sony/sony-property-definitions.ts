@@ -630,8 +630,8 @@ export const MovieRecordingState = {
             [
                 { value: 0, name: 'Idle', description: 'Not recording' },
                 { value: 1, name: 'Recording', description: 'Recording' },
-                { value: 2, name: 'Starting', description: 'Starting recording' },
-                { value: 3, name: 'Stopping', description: 'Stopping recording' },
+                { value: 2, name: 'RecordingFailed', description: 'Recording failed' },
+                { value: 3, name: 'IntervalRecordingWaiting', description: 'Waiting for interval recording' },
             ] as const,
             registry.codecs.uint8
         ),

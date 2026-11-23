@@ -1,4 +1,6 @@
-interface CardProperty { code: number; rawValue: unknown; sonyEnabledFlag?: number }
+import { isSonyMovieExposureProgram } from '@vendors/sony/exposure-program'
+
+interface CardProperty { code: number; rawValue: unknown; value?: unknown; sonyEnabledFlag?: number }
 interface CardCamera { getSonyPropertyStates(): Promise<CardProperty[]> }
 
 /**
@@ -13,6 +15,9 @@ interface CardCamera { getSonyPropertyStates(): Promise<CardProperty[]> }
  */
 export async function sonyPtpMovieCard(camera: CardCamera, options: { singleSlot?: boolean; recording?: boolean } = {}) {
     const properties = await camera.getSonyPropertyStates()
+    const exposure = properties.find(property => property.code === 0x500e)
+    const movieMode = (exposure?.sonyEnabledFlag === 1 || exposure?.sonyEnabledFlag === 2) &&
+        isSonyMovieExposureProgram(exposure.value)
     const raw = (code: number) => {
         const property = properties.find(property => property.code === code)
         // CRSDK CrPropertyEnableFlag: 0 unavailable, 1 active, 2 display-only.
@@ -26,7 +31,8 @@ export async function sonyPtpMovieCard(camera: CardCamera, options: { singleSlot
         : destination === 0x101 ? [1, 2]
         : destination === undefined && options.singleSlot === true ? [1] : []
     const source = 'Native Sony PTP; Sony CRSDK 2.02 protocol mapping'
-    if (!slots.length) return { status: 'unknown' as const, slots, source, detail: 'The native camera did not identify its movie card destination' }
+    if (!slots.length) return { status: 'unknown' as const, slots, source, remainingMovieSeconds: undefined,
+        detail: 'The native camera did not identify its movie card destination' }
     const cards = slots.map(slot => {
         const code = raw(slot === 1 ? 0xd248 : 0xd256)
         const time = raw(slot === 1 ? 0xd24a : 0xd258)
@@ -35,9 +41,9 @@ export async function sonyPtpMovieCard(camera: CardCamera, options: { singleSlot
             slot, code,
             status: code === 1 ? 'ready' as const : code === 2 ? 'absent' as const
                 : code !== undefined && code >= 3 && code <= 9 ? 'error' as const : 'unknown' as const,
-            // Still mode can return zero even with a writable card. A zero while
-            // observed recording is useful; outside that context it is unknown.
-            seconds: time !== undefined && time < 0xffffffff && (time > 0 || options.recording === true) ? time : undefined,
+            // Still mode can return zero even with a writable card. Require a
+            // recognized observed movie mode or active recording to interpret zero.
+            seconds: time !== undefined && time < 0xffffffff && (time > 0 || movieMode || options.recording === true) ? time : undefined,
             photos: photos !== undefined && photos < 0xffffffff ? photos : undefined,
         }
     })
@@ -47,6 +53,7 @@ export async function sonyPtpMovieCard(camera: CardCamera, options: { singleSlot
         status: problem?.status || 'ready' as const,
         remainingMovieSeconds: cards.every(card => card.seconds !== undefined) ? Math.min(...cards.map(card => card.seconds!)) : undefined,
         remainingPhotos: cards.every(card => card.photos !== undefined) ? Math.min(...cards.map(card => card.photos!)) : undefined,
+        ...(cards.some(card => card.seconds === 0) ? { detail: 'No movie recording time remains on the selected memory card' } : {}),
         source,
     }
 }

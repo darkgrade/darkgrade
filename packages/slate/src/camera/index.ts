@@ -2,7 +2,8 @@ import type { CameraRecoveryOptions, CameraRecoveryReport } from '@camera/generi
 import type { SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import type { TransactionPolicy } from '@camera/transaction-channel'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
-import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
+import { openSonyRecordingMode, withSonyPhotoMode } from '@vendors/sony/photo-mode'
+import { readSonyMovieCard } from '@vendors/sony/card-storage'
 import { openCanonRecordingMode, withCanonPhotoMode } from '@vendors/canon/recording-mode'
 export {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
 import { Logger } from '@core/logger'
@@ -798,6 +799,8 @@ export class Camera {
             const state = await this.getRecordingState()
             if (state === 'stopping') await confirmCameraValue('record_start', 'idle', () => this.getRecordingState(), 5000)
             else if (state !== 'idle') throw new CameraConfirmationError('record_start', 'idle before starting', state)
+            if (this.instance instanceof SonyCamera && (await readSonyMovieCard(this)).remainingMovieSeconds === 0)
+                throw new Error('No movie recording time remains on the selected Sony memory card')
             await this.instance.startRecording()
             await confirmCameraValue('record_start', 'recording', () => this.getRecordingState(), 5000)
         })
@@ -806,6 +809,7 @@ export class Camera {
     /** Hold the camera's required recording mode until a confirmed stop, then restore it. */
     async prepareRecordingMode(): Promise<{ restore(): Promise<void> }> {
         if (this.instance instanceof CanonCamera) return openCanonRecordingMode(this)
+        if (this.instance instanceof SonyCamera) return openSonyRecordingMode(this)
         return { restore: async () => {} }
     }
 

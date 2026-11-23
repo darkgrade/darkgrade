@@ -16,6 +16,21 @@ describe('camera-side card write capability',()=>{
   camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
   expect((await readCameraStorages(camera))[0].writable).toBe(false)
  })
+ it('does not call a present Sony card recording-ready when its observed movie capacity is zero',async()=>{
+  const camera=fixture(1,'none',0x054c) as any
+  let seconds=0
+  camera.getSonyPropertyStates=async()=>[
+   {code:0xd160,rawValue:2,sonyEnabledFlag:1},
+   {code:0xd256,rawValue:1,sonyEnabledFlag:2},
+   {code:0xd258,rawValue:seconds,sonyEnabledFlag:2},
+   {code:0x500e,rawValue:0x78053,value:'Movie Manual',sonyEnabledFlag:1},
+  ]
+  expect((await readCameraStorages(camera))[0]).toMatchObject({writable:false,recordingReady:false,
+   recordingEvidence:{status:'ready',remainingMovieSeconds:0}})
+  seconds=120
+  expect((await readCameraStorages(camera))[0]).toMatchObject({writable:true,recordingReady:true,
+   recordingEvidence:{remainingMovieSeconds:120}})
+ })
  it('accepts Nikon host read/delete access when camera protection is clear',async()=>{const cards=await readCameraStorages(fixture(2));expect(cards).toHaveLength(1);expect(cards[0]).toMatchObject({writable:true,hostAccessCapability:2,capacityBytes:256})})
  for(const flag of ['noCardInserted','cardAccessError','cardNotFormatted','noFreeSpace','cardProtected'])it('rejects Nikon '+flag,async()=>{expect((await readCameraStorages(fixture(2,flag)))[0].writable).toBe(false)})
  it('does not generalize Nikon host permissions to other brands',async()=>{expect((await readCameraStorages(fixture(2,'none',0x04a9)))[0].writable).toBe(false)})

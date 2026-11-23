@@ -2,6 +2,7 @@ import {it,expect,vi} from 'vitest'
 import {SonyPtpVideoRecording} from '@vendors/sony/ptp-video-recording'
 function fixture(){
  let state:unknown=0,handles=[1],bytes=3,name='new.MP4'
+ const restore=vi.fn(async()=>{})
  const largeChunk=new Uint8Array(2*1024*1024)
  const operations=Object.fromEntries(['GetStorageIDs','GetObjectHandles','GetObjectInfo','SDIO_GetPartialLargeObject','GetDeviceInfo','MtpGetObjectPropDesc','MtpGetObjectPropValue','MtpGetObjectPropList'].map(name=>[name,{name}]))
  const send=vi.fn(async(op:any,args:any)=>{
@@ -11,10 +12,11 @@ function fixture(){
   return {code:0x2001,data:largeChunk.subarray(0,Math.min(args.MaxBytes,bytes))}
  })
  const camera={getInstance:()=>({registry:{operations},prepareStorageRead:async()=>{}}),send,
+  prepareRecordingMode:vi.fn(async()=>({restore})),
   getSonyPropertyStates:async()=>[{code:0xd21d,rawValue:state}],
   startRecording:vi.fn(async()=>{state=1}),
   stopRecording:vi.fn(async()=>{state=0;handles=[1,2]})}
- return {camera,recording:new SonyPtpVideoRecording(camera),setState:(s:unknown)=>state=s,setBytes:(n:number)=>bytes=n,setName:(n:string)=>name=n,setHandles:(value:number[])=>handles=value}
+ return {camera,restore,recording:new SonyPtpVideoRecording(camera),setState:(s:unknown)=>state=s,setBytes:(n:number)=>bytes=n,setName:(n:string)=>name=n,setHandles:(value:number[])=>handles=value}
 }
 it('native take confirms state, discovers only the new original and streams verified bytes',async()=>{
  const f=fixture();await f.recording.prepare();expect(await f.recording.start()).toMatchObject({recordingConfirmed:true})
@@ -23,6 +25,30 @@ it('native take confirms state, discovers only the new original and streams veri
  await f.recording.transfer(result.media[0],async bytes=>{chunks.push(bytes.length)},progress)
  expect(chunks).toEqual([3]);expect(progress).toHaveBeenLastCalledWith(3,3)
  expect(f.camera.send.mock.calls.some(([op])=>op.name==='SDIO_GetPartialLargeObject')).toBe(true)
+})
+it('preserves prepared movie mode through an unconfirmed Stop and restores after explicit cleanup',async()=>{
+ vi.useFakeTimers()
+ try{
+  const f=fixture();await f.recording.prepare();await f.recording.start()
+  f.camera.stopRecording.mockResolvedValueOnce(undefined)
+  const failure=expect(f.recording.stop()).rejects.toThrow('preserve camera power')
+  await vi.advanceTimersByTimeAsync(15100);await failure
+  expect(f.restore).not.toHaveBeenCalled()
+  await f.recording.cleanup()
+  expect(f.restore).toHaveBeenCalledOnce()
+  expect(f.camera.startRecording).toHaveBeenCalledOnce()
+  expect(f.camera.stopRecording).toHaveBeenCalledTimes(2)
+ }finally{vi.useRealTimers()}
+})
+it('restores explicit movie preparation if indexing fails or the prepared take is cancelled',async()=>{
+ const f=fixture()
+ f.camera.send.mockRejectedValueOnce(new Error('Card index unavailable'))
+ await expect(f.recording.prepare()).rejects.toThrow('Card index unavailable')
+ expect(f.restore).toHaveBeenCalledOnce()
+ f.restore.mockClear()
+ await f.recording.prepare();await f.recording.cleanup()
+ expect(f.restore).toHaveBeenCalledOnce()
+ expect(f.camera.startRecording).not.toHaveBeenCalled()
 })
 it('a command acknowledgement without observed recording fails and cleanup still sends Stop',async()=>{
  vi.useFakeTimers()

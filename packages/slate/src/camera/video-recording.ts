@@ -14,15 +14,9 @@ export async function readCameraRecordingState(camera: Camera): Promise<CameraRe
     const vendor = driver.vendorId
     if (vendor === 0x054c) {
         const state = await readSonyPtpRecordingState(camera)
-        return state === 0
-            ? 'idle'
-            : state === 1
-              ? 'recording'
-              : state === 2
-                ? 'starting'
-                : state === 3
-                  ? 'stopping'
-                  : 'unknown'
+        // Native 2 is recording failure and 3 is interval-recording waiting.
+        // Neither proves idle or a start/stop transition.
+        return state === 0 ? 'idle' : state === 1 ? 'recording' : 'unknown'
     }
     if (vendor === 0x04b0) {
         const state = await readNikonRecordingStatus(camera)

@@ -37,6 +37,13 @@ is the public control name; exposure time and shutter angle resolve to it as sea
 Recording transitions use existing vendor state observations and the shared host queue;
 missing telemetry never proves idle. Confirmation polls reads, never replays a command.
 Keep Stop available and preserve the connection/mode if stopping cannot be confirmed.
+Sony native movie states 2 and 3 mean recording failure and interval-recording waiting,
+not starting/stopping or idle. Card-present status does not prove free movie capacity.
+Interpret a readable zero remaining-movie-time only in an observed recognized movie
+mode or during recording; Sony's virtual PTP storage byte capacity is not card free space.
+Recording preparation uses advertised generic mode controls, keeps the original mode,
+and restores only after confirmed idle. Never format or delete existing footage to
+make tests green; owned test artifacts require complete verified backups and exact targets.
 Detach discarded driver telemetry before constructing its replacement. Internal transport
 lifecycle helpers must stay absent from packed public declarations.
 

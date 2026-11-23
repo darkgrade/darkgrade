@@ -1,8 +1,9 @@
 import {readCameraObjectHandles} from '@camera/storage'
+import type {Camera} from '@camera/index'
 import type {TakeMedia} from '@workflows/video-take'
 
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
-/** The native PTP state enum is distinct from the SDK's recording-state values. */
+/** Native state: 0 idle, 1 recording, 2 recording failed, 3 interval-recording waiting. */
 export async function readSonyPtpRecordingState(camera: {getSonyPropertyStates(): Promise<{code:number;rawValue:unknown}[]>}) {
     const raw = (await camera.getSonyPropertyStates()).find(state => state.code === 0xd21d)?.rawValue
     const value = typeof raw === 'number' || typeof raw === 'bigint' ? Number(raw) : NaN
@@ -13,6 +14,7 @@ export class SonyPtpVideoRecording {
     private baseline=new Set<number>()
     private attempted=false
     private prepared=false
+    private movieMode?: Awaited<ReturnType<Camera['prepareRecordingMode']>>
     private stoppedResult?:{stopped:boolean;media:TakeMedia[];warning?:string}
     constructor(private readonly camera:any){}
     private get operations(){return this.camera.getInstance().registry.operations}
@@ -26,7 +28,14 @@ export class SonyPtpVideoRecording {
         this.prepared=false
         this.stoppedResult=undefined
         if(await this.state()!==0)throw new Error('Sony is already recording or finalizing a movie')
-        this.baseline=await readCameraObjectHandles(this.camera)
+        await this.movieMode?.restore()
+        this.movieMode=await this.camera.prepareRecordingMode()
+        try{this.baseline=await readCameraObjectHandles(this.camera)}
+        catch(error){
+            try{await this.movieMode?.restore();this.movieMode=undefined}
+            catch(cleanup){throw new AggregateError([error,cleanup],'Sony recording preparation and restoration failed')}
+            throw error
+        }
         this.prepared=true
     }
     async start(){
@@ -115,10 +124,14 @@ export class SonyPtpVideoRecording {
         return {id:String(handle),filename:String(info.filename),bytes,verified:true}
     }
     async stop(){
-        if(!this.attempted)return this.stoppedResult??{stopped:true,media:[] as TakeMedia[]}
+        if(!this.attempted){
+            await this.movieMode?.restore();this.movieMode=undefined;this.prepared=false
+            return this.stoppedResult??{stopped:true,media:[] as TakeMedia[]}
+        }
         await this.confirmStopped();this.attempted=false
         const deadline=Date.now()+15000
         let lastError:unknown
+        try{
         do{
             try{
                 const media:TakeMedia[]=[]
@@ -132,6 +145,7 @@ export class SonyPtpVideoRecording {
             await sleep(300)
         }while(Date.now()<deadline)
         return this.stoppedResult={stopped:true,media:[] as TakeMedia[],warning:'Sony stopped; its new original is not yet available. '+(lastError instanceof Error?lastError.message:'Original remains on the card.')}
+        }finally{await this.movieMode?.restore();this.movieMode=undefined}
     }
     async transfer(file:TakeMedia,write:(bytes:Uint8Array)=>Promise<void>,progress:(bytes:number,total:number)=>void){
         if(await this.state()!==0)throw new Error('Stop Sony recording before transferring footage')
@@ -152,5 +166,8 @@ export class SonyPtpVideoRecording {
             await write(response.data);offset+=response.data.length;progress(offset,file.bytes)
         }
     }
-    async cleanup(){if(this.attempted)await this.stop()}
+    async cleanup(){
+        if(this.attempted)await this.stop()
+        else{await this.movieMode?.restore();this.movieMode=undefined;this.prepared=false}
+    }
 }

@@ -36,6 +36,12 @@ const modes: Record<number, string> = {
     0x000c8097: 'Interval Movie Auto',
 }
 
+/** Only recognized movie modes make a zero remaining-movie-time observation meaningful. */
+export function isSonyMovieExposureProgram(value: unknown): boolean {
+    return typeof value === 'string' && Object.values(modes).includes(value) &&
+        (value.includes('Movie') || value.startsWith('S&Q '))
+}
+
 /** Preserve the descriptor's width and every vendor bit, including unknown modes. */
 export class SonyExposureProgramCodec extends CustomCodec<string> {
     constructor(registry: PTPRegistry, private datatype: number) {

@@ -132,8 +132,8 @@ other operations between SDK/Wi-Fi and native PTP.
 
 `Camera.getRecordingState()` and the Sony SDK camera return `idle`, `recording`,
 `starting`, `stopping` or `unknown` according to the backend's real observations.
-Native Sony transitional values are distinct from SDK values; SDK recording failure
-does not become proof of idle. Nikon uses its existing movie-status descriptor and
+Native Sony failure and interval-recording waiting values return `unknown`;
+neither those values nor SDK recording failure prove idle. Nikon uses its movie-status descriptor and
 Canon uses its event-reported recording state. Missing observations stay unknown.
 
 `startRecording()` requires verified idle state, sends Start once, and waits up to
@@ -145,6 +145,12 @@ Native Sony movie-button transitions wait at least 1.5 seconds after the precedi
 write attempt completes: a body can acknowledge an earlier release or press while
 ignoring it. The driver delays that single command; readback still determines success
 and a refusal still raises an error.
+`prepareRecordingMode()` explicitly selects Sony's advertised corresponding movie
+mode and returns a restoration handle. It checks camera-reported movie capacity,
+without inferring free space from Sony's zero-capacity, read-only host storage.
+A readable zero in an observed movie mode prevents Start and reports no remaining
+recording time; unavailable values and photo-mode zero remain unknown.
+Restoration requires confirmed idle. Sony video-take workflows use this same preparation.
 These bounds govern observation polling; the configured transport bounds still apply.
 The shared host operation queue serializes rapid control and recording changes within
 one Camera object. Hosts still own physical leases and mode preparation/restoration.

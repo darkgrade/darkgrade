@@ -37,4 +37,15 @@ describe('native Sony movie card readback', () => {
         expect((await sonyPtpMovieCard(body)).remainingMovieSeconds).toBeUndefined()
         expect((await sonyPtpMovieCard(body, { recording: true })).remainingMovieSeconds).toBe(0)
     })
+    it('preserves zero capacity in a recognized movie mode without inventing it in photo mode', async () => {
+        const properties = [property(0xd160, 1), property(0xd248, 1), property(0xd24a, 0),
+            { ...property(0x500e, 0x78053), value: 'Movie Manual' }]
+        expect(await sonyPtpMovieCard(camera(...properties))).toMatchObject({
+            status: 'ready', remainingMovieSeconds: 0, detail: expect.stringContaining('No movie recording time'),
+        })
+        properties[3] = { ...property(0x500e, 1), value: 'Manual' }
+        expect((await sonyPtpMovieCard(camera(...properties))).remainingMovieSeconds).toBeUndefined()
+        properties[3] = { ...property(0x500e, 0x78053, 0), value: 'Movie Manual' }
+        expect((await sonyPtpMovieCard(camera(...properties))).remainingMovieSeconds).toBeUndefined()
+    })
 })

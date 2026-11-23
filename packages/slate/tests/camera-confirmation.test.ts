@@ -17,6 +17,11 @@ function fixture(vendorId: number) {
         } as unknown as TransportInterface,
     })
     let state: CameraRecordingState = 'idle'
+    if (vendorId === 0x054c) vi.spyOn(camera, 'getSonyPropertyStates').mockResolvedValue([
+        {code:0xd160,rawValue:1,sonyEnabledFlag:1},
+        {code:0xd248,rawValue:1,sonyEnabledFlag:2},
+        {code:0xd24a,rawValue:120,sonyEnabledFlag:2},
+    ] as any)
     const read = vi.spyOn(camera, 'getRecordingState').mockImplementation(async () => state)
     const start = vi.spyOn(camera.getInstance(), 'startRecording').mockImplementation(async () => {
         state = 'recording'
@@ -89,6 +94,57 @@ describe.each([0x054c, 0x04b0, 0x04a9])('vendor %i confirmed recording lifecycle
     })
 })
 
+it('rejects full Sony movie capacity before sending Start, while keeping Stop available', async () => {
+    const f = fixture(0x054c)
+    vi.mocked(f.camera.getSonyPropertyStates).mockResolvedValue([
+        {code:0xd160,rawValue:1,sonyEnabledFlag:1},
+        {code:0xd248,rawValue:1,sonyEnabledFlag:2},
+        {code:0xd24a,rawValue:0,sonyEnabledFlag:2},
+        {code:0x500e,value:'Movie Manual',rawValue:0x78053,sonyEnabledFlag:1},
+    ] as any)
+    await expect(f.camera.startRecording()).rejects.toThrow('No movie recording time')
+    expect(f.start).not.toHaveBeenCalled()
+    await f.camera.stopRecording()
+    expect(f.stop).toHaveBeenCalledOnce()
+})
+
+it('explicit Sony preparation uses advertised controls and restores only after confirmed idle', async () => {
+    const f = fixture(0x054c)
+    let mode = 'Manual'
+    vi.spyOn(f.camera, 'getCapabilities').mockImplementation(async () => ({
+        controls: {exposureProgram: {value:mode,writable:true,allowedValues:['Manual','Movie Manual']}},
+    }) as any)
+    const write = vi.spyOn(f.camera, 'setControl').mockImplementation(async (_id, value) => {
+        mode = value as string
+        return {value:mode} as any
+    })
+    const prepared = await f.camera.prepareRecordingMode()
+    expect(mode).toBe('Movie Manual')
+    f.set('recording')
+    await expect(prepared.restore()).rejects.toThrow('not confirmed stopped')
+    expect(mode).toBe('Movie Manual')
+    f.set('idle')
+    await prepared.restore()
+    expect(mode).toBe('Manual')
+    await prepared.restore()
+    expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Manual'])
+})
+
+it('Sony preparation never guesses an unadvertised movie mode or ignores a failed readback', async () => {
+    const f = fixture(0x054c)
+    const inventory = vi.spyOn(f.camera, 'getCapabilities').mockResolvedValue({
+        controls:{exposureProgram:{value:'Manual',writable:false,allowedValues:['Manual','Movie Manual']}},
+    } as any)
+    const write = vi.spyOn(f.camera, 'setControl')
+    await expect(f.camera.prepareRecordingMode()).rejects.toThrow('no corresponding writable movie mode')
+    expect(write).not.toHaveBeenCalled()
+    inventory.mockResolvedValue({controls:{exposureProgram:{value:'Manual',writable:true,allowedValues:['Manual','Movie Manual']}}} as any)
+    write.mockRejectedValueOnce(new CameraConfirmationError('exposureProgram','Movie Manual','Manual'))
+        .mockResolvedValueOnce({value:'Manual'} as any)
+    await expect(f.camera.prepareRecordingMode()).rejects.toBeInstanceOf(CameraConfirmationError)
+    expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Manual'])
+})
+
 it('polls delayed observations without repeating writes and propagates observation failures', async () => {
     vi.useFakeTimers()
     let value = 'old'
@@ -119,8 +175,8 @@ it('canonical recording observation preserves native Sony transitional and unkno
     for (const [rawValue, expected] of [
         [0, 'idle'],
         [1, 'recording'],
-        [2, 'starting'],
-        [3, 'stopping'],
+        [2, 'unknown'],
+        [3, 'unknown'],
         [4, 'unknown'],
         [null, 'unknown'],
     ] as const) {
