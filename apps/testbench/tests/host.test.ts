@@ -86,7 +86,7 @@ test('a failed connection closes its attempt and can be connected explicitly aft
     await bench.close()
     expect(camera.calls).toEqual(['connect', 'disconnect', 'connect', 'disconnect'])
 })
-test('successful Link recovery reconnects its closed transport before reading controls', async () => {
+test('successful Slate recovery reconnects its closed transport before reading controls', async () => {
     const { bench, camera } = fixtureBench()
     const { id } = (await bench.scan()).cameras[0]
     await bench.action(id, 'connect')
@@ -100,7 +100,7 @@ test('successful Link recovery reconnects its closed transport before reading co
     expect(camera.calls).toEqual(['connect', 'recover', 'connect'])
     await bench.close()
 })
-test.each([0x054c, 0x04b0, 0x04a9])('vendor %s uses Link capabilities and preserves shutter-angle labels', async vendorId => {
+test.each([0x054c, 0x04b0, 0x04a9])('vendor %s uses Slate capabilities and preserves shutter-angle labels', async vendorId => {
     const { adapter, camera } = fixtureBench()
     adapter.discover = async () => [{ vendorId, productId: 1, model: 'USB camera' }]
     const read = camera.getCapabilities.bind(camera)

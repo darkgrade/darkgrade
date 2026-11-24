@@ -9,7 +9,7 @@ const PRIVACY = {
     lede: 'Our privacy policy is being written, and will be published on this page. Until it is, ask us in Discord about your data and a person will answer.',
     facts: [
         { name: 'Status', value: 'Coming soon' },
-        { name: 'Covers', value: 'This site, Link and Studio' },
+        { name: 'Covers', value: 'This site, Slate and Studio' },
         { name: 'Source', value: 'Open on GitHub', href: LINKS.github },
         { name: 'Questions', value: 'Discord', href: LINKS.discord },
     ],

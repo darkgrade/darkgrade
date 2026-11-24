@@ -1,0 +1,1892 @@
+import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
+import { baseCodecs, createEnumCodec, CustomCodec, EnumCodec, PTPRegistry } from '@ptp/types/codec'
+import { PropertyDefinition } from '@ptp/types/property'
+import { sonyIsoLabel, sonyIsoRaw } from '@vendors/sony/iso-value'
+
+const INT8 = getDatatypeByName('INT8')!.code
+const UINT8 = getDatatypeByName('UINT8')!.code
+const UINT16 = getDatatypeByName('UINT16')!.code
+const INT16 = getDatatypeByName('INT16')!.code
+const UINT32 = getDatatypeByName('UINT32')!.code
+
+const parseAperture = (v: string | number): number => {
+    const s = String(v)
+        .toLowerCase()
+        .replace(/[fƒ]/g, '')
+        .replace(/[\/:\s]/g, '')
+    return parseFloat(s) || 0
+}
+
+const parseShutter = (v: string): [number, number] => {
+    let s = String(v).toLowerCase().trim()
+    if (s === 'bulb' || s === 'b') return [0, 0]
+
+    s = s.replace(/["'`]/g, '').replace(/\s*(sec(onds?)?|s)\s*$/g, '')
+
+    if (s.includes('/')) {
+        const parts = s.split('/')
+        const n = parseInt(parts[0] || '1') || 1
+        const d = parseInt(parts[1] || '1') || 1
+        return [n, d]
+    }
+
+    const num = parseFloat(s)
+    if (isNaN(num)) return [1, 1]
+
+    if (num >= 0.4) {
+        return [Math.round(num * 10), 10]
+    } else {
+        const denominator = Math.round(1 / num)
+        return [1, denominator]
+    }
+}
+
+class ApertureCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const v = String(value).toLowerCase()
+        const u16 = this.baseCodecs.uint16
+        if (v === 'iris close') return u16.encode(0xfffd)
+        if (v === '--') return u16.encode(0xfffe)
+        if (v === 'nothing to display') return u16.encode(0xffff)
+        return u16.encode(Math.round(parseAperture(value) * 100))
+    }
+
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const u16 = this.baseCodecs.uint16
+        const result = u16.decode(buffer, offset)
+        const hexValue = result.value
+
+        const decoded =
+            hexValue === 0xfffd
+                ? 'Iris Close'
+                : hexValue === 0xfffe
+                  ? '--'
+                  : hexValue === 0xffff
+                    ? 'nothing to display'
+                    : `f/${hexValue / 100}`
+
+        return { value: decoded, bytesRead: result.bytesRead }
+    }
+}
+
+class ShutterSpeedCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const [n, d] = parseShutter(value)
+        const u32 = this.baseCodecs.uint32
+        if (n === 0 && d === 0) return u32.encode(0x00000000)
+        return u32.encode((n << 16) | d)
+    }
+
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const u32 = this.baseCodecs.uint32
+        const result = u32.decode(buffer, offset)
+        const hexValue = result.value
+
+        if (hexValue === 0x00000000) {
+            return { value: 'BULB', bytesRead: result.bytesRead }
+        }
+
+        const numerator = (hexValue >> 16) & 0xffff
+        const denominator = hexValue & 0xffff
+
+        let decoded: string
+        if (numerator === 1) {
+            decoded = `1/${denominator}`
+        } else if (denominator === 0x000a) {
+            const seconds = numerator / 10
+            if (seconds === Math.floor(seconds)) {
+                decoded = `${Math.floor(seconds)}"`
+            } else {
+                decoded = `${seconds}"`
+            }
+        } else {
+            decoded = `${numerator}/${denominator}`
+        }
+
+        return { value: decoded, bytesRead: result.bytesRead }
+    }
+}
+
+class IsoCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        return this.baseCodecs.uint32.encode(sonyIsoRaw(value))
+    }
+
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const u32 = this.baseCodecs.uint32
+        const result = u32.decode(buffer, offset)
+        return { value: sonyIsoLabel(result.value), bytesRead: result.bytesRead }
+    }
+}
+
+class ExposureValueCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const i16 = this.baseCodecs.int16
+        return i16.encode(Math.round(parseFloat(value) * 1000))
+    }
+
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const i16 = this.baseCodecs.int16
+        const result = i16.decode(buffer, offset)
+        const decoded = result.value / 1000
+        return { value: `${decoded < 0 ? '-' : '+'}${Math.abs(decoded)} EV`, bytesRead: result.bytesRead }
+    }
+}
+
+class SonyZoomPositionCodec extends CustomCodec<number> {
+    encode(value: number): Uint8Array {
+        if (!Number.isFinite(value) || value < 0) {
+            throw new Error(`Sony zoom position must be a non-negative number, received ${value}`)
+        }
+        return this.baseCodecs.uint32.encode(Math.round(value * 1_000_000))
+    }
+
+    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
+        const result = this.baseCodecs.uint32.decode(buffer, offset)
+        return { value: result.value / 1_000_000, bytesRead: result.bytesRead }
+    }
+}
+
+export const WhiteBalance = {
+    code: 0x5005,
+    name: 'WhiteBalance',
+    description: 'Sony white-balance mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0002, name: 'Auto', description: 'Automatic white balance' },
+                { value: 0x0004, name: 'Daylight', description: 'Daylight' },
+                { value: 0x8011, name: 'Shade', description: 'Shade' },
+                { value: 0x8010, name: 'Cloudy', description: 'Cloudy' },
+                { value: 0x0006, name: 'Tungsten', description: 'Tungsten / incandescent' },
+                { value: 0x8001, name: 'Fluorescent Warm White', description: 'Warm-white fluorescent' },
+                { value: 0x8002, name: 'Fluorescent Cool White', description: 'Cool-white fluorescent' },
+                { value: 0x8003, name: 'Fluorescent Day White', description: 'Day-white fluorescent' },
+                { value: 0x8004, name: 'Fluorescent Daylight', description: 'Daylight fluorescent' },
+                { value: 0x0007, name: 'Flash', description: 'Flash' },
+                { value: 0x8030, name: 'Underwater Auto', description: 'Underwater automatic' },
+                { value: 0x8012, name: 'Color Temperature', description: 'Explicit color temperature' },
+                { value: 0x8020, name: 'Preset 1', description: 'Custom white-balance preset 1' },
+                { value: 0x8021, name: 'Preset 2', description: 'Custom white-balance preset 2' },
+                { value: 0x8022, name: 'Preset 3', description: 'Custom white-balance preset 3' },
+                { value: 0x8023, name: 'Preset', description: 'Custom white-balance preset' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const FocusMode = {
+    code: 0x500a,
+    name: 'FocusMode',
+    description: 'Sony focus mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'Manual', description: 'Manual focus' },
+                { value: 0x0002, name: 'AF-S', description: 'Single-shot autofocus' },
+                { value: 0x8004, name: 'AF-C', description: 'Continuous autofocus' },
+                { value: 0x8005, name: 'AF-A', description: 'Automatic AF-S / AF-C selection' },
+                { value: 0x8006, name: 'DMF', description: 'Direct manual focus' },
+                { value: 0x8007, name: 'Manual Reverse', description: 'Reverse manual focus' },
+                { value: 0x8008, name: 'AF-D', description: 'Depth-map assisted autofocus' },
+                { value: 0x8009, name: 'Preset Focus', description: 'Preset focus' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+// Sony autofocus area (PTP 0xd22c), as listed in Sony's Camera Control PTP 3 reference. Unknown
+// areas still decode to "Area 0x…" so a newer body reports rather than fails.
+const SONY_FOCUS_AREA_NAMES: Record<number, string> = {
+    0x0001: 'Wide',
+    0x0002: 'Zone',
+    0x0003: 'Center',
+    0x0101: 'Flexible Spot S',
+    0x0102: 'Flexible Spot M',
+    0x0103: 'Flexible Spot L',
+    0x0104: 'Expand Flexible Spot',
+    0x0105: 'Flexible Spot',
+    0x0106: 'Flexible Spot XS',
+    0x0107: 'Flexible Spot XL',
+    0x1101: 'Flexible Spot Free Size 1',
+    0x1102: 'Flexible Spot Free Size 2',
+    0x1103: 'Flexible Spot Free Size 3',
+    0x0201: 'Lock on AF Wide',
+    0x0202: 'Lock on AF Zone',
+    0x0203: 'Lock on AF Center',
+    0x0204: 'Lock on AF Flexible Spot S',
+    0x0205: 'Lock on AF Flexible Spot M',
+    0x0206: 'Lock on AF Flexible Spot L',
+    0x0207: 'Lock on AF Expand Flexible Spot',
+    0x0208: 'Lock on AF Flexible Spot',
+    0x0209: 'Lock on AF Flexible Spot XS',
+    0x020a: 'Lock on AF Flexible Spot XL',
+    0x1201: 'Lock on AF Flexible Spot Free Size 1',
+    0x1202: 'Lock on AF Flexible Spot Free Size 2',
+    0x1203: 'Lock on AF Flexible Spot Free Size 3',
+    // Not in the PTP 3 reference; reported by older bodies.
+    0x0301: 'Tracking Flexible Spot S',
+    0x0302: 'Tracking Flexible Spot M',
+    0x0303: 'Tracking Flexible Spot L',
+    0x0304: 'Tracking Expand Flexible Spot',
+}
+class SonyFocusAreaCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const entry = Object.entries(SONY_FOCUS_AREA_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
+        if (!Number.isFinite(raw)) throw new Error(`Unknown focus area: ${value}`)
+        return this.baseCodecs.uint16.encode(raw)
+    }
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const result = this.baseCodecs.uint16.decode(buffer, offset)
+        return { value: SONY_FOCUS_AREA_NAMES[result.value] ?? `Area 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+    }
+}
+export const FocusArea = {
+    code: 0xd22c,
+    name: 'FocusArea',
+    description: 'Sony autofocus area mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new SonyFocusAreaCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const CompressionSetting = {
+    code: 0x5004,
+    name: 'CompressionSetting',
+    description: 'Sony still-image recording format and JPEG/HEIF quality.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'JPEG Light', description: 'JPEG Light' },
+                { value: 0x02, name: 'JPEG Standard', description: 'JPEG Standard' },
+                { value: 0x03, name: 'JPEG Fine', description: 'JPEG Fine' },
+                { value: 0x04, name: 'JPEG Extra Fine', description: 'JPEG Extra Fine' },
+                { value: 0x10, name: 'RAW', description: 'RAW' },
+                { value: 0x11, name: 'RAW + JPEG Light', description: 'RAW plus JPEG Light' },
+                { value: 0x12, name: 'RAW + JPEG Standard', description: 'RAW plus JPEG Standard' },
+                { value: 0x13, name: 'RAW + JPEG Fine', description: 'RAW plus JPEG Fine' },
+                { value: 0x14, name: 'RAW + JPEG Extra Fine', description: 'RAW plus JPEG Extra Fine' },
+                { value: 0x31, name: 'HEIF Light', description: 'HEIF Light' },
+                { value: 0x32, name: 'HEIF Standard', description: 'HEIF Standard' },
+                { value: 0x33, name: 'HEIF Fine', description: 'HEIF Fine' },
+                { value: 0x34, name: 'HEIF Extra Fine', description: 'HEIF Extra Fine' },
+                { value: 0x41, name: 'RAW + HEIF Light', description: 'RAW plus HEIF Light' },
+                { value: 0x42, name: 'RAW + HEIF Standard', description: 'RAW plus HEIF Standard' },
+                { value: 0x43, name: 'RAW + HEIF Fine', description: 'RAW plus HEIF Fine' },
+                { value: 0x44, name: 'RAW + HEIF Extra Fine', description: 'RAW plus HEIF Extra Fine' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const SonyImageSize = {
+    code: 0xd203,
+    name: 'SonyImageSize',
+    description: 'Sony still-image size.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Large', description: 'Large' },
+                { value: 0x02, name: 'Medium', description: 'Medium' },
+                { value: 0x03, name: 'Small', description: 'Small' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const AspectRatio = {
+    code: 0xd211,
+    name: 'AspectRatio',
+    description: 'Sony still-image aspect ratio.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: '3:2', description: '3:2' },
+                { value: 0x02, name: '16:9', description: '16:9' },
+                { value: 0x03, name: '4:3', description: '4:3' },
+                { value: 0x04, name: '1:1', description: '1:1' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ColorTemperature = {
+    code: 0xd20f,
+    name: 'ColorTemperature',
+    description: 'Sony white-balance color temperature in kelvin.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: baseCodecs.uint16,
+} as const satisfies PropertyDefinition
+
+export const ZoomPosition = {
+    code: 0xd214,
+    name: 'ZoomPosition',
+    description: 'Sony lens zoom/focal position reported in millimetres.',
+    datatype: UINT32,
+    access: 'Get',
+    codec: registry => new SonyZoomPositionCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const StillFileFormat = {
+    code: 0xd253,
+    name: 'StillFileFormat',
+    description: 'Sony still-image file format used by current protocol-v3 bodies.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'RAW', description: 'RAW' },
+                { value: 0x02, name: 'RAW + JPEG', description: 'RAW plus JPEG' },
+                { value: 0x03, name: 'JPEG', description: 'JPEG' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const JpegQuality = {
+    code: 0xd252,
+    name: 'JpegQuality',
+    description: 'Sony JPEG quality for protocol-v3 bodies.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Extra Fine', description: 'Extra Fine' },
+                { value: 0x02, name: 'Fine', description: 'Fine' },
+                { value: 0x03, name: 'Standard', description: 'Standard' },
+                { value: 0x04, name: 'Light', description: 'Light' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieFileFormat = {
+    code: 0xd241,
+    name: 'MovieFileFormat',
+    description: 'Sony movie codec/container family.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x03, name: 'AVCHD', description: 'AVCHD' },
+                { value: 0x08, name: 'XAVC S 4K', description: 'XAVC S 4K' },
+                { value: 0x09, name: 'XAVC S HD', description: 'XAVC S HD' },
+                { value: 0x0a, name: 'XAVC HS 8K', description: 'XAVC HS 8K' },
+                { value: 0x0b, name: 'XAVC HS 4K', description: 'XAVC HS 4K' },
+                { value: 0x0c, name: 'XAVC S 4K (modern)', description: 'XAVC S 4K on newer Sony bodies' },
+                { value: 0x0d, name: 'XAVC S HD (modern)', description: 'XAVC S HD on newer Sony bodies' },
+                { value: 0x0e, name: 'XAVC S-I 4K', description: 'XAVC S-I 4K' },
+                { value: 0x0f, name: 'XAVC S-I HD', description: 'XAVC S-I HD' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieRecordingSetting = {
+    code: 0xd242,
+    name: 'MovieRecordingSetting',
+    description: 'Sony movie recording setting (bitrate, chroma sampling and bit depth), per the Camera Control PTP 3 reference.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: '60p 50M · XAVC S', description: '60p 50M · XAVC S' },
+                { value: 0x02, name: '30p 50M · XAVC S', description: '30p 50M · XAVC S' },
+                { value: 0x03, name: '24p 50M · XAVC S', description: '24p 50M · XAVC S' },
+                { value: 0x04, name: '50p 50M · XAVC S', description: '50p 50M · XAVC S' },
+                { value: 0x05, name: '25p 50M · XAVC S', description: '25p 50M · XAVC S' },
+                { value: 0x06, name: '60i 24M (FX) · AVCHD', description: '60i 24M (FX) · AVCHD' },
+                { value: 0x07, name: '50i 24M (FX) · AVCHD', description: '50i 24M (FX) · AVCHD' },
+                { value: 0x08, name: '60i 17M (FH) · AVCHD', description: '60i 17M (FH) · AVCHD' },
+                { value: 0x09, name: '50i 17M (FH) · AVCHD', description: '50i 17M (FH) · AVCHD' },
+                { value: 0x0a, name: '60p 28M (PS) · AVCHD', description: '60p 28M (PS) · AVCHD' },
+                { value: 0x0b, name: '50p 28M (PS) · AVCHD', description: '50p 28M (PS) · AVCHD' },
+                { value: 0x0c, name: '24p 24M (FX) · AVCHD', description: '24p 24M (FX) · AVCHD' },
+                { value: 0x0d, name: '25p 24M (FX) · AVCHD', description: '25p 24M (FX) · AVCHD' },
+                { value: 0x0e, name: '24p 17M (FH) · AVCHD', description: '24p 17M (FH) · AVCHD' },
+                { value: 0x0f, name: '25p 17M (FH) · AVCHD', description: '25p 17M (FH) · AVCHD' },
+                { value: 0x10, name: '720 120p 50M · XAVC S', description: '720 120p 50M · XAVC S' },
+                { value: 0x11, name: '720 100p 50M · XAVC S', description: '720 100p 50M · XAVC S' },
+                { value: 0x12, name: '1080 30p 16M · MP4', description: '1080 30p 16M · MP4' },
+                { value: 0x13, name: '1080 25p 16M · MP4', description: '1080 25p 16M · MP4' },
+                { value: 0x14, name: '720 30p 6M · MP4', description: '720 30p 6M · MP4' },
+                { value: 0x15, name: '720 25p 6M · MP4', description: '720 25p 6M · MP4' },
+                { value: 0x16, name: '1080 60p 28M · MP4', description: '1080 60p 28M · MP4' },
+                { value: 0x17, name: '1080 50p 28M · MP4', description: '1080 50p 28M · MP4' },
+                { value: 0x18, name: '60p 25M · XAVC S HD', description: '60p 25M · XAVC S HD' },
+                { value: 0x19, name: '50p 25M · XAVC S HD', description: '50p 25M · XAVC S HD' },
+                { value: 0x1a, name: '30p 16M · XAVC S HD', description: '30p 16M · XAVC S HD' },
+                { value: 0x1b, name: '25p 16M · XAVC S HD', description: '25p 16M · XAVC S HD' },
+                { value: 0x1c, name: '1080 120p 100M · XAVC S HD', description: '1080 120p 100M · XAVC S HD' },
+                { value: 0x1d, name: '1080 100p 100M · XAVC S HD', description: '1080 100p 100M · XAVC S HD' },
+                { value: 0x1e, name: '1080 120p 60M · XAVC S HD', description: '1080 120p 60M · XAVC S HD' },
+                { value: 0x1f, name: '1080 100p 60M · XAVC S HD', description: '1080 100p 60M · XAVC S HD' },
+                { value: 0x20, name: '30p 100M · XAVC S 4K', description: '30p 100M · XAVC S 4K' },
+                { value: 0x21, name: '25p 100M · XAVC S 4K', description: '25p 100M · XAVC S 4K' },
+                { value: 0x22, name: '24p 100M · XAVC S 4K', description: '24p 100M · XAVC S 4K' },
+                { value: 0x23, name: '30p 60M · XAVC S 4K', description: '30p 60M · XAVC S 4K' },
+                { value: 0x24, name: '25p 60M · XAVC S 4K', description: '25p 60M · XAVC S 4K' },
+                { value: 0x25, name: '24p 60M · XAVC S 4K', description: '24p 60M · XAVC S 4K' },
+                { value: 0x26, name: '600M 4:2:2 10-bit', description: '600M 4:2:2 10-bit' },
+                { value: 0x27, name: '500M 4:2:2 10-bit', description: '500M 4:2:2 10-bit' },
+                { value: 0x28, name: '400M 4:2:0 10-bit', description: '400M 4:2:0 10-bit' },
+                { value: 0x29, name: '300M 4:2:2 10-bit', description: '300M 4:2:2 10-bit' },
+                { value: 0x2a, name: '280M 4:2:2 10-bit', description: '280M 4:2:2 10-bit' },
+                { value: 0x2b, name: '250M 4:2:2 10-bit', description: '250M 4:2:2 10-bit' },
+                { value: 0x2c, name: '240M 4:2:2 10-bit', description: '240M 4:2:2 10-bit' },
+                { value: 0x2d, name: '222M 4:2:2 10-bit', description: '222M 4:2:2 10-bit' },
+                { value: 0x2e, name: '200M 4:2:2 10-bit', description: '200M 4:2:2 10-bit' },
+                { value: 0x2f, name: '200M 4:2:0 10-bit', description: '200M 4:2:0 10-bit' },
+                { value: 0x30, name: '200M 4:2:0 8-bit', description: '200M 4:2:0 8-bit' },
+                { value: 0x31, name: '185M 4:2:2 10-bit', description: '185M 4:2:2 10-bit' },
+                { value: 0x32, name: '150M 4:2:0 10-bit', description: '150M 4:2:0 10-bit' },
+                { value: 0x33, name: '150M 4:2:0 8-bit', description: '150M 4:2:0 8-bit' },
+                { value: 0x34, name: '140M 4:2:2 10-bit', description: '140M 4:2:2 10-bit' },
+                { value: 0x35, name: '111M 4:2:2 10-bit', description: '111M 4:2:2 10-bit' },
+                { value: 0x36, name: '100M 4:2:2 10-bit', description: '100M 4:2:2 10-bit' },
+                { value: 0x37, name: '100M 4:2:0 10-bit', description: '100M 4:2:0 10-bit' },
+                { value: 0x38, name: '100M 4:2:0 8-bit', description: '100M 4:2:0 8-bit' },
+                { value: 0x39, name: '93M 4:2:2 10-bit', description: '93M 4:2:2 10-bit' },
+                { value: 0x3a, name: '89M 4:2:2 10-bit', description: '89M 4:2:2 10-bit' },
+                { value: 0x3b, name: '75M 4:2:0 10-bit', description: '75M 4:2:0 10-bit' },
+                { value: 0x3c, name: '60M 4:2:0 8-bit', description: '60M 4:2:0 8-bit' },
+                { value: 0x3d, name: '50M 4:2:2 10-bit', description: '50M 4:2:2 10-bit' },
+                { value: 0x3e, name: '50M 4:2:0 10-bit', description: '50M 4:2:0 10-bit' },
+                { value: 0x3f, name: '50M 4:2:0 8-bit', description: '50M 4:2:0 8-bit' },
+                { value: 0x40, name: '45M 4:2:0 10-bit', description: '45M 4:2:0 10-bit' },
+                { value: 0x41, name: '30M 4:2:0 10-bit', description: '30M 4:2:0 10-bit' },
+                { value: 0x42, name: '25M 4:2:0 8-bit', description: '25M 4:2:0 8-bit' },
+                { value: 0x43, name: '16M 4:2:0 8-bit', description: '16M 4:2:0 8-bit' },
+                { value: 0x44, name: '520M 4:2:2 10-bit', description: '520M 4:2:2 10-bit' },
+                { value: 0x45, name: '260M 4:2:2 10-bit', description: '260M 4:2:2 10-bit' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const SubjectRecognitionInAF = {
+    code: 0xd157,
+    name: 'SubjectRecognitionInAF',
+    description: 'Sony subject recognition (face and eye detection) in AF.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Off', description: 'Off' },
+                { value: 0x02, name: 'On', description: 'On' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const RecognitionTarget = {
+    code: 0xd158,
+    name: 'RecognitionTarget',
+    description: 'Sony subject recognition target.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Person', description: 'Person' },
+                { value: 0x02, name: 'Animal + Bird', description: 'Animal + Bird' },
+                { value: 0x03, name: 'Animal', description: 'Animal' },
+                { value: 0x04, name: 'Bird', description: 'Bird' },
+                { value: 0x05, name: 'Insect', description: 'Insect' },
+                { value: 0x06, name: 'Car/Train', description: 'Car/Train' },
+                { value: 0x07, name: 'Plane', description: 'Plane' },
+                { value: 0xffff, name: 'Auto', description: 'Auto' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const RightLeftEyeSelect = {
+    code: 0xd159,
+    name: 'RightLeftEyeSelect',
+    description: 'Sony right/left eye select for subject recognition.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Auto', description: 'Auto' },
+                { value: 0x02, name: 'Right Eye', description: 'Right Eye' },
+                { value: 0x03, name: 'Left Eye', description: 'Left Eye' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const FaceEyeFrameDisplay = {
+    code: 0xd1b8,
+    name: 'FaceEyeFrameDisplay',
+    description: 'Sony face/eye frame display.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'OFF', description: 'OFF' },
+                { value: 0x02, name: 'ON', description: 'ON' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieRecordingFrameRate = {
+    code: 0xd286,
+    name: 'MovieRecordingFrameRate',
+    description: 'Sony movie recording frame rate, per the Camera Control PTP 3 reference.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x01, name: '120p', description: '120p' },
+                { value: 0x02, name: '100p', description: '100p' },
+                { value: 0x03, name: '60p', description: '60p' },
+                { value: 0x04, name: '50p', description: '50p' },
+                { value: 0x05, name: '30p', description: '30p' },
+                { value: 0x06, name: '25p', description: '25p' },
+                { value: 0x07, name: '24p', description: '24p' },
+                { value: 0x08, name: '23.98p', description: '23.98p' },
+                { value: 0x09, name: '29.97p', description: '29.97p' },
+                { value: 0x0a, name: '59.94p', description: '59.94p' },
+                { value: 0x0b, name: '19.98p', description: '19.98p' },
+                { value: 0x0c, name: '14.99p', description: '14.99p' },
+                { value: 0x0d, name: '12.50p', description: '12.50p' },
+                { value: 0x0e, name: '12.00p', description: '12.00p' },
+                { value: 0x0f, name: '11.99p', description: '11.99p' },
+                { value: 0x10, name: '10.00p', description: '10.00p' },
+                { value: 0x11, name: '9.99p', description: '9.99p' },
+                { value: 0x12, name: '6.00p', description: '6.00p' },
+                { value: 0x13, name: '5.99p', description: '5.99p' },
+                { value: 0x14, name: '5.00p', description: '5.00p' },
+                { value: 0x15, name: '4.995p', description: '4.995p' },
+                { value: 0x16, name: '24.00p', description: '24.00p' },
+                { value: 0x17, name: '119.88p', description: '119.88p' },
+                { value: 0x41, name: '120i', description: '120i' },
+                { value: 0x42, name: '100i', description: '100i' },
+                { value: 0x43, name: '60i', description: '60i' },
+                { value: 0x44, name: '50i', description: '50i' },
+                { value: 0x45, name: '30i', description: '30i' },
+                { value: 0x46, name: '25i', description: '25i' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const DateTimeSetting = {
+    code: 0xd223,
+    name: 'DateTimeSetting',
+    description:
+        'Sets the camera clock (write-only). ISO 8601 "YYYYMMDDThhmmss.s±hhmm"; valid from 2016-01-01. The result arrives as SDIE_DateTimeSettingResult.',
+    datatype: getDatatypeByName('STR')!.code,
+    access: 'GetSet',
+    codec: registry => registry.codecs.string,
+} as const satisfies PropertyDefinition
+
+export const MovieRecordingState = {
+    code: 0xd21d,
+    name: 'MovieRecordingState',
+    description: 'Sony movie-recording state.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'Idle', description: 'Not recording' },
+                { value: 1, name: 'Recording', description: 'Recording' },
+                { value: 2, name: 'RecordingFailed', description: 'Recording failed' },
+                { value: 3, name: 'IntervalRecordingWaiting', description: 'Waiting for interval recording' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ZoomEnableStatus = {
+    code: 0xd25b,
+    name: 'ZoomEnableStatus',
+    description: 'Whether the attached lens/configuration accepts remote zoom.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'Unavailable', description: 'Remote zoom unavailable' },
+                { value: 1, name: 'Enabled', description: 'Remote zoom enabled' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ZoomScale = {
+    code: 0xd25c,
+    name: 'ZoomScale',
+    description: 'Sony zoom scale in thousandths.',
+    datatype: UINT32,
+    access: 'Get',
+    codec: baseCodecs.uint32,
+} as const satisfies PropertyDefinition
+
+export const ZoomBarInfo = {
+    code: 0xd25d,
+    name: 'ZoomBarInfo',
+    description: 'Sony packed zoom-bar position information.',
+    datatype: UINT32,
+    access: 'Get',
+    codec: baseCodecs.uint32,
+} as const satisfies PropertyDefinition
+
+export const ZoomSpeed = {
+    code: 0xd25e,
+    name: 'ZoomSpeed',
+    description: 'Current Sony remote zoom direction/speed.',
+    datatype: INT8,
+    access: 'Get',
+    codec: baseCodecs.int8,
+} as const satisfies PropertyDefinition
+
+export const ZoomSetting = {
+    code: 0xd25f,
+    name: 'ZoomSetting',
+    description: 'Sony zoom range/type setting.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 1, name: 'Optical Zoom Only', description: 'Optical zoom only' },
+                { value: 3, name: 'Clear Image Zoom', description: 'Optical plus Clear Image Zoom' },
+                { value: 4, name: 'Digital Zoom', description: 'Optical plus digital zoom' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ZoomTypeStatus = {
+    code: 0xd260,
+    name: 'ZoomTypeStatus',
+    description: 'Active Sony zoom type.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 1, name: 'Optical', description: 'Optical zoom' },
+                { value: 2, name: 'Smart Zoom', description: 'Smart Zoom' },
+                { value: 3, name: 'Clear Image Zoom', description: 'Clear Image Zoom' },
+                { value: 4, name: 'Digital Zoom', description: 'Digital zoom' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const Aperture = {
+    code: 0x5007,
+    name: 'Aperture',
+    description: 'Get/Set the aperture value.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new ApertureCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const ShutterSpeed = {
+    code: 0xd20d,
+    name: 'ShutterSpeed',
+    description: 'Get/Set the shutter speed.',
+    datatype: UINT32,
+    access: 'GetSet',
+    codec: registry => new ShutterSpeedCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const Iso = {
+    code: 0xd21e,
+    name: 'Iso',
+    description: 'Get/Set the ISO sensitivity.',
+    datatype: UINT32,
+    access: 'GetSet',
+    codec: registry => new IsoCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const GainControlSetting = {
+    code: 0xd01c,
+    name: 'GainControlSetting',
+    description: 'ISO auto/manual switch in Sony Flexible Exposure mode.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry => createEnumCodec(registry, [
+        { value: 1, name: 'Auto', description: 'Automatic ISO sensitivity' },
+        { value: 2, name: 'Manual', description: 'Manually selected ISO sensitivity' },
+    ] as const, registry.codecs.uint8),
+} as const satisfies PropertyDefinition
+
+export const Exposure = {
+    code: 0x0000,
+    name: 'Exposure',
+    description: 'Exposure (either metered or manually set)',
+    datatype: INT16,
+    access: 'Get',
+    codec: baseCodecs.int16,
+} as const satisfies PropertyDefinition
+
+export const MeteredExposure = {
+    code: 0xd1b5,
+    name: 'MeteredExposure',
+    description: 'AKA Metered Manual Level - Get the metered manual level.',
+    datatype: INT16,
+    access: 'GetSet',
+    codec: registry => new ExposureValueCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const ExposureCompensation = {
+    code: 0x5010,
+    name: 'ExposureCompensation',
+    description: 'AKA Exposure Bias Compensation - Get/Set the exposure bias compensation.',
+    datatype: INT16,
+    access: 'GetSet',
+    codec: registry => new ExposureValueCodec(registry),
+} as const satisfies PropertyDefinition
+
+// Override the generic 0x5010 definition (plain int16) so Sony bodies decode the
+// exposure-compensation value as EV. The camera advertises this property in
+// thousandths of a stop (e.g. 300 = +0.3 EV, 3000 = +3.0 EV, verified against the
+// ILCE-6700's own advertised value set), so the generic raw-integer decode is wrong.
+// Keeps the `ExposureBiasCompensation` key/position that generic defines, which is
+// what property lookup (find-by-code) and the UI label already use.
+export const ExposureBiasCompensation = {
+    code: 0x5010,
+    name: 'ExposureBiasCompensation',
+    description: 'Exposure bias compensation, decoded as EV.',
+    datatype: INT16,
+    access: 'GetSet',
+    codec: registry => new ExposureValueCodec(registry),
+} as const satisfies PropertyDefinition
+
+// Sony exposure-metering modes (PTP 0x500b). The ILCE-6700 advertises 0x8001-0x8006;
+// names were verified on the darkgrade-testbench by driving each CrMeteringMode through
+// the Sony Camera Remote SDK and reading back the PTP value (0x8001=Multi, 0x8002=Center/
+// CenterWeighted, 0x8003=Entire Screen Avg, 0x8004=Spot Standard, 0x8005=Spot Large,
+// 0x8006=Highlight). Unknown/vendor modes decode to a readable "Mode 0x…" instead of the
+// generic raw integer, so other Sony bodies still report.
+const SONY_METERING_MODE_NAMES: Record<number, string> = {
+    0x8001: 'Multi',
+    0x8002: 'Center',
+    0x8003: 'Entire Screen Avg.',
+    0x8004: 'Spot: Standard',
+    0x8005: 'Spot: Large',
+    0x8006: 'Highlight',
+}
+class SonyMeteringModeCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const entry = Object.entries(SONY_METERING_MODE_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
+        if (!Number.isFinite(raw)) throw new Error(`Unknown metering mode: ${value}`)
+        return this.baseCodecs.uint16.encode(raw)
+    }
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const result = this.baseCodecs.uint16.decode(buffer, offset)
+        return { value: SONY_METERING_MODE_NAMES[result.value] ?? `Mode 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+    }
+}
+// Overrides the generic 0x500b definition (raw uint16) for Sony bodies.
+export const ExposureMeteringMode = {
+    code: 0x500b,
+    name: 'ExposureMeteringMode',
+    description: 'Sony exposure metering mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new SonyMeteringModeCodec(registry),
+} as const satisfies PropertyDefinition
+
+// Sony flash modes (PTP 0x500c). Verified on the darkgrade-testbench by setting each
+// value through the Sony SDIO path and reading back the SDK's CrFlashMode: PTP 0x0003=Fill
+// (SDK 3), 0x8001=Slow Sync (SDK 5), 0x8003=Rear Sync (SDK 6). The body under test has no
+// flash so it rejected 0x0001/0x0002; those map to Autoflash/Flash Off by the standard-PTP
+// and SDK low-range alignment that the verified 0x0003=Fill anchors. Unknown modes decode
+// to a readable "Mode 0x…".
+const SONY_FLASH_MODE_NAMES: Record<number, string> = {
+    0x0001: 'Autoflash',
+    0x0002: 'Flash Off',
+    0x0003: 'Fill-flash',
+    0x8001: 'Slow Sync',
+    0x8003: 'Rear Sync',
+}
+class SonyFlashModeCodec extends CustomCodec<string> {
+    encode(value: string): Uint8Array {
+        const entry = Object.entries(SONY_FLASH_MODE_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
+        if (!Number.isFinite(raw)) throw new Error(`Unknown flash mode: ${value}`)
+        return this.baseCodecs.uint16.encode(raw)
+    }
+    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
+        const result = this.baseCodecs.uint16.decode(buffer, offset)
+        return { value: SONY_FLASH_MODE_NAMES[result.value] ?? `Mode 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+    }
+}
+// Overrides the generic 0x500c definition (raw uint16) for Sony bodies.
+export const FlashMode = {
+    code: 0x500c,
+    name: 'FlashMode',
+    description: 'Sony flash mode.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry => new SonyFlashModeCodec(registry),
+} as const satisfies PropertyDefinition
+
+export const StillCaptureMode = {
+    code: 0x5013,
+    name: 'StillCaptureMode',
+    description: 'Get/Set the drive mode.',
+    datatype: UINT32,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x00000001, name: 'Normal', description: 'Normal' },
+                { value: 0x00010002, name: 'Continuous Shooting Hi', description: 'Continuous Shooting Hi' },
+                { value: 0x00018010, name: 'Continuous Shooting Hi+', description: 'Continuous Shooting Hi+' },
+                { value: 0x00018011, name: 'Continuous Shooting Hi-Live', description: 'Continuous Shooting Hi-Live' },
+                { value: 0x00018012, name: 'Continuous Shooting Lo', description: 'Continuous Shooting Lo' },
+                { value: 0x00018013, name: 'Continuous Shooting', description: 'Continuous Shooting' },
+                {
+                    value: 0x00018014,
+                    name: 'Continuous Shooting Speed Priority',
+                    description: 'Continuous Shooting Speed Priority',
+                },
+                { value: 0x00018015, name: 'Continuous Shooting Mid', description: 'Continuous Shooting Mid' },
+                {
+                    value: 0x00018016,
+                    name: 'Continuous Shooting Mid-Live',
+                    description: 'Continuous Shooting Mid-Live',
+                },
+                { value: 0x00018017, name: 'Continuous Shooting Lo-Live', description: 'Continuous Shooting Lo-Live' },
+                { value: 0x00020003, name: 'Timelapse', description: 'Timelapse' },
+                { value: 0x00038003, name: 'Self Timer 5 Sec.', description: 'Self Timer 5 Sec.' },
+                { value: 0x00038004, name: 'Self Timer 10 Sec.', description: 'Self Timer 10 Sec.' },
+                { value: 0x00038005, name: 'Self Timer 2 Sec.', description: 'Self Timer 2 Sec.' },
+                {
+                    value: 0x0004c237,
+                    name: 'Continuous Bracket 0.3 EV 2 Img. +',
+                    description: 'Continuous Bracket 0.3 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c23f,
+                    name: 'Continuous Bracket 0.3 EV 2 Img. -',
+                    description: 'Continuous Bracket 0.3 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048337,
+                    name: 'Continuous Bracket 0.3 EV 3 Img.',
+                    description: 'Continuous Bracket 0.3 EV 3 Img.',
+                },
+                {
+                    value: 0x00048537,
+                    name: 'Continuous Bracket 0.3 EV 5 Img.',
+                    description: 'Continuous Bracket 0.3 EV 5 Img.',
+                },
+                {
+                    value: 0x00048737,
+                    name: 'Continuous Bracket 0.3 EV 7 Img.',
+                    description: 'Continuous Bracket 0.3 EV 7 Img.',
+                },
+                {
+                    value: 0x00048937,
+                    name: 'Continuous Bracket 0.3 EV 9 Img.',
+                    description: 'Continuous Bracket 0.3 EV 9 Img.',
+                },
+                {
+                    value: 0x0004c257,
+                    name: 'Continuous Bracket 0.5 EV 2 Img. +',
+                    description: 'Continuous Bracket 0.5 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c25f,
+                    name: 'Continuous Bracket 0.5 EV 2 Img. -',
+                    description: 'Continuous Bracket 0.5 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048357,
+                    name: 'Continuous Bracket 0.5 EV 3 Img.',
+                    description: 'Continuous Bracket 0.5 EV 3 Img.',
+                },
+                {
+                    value: 0x00048557,
+                    name: 'Continuous Bracket 0.5 EV 5 Img.',
+                    description: 'Continuous Bracket 0.5 EV 5 Img.',
+                },
+                {
+                    value: 0x00048757,
+                    name: 'Continuous Bracket 0.5 EV 7 Img.',
+                    description: 'Continuous Bracket 0.5 EV 7 Img.',
+                },
+                {
+                    value: 0x00048957,
+                    name: 'Continuous Bracket 0.5 EV 9 Img.',
+                    description: 'Continuous Bracket 0.5 EV 9 Img.',
+                },
+                {
+                    value: 0x0004c277,
+                    name: 'Continuous Bracket 0.7 EV 2 Img. +',
+                    description: 'Continuous Bracket 0.7 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c27f,
+                    name: 'Continuous Bracket 0.7 EV 2 Img. -',
+                    description: 'Continuous Bracket 0.7 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048377,
+                    name: 'Continuous Bracket 0.7 EV 3 Img.',
+                    description: 'Continuous Bracket 0.7 EV 3 Img.',
+                },
+                {
+                    value: 0x00048577,
+                    name: 'Continuous Bracket 0.7 EV 5 Img.',
+                    description: 'Continuous Bracket 0.7 EV 5 Img.',
+                },
+                {
+                    value: 0x00048777,
+                    name: 'Continuous Bracket 0.7 EV 7 Img.',
+                    description: 'Continuous Bracket 0.7 EV 7 Img.',
+                },
+                {
+                    value: 0x00048977,
+                    name: 'Continuous Bracket 0.7 EV 9 Img.',
+                    description: 'Continuous Bracket 0.7 EV 9 Img.',
+                },
+                {
+                    value: 0x0004c211,
+                    name: 'Continuous Bracket 1.0 EV 2 Img. +',
+                    description: 'Continuous Bracket 1.0 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c219,
+                    name: 'Continuous Bracket 1.0 EV 2 Img. -',
+                    description: 'Continuous Bracket 1.0 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048311,
+                    name: 'Continuous Bracket 1.0 EV 3 Img.',
+                    description: 'Continuous Bracket 1.0 EV 3 Img.',
+                },
+                {
+                    value: 0x00048511,
+                    name: 'Continuous Bracket 1.0 EV 5 Img.',
+                    description: 'Continuous Bracket 1.0 EV 5 Img.',
+                },
+                {
+                    value: 0x00048711,
+                    name: 'Continuous Bracket 1.0 EV 7 Img.',
+                    description: 'Continuous Bracket 1.0 EV 7 Img.',
+                },
+                {
+                    value: 0x00048911,
+                    name: 'Continuous Bracket 1.0 EV 9 Img.',
+                    description: 'Continuous Bracket 1.0 EV 9 Img.',
+                },
+                {
+                    value: 0x0004c241,
+                    name: 'Continuous Bracket 1.3 EV 2 Img. +',
+                    description: 'Continuous Bracket 1.3 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c249,
+                    name: 'Continuous Bracket 1.3 EV 2 Img. -',
+                    description: 'Continuous Bracket 1.3 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048341,
+                    name: 'Continuous Bracket 1.3 EV 3 Img.',
+                    description: 'Continuous Bracket 1.3 EV 3 Img.',
+                },
+                {
+                    value: 0x00048541,
+                    name: 'Continuous Bracket 1.3 EV 5 Img.',
+                    description: 'Continuous Bracket 1.3 EV 5 Img.',
+                },
+                {
+                    value: 0x00048741,
+                    name: 'Continuous Bracket 1.3 EV 7 Img.',
+                    description: 'Continuous Bracket 1.3 EV 7 Img.',
+                },
+                {
+                    value: 0x0004c261,
+                    name: 'Continuous Bracket 1.5 EV 2 Img. +',
+                    description: 'Continuous Bracket 1.5 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c269,
+                    name: 'Continuous Bracket 1.5 EV 2 Img. -',
+                    description: 'Continuous Bracket 1.5 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048361,
+                    name: 'Continuous Bracket 1.5 EV 3 Img.',
+                    description: 'Continuous Bracket 1.5 EV 3 Img.',
+                },
+                {
+                    value: 0x00048561,
+                    name: 'Continuous Bracket 1.5 EV 5 Img.',
+                    description: 'Continuous Bracket 1.5 EV 5 Img.',
+                },
+                {
+                    value: 0x00048761,
+                    name: 'Continuous Bracket 1.5 EV 7 Img.',
+                    description: 'Continuous Bracket 1.5 EV 7 Img.',
+                },
+                {
+                    value: 0x0004c281,
+                    name: 'Continuous Bracket 1.7 EV 2 Img. +',
+                    description: 'Continuous Bracket 1.7 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c289,
+                    name: 'Continuous Bracket 1.7 EV 2 Img. -',
+                    description: 'Continuous Bracket 1.7 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048381,
+                    name: 'Continuous Bracket 1.7 EV 3 Img.',
+                    description: 'Continuous Bracket 1.7 EV 3 Img.',
+                },
+                {
+                    value: 0x00048581,
+                    name: 'Continuous Bracket 1.7 EV 5 Img.',
+                    description: 'Continuous Bracket 1.7 EV 5 Img.',
+                },
+                {
+                    value: 0x00048781,
+                    name: 'Continuous Bracket 1.7 EV 7 Img.',
+                    description: 'Continuous Bracket 1.7 EV 7 Img.',
+                },
+                {
+                    value: 0x0004c221,
+                    name: 'Continuous Bracket 2.0 EV 2 Img. +',
+                    description: 'Continuous Bracket 2.0 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c229,
+                    name: 'Continuous Bracket 2.0 EV 2 Img. -',
+                    description: 'Continuous Bracket 2.0 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048321,
+                    name: 'Continuous Bracket 2.0 EV 3 Img.',
+                    description: 'Continuous Bracket 2.0 EV 3 Img.',
+                },
+                {
+                    value: 0x00048521,
+                    name: 'Continuous Bracket 2.0 EV 5 Img.',
+                    description: 'Continuous Bracket 2.0 EV 5 Img.',
+                },
+                {
+                    value: 0x00048721,
+                    name: 'Continuous Bracket 2.0 EV 7 Img.',
+                    description: 'Continuous Bracket 2.0 EV 7 Img.',
+                },
+                {
+                    value: 0x0004c251,
+                    name: 'Continuous Bracket 2.3 EV 2 Img. +',
+                    description: 'Continuous Bracket 2.3 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c259,
+                    name: 'Continuous Bracket 2.3 EV 2 Img. -',
+                    description: 'Continuous Bracket 2.3 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048351,
+                    name: 'Continuous Bracket 2.3 EV 3 Img.',
+                    description: 'Continuous Bracket 2.3 EV 3 Img.',
+                },
+                {
+                    value: 0x00048551,
+                    name: 'Continuous Bracket 2.3 EV 5 Img.',
+                    description: 'Continuous Bracket 2.3 EV 5 Img.',
+                },
+                {
+                    value: 0x0004c271,
+                    name: 'Continuous Bracket 2.5 EV 2 Img. +',
+                    description: 'Continuous Bracket 2.5 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c279,
+                    name: 'Continuous Bracket 2.5 EV 2 Img. -',
+                    description: 'Continuous Bracket 2.5 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048371,
+                    name: 'Continuous Bracket 2.5 EV 3 Img.',
+                    description: 'Continuous Bracket 2.5 EV 3 Img.',
+                },
+                {
+                    value: 0x00048571,
+                    name: 'Continuous Bracket 2.5 EV 5 Img.',
+                    description: 'Continuous Bracket 2.5 EV 5 Img.',
+                },
+                {
+                    value: 0x0004c291,
+                    name: 'Continuous Bracket 2.7 EV 2 Img. +',
+                    description: 'Continuous Bracket 2.7 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c299,
+                    name: 'Continuous Bracket 2.7 EV 2 Img. -',
+                    description: 'Continuous Bracket 2.7 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048391,
+                    name: 'Continuous Bracket 2.7 EV 3 Img.',
+                    description: 'Continuous Bracket 2.7 EV 3 Img.',
+                },
+                {
+                    value: 0x00048591,
+                    name: 'Continuous Bracket 2.7 EV 5 Img.',
+                    description: 'Continuous Bracket 2.7 EV 5 Img.',
+                },
+                {
+                    value: 0x0004c231,
+                    name: 'Continuous Bracket 3.0 EV 2 Img. +',
+                    description: 'Continuous Bracket 3.0 EV 2 Img. +',
+                },
+                {
+                    value: 0x0004c239,
+                    name: 'Continuous Bracket 3.0 EV 2 Img. -',
+                    description: 'Continuous Bracket 3.0 EV 2 Img. -',
+                },
+                {
+                    value: 0x00048331,
+                    name: 'Continuous Bracket 3.0 EV 3 Img.',
+                    description: 'Continuous Bracket 3.0 EV 3 Img.',
+                },
+                {
+                    value: 0x00048531,
+                    name: 'Continuous Bracket 3.0 EV 5 Img.',
+                    description: 'Continuous Bracket 3.0 EV 5 Img.',
+                },
+                {
+                    value: 0x0005c236,
+                    name: 'Single Bracket 0.3 EV 2 Img. +',
+                    description: 'Single Bracket 0.3 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c23e,
+                    name: 'Single Bracket 0.3 EV 2 Img. -',
+                    description: 'Single Bracket 0.3 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058336,
+                    name: 'Single Bracket 0.3 EV 3 Img.',
+                    description: 'Single Bracket 0.3 EV 3 Img.',
+                },
+                {
+                    value: 0x00058536,
+                    name: 'Single Bracket 0.3 EV 5 Img.',
+                    description: 'Single Bracket 0.3 EV 5 Img.',
+                },
+                {
+                    value: 0x00058736,
+                    name: 'Single Bracket 0.3 EV 7 Img.',
+                    description: 'Single Bracket 0.3 EV 7 Img.',
+                },
+                {
+                    value: 0x00058936,
+                    name: 'Single Bracket 0.3 EV 9 Img.',
+                    description: 'Single Bracket 0.3 EV 9 Img.',
+                },
+                {
+                    value: 0x0005c256,
+                    name: 'Single Bracket 0.5 EV 2 Img. +',
+                    description: 'Single Bracket 0.5 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c25e,
+                    name: 'Single Bracket 0.5 EV 2 Img. -',
+                    description: 'Single Bracket 0.5 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058356,
+                    name: 'Single Bracket 0.5 EV 3 Img.',
+                    description: 'Single Bracket 0.5 EV 3 Img.',
+                },
+                {
+                    value: 0x00058556,
+                    name: 'Single Bracket 0.5 EV 5 Img.',
+                    description: 'Single Bracket 0.5 EV 5 Img.',
+                },
+                {
+                    value: 0x00058756,
+                    name: 'Single Bracket 0.5 EV 7 Img.',
+                    description: 'Single Bracket 0.5 EV 7 Img.',
+                },
+                {
+                    value: 0x00058956,
+                    name: 'Single Bracket 0.5 EV 9 Img.',
+                    description: 'Single Bracket 0.5 EV 9 Img.',
+                },
+                {
+                    value: 0x0005c276,
+                    name: 'Single Bracket 0.7 EV 2 Img. +',
+                    description: 'Single Bracket 0.7 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c27e,
+                    name: 'Single Bracket 0.7 EV 2 Img. -',
+                    description: 'Single Bracket 0.7 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058376,
+                    name: 'Single Bracket 0.7 EV 3 Img.',
+                    description: 'Single Bracket 0.7 EV 3 Img.',
+                },
+                {
+                    value: 0x00058576,
+                    name: 'Single Bracket 0.7 EV 5 Img.',
+                    description: 'Single Bracket 0.7 EV 5 Img.',
+                },
+                {
+                    value: 0x00058776,
+                    name: 'Single Bracket 0.7 EV 7 Img.',
+                    description: 'Single Bracket 0.7 EV 7 Img.',
+                },
+                {
+                    value: 0x00058976,
+                    name: 'Single Bracket 0.7 EV 9 Img.',
+                    description: 'Single Bracket 0.7 EV 9 Img.',
+                },
+                {
+                    value: 0x0005c210,
+                    name: 'Single Bracket 1.0 EV 2 Img. +',
+                    description: 'Single Bracket 1.0 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c218,
+                    name: 'Single Bracket 1.0 EV 2 Img. -',
+                    description: 'Single Bracket 1.0 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058310,
+                    name: 'Single Bracket 1.0 EV 3 Img.',
+                    description: 'Single Bracket 1.0 EV 3 Img.',
+                },
+                {
+                    value: 0x00058510,
+                    name: 'Single Bracket 1.0 EV 5 Img.',
+                    description: 'Single Bracket 1.0 EV 5 Img.',
+                },
+                {
+                    value: 0x00058710,
+                    name: 'Single Bracket 1.0 EV 7 Img.',
+                    description: 'Single Bracket 1.0 EV 7 Img.',
+                },
+                {
+                    value: 0x00058910,
+                    name: 'Single Bracket 1.0 EV 9 Img.',
+                    description: 'Single Bracket 1.0 EV 9 Img.',
+                },
+                {
+                    value: 0x0005c240,
+                    name: 'Single Bracket 1.3 EV 2 Img. +',
+                    description: 'Single Bracket 1.3 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c248,
+                    name: 'Single Bracket 1.3 EV 2 Img. -',
+                    description: 'Single Bracket 1.3 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058340,
+                    name: 'Single Bracket 1.3 EV 3 Img.',
+                    description: 'Single Bracket 1.3 EV 3 Img.',
+                },
+                {
+                    value: 0x00058540,
+                    name: 'Single Bracket 1.3 EV 5 Img.',
+                    description: 'Single Bracket 1.3 EV 5 Img.',
+                },
+                {
+                    value: 0x00058740,
+                    name: 'Single Bracket 1.3 EV 7 Img.',
+                    description: 'Single Bracket 1.3 EV 7 Img.',
+                },
+                {
+                    value: 0x0005c260,
+                    name: 'Single Bracket 1.5 EV 2 Img. +',
+                    description: 'Single Bracket 1.5 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c268,
+                    name: 'Single Bracket 1.5 EV 2 Img. -',
+                    description: 'Single Bracket 1.5 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058360,
+                    name: 'Single Bracket 1.5 EV 3 Img.',
+                    description: 'Single Bracket 1.5 EV 3 Img.',
+                },
+                {
+                    value: 0x00058560,
+                    name: 'Single Bracket 1.5 EV 5 Img.',
+                    description: 'Single Bracket 1.5 EV 5 Img.',
+                },
+                {
+                    value: 0x00058760,
+                    name: 'Single Bracket 1.5 EV 7 Img.',
+                    description: 'Single Bracket 1.5 EV 7 Img.',
+                },
+                {
+                    value: 0x0005c280,
+                    name: 'Single Bracket 1.7 EV 2 Img. +',
+                    description: 'Single Bracket 1.7 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c288,
+                    name: 'Single Bracket 1.7 EV 2 Img. -',
+                    description: 'Single Bracket 1.7 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058380,
+                    name: 'Single Bracket 1.7 EV 3 Img.',
+                    description: 'Single Bracket 1.7 EV 3 Img.',
+                },
+                {
+                    value: 0x00058580,
+                    name: 'Single Bracket 1.7 EV 5 Img.',
+                    description: 'Single Bracket 1.7 EV 5 Img.',
+                },
+                {
+                    value: 0x00058780,
+                    name: 'Single Bracket 1.7 EV 7 Img.',
+                    description: 'Single Bracket 1.7 EV 7 Img.',
+                },
+                {
+                    value: 0x0005c220,
+                    name: 'Single Bracket 2.0 EV 2 Img. +',
+                    description: 'Single Bracket 2.0 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c228,
+                    name: 'Single Bracket 2.0 EV 2 Img. -',
+                    description: 'Single Bracket 2.0 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058320,
+                    name: 'Single Bracket 2.0 EV 3 Img.',
+                    description: 'Single Bracket 2.0 EV 3 Img.',
+                },
+                {
+                    value: 0x00058520,
+                    name: 'Single Bracket 2.0 EV 5 Img.',
+                    description: 'Single Bracket 2.0 EV 5 Img.',
+                },
+                {
+                    value: 0x00058720,
+                    name: 'Single Bracket 2.0 EV 7 Img.',
+                    description: 'Single Bracket 2.0 EV 7 Img.',
+                },
+                {
+                    value: 0x0005c250,
+                    name: 'Single Bracket 2.3 EV 2 Img. +',
+                    description: 'Single Bracket 2.3 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c258,
+                    name: 'Single Bracket 2.3 EV 2 Img. -',
+                    description: 'Single Bracket 2.3 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058350,
+                    name: 'Single Bracket 2.3 EV 3 Img.',
+                    description: 'Single Bracket 2.3 EV 3 Img.',
+                },
+                {
+                    value: 0x00058550,
+                    name: 'Single Bracket 2.3 EV 5 Img.',
+                    description: 'Single Bracket 2.3 EV 5 Img.',
+                },
+                {
+                    value: 0x0005c270,
+                    name: 'Single Bracket 2.5 EV 2 Img. +',
+                    description: 'Single Bracket 2.5 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c278,
+                    name: 'Single Bracket 2.5 EV 2 Img. -',
+                    description: 'Single Bracket 2.5 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058370,
+                    name: 'Single Bracket 2.5 EV 3 Img.',
+                    description: 'Single Bracket 2.5 EV 3 Img.',
+                },
+                {
+                    value: 0x00058570,
+                    name: 'Single Bracket 2.5 EV 5 Img.',
+                    description: 'Single Bracket 2.5 EV 5 Img.',
+                },
+                {
+                    value: 0x0005c290,
+                    name: 'Single Bracket 2.7 EV 2 Img. +',
+                    description: 'Single Bracket 2.7 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c298,
+                    name: 'Single Bracket 2.7 EV 2 Img. -',
+                    description: 'Single Bracket 2.7 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058390,
+                    name: 'Single Bracket 2.7 EV 3 Img.',
+                    description: 'Single Bracket 2.7 EV 3 Img.',
+                },
+                {
+                    value: 0x00058590,
+                    name: 'Single Bracket 2.7 EV 5 Img.',
+                    description: 'Single Bracket 2.7 EV 5 Img.',
+                },
+                {
+                    value: 0x0005c230,
+                    name: 'Single Bracket 3.0 EV 2 Img. +',
+                    description: 'Single Bracket 3.0 EV 2 Img. +',
+                },
+                {
+                    value: 0x0005c238,
+                    name: 'Single Bracket 3.0 EV 2 Img. -',
+                    description: 'Single Bracket 3.0 EV 2 Img. -',
+                },
+                {
+                    value: 0x00058330,
+                    name: 'Single Bracket 3.0 EV 3 Img.',
+                    description: 'Single Bracket 3.0 EV 3 Img.',
+                },
+                {
+                    value: 0x00058530,
+                    name: 'Single Bracket 3.0 EV 5 Img.',
+                    description: 'Single Bracket 3.0 EV 5 Img.',
+                },
+                { value: 0x00068018, name: 'White Balance Bracket Lo', description: 'White Balance Bracket Lo' },
+                { value: 0x00068028, name: 'White Balance Bracket Hi', description: 'White Balance Bracket Hi' },
+                { value: 0x00078019, name: 'DRO Bracket Lo', description: 'DRO Bracket Lo' },
+                { value: 0x00078029, name: 'DRO Bracket Hi', description: 'DRO Bracket Hi' },
+                { value: 0x0007801a, name: 'LPF Bracket', description: 'LPF Bracket' },
+                { value: 0x0007800a, name: 'Remote Commander', description: 'Remote Commander' },
+                { value: 0x0007800b, name: 'Mirror Up', description: 'Mirror Up' },
+                { value: 0x00078006, name: 'Self Portrait 1 Person', description: 'Self Portrait 1 Person' },
+                { value: 0x00078007, name: 'Self Portrait 2 People', description: 'Self Portrait 2 People' },
+                {
+                    value: 0x00088008,
+                    name: 'Continuous Self Timer 3 Img.',
+                    description: 'Continuous Self Timer 3 Img.',
+                },
+                {
+                    value: 0x00088009,
+                    name: 'Continuous Self Timer 5 Img.',
+                    description: 'Continuous Self Timer 5 Img.',
+                },
+                {
+                    value: 0x0008800c,
+                    name: 'Continuous Self Timer 3 Img. 5 Sec.',
+                    description: 'Continuous Self Timer 3 Img. 5 Sec.',
+                },
+                {
+                    value: 0x0008800d,
+                    name: 'Continuous Self Timer 5 Img. 5 Sec.',
+                    description: 'Continuous Self Timer 5 Img. 5 Sec.',
+                },
+                {
+                    value: 0x0008800e,
+                    name: 'Continuous Self Timer 3 Img. 2 Sec.',
+                    description: 'Continuous Self Timer 3 Img. 2 Sec.',
+                },
+                {
+                    value: 0x0008800f,
+                    name: 'Continuous Self Timer 5 Img. 2 Sec.',
+                    description: 'Continuous Self Timer 5 Img. 2 Sec.',
+                },
+                { value: 0x00098030, name: 'Spot Burst Shooting Lo', description: 'Spot Burst Shooting Lo' },
+                { value: 0x00098031, name: 'Spot Burst Shooting Mid', description: 'Spot Burst Shooting Mid' },
+                { value: 0x00098032, name: 'Spot Burst Shooting Hi', description: 'Spot Burst Shooting Hi' },
+                { value: 0x000a8040, name: 'Focus Bracket', description: 'Focus Bracket' },
+            ] as const,
+            registry.codecs.uint32
+        ),
+} as const satisfies PropertyDefinition
+
+export const OsdImageMode = {
+    code: 0xd207,
+    name: 'OsdImageMode',
+    description: 'Get/Set the OSD image mode',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'OFF', description: 'OFF' },
+                { value: 0x01, name: 'ON', description: 'ON' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+// 0xd251 and 0xd150 were mapped from the Camera Remote SDK's PTP-code table
+// (CrDeviceProperty_DeviceOverheatingState 0x760 and CrDeviceProperty_USBPowerSupply
+// 0x1f3) and confirmed on an ILCE-6700: both read the same values as the SDK.
+export const DeviceOverheatingState = {
+    code: 0xd251,
+    name: 'DeviceOverheatingState',
+    description: 'Whether the body is approaching or at its thermal shutdown.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'Not Overheating', description: 'Normal temperature' },
+                { value: 0x01, name: 'Pre-Overheating', description: 'Approaching the thermal shutdown' },
+                { value: 0x02, name: 'Overheating', description: 'The body will power off to cool down' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const UsbPowerSupply = {
+    code: 0xd150,
+    name: 'UsbPowerSupply',
+    description: 'Whether the body draws power over USB. On keeps a body alive on USB VBUS even when its battery supply is cut.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'Off', description: 'Run from the battery or dummy battery only' },
+                { value: 0x02, name: 'On', description: 'Draw power from USB' },
+                { value: 0x03, name: 'Auto', description: 'Automatic' },
+                { value: 0x04, name: 'Port 1', description: 'Draw power from USB port 1' },
+                { value: 0x05, name: 'Port 2', description: 'Draw power from USB port 2' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const LiveViewStatus = {
+    code: 0xd221,
+    name: 'LiveViewStatus',
+    description: 'Get the live view status.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'SUPPORTED_DISABLED', description: 'SUPPORTED_DISABLED' },
+                { value: 0x01, name: 'SUPPORTED_ENABLED', description: 'SUPPORTED_ENABLED' },
+                { value: 0x02, name: 'NOT_SUPPORTED', description: 'NOT_SUPPORTED' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const StillImageSaveDestination = {
+    code: 0xd222,
+    name: 'StillImageSaveDestination',
+    description: 'Get the information of still image save destination.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x0010, name: 'CAMERA_DEVICE', description: 'Save to camera card' },
+                { value: 0x0001, name: 'HOST_DEVICE', description: 'Transfer from camera memory to host' },
+                { value: 0x0011, name: 'BOTH_DEVICES', description: 'BOTH_DEVICES' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const PositionKeySetting = {
+    code: 0xd25a,
+    name: 'PositionKeySetting',
+    description: 'Get/Set the position key setting (controls which setting takes priority between host and camera)',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'CAMERA_PRIORITY', description: 'CAMERA_PRIORITY' },
+                { value: 0x01, name: 'HOST_PRIORITY', description: 'HOST_PRIORITY' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const SetLiveViewEnable = {
+    code: 0xd313,
+    name: 'SetLiveViewEnable',
+    description:
+        'Set live view enable. When using Live View while connected in "Remote Control with Transfer Mode," it is necessary to enable the feature using this Control Code.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'DISABLE', description: 'DISABLE' },
+                { value: 0x0002, name: 'ENABLE', description: 'ENABLE' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const SetPostViewEnable = {
+    code: 0xd312,
+    name: 'SetPostViewEnable',
+    description:
+        'Set post view enable. When using Live View while connected in "Remote Control with Transfer Mode," it is necessary to enable the feature using this Control Code.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'DISABLE', description: 'DISABLE' },
+                { value: 0x0002, name: 'ENABLE', description: 'ENABLE' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const ShootingFileInfo = {
+    code: 0xd215,
+    name: 'ShootingFileInfo',
+    description:
+        'Get the shooting file info. 0x0000 indicates no files are available, 0x0001 - 0x7FFF indicate files exist. 0x8001 and over indicate the files are ready for transfer.',
+    datatype: UINT16,
+    access: 'Get',
+    codec: baseCodecs.uint16,
+} as const satisfies PropertyDefinition
+
+export const ShutterHalfReleaseButton = {
+    code: 0xd2c1,
+    name: 'ShutterHalfReleaseButton',
+    description: 'Control shutter half-release (S1) (focus) button.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'UP', description: 'UP' },
+                { value: 0x0002, name: 'DOWN', description: 'DOWN' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const ShutterReleaseButton = {
+    code: 0xd2c2,
+    name: 'ShutterReleaseButton',
+    description: 'Control shutter release (S2) button.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'UP', description: 'UP' },
+                { value: 0x0002, name: 'DOWN', description: 'DOWN' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const S1S2Button = {
+    code: 0xd2e6,
+    name: 'S1S2Button',
+    description: 'Execute shutter half-release (S1) and shutter release (S2) buttons.',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'UP', description: 'UP' },
+                { value: 0x0002, name: 'DOWN', description: 'DOWN' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const MovieRecButton = {
+    code: 0xd2c8,
+    name: 'MovieRecButton',
+    description: 'Control movie record button (hold)',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'UP', description: 'UP' },
+                { value: 0x0002, name: 'DOWN', description: 'DOWN' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const LiveViewImageQuality = {
+    code: 0xd26a,
+    name: 'LiveViewImageQuality',
+    description: 'Get/Set the live view image quality.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x01, name: 'LOW', description: 'LOW' },
+                { value: 0x02, name: 'HIGH', description: 'HIGH' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const ContentTransferEnable = {
+    code: 0xd295,
+    name: 'ContentTransferEnable',
+    description: 'Get the contents transfer enabled status.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        new EnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'DISABLE', description: 'DISABLE' },
+                { value: 0x01, name: 'ENABLE', description: 'ENABLE' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
+export const FocusIndicationCodec = (registry: PTPRegistry) =>
+    createEnumCodec(
+        registry,
+        [
+            { value: 0x01, name: 'UNLOCK', description: 'Unlock' },
+            { value: 0x02, name: 'AF_S_FOCUSED', description: '[AF-S] Focused and AF Locked State' },
+            { value: 0x03, name: 'AF_S_NOT_FOCUSED', description: '[AF-S] Not Focused and Low Contrast State' },
+            { value: 0x04, name: 'NOT_USED', description: 'Not Used' },
+            { value: 0x05, name: 'AF_C_TRACKING', description: '[AF-C] Tracking Subject motion' },
+            { value: 0x06, name: 'AF_C_FOCUSED', description: '[AF-C] Focused State' },
+            { value: 0x07, name: 'AF_C_NOT_FOCUSED', description: '[AF-C] Not Focused and Low Contrast State' },
+            { value: 0x08, name: 'UNPAUSE', description: 'Unpause' },
+            { value: 0x09, name: 'PAUSE', description: 'Pause' },
+        ] as const,
+        registry.codecs.uint8
+    )
+
+export const FocusIndication = {
+    code: 0xd213,
+    name: 'FocusIndication',
+    description: 'Get the focus indication.',
+    datatype: UINT8,
+    access: 'Get',
+    codec: FocusIndicationCodec,
+} as const satisfies PropertyDefinition
+
+export const sonyPropertyRegistry = {
+    Aperture,
+    ShutterSpeed,
+    Iso,
+    GainControlSetting,
+    WhiteBalance,
+    FocusMode,
+    FocusArea,
+    SubjectRecognitionInAF,
+    RecognitionTarget,
+    RightLeftEyeSelect,
+    FaceEyeFrameDisplay,
+    CompressionSetting,
+    SonyImageSize,
+    AspectRatio,
+    ColorTemperature,
+    ZoomPosition,
+    StillFileFormat,
+    JpegQuality,
+    MovieFileFormat,
+    MovieRecordingSetting,
+    MovieRecordingState,
+    ZoomEnableStatus,
+    ZoomScale,
+    ZoomBarInfo,
+    ZoomSpeed,
+    ZoomSetting,
+    ZoomTypeStatus,
+    Exposure,
+    MeteredExposure,
+    ExposureCompensation,
+    ExposureBiasCompensation,
+    ExposureMeteringMode,
+    FlashMode,
+    StillCaptureMode,
+    OsdImageMode,
+    DeviceOverheatingState,
+    UsbPowerSupply,
+    LiveViewStatus,
+    StillImageSaveDestination,
+    PositionKeySetting,
+    SetLiveViewEnable,
+    SetPostViewEnable,
+    ShutterHalfReleaseButton,
+    ShutterReleaseButton,
+    S1S2Button,
+    MovieRecButton,
+    LiveViewImageQuality,
+    ContentTransferEnable,
+    FocusIndication,
+    MovieRecordingFrameRate,
+    DateTimeSetting,
+} as const satisfies { [key: string]: PropertyDefinition }
+
+export type SonyPropertyDef = (typeof sonyPropertyRegistry)[keyof typeof sonyPropertyRegistry]

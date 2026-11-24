@@ -18,9 +18,9 @@ const migration = [
 const browserCapabilities = /\bfetch\s*\(|new\s+(?:WebSocket|EventSource|XMLHttpRequest)\s*\(|navigator\.(?:usb|bluetooth|mediaDevices)|\bfrom\s*['"](?!\.)|\bimport\s*['"](?!\.)|\bimport\s*\(/g
 const demoRoot = 'apps/testbench/'
 const allowedDemoExtensions = new Set(['ts', 'css', 'html', 'json', 'md', 'svg'])
-// Product code belongs in Link, Studio or CLI; these existing ancillary workspaces may stay.
+// Product code belongs in Slate, Studio or CLI; these existing ancillary workspaces may stay.
 const workspaceManifests = new Set([
-    'packages/link/package.json', 'packages/cli/package.json',
+    'packages/slate/package.json', 'packages/cli/package.json',
     'packages/ui/package.json', 'packages/typescript-config/package.json',
     'apps/studio/package.json', 'apps/testbench/package.json',
     'apps/contribution-collector/package.json', 'apps/docs/package.json',

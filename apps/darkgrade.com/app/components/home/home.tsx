@@ -4,12 +4,12 @@ import { type RefObject, useEffect, useRef, useState } from 'react'
 
 import { CALLOUT_NAMES, CALLOUT_SIDE, FIRST_READINGS, leaderPixels } from '@/app/components/home/callouts'
 import { CameraErrors, MONITOR_WIDTH_PIXELS } from '@/app/components/home/camera-errors'
-import { DREAM, HERO, LINK, LINKS, MANIFESTO, PRINCIPLES, STUDIO } from '@/app/components/home/content'
+import { DREAM, HERO, SLATE as SLATE_PRODUCT, LINKS, MANIFESTO, PRINCIPLES, STUDIO } from '@/app/components/home/content'
 import { CALLOUTS, CHAPTERS, type Callout } from '@/app/components/home/cut-scene'
 import { FIRST_CUT_COPY, FirstCutApp } from '@/app/components/home/cut-screen'
 import { HomeFooter, HomeHeader } from '@/app/components/home/home-chrome'
 import { LaptopScreen, SCREEN_WIDTH_PIXELS, transformOnto } from '@/app/components/home/laptop-screen'
-import { EXCHANGES_KEPT, type Exchange, LinkDesk } from '@/app/components/home/link-desk'
+import { EXCHANGES_KEPT, type Exchange, SlateDesk } from '@/app/components/home/slate-desk'
 import { between, watch } from '@/app/components/home/motion'
 import { PageTimeline, type TimelineClip, type TimelineControls } from '@/app/components/home/page-timeline'
 import { PrincipleSteps } from '@/app/components/home/principle-steps'
@@ -31,7 +31,7 @@ const SHEETS = [
     { scene: 'Scene 02', title: 'Our thesis', caption: 'The shutter button.' },
     { scene: 'Scene 03', title: 'Our thesis', caption: 'Every control it has, all at once.' },
     { scene: 'Scene 04', title: 'Our thesis', caption: 'Every control but one, removed.' },
-    { scene: 'Act I', title: LINK.kind, caption: 'Ask on the laptop; Link makes the call; the camera answers.' },
+    { scene: 'Act I', title: SLATE_PRODUCT.kind, caption: 'Ask on the laptop; Slate makes the call; the camera answers.' },
     { scene: 'Act II', title: STUDIO.kind, caption: 'The studio, lit. Move your pointer: the lights lean after it.' },
     {
         scene: 'Act II',
@@ -72,7 +72,7 @@ const CHAIR_WINDOWS_FROM_END = 0.875
 const CLIPS: TimelineClip[] = [
     { id: 'intro', label: 'Intro', sections: ['hero'], sound: 'quiet' },
     { id: 'thesis', label: 'The thesis', sections: ['fun', 'menus', 'delete'], sound: 'room' },
-    { id: 'link', label: 'Link', sections: ['link'], sound: 'speech' },
+    { id: 'link', label: 'Slate', sections: ['link'], sound: 'speech' },
     { id: 'studio', label: 'Studio', sections: ['studio'], sound: 'speech' },
     { id: 'first-cut', label: 'First cut', sections: ['cut'], sound: 'speech' },
     { id: 'principles', label: 'Principles', sections: [PRINCIPLES_SHEET], sound: 'room' },
@@ -473,7 +473,7 @@ export function Home() {
                 <CameraErrors frame={monitor} />
                 <LaptopScreen
                     frame={laptopScreen}
-                    link={{ layer: linkLayer, children: <LinkDesk exchanges={exchanges} typing={typing} /> }}
+                    link={{ layer: linkLayer, children: <SlateDesk exchanges={exchanges} typing={typing} /> }}
                     cut={{ layer: cutLayer, children: <FirstCutApp /> }}
                 />
             </div>
@@ -587,29 +587,29 @@ export function Home() {
                 </Sheet>
 
                 <div id="product" />
-                {/* the camera is up and to the left with what Link is under it; the laptop it is driven from is on the right */}
+                {/* the camera is up and to the left with what Slate is under it; the laptop it is driven from is on the right */}
                 <Sheet id="link" anchor="link" register={register} align="bottom">
                     <div className="max-w-[min(460px,36%)] max-[900px]:max-w-none">
                         <p className={KICKER} data-rise>
-                            <span className="text-gold">{LINK.name}</span>
-                            <span className={KIND}>{LINK.kind}</span>
+                            <span className="text-gold">{SLATE_PRODUCT.name}</span>
+                            <span className={KIND}>{SLATE_PRODUCT.kind}</span>
                         </p>
                         <h2
                             className={`${ACT_TITLE} mt-[10px] text-[clamp(1.75rem,min(3vw,5.2vh),2.875rem)]`}
                             data-rise
                             style={order(1)}
                         >
-                            {LINK.tagline}
+                            {SLATE_PRODUCT.tagline}
                         </h2>
                         <p
                             className="mt-[clamp(8px,1.4vh,14px)] max-w-[44ch] text-body leading-[1.5] text-ink-66 [@media(max-height:960px)]:hidden"
                             data-rise
                             style={order(2)}
                         >
-                            {LINK.does}
+                            {SLATE_PRODUCT.does}
                         </p>
                         <div className="mt-[clamp(12px,2vh,22px)]" data-rise style={order(3)}>
-                            <FeatureList features={LINK.features} />
+                            <FeatureList features={SLATE_PRODUCT.features} />
                         </div>
                     </div>
                 </Sheet>

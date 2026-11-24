@@ -261,11 +261,11 @@ const sessionColumns = `events,errors,signals,started_at,ended_at,latest_receive
     transports,evidence,backends,revisions,hardware_fingerprints,truncated`
 
 /** One-time removal requested on 2026-11-14: events recorded with no camera identity before
- * Link learned to read it (the first commands of every connection that could not be matched to
+ * Slate learned to read it (the first commands of every connection that could not be matched to
  * a session identity, and whole native Sony sessions). Later unidentified events are kept. */
 export const unidentifiedPurges = [
     { marker: 'purge-unidentified-2026-11-14', before: '2026-11-14T18:30:00Z' },
-    // The same request, for events recorded that day before Link could attribute failed connections.
+    // The same request, for events recorded that day before Slate could attribute failed connections.
     { marker: 'purge-unidentified-2026-11-14b', before: '2026-11-14T21:05:00Z' },
 ] as const
 export const unidentifiedPurge = unidentifiedPurges[unidentifiedPurges.length - 1]

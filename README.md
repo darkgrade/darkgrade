@@ -2,7 +2,7 @@
 
 **Connect to & control your camera with TypeScript**
 
-> **Note:** Link is in alpha and APIs may change without backwards compatibility.
+> **Note:** Slate is in alpha and APIs may change without backwards compatibility.
 
 Connect your own USB cameras with the [basic Test Bench](apps/testbench/README.md):
 `bun install --frozen-lockfile --ignore-scripts`, then `bun run testbench`.
@@ -11,15 +11,14 @@ An optional simulation mode lets you explore the console without hardware. Devel
 Node.js 22.18 or newer and Bun 1.4.3.
 The [security review](SECURITY_REVIEW.md) records the migration checklist, audit scope and CI checks.
 
-Link implements core [ISO-15740:2013](https://www.iso.org/standard/63602.html) PTP operations and partial vendor extensions in TypeScript. It is an independent implementation; [`libgphoto2`](https://github.com/gphoto/libgphoto2) is a protocol reference, not a consumer of Link. Control availability depends on the attached body, firmware, transport and current mode.
+Slate implements core [ISO-15740:2013](https://www.iso.org/standard/63602.html) PTP operations and partial vendor extensions in TypeScript. It is an independent implementation; [`libgphoto2`](https://github.com/gphoto/libgphoto2) is a protocol reference, not a consumer of Slate. Control availability depends on the attached body, firmware, transport and current mode.
 
-[![npm version](https://img.shields.io/npm/v/@darkgrade/link)](https://www.npmjs.com/package/@darkgrade/link)
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue.svg)](https://www.typescriptlang.org/)
 
 ## ✨ Highlights
 
 - [x] **🚀 USB vendor selection** - Automatically selects the uniquely matched body's driver; multiple cameras require a device filter
-- [x] **📦 Separate exports** - Camera, terminal, runtime, controls and diagnostics entries; installed dependencies are listed in `packages/link/package.json`
+- [x] **📦 Separate exports** - Camera, terminal, runtime, controls and diagnostics entries; installed dependencies are listed in `packages/slate/package.json`
 - [x] **🌐 Explicit host boundaries** - Node.js camera APIs; browser-safe `/controls`, `/runtime/browser` and diagnostics exports
 - [x] **🎯 Typed library API** - Concrete protocol definitions infer parameters and decoded values; packed declarations are checked under strict NodeNext
 - [x] **🎛️ Shared controls** - One current capability model across Sony, Nikon, Canon and standard PTP controls
@@ -35,12 +34,14 @@ Link implements core [ISO-15740:2013](https://www.iso.org/standard/63602.html) P
 
 | Manufacturer | Body (USB ID) | What has been verified on hardware |
 | --- | --- | --- |
-| Sony | α6700 / ILCE-6700 (`054c:0e78`, fw 2.00) | USB SDIO property inventory and controls, autofocus, still/movie formats, AF-point placement; authenticated Wi-Fi controls through the Sony SDK. Re-checked 2026-10-28 on darkgrade01: ISO 8000 → 100 → 8000 with fresh readback and restore, native PTP live-view JPEG |
+| Sony | α6700 / ILCE-6700 (`054c:0e78`, fw 2.00) | USB property inventory, controls, still/movie formats and AF-point placement; SDK Wi-Fi controls. Re-checked 2026-11-23 on revision `9026c1c`: confirmed generic settings, rapid recording, reconnect/events, live view, still capture and a 10-second movie with complete transfer and independent decoding |
 | Sony | FX2 / ILME-FX2 | USB native property inventory, aperture round trip, HDMI; Wi-Fi SDK controls and live preview (no card media) |
 | Canon | EOS R6 Mark III (`04a9:3323`, fw 1.0.1) | USB/PTP exposure and white-balance controls, USB live view, preview zoom, color temperature, live-view AF area, movie recording |
 | Canon | EOS 80D (`04a9:3294`, fw 3-1.0.3) | USB controls (aperture, shutter, ISO, white balance, image format), autofocus, movie mode; PTP/IP pairing is work in progress. Re-checked 2026-10-28 on darkgrade01: color temperature 5200 → 5300 → 5200 K with independent readback, native PTP live-view JPEG, a 3-second card movie with an audio track |
 | Canon | EOS R6 (`04a9:32f5`) | USB/PTP identification only |
+| Canon | EOS R8 Mark II (`04a9:3329`, fw 3-1.0.0) | 2026-11-23 USB qualification on revision `9026c1c`: confirmed generic settings, recording, reconnect/events, live view, still/movie transfer and independent decoding |
 | Nikon | Z6 III (`04b0:0454`, fw V2.00) | USB session, aperture and Auto/fixed ISO round trips (no card) |
+| Nikon | Z5 II / Z5_2 (`04b0:0456`, fw V1.00) | 2026-11-23 USB qualification on revision `9026c1c`: confirmed generic settings, recording-session recovery, reconnect/events, live view, still/movie transfer and independent decoding |
 | Nikon | Z 7 (`04b0:0442`) | USB `GetDeviceInfo` probe and bench recovery |
 
 **Work in progress: every other manufacturer.** These cameras run as standard ISO 15740 PTP devices; vendor operation definitions exist only where listed and are taken from libgphoto2's `camlibs/ptp2` tables. None of the vendor definitions below is hardware-verified.
@@ -60,27 +61,37 @@ Transactions are bounded by timeouts, replies are checked against PTP container 
 
 ### Installation
 
+`@darkgrade/slate` is not published yet. For development in this repository:
+
 ```bash
-npm install @darkgrade/link
+bun install --frozen-lockfile --ignore-scripts
+bun run --cwd packages/slate build
 ```
+
+Workspace applications can then import `@darkgrade/slate`. After publishing, library
+consumers will install it with `npm install @darkgrade/slate`. The separately published
+`darkgrade` terminal executable bundles its library implementation.
 
 ### Basic Usage
 
 ```typescript
-import { Camera } from '@darkgrade/link'
+import { Camera } from '@darkgrade/slate'
 
 const camera = new Camera()
 await camera.connect()
+try {
+    const { controls } = await camera.getCapabilities()
+    if (controls.iso?.writable && controls.iso.allowedValues?.includes('ISO 800')) {
+        const observed = await camera.setControl('iso', 'ISO 800')
+        console.log(observed.value)
+    }
 
-// Control camera settings
-await camera.setIso('800')
-await camera.setShutterSpeed('1/250')
-await camera.setAperture('f/2.8')
-
-// Capture an image
-const { data } = await camera.captureImage()
-
-await camera.disconnect()
+    // Requires a body and mode that support remote still capture.
+    const { data } = await camera.captureImage()
+    if (!data) throw new Error('No image data returned')
+} finally {
+    await camera.disconnect()
+}
 ```
 
 ### One camera control vocabulary
@@ -94,23 +105,27 @@ for (const control of Object.values(controls)) {
 }
 
 // Exact advertised values only; no rounding to a nearby setting.
-if (controls.exposureTime?.allowedValues?.includes('1/250') && controls.exposureTime.writable) {
-    await camera.setExposureTime({ kind: 'duration', seconds: 1 / 250 })
+if (controls.shutterSpeed?.allowedValues?.includes('1/250') && controls.shutterSpeed.writable) {
+    await camera.setControl('shutterSpeed', { kind: 'duration', seconds: 1 / 250 })
 }
 ```
 
-`exposureTime` is the canonical control. “Shutter speed,” “shutter angle” and
+`shutterSpeed` is the canonical control. “Shutter speed,” “shutter angle” and
 “exposure time” resolve to it through `resolveCameraControl()`. Native angle mode
 stays in angle mode. Converting an angle to duration (or the reverse) requires the
 actual frame rate, for example `setExposureTime('180°', { framesPerSecond: 24000 / 1001 })`.
-Bulb, Time and flash-sync remain distinct states.
+`ExposureTime` is the physical-value type, and `setExposureTime()` is its convenience
+method. Bulb, Time and flash-sync remain distinct states.
 
 Capability observations report active properties, allowed values and current write
 guards. They do not certify a model or prove that an advertised operation is implemented.
 Re-read after mode changes; setters re-check before writing. Concrete protocol types
 cannot encode the attached body's changing value list.
-See the [control contract](packages/link/docs/camera-controls.md) and
-[release audit](packages/link/docs/pre-release-audit.md).
+Strict packed-package checks reject invalid operation parameters, known read-only
+property writes, invented control ids and incorrect exposure unions. They also compile
+the TypeScript examples in this README, the package README and the quickstart.
+See the [control contract](packages/slate/docs/camera-controls.md) and
+[release audit](packages/slate/docs/pre-release-audit.md).
 
 ### Sony α USB controls
 
@@ -161,14 +176,14 @@ The attached Olympus E-PL5 (`07b4:012f`, firmware 1.00) was physically inventori
 Darkgrade can use the standard PTP/IP command and event channels instead of USB. Bind the socket to a secondary adapter so joining a camera access point cannot move the controller's normal route:
 
 ```typescript
-import { Camera, IPTransport, VendorIDs } from '@darkgrade/link'
+import { Camera, IPTransport, VendorIDs } from '@darkgrade/slate'
 
 const host = '192.168.1.1' // camera address after Wi-Fi pairing
 const localAddress = '192.168.1.2' // address assigned to the isolated adapter
 const transport = new IPTransport({
     address: host,
     localAddress,
-    clientName: 'Darkgrade darkgrade01',
+    clientName: 'Darkgrade controller',
 })
 const camera = new Camera({ transport, vendorId: VendorIDs.CANON })
 
@@ -182,7 +197,13 @@ await camera.disconnect()
 
 The transport pairs separate command and event TCP connections, uses a stable client identity, supports camera-to-host and host-to-camera data phases, responds to PTP/IP ping packets, and handles fragmented or coalesced TCP frames. It is Node.js-only because it uses `node:net`. The camera must first expose its PTP/IP service and may require approval on its body; on the EOS 80D that means **Wi-Fi function → Remote control (EOS Utility) → Easy connection** after physically disconnecting USB.
 
-This standard PTP/IP example is currently validated for the Canon-oriented pairing path, not modern Sony PC Remote. The α6700 documents **Wi-Fi Connect**, **PC Remote Function**, **Wi-Fi Direct Info**, and **Access Authen Info** credentials/fingerprint; Darkgrade has not yet implemented or physically validated that authenticated Sony session. Use USB for the Sony controls above until that boundary is complete. The current negative hardware result and next experiment are recorded in [Sony Wi-Fi WIP](apps/docs/link/getting_started/sony-wifi-wip.mdx).
+This standard PTP/IP example is validated against the Canon-oriented simulator.
+The α6700 documents **Wi-Fi Connect**, **PC Remote Function**, **Wi-Fi Direct Info**,
+and **Access Authen Info** credentials/fingerprint. `IPTransport` does not implement
+that authenticated Sony connection. USB and the existing Sony SDK bridge have
+separate connection workflows and evidence; a shared settings API does not certify
+pairing or media parity. The standard transport's hardware limits are recorded in
+[Sony Wi-Fi WIP](apps/docs/slate/getting_started/sony-wifi-wip.mdx).
 
 Physical EOS 80D first-pairing validation is still WIP on the reference test bench. On
 2026-08-25, the isolated adapter joined the camera AP and routed the camera host correctly,
@@ -194,7 +215,7 @@ two-channel simulator; they do not constitute a successful physical Wi-Fi sessio
 For a bounded bench command:
 
 ```bash
-bun run --cwd packages/link bench:ptpip -- \
+bun run --cwd packages/slate bench:ptpip -- \
   --host 192.168.1.1 --local-address 192.168.1.2 --action probe
 ```
 
@@ -207,7 +228,7 @@ const network = camera.getCanonNetworkState()
 // { communicationMode, communicationModeChoices, serverRegion, wftStatus }
 ```
 
-`camera.setCanonNetworkCommunicationMode(value)` accepts only a mode advertised by that camera. Passing `true` as its second argument bypasses that guard for controlled reverse-engineering only; it is not a general Wi-Fi switch. On the tested EOS 80D, forcing mode `1` was accepted for the USB session but did not advertise an AP or TCP/15740 endpoint and reset to `0` after reboot. Use `bun run --cwd packages/link bench:canon -- --network-only` to inspect these properties; add `--force-network-mode <uint32>` only while recording the USB exchange and with a recovery path available.
+`camera.setCanonNetworkCommunicationMode(value)` accepts only a mode advertised by that camera. Passing `true` as its second argument bypasses that guard for controlled reverse-engineering only; it is not a general Wi-Fi switch. On the tested EOS 80D, forcing mode `1` was accepted for the USB session but did not advertise an AP or TCP/15740 endpoint and reset to `0` after reboot. Use `bun run --cwd packages/slate bench:canon -- --network-only` to inspect these properties; add `--force-network-mode <uint32>` only while recording the USB exchange and with a recovery path available.
 
 Canon HDMI sensor output can be selected during an open USB session:
 
@@ -266,7 +287,7 @@ await camera.setAperture('f/4.0')
 ### Event Handling
 
 ```typescript
-import { Camera } from '@darkgrade/link'
+import { Camera } from '@darkgrade/slate'
 
 const camera = new Camera()
 await camera.connect()
@@ -276,8 +297,8 @@ camera.on(camera.getInstance().registry.events.ObjectAdded, event => {
     console.log('New object added:', event.ObjectHandle)
 })
 
-camera.on(camera.getInstance().registry.events.PropertyChanged, event => {
-    console.log('Property changed:', event.PropertyName)
+camera.on(camera.getInstance().registry.events.DevicePropChanged, event => {
+    console.log('Property changed:', event.DevicePropCode)
 })
 
 // Remove event listeners
@@ -287,8 +308,9 @@ camera.off(camera.getInstance().registry.events.ObjectAdded)
 ### Live View
 
 ```typescript
-// Capture live view frame (Sony & Nikon only)
+// Capture live view on a supported Sony, Nikon or Canon body.
 const { data: liveViewFrame } = await camera.captureLiveView()
+if (!liveViewFrame) throw new Error('No live-view image returned')
 
 // Save or display the frame
 fs.writeFileSync('liveview.jpg', liveViewFrame)
@@ -297,7 +319,7 @@ fs.writeFileSync('liveview.jpg', liveViewFrame)
 ### Video Recording
 
 ```typescript
-// Start recording (Sony & Canon only)
+// Start recording on a supported Sony, Nikon or Canon body with usable media.
 await camera.startRecording()
 
 // ... record for some duration ...
@@ -331,7 +353,7 @@ for (const [storageId, storage] of Object.entries(objects)) {
 // Access vendor-specific properties directly
 const registry = camera.getInstance().registry
 
-// Get property descriptor
+// Get the property's decoded current value.
 const propValue = await camera.get(registry.properties.ExposureIndex)
 
 // Set property with type safety
@@ -354,7 +376,7 @@ build an application control map from their presence:
 Or specify a device descriptor when initializing the `Camera` constructor:
 
 ```typescript
-import { Camera, VendorIDs } from '@darkgrade/link'
+import { Camera, VendorIDs } from '@darkgrade/slate'
 
 // Specify a camera brand for vendor-specific features
 const camera = new Camera({
@@ -364,6 +386,8 @@ const camera = new Camera({
         },
     },
     logger: {
+        renderInTerminal: true, // Opt in to terminal rendering.
+        captureConsole: false,
         expanded: true, // Show detailed logging
     },
 })
@@ -402,11 +426,16 @@ console.log(point.positionVerified, focus.focusAcquired, frame.nikonMetadata)
 | **Download Objects**          | ✅                         | ✅                        | ✅              | ✅              | ✅                         |
 | **Live View**                 | ❌ <sup>1</sup>            | ✅                        | ✅              | 🟡              | ❌ on E-PL5                |
 | **Video Recording**           | ❌ <sup>2</sup>            | ✅                        | ✅ <sup>3</sup> | 🟡              | ❌ on E-PL5                |
-| **Mode-aware control inventory** | ✅ standard descriptors | ✅ <sup>5</sup>           | ❌              | ✅              | ✅ standard descriptors    |
+| **Mode-aware control inventory** | ✅ standard descriptors | ✅ <sup>5</sup>           | ✅              | ✅              | ✅ standard descriptors    |
 | **Still/movie format controls** | When advertised         | ✅ <sup>5</sup>           | ❌              | ✅              | When advertised            |
 | **Remote power zoom**         | ❌                         | 🟡 <sup>5</sup>           | ❌              | ❌              | ❌                         |
 | **Prompt-free USB reconnect** | Body setting               | Body setting <sup>4</sup> | Body setting    | Body setting    | Body setting               |
-| Tested with:                  |                            | α6700<br/>α7 IV<br/>α7 V  | Z6 III          | EOS R6 Mk.III   | E-PL5                     |
+| Physical evidence:            |                            | α6700<br/>FX2             | Z6 III<br/>Z5 II | EOS R6 Mk.III<br/>EOS R8 Mk.II<br/>EOS 80D | E-PL5 |
+
+This table describes implemented driver paths. Current availability depends on the
+body, firmware, transport and mode. The hardware table above records the scope of
+physical checks; definitions, simulated scenarios and advertised operations do not
+certify a complete camera family or >99% long-run reliability.
 
 **Notes**
 
@@ -425,4 +454,4 @@ console.log(point.positionVerified, focus.focusAcquired, frame.nikonMetadata)
 
 ---
 
-made with ❤️ by [darkgrade](https:/darkgrade.com)
+made with ❤️ by [darkgrade](https://darkgrade.com)

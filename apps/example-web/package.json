@@ -1,5 +1,5 @@
 {
-    "name": "@darkgrade/link-web-example",
+    "name": "@darkgrade/slate-web-example",
     "version": "0.1.0",
     "private": true,
     "scripts": {
@@ -11,7 +11,7 @@
         "format": "prettier --write ."
     },
     "dependencies": {
-        "@darkgrade/link": "workspace:*"
+        "@darkgrade/slate": "workspace:*"
     },
     "devDependencies": {
         "@darkgrade/typescript-config": "workspace:*",

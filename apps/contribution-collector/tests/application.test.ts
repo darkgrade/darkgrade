@@ -1,6 +1,6 @@
 import { createTelemetry } from '#collector/telemetry'
-import { createApplicationDiagnostics, type InstallationState } from '@darkgrade/link/contribute/application'
-import { NOTICE_VERSION } from '@darkgrade/link/contribute/batch'
+import { createApplicationDiagnostics, type InstallationState } from '@darkgrade/slate/contribute/application'
+import { NOTICE_VERSION } from '@darkgrade/slate/contribute/batch'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { camera, memoryDatabase } from './telemetry-fixture.ts'
@@ -100,6 +100,8 @@ test('email enrollment works before camera use; verification, logout and opt-out
         assert.equal((await confirm()).status, 410, 'confirmation cannot be replayed')
         await client.setConsent(false)
         assert.equal((await client.contactStatus())?.email, 'camera@example.com')
+        await assert.rejects(client.requestContact('other@example.com'), /Turn on sharing to link an email/)
+        assert.equal(messages.length, 1, 'an enrolled installation still respects a saved opt-out')
         await client.removeContact()
         assert.equal(await client.contactStatus(), null)
         assert.equal(client.status().sharingEnabled, false)

@@ -27,7 +27,7 @@ jobs:
             - name: npm with trusted publishing support
               run: npm install -g npm@latest
             - run: bun install --frozen-lockfile --ignore-scripts
-            - run: npm run build --prefix packages/link
+            - run: npm run build --prefix packages/slate
             - name: Tag matches package version
               if: startsWith(github.ref, 'refs/tags/cli-v')
               run: test "cli-v$(node -p "require('./packages/cli/package.json').version")" = "${GITHUB_REF_NAME}"

@@ -1,0 +1,361 @@
+import {
+    createApplicationDiagnostics,
+    validateInstallationState,
+    type InstallationState,
+    type InstallationStore,
+} from '@contribute/application'
+import { NOTICE_VERSION } from '@contribute/batch'
+import type { CameraContext, DiagnosticEntry } from '@contribute/schema'
+import { randomBytes, randomUUID } from 'node:crypto'
+import {
+    appendFileSync,
+    closeSync,
+    existsSync,
+    fsyncSync,
+    mkdirSync,
+    openSync,
+    readdirSync,
+    readFileSync,
+    renameSync,
+    statSync,
+    unlinkSync,
+    writeFileSync,
+} from 'node:fs'
+import { createHash } from 'node:crypto'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+export const DEFAULT_TELEMETRY_URL = 'https://darkgrade-telemetry-4ba4fvhf5a-uc.a.run.app'
+/** An override changes the destination; opting out uses the saved preference or opt-out environment flags. */
+export const telemetryEndpoint = () => process.env.DARKGRADE_TELEMETRY_URL?.trim() || DEFAULT_TELEMETRY_URL
+
+export const settingsDirectory = () => process.env.DARKGRADE_HOME || join(homedir(), '.darkgrade')
+/** Persist the benchmark's sanitized local profile even when cloud sharing is disabled. */
+export function saveDiagnosticProfile(profile: { id: string; schema: string }) {
+    if (profile.schema !== 'darkgrade.camera-profile/v1' ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(profile.id))
+        throw new Error('Invalid profile identity')
+    const directory = join(settingsDirectory(), 'profiles')
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    const path = join(directory, `${profile.id}.json`), temporary = `${path}.tmp`
+    const encoded = JSON.stringify(profile, null, 2)
+    if (Buffer.byteLength(encoded) > 8 * 1024 * 1024) throw new Error('Profile exceeds local limit')
+    const file = openSync(temporary, 'wx', 0o600)
+    try { writeFileSync(file, encoded); fsyncSync(file) } finally { closeSync(file) }
+    renameSync(temporary, path)
+    return path
+}
+export function sharedSettings(directory = settingsDirectory()): InstallationStore {
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    const file = join(directory, 'settings.json')
+    let previous: InstallationState | null = null
+    const read = () => {
+        if (!existsSync(file)) return null
+        if (statSync(file).size > 16_384) throw new Error('Invalid telemetry settings')
+        const state = JSON.parse(readFileSync(file, 'utf8'))
+        validateInstallationState(state)
+        return state as InstallationState
+    }
+    const locked = async <T>(work: () => T): Promise<T> => {
+        // Serialize simultaneous CLI/Studio startup; never steal a potentially live writer's lock.
+        let lock: number | undefined
+        for (let attempt = 0; attempt < 100; attempt++) {
+            try {
+                lock = openSync(`${file}.lock`, 'wx', 0o600)
+                break
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+                await new Promise(resolve => setTimeout(resolve, 5 + Math.random() * 5))
+            }
+        }
+        if (lock === undefined) throw new Error('Telemetry settings are locked; another process may be updating them')
+        try {
+            return work()
+        } finally {
+            closeSync(lock)
+            unlinkSync(`${file}.lock`)
+        }
+    }
+    const save = (state: InstallationState) => {
+        validateInstallationState(state)
+        const temporary = `${file}.${randomUUID()}.tmp`
+        const descriptor = openSync(temporary, 'wx', 0o600)
+        try {
+            writeFileSync(descriptor, JSON.stringify(state, null, 2) + '\n')
+            fsyncSync(descriptor)
+        } finally {
+            closeSync(descriptor)
+        }
+        try {
+            renameSync(temporary, file)
+        } finally {
+            if (existsSync(temporary)) unlinkSync(temporary)
+        }
+        const parent = openSync(directory, 'r')
+        try {
+            fsyncSync(parent)
+        } finally {
+            closeSync(parent)
+        }
+        previous = structuredClone(state)
+    }
+    return {
+        async read() {
+            return locked(() => {
+                previous = read()
+                if (!previous) {
+                    const installationId = randomUUID()
+                    previous = {
+                        enabled: true,
+                        withdrawalPending: false,
+                        noticeVersion: NOTICE_VERSION,
+                        installationId,
+                        enrollmentKey: `dgi_${installationId}.${randomBytes(32).toString('base64url')}`,
+                    }
+                    save(previous)
+                }
+                return structuredClone(previous)
+            })
+        },
+        async write(state) {
+            await locked(() => {
+                const current = read()
+                const merged = { ...current } as InstallationState
+                for (const key of new Set([...Object.keys(previous ?? {}), ...Object.keys(state)])) {
+                    const before = (previous as any)?.[key],
+                        next = (state as any)[key],
+                        present = (current as any)?.[key]
+                    if (before === next) continue
+                    if (present !== before && present !== next)
+                        throw new Error('Telemetry settings changed in another process; reload before updating')
+                    if (next === undefined) delete (merged as any)[key]
+                    else (merged as any)[key] = next
+                }
+                save(merged)
+                // Compare future writes to what this caller requested, not another process's
+                // merged preference. Repeated stale enrollment writes must preserve an opt-out.
+                previous = structuredClone(state)
+            })
+        },
+        current: read,
+    }
+}
+
+/** Per-process rotation avoids cross-process append/rotation races. No payloads or arbitrary logs. */
+export function localDiagnostics(directory = settingsDirectory()) {
+    const folder = join(directory, 'diagnostics')
+    mkdirSync(folder, { recursive: true, mode: 0o700 })
+    const files = readdirSync(folder)
+        .filter(name => /^\d+\.jsonl(?:\.previous)?$/.test(name))
+        .map(name => ({ name, time: statSync(join(folder, name)).mtimeMs }))
+        .sort((a, b) => b.time - a.time)
+    for (const file of files.slice(24)) {
+        // Never delete a live process's files while it is writing.
+        const pid = Number(file.name.split('.')[0])
+        try {
+            process.kill(pid, 0)
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ESRCH') unlinkSync(join(folder, file.name))
+        }
+    }
+    const file = join(folder, `${process.pid}.jsonl`)
+    let buffered: string[] = []
+    const flush = () => {
+        if (!buffered.length) return
+        const text = buffered.join('')
+        buffered = []
+        try {
+            if (existsSync(file) && statSync(file).size + Buffer.byteLength(text) > 2 * 1024 * 1024)
+                renameSync(file, `${file}.previous`)
+            appendFileSync(file, text, { mode: 0o600 })
+        } catch {
+            /* Camera operations remain available if local diagnostics fail. */
+        }
+    }
+    const timer = setInterval(flush, 1000)
+    timer.unref()
+    return {
+        record(camera: CameraContext, entry: DiagnosticEntry) {
+            if (process.env.DARKGRADE_LOCAL_DIAGNOSTICS === '0') return
+            if (buffered.length >= 1000) return
+            buffered.push(JSON.stringify({ camera, ...entry }) + '\n')
+        },
+        close() {
+            clearInterval(timer)
+            flush()
+        },
+    }
+}
+
+let shared: Promise<Awaited<ReturnType<typeof createApplicationDiagnostics>>> | undefined
+let log: ReturnType<typeof localDiagnostics> | undefined
+let shutdownHooks = false
+/** One queue and identity shared by all Slate cameras in this process; CLI and Studio use the same file. */
+export function nodeDiagnostics() {
+    return (shared ??= (async () => {
+        if (!shutdownHooks) {
+            shutdownHooks = true
+            // Short-lived CLI/bench tools must not discard their queue merely because the
+            // periodic uploader is unref'd. Forced exits still retain buffered local metadata.
+            process.once('exit', () => log?.close())
+            process.once('beforeExit', () => {
+                void flushNodeDiagnostics()
+                    .finally(closeNodeDiagnostics)
+                    .catch(() => {})
+            })
+        }
+        log = localDiagnostics()
+        return createApplicationDiagnostics({
+            endpoint: telemetryEndpoint(),
+            // Automatic clients in test runners must not upload fixtures to the hosted collector.
+            disabled: () => process.env.NODE_ENV === 'test',
+            store: sharedSettings(),
+            localRecord: log.record,
+        })
+    })().catch(error => {
+        shared = undefined
+        log?.close()
+        throw error
+    }))
+}
+/** Bounded final delivery for process owners; never used on the camera-operation path. */
+export async function flushNodeDiagnostics() {
+    if (!shared) return 'empty'
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+        return await Promise.race([
+            shared.then(client => client.flush()),
+            new Promise<'timeout'>(resolve => {
+                timer = setTimeout(() => resolve('timeout'), 3000)
+            }),
+        ])
+    } finally {
+        if (timer) clearTimeout(timer)
+    }
+}
+export async function closeNodeDiagnostics() {
+    if (shared) (await shared).close()
+    log?.close()
+    shared = undefined
+    log = undefined
+}
+
+let facts: ReturnType<typeof reportedFacts> | undefined
+/** The installation's single memory of protocol facts it has already shared. */
+export const sharedReportedFacts = () => (facts ??= reportedFacts())
+/** Remembers, across processes, which unchanging protocol facts this installation already shared,
+ * so each camera connection does not upload the same inventory again. Only short hashes are
+ * kept. A lost or damaged file means facts are shared once more, never that sharing stops. */
+export function reportedFacts(directory = settingsDirectory(), maximumAgeMilliseconds = 6 * 3_600_000) {
+    const file = join(directory, 'reported-facts.json')
+    const digest = (text: string, length: number) => createHash('sha256').update(text).digest('hex').slice(0, length)
+    type Facts = Record<string, [string, number]>
+    const read = (): Facts => {
+        try {
+            const value = JSON.parse(readFileSync(file, 'utf8')) as Facts
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+            return Object.fromEntries(Object.entries(value).filter(([, entry]) =>
+                Array.isArray(entry) && typeof entry[0] === 'string' && Number.isFinite(entry[1])))
+        } catch {
+            return {}
+        }
+    }
+    let known: Facts | undefined,
+        dirty = false,
+        savedAt = 0,
+        exitHook = false,
+        scheduled = false
+    const save = () => {
+        scheduled = false
+        if (!dirty || !known) return
+        dirty = false
+        savedAt = Date.now()
+        try {
+            // Another process may have saved since this one loaded: keep the newer entry of each.
+            for (const [key, entry] of Object.entries(read())) if (!known[key] || known[key][1] < entry[1]) known[key] = entry
+            const entries = Object.entries(known).sort((a, b) => b[1][1] - a[1][1]).slice(0, 50_000)
+            known = Object.fromEntries(entries)
+            mkdirSync(directory, { recursive: true, mode: 0o700 })
+            const temporary = `${file}.${process.pid}.tmp`
+            writeFileSync(temporary, JSON.stringify(known), { mode: 0o600 })
+            renameSync(temporary, file)
+        } catch {
+            /* Sharing a fact twice is harmless; camera work never depends on this file. */
+        }
+    }
+    return {
+        /** True when this fact is new, changed, or was last shared longer ago than the maximum age. */
+        fresh(scope: string, key: string, encoded: string, now = Date.now()) {
+            known ??= read()
+            const name = digest(scope + '\n' + key, 24),
+                value = digest(encoded, 16),
+                previous = known[name]
+            if (previous && previous[0] === value && now - previous[1] < maximumAgeMilliseconds) return false
+            known[name] = [value, now]
+            dirty = true
+            if (!exitHook) {
+                exitHook = true
+                process.once('exit', save)
+            }
+            // Short-lived bench workers exit soon after a burst; save promptly, but not per fact.
+            if (!scheduled) {
+                scheduled = true
+                setTimeout(save, Date.now() - savedAt > 2000 ? 250 : 2000).unref()
+            }
+            return true
+        },
+        save,
+    }
+}
+
+let cameras: ReturnType<typeof knownCameras> | undefined
+/** The installation's single record of which camera each USB identity last reported itself as. */
+export const sharedKnownCameras = () => (cameras ??= knownCameras())
+/** Remembers, per USB identity a host asked for, the manufacturer and model the camera reported
+ * when it last answered there. A later connection that fails before any identity read (the body
+ * is asleep or switched off) can then be attributed instead of left unidentified. Only what the
+ * camera itself reported is kept; the body fingerprint is kept only when the host asked for one
+ * exact serial, and that serial is stored as a hash. */
+export function knownCameras(directory = settingsDirectory()) {
+    const file = join(directory, 'known-cameras.json')
+    type Known = { manufacturer: string; model: string; hardwareFingerprint?: string }
+    const key = (usb: { vendorId?: number; productId?: number; serialNumber?: string }) =>
+        Number.isInteger(usb.vendorId) && Number.isInteger(usb.productId)
+            ? `${usb.vendorId!.toString(16)}:${usb.productId!.toString(16)}:${
+                  usb.serialNumber ? createHash('sha256').update(usb.serialNumber).digest('hex').slice(0, 16) : ''}`
+            : undefined
+    const read = (): Record<string, Known> => {
+        try {
+            const value = JSON.parse(readFileSync(file, 'utf8'))
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+        } catch {
+            return {}
+        }
+    }
+    return {
+        lookup(usb: { vendorId?: number; productId?: number; serialNumber?: string }): Known | undefined {
+            const name = key(usb), known = name ? read()[name] : undefined
+            return known && typeof known.manufacturer === 'string' && typeof known.model === 'string' && known.model !== 'Unknown'
+                ? { manufacturer: known.manufacturer, model: known.model,
+                    ...(usb.serialNumber && typeof known.hardwareFingerprint === 'string' && { hardwareFingerprint: known.hardwareFingerprint }) }
+                : undefined
+        },
+        remember(usb: { vendorId?: number; productId?: number; serialNumber?: string }, camera: Known) {
+            const name = key(usb)
+            if (!name || camera.model === 'Unknown') return
+            try {
+                const all = read(), previous = all[name]
+                const next: Known = { manufacturer: camera.manufacturer, model: camera.model,
+                    ...(usb.serialNumber && camera.hardwareFingerprint && { hardwareFingerprint: camera.hardwareFingerprint }) }
+                if (JSON.stringify(previous) === JSON.stringify(next)) return
+                all[name] = next
+                mkdirSync(directory, { recursive: true, mode: 0o700 })
+                const temporary = `${file}.${process.pid}.tmp`
+                writeFileSync(temporary, JSON.stringify(Object.fromEntries(Object.entries(all).slice(-500))), { mode: 0o600 })
+                renameSync(temporary, file)
+            } catch {
+                /* Attribution of a later failed connection is optional. */
+            }
+        },
+    }
+}

@@ -3,7 +3,7 @@
  * the tools that adjust exposure in stops.
  * One full photographic stop = 3 entries in these tables.
  */
-import { exposureSeconds, parseExposureTime } from '@darkgrade/link/controls'
+import { exposureSeconds, parseExposureTime } from '@darkgrade/slate/controls'
 
 export const STEPS_PER_STOP = 3
 

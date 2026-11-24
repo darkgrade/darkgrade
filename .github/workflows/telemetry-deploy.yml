@@ -25,7 +25,7 @@ jobs:
               with:
                   node-version: '24'
             - run: bun install --frozen-lockfile --ignore-scripts
-            - run: npm run test:contribute --prefix packages/link && npm run test --prefix apps/contribution-collector
+            - run: npm run test:contribute --prefix packages/slate && npm run test --prefix apps/contribution-collector
             - name: Check deployment configuration
               run: test -n "$PROJECT" && test -n "$REGION" && test -n "$PUBLIC_URL"
             - uses: google-github-actions/auth@v2

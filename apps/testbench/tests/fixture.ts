@@ -1,5 +1,5 @@
 import { LocalBench, type LocalCamera, type CameraAdapter } from '../server/host'
-import { cameraControlDefinitions, type CameraCapabilities, type CameraControlId, type CameraControlInputs } from '@darkgrade/link/controls'
+import { cameraControlDefinitions, type CameraCapabilities, type CameraControlId, type CameraControlInputs } from '@darkgrade/slate/controls'
 
 export class FixtureCamera implements LocalCamera {
     calls: string[] = []

@@ -7,7 +7,7 @@ const execFileAsync = promisify(execFile)
  * macOS spawns a system daemon the moment a PTP camera enumerates on USB and
  * that daemon claims the device's Still Image interface, so any attempt to
  * claim it from user space fails with LIBUSB_ERROR_ACCESS / BUSY.
- * (See packages/link/tests/01_usb.test.ts: "Mac PTPCamera is running and
+ * (See packages/slate/tests/01_usb.test.ts: "Mac PTPCamera is running and
  * hijacking the USB device".)
  *
  * Process name varies by macOS version:

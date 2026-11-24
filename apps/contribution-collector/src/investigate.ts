@@ -13,7 +13,7 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #8883;vertical-align:
 <form id="filters"><input name="installation" aria-label="Installation ID" placeholder="Installation ID">
 <input name="model" aria-label="Camera model" placeholder="Camera model"><input name="session" aria-label="Session ID" placeholder="Session ID">
 <button>Load timeline</button></form><p id="status" role="status">Loading…</p>
-<div class="scroll"><table><thead><tr><th>Time</th><th>Camera</th><th>Link</th><th>Operation</th><th>Result</th><th>Details</th></tr></thead><tbody id="events"></tbody></table></div>
+<div class="scroll"><table><thead><tr><th>Time</th><th>Camera</th><th>Slate</th><th>Operation</th><th>Result</th><th>Details</th></tr></thead><tbody id="events"></tbody></table></div>
 <script>
 const form=document.querySelector('form'),body=document.querySelector('#events'),status=document.querySelector('#status');
 let controller;
