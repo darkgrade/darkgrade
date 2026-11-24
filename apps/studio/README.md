@@ -1,74 +1,28 @@
 # Darkgrade Studio
 
-Desktop app for [`@darkgrade/slate`](../../packages/slate) — full camera control with **local AI voice**. Electron + React, everything on-device.
+One tap & we’re rolling.
 
-## Run it
+An app that sets your camera, takes orders by voice and, soon, hands you a first cut. Camera control,
+speech recognition and text models run on your own machine.
 
-```bash
-bun install          # once, from repo root
-bun run studio       # builds link, launches the app
-```
+## How it works
 
-Plug in a Sony ⍺ / Nikon Z / Canon EOS R (or any PTP camera) over USB and it auto-connects on launch.
+Plug in a Sony, Nikon or Canon camera over USB and Studio connects to it. From one screen you can set
+exposure, focus and white balance, watch live view, take a photo or record, and download what’s on the
+card. Return takes a photo and F focuses.
 
-### macOS: the camera daemon
+Press **Voice** and say what you want: *“set ISO to 800”*, *“take a photo”*, *“start recording”*.
 
-macOS spawns `ptpcamerad` (older: `PTPCamera`, mass-storage: `mscamerad`) the moment a camera enumerates, and it claims the PTP interface before anyone else can. One kill is not enough — launchd respawns it and macOS will clobber camera access again. Studio therefore **kills these daemons every second for the entire app lifetime**, plus immediately before each connect attempt (with one retry). If a connect still fails with an access/busy error, hit **Free camera** in the top bar (or say *"fix the camera"*).
+To let an assistant like Claude run the camera, turn on **Let AI apps control the camera** in
+Preferences. Only apps on your Mac can connect.
 
-## What it does
-
-Everything `@darkgrade/slate` exposes:
-
-| UI | Voice |
-| --- | --- |
-| Connect / disconnect | "connect" / "disconnect" |
-| ISO, shutter, aperture (read + set) | "set ISO to 800", "shutter to 1/250", "aperture to f/2.8" |
-| Capture (saved to disk + preview) | "take a photo", "capture", "shoot" |
-| Live view viewport | "start live view" / "stop live view" |
-| Video recording | "start recording" / "stop recording" / "cut" |
-| Browse + download camera storage | "list files", "download everything", "download the latest" |
-| Event log (all PTP events) | "what are my settings" |
-| Kill macOS camera daemon | "fix the camera" |
-
-## Voice control
-
-- **Fully local.** Speech recognition is Conway Research's Underdog Bark 3.0 Plus (Voicebench's leader; CC BY-NC 4.0, commercial use needs a licence from license@conway.tech). It runs in a Python MLX sidecar (`resources/bark-sidecar`, an approved exception to the TypeScript-only rule) that the main process starts. The model and its own loading code (~180 MB) download once from Hugging Face at a pinned revision, and the code is checked against known hashes before it runs. Silero VAD comes from the pinned `silero-vad` package. Voice needs Python 3.11 on the Mac (`brew install python@3.11`); the sidecar's environment is created on first use.
-- **Utterances, live.** Silero VAD 6.2.1 (onnxruntime-web, in the transcription worker) cuts speech at 0.5 s pauses, as Voicebench does. Partial words are re-transcribed every 0.7 s while you speak and are shown only; each utterance's final words go to the assistant. All settings are in `src/shared/speech-settings.ts`.
-- **Push-to-talk:** hold **Space** (or the mic button), speak, release.
-- **Always listening:** toggle on, then prefix commands with the wake word — *"hey darkgrade, take a photo"*. The wake-word requirement can be disabled.
-- Spoken numbers work: *"ISO sixty four hundred"*, *"shutter to one two-hundred-and-fiftieth of a second"*, *"aperture two point eight"*.
-
-## Vision models (Developer Mode)
-
-App menu › Developer Mode, then **Vision Models**: Apple's **Depth Pro 2** (metric depth, sizes S/B/L/H+, L by default) and Meta's **SAM 3** (finds and outlines every instance of a noun phrase). Each runs in its own Python sidecar (`resources/vision-sidecar`, PyTorch on the GPU through Metal; the same approved exception as Bark's), so both stay loaded beside the speech engine and the assistant: nothing unloads anything else. A model that is ticked loads at launch and stays loaded; using one of its tools ticks it.
-
-- **Tools**: with Developer Mode on, Studio's MCP server adds `estimate_depth` and `segment_objects`. Both take the live-view picture, or `imagePath` (a JPEG or PNG on this Mac), and answer numbers plus a picture (the depth map, red near and blue far; or the instances drawn over the frame). Pictures go to Depth Pro 2 at most 1024 pixels on the long side, since its memory grows with the picture.
-- **Downloads**: Depth Pro 2 (and its shared focal-length estimator) from `apple/DepthPro2-*`, SAM 3 from `facebook/sam3`, each pinned to a revision. SAM 3 is gated: accept Meta's licence on its Hugging Face page, then `hf auth login` (or set `HF_TOKEN`); without access Studio says so and the other models are unaffected.
-- **Licences**: Depth Pro 2's weights are for research use only (Apple Machine Learning Research Model licence); SAM 3 is under Meta's SAM licence.
-- **Live overlays**: with Developer Mode on, the Scopes panel's **Vision overlays** switches draw Depth Pro 2's depth map (semi-transparent, red near, blue far) and SAM 3's instances of a typed noun phrase (tinted masks with outlines; `person` until changed) over the picture, either or both. Each overlay loop keeps one frame in flight and takes only the newest frame when its model is free, so it refreshes as fast as the model sustains; the picture's corner shows each one's measured rate and round trip. Depth Pro 2 L ran at about 5 fps (183 ms round trip) on a 1280 × 720 feed on the M5 Max. A model that can't load (SAM 3 without access) shows why under its switch and stops asking.
-- **Memory** (measured on an M5 Max, all four loaded and answering at once: a 1024 × 768 frame for depth and segmentation, a 15 s utterance for Bark 3.0 Plus, a 2.7k-token request with a 768 × 576 frame for Nemotron 3.5 Bolt E4B at Studio's 2 × 16k context): Nemotron about 5.9 GB (2.0 GB plus 3.9 GB of its mapped weights resident), Bark 3.0 Plus 2.6 GB, Depth Pro 2 L 4.9 GB (H+ 8.1 GB), SAM 3 about 4.5 GB (measured on its architecture with random weights, since the real ones are gated here); about 18 GB together with L, 21 GB with H+.
-
-## Scripts
+## Run locally
 
 ```bash
-bun run dev        # dev mode with HMR (builds packages/slate first)
-bun run build      # production bundle → out/
-bun run typecheck  # tsc over main + renderer
-bun run test       # vitest — intent parser & number-word coverage
-bun run package    # electron-builder → release/ (mac dmg/zip)
+bun install
+bun run studio
 ```
 
-## Architecture
-
-```
-src/main/       Electron main — owns the camera (node-usb via @darkgrade/slate)
-  camera-service.ts        connect/settings/capture/live-view-loop/files/events
-  macos-camera-daemon.ts   killall ptpcamerad · PTPCamera · mscamerad
-  ipc-handlers.ts          one handler per camera capability
-src/preload/    typed contextBridge → window.studio
-src/shared/     IPC contract (channels + types)
-src/renderer/   React UI
-  voice/        transcription worker (Silero VAD → Bark sidecar) · intent follower
-```
-
-Live view frames stream main → renderer as JPEG buffers over IPC. All camera I/O stays in the main process; the renderer is sandbox-friendly (contextIsolation on).
+Needs an Apple silicon Mac. Voice needs Python 3.11 (`brew install python@3.11`) and downloads its
+speech model, Underdog Bark 3.0 Plus (CC BY-NC 4.0), on first use. `bun run studio:bundle` builds the
+Mac app.

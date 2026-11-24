@@ -5,15 +5,18 @@ description: "Install Darkgrade Slate in your project"
 
 ## Installation
 
-Publishing of `@darkgrade/slate` is pending. Develop from this repository:
+```bash
+npm i @darkgrade/slate
+```
+
+To work on Slate itself, build it from this repository:
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
 bun run --cwd packages/slate build
 ```
 
-Workspace applications can then import `@darkgrade/slate`. Once published, library
-consumers will install it with `npm install @darkgrade/slate`. The separately published
+Workspace applications can then import `@darkgrade/slate`. The separately published
 `darkgrade` executable bundles its implementation.
 
 ## Requirements
