@@ -33,6 +33,7 @@ test('Resend sends one private transactional confirmation with a bounded, idempo
     const body = JSON.parse(String(call.options.body))
     assert.deepEqual(body.to, [message.email])
     assert.ok(body.text.includes(message.confirmationUrl))
+    assert.match(body.text,/expires in 2 hours/)
     assert.match(body.text, /does not subscribe you to product updates/)
     assert.equal(body.tags, undefined)
     assert.doesNotMatch(JSON.stringify(body), /server-only-test-key/)
@@ -70,7 +71,7 @@ test('provider rejection, network loss and invalid acknowledgements never claim 
         assert.throws(() => resendContactSender(key, from), /configuration required/)
 })
 
-test('a rejected email cannot identify a contributor or leak provider details through telemetry', async () => {
+test('a rejected email retains only an unverified submission and cannot publish attribution or provider secrets', async () => {
     const fixture = memoryDatabase()
     const handle = createTelemetry(fixture.database, {
         publicUrl: 'https://telemetry.example',
@@ -83,6 +84,7 @@ test('a rejected email cannot identify a contributor or leak provider details th
     assert.equal(result.status, 503)
     assert.doesNotMatch(await result.text(), /server-only-test-key|contributor@example.com/)
     assert.equal(await fixture.database.get(`contacts/${user.installId}`), undefined)
+    assert.equal((await fixture.database.get(`contactRequests/${user.installId}`))?.email,message.email)
     assert.equal((await fixture.database.list('diagnostics')).length, 0)
     assert.doesNotMatch(JSON.stringify([...fixture.records.values()]), /server-only-test-key/)
 })

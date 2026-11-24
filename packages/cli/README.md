@@ -11,9 +11,10 @@ preserving standalone `npx darkgrade` installation.
 - `whoami`: print the persistent random diagnostic ID, never its secret.
 - `status`: show the sharing preference and endpoint configuration without contacting the service.
 - `login EMAIL`: request a Resend confirmation link to identify your telemetry contributions.
-  Open the link within 15 minutes; it can be used once. No mailing-list signup is included.
+  Open the link within 2 hours; it can be used once. No mailing-list signup is included.
 - `status --email`: read the confirmed email association from the collector, or `contact: null`
-  while no email is confirmed. This is an explicit network request.
+  while no email is submitted. Submitted addresses show `verified: false`; a pending replacement
+  is returned as `pendingEmail` while the previous verified address stays current. This is an explicit network request.
 - `logout`: remove the email association without changing the sharing preference.
 - `opt-out`: stop future cloud uploads; retain bounded sanitized local diagnostics.
 - `opt-in`: enable sharing again. After deletion this starts a new cloud identity.
@@ -35,3 +36,8 @@ collector origin. Email linking is optional and requires sharing to be enabled w
 logout still works after opting out. Studio Preferences provides
 sharing, Copy diagnostic ID, Delete cloud data and the same read-only Check camera run.
 The explicit capture/live CLI options remain camera operations, not background telemetry.
+
+Submitting a different address is allowed immediately (up to five confirmations a day).
+Verifying the latest address reassigns the installation's entire retained history; previous
+links cannot undo it. Private support lookup is in Outpost **Telemetry → Contributors**.
+See `packages/slate/docs/telemetry-email-enrollment.md` in the source repository for a test walkthrough.

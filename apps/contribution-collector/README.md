@@ -59,17 +59,22 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   cleanup is pending. Matrix automatically receives the same source-linked findings.
 - Optional email linking uses a single-use confirmation. `darkgrade telemetry login EMAIL`
   can enroll before camera use; `darkgrade telemetry status --email` reads the verified
-  association (or `contact: null` until confirmed). Ordinary `status` stays offline.
+  association (`verified: false` before confirmation, or `contact: null` before submission).
+  A previous verified address stays current while a replacement is pending. Ordinary `status` stays offline.
   `logout` removes the association without changing sharing, including after opting out.
   It stays unavailable until `TELEMETRY_EMAIL_API_KEY` (Resend) and a verified
   `TELEMETRY_EMAIL_FROM` are configured. Anonymous `whoami` works without email.
   These addresses identify telemetry contributors only: no Resend contact, segment,
   product-update subscription or public contributor credit is created. Addresses remain
-  separate from camera events, diagnostic batches and Matrix/operator exports.
-  Confirmation links expire after 15 minutes, are single-use, and are invalidated by a
+  separate from camera events, diagnostic batches and Matrix exports. The private operator
+  `/internal/api/contributors` support lookup exposes current/pending identities and joins
+  the installation's retained summaries, including history before enrollment; it never exposes credentials.
+  Confirmation links expire after 2 hours, are single-use, and are invalidated by a
   replacement request, logout or withdrawal. Requests are limited to five per installation
-  per day and one per minute. Provider rejection and ambiguous acknowledgements fail
+  per day; resends to the same address require one minute. Provider rejection and ambiguous acknowledgements fail
   without reporting an email as sent; the API does not return provider errors or secrets.
+  Unverified submissions persist for private support lookup even when delivery fails.
+  Logout/withdrawal remove both pending and verified associations.
 
 ## Resend configuration
 

@@ -144,7 +144,7 @@ test('email confirmation is separate, expires, is single-use, and only verified 
     assert.equal((await exportReviewedPatterns(database)).records[0].credit, null)
     date = new Date(+date + 60_000)
     await handle(request('/v2/contact', 'POST', installKey, contact))
-    date = new Date(+date + 16 * 60_000)
+    date = new Date(+date + 120 * 60_000)
     assert.equal(
         (
             await handle(
@@ -155,6 +155,49 @@ test('email confirmation is separate, expires, is single-use, and only verified 
         ).status,
         410
     )
+})
+
+test('latest email replaces the verified identity only after confirmation and older links cannot undo it', async () => {
+    const {database} = memoryDatabase()
+    const sent: ContactMessage[] = []
+    const handle = createTelemetry(database,{publicUrl:'https://telemetry.example',sendContact:async message=>{sent.push(message)}})
+    const user=await enroll(handle)
+    const status=async()=> (await (await handle(request('/v2/installation','GET',user.installKey))).json()).contact
+    const confirm=async(index:number)=>handle(request('/v2/contact/confirm','POST',undefined,{token:new URL(sent[index].confirmationUrl).hash.slice(1)}))
+    assert.equal((await handle(request('/v2/contact','POST',user.installKey,{email:'FIRST@example.com'}))).status,202)
+    assert.deepEqual(await status(),{email:'first@example.com',verified:false,credit:null})
+    assert.equal((await confirm(0)).status,200)
+    assert.equal((await handle(request('/v2/contact','POST',user.installKey,{email:'second@example.com'}))).status,202)
+    assert.deepEqual(await status(),{email:'first@example.com',verified:true,credit:null,pendingEmail:'second@example.com'})
+    assert.equal((await confirm(1)).status,200)
+    assert.deepEqual(await status(),{email:'second@example.com',verified:true,credit:null})
+    assert.equal((await confirm(0)).status,410)
+    assert.equal((await handle(request('/v2/contact','POST',user.installKey,{email:'third@example.com'}))).status,202)
+    assert.equal((await handle(request('/v2/contact','POST',user.installKey,{email:'fourth@example.com'}))).status,202)
+    assert.equal((await confirm(2)).status,410,'superseded pending links cannot replace a verified identity')
+    assert.equal((await confirm(3)).status,200)
+    assert.equal((await status()).email,'fourth@example.com')
+    assert.equal((await handle(request('/v2/contact','POST',user.installKey,{email:'fourth@example.com'}))).status,429,'same-address resend is still rate limited')
+    assert.equal((await handle(request('/v2/contact','DELETE',user.installKey))).status,200)
+    assert.equal(await status(),null)
+    assert.equal(await database.get(`contactRequests/${user.installId}`),undefined)
+})
+
+test('confirmation works after 119 minutes and expires exactly at two hours', async () => {
+    const {database}=memoryDatabase()
+    let clock=new Date()
+    const sent:ContactMessage[]=[]
+    const handle=createTelemetry(database,{publicUrl:'https://telemetry.example',now:()=>clock,sendContact:async m=>{sent.push(m)}})
+    const user=await enroll(handle)
+    await handle(request('/v2/contact','POST',user.installKey,{email:'first@example.com'}))
+    clock=new Date(+clock+119*60_000)
+    const confirm=(index:number)=>handle(request('/v2/contact/confirm','POST',undefined,{token:new URL(sent[index].confirmationUrl).hash.slice(1)}))
+    assert.equal((await confirm(0)).status,200)
+    await handle(request('/v2/contact','POST',user.installKey,{email:'second@example.com'}))
+    clock=new Date(+clock+120*60_000)
+    assert.equal((await confirm(1)).status,410)
+    assert.equal((await database.get(`contacts/${user.installId}`))?.email,'first@example.com')
+    assert.equal((await database.get(`contactRequests/${user.installId}`))?.email,'second@example.com')
 })
 
 test('withdrawal and replaced contact challenges cannot resurrect contact details', async () => {

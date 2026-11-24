@@ -449,7 +449,9 @@ export async function postgresDatabase(connectionString: string, options: { defe
     // Pool errors must not crash an otherwise idle HTTP service.
     pool.on('error', () => console.error('Telemetry database connection unavailable'))
     try {
-        const ready = await pool.query(`SELECT count(*)::int AS triggers FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+        const ready = await pool.query(`SELECT count(*)::int AS triggers,
+            to_regclass('telemetry_contacts_email') IS NOT NULL AS contacts_ready
+            FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
             WHERE c.relname='telemetry_events' AND t.tgname IN ('telemetry_events_added','telemetry_events_removed')`)
         const eventsSchemaReady = ready.rows[0].triggers === 2
         const summaries = await pool.query(`SELECT to_regclass('telemetry_unknown_codes_latest') IS NOT NULL
@@ -459,6 +461,19 @@ export async function postgresDatabase(connectionString: string, options: { defe
         await pool.query(
             "BEGIN; SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.schema'));" +
                 (eventsSchemaReady ? '' : eventsSchema) + (summarySchemaReady ? '' : summarySchema) + schema +
+                (ready.rows[0].contacts_ready ? '' :
+                    `CREATE INDEX IF NOT EXISTS telemetry_contacts_email ON telemetry_state ((lower(data->>'email')),path COLLATE "C")
+                    WHERE split_part(path,'/',1) IN ('contacts','contactRequests');
+                    INSERT INTO telemetry_state(path,data)
+                    SELECT 'contactRequests/'||(c.data->>'installId'),
+                        jsonb_build_object('installId',c.data->>'installId','email',c.data->>'email',
+                            'requestedAt',coalesce(c.data->'requestedAt',i.data->'lastEmailAt'))
+                    FROM telemetry_state c JOIN telemetry_state i ON i.path='installations/'||(c.data->>'installId')
+                    WHERE split_part(c.path,'/',1)='contactChallenges'
+                        AND c.data->>'expiresAt'>to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                        AND (c.data->>'generation')::int=(i.data->>'emailGeneration')::int
+                        AND NOT coalesce((i.data->>'revoked')::boolean,false)
+                    ON CONFLICT(path) DO NOTHING;`) +
                 (eventsSchemaReady ? '' : eventsTriggers) + ';COMMIT;'
         )
         // A service defers this until it is listening: the rebuild can outlast a startup probe.
