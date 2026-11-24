@@ -76,7 +76,7 @@ const PHOTOS = ['DSC02760', 'DSC02762', 'DSC02764', 'DSC02766']
 const media = (name: string) => `/@fs${import.meta.env.STUDIO_POLISH_MEDIA}/${name}.jpg`
 const bytes = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer())
 
-/** The camera's own date form, as Link reports it: 20261118T073312. */
+/** The camera's own date form, as Slate reports it: 20261118T073312. */
 const ptpDate = (ms: number) => new Date(ms).toISOString().replace(/[-:]/g, '').slice(0, 15)
 
 const files: FileEntry[] = [

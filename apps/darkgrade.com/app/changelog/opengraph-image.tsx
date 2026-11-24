@@ -7,7 +7,7 @@ export const contentType = CARD_CONTENT_TYPE
 export default function OpenGraphImage() {
     return drawPageCard({
         main: 'Changelog',
-        sub: 'A dated record of what ships in Link and Studio',
+        sub: 'A dated record of what ships in Slate and Studio',
         path: '/changelog',
     })
 }

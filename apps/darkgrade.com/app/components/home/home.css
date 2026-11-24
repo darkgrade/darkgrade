@@ -83,7 +83,7 @@
     }
 }
 
-/* What runs on the laptop in the Link chapter: each request, reply and call arrives with a small move of its own. */
+/* What runs on the laptop in the Slate chapter: each request, reply and call arrives with a small move of its own. */
 @keyframes desk-arrive {
     from {
         opacity: 0;

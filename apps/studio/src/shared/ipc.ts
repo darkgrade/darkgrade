@@ -1,8 +1,10 @@
 import type { SpeechModelId } from '@shared/speech-models'
+import { cameraControlDefinitions, resolveCameraControl } from '@darkgrade/slate/controls'
+import type { CameraRecordingState } from '@darkgrade/slate/controls'
 import type { DepthModelSize, VisionEngineStatus, VisionModelId, VisionOverlay } from '@shared/vision-models'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
- * Every camera capability exposed by @darkgrade/link has a channel here.
+ * Every camera capability exposed by @darkgrade/slate has a channel here.
  */
 
 export const IPC = {
@@ -134,28 +136,11 @@ export const CAMERA_CONTROL_NAMES = [
 export type CameraControlName = (typeof CAMERA_CONTROL_NAMES)[number]
 
 /** What each setting is called on screen, in logs and in tool descriptions. */
-export const CAMERA_CONTROL_LABELS: Record<CameraControlName, string> = {
-    whiteBalance: 'White balance',
-    colorTemperature: 'Colour temperature',
-    imageSize: 'Photo size',
-    aspectRatio: 'Aspect ratio',
-    jpegQuality: 'JPEG quality',
-    movieFrameRate: 'Frame rate',
-    zoomMode: 'Zoom mode',
-    liveViewQuality: 'Live view quality',
-    exposureProgram: 'Shooting mode',
-    aperture: 'Aperture',
-    shutterSpeed: 'Shutter speed',
-    iso: 'ISO',
-    focusMode: 'Focus mode',
-    focusArea: 'Focus area',
-    subjectRecognition: 'Eye tracking',
-    recognitionTarget: 'Recognition target',
-    eyeSelect: 'Eye',
-    stillFormat: 'Photo format',
-    movieFormat: 'Movie format',
-    movieSetting: 'Movie quality',
-}
+export const CAMERA_CONTROL_LABELS = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => {
+    const id = resolveCameraControl(name)
+    if (!id) throw new Error(`Studio control ${name} has no Slate definition`)
+    return [name, cameraControlDefinitions[id].label]
+})) as Record<CameraControlName, string>
 export type CameraControls = Record<CameraControlName, CameraControl | null>
 
 /** The attached lens and where its zoom sits. */
@@ -210,6 +195,7 @@ export interface CameraState {
     osdOverlay: boolean | null
     liveView: boolean
     recording: boolean
+    recordingState: CameraRecordingState
     settings: CameraSettings
     downloadDir: string
     platform: NodeJS.Platform | ''
@@ -352,9 +338,9 @@ export interface StudioViewState {
  * this choice adds is marked EXPERIMENT(usb-transport); src/main/usb-experiments.ts lists the pieces.
  */
 export const USB_TRANSPORT_CHOICES = [
-    { id: 'node-usb', label: 'Link on node-usb (default)' },
-    { id: 'node-usb-rs', label: 'Link on node-usb-rs' },
-    { id: 'swift-transport', label: 'Link on a Swift USB transport' },
+    { id: 'node-usb', label: 'Slate on node-usb (default)' },
+    { id: 'node-usb-rs', label: 'Slate on node-usb-rs' },
+    { id: 'swift-transport', label: 'Slate on a Swift USB transport' },
     { id: 'swift-live-view', label: 'Swift USB transport and Swift live-view loop' },
 ] as const
 export type UsbTransportChoice = (typeof USB_TRANSPORT_CHOICES)[number]['id']

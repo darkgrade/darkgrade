@@ -1,8 +1,8 @@
 import { allowBurst } from '#collector/abuse-limits'
 import type { Database, Transaction } from '#collector/database'
 import { changeMatrixGeneration } from '#collector/matrix-generation'
-import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/link/contribute/batch'
-import { MAXIMUM_BODY_BYTES } from '@darkgrade/link/contribute/schema'
+import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/slate/contribute/batch'
+import { MAXIMUM_BODY_BYTES } from '@darkgrade/slate/contribute/schema'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 export const RETENTION_DAYS = 90
@@ -496,24 +496,33 @@ fetch('/v2/contact/confirm',{method:'POST',headers:{'content-type':'application/
 }
 
 export function resendContactSender(apiKey: string, from: string, request: typeof fetch = fetch) {
-    if (!apiKey || !from || /[\r\n]/.test(from)) throw new Error('Email sender configuration required')
+    if (!apiKey?.trim() || !from?.trim() || /[\r\n]/.test(apiKey + from))
+        throw new Error('Email sender configuration required')
     return async ({ email, confirmationUrl, idempotencyKey }: ContactMessage) => {
-        const result = await request('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-                authorization: `Bearer ${apiKey}`,
-                'content-type': 'application/json',
-                'idempotency-key': idempotencyKey,
-            },
-            body: JSON.stringify({
-                from,
-                to: [email],
-                subject: 'Confirm your Darkgrade diagnostics email',
-                text: `Confirm this email for your Darkgrade installation:\n${confirmationUrl}\n\nThis link expires in 15 minutes. If you did not request it, ignore this message. Diagnostics never contain your email.`,
-            }),
-            signal: AbortSignal.timeout(10_000),
-            redirect: 'error',
-        })
-        if (!result.ok) throw new Error('Contact email delivery failed')
+        try {
+            const result = await request('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: {
+                    authorization: `Bearer ${apiKey.trim()}`,
+                    'content-type': 'application/json',
+                    'idempotency-key': idempotencyKey,
+                },
+                body: JSON.stringify({
+                    from: from.trim(),
+                    to: [email],
+                    subject: 'Confirm your Darkgrade diagnostics email',
+                    text: `Confirm this email for your Darkgrade installation:\n${confirmationUrl}\n\nThis link expires in 15 minutes. If you did not request it, ignore this message. This only identifies your telemetry contributions; it does not subscribe you to product updates. Camera diagnostic events never contain your email.`,
+                }),
+                signal: AbortSignal.timeout(10_000),
+                redirect: 'error',
+            })
+            if (!result.ok) throw new Error('Email was not accepted')
+            const receipt = await result.json()
+            if (typeof receipt?.id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(receipt.id))
+                throw new Error('Email acceptance is unverified')
+        } catch {
+            // Provider errors can contain addresses, tokens or configuration details.
+            throw new TelemetryError(503, 'Email confirmation is temporarily unavailable. Try again shortly.')
+        }
     }
 }

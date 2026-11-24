@@ -1,4 +1,4 @@
-import { LINK, LINKS, STUDIO } from '@/app/components/home/content'
+import { SLATE, LINKS, STUDIO } from '@/app/components/home/content'
 import { FactStrip, SheetClosing, SheetHeadline, SheetPage, SheetSection } from '@/app/components/sheet-page'
 import { BTN_GHOST, BTN_SOLID } from '@/app/components/site-links'
 
@@ -21,7 +21,7 @@ const CAREERS = {
 } as const
 
 /** What someone joining would work on: the two products, each with the line the home page says of it. */
-const WORK = [LINK, STUDIO]
+const WORK = [SLATE, STUDIO]
 
 /**
  * The Careers page: there are no open roles, what the team works on, and where to say hello if you

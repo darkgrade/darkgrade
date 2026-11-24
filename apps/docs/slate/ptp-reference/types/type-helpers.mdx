@@ -1,0 +1,35 @@
+---
+title: "Type Helpers"
+description: "PTP Type Helpers type definitions"
+---
+
+# Type Helpers
+
+## OperationParams
+
+Infers required and optional named parameters from an operation's concrete
+`operationParameters` tuple. `Camera.send(OpenSession, { SessionID: 1 })` is valid;
+omitting SessionID or passing a string is a type error.
+
+---
+
+## OperationResponse
+
+Infers the decoded data from the operation's `dataCodec`, alongside its response
+code and optional response parameters. GetDeviceInfo returns a typed DeviceInfo
+dataset; an operation without data does not invent a data field.
+
+---
+
+## EventParams
+
+Infers the event's named fields from its concrete parameter tuple.
+
+---
+
+## EventNames
+
+The union of concrete event names in a registry.
+
+---
+

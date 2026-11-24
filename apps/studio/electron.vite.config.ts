@@ -11,8 +11,8 @@ const onnxRuntimeDistribution = dirname(createRequire(import.meta.url).resolve('
 export default defineConfig({
     main: {
         define: {
-            __LINK_REVISION__: JSON.stringify(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()),
-            __LINK_DIRTY__: JSON.stringify(
+            __SLATE_REVISION__: JSON.stringify(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()),
+            __SLATE_DIRTY__: JSON.stringify(
                 !!execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim()
             ),
         },

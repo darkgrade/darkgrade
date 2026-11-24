@@ -150,7 +150,9 @@ function CameraDetails({ cameraState }: { cameraState: CameraState }): React.JSX
             <DetailGroup
                 rows={[
                     ['Live view', cameraState.liveView ? 'On' : 'Paused'],
-                    ['Recording', cameraState.recording ? 'Yes' : 'No'],
+                    ['Recording', cameraState.recordingState === 'recording' ? 'Yes'
+                        : cameraState.recordingState === 'idle' ? 'No'
+                        : cameraState.recordingState === 'unknown' ? 'Unconfirmed' : cameraState.recordingState],
                 ]}
             />
         </div>

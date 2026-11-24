@@ -18,7 +18,7 @@ const DOCUMENT_NUMBER = 'DG-PK-001'
 const ZIP_FILENAME = 'darkgrade-press-kit.zip'
 /** Where the backdrop is cropped to behind the banners and the full-bleed square, 0 = its top edge, 1 = its foot. */
 const BACKDROP_POSITION_Y = 0.5
-/** The picture behind the link preview card: the camera as Link drives it, with its four readings pinned to it. The laptop is left out, and the camera stands to the right of the words. */
+/** The picture behind the link preview card: the camera as Slate drives it, with its four readings pinned to it. The laptop is left out, and the camera stands to the right of the words. */
 const CARD_PICTURE: PictureFraming = {
     chapter: 'link',
     standBack: 0.61,

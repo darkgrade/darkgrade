@@ -10,7 +10,7 @@ export default defineConfig({
     plugins: [sveltekit({ adapter: adapter(), preprocess: vitePreprocess() }), tailwindcss(), devtoolsJson()],
     resolve: {
         alias: {
-            '@darkgrade/link': resolve(import.meta.dirname, '../../packages/link'),
+            '@darkgrade/slate': resolve(import.meta.dirname, '../../packages/slate'),
         },
     },
     build: {

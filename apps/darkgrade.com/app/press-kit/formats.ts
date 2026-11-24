@@ -51,7 +51,7 @@ export const ASSET_FORMATS: readonly AssetFormat[] = [
         height: CARD_HEIGHT,
         look: 'card',
         contentArea: CARD_CONTENT_AREA,
-        note: 'The camera as Link drives it, with its four readings pinned to it, and the name and headline on the left.',
+        note: 'The camera as Slate drives it, with its four readings pinned to it, and the name and headline on the left.',
     },
     {
         id: 'linkedin-profile',

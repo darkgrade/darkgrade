@@ -7,13 +7,13 @@
     "description": "Darkgrade Studio \u2014 desktop camera control with local live transcription",
     "main": "out/main/index.js",
     "scripts": {
-        "build:link": "bun run --cwd ../../packages/link build",
+        "build:slate": "bun run --cwd ../../packages/slate build",
         "ensure:electron": "node scripts/ensure-electron.mjs",
         "ensure:llama-server": "bun scripts/download-llama-server.ts",
         "build:native": "node scripts/build-native.mjs",
-        "dev": "bun run ensure:electron && bun run ensure:llama-server && bun run build:link && bun run build:native && electron-vite dev",
+        "dev": "bun run ensure:electron && bun run ensure:llama-server && bun run build:slate && bun run build:native && electron-vite dev",
         "start": "bun run dev",
-        "build": "bun run ensure:llama-server && bun run build:link && bun run build:native && electron-vite build",
+        "build": "bun run ensure:llama-server && bun run build:slate && bun run build:native && electron-vite build",
         "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
         "test": "vitest run",
         "lint": "eslint . --ext .ts,.tsx",
@@ -21,7 +21,7 @@
         "package": "bun run build && electron-builder --mac"
     },
     "dependencies": {
-        "@darkgrade/link": "workspace:*",
+        "@darkgrade/slate": "workspace:*",
         "@kevinschaich/components": "0.7.0",
         "@modelcontextprotocol/node": "2.1.2",
         "@modelcontextprotocol/server": "2.4.0",

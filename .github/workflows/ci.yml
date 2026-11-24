@@ -1,5 +1,5 @@
 name: CI
-# Every pull request and every push to main runs the whole suite: a camera fix in Link can
+# Every pull request and every push to main runs the whole suite: a camera fix in Slate can
 # break telemetry, Studio or the collector, and a path filter would hide that.
 on:
     pull_request:
@@ -39,7 +39,7 @@ jobs:
               run: bun run security:check && bun run security:test
             - name: Dependency security audit
               run: bun audit
-            - run: npm run build --prefix packages/link
+            - run: npm run build --prefix packages/slate
             - name: Test Bench host and UI
               run: |
                   bun run --cwd apps/testbench build
@@ -50,12 +50,12 @@ jobs:
             - run: npm run test --prefix apps/contribution-collector
               env:
                   DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry
-            - name: Link type check
-              run: npm run typecheck --prefix packages/link
-            - name: Link tests (camera library and runtime)
-              run: npm run test --prefix packages/link
-            - name: Link package exports
-              run: npm run test:package --prefix packages/link
+            - name: Slate type check
+              run: npm run typecheck --prefix packages/slate
+            - name: Slate tests (camera library and runtime)
+              run: npm run test --prefix packages/slate
+            - name: Slate package exports
+              run: npm run test:package --prefix packages/slate
             - run: npm run test --prefix packages/cli
             - run: npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
             - run: docker build -f apps/contribution-collector/Dockerfile -t telemetry-check .

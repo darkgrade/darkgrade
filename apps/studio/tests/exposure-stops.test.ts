@@ -1,4 +1,5 @@
 import {
+    advertisedExposureValues,
     APERTURE_VALUES,
     apertureToNumber,
     isAutoValue,
@@ -7,9 +8,24 @@ import {
     nearestNumericOption,
     SHUTTER_VALUES,
     shutterToNumber,
+    shutterDialToNumber,
     stepValue,
 } from '@shared/exposure-stops'
 import { describe, expect, it } from 'vitest'
+
+describe('advertised exposure dial values', () => {
+    it('preserves vendor labels and never manufactures a fallback value', () => {
+        expect(advertisedExposureValues(['ISO 800', 'Auto', 'ISO 125'], isoToNumber)).toEqual(['Auto', 'ISO 125', 'ISO 800'])
+        expect(advertisedExposureValues(undefined, isoToNumber)).toEqual([])
+        expect(advertisedExposureValues([], isoToNumber)).toEqual([])
+        expect(advertisedExposureValues(['ISO 100', 'ISO 100'], isoToNumber)).toEqual([])
+    })
+    it('orders native angle values without treating them as durations', () => {
+        expect(advertisedExposureValues(['90°', '360°', '180°'], shutterDialToNumber, true)).toEqual(['360°', '180°', '90°'])
+        expect(shutterToNumber('180°')).toBeNull()
+        expect(stepValue(['360°', '180°', '90°'], '180°', shutterDialToNumber, 1)).toBe('90°')
+    })
+})
 
 describe('stepValue', () => {
     it('steps ISO one full stop up (+3 thirds)', () => {

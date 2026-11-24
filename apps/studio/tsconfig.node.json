@@ -22,5 +22,6 @@
         "src/renderer/src/lib/latest-frame-loop.ts",
         "electron.vite.config.ts",
         "tests/**/*"
-    ]
+    ],
+    "exclude": ["tests/renderer/**/*"]
 }

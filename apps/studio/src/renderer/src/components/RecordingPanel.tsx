@@ -56,7 +56,7 @@ export function useRecordingClock(recording: boolean): string | null {
 
 export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanelProps): React.JSX.Element {
     const controls = cameraState.controls
-    const elapsed = useRecordingClock(cameraState.recording)
+    const elapsed = useRecordingClock(cameraState.recordingState === 'recording')
     // The body won't change movie settings mid-take.
     const disabled = !cameraState.connected || locked || cameraState.recording
     const photoDisabled = !cameraState.connected || locked
@@ -70,7 +70,10 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                     <span className="flex items-center gap-1.5 text-[12px] font-medium text-rec tabular-nums">
                         <span className="size-2 animate-pulse rounded-full bg-rec" aria-hidden /> {elapsed}
                     </span>
-                ) : undefined
+                ) : cameraState.recording && cameraState.recordingState !== 'recording'
+                    ? <span className="text-xs text-muted-foreground">{cameraState.recordingState === 'idle'
+                        ? 'Recording stopped; finishing camera setup' : `Recording state ${cameraState.recordingState}`}</span>
+                    : undefined
             }
         >
             {controls ? (

@@ -7,7 +7,7 @@ required. This replaces the undeployed project 18 infrastructure.
 
 ## Local development
 
-Build `packages/link` and this app, then run a local Postgres 17 database. Set
+Build `packages/slate` and this app, then run a local Postgres 17 database. Set
 `DATABASE_URL` to its connection string and `TELEMETRY_PUBLIC_URL` to the intended HTTPS
 origin. `npm start` starts the service on port 8080. `npm test` includes real Postgres
 integration tests when `DATABASE_URL` is set. `npm run smoke` uses `TELEMETRY_SMOKE_URL`
@@ -21,7 +21,7 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
 ## Data and behavior
 
 - `telemetry_events` is the flat investigation table: installation/session IDs, client/server
-  timestamps, model, firmware, Link revision, transport, operation code and flexible JSONB
+  timestamps, model, firmware, Slate revision, transport, operation code and flexible JSONB
   properties, and optional versioned camera-body fingerprints. Fingerprints hash manufacturer, model
   and reliable serial identity; raw serials, images, command parameters and free-form errors are excluded.
 - `telemetry_state` holds installation credential hashes, immutable original batches, quotas,
@@ -40,14 +40,14 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   installation by default. `TELEMETRY_DAILY_BATCH_LIMIT` (Terraform `daily_batch_limit`)
   sets an explicit integer service budget from 1 through 65,536; existing quota counts
   and installation identities stay intact. The day resets at UTC midnight, and daily
-  rejection returns the seconds until that reset. Link identifies this rejection
+  rejection returns the seconds until that reset. Slate identifies this rejection
   explicitly; its bounded queue can still drop events if delivery remains blocked.
   Shared Postgres windows also limit registrations to 30/minute and uploads
   to 600/minute globally and 120/minute per installation. Repeated registrations consume
   the same burst budget. Before parsing bodies or querying Postgres, each process admits
   at most 100 requests/second and 32 concurrent requests. Rejections return Retry-After;
   withdrawal is not blocked by an exhausted upload budget. These are application limits,
-  not a DDoS shield or proof the caller is an official Link client.
+  not a DDoS shield or proof the caller is an official Slate client.
   Bodies are capped at 256 KiB, 1,000 entries and 16 camera contexts.
 - Deep benchmarks add typed advertised inventories and allowlisted numeric descriptors.
   `/internal/api/profile` exports their retained evidence and `/internal/api/protocol`
@@ -57,10 +57,37 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   reference; the label is an operator assertion, not automatic hardware qualification.
   Expired/withdrawn sources disappear from these views immediately, including while
   cleanup is pending. Matrix automatically receives the same source-linked findings.
-- Optional email linking uses a single-use confirmation. CLI `telemetry login EMAIL`
-  can enroll before camera use; `logout` removes the association without changing sharing.
+- Optional email linking uses a single-use confirmation. `darkgrade telemetry login EMAIL`
+  can enroll before camera use; `darkgrade telemetry status --email` reads the verified
+  association (or `contact: null` until confirmed). Ordinary `status` stays offline.
+  `logout` removes the association without changing sharing, including after opting out.
   It stays unavailable until `TELEMETRY_EMAIL_API_KEY` (Resend) and a verified
   `TELEMETRY_EMAIL_FROM` are configured. Anonymous `whoami` works without email.
+  These addresses identify telemetry contributors only: no Resend contact, segment,
+  product-update subscription or public contributor credit is created. Addresses remain
+  separate from camera events, diagnostic batches and Matrix/operator exports.
+  Confirmation links expire after 15 minutes, are single-use, and are invalidated by a
+  replacement request, logout or withdrawal. Requests are limited to five per installation
+  per day and one per minute. Provider rejection and ambiguous acknowledgements fail
+  without reporting an email as sent; the API does not return provider errors or secrets.
+
+## Resend configuration
+
+1. Add and verify the sender's domain in Resend. Add its DKIM and sending DNS records
+   without replacing the domain's existing inbound mail records. A mailbox address alone
+   does not authorize Resend to send from that domain.
+2. Store the key in the collector's Secret Manager configuration using Terraform
+   `email_api_key`; set `email_from` to the verified sender address. Neither value belongs
+   in the CLI or Studio build. Local development uses `TELEMETRY_EMAIL_API_KEY` and
+   `TELEMETRY_EMAIL_FROM`; both must be configured together.
+3. Deploy the collector through the existing telemetry workflow. Updating the image
+   preserves its existing secret references and sender environment configuration.
+4. Run `darkgrade telemetry login you@example.com`, open the received confirmation link,
+   then run `darkgrade telemetry status --email`. Confirm logout removes the association
+   without changing sharing. Provider acceptance alone does not prove inbox delivery.
+
+The tests exercise Resend acceptance/rejection and the actual CLI over a local HTTPS
+collector. They never require a production key or send messages to real people.
 
 ## Investigation and Matrix
 
@@ -134,7 +161,7 @@ permissions. Optional `email_api_key` and `email_from` inject the sender through
 4. Test `/health` (public Cloud Run frontends reserve `/healthz`, which remains an internal probe alias), enrollment, duplicates, opt-out, withdrawal and `/internal`. Verify
    database/network permissions and backup restoration before accepting customer diagnostics.
    Configure project-level billing notifications; instance counts are not hard spending caps.
-5. Node Link, CLI and Studio use the built-in hosted collector by default.
+5. Node Slate, CLI and Studio use the built-in hosted collector by default.
    `DARKGRADE_TELEMETRY_URL` overrides it for self-hosting. Saved opt-outs and environment
    overrides still disable uploads; automatic clients also stay local under `NODE_ENV=test`.
    Publishing packages is a separate release step.

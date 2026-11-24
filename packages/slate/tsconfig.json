@@ -1,0 +1,27 @@
+{
+    "extends": "@darkgrade/typescript-config/library.json",
+    "compilerOptions": {
+        "lib": ["ES2022", "DOM"],
+        "jsx": "react-jsx",
+        "types": ["w3c-web-usb", "node"],
+        "declaration": true,
+        "declarationMap": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "outDir": "./dist",
+        "rootDir": ".",
+        "baseUrl": ".",
+        "paths": {
+            "@contribute/*": ["src/contribute/*"],
+            "@workflows/*": ["src/workflows/*"],
+            "@camera/*": ["src/camera/*"],
+            "@core/*": ["src/core/*"],
+            "@transport/*": ["src/transport/*"],
+            "@ptp/*": ["src/ptp/*"],
+            "@vendors/*": ["src/vendors/*"],
+            "@runtime/*": ["src/runtime/*"]
+        }
+    },
+    "include": ["src", "tests", "scripts/recover-camera.ts", "*.config.ts"],
+    "exclude": ["tests/runtime"]
+}

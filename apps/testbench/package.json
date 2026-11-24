@@ -14,7 +14,7 @@
         "test:e2e": "playwright test"
     },
     "dependencies": {
-        "@darkgrade/link": "workspace:*"
+        "@darkgrade/slate": "workspace:*"
     },
     "devDependencies": {
         "@playwright/test": "1.55.1",

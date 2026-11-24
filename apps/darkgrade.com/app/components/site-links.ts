@@ -2,7 +2,7 @@ export const LINKS = {
     github: 'https://github.com/darkgrade/darkgrade',
     discord: 'https://discord.gg/fbDbdJv9dX',
     youtube: 'https://www.youtube.com/watch?v=tsNWxj-pmU4',
-    docs: 'https://darkgrade.com/docs/link',
+    docs: 'https://darkgrade.com/docs/slate',
     commits: 'https://github.com/darkgrade/darkgrade/commits/main',
     x: 'https://x.com/darkgradehq',
     linkedin: 'https://www.linkedin.com/company/darkgrade',
@@ -14,7 +14,7 @@ export const LINKS = {
     yCombinator: 'https://www.ycombinator.com/companies/darkgrade',
 } as const
 
-export const NPM_INSTALL = 'npm i @darkgrade/link'
+export const NPM_INSTALL = 'npm i @darkgrade/slate'
 
 /** Section eyebrow: 14px, wide-tracked, uppercase. Colour is the caller's,
  *  so two text-* utilities never race for the same declaration. */

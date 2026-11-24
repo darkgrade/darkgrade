@@ -1,12 +1,12 @@
-import { createApplicationDiagnostics } from '@darkgrade/link/contribute/application'
-import { installationFileStore } from '@darkgrade/link/contribute/installation-store'
+import { createApplicationDiagnostics } from '@darkgrade/slate/contribute/application'
+import { installationFileStore } from '@darkgrade/slate/contribute/installation-store'
 import {
     closeNodeDiagnostics,
     nodeDiagnostics,
     settingsDirectory,
     sharedSettings,
     telemetryEndpoint,
-} from '@darkgrade/link/contribute/settings'
+} from '@darkgrade/slate/contribute/settings'
 import type { DiagnosticsStatus } from '@shared/ipc'
 import { app, safeStorage } from 'electron'
 import { createHash } from 'node:crypto'

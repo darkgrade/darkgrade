@@ -1,0 +1,276 @@
+import type { SonySdkProperty, SonyWifiCamera } from '@vendors/sony/sdk-camera'
+import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
+import { sonyIsoLabel } from '@vendors/sony/iso-value'
+import { cameraControlDefinitions, resolveCameraControl, type CameraCapabilities, type CameraControlId } from '@camera/controls'
+import { parseExposureTime } from '@camera/exposure-time'
+
+const controls: Record<string, { code: number; label: string; values?: Record<string, string> }> = {
+    aperture: { code: 256, label: 'Aperture' },
+    shutterSpeed: { code: 259, label: 'Shutter speed' },
+    iso: { code: 260, label: 'ISO' },
+    focusMode: {
+        code: 265,
+        label: 'Focus mode',
+        values: { '1': 'Manual', '2': 'AF-S', '3': 'AF-C', '4': 'AF-A', '6': 'DMF' },
+    },
+    whiteBalance: {
+        code: 264,
+        label: 'White balance',
+        values: {
+            '0': 'Auto',
+            '17': 'Daylight',
+            '18': 'Shade',
+            '19': 'Cloudy',
+            '20': 'Tungsten',
+            '33': 'Warm White',
+            '34': 'Cool White',
+            '35': 'Day White',
+            '36': 'Daylight fluorescent',
+            '48': 'Flash',
+            '1': 'Underwater Auto',
+            '256': 'Color Temperature',
+            '257': 'Custom 1',
+            '258': 'Custom 2',
+            '259': 'Custom 3',
+        },
+    },
+    imageFormat: { code: 262, label: 'Image format' },
+    jpegQuality: { code: 301, label: 'JPEG quality' },
+    imageSize: { code: 272, label: 'Image size', values: { '1': 'L', '2': 'M', '3': 'S' } },
+    aspectRatio: { code: 273, label: 'Aspect ratio', values: { '1': '3:2', '2': '16:9', '3': '4:3', '4': '1:1' } },
+    movieFormat: { code: 295, label: 'Movie format' },
+    movieSetting: { code: 296, label: 'Movie recording profile' },
+    movieFrameRate: { code: 297, label: 'Movie frame rate', values: {'1':'120p','2':'100p','3':'60p','4':'50p','5':'30p','6':'25p','7':'24p','8':'23.98p','9':'29.97p','10':'59.94p','22':'24p','23':'119.88p'} },
+    zoomSetting: {
+        code: 293,
+        label: 'Zoom range',
+        values: { '1': 'Optical Zoom', '2': 'Smart Zoom', '3': 'Clear Image Zoom', '4': 'Digital Zoom' },
+    },
+    exposureProgram: { code: 261, label: 'Exposure program' },
+    apertureMode: { code: 310, label: 'Aperture auto/manual' },
+    shutterMode: { code: 311, label: 'Shutter auto/manual' },
+    isoMode: { code: 312, label: 'ISO auto/manual' },
+    exposureComp: { code: 257, label: 'Exposure compensation' },
+    colorTemperature: { code: 277, label: 'Color temperature' },
+    flashMode: { code: 290, label: 'Flash mode' },
+    meteringMode: { code: 266, label: 'Metering' },
+    focusArea: { code: 275, label: 'Focus area' },
+    zoomPosition: { code: 333, label: 'Focal length' },
+    zoomScale: { code: 292, label: 'Zoom scale' },
+    movieState: { code: 1797, label: 'Recording state' },
+}
+const settingActions: Record<string, string> = {
+    'set-aperture': 'aperture',
+    'set-shutter-speed': 'shutterSpeed',
+    'set-iso': 'iso',
+    'set-focus-mode': 'focusMode',
+    'set-white-balance': 'whiteBalance',
+    'set-image-format': 'imageFormat',
+    'set-jpeg-quality': 'jpegQuality',
+    'set-image-size': 'imageSize',
+    'set-aspect-ratio': 'aspectRatio',
+    'set-movie-format': 'movieFormat',
+    'set-movie-setting': 'movieSetting',
+    'set-zoom-setting': 'zoomSetting',
+}
+function label(property: SonySdkProperty, key: string, value: string): string {
+    if (key === 'aperture') return 'f/' + (Number(value) / 100).toFixed(1)
+    if (key === 'zoomPosition') return String(Number(value) / 1000)
+    if (key === 'exposureComp') return String(Number(value) / 1000)
+    if (key === 'iso') return sonyIsoLabel(Number(value)).replace(/^ISO /, '').replace(/^AUTO$/, 'Auto')
+    if (key === 'shutterSpeed') {
+        if (property.code === 378) return `${Number(value) / 1000}°`
+        if (value === '0') return 'BULB'
+        const packed = Number(value)
+        return `${packed >>> 16}/${packed & 65535}`
+    }
+    return controls[key]?.values?.[value] || SONY_SDK_SETTING_LABELS[property.code]?.[value] || value
+}
+function findProperty(properties: SonySdkProperty[], key: string): SonySdkProperty | undefined {
+    if (key === 'shutterSpeed') {
+        const speed = properties.find(property => property.code === 259)
+        const angle = properties.find(property => property.code === 378)
+        if (angle && (!speed || speed.value === '4294967295' || angle.writable && !speed.writable)) return angle
+        return speed
+    }
+    if (key === 'jpegQuality')
+        return properties.find(property => property.code === 263) || properties.find(property => property.code === 301)
+    return properties.find(property => property.code === controls[key]?.code)
+}
+export function sonySdkControls(properties: SonySdkProperty[]) {
+    return Object.fromEntries(
+        Object.entries(controls).flatMap(([key, definition]) => {
+            const property = findProperty(properties, key)
+            if (!property) return []
+            return [
+                [
+                    key,
+                    {
+                        ...property,
+                        codeHex: '0x' + property.code.toString(16),
+                        description: definition.label,
+                        rawValue: property.value,
+                        value: label(property, key, property.value),
+                        allowedValues:
+                            property.valueForm === 'enum'
+                                ? property.allowedValues?.map(value => label(property, key, value))
+                                : property.allowedValues,
+                        enabled: property.writable,
+                        sonyEnabledFlag: property.writable ? 1 : 0,
+                        sonyGetSetFlag: property.writable ? 1 : 0,
+                    },
+                ],
+            ]
+        })
+    )
+}
+
+/** Reuse the SDK's existing raw/label mapping; SDK ids are never mistaken for PTP ids. */
+export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabilities {
+    const result: CameraCapabilities['controls'] = {}
+    for (const [name, state] of Object.entries(sonySdkControls(properties))) {
+        const id = resolveCameraControl(name)
+        if (!id) continue
+        if (id === 'shutterSpeed' && state.code === 259 && state.rawValue === '4294967295') continue
+        const definition = cameraControlDefinitions[id]
+        const choices = state.valueForm === 'enum' ? state.allowedValues : undefined
+        const unique = choices !== undefined && choices.length > 0 && new Set(choices).size === choices.length
+        let exposureTime: ReturnType<typeof parseExposureTime> | undefined
+        if (id === 'shutterSpeed') {
+            try { exposureTime = parseExposureTime(state.value) } catch { /* Unknown wire values stay unknown. */ }
+        }
+        result[id] = {
+            id, label: definition.label, aliases: definition.aliases,
+            value: id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${state.value})` : state.value,
+            source: { code: state.code, name: state.name, protocol: 'sony-sdk' },
+            allowedValues: choices, enabled: state.enabled,
+            writable: state.writable && unique && (id !== 'shutterSpeed' || Boolean(exposureTime)),
+            ...(exposureTime ? { exposureTime } : {}),
+        }
+    }
+    // The SDK does not supply a standard PTP DeviceInfo operation inventory.
+    return { observedAt: Date.now(), controls: result, advertisedOperations: null }
+}
+
+export function sonySdkControlWireValue(
+    properties: SonySdkProperty[], id: CameraControlId, label: string
+): { code: number; value: bigint } {
+    for (const [name, state] of Object.entries(sonySdkControls(properties))) {
+        if (resolveCameraControl(name) !== id || state.valueForm !== 'enum') continue
+        const index = state.allowedValues?.indexOf(label) ?? -1
+        const raw = properties.find(property => property.code === state.code)?.allowedValues?.[index]
+        if (index >= 0 && raw !== undefined) return { code: state.code, value: BigInt(raw) }
+    }
+    throw new Error('Requested SDK control value is not advertised')
+}
+function settingValue(property: SonySdkProperty, key: string, value: string | number): bigint {
+    const text = String(value).trim(),
+        normalized = text.toLowerCase()
+    if (key === 'aperture') {
+        const aperture = Number(text.replace(/^f\/?/i, '')) * 100
+        if (!Number.isSafeInteger(aperture)) throw new Error('Use an aperture such as f/5.6')
+        return BigInt(aperture)
+    }
+    if (key === 'iso') {
+        const wanted = normalized.replace(/^iso\s+/, '')
+        const choice = property.allowedValues?.find(candidate => label(property, key, candidate).toLowerCase() === wanted)
+        if (choice !== undefined) return BigInt(choice)
+        return wanted === 'auto' ? 16777215n : BigInt(text)
+    }
+    if (key === 'shutterSpeed') {
+        if (property.code === 378) {
+            const degrees = /^\d+(?:\.\d+)?°?$/.test(text) ? Number(text.replace('°', '')) : NaN
+            if (!(degrees > 0 && degrees <= 360)) throw new Error('This camera uses shutter angle; choose an advertised angle such as 180°')
+            return BigInt(Math.round(degrees * 1000))
+        }
+        if (normalized === 'bulb') return 0n
+        const match = text.match(/^(\d+)(?:\/(\d+))?$/)
+        if (!match || Number(match[1]) > 65535 || Number(match[2] || 1) > 65535 || Number(match[2] || 1) === 0)
+            throw new Error('Use a shutter speed such as 1/125 or BULB')
+        return (BigInt(match[1]!) << 16n) | BigInt(match[2] || 1)
+    }
+    const choice = property.allowedValues?.find(
+        candidate => label(property, key, candidate).toLowerCase() === normalized
+    )
+    if (choice !== undefined) return BigInt(choice)
+    if (/^-?\d+$/.test(text)) return BigInt(text)
+    throw new Error('Choose a value advertised by camera_controls for this setting')
+}
+/** The same named camera controls used by USB, translated to documented SDK values. */
+export async function performSonySdkControl(camera: SonyWifiCamera, action: string, value?: string | number) {
+    let result: Record<string, unknown> = {}
+    if (action === 'set-exposure-mode') {
+        if (value !== 'manual') throw new Error('Only advertised Manual exposure is supported')
+        const changes = []
+        let properties = await camera.getSonyPropertyStates()
+        const program = properties.find(property => property.code === 261)
+        const programLabel = program && label(program, 'exposureProgram', program.value)
+        // Flexible Exposure uses separate auto/manual switches. Keep its movie mode.
+        if (programLabel && /Movie.* F$/.test(programLabel)) {
+            for (const code of [310, 311, 312]) {
+                const property = properties.find(property => property.code === code)
+                if (!property || property.value === '2') continue
+                if (!property.writable || !property.allowedValues?.includes('2'))
+                    throw new Error(`${property.name || code} cannot be switched to Manual remotely`)
+                changes.push(await camera.setSonySetting(code, 2n))
+            }
+        } else if (program) {
+            const target = /SQMotion/.test(programLabel || '') ? '32860'
+                : /HiFrameRate/.test(programLabel || '') ? '32899'
+                : /Movie/.test(programLabel || '') ? '32851' : '1'
+            if (program.value !== target) {
+                if (!program.writable || !program.allowedValues?.includes(target))
+                    throw new Error('This camera does not advertise a remote Manual exposure mode in its current shooting mode')
+                changes.push(await camera.setSonySetting(261, BigInt(target)))
+            }
+        } else throw new Error('The camera does not publish its exposure program')
+        properties = await camera.getSonyPropertyStates()
+        const exposure = sonySdkControls(properties)
+        if (!exposure.iso?.writable || !exposure.shutterSpeed?.writable)
+            throw new Error('Manual mode was requested, but ISO or shutter remains unavailable; check the camera exposure controls')
+        result = { changes, exposureModeVerified: true }
+    } else if (settingActions[action]) {
+        if (value === undefined) throw new Error('A camera setting value is required')
+        const key = settingActions[action]!
+        const property = findProperty(await camera.getSonyPropertyStates(), key)
+        if (!property) throw new Error('The camera does not advertise this setting in its current mode')
+        result = await camera.setSonySetting(property.code, settingValue(property, key, value))
+    } else if (action === 'autofocus') await camera.autofocus(1200)
+    else if (action === 'touch-focus') {
+        const [x, y] = String(value).split(',').map(Number)
+        result = await camera.placeSonyFocusPoint(x!, y!)
+        await camera.autofocus(800)
+        result.autofocusRequested = true
+        result.focusAcquired = (await camera.getSonyFocusFrames()).some(frame => frame.state === 2)
+    } else if (action === 'camera-buttons') {
+        const buttons = String(value || '')
+            .split(',')
+            .map(button => button.trim())
+            .filter(Boolean)
+        if (buttons.length > 30) throw new Error('At most 30 buttons per sequence')
+        for (const button of buttons) {
+            await camera.sonyPressButton(button as any)
+            await new Promise(resolve => setTimeout(resolve, 200))
+        }
+        result = { pressed: buttons, cameraButtons: { pressed: buttons } }
+    } else if (action === 'power-zoom-wide' || action === 'power-zoom-tele') {
+        const pulses = Number(value || 1)
+        if (!Number.isInteger(pulses) || pulses < 1 || pulses > 8) throw new Error('Zoom amount must be 1–8')
+        const before = await camera.getSonyProperty('ZoomDistance')
+        await camera.zoomSony(action === 'power-zoom-wide' ? 'wide' : 'tele', pulses * 200)
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const after = await camera.getSonyProperty('ZoomDistance')
+        result = { before, after, movementConfirmed: before.value !== after.value }
+    } else if (action !== 'status') throw new Error('Unsupported Sony camera control')
+    const properties = await camera.getSonyPropertyStates()
+    return {
+        ...result,
+        vendor: 'sony',
+        action,
+        transport: 'sony-sdk-wifi',
+        detail: action === 'status' ? 'Read Sony Wi-Fi camera controls' : 'Sony Wi-Fi control completed: ' + action,
+        properties,
+        controls: sonySdkControls(properties),
+        publishedPropertyCount: properties.length,
+    }
+}

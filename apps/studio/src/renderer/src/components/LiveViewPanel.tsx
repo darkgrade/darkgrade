@@ -385,7 +385,7 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                                     ? { ...props.previewAssists, zebras: false, focusPeaking: false }
                                     : props.previewAssists
                             }
-                            recording={cameraState.recording && !webcam}
+                            recording={cameraState.recordingState === 'recording' && !webcam}
                             cameraDisplay={cameraState.osdOverlay === true && !webcam}
                             dimmed={readingCard}
                             onAspect={aspect => {
@@ -398,7 +398,13 @@ export function LiveViewPanel(props: LiveViewPanelProps): React.JSX.Element {
                                 <Spinner className="size-3" /> Live view paused while the card is read
                             </span>
                         )}
-                        {cameraState.recording && !webcam && <RecordingBadge />}
+                        {cameraState.recordingState === 'recording' && !webcam && <RecordingBadge />}
+                        {cameraState.recording && cameraState.recordingState !== 'recording' && !webcam &&
+                            <span className="absolute bottom-3 left-3 rounded bg-black/70 px-2 py-1 text-xs text-white">
+                                {cameraState.recordingState === 'unknown' ? 'Recording unconfirmed — use Stop'
+                                    : cameraState.recordingState === 'idle' ? 'Recording stopped — retry Stop to restore setup'
+                                    : `Recording ${cameraState.recordingState}`}
+                            </span>}
                         {!webcam && (
                             <FocusFrames
                                 focusArea={cameraState.controls?.focusArea?.value ?? null}

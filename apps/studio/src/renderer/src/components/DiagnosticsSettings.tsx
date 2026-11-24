@@ -123,7 +123,7 @@ export function DiagnosticsSettings() {
                         ? (status.error ?? 'Sharing is off until a collector is configured.')
                         : status.withdrawalPending
                           ? "Deleting what this Mac shared. Sharing can be turned back on once that's done."
-                          : 'Camera capabilities and numeric settings, to improve Link and Matrix. No images or raw serial numbers.'
+                          : 'Camera capabilities and numeric settings, to improve Slate and Matrix. No images or raw serial numbers.'
                 }
                 control={
                     <Switch
