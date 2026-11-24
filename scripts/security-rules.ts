@@ -11,13 +11,13 @@ const credentials = [
 const workspaceManifests = new Set([
     'packages/slate/package.json', 'packages/cli/package.json',
     'apps/studio/package.json', 'apps/contribution-collector/package.json', 'apps/docs/package.json',
-    'apps/darkgrade.com/package.json', 'apps/drkgrd.co/package.json',
+    'apps/darkgrade.com/package.json', 'apps/darkgrade.com/drkgrd.co/package.json',
 ])
 
 /** Findings expose locations and categories, never the credential. */
 export function scanSecurityFile(file: string, text: string): SecurityFinding[] {
     const findings: SecurityFinding[] = []
-    if (/^(?:packages|apps)\/[^/]+\/package\.json$/.test(file) && !workspaceManifests.has(file))
+    if (/^(?:packages|apps)\/[^/]+(?:\/[^/]+)?\/package\.json$/.test(file) && !workspaceManifests.has(file))
         findings.push({ file, line: 1, rule: 'unapproved-workspace-package' })
     for (const [rule, expression] of credentials) {
         const pattern = new RegExp(expression.source, expression.flags)
