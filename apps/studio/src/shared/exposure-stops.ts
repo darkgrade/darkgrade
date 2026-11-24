@@ -5,8 +5,6 @@
  */
 import { exposureSeconds, parseExposureTime } from '@darkgrade/slate/controls'
 
-export const STEPS_PER_STOP = 3
-
 export const ISO_VALUES = [
     'auto',
     '50',
