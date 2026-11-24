@@ -1,5 +1,0 @@
-{
-    "extends": ["@darkgrade/typescript-config/app.json", "$app/tsconfig"],
-    "include": ["src", "test", "*"],
-    "exclude": ["src/service-worker"]
-}

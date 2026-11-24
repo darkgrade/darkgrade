@@ -24,7 +24,6 @@
         "typescript": "^5.0.0"
     },
     "dependencies": {
-        "@darkgrade/ui": "workspace:*",
         "@kevinschaich/components": "^0.8.3",
         "@types/react": "^19.1.11",
         "@types/react-dom": "^19.1.8",

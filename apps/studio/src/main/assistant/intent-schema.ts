@@ -155,13 +155,3 @@ export function parseIntentLine(line: string): FoundRequest | null {
             return null
     }
 }
-
-/** The model's whole answer: "none", or requests separated by "; ". */
-export function parseIntentAnswer(answer: string): FoundRequest[] {
-    if (answer.trim() === 'none') return []
-    return answer
-        .split(/;|\n/)
-        .filter(line => line.trim())
-        .map(parseIntentLine)
-        .filter((request): request is FoundRequest => request !== null)
-}

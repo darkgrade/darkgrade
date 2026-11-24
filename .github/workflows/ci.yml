@@ -35,18 +35,11 @@ jobs:
               with:
                   node-version: '24'
             - run: bun install --frozen-lockfile --ignore-scripts
-            - name: Leak and migration boundary checks
+            - name: Leak and workspace boundary checks
               run: bun run security:check && bun run security:test
             - name: Dependency security audit
               run: bun audit
             - run: npm run build --prefix packages/slate
-            - name: Test Bench host and UI
-              run: |
-                  bun run --cwd apps/testbench build
-                  bun run --cwd apps/testbench test
-                  cd apps/testbench
-                  node node_modules/@playwright/test/cli.js install --with-deps chromium
-                  bun run test:e2e
             - run: npm run test --prefix apps/contribution-collector
               env:
                   DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry

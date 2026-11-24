@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* drkgrd.co is its own site in a subfolder: its classes are not this site's. */
+@source not '../drkgrd.co';
 
 /* ============================================================================
    MONOLITH x LAMP - cinematic dark, lit from within.

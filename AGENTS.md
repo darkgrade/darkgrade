@@ -39,40 +39,6 @@ removals separately from executable code and tests; deletion counts alone are no
 of simplification. Keep Slate's unused-local/parameter compiler checks enabled and preserve
 packed enum inference. Hosts consume the generic control API rather than maintaining
 another property alias map, vendor switch, session cache or setter registry.
-The Camera façade must open USB through the driver's existing `connectTransport` lifecycle.
-Opening the raw transport bypasses event subscription, channel reset and per-connection
-diagnostic/identity cleanup. Test disconnect/connect and recover/connect on the same Camera,
-not only fresh objects. Nikon control writes refresh the requested descriptor and its live
-mode/availability guards; do not reread unrelated descriptors or admit writes from a cache.
-Studio preserves last observations after a failed refresh with choices disabled, clears them
-on disconnect, and replaces them only after a successful inventory.
-`setControl()` returns confirmed observations; consumers display those values instead of
-optimistically applying requests or repeating admission/readback in each host. Shutter speed
-is the public control name; exposure time and shutter angle resolve to it as search aliases.
-Recording transitions use existing vendor state observations and the shared host queue;
-missing telemetry never proves idle. Confirmation polls reads, never replays a command.
-Keep Stop available and preserve the connection/mode if stopping cannot be confirmed.
-On Nikon reconnect, a fresh recording observation preserves the known interrupted PTP
-session. Closing that session first restores photo/application modes and can make Stop
-hang. Reuse the existing recording-status parser; unreadable or unknown ownership must
-preserve the session and report an error rather than closing it or inventing its id.
-Nikon still captures need a bounded readout allowance after a 30-second exposure.
-Poll readiness without replaying the release, and test delayed completion before RAW
-or photo/movie mode restoration rather than asserting success at the shutter response.
-Sony native movie states 2 and 3 mean recording failure and interval-recording waiting,
-not starting/stopping or idle. Card-present status does not prove free movie capacity.
-Interpret a readable zero remaining-movie-time only in an observed recognized movie
-mode or during recording; Sony's virtual PTP storage byte capacity is not card free space.
-Recording preparation uses advertised generic mode controls, keeps the original mode,
-and restores only after confirmed idle. Never format or delete existing footage to
-make tests green; owned test artifacts require complete verified backups and exact targets.
-Sony's shipped exposure-mode sample admits bounded idempotent reconciliation. Explicit
-mode preparation allows one extra mode selection only after typed confirmation failure
-and fresh idle, unchanged old mode, writable status and advertised choices. Generic control
-writes and Record/Stop/capture remain single-attempt. Unknown outcomes and transport errors
-never admit reconciliation; retain the first failure and require observed equality.
-Detach discarded driver telemetry before constructing its replacement. Internal transport
-lifecycle helpers must stay absent from packed public declarations.
 
 Verify README promises with built/packed exports. Run `packages/slate`'s `test:package`
 for strict ESM/CommonJS NodeNext consumer types, including negative input checks, with
@@ -87,22 +53,16 @@ promise rejections; verify this in isolated Node consumers, not by swallowing a 
 Keep the requested task on one branch and one PR. Historical PR numbers in technical
 notes are evidence, not instructions to append new work to an old branch or to merge.
 
-# Telemetry contact identity
+# Subsystem notes
 
-Email linking reuses `requestContact`, `contactStatus`, `removeContact` and the collector's
-existing single-use challenges. Keep Resend credentials in server Secret Manager configuration;
-never put them in Slate, CLI, Studio, diagnostic events, Matrix exports or client preferences.
-Confirmed addresses identify contributors only, without mailing-list signup or provider contacts.
-Private support lookup belongs in Telemetry, never Matrix exports. Join current/pending
-addresses to retained sessions by installation ID; shared camera fingerprints never merge
-people. Pending submissions are claims. Keep the old verified identity until the latest
-replacement is confirmed; generation checks must prevent old links restoring it. Confirmation
-expires after two hours, and logout/withdrawal remove pending as well as verified identities.
-Use existing per-session signal summaries to distinguish explicit failures from busy/retry
-warnings; do not label every non-OK response as a red error.
-Plain `telemetry status` stays offline; `status --email` explicitly reads the collector.
-Do not claim email delivery from an HTTP acknowledgement or a fake sender: verify a real
-provider receipt and, when authorized, the recipient's inbox. Sending requires a verified domain.
+Rules that apply to one part of the repository live beside it. Read the one for the area
+you are changing before you start, regardless of the agent harness:
+
+- `packages/slate/AGENTS.md`: where Slate's modules live, driver invariants, bench findings,
+  private camera recordings and fuzz checks.
+- `apps/contribution-collector/AGENTS.md`: telemetry, the collector, its database rules,
+  contributor identity and the Matrix export.
+- `packages/cli/AGENTS.md`: the thin `darkgrade` executable.
 
 # Package boundaries
 
@@ -121,124 +81,6 @@ in `packages/slate`, named `@darkgrade/slate` (publishing is pending); do not re
 or another shared camera package. Test harnesses consume these modules and keep
 independent fixtures; they must not introduce production packages in the Darkgrade repo.
 Read these rules regardless of the agent harness (Codex, Claude, Gemini or another agent).
-
-Physical CI powers on an off mapped supply and attempts one guarded startup recovery for
-absent or unresponsive cameras before candidate tests. Fresh verified USB absence or
-PTP unresponsiveness after completed recovery may produce an explicit preparation skip.
-Keep scoped recovery/availability receipts and report skipped cameras separately from passes.
-Failures after candidate testing starts, unknown state, lost ownership and uncertain cleanup
-remain failures; an all-skipped run cannot pass. Preserve prior failed runs when the harness
-or operator policy changes.
-
-Diagnostics live in `packages/slate/src/contribute` and are exported as
-`@darkgrade/slate/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
-Use `@contribute/*` for imports inside Slate. Node settings stay separate from browser clients.
-The Node diagnostics tests live in `packages/slate/tests/contribute` and run in Slate's full
-test suite or with `bun run --cwd packages/slate test:contribute`.
-
-The shared camera runtime (operation ordering, leases, the common MCP tools) lives in
-`packages/slate/src/runtime` and is imported as `@darkgrade/slate/runtime` (`/browser`, `/mcp`,
-`/ownership`). There is no `packages/runtime`: put new camera code in Slate. Its tests run under
-Bun (`bun run --cwd packages/slate test:runtime`, which builds first) because they check package
-resolution with Bun's bundler; Vitest excludes `tests/runtime`. Hosts that load it by path
-(Test Bench) use `packages/slate/src/runtime/index.ts` and `mcp.ts`.
-DeviceInfo carries numeric lists as `operationsSupportedRaw`, `eventsSupportedRaw` and
-`devicePropertiesSupported`; there is no `operationsSupported` or `devicePropertiesSupportedRaw`.
-Two recoveries read fields that do not exist and their tests faked them. Build test replies with
-the real codec.
-
-Telemetry scale and identity (2026-11-13): the collector keeps `telemetry_sessions` and
-`telemetry_session_signals` current with statement triggers on `telemetry_events`; the overview,
-session list, filters and suggestions read those and never scan raw events. Deletions decrement
-counts at once and mark the session stale; maintenance refreshes time bounds and label sets.
-A one-time startup rebuild (marker `sessions-v1` in `telemetry_rollup_state`) holds a brief table
-lock. Any new writer of `telemetry_events` is covered by the triggers; a change to how a signal
-or error is derived must change the trigger functions, the queries and the marker together.
-Events recorded before a connection's identity read adopt the single identity the same session
-read later (derived columns only; signed payloads stay as uploaded). Native Sony sessions read
-standard DeviceInfo once per connection after authentication; a refusal is logged and ignored.
-The in-session read was confirmed physically on the a6700 and FX2 (2026-11-14): it follows
-authentication and precedes the first property read. Slate remembers which inventory and setting
-facts this installation already shared in `reported-facts.json` under the settings directory
-(short hashes only), because bench camera work runs in short-lived workers; a fact is shared
-again when it changes or after six hours. Probe and vendor-session scopes are kept separately.
-Benchmark profiles are exempt and stay complete. Each kind of fact has its own memory entry
-(vendor scope, operation and field set): a Canon setting's value and its allowed values, or two
-operations listing one inventory category, must not replace each other.
-The unknown-code queue reads `telemetry_unknown_codes` (per installation, kept by the same
-triggers, marker `unknown-codes-v1`); session, body and signal scopes still read events.
-Collector rules learned the hard way on 2026-11-14:
-- Startup must not queue table locks. DDL on `telemetry_events` and the summary tables
-  (including `CREATE INDEX IF NOT EXISTS`, `ALTER ... IF NOT EXISTS`, `CREATE TRIGGER`) runs only
-  until those objects exist (`eventsSchemaReady`, `summarySchemaReady` in postgres.ts). A schema
-  change to those tables must update the readiness check, or it will never be applied.
-- Maintenance works in short transactions. One long transaction blocks the next start, and a
-  backend keeps running after its collector instance is gone; only a database restart ended it.
-- Triggers must stay cheap for bulk deletes: never search events from inside them. A summary row
-  that needs a new source is listed in `telemetry_unknown_code_repairs` and repaired by
-  maintenance within a time budget; it is hidden from the queue until then.
-- `purge-unidentified-2026-11-14` removed 65,947 old events with no camera identity and 164
-  uploads left empty. It is marker-guarded and dated; unidentified events after the cutoff stay.
-Sony originals over 4 GiB (2026-11-14): ObjectInfo reports 0xffffffff. Support is read from
-DeviceInfo `operationsSupportedRaw` (there is no `operationsSupported` field; a test that fakes
-one proves nothing). The bench FX2 advertises GetObjectPropDesc but answers 0x2005; its size
-comes from GetObjectPropList for the exact handle and ObjectSize, typed UINT64. A 5,101,088,166
-byte FX2 original was sized, transferred, collected and fully decoded. The a6700 splits at 4 GB.
-EOS R6 Mark III with its lever at Movie cannot be put in still mode over PTP: Canon's SDK
-reference (6.9.5) requires the hardware in still position, and on firmware 1.0.1 every tried
-route left FixedMovie at 1 (MovieSelectSwitchOff, writing 0xd1c2, remote modes 0x11/0x15, AE
-mode writes under dial override). Do not spend more bench time on it without new information.
-A connection that fails before any identity read (body asleep or off) is attributed to the
-camera that last reported itself at the requested USB identity, from `known-cameras.json` in the
-settings directory: manufacturer and model only, firmware `unknown`, and a body fingerprint only
-when one exact serial was requested. A body never seen stays Unknown. Sony Wi-Fi attempts carry
-the model the caller named; the trust (`fingerprint`) step shares the following connect's session.
-Collector purge markers `purge-unidentified-2026-11-14` and `-14b` are one-time and dated.
-Focus refusals say what the body reported: a Sony focus timeout includes the last focus status
-and a Canon refusal names the SDK reason. Sony bodies in movie mode stayed at UNLOCK on a
-half-press in bench tests, so focus confirmation was never obtained there.
-
-Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
-existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
-no saved body power setting is rewritten. Explicit KeepDeviceOn rejects non-OK responses.
-Nikon USB reference Z5_2UsbMtpE_01 §2.2 says PC connection disables meter auto-off already.
-Its §11.7.5 documents one release command to clear a recoverable WarningStatus bit-0
-sequence error. Slate retries live-view startup once only after that exact warning,
-idle movie/buffer state, advertised operations and fresh clearing readback. Other
-hardware errors remain errors. SDK documents stay private; attribution in the workspace
-camera-keepalive-2026-11-13 report must remain. Physical user actions can race warning
-reads; recovery may release a shutter if someone clears the warning first.
-
-Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
-failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
-writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,
-waits or cloud calls. Canon FixedMovie is allowlisted as a numeric readback using the supplied
-EDSDK/libgphoto2 references; SDK and PTP property IDs are different. Deploy collector and Matrix
-schema support before candidate Slate clients upload snapshots. Missing settings stay unknown;
-no snapshot implies that recording or independent media validation passed.
-
-Canon movie workflows prepare a camera-advertised card destination before movie selection,
-restoring prior host routing after safe cleanup. This follows the Canon EDSDK sample and
-libgphoto2 card-target enumeration; it is not proof of the R8 Mark II failure's root cause.
-Numeric Canon property-write telemetry retains intent, transaction and response separately
-from observed state. Deploy the matching collector and Matrix contract before rolling out
-this Slate candidate. Preserve real versus simulated evidence.
-
-Telemetry benchmark now exports a deep sanitized camera profile through Slate's existing
-camera session. Keep inventories and allowlisted numeric descriptors separate from media,
-opaque payloads and private settings. Partial/cancelled exports retain evidence without
-claiming unsupported features. The CLI saves profiles even with sharing off; Test Bench
-supplies leases and exposes the Darkgrade `camera_benchmark` tool. Collector research
-findings require exact source, model, firmware, revision, transport and evidence scope,
-plus attributed references; they expire/withdraw with the source and never certify hardware.
-Shared admission quotas must remain consistent across collector instances.
-
-Matrix imports all validated batches as diagnostic evidence automatically, with optional human review separately labeled. Committed ingestion watermarks prevent live uploads starving pagination; review, withdrawal and credit changes invalidate exports. Camera fingerprints are absent when reliable serial identity is unavailable, and reconnect must clear stale body identity.
-
-Telemetry autocomplete uses bounded authenticated database suggestions scoped by other filters,
-including old sessions. Preserve hardware/synthetic provenance and hide credentials/contact details.
-Inspection modals keep summaries readable and raw evidence collapsed; test keyboard selection, stale
-responses, Escape/focus return, friendly installation labels, and narrow screens.
 
 # Project Cheat Sheet
 
@@ -286,7 +128,7 @@ is the single knob for every gold glow.
 | `apps/darkgrade.com/public` | the ten brand files | source of truth |
 | `apps/darkgrade.com/app/press-kit` | draws every social image live | regenerate here, never hand-edit a PNG |
 | `apps/darkgrade.com/scripts/make-lockups.ts` | the wordmark in every ink | `bun run lockups`; writes into all three folders at once |
-| `apps/drkgrd.co/public` | copies of the brand files | its card is drawn by `app/opengraph-image.tsx`, not committed |
+| `apps/darkgrade.com/drkgrd.co/public` | copies of the brand files | its card is drawn by `app/opengraph-image.tsx`, not committed |
 | `apps/docs/assets` | copies, plus `ks_*` for kevinschaich.com | `docs.json` carries `fonts` and `colors` of its own |
 | `toolbench`, `voicebench`, `cambench` (separate repos) | `scripts/prerender.ts` | draws a card per route with satori, from the shared component |
 | `kevinschaich.com` (separate repo) | `ks_*` cards, `public/kit/v1/brand.css` | its home page mirrors drkgrd.co; a projects page besides |
@@ -352,89 +194,15 @@ Run the same bounded health probe directly with:
 bun run --cwd packages/slate bench:probe -- --camera 04a9:32f5
 ```
 
+Physical CI powers on an off mapped supply and attempts one guarded startup recovery for
+absent or unresponsive cameras before candidate tests. Fresh verified USB absence or
+PTP unresponsiveness after completed recovery may produce an explicit preparation skip.
+Keep scoped recovery/availability receipts and report skipped cameras separately from passes.
+Failures after candidate testing starts, unknown state, lost ownership and uncertain cleanup
+remain failures; an all-skipped run cannot pass. Preserve prior failed runs when the harness
+or operator policy changes.
+
 # Software Engineering Principles for Agents
-
-## Private camera recordings
-
-`recordFullTransport` wraps the chosen transport before Camera construction and records all
-sent/received bytes, events, operation timing and failures. It does not open another session.
-`createRecordingBundle` requires an external 32-byte AES key/key ID (or injected
-DARKGRADE_RECORDING_KEY base64 plus DARKGRADE_RECORDING_KEY_ID) and writes v2 encrypted
-blobs, encrypted provenance, a durable journal and an initial incomplete manifest.
-Never store the key in a recording bundle. Inspection can recover interrupted durable
-entries without plaintext extraction and always reports those runs incomplete;
-storage loss invalidates completeness without preventing camera cleanup. Full traces can contain
-private image/identity metadata. Never commit the blobs or publish them through Matrix.
-
-Use the existing `bench:profile` command with `--recording-directory NEW_DIRECTORY` for an
-explicit recording. `--initialize --take-photo --autofocus true|false --live-view` requests a still
-and live frame as well as the profile; this writes a photo and requires normal bench ownership.
-The profile output stays sanitized. The private recording stays separate and requires independent
-media decoding before asserting image validity. A complete recording can include failed operations:
-completeness describes preservation of evidence, not camera compatibility. Never run on page open.
-Outpost's private recording utility archives/restores these bundles through the existing Drive
-connector. Keep contributor/source attribution attached, and do not infer a lender or person.
-
-Keep follow-up work in its requested ongoing branch/PR until the user requests a merge.
-Do not create a separate PR per small follow-up fix.
-
-Run `bun run --cwd packages/slate test:fuzz` for reproducible PTP input mutation checks.
-The fixed seed `0x4d415452` covers standard/Sony descriptors and Canon/Nikon event records,
-including truncated views into larger buffers, invalid offsets and string length boundaries.
-These synthetic parser checks neither contact hardware nor certify model support. Matrix keeps
-independent copies of the wire seeds in its fixed candidate harness so driver changes cannot
-silently weaken their own regression gate.
-
-## Shared telemetry — November 12, 2026
-
-The ingestion audit adds early bounded SDK flushes, email login/logout, paged session lists,
-an operator review queue and generation-consistent Matrix exports. Reviewed evidence expires
-with its original diagnostic. Test with real Postgres and a separate growth-test database:
-reviewing or withdrawing during an export deliberately invalidates its cursor.
-Terraform now includes encrypted-only SQL connections, server-side deletion protection and
-minimal health/CPU/disk monitoring. Notification delivery requires verified channel IDs;
-email requires a configured sender. Do not claim live email delivery from a mock sender test.
-
-The ingestion implementation replaced project 18 with one HTTPS service and Postgres.
-`apps/contribution-collector/src/postgres.ts`
-stores flat telemetry_events plus operational state; main.ts performs its own cleanup and
-serves an operator-authenticated /internal timeline. Firestore/GCS/grant collector deployment
-code and the separate cleanup job were removed. Terraform provisions Cloud Run + Cloud SQL
-with restricted configuration secrets; validation is not a live deployment.
-
-The Outpost Telemetry app uses `/internal/api` for bounded issues/session reports,
-installation lookup, batch review, full Matrix exports and authenticated revocation.
-Never expose credential hashes. Contact details belong only to the authenticated private
-contributor support lookup, not event reports or Matrix exports. Operator mutations require JSON, the
-operator header, no browser Origin and an exact ID confirmation for deletion. Keep
-deletion shared with the installation API so pending cleanup and revocation stay consistent.
-`bootstrap_principal` in Terraform grants scoped actAs on the collector service account;
-it does not grant organization or billing-account access.
-
-Slate instruments existing USB/PTP-IP sessions, with Unknown identity until GetDeviceInfo. Custom
-transports need explicit telemetry configuration, and loopback IP defaults to synthetic.
-Do not mistake a real socket for proof of physical hardware. Sony SDK bridge calls have separate named-operation telemetry; no SDK arguments or payloads
-are collected. USB SDK model/firmware remain Unknown when the bridge cannot supply them. Model/firmware/revision/transport,
-source hashes and contributor attribution stay attached; metadata never becomes a hardware
-pass. All validated Matrix diagnostic snapshots replace fully and expire within 24 hours.
-
-Direct-source bench execution resolves revision/dirty state from the Slate source checkout when
-build constants are absent. Normal Node/Bun process exit attempts a bounded final flush; forced
-exit preserves buffered local metadata but cannot promise cloud delivery. Keep these lifecycle
-checks alongside transport attribution tests.
-
-Node applications and packages/cli share packages/slate/src/contribute/settings: one random installation
-ID and scoped secret in ~/.darkgrade/settings.json, mode 0600. Installation identity stays random; camera-body fingerprints are separate versioned hashes of manufacturer/model/serial. Never retain the raw serial in telemetry. Default sharing is enabled; there is no first-run notice in CLI/Studio and no UI
-retention-age blurb. The built-in hosted collector is used when no endpoint override is supplied. Opt-out stops
-cloud uploads but keeps bounded sanitized local logs. Delete disables sharing first and
-preserves retry state. Respect environment overrides and saved/corrupt preferences. Native
-Studio migrates the earlier encrypted preference before initializing the shared file.
-
-Run SDK, real Postgres collector, CLI, Studio and Slate tests; validate Terraform and the
-actual HTTP container. Test the event listener before/after observer replacement: telemetry
-must not steal a camera's event handler. Run the Matrix export/import contract without
-promoting metadata or mutating the installed Matrix app. No hardware operations are needed
-for ordinary telemetry validation. Keep unrelated dependency symlinks intact.
 
 **Core Philosophy**: Prioritize readability and maintainability over premature optimization. Code is written for humans to understand.
 

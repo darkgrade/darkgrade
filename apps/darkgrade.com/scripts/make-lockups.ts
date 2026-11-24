@@ -131,7 +131,7 @@ const SHAPES = [
 const PNG_WIDTH = 1600
 
 /** Everywhere the brand files are kept, relative to this app. They are copies of one another; nothing syncs them, so every one is written. */
-const FOLDERS = ['public', '../drkgrd.co/public', '../docs/assets'].map(folder =>
+const FOLDERS = ['public', 'drkgrd.co/public', '../docs/assets'].map(folder =>
     join(import.meta.dirname, '..', folder)
 )
 
