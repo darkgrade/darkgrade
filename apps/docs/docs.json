@@ -73,6 +73,8 @@
                             "slate/getting_started/what-is-ptp",
                             "slate/getting_started/feature-compatibility",
                             "slate/getting_started/controls",
+                            "slate/getting_started/vendor-features",
+                            "slate/getting_started/ptp-ip",
                             "slate/getting_started/camera"
                         ]
                     },
