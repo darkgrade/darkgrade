@@ -371,7 +371,7 @@ export interface Preferences {
      * process and drawn by the window's WebGPU as textures. Off: the window decodes each JPEG itself.
      */
     metalLiveViewDecoder: boolean
-    /** EXPERIMENT(usb-transport): Developer Mode's USB transport choice; applies from the next connection. */
+    /** EXPERIMENT(usb-transport): Developer Mode's USB transport choice; a connected camera reconnects with it. */
     usbTransport: UsbTransportChoice
     /**
      * Developer Mode's vision models kept loaded (app menu › Vision Models), each in its own process beside voice and

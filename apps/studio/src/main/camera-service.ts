@@ -24,6 +24,7 @@ import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 // EXPERIMENT(usb-transport): Developer Mode's USB transport choice.
 import {
     experimentalCameraOptions,
+    onUsbTransportChanged,
     runSwiftLiveView,
     stopSwiftLiveView,
     swiftLiveViewJpeg,
@@ -1075,6 +1076,33 @@ export class CameraService {
     }
     private latestNodeFrame: Uint8Array | null = null
 
+    /**
+     * EXPERIMENT(usb-transport): the transport is chosen when a connection is made, so a change of choice remakes
+     * the connection (live view starts again with it). A recording isn't interrupted: the choice then waits for the
+     * next connection.
+     */
+    reconnectForUsbTransport(choice: string): void {
+        if (!this.connected || this.recoveryInProgress) return
+        if (this.recording) {
+            this.log('system', `USB transport ${choice} applies from the next connection: a recording is running`)
+            return
+        }
+        this.recoveryInProgress = true
+        this.log('system', `USB transport changed to ${choice}: reconnecting…`)
+        void (async () => {
+            try {
+                await this.disconnect()
+                await delay(RECOVERY_RECONNECT_DELAY_MS)
+                await this.connect()
+            } catch (error) {
+                this.log('system', `Reconnecting failed: ${errorMessage(error)}: replug the camera`, 'error')
+            } finally {
+                this.recoveryInProgress = false
+                this.broadcastState()
+            }
+        })()
+    }
+
     /** EXPERIMENT(usb-transport): true once the Swift live-view loop has run and ended; false when it isn't chosen. */
     private async runSwiftLiveViewIfChosen(): Promise<boolean> {
         const camera = this.camera
@@ -1591,6 +1619,8 @@ function formatBytes(bytes: number): string {
 }
 
 export const cameraService = new CameraService()
+// EXPERIMENT(usb-transport): a change of transport takes effect at once.
+onUsbTransportChanged(choice => cameraService.reconnectForUsbTransport(choice))
 
 const VIDEO_MIME_TYPES: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/mp4' }
 const IMAGE_MIME_TYPES: Record<string, string> = {
