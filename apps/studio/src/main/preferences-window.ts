@@ -147,7 +147,7 @@ export function installApplicationMenu(): void {
                     click: item => preferences.set({ metalLiveViewDecoder: item.checked }),
                 },
                 {
-                    // EXPERIMENT(usb-transport): what carries the camera's USB connection; from the next connection.
+                    // EXPERIMENT(usb-transport): what carries the camera's USB connection; a connected camera reconnects.
                     label: 'USB Transport (Experimental)',
                     visible: preferences.get().developerMode,
                     submenu: USB_TRANSPORT_CHOICES.map(choice => ({
