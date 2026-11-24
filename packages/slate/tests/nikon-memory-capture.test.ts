@@ -124,8 +124,37 @@ describe('Nikon event-identified SDRAM capture', () => {
                 return original(...args)
             })
             const result = expect(camera.captureImage({ autofocus: false })).rejects.toThrow('timed out')
-            await vi.advanceTimersByTimeAsync(30100)
+            await vi.advanceTimersByTimeAsync(60100)
             await result
+            expect(send.mock.calls.filter(([operation]) => operation.name === 'InitiateCaptureRecInMedia')).toHaveLength(1)
+        } finally { vi.useRealTimers() }
+    })
+    it('allows a 30-second still exposure to complete readout before restoring movie mode', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, send } = fixture()
+            let selector = 'VIDEO', releasedAt: number | undefined, ready = false
+            camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector : 'OFF') as any
+            camera.set = vi.fn(async (property, value) => {
+                if (property.name === 'LiveViewSelector') {
+                    if (value === 'VIDEO') expect(ready).toBe(true)
+                    selector = String(value)
+                }
+            }) as any
+            const original = send.getMockImplementation()!
+            send.mockImplementation(async (...args) => {
+                if (args[0].name === 'InitiateCaptureRecInMedia') releasedAt = Date.now()
+                if (args[0].name === 'DeviceReady' && releasedAt !== undefined) {
+                    if (Date.now() - releasedAt < 31500) return { code: 0xa201 } as any
+                    ready = true
+                }
+                return original(...args)
+            })
+            const result = expect(camera.captureImage({ autofocus: false }))
+                .resolves.toEqual({ info: undefined, data: undefined })
+            await vi.advanceTimersByTimeAsync(32000)
+            await result
+            expect(selector).toBe('VIDEO')
             expect(send.mock.calls.filter(([operation]) => operation.name === 'InitiateCaptureRecInMedia')).toHaveLength(1)
         } finally { vi.useRealTimers() }
     })

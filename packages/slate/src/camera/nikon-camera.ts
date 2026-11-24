@@ -342,7 +342,9 @@ export class NikonCamera extends GenericCamera {
             }
             // A successful silent release may still be processing the exposure.
             // Do not restore RAW compression or the photo/video mode until it is ready.
-            await this.pollDeviceReady(30000, [], [SilentReleaseBusy.code])
+            // A valid 30-second exposure still needs sensor readout and buffer completion.
+            // Wait without replaying the release before restoring RAW or photo/movie modes.
+            await this.pollDeviceReady(60000, [], [SilentReleaseBusy.code])
             if (!memory && waitForBuffer) await this.waitForImageBufferReady(30000)
         }
         const capture = (waitForBuffer = true) => withNikonRawCompression(this, options.rawCompression, async () => {

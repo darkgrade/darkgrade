@@ -56,6 +56,9 @@ On Nikon reconnect, a fresh recording observation preserves the known interrupte
 session. Closing that session first restores photo/application modes and can make Stop
 hang. Reuse the existing recording-status parser; unreadable or unknown ownership must
 preserve the session and report an error rather than closing it or inventing its id.
+Nikon still captures need a bounded readout allowance after a 30-second exposure.
+Poll readiness without replaying the release, and test delayed completion before RAW
+or photo/movie mode restoration rather than asserting success at the shutter response.
 Sony native movie states 2 and 3 mean recording failure and interval-recording waiting,
 not starting/stopping or idle. Card-present status does not prove free movie capacity.
 Interpret a readable zero remaining-movie-time only in an observed recognized movie
