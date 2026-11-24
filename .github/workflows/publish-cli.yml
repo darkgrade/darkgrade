@@ -1,9 +1,20 @@
 name: Publish CLI
-# Publishes packages/cli as `darkgrade` through npm trusted publishing (OIDC), so each
-# release carries provenance from this repository instead of a personal token.
+# Publishes packages/cli as `darkgrade` from every push to main that changes it or the Slate
+# it bundles, and points both the `alpha` and `latest` dist-tags at that build. Uses npm
+# trusted publishing (OIDC), so each release carries provenance from this repository instead
+# of a personal token. Moving `latest` needs "Allow npm dist-tag" on the trusted publisher.
+#
+# The version is package.json's release with a prerelease number that only grows:
+# 0.1.0 at commit 812 of main publishes 0.1.0-alpha.812.
 on:
     push:
-        tags: ['cli-v*']
+        branches: [main]
+        paths:
+            - 'packages/cli/**'
+            - 'packages/slate/**'
+            - 'package.json'
+            - 'bun.lock'
+            - '.github/workflows/publish-cli.yml'
     workflow_dispatch:
 concurrency:
     group: publish-cli
@@ -17,6 +28,8 @@ jobs:
         timeout-minutes: 20
         steps:
             - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: '1.4.3'
@@ -24,16 +37,43 @@ jobs:
               with:
                   node-version: '24'
                   registry-url: 'https://registry.npmjs.org'
-            - name: npm with trusted publishing support
+            - name: npm with trusted publishing and dist-tag support
               run: npm install -g npm@latest
-            - run: bun install --frozen-lockfile --ignore-scripts
-            - run: npm run build --prefix packages/slate
-            - name: Tag matches package version
-              if: startsWith(github.ref, 'refs/tags/cli-v')
-              run: test "cli-v$(node -p "require('./packages/cli/package.json').version")" = "${GITHUB_REF_NAME}"
-            - name: Publish
+            - name: Version from main
+              id: version
               working-directory: packages/cli
               run: |
-                  version=$(node -p "require('./package.json').version")
-                  case "$version" in *-*) tag=alpha ;; *) tag=latest ;; esac
-                  npm publish --provenance --access public --tag "$tag"
+                  release=$(node -p "require('./package.json').version.split('-')[0]")
+                  version="$release-alpha.$(git rev-list --count HEAD)"
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+                  if npm view "darkgrade@$version" version >/dev/null 2>&1; then
+                      echo "published=true" >> "$GITHUB_OUTPUT"
+                      echo "darkgrade@$version is already published"
+                  fi
+            - if: steps.version.outputs.published != 'true'
+              run: bun install --frozen-lockfile --ignore-scripts
+            - if: steps.version.outputs.published != 'true'
+              run: npm run build --prefix packages/slate
+            - name: Publish
+              if: steps.version.outputs.published != 'true'
+              working-directory: packages/cli
+              env:
+                  VERSION: ${{ steps.version.outputs.version }}
+              run: |
+                  npm pkg set "version=$VERSION"
+                  npm publish --provenance --access public --tag alpha
+                  npm dist-tag add "darkgrade@$VERSION" latest
+            # A re-run whose publish already happened (say, `latest` failed the first time) moves
+            # latest only if this is still the newest build, so an older commit never takes it back.
+            - name: Point latest at it on a re-run
+              if: steps.version.outputs.published == 'true'
+              working-directory: packages/cli
+              env:
+                  VERSION: ${{ steps.version.outputs.version }}
+              run: |
+                  alpha=$(npm view darkgrade dist-tags.alpha)
+                  if [ "$alpha" != "$VERSION" ]; then
+                      echo "alpha is $alpha, newer than $VERSION; leaving latest alone"
+                      exit 0
+                  fi
+                  npm dist-tag add "darkgrade@$VERSION" latest

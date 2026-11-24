@@ -1,6 +1,7 @@
 # Darkgrade CLI
 
-Alpha releases: `npx darkgrade@alpha telemetry …`.
+`npx darkgrade telemetry …`. Every change to the CLI or Slate on `main` publishes a new build,
+and both the `latest` and `alpha` tags point at it.
 For local development, build Slate and CLI and run `node packages/cli/dist/main.js`.
 
 This package is a thin executable wrapper. Command parsing, preference actions and camera

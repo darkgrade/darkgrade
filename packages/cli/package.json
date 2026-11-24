@@ -8,7 +8,7 @@
     "files": ["dist", "README.md"],
     "publishConfig": { "tag": "alpha", "access": "public" },
     "scripts": {
-        "build": "bun build src/main.ts --target node --format esm --splitting --outdir dist -e usb -e ink -e ink-spinner -e react -e egoroof-blowfish",
+        "build": "rm -rf dist && bun build src/main.ts --target node --format esm --splitting --production --keep-names --outdir dist -e usb -e ink -e ink-spinner -e react -e egoroof-blowfish",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "npm run build && node --test tests/*.test.ts",
         "prepublishOnly": "npm run typecheck && npm test"
