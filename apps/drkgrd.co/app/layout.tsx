@@ -1,4 +1,3 @@
-import { MUX_STREAM_ORIGIN } from '@/app/components/mux'
 import type { Metadata, Viewport } from 'next'
 import { Fragment_Mono, Public_Sans } from 'next/font/google'
 import './globals.css'
@@ -44,9 +43,6 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" className={`${siteSans.variable} ${siteMono.variable}`}>
-            <head>
-                <link rel="preconnect" href={MUX_STREAM_ORIGIN} />
-            </head>
             <body>{children}</body>
         </html>
     )
