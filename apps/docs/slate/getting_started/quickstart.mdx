@@ -3,6 +3,12 @@ title: "Quickstart"
 description: "Get started with Darkgrade Slate in minutes"
 ---
 
+## Before you connect
+
+- Put the camera in its USB remote-control mode.
+- Close other applications that hold the camera. Only one program can own its USB session at a time.
+- On Linux, your user needs permission to open the USB device.
+
 ## Basic Usage
 
 ```typescript
@@ -104,6 +110,8 @@ await camera.startRecording()
 // ... record for some duration ...
 await camera.stopRecording()
 ```
+
+A successful stop means the camera acknowledged the command; it does not verify the saved movie. Check the file on the card before relying on a take. If a start fails, treat the recording state as uncertain until a stop succeeds.
 
 ### File Management
 
