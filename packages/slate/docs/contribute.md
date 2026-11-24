@@ -41,13 +41,24 @@ and allowlisted numeric setting descriptors. Unknown codes are retained, but the
 opaque payloads, strings, network settings and authentication data are excluded. Numeric
 values must fit the declared PTP type. Named SDK calls still omit their arguments.
 
-`darkgrade telemetry benchmark --camera VVVV:PPPP` reads a deep camera profile through
-the existing Slate camera implementation. It exports `~/.darkgrade/profiles/<uuid>.json`
-with restrictive permissions even when sharing is off. Progress is printed to stderr;
+`darkgrade telemetry benchmark` finds the attached USB PTP camera and reads a deep camera
+profile through the existing Slate camera implementation. With several cameras attached it
+uses the only camera-maker device or lists them for `--camera VVVV:PPPP`. It exports
+`~/.darkgrade/profiles/<uuid>.json` with restrictive permissions even when sharing is off and
+prints a short summary (`--json` prints the full result). Progress is printed to stderr;
 Ctrl-C requests cancellation between bounded operations. The profile reports complete,
-partial or cancelled and retains the exact revision, transport and evidence type. Optional
-`--capture`/`--live` perform explicit media transfers; image bytes are never uploaded here.
-A completed inventory is not proof that every advertised feature works.
+partial or cancelled and retains the exact revision, transport and evidence type. Photo
+capture and a live-view frame run by default (`--no-capture`/`--no-live` skip them); image
+bytes are never uploaded here. Bodies without a vendor inventory (e.g. Fujifilm) have every
+advertised property descriptor read, vendor codes included; only allowlisted numeric values
+are exported. A completed inventory is not proof that every advertised feature works.
+
+First contact: on Node, when a body outside `validatedCameraModels`
+(`src/camera/validated-models.ts`) connects, `Camera.connect()` runs the same inventory once per
+model+firmware per installation in read-only mode (identity, property descriptors, storage IDs;
+no capture, live view or Sony transfer-mode switch). Its benchmark evidence carries
+`purpose: 'first-contact'`. It never runs with sharing off, under `NODE_ENV=test`, or on
+simulated transports; `new Camera({ firstContact: false })` disables it.
 
 `setConsent(false)` stops cloud uploads and clears the upload queue. Sanitized diagnostics
 continue locally in `~/.darkgrade/diagnostics` for debugging. Each process rotates at 2 MiB,

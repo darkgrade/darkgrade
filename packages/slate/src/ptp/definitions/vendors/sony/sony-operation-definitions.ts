@@ -2,6 +2,7 @@ import {
     SDIDevicePropInfoArrayCodec,
     SDIExtDevicePropInfoCodec,
 } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import { SonyExtendedDeviceInfoCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-info-dataset'
 import { baseCodecs, createEnumCodec } from '@ptp/types/codec'
 import { OperationDefinition } from '@ptp/types/operation'
 
@@ -93,6 +94,7 @@ export const SDIO_GetExtDeviceInfo = {
     name: 'SDIO_GetExtDeviceInfo',
     description: 'Get the protocol version and the supported properties of the connected device.',
     dataDirection: 'out',
+    dataCodec: registry => new SonyExtendedDeviceInfoCodec(registry),
     operationParameters: [
         {
             name: 'initiatorVersion',

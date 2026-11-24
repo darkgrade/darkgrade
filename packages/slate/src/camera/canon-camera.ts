@@ -1,3 +1,4 @@
+import { unrecognizedValueLabel, type UnrecognizedValues } from '@camera/controls'
 import { Logger } from '@core/logger'
 import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
 import { captureCanonCardImage } from '@vendors/canon/card-capture'
@@ -31,8 +32,10 @@ export interface CanonPropertyState {
     name: string
     description: string
     access: PropertyDefinition['access']
+    /** Undefined while the current value is unrecognized. */
     value: unknown
     allowedValues?: unknown[]
+    unrecognized?: UnrecognizedValues
 }
 
 export interface CanonUnknownPropertyState {
@@ -61,6 +64,13 @@ export interface CanonRawEvent {
 
 function bytesToHex(value: Uint8Array): string {
     return [...value].map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** Single-word values read as their number; longer structured records as their wire bytes. */
+function canonRawLabel(encoded: Uint8Array): string {
+    return encoded.length === 4
+        ? unrecognizedValueLabel(new DataView(encoded.buffer, encoded.byteOffset, 4).getUint32(0, true))
+        : bytesToHex(encoded)
 }
 
 /**
@@ -110,7 +120,11 @@ export class CanonCamera extends GenericCamera {
     private advertisedPropertyData = new Map<PropertyDefinition, Uint8Array[]>()
     private propertyCache = new Map<
         PropertyDefinition,
-        { current?: CodecType<PropertyDefinition['codec']>; allowed?: CodecType<PropertyDefinition['codec']>[] }
+        {
+            current?: CodecType<PropertyDefinition['codec']>
+            allowed?: CodecType<PropertyDefinition['codec']>[]
+            unrecognized?: UnrecognizedValues
+        }
     >()
     private unknownPropertyCache = new Map<
         number,
@@ -976,7 +990,7 @@ export class CanonCamera extends GenericCamera {
 
     listPropertyStates(): CanonPropertyState[] {
         return [...this.propertyCache.entries()]
-            .filter(([, state]) => state.current !== undefined)
+            .filter(([, state]) => state.current !== undefined || state.unrecognized?.value !== undefined)
             .map(([property, state]) => ({
                 code: property.code,
                 name: property.name,
@@ -984,6 +998,7 @@ export class CanonCamera extends GenericCamera {
                 access: property.access,
                 value: state.current,
                 ...(state.allowed ? { allowedValues: [...state.allowed] } : {}),
+                ...(state.unrecognized && { unrecognized: { ...state.unrecognized } }),
             }))
             .sort((left, right) => left.code - right.code)
     }
@@ -1030,6 +1045,11 @@ export class CanonCamera extends GenericCamera {
         await this.send(this.registry.operations.CanonSetEventMode, { EventMode: 'DISABLE' })
     }
 
+    /** Shares a value Slate could not name with its raw number; never fails event processing. */
+    private recordUnrecognizedValue(property: number, raw: number, choice: boolean): void {
+        this.recordProtocol({ type: 'unrecognized-value', vendorId: VendorIDs.CANON, property, dataType: 6, raw, choice })
+    }
+
     private processEvents(
         events: Array<{
             code: number
@@ -1064,25 +1084,31 @@ export class CanonCamera extends GenericCamera {
                 if (property) {
                     const codec = this.resolveCodec(property.codec)
                     const encoded = event.valueData || this.registry.codecs.uint32.encode(rawValue)
+                    const existing = this.propertyCache.get(property)
+                    const choices = existing?.unrecognized?.choices
                     let decoded
                     try {
                         decoded = codec.decode(encoded)
                     } catch {
-                        // New bodies can publish values outside an older enum table.
-                        // Retain diagnostics without dropping later properties/choices.
-                        this.propertyCache.delete(property)
+                        // New bodies can publish values outside an older enum table: keep the
+                        // property visible with its raw value, read-only, without a decoded current.
+                        this.propertyCache.set(property, {
+                            allowed: existing?.allowed,
+                            unrecognized: { ...(choices && { choices }), value: canonRawLabel(encoded) },
+                        })
                         this.unknownPropertyCache.set(propCode, {
                             ...this.unknownPropertyCache.get(propCode),
                             rawValue,
                             valueDataHex: bytesToHex(encoded),
                         })
+                        if (encoded.length === 4) this.recordUnrecognizedValue(propCode, rawValue, false)
                         return
                     }
 
-                    const existing = this.propertyCache.get(property)
                     this.propertyCache.set(property, {
                         current: decoded.value,
                         allowed: existing?.allowed,
+                        ...(choices && { unrecognized: { choices } }),
                     })
                 } else {
                     const existing = this.unknownPropertyCache.get(propCode)
@@ -1109,18 +1135,28 @@ export class CanonCamera extends GenericCamera {
                                 property,
                                 encodedAllowed.map(encoded => encoded.slice())
                             )
+                            const rejected: string[] = []
                             const decodedAllowed = encodedAllowed.flatMap(encoded => {
                                 try {
                                     return [codec.decode(encoded).value]
                                 } catch {
+                                    rejected.push(canonRawLabel(encoded))
+                                    if (encoded.length === 4)
+                                        this.recordUnrecognizedValue(propCode, this.registry.codecs.uint32.decode(encoded).value, true)
                                     return []
                                 }
                             })
 
                             const existing = this.propertyCache.get(property)
+                            const value = existing?.unrecognized?.value
+                            const unrecognized = {
+                                ...(value !== undefined && { value }),
+                                ...(rejected.length > 0 && { choices: rejected }),
+                            }
                             this.propertyCache.set(property, {
                                 current: existing?.current,
                                 allowed: decodedAllowed,
+                                ...(Object.keys(unrecognized).length > 0 && { unrecognized }),
                             })
                         } else {
                             const existing = this.unknownPropertyCache.get(propCode)

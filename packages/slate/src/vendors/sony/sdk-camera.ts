@@ -9,6 +9,8 @@ import { sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 import { SONY_SDK_NAMED_PROPERTIES } from '@vendors/sony/sdk-property-codes'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
+import { isSonyModelName } from '@vendors/sony/model-name'
+import { isVerifiedFeature } from '@camera/validated-models'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
 export interface SonySdkBridge {
@@ -16,7 +18,18 @@ export interface SonySdkBridge {
     close(): Promise<void>
 }
 
-export type SonyWifiCameraModel = 'ILCE-6700' | 'ILME-FX2'
+/** Any Sony body name is attempted; the bench-verified bodies stay named for completion. */
+export type SonyWifiCameraModel = 'ILCE-6700' | 'ILME-FX2' | (string & Record<never, never>)
+
+/** `verified` is false when the named body (or an unnamed one) has not been confirmed on a bench. */
+export interface SonyWirelessConnection {
+    model?: string
+    verified: boolean
+}
+
+function wirelessConnection(model: string | undefined): SonyWirelessConnection {
+    return { ...(model ? { model } : {}), verified: isVerifiedFeature('sony-wireless', model) }
+}
 
 export interface SonyBluetoothDirectAuthentication {
     host: string
@@ -114,7 +127,7 @@ export function validateSonyWifiAuthentication(authentication: SonyWifiAuthentic
         throw new Error('Sony Wi-Fi requires a valid IPv4 camera address')
     if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.mac))
         throw new Error('Sony Wi-Fi requires the camera MAC address')
-    if (authentication.model !== undefined && !['ILCE-6700', 'ILME-FX2'].includes(authentication.model))
+    if (authentication.model !== undefined && !isSonyModelName(authentication.model))
         throw new Error('Unsupported Sony Wi-Fi camera model')
     if (!authentication.username || !authentication.password || !authentication.fingerprint)
         throw new Error('Sony Wi-Fi requires runtime username, password, and a trusted camera fingerprint')
@@ -151,7 +164,7 @@ function validateSonyBluetoothDirectAuthentication(authentication: SonyBluetooth
         throw new Error('Sony Bluetooth Direct requires the camera MAC address')
     if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.bluetoothAddress))
         throw new Error('Sony Bluetooth Direct requires the camera Bluetooth MAC address')
-    if (!['ILCE-6700', 'ILME-FX2'].includes(authentication.model))
+    if (!isSonyModelName(authentication.model))
         throw new Error('Unsupported Sony Bluetooth Direct camera model')
 }
 
@@ -213,7 +226,7 @@ export class SonyWifiCamera {
     async connect(
         authentication: SonyWifiAuthentication,
         options: { mode?: 'remote' | 'remote-transfer' } = {}
-    ): Promise<void> {
+    ): Promise<SonyWirelessConnection> {
         if (this.connected) throw new Error('Sony Wi-Fi camera is already connected')
         validateSonyWifiAuthentication(authentication)
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -259,14 +272,15 @@ export class SonyWifiCamera {
         this.connected = true
         this.connectionTransport = 'wifi'
         const saved={...authentication},mode={...options}
-        this.reconnectOperation=()=>this.connect(saved,mode)
+        this.reconnectOperation=async()=>{await this.connect(saved,mode)}
+        return wirelessConnection(authentication.model)
     }
 
     /** Connect to the Wi-Fi Direct session already established through trusted Bluetooth control. */
     async connectBluetoothDirect(
         authentication: SonyBluetoothDirectAuthentication,
         options: { mode?: 'remote' | 'remote-transfer' } = {}
-    ): Promise<void> {
+    ): Promise<SonyWirelessConnection> {
         if (this.connected) throw new Error('Sony SDK camera is already connected')
         validateSonyBluetoothDirectAuthentication(authentication)
         if (options.mode !== undefined && !['remote', 'remote-transfer'].includes(options.mode))
@@ -283,7 +297,8 @@ export class SonyWifiCamera {
         this.connected = true
         this.connectionTransport = 'wifi'
         const saved={...authentication},mode={...options}
-        this.reconnectOperation=()=>this.connectBluetoothDirect(saved,mode)
+        this.reconnectOperation=async()=>{await this.connectBluetoothDirect(saved,mode)}
+        return wirelessConnection(authentication.model)
     }
 
     /** Open the same official SDK over USB for guarded preparation and readback. */

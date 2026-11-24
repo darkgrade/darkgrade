@@ -1,3 +1,4 @@
+import { unrecognizedValueLabel, type UnrecognizedValues } from '@camera/controls'
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { CustomCodec, type CodecInstance, type PTPRegistry } from '@ptp/types/codec'
@@ -20,6 +21,10 @@ export interface DevicePropDesc {
     numberOfValues?: number
     supportedValuesRaw?: (number | bigint | string)[]
     supportedValuesDecoded?: (number | bigint | string)[]
+    /** The property codec rejected the current value; `currentValueDecoded` then holds the raw value. */
+    currentValueUnrecognized?: true
+    /** Raw choices the property codec rejected; each keeps its raw value and index in `supportedValuesDecoded`. */
+    unrecognizedSupportedValues?: (number | bigint | string)[]
     vendorExtensions?: {
         [key: string]: number | bigint | string | boolean | object
     }
@@ -28,17 +33,33 @@ export interface DevicePropDesc {
 /**
  * A camera can report a value its property codec does not know (newer firmware, or an enumeration
  * entry darkgrade has not named yet). The descriptor stays usable with the raw value in that slot
- * instead of failing as a whole.
+ * instead of failing as a whole; `undefined` marks the value unrecognized.
  */
-function decodeOrRaw(
-    codec: CodecInstance<number | bigint | string>,
-    bytes: Uint8Array,
-    raw: number | bigint | string
-): number | bigint | string {
+function tryDecode(codec: CodecInstance<number | bigint | string>, bytes: Uint8Array): number | bigint | string | undefined {
     try {
         return codec.decode(bytes, 0).value
     } catch {
-        return raw
+        return undefined
+    }
+}
+
+/** Application view of a descriptor: recognized choices only, and the raw values Slate could not name. */
+export function recognizedDescriptorValues(descriptor: DevicePropDesc): {
+    allowedValues?: (number | bigint | string)[]
+    allowedRawValues?: (number | bigint | string)[]
+    unrecognized?: UnrecognizedValues
+} {
+    const rejected = new Set(descriptor.unrecognizedSupportedValues)
+    const recognized = (_: unknown, index: number) =>
+        !rejected.has(descriptor.supportedValuesRaw?.[index] as number | bigint | string)
+    const unrecognized: UnrecognizedValues = {
+        ...(descriptor.currentValueUnrecognized && { value: unrecognizedValueLabel(descriptor.currentValueRaw) }),
+        ...(rejected.size > 0 && { choices: [...rejected].map(unrecognizedValueLabel) }),
+    }
+    return {
+        ...(descriptor.supportedValuesDecoded && { allowedValues: descriptor.supportedValuesDecoded.filter(recognized) }),
+        ...(descriptor.supportedValuesRaw && { allowedRawValues: descriptor.supportedValuesRaw.filter(recognized) }),
+        ...(Object.keys(unrecognized).length > 0 && { unrecognized }),
     }
 }
 
@@ -113,10 +134,13 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         const devicePropertyDescription = propertyDef?.description || ''
 
         let currentValueDecoded: number | bigint | string = currentValueRaw
+        let currentValueUnrecognized: true | undefined
         if (propertyDef && propertyDef.codec) {
             const codecInstance =
                 typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
-            currentValueDecoded = decodeOrRaw(codecInstance, currentValueBytes, currentValueRaw)
+            const decoded = tryDecode(codecInstance, currentValueBytes)
+            if (decoded === undefined) currentValueUnrecognized = true
+            currentValueDecoded = decoded ?? currentValueRaw
         }
 
         let minimumValue: number | bigint | string | undefined = undefined
@@ -125,6 +149,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
         let numberOfValues: number | undefined = undefined
         let supportedValuesRaw: (number | bigint | string)[] | undefined = undefined
         let supportedValuesDecoded: (number | bigint | string)[] | undefined = undefined
+        const unrecognizedSupportedValues: (number | bigint | string)[] = []
 
         if (formFlag === 0x01) {
             const minResult = valueCodec.decode(buffer, currentOffset)
@@ -160,9 +185,9 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
                     const maxBytes = datatypeCodec.encode(maximumValue)
                     const stepBytes = datatypeCodec.encode(stepSize)
 
-                    minimumValue = decodeOrRaw(codecInstance, minBytes, minimumValue)
-                    maximumValue = decodeOrRaw(codecInstance, maxBytes, maximumValue)
-                    stepSize = decodeOrRaw(codecInstance, stepBytes, stepSize)
+                    minimumValue = tryDecode(codecInstance, minBytes) ?? minimumValue
+                    maximumValue = tryDecode(codecInstance, maxBytes) ?? maximumValue
+                    stepSize = tryDecode(codecInstance, stepBytes) ?? stepSize
                 }
             }
         } else if (formFlag === 0x02) {
@@ -189,9 +214,11 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
                             ? datatypeDefinition.codec(this.registry)
                             : datatypeDefinition.codec
 
-                    supportedValuesDecoded = supportedValuesRaw.map(rawVal =>
-                        decodeOrRaw(codecInstance, datatypeCodec.encode(rawVal), rawVal)
-                    )
+                    supportedValuesDecoded = supportedValuesRaw.map(rawValue => {
+                        const decoded = tryDecode(codecInstance, datatypeCodec.encode(rawValue))
+                        if (decoded === undefined) unrecognizedSupportedValues.push(rawValue)
+                        return decoded ?? rawValue
+                    })
                 }
             }
         }
@@ -214,6 +241,8 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
                 numberOfValues,
                 supportedValuesRaw,
                 supportedValuesDecoded,
+                ...(currentValueUnrecognized && { currentValueUnrecognized }),
+                ...(unrecognizedSupportedValues.length > 0 && { unrecognizedSupportedValues }),
             },
             bytesRead: currentOffset - offset,
         }

@@ -116,6 +116,10 @@ export function protocolEvidence(
         }
         if (value.supportedValuesRaw) item.values = value.supportedValuesRaw.map(numeric)
         add(item)
+        const unrecognized = (raw: unknown, choice: boolean) =>
+            add({ type: 'unrecognized-value', vendorId, property: value.devicePropertyCode, dataType: value.dataType, raw: numeric(raw), choice })
+        if (value.currentValueUnrecognized) unrecognized(value.currentValueRaw, false)
+        for (const raw of value.unrecognizedSupportedValues?.slice(0, 512) ?? []) unrecognized(raw, true)
     }
     const value = data as Record<string, unknown> | undefined
     if (!value || typeof value !== 'object') return result

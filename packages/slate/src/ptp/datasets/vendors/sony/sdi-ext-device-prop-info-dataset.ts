@@ -143,8 +143,10 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
         const devicePropertyDescription = propertyDef?.description || fallback!.description
 
         let currentValueDecoded: number | bigint | string = currentValueRaw
+        let currentValueUnrecognized: true | undefined
         let enumValuesSetDecoded: (number | bigint | string)[] = enumValuesSet
         let enumValuesGetSetDecoded: (number | bigint | string)[] = enumValuesGetSet
+        const rejectedValues = new Set<number | bigint | string>()
 
         if (propertyDef && propertyDef.codec && currentValueBytes.length > 0) {
             const codecInstance =
@@ -155,21 +157,26 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
             try {
                 const decodedResult = codecInstance.decode(currentValueBytes, 0)
                 currentValueDecoded = decodedResult.value
-            } catch (e) {}
+            } catch {
+                currentValueUnrecognized = true
+            }
 
+            const definition = getDatatypeByCode(dataType)
             const decodeEnumValue = (rawValue: number | bigint | string) => {
+                if (!definition?.codec) return rawValue
                 try {
-                    const definition = getDatatypeByCode(dataType)
-                    if (!definition?.codec) return rawValue
                     const wire = typeof definition.codec === 'function' ? definition.codec(this.registry) : definition.codec
                     return codecInstance.decode(wire.encode(rawValue), 0).value
                 } catch {
+                    rejectedValues.add(rawValue)
                     return rawValue
                 }
             }
             enumValuesSetDecoded = enumValuesSet.map(decodeEnumValue)
             enumValuesGetSetDecoded = enumValuesGetSet.map(decodeEnumValue)
         }
+        const supportedValuesRaw = enumValuesGetSet.length ? enumValuesGetSet : enumValuesSet
+        const unrecognizedSupportedValues = supportedValuesRaw.filter(value => rejectedValues.has(value))
 
         return {
             value: {
@@ -187,8 +194,10 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
                 maximumValue,
                 stepSize,
                 numberOfValues: enumValuesGetSet.length || enumValuesSet.length || undefined,
-                supportedValuesRaw: enumValuesGetSet.length ? enumValuesGetSet : enumValuesSet,
+                supportedValuesRaw,
                 supportedValuesDecoded: enumValuesGetSet.length ? enumValuesGetSetDecoded : enumValuesSetDecoded,
+                ...(currentValueUnrecognized && { currentValueUnrecognized }),
+                ...(unrecognizedSupportedValues.length > 0 && { unrecognizedSupportedValues }),
                 sonyDescriptorKind: (getSet & 0x80) === 0x80 ? 'control' : 'property',
                 sonyGetSetFlag: getSet,
                 sonyEnabledFlag: isEnabled,

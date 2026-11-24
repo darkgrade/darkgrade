@@ -310,7 +310,12 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         fixture.properties.get(0x1d074)!.value = 2
         fixture.properties.get(0x1d075)!.type = 3 // INT16 instead of the documented INT32.
         fixture.properties.get(0x1d075)!.choices = [9000, 18000]
-        await expect(fixture.camera.setExposureTime('90°')).rejects.toThrow('without truncation')
+        // The angle codec cannot read the narrower value, so it stays raw and read-only.
+        expect((await fixture.camera.getCapabilities()).controls.shutterSpeed).toMatchObject({
+            writable: false,
+            unrecognized: { value: '0x4650', choices: ['0x2328', '0x4650'] },
+        })
+        await expect(fixture.camera.setExposureTime('90°')).rejects.toThrow('not writable')
         expect(fixture.writes).toEqual([])
     })
 })

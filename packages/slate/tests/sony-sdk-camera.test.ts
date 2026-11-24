@@ -142,6 +142,18 @@ describe('Sony SDK Bluetooth Direct connection', () => {
         expect(camera.isConnected()).toBe(false)
     })
 
+    it('attempts an unvalidated Sony body and reports it unverified', async () => {
+        const { bridge, requests } = bridgeForProperties()
+        const camera = new SonyWifiCamera(bridge)
+        expect(await camera.connectBluetoothDirect({ ...directAuthentication, model: 'ILCE-7M4' })).toEqual({
+            model: 'ILCE-7M4',
+            verified: false,
+        })
+        expect(requests[0]).toMatchObject({ cmd: 'connect_bluetooth_direct', model: 'ILCE-7M4' })
+        expect(await new SonyWifiCamera(bridgeForProperties().bridge).connectBluetoothDirect(directAuthentication))
+            .toEqual({ model: 'ILME-FX2', verified: true })
+    })
+
     it('rejects an unsupported runtime mode without contacting the bridge', async () => {
         const { bridge, requests } = bridgeForProperties()
         await expect(
@@ -244,16 +256,33 @@ describe('Sony SDK Wi-Fi camera', () => {
         expect(requests.map(request => request.cmd)).toEqual(['fingerprint'])
         expect(camera.isConnected()).toBe(false)
     })
-    it.each(['ILCE-6700', 'ILME-FX2'] as const)('uses %s for fingerprint and connection identity', async model => {
+    it.each([
+        ['ILCE-6700', true],
+        ['ILME-FX2', true],
+        ['ILCE-7M4', false],
+        ['ZV-E1', false],
+    ] as const)('attempts %s for fingerprint and connection identity (verified: %s)', async (model, verified) => {
         const { bridge, requests } = bridgeForProperties()
         const camera = new SonyWifiCamera(bridge)
-        await camera.connect({ ...authentication, model })
+        expect(await camera.connect({ ...authentication, model })).toEqual({ model, verified })
         expect(requests[0]).toMatchObject({ cmd: 'fingerprint', model })
         expect(requests[1]).toMatchObject({ cmd: 'connect_wifi', model })
     })
+    it('surfaces a refused unvalidated body as the ordinary connection failure', async () => {
+        const { bridge, requests } = bridgeForProperties()
+        const request = bridge.request.bind(bridge)
+        bridge.request = async command => {
+            if (command.cmd === 'connect_wifi') throw new Error('SDK code 33281')
+            return request(command)
+        }
+        const camera = new SonyWifiCamera(bridge)
+        await expect(camera.connect({ ...authentication, model: 'ILCE-7M4' })).rejects.toThrow('33281')
+        expect(requests.map(request => request.cmd)).toEqual(['fingerprint'])
+        expect(camera.isConnected()).toBe(false)
+    })
     it('keeps the existing bridge contract when the model is omitted', async () => {
         const { bridge, requests } = bridgeForProperties()
-        await new SonyWifiCamera(bridge).connect(authentication)
+        expect(await new SonyWifiCamera(bridge).connect(authentication)).toEqual({ verified: false })
         expect(requests[0]).not.toHaveProperty('model')
         expect(requests[1]).not.toHaveProperty('model')
     })

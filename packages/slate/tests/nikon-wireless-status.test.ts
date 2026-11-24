@@ -3,11 +3,12 @@ import {describe,expect,it,vi} from 'vitest'
 import {createNikonRegistry} from '@ptp/registry'
 import {DevicePropDescCodec} from '@ptp/datasets/device-prop-desc-dataset'
 
-function fixture({manufacturer='Nikon Corporation',model='Z6_3',advertised=true,malformed=false,queryFailure=false,pathValue=0,pathAdvertised=false,pathWrongProperty=false,pathThrow=false}={}) {
+function fixture({manufacturer='Nikon Corporation',model='Z6_3',advertised=true,malformed=false,queryFailure=false,queryThrow=false,pathValue=0,pathAdvertised=false,pathWrongProperty=false,pathThrow=false}={}) {
     const integer=(value:number)=>{const bytes=new Uint8Array(4);new DataView(bytes.buffer).setUint32(0,value,true);return bytes}
     const send=vi.fn(async(operation:{code:number})=>{
         if(operation.code===0x1001)return {code:0x2001,data:{manufacturer,model,operationsSupportedRaw:advertised?[0x9358,0x936d,0x90eb]:[],devicePropertiesSupported:pathAdvertised?[0xd12e]:[]}}
         if(queryFailure)return {code:0x2005}
+        if(queryThrow)throw new Error('Operation not supported')
         if(operation.code===0x943a||operation.code===0x1014){
             if(pathThrow)throw new Error('Descriptor unsupported')
             return {code:0x2001,data:{devicePropertyCode:pathWrongProperty?0x5001:0xd12e,currentValueRaw:pathValue}}
@@ -31,6 +32,7 @@ describe('Nikon wireless prerequisite diagnostics',()=>{
         expect(result.queries.WsGetResponderCfg).toEqual({advertised:true,queried:true,response:0x2001,configurationVersion:200,profileCount:0})
         expect(camera.send.mock.calls.map(([operation])=>operation.code)).toEqual([0x1001,0x9358,0x936d,0x90eb,0x943a])
         expect(JSON.stringify(result)).not.toMatch(/passphrase|ssid|hostGuid/i)
+        expect(result.verified).toBe(true)
     })
     it('uses only physically verified WTU reads for the known Z6 III DeviceInfo omission',async()=>{
         const camera=fixture({advertised:false})
@@ -38,11 +40,21 @@ describe('Nikon wireless prerequisite diagnostics',()=>{
         expect(result.usbProvisioning).toBe('ftp-only')
         expect(result.queries.WsGetSupportedProfileType).toEqual({advertised:false,queried:true,response:0x2001,value:1})
         expect(camera.send).toHaveBeenCalledTimes(5)
+        expect(result).toMatchObject({verifiedModelReadFallback:true,verified:true})
     })
-    it('does not send unadvertised vendor operations',async()=>{
-        const camera=fixture({advertised:false,model:'D850'})
-        expect((await readNikonWirelessStatus(camera as any)).usbProvisioning).toBe('unverified')
-        expect(camera.send).toHaveBeenCalledOnce()
+    it('tries unadvertised reads on other Nikon bodies and marks the result unverified',async()=>{
+        const camera=fixture({advertised:false,model:'Z8'})
+        const result=await readNikonWirelessStatus(camera as any)
+        expect(result).toMatchObject({usbProvisioning:'ftp-only',verifiedModelReadFallback:false,verified:false})
+        expect(result.queries.WsGetSupportedProfileType).toEqual({advertised:false,queried:true,response:0x2001,value:1})
+        expect(camera.send.mock.calls.map(([operation])=>operation.code)).toEqual([0x1001,0x9358,0x936d,0x90eb,0x1014])
+    })
+    it.each([{queryFailure:true},{queryThrow:true},{malformed:true}] as {queryFailure?:boolean;queryThrow?:boolean;malformed?:boolean}[])('keeps an unvalidated body unavailable when unadvertised reads fail: %j',async options=>{
+        const result=await readNikonWirelessStatus(fixture({advertised:false,model:'D850',...options}) as any)
+        expect(result.verified).toBe(false)
+        if(!options.malformed)expect(result.usbProvisioning).toBe('unverified')
+        expect(result.queries.WsGetResponderCfg).toMatchObject({advertised:false,queried:true})
+        expect(result.queries.WsGetResponderCfg?.profileCount).toBeUndefined()
     })
     it('does not call unsupported capabilities successful or infer FTP from a failed response',async()=>{
         const result=await readNikonWirelessStatus(fixture({queryFailure:true}) as any)
@@ -75,10 +87,19 @@ describe('Nikon actual connection path',()=>{
         expect((await readNikonWirelessStatus(camera as any)).connectionPath).toEqual({advertised:true,queried:true,response:0x2001,value:2,path:'wifi'})
         expect(camera.send).toHaveBeenLastCalledWith(expect.objectContaining({code:0x1014}),{DevicePropCode:0xd12e})
     })
-    it('does not probe an unadvertised property on an unvalidated model',async()=>{
-        const camera=fixture({model:'D850',advertised:false})
-        expect((await readNikonWirelessStatus(camera as any)).connectionPath).toEqual({advertised:false,queried:false,path:'unknown'})
-        expect(camera.send).toHaveBeenCalledOnce()
+    it('tries an unadvertised property with the standard descriptor on an unvalidated model',async()=>{
+        const camera=fixture({model:'D850',advertised:false,pathValue:2})
+        const result=await readNikonWirelessStatus(camera as any)
+        expect(result.connectionPath).toEqual({advertised:false,queried:true,response:0x2001,value:2,path:'wifi'})
+        expect(result.verified).toBe(false)
+        expect(camera.send).toHaveBeenLastCalledWith(expect.objectContaining({code:0x1014}),{DevicePropCode:0xd12e})
+    })
+    it('keeps a refused unadvertised property unknown on an unvalidated model',async()=>{
+        for(const options of [{pathThrow:true},{pathWrongProperty:true}]){
+            const result=await readNikonWirelessStatus(fixture({model:'D850',advertised:false,...options}) as any)
+            expect(result.connectionPath).toMatchObject({advertised:false,queried:true,path:'unknown'})
+            expect(result.wifiControl).toBe('unverified')
+        }
     })
     it('preserves unsupported, malformed and failed reads as unknown',async()=>{
         for(const options of [{queryFailure:true},{pathWrongProperty:true},{pathThrow:true},{pathValue:-1},{pathValue:256},{pathValue:1.5}]){

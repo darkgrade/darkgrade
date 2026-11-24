@@ -1,9 +1,18 @@
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { parseSonyContentInfoList, type SonyContentInfoList } from '@vendors/sony/content-info-list'
 import { Logger } from '@core/logger'
-import { PTPResponseError } from '@core/ptp-errors'
+import {
+    PTPDecodeError,
+    PTPDisconnectedError,
+    PTPProtocolError,
+    PTPRecoveryRequiredError,
+    PTPResponseError,
+    PTPTimeoutError,
+} from '@core/ptp-errors'
+import { recognizedDescriptorValues } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
+import type { SonyExtendedDeviceInfo } from '@ptp/datasets/vendors/sony/sdi-ext-device-info-dataset'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import { parseLiveViewDataset } from '@ptp/datasets/vendors/sony/sony-live-view-dataset'
 import { parseOsdImageDataset, type OsdImageMetaInfo } from '@ptp/datasets/vendors/sony/sony-osd-image-dataset'
@@ -18,6 +27,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { CameraConfirmationError } from '@camera/confirmation'
+import type { UnrecognizedValues } from '@camera/controls'
 import { GenericCamera } from './generic-camera'
 
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
@@ -118,6 +128,9 @@ const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
 // α6700 can acknowledge but ignore early movie-button transitions, including
 // a release one second after the press. Allow the body to finish the transition.
 const SONY_MOVIE_BUTTON_INTERVAL_MS = 1_500
+/** Initiator versions announced in SDIO_GetExtDeviceInfo, newest first; 2.00 is the ILCE-7M2 generation. */
+const SONY_INITIATOR_VERSIONS = ['3.00', '2.00'] as const
+type SonyInitiatorVersion = (typeof SONY_INITIATOR_VERSIONS)[number]
 
 export interface SonyPropertyState {
     code: number
@@ -133,6 +146,7 @@ export interface SonyPropertyState {
     sonyEnabledFlag: number
     sonyGetSetFlag: number
     range?: { minimum: number; maximum: number; step: number }
+    unrecognized?: UnrecognizedValues
 }
 
 export interface SonyOsdImage {
@@ -166,6 +180,7 @@ export class SonyCamera extends GenericCamera {
     private propertyCache = new Map<number, SonyDevicePropDesc>()
     private manualIsoChoices?: SonyPropertyState['allowedValues']
     private movieButtonAttemptedAt?: number
+    private negotiatedProtocolVersion?: number
     vendorId = VendorIDs.SONY
     declare public registry: SonyRegistry
 
@@ -175,8 +190,17 @@ export class SonyCamera extends GenericCamera {
         logger.setRegistry(this.registry)
     }
 
+    /**
+     * The SDIO protocol version the camera returned from SDIO_GetExtDeviceInfo in hundredths
+     * (300 is 3.00), or undefined before authentication, after disconnect or when unreadable.
+     */
+    get sdioProtocolVersion(): number | undefined {
+        return this.negotiatedProtocolVersion
+    }
+
     async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus'; configure?: boolean } = {}): Promise<void> {
         this.manualIsoChoices = undefined
+        this.negotiatedProtocolVersion = undefined
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
@@ -209,13 +233,28 @@ export class SonyCamera extends GenericCamera {
 
         if (options.mode === 'menus' || options.configure === false) return
 
-        await this.set(this.registry.properties.PositionKeySetting, 'HOST_PRIORITY')
-        await this.set(this.registry.properties.StillImageSaveDestination, 'CAMERA_DEVICE')
+        await this.configureSessionSetting(this.registry.properties.PositionKeySetting, 'HOST_PRIORITY')
+        await this.configureSessionSetting(this.registry.properties.StillImageSaveDestination, 'CAMERA_DEVICE')
         await this.refreshPropertyStates()
+    }
+
+    /** A body that refuses a host-preference write is still usable; transport failures still end connect. */
+    private async configureSessionSetting<P extends PropertyDefinition>(
+        property: P,
+        value: CodecType<P['codec']>
+    ): Promise<void> {
+        try {
+            await this.set(property, value)
+        } catch (error) {
+            if (isTransportFailure(error)) throw error
+            this.logger.addLog({ type: 'console', level: 'warn', consoleLevel: 'warn',
+                args: [`Sony ${property.name} not set during connect: ${error instanceof Error ? error.message : String(error)}`] })
+        }
     }
 
     async disconnect(): Promise<void> {
         this.manualIsoChoices = undefined
+        this.negotiatedProtocolVersion = undefined
         if (!this.transport.isConnected()) return super.disconnect()
         let cleanupError: unknown
         try {
@@ -350,19 +389,17 @@ export class SonyCamera extends GenericCamera {
 
     listPropertyStates(): SonyPropertyState[] {
         return [...this.propertyCache.values()]
-            .map(descriptor => ({
+            .map(descriptor => ({ descriptor, ...recognizedDescriptorValues(descriptor) }))
+            .map(({ descriptor, allowedValues, allowedRawValues, unrecognized }) => ({
                 code: descriptor.devicePropertyCode,
                 codeHex: `0x${descriptor.devicePropertyCode.toString(16).padStart(4, '0')}`,
                 name: descriptor.devicePropertyName,
                 description: descriptor.devicePropertyDescription,
                 value: descriptor.currentValueDecoded,
                 rawValue: descriptor.currentValueRaw,
-                ...(descriptor.supportedValuesDecoded?.length
-                    ? { allowedValues: [...descriptor.supportedValuesDecoded] }
-                    : {}),
-                ...(descriptor.supportedValuesRaw?.length
-                    ? { allowedRawValues: [...descriptor.supportedValuesRaw] }
-                    : {}),
+                ...(allowedValues?.length ? { allowedValues } : {}),
+                ...(allowedRawValues?.length ? { allowedRawValues } : {}),
+                ...(unrecognized && { unrecognized }),
                 writable:
                     descriptor.vendorExtensions.enabled &&
                     (descriptor.getSet === 'GET_SET' || this.isIncrementalProperty(descriptor.devicePropertyCode)),
@@ -1458,7 +1495,30 @@ export class SonyCamera extends GenericCamera {
         }
     }
 
+    /**
+     * Sony's documented sequence is SDIO_Connect phase 1, phase 2, SDIO_GetExtDeviceInfo, phase 3.
+     * A body that refuses the 3.00 announcement leaves its handshake state undefined, so the whole
+     * sequence is restarted from phase 1 announcing 2.00.
+     */
     private async authenticate(): Promise<void> {
+        const refusals: string[] = []
+        let refusedCode: number = OK.code
+        for (const version of SONY_INITIATOR_VERSIONS) {
+            const refusal = await this.authenticateAnnouncing(version)
+            if (refusal === undefined) return
+            refusedCode = refusal
+            refusals.push(`${version} (0x${refusal.toString(16)})`)
+            this.logger.addLog({ type: 'console', level: 'warn', consoleLevel: 'warn',
+                args: [`Sony refused initiator version ${version} with 0x${refusal.toString(16)}`] })
+        }
+        throw new PTPResponseError(
+            refusedCode,
+            `Sony extended device information refused initiator versions ${refusals.join(' and ')}`
+        )
+    }
+
+    /** Runs the handshake announcing one version; returns the extended-information refusal code, if any. */
+    private async authenticateAnnouncing(version: SonyInitiatorVersion): Promise<number | undefined> {
         const first = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_1',
             keyCode1: 'DEFAULT',
@@ -1473,11 +1533,8 @@ export class SonyCamera extends GenericCamera {
         })
         this.assertOk(second.code, 'Sony authentication phase 2')
 
-        const information = await this.send(this.registry.operations.SDIO_GetExtDeviceInfo, {
-            initiatorVersion: '3.00',
-            flagOfDevicePropertyOption: 'ENABLE',
-        })
-        this.assertOk(information.code, 'Sony extended device information')
+        const refusal = await this.readExtendedDeviceInformation(version)
+        if (refusal !== undefined) return refusal
 
         const third = await this.send(this.registry.operations.SDIO_Connect, {
             phaseType: 'PHASE_3',
@@ -1485,7 +1542,33 @@ export class SonyCamera extends GenericCamera {
             keyCode2: 'DEFAULT',
         })
         this.assertOk(third.code, 'Sony authentication phase 3')
+        return undefined
     }
+
+    private async readExtendedDeviceInformation(version: SonyInitiatorVersion): Promise<number | undefined> {
+        try {
+            const information = await this.send(this.registry.operations.SDIO_GetExtDeviceInfo,
+                version === '3.00' ? { initiatorVersion: version, flagOfDevicePropertyOption: 'ENABLE' } : { initiatorVersion: version })
+            if (information.code !== OK.code) return information.code
+            const protocolVersion = (information.data as SonyExtendedDeviceInfo | undefined)?.protocolVersion
+            this.negotiatedProtocolVersion = typeof protocolVersion === 'number' ? protocolVersion : undefined
+        } catch (error) {
+            // The camera accepted the announcement; only its dataset is unreadable.
+            if (!(error instanceof PTPDecodeError)) throw error
+            this.logger.addLog({ type: 'console', level: 'warn', consoleLevel: 'warn',
+                args: [`Sony extended device information unreadable: ${error.message}`] })
+        }
+        return undefined
+    }
+}
+
+function isTransportFailure(error: unknown): boolean {
+    return (
+        error instanceof PTPTimeoutError ||
+        error instanceof PTPDisconnectedError ||
+        error instanceof PTPProtocolError ||
+        error instanceof PTPRecoveryRequiredError
+    )
 }
 
 /** Focus areas that take an AF area position: every Flexible Spot (sizes, Expand, Free Size), plain or Lock on AF. Zone ignores it. */

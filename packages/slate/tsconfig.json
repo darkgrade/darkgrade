@@ -19,7 +19,8 @@
             "@transport/*": ["src/transport/*"],
             "@ptp/*": ["src/ptp/*"],
             "@vendors/*": ["src/vendors/*"],
-            "@runtime/*": ["src/runtime/*"]
+            "@runtime/*": ["src/runtime/*"],
+            "@cli/*": ["src/cli/*"]
         }
     },
     "include": ["src", "tests", "scripts/recover-camera.ts", "*.config.ts"],

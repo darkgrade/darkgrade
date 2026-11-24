@@ -63,6 +63,11 @@ export interface CameraOptions {
     /** Default true: send the advertised Canon session heartbeat without changing saved body settings. */
     keepAlive?: boolean
     vendorId?: number
+    /**
+     * Default true: on Node, a body outside Slate's validated list gets one read-only inventory per
+     * model+firmware per installation, shared as a `first-contact` profile unless telemetry is off.
+     */
+    firstContact?: boolean
 }
 
 function descriptorVendor(device?: DeviceDescriptor): number | undefined {
@@ -179,7 +184,11 @@ export class Camera {
         this.deviceDescriptor = descriptor
         // Preserve the caller-owned partial session for standard protocol diagnostics when
         // vendor initialization is refused. The caller closes it with disconnect() in finally.
-        return this.instance.connect(descriptor)
+        await this.instance.connect(descriptor)
+        if (this.options.firstContact !== false) {
+            const { recordFirstContact } = await import('@workflows/first-contact')
+            await recordFirstContact(this)
+        }
     }
 
     /** Opens a Sony contents-transfer session for body-menu controls. */

@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from 'vitest'
 import {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
+import {readSonyMovieCard} from '@vendors/sony/card-storage'
 function fixture(access:number,flags='notInApplicationMode (Not in application mode)',vendor=0x04b0){return {getInstance:()=>({vendorId:vendor,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info'},properties:{MovieRecProhibitionCondition:'flags'}}}),get:async()=>flags,send:async(op:string)=>({code:0x2001,data:op==='ids'?[0x10000,0x20001]:{accessCapability:access,maxCapacity:256n,freeSpaceInBytes:128n,volumeLabel:'Slot 2'}})}}
 describe('camera-side card write capability',()=>{
  it('uses native Sony card status while preserving zero-capacity host storage',async()=>{
@@ -10,6 +11,32 @@ describe('camera-side card write capability',()=>{
   expect((await readCameraStorages(camera))[0]).toMatchObject({writable:true,recordingReady:true,hostAccessCapability:1,capacityBytes:0})
   camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:2,sonyEnabledFlag:2}]
   expect((await readCameraStorages(camera))[0].writable).toBe(false)
+ })
+ function sonyBody(identity:()=>Promise<any>){
+  const camera=fixture(1,'none',0x054c) as any
+  camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
+  camera.getInstance=()=>({vendorId:0x054c,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info',GetDeviceInfo:'identity'}}})
+  camera.send=async(op:string)=>op==='identity'?identity():{code:0x2001,data:op==='ids'?[0x10001]:{accessCapability:1,maxCapacity:0n,freeSpaceInBytes:0n}}
+  return camera
+ }
+ it('marks the single-slot fallback verified only on the bench-validated body',async()=>{
+  const validated=await readSonyMovieCard(sonyBody(async()=>({code:0x2001,data:{model:'ILCE-6700'}})))
+  expect(validated).toMatchObject({status:'ready',slots:[1],singleSlotFallback:true,verified:true})
+  const other=sonyBody(async()=>({code:0x2001,data:{model:'ILCE-7M4'}}))
+  expect(await readSonyMovieCard(other)).toMatchObject({status:'ready',slots:[1],singleSlotFallback:true,verified:false})
+  expect((await readCameraStorages(other))[0]).toMatchObject({writable:true,recordingReady:true,recordingEvidence:{verified:false}})
+ })
+ it('keeps the native unknown result when the fallback is refused or cannot read the card',async()=>{
+  for(const identity of [async()=>({code:0x2019}),async()=>{throw new Error('GetDeviceInfo timed out')}]){
+   const camera=sonyBody(identity)
+   expect(await readSonyMovieCard(camera)).toMatchObject({status:'unknown',slots:[]})
+   expect((await readCameraStorages(camera))[0].writable).toBe(false)
+  }
+  const unreadable=sonyBody(async()=>({code:0x2001,data:{model:'ILCE-7M4'}}))
+  unreadable.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:0}]
+  const card=await readSonyMovieCard(unreadable)
+  expect(card).toMatchObject({status:'unknown',slots:[]})
+  expect(card).not.toHaveProperty('singleSlotFallback')
  })
  it('does not invent a single-slot Sony destination for an unidentified body',async()=>{
   const camera=fixture(1,'none',0x054c) as any

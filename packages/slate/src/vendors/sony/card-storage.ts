@@ -1,4 +1,5 @@
 import { sonyPtpMovieCard } from '@vendors/sony/ptp-recording-card'
+import { isVerifiedFeature } from '@camera/validated-models'
 
 /** Sony's remote-control storage is read-only to the host and reports zero byte capacity.
  * Native card status supplies camera-side recording evidence; preserve the host fields. */
@@ -11,14 +12,21 @@ export async function sonyStorageRecordingCapability(camera: any, storageId: num
     }
 }
 
-/** Reuse the native destination, with the already qualified single-slot model fallback. */
+/** Reuse the native destination; when a body omits it, try the single-slot read (bench-verified on the a6700 only)
+ * and keep the native result if that read is refused or still cannot identify a card. */
 export async function readSonyMovieCard(camera: any) {
-    let card = await sonyPtpMovieCard(camera)
-    if (card.status === 'unknown' && !card.slots.length) {
+    const card = await sonyPtpMovieCard(camera)
+    if (card.status !== 'unknown' || card.slots.length) return card
+    try {
         const operations = camera.getInstance().registry.operations
         const identity = await camera.send(operations.GetDeviceInfo, {})
-        if (identity.code === 0x2001 && identity.data?.model === 'ILCE-6700')
-            card = await sonyPtpMovieCard(camera, { singleSlot: true })
+        const model = identity.code === 0x2001 ? identity.data?.model : undefined
+        if (typeof model !== 'string' || !model) return card
+        const verified = isVerifiedFeature('sony-card-fallback', model)
+        const fallback = await sonyPtpMovieCard(camera, { singleSlot: true })
+        if (fallback.status === 'unknown' && !verified) return card
+        return { ...fallback, singleSlotFallback: true as const, verified }
+    } catch {
+        return card
     }
-    return card
 }

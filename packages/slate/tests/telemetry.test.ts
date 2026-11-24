@@ -183,7 +183,7 @@ test('SDK telemetry preserves outcomes and profile scoping without passwords, pa
                 throw new Error('Connection failed')
             })
         ).rejects.toThrow('Connection failed')
-        // A failed attempt is still about the body the caller named; an unlisted name stays unidentified.
+        // A failed attempt is still about the body the caller named; a name that is not a Sony body stays unidentified.
         expect(saved.at(-1).camera).toMatchObject({ model: 'ILCE-6700', transport: 'wifi', backend: 'vendor-api' })
         expect(saved.at(-1).entry.failed).toBe(true)
         // The trust step that starts a Wi-Fi connection shares the session of the connect that follows.
@@ -192,6 +192,9 @@ test('SDK telemetry preserves outcomes and profile scoping without passwords, pa
         await sdk.operation({ cmd: 'connect_wifi', model: 'ILME-FX2' }, async () => ({ ok: true }))
         expect(trust.camera).toMatchObject({ model: 'ILME-FX2', transport: 'wifi' })
         expect(saved.at(-1).entry.sessionId).toBe(trust.entry.sessionId)
+        // An unvalidated Sony body is still attempted, so it carries the name the caller gave.
+        await sdk.operation({ cmd: 'connect_bluetooth_direct', model: 'ILCE-7M4' }, async () => ({ ok: true }))
+        expect(saved.at(-1).camera).toMatchObject({ model: 'ILCE-7M4', transport: 'wifi' })
         await sdk.operation({ cmd: 'fingerprint', model: 'private-name' }, async () => ({ ok: true }))
         expect(saved.at(-1).camera.model).toBe('Unknown')
         expect(saved.at(-1).entry.sessionId).not.toBe(trust.entry.sessionId)
