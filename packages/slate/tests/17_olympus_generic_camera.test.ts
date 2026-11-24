@@ -3,14 +3,9 @@ import { GenericCamera } from '@camera/generic-camera'
 import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { PTP_DISCOVERY_VENDORS } from '@transport/usb/usb-transport'
 import { describe, expect, it } from 'vitest'
 
 describe('Olympus generic PTP support', () => {
-    it('requests Olympus devices during WebUSB discovery', () => {
-        expect(PTP_DISCOVERY_VENDORS).toContainEqual({ vendorId: VendorIDs.OLYMPUS, name: 'Olympus' })
-    })
-
     it('uses the generic standards-based camera implementation', () => {
         const camera = new Camera({
             device: {

@@ -12,27 +12,33 @@ vi.mock('usb', async () => {
 })
 import { usb } from 'usb'
 import { Logger } from '@core/logger'
+import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { USBTransport } from '@transport/usb/usb-transport'
 
-function device(vendorId: number, productId: number, serialNumber = '') {
-    const alternate = { interfaceClass: 6, interfaceSubclass: 1, interfaceProtocol: 1 }
+function device(vendorId: number, productId: number, serialNumber = '', interfaceClass = 6, interfaceSubclass = 1) {
+    const alternate = { interfaceClass, interfaceSubclass, interfaceProtocol: 1 }
+    const configDescriptor = { interfaces: [[{ bInterfaceClass: interfaceClass, bInterfaceSubClass: interfaceSubclass, bInterfaceProtocol: 1 }]] }
     const webDevice = {
         vendorId, productId, serialNumber, deviceClass: 0, deviceSubclass: 0, deviceProtocol: 0,
         configuration: { interfaces: [{ alternate, alternates: [alternate] }] },
         open: vi.fn().mockRejectedValue(new Error('selected camera')),
         close: vi.fn().mockResolvedValue(undefined),
     }
-    return { deviceDescriptor: { idVendor: vendorId, idProduct: productId }, webDevice }
+    return { deviceDescriptor: { idVendor: vendorId, idProduct: productId }, allConfigDescriptors: [configDescriptor], webDevice }
 }
 function transport() { return new USBTransport(new Logger({ captureConsole: false, renderInTerminal: false })) }
 const sony = device(0x054c, 0x0f4a, 'sony')
 const nikon = device(0x04b0, 0x0450, 'nikon')
-const capture = device(0x0fd9, 0x0066)
-const hub = device(0x2109, 0x0822)
+const capture = device(0x0fd9, 0x0066, '', 0xff, 0)
+const hub = device(0x2109, 0x0822, '', 9, 0)
+const fujifilm = device(VendorIDs.FUJIFILM, 0x02e3, 'fujifilm')
+const panasonic = device(VendorIDs.PANASONIC, 0x2382, 'panasonic')
+const olympus = device(VendorIDs.OLYMPUS, 0x012f, 'olympus')
+const fujifilmCardReader = device(VendorIDs.FUJIFILM, 0x5006, 'card-reader', 8, 6)
 
 beforeEach(() => {
     fixture.options.length = 0; fixture.touched.length = 0; fixture.requests = 0
-    sony.webDevice.open.mockRejectedValue(new Error('selected camera'))
+    for (const camera of [sony, fujifilm, panasonic]) camera.webDevice.open.mockRejectedValue(new Error('selected camera'))
     vi.spyOn(usb, 'getDeviceList').mockReturnValue([capture, hub, nikon, sony] as any)
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
 })
@@ -46,11 +52,53 @@ describe('USB discovery scope', () => {
         expect(fixture.options).toEqual([{ allowedDevices: [{ vendorId: 0x054c, productId: 0x0f4a }], allowAllDevices: false, deviceTimeout: 1000 }])
     })
 
-    it('limits default discovery to PTP vendors before opening descriptors', async () => {
+    it('limits default discovery to PTP interfaces before opening descriptors', async () => {
         const devices = await transport().discover()
         expect(devices.map(device => device.vendorId)).toEqual([0x04b0, 0x054c])
         expect(fixture.touched).toEqual([0x04b0, 0x054c])
         expect(fixture.requests).toBe(0)
+    })
+
+    it('finds any vendor\'s PTP body by default and leaves non-PTP devices closed', async () => {
+        vi.mocked(usb.getDeviceList).mockReturnValue([capture, hub, fujifilmCardReader, fujifilm, panasonic, olympus] as any)
+        const devices = await transport().discover()
+        expect(devices.map(device => device.vendorId)).toEqual([VendorIDs.FUJIFILM, VendorIDs.PANASONIC, VendorIDs.OLYMPUS])
+        expect(devices.map(device => device.serialNumber)).toEqual(['fujifilm', 'panasonic', 'olympus'])
+        expect(fixture.touched).toEqual([VendorIDs.FUJIFILM, VendorIDs.PANASONIC, VendorIDs.OLYMPUS])
+    })
+
+    it('connects to a lone Fujifilm body without a device descriptor', async () => {
+        fujifilm.webDevice.open.mockClear()
+        vi.mocked(usb.getDeviceList).mockReturnValue([capture, hub, fujifilm] as any)
+        await expect(transport().connect()).rejects.toThrow('selected camera')
+        expect(fujifilm.webDevice.open).toHaveBeenCalledOnce()
+        expect(fixture.touched).toEqual([VendorIDs.FUJIFILM])
+    })
+
+    it('refuses to guess between two PTP bodies on the default path', async () => {
+        vi.mocked(usb.getDeviceList).mockReturnValue([fujifilm, panasonic] as any)
+        await expect(transport().connect()).rejects.toThrow('Multiple USB cameras match')
+    })
+
+    it('opens nothing when no attached device has a PTP interface', async () => {
+        vi.mocked(usb.getDeviceList).mockReturnValue([capture, hub, fujifilmCardReader] as any)
+        expect(await transport().discover()).toEqual([])
+        await expect(transport().connect()).rejects.toThrow('No USB devices available')
+        expect(fixture.touched).toEqual([])
+        expect(fixture.options).toEqual([])
+    })
+
+    it('offers any PTP device in the browser picker by default', async () => {
+        let granted = false
+        const browser = {
+            getDevices: vi.fn(async () => granted ? [hub.webDevice, panasonic.webDevice] : []),
+            requestDevice: vi.fn(async () => { granted = true; return panasonic.webDevice }),
+        }
+        vi.stubGlobal('navigator', { usb: browser })
+        await expect(transport().connect()).rejects.toThrow('selected camera')
+        expect(browser.requestDevice).toHaveBeenCalledWith({ filters: [{ classCode: 6, subclassCode: 1 }] })
+        expect(panasonic.webDevice.open).toHaveBeenCalled()
+        expect(hub.webDevice.open).not.toHaveBeenCalled()
     })
 
     it('creates a fresh narrowed WebUSB scope after broad discovery', async () => {

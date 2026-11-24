@@ -9,7 +9,7 @@ import { resolveCameraControl } from '@darkgrade/slate/controls'
 
 const camera = new Camera()
 try {
-    await camera.connect() // Requires one matching USB body, or an explicit device filter.
+    await camera.connect() // Finds the one attached PTP camera of any vendor, or pass a device filter.
     const { controls } = await camera.getCapabilities()
     const iso = controls.iso
     if (iso?.writable && iso.allowedValues?.length) {

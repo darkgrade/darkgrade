@@ -50,7 +50,7 @@ This prevents an application from presenting ISO, aperture, or focus controls so
 
 When you call `connect()`, Darkgrade Slate:
 
-1. Scans for connected USB devices
+1. Scans for USB devices with a PTP still-image interface (class 0x06, subclass 0x01), from any vendor, and stops with an error if more than one matches; pass a device filter to choose
 2. Identifies the camera's vendor ID
 3. Selects the appropriate vendor-specific implementation:
    - **Sony ⍺ Series** → `SonyCamera` with live view, video recording, SDIO

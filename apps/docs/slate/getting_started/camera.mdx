@@ -53,7 +53,7 @@ async connect(device?: DeviceDescriptor): Promise&lt;void&gt;
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| **device** | `DeviceDescriptor` |  | Optional device descriptor. If not provided, uses the device from the constructor options. |
+| **device** | `DeviceDescriptor` |  | Optional device descriptor. If not provided, uses the device from the constructor options; with neither, connects to the one attached PTP camera of any vendor. |
 
 ### disconnect
 
