@@ -6,7 +6,8 @@
 //   apps/studio/src/main/preferences.ts        the default ('node-usb')
 //   apps/studio/src/main/preferences-window.ts the submenu
 //   apps/studio/src/main/usb-experiments.ts    this file: everything the choices do in the main process
-//   apps/studio/src/main/camera-service.ts     four marked hooks (camera options, live-view start and stop, latest frame)
+//   apps/studio/src/main/camera-service.ts     marked hooks: camera options, live-view start and stop, the latest
+//                                              frame, and the reconnect when the choice changes
 //   apps/studio/src/main/ipc-handlers.ts       one marked branch that sends the Swift loop's surfaces to the window
 //   apps/studio/src/main/metal-frames.ts       sendDecodedSurface
 //   apps/studio/native/swift-usb/              the Swift transport, the Swift live-view loop and their Node glue
@@ -168,8 +169,7 @@ export function experimentalCameraOptions(
     vendorId: number | undefined,
     log: (message: string) => void
 ): Pick<CameraOptions, 'usb' | 'transport'> {
-    const { developerMode, usbTransport } = preferences.get()
-    const choice = developerMode ? usbTransport : 'node-usb'
+    const choice = chosenTransport()
     current = { choice: 'node-usb', swift: null, sony: vendorId === VendorIDs.SONY }
     if (choice === 'node-usb') return {}
     if (choice === 'node-usb-rs') {
@@ -198,6 +198,26 @@ export function experimentalCameraOptions(
             : 'USB transport (experimental): Slate on the Swift transport'
     )
     return { transport: current.swift }
+}
+
+/** The choice in effect: Developer Mode off means node-usb, whatever was last chosen. */
+function chosenTransport(): UsbTransportChoice {
+    const { developerMode, usbTransport } = preferences.get()
+    return developerMode ? usbTransport : 'node-usb'
+}
+
+/**
+ * Calls `reconnect` when the choice changes, so it takes effect at once rather than at the next connection. The
+ * camera service decides whether there is a connection to remake.
+ */
+export function onUsbTransportChanged(reconnect: (choice: UsbTransportChoice) => void): void {
+    let chosen = chosenTransport()
+    preferences.onChange(() => {
+        const now = chosenTransport()
+        if (now === chosen) return
+        chosen = now
+        reconnect(now)
+    })
 }
 
 /** What the Swift live-view loop needs from the camera service. */
@@ -231,6 +251,7 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
         const finish = (): void => {
             if (stopLoop !== finish) return
             clearInterval(report)
+            stopFollowingDecoder()
             stopLoop = null
             addon.stopLiveView()
             resolve()
@@ -251,7 +272,7 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
             last = now
             lastAtMs = performance.now()
         }, 1000)
-        addon.startLiveView(preferences.get().metalLiveViewDecoder, frame => {
+        const onFrame = (frame: SwiftFrame | null): void => {
             if (!frame) {
                 host.log('The Swift live-view loop stopped on a USB error', true)
                 return finish()
@@ -265,7 +286,16 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
             }
             host.broadcastFocusFrames(frame.focal.length ? parseSonyFocalFrameInfo(frame.focal).frames : [])
             void host.refreshOsdFrame().catch(() => {})
+        }
+        // The loop decodes on the GPU or not as the Metal decoder is switched, at once: it is started again.
+        let decodeOnGpu = preferences.get().metalLiveViewDecoder
+        const stopFollowingDecoder = preferences.onChange(now => {
+            if (now.metalLiveViewDecoder === decodeOnGpu) return
+            decodeOnGpu = now.metalLiveViewDecoder
+            addon.stopLiveView()
+            addon.startLiveView(decodeOnGpu, onFrame)
         })
+        addon.startLiveView(decodeOnGpu, onFrame)
     })
     return true
 }
