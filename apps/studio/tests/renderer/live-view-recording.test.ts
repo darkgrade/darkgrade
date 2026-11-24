@@ -41,11 +41,10 @@ const connectedState: CameraState = {
     platform: '',
 }
 
-function renderView(recordingState: CameraState['recordingState'], webcam = false): string {
+function renderView(recordingState: CameraState['recordingState']): string {
     return renderToStaticMarkup(createElement(LiveViewPanel, {
         header: null,
         cameraState: { ...connectedState, recordingState },
-        webcam: webcam ? { phase: 'live', message: 'Webcam' } : null,
         visionOverlays: true,
         busy: true,
         capturing: false,
@@ -65,7 +64,7 @@ function renderView(recordingState: CameraState['recordingState'], webcam = fals
     }))
 }
 
-describe('recording state alongside the developer live feed', () => {
+describe('recording state in the live view', () => {
     it('shows REC and the GPU tally only after the body confirms recording', () => {
         const html = renderView('recording')
         expect(html).toMatch(/>REC</)
@@ -84,19 +83,6 @@ describe('recording state alongside the developer live feed', () => {
             expect(stop).not.toMatch(/\bdisabled(?:=|\s|>)/)
             expect(html).toContain(state === 'idle' ? 'retry Stop to restore setup'
                 : state === 'unknown' ? 'Recording unconfirmed' : `Recording ${state}`)
-        }
-    )
-
-    it.each(['recording', 'unknown'] as const)(
-        'does not label the webcam as the camera recording, but retains camera Stop when state is %s',
-        state => {
-            const html = renderView(state, true)
-            expect(html).not.toMatch(/>REC</)
-            expect(html).toContain('data-recording-tally="false"')
-            expect(html).toContain('data-vision-overlay="true"')
-            const stop = html.match(/<button[^>]*aria-label="Stop recording"[^>]*>/)?.[0]
-            expect(stop).toBeDefined()
-            expect(stop).not.toMatch(/\bdisabled(?:=|\s|>)/)
         }
     )
 })

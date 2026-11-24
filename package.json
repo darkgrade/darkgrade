@@ -4,6 +4,7 @@
     "private": true,
     "workspaces": [
         "apps/*",
+        "apps/darkgrade.com/drkgrd.co",
         "packages/*"
     ],
     "scripts": {
@@ -14,7 +15,6 @@
         "format": "turbo format",
         "studio": "bun run --cwd apps/studio dev",
         "studio:bundle": "bun run --cwd apps/studio package && open apps/studio/release",
-        "testbench": "bun run --cwd packages/slate build && bun run --cwd apps/testbench build && bun run --cwd apps/testbench start",
         "security:check": "bun run scripts/security-check.ts",
         "security:test": "bun test scripts/tests"
     },

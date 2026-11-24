@@ -1,0 +1,37 @@
+---
+title: "PTP/IP over Wi-Fi"
+description: "Connect over the standard PTP/IP command and event channels instead of USB (Node.js)."
+---
+
+Slate can use the standard PTP/IP command and event channels instead of USB. Bind the socket to a secondary adapter so joining a camera access point cannot move the controller's normal route:
+
+```typescript
+import { Camera, IPTransport, VendorIDs } from '@darkgrade/slate'
+
+const host = '192.168.1.1' // camera address after Wi-Fi pairing
+const localAddress = '192.168.1.2' // address assigned to the isolated adapter
+const transport = new IPTransport({
+    address: host,
+    localAddress,
+    clientName: 'Darkgrade controller',
+})
+const camera = new Camera({ transport, vendorId: VendorIDs.CANON })
+
+await camera.connect({ ip: { host, port: 15740, protocol: 'ptp/ip', localAddress } })
+const instance = camera.getInstance()
+const deviceInfo = await camera.send(instance.registry.operations.GetDeviceInfo, {})
+await camera.autofocus()
+await camera.keepDeviceOn()
+await camera.disconnect()
+```
+
+The transport pairs separate command and event TCP connections, uses a stable client identity, supports camera-to-host and host-to-camera data phases, responds to PTP/IP ping packets, and handles fragmented or coalesced TCP frames. It is Node.js-only because it uses `node:net`. The camera must first expose its PTP/IP service and may require approval on its body; on the EOS 80D that means **Wi-Fi function → Remote control (EOS Utility) → Easy connection** after physically disconnecting USB.
+
+## What has been verified
+
+This transport is validated against a two-channel, Canon-oriented simulator. That proves
+protocol behavior; it is not a successful physical Wi-Fi session. First pairing with a
+physical EOS 80D is not yet verified.
+
+Sony's current PC Remote over Wi-Fi uses access authentication, which `IPTransport` does
+not implement. See [Sony Wi-Fi](/slate/getting_started/sony-wifi-wip) for that path and its limits.
