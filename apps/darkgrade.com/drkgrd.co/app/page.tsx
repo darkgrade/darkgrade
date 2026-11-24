@@ -1,5 +1,5 @@
 import { Dust } from '@/app/components/dust/dust'
-import { Lockup, WordmarkSprite } from '@/app/components/wordmark'
+import { Lockup } from '@/app/components/wordmark'
 
 /** The short link's sheet number, in the same series as darkgrade.com's pages. */
 const DOCUMENT_NUMBER = 'DG-DK-001'
@@ -19,7 +19,6 @@ const LINKS = [
 export default function Home() {
     return (
         <>
-            <WordmarkSprite />
 
             <Dust />
 
