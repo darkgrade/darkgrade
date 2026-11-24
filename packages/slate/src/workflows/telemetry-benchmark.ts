@@ -15,6 +15,8 @@ export interface BenchmarkCheck {
 export interface BenchmarkOptions {
     capture?: boolean
     live?: boolean
+    /** 'first-contact' is the automatic read-only inventory: no capture, live view or storage mode change. */
+    purpose?: 'benchmark' | 'first-contact'
     signal?: AbortSignal
     timeoutMilliseconds?: number
     maximumProperties?: number
@@ -23,9 +25,19 @@ export interface BenchmarkOptions {
     flushEvidence?: () => Promise<unknown>
 }
 
+/** Numeric descriptor metadata kept in the local profile only; never values or payloads. */
+export interface DescriptorShape {
+    property: number
+    dataType: number
+    writable: boolean
+    form: number
+    choices?: number
+}
+
 /** Caller owns an idle, connected camera. Reads its full advertised inventory and bounded
  * safe numeric descriptors. Photo/live transfers remain explicit; no arbitrary vendor writes. */
 export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptions = {}) {
+    const firstContact = options.purpose === 'first-contact'
     const timeout = options.timeoutMilliseconds ?? 180_000
     const maximum = options.maximumProperties ?? 128
     if (
@@ -44,6 +56,7 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
         vendorId = instance.vendorId ?? 0
     const checks: BenchmarkCheck[] = []
     const datasets: ProtocolEvidence[] = []
+    const descriptorShapes: DescriptorShape[] = []
     let retainedBytes = 0,
         truncated = false
     const detach = instance.observeProfile(id, item => {
@@ -94,7 +107,10 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
         // this read stranded the initial mode/settings under "Unknown" in model filters.
         // GetDeviceInfo does not prepare settings; their original observation ages remain.
         instance.recordProtocol(
-            { type: 'benchmark', vendorId, benchmarkId: id, status: 'started', checks: 0, failures: 0 },
+            {
+                type: 'benchmark', vendorId, benchmarkId: id, status: 'started', checks: 0, failures: 0,
+                ...(firstContact && { purpose: 'first-contact' as const }),
+            },
             0x1001
         )
         instance.recordStateSnapshot('benchmark', 'before-prepare')
@@ -103,6 +119,14 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
             const supported = new Set(response.operationsSupportedRaw)
             const safe = capturePropertyCodes(vendorId)
             let properties = response.devicePropertiesSupported.filter(code => safe.has(code))
+            const vendorInventory = instance instanceof SonyCamera || instance instanceof CanonCamera || vendorId === 0x04b0
+            if (!vendorInventory) {
+                // Without a vendor inventory (e.g. Fujifilm), read every advertised code Slate does not
+                // know, including 0xDxxx vendor codes. Known private properties stay excluded; only
+                // allowlisted numeric values leave the camera session.
+                const known = new Set(Object.values(instance.registry.properties).map(item => item.code))
+                properties = [...new Set(response.devicePropertiesSupported)].filter(code => safe.has(code) || !known.has(code))
+            }
             if (instance instanceof SonyCamera) {
                 // One authoritative inventory; legacy per-property probes can wedge newer Sonys.
                 if (supported.has(0x9209))
@@ -153,24 +177,34 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
                             : instance.registry.operations.GetDevicePropDesc
                     const result = await camera.send(operation, { DevicePropCode: property })
                     if (result.code !== 0x2001 || !result.data) throw new Error('Missing property descriptor')
+                    const descriptor = result.data
+                    descriptorShapes.push({
+                        property,
+                        dataType: descriptor.dataType,
+                        writable: descriptor.getSet === 'GET_SET',
+                        form: descriptor.formFlag,
+                        ...(descriptor.supportedValuesRaw && { choices: descriptor.supportedValuesRaw.length }),
+                    })
                 })
             }
             if (properties.length > maximum) truncated = true
+            // Sony storage needs a transfer-mode switch; first contact reads whatever is exposed without it.
+            const prepareSonyStorage = instance instanceof SonyCamera && !firstContact
             await check('storage', async () => {
                 try {
-                    if (instance instanceof SonyCamera) await instance.prepareStorageRead()
+                    if (prepareSonyStorage) await instance.prepareStorageRead()
                     const result = await camera.send(instance.registry.operations.GetStorageIDs, {})
                     if (result.code !== 0x2001 || !result.data) throw new Error('Missing storage result')
                 } finally {
-                    if (instance instanceof SonyCamera) await instance.resumeShooting()
+                    if (prepareSonyStorage) await instance.resumeShooting()
                 }
             })
-            if (options.capture)
+            if (options.capture && !firstContact)
                 await check('photo-transfer', async () => {
                     const image = await camera.captureImage({ includeData: true, autofocus: false })
                     if (!image.data?.length) throw new Error('No image transferred')
                 })
-            if (options.live)
+            if (options.live && !firstContact)
                 await check('live-transfer', async () => {
                     const frame = await camera.captureLiveView({ includeData: true })
                     if (!frame.data?.length) throw new Error('No frame transferred')
@@ -189,6 +223,7 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
         status,
         checks: checks.length,
         failures: checks.filter(item => !item.passed).length,
+        ...(firstContact && { purpose: 'first-contact' as const }),
     }
     instance.recordProtocol(summary, 0x1001)
     datasets.push(summary)
@@ -210,7 +245,11 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
                     ? 'hardware'
                     : 'synthetic',
             status,
-            scope: 'advertised-inventory-and-allowlisted-numeric-descriptors',
+            purpose: firstContact ? 'first-contact' : 'benchmark',
+            scope: firstContact
+                ? 'first-contact-read-only-inventory'
+                : 'advertised-inventory-and-allowlisted-numeric-descriptors',
+            descriptorShapes,
             hardwarePass: false,
             omitted: ['media', 'authentication', 'identity-strings', 'unknown-property-values', 'non-numeric-values'],
             datasets,

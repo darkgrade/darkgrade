@@ -1,7 +1,6 @@
 import {
     closeNodeDiagnostics,
     nodeDiagnostics,
-    saveDiagnosticProfile,
     settingsDirectory,
     sharedSettings,
 } from '@contribute/settings'
@@ -12,7 +11,7 @@ export async function runDarkgradeCli(argumentsList: readonly string[]): Promise
     const [group, action, ...args] = argumentsList
     let exitCode = 0
     const usage =
-        'darkgrade telemetry <status [--email]|whoami|opt-out|opt-in|delete|login EMAIL|logout|benchmark --camera VID:PID [--capture] [--live]>'
+        'darkgrade telemetry <status [--email]|whoami|opt-out|opt-in|delete|login EMAIL|logout|benchmark [--camera VID:PID] [--no-capture] [--no-live] [--json]>'
     try {
         if (
             group !== 'telemetry' ||
@@ -83,53 +82,8 @@ export async function runDarkgradeCli(argumentsList: readonly string[]): Promise
                 )
             } else console.log('Sharing is off. No cloud enrollment exists.')
         } else if (action === 'benchmark') {
-            const cameraIndex = args.indexOf('--camera')
-            const cameraId = args[cameraIndex + 1]
-            if (
-                cameraIndex < 0 ||
-                !/^[a-f0-9]{4}:[a-f0-9]{4}$/i.test(cameraId ?? '') ||
-                args.some(
-                    (value, index) => index !== cameraIndex + 1 && !['--camera', '--capture', '--live'].includes(value)
-                )
-            )
-                throw new Error(usage)
-            // Importing the CLI's preference commands never loads USB or opens a camera.
-            const { Camera } = await import('@camera/index')
-            const { runCameraBenchmark } = await import('@workflows/telemetry-benchmark')
-            const [vendorId, productId] = cameraId.split(':').map(value => parseInt(value, 16))
-            const camera = new Camera({
-                device: { usb: { filters: [{ vendorId, productId }] } },
-                logger: { renderInTerminal: false, captureConsole: false },
-                transactionPolicy: { timeoutMilliseconds: 10_000, deviceBusyRetries: 1 },
-            })
-            const cancellation = new AbortController()
-            const cancel = () => cancellation.abort()
-            process.once('SIGINT', cancel)
-            process.once('SIGTERM', cancel)
-            const deadline = setTimeout(cancel, 200_000)
-            try {
-                await camera.connect()
-                const result = await runCameraBenchmark(camera, {
-                    capture: args.includes('--capture'),
-                    live: args.includes('--live'),
-                    signal: cancellation.signal,
-                    flushEvidence: async () => (await nodeDiagnostics()).flush(),
-                    onProgress: (check: { passed: boolean; name: string }) =>
-                        console.error(`${check.passed ? '✓' : '!'} ${check.name}`),
-                })
-                const profilePath = saveDiagnosticProfile(result.profile)
-                const upload = await (await nodeDiagnostics()).flush()
-                console.log(JSON.stringify({ ...result, profilePath, upload }))
-                if (!result.passed) exitCode = 1
-            } finally {
-                try {
-                    await camera.disconnect()
-                } finally {
-                    clearTimeout(deadline)
-                    process.removeListener('SIGINT', cancel)
-                    process.removeListener('SIGTERM', cancel)
-                }
-            }
+            const { runBenchmarkCommand } = await import('@cli/benchmark')
+            exitCode = await runBenchmarkCommand(args)
         }
     } catch (error) {
         console.error(error instanceof Error ? error.message : 'Telemetry command failed')

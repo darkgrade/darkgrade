@@ -19,9 +19,16 @@ preserving standalone `npx darkgrade` installation.
 - `opt-out`: stop future cloud uploads; retain bounded sanitized local diagnostics.
 - `opt-in`: enable sharing again. After deletion this starts a new cloud identity.
 - `delete`: disable sharing and delete cloud data; failed deletion remains retryable.
-- `benchmark --camera VID:PID`: read camera identity, storage and properties.
-- Add `--capture` to take/transfer a photo, or `--live` to request a live frame.
+- `benchmark`: find the attached camera and run the full benchmark: identity, storage, every
+  readable property, one photo capture/transfer and one live-view frame. Then it prints a short
+  summary (model, firmware, properties read, capture/live result, saved profile, upload).
   Capture can write a file on the camera. No format/delete/reset/power operation is included.
+  - No camera found: it explains how to connect (Sony USB mode "PC Remote", Fujifilm
+    "USB Tether Shooting", not card-reader/mass-storage modes) and exits 1.
+  - Several cameras: it uses the only camera-maker device, otherwise lists them; choose one with
+    `--camera VID:PID`.
+  - `--no-capture` / `--no-live` skip the photo or live frame; `--json` prints the full result.
+    `--capture` and `--live` are still accepted and change nothing.
 
 Benchmarks use Slate's existing drivers and bounded transaction deadlines, report each
 selected check separately, and always attempt disconnect. A returned media payload proves
