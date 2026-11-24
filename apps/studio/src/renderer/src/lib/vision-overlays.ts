@@ -1,8 +1,7 @@
 import { currentFrameTexture } from '@renderer/gpu/device'
 import { createStore } from '@renderer/lib/external-store'
 import { RateMeter, startLatestFrameLoop } from '@renderer/lib/latest-frame-loop'
-import { latestLiveFrame, liveFeed } from '@renderer/lib/live-frame-store'
-import { webcamJpeg } from '@renderer/lib/webcam-feed'
+import { latestLiveFrame } from '@renderer/lib/live-frame-store'
 import {
     DEFAULT_SEGMENTATION_PROMPT,
     type VisionEngineStatus,
@@ -59,8 +58,6 @@ function watchVisionEngines(): void {
     window.studio.onVisionStatus(visionEngineStatus.set)
 }
 
-/** Frames are sent at most this size; Depth Pro 2 scales larger ones down to it anyway. */
-const OVERLAY_FRAME_LONG_SIDE = 1024
 const NEW_FRAME_POLL_MILLISECONDS = 16
 
 /** The newest frame as a JPEG (null: the camera's, which the main process already holds). */
@@ -74,10 +71,6 @@ function newestFrameTaker(): () => Promise<OverlayFrame | null> {
         const texture = currentFrameTexture()
         if (!texture || texture.version === takenVersion) return null
         takenVersion = texture.version
-        if (liveFeed.get() === 'webcam') {
-            const jpeg = await webcamJpeg(OVERLAY_FRAME_LONG_SIDE)
-            return jpeg ? { jpeg } : null
-        }
         const frame = latestLiveFrame()
         if (!frame) return null
         return { jpeg: frame.blob.size > 0 ? new Uint8Array(await frame.blob.arrayBuffer()) : null }

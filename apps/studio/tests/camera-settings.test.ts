@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 const hotplug = vi.hoisted(() => ({ usb: null as EventEmitter | null }))
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp', getPathForFile: () => '/tmp' } }))
-vi.mock('@main/usb-experiments', () => ({ stopSwiftLiveView: () => {} }))
+vi.mock('@main/usb-experiments', () => ({ stopSwiftLiveView: () => {}, onUsbTransportChanged: () => {} }))
 vi.mock('usb', async () => {
     const { EventEmitter } = await import('node:events')
     hotplug.usb ??= new EventEmitter()

@@ -345,18 +345,6 @@ export const USB_TRANSPORT_CHOICES = [
 ] as const
 export type UsbTransportChoice = (typeof USB_TRANSPORT_CHOICES)[number]['id']
 
-/** Where Developer Mode's live picture comes from: the connected camera, or this Mac's webcam (app menu › Live Feed). */
-export const LIVE_FEED_CHOICES = [
-    { id: 'camera', label: 'Camera (default)' },
-    { id: 'webcam', label: "Webcam (this Mac's camera)" },
-] as const
-export type LiveFeedChoice = (typeof LIVE_FEED_CHOICES)[number]['id']
-
-/** The webcam replaces the camera's picture only while Developer Mode is on. */
-export function usesWebcamFeed(current: Pick<Preferences, 'developerMode' | 'liveFeed'>): boolean {
-    return current.developerMode && current.liveFeed === 'webcam'
-}
-
 /** Studio's saved settings (Preferences window). */
 export interface Preferences {
     /** Serve Studio's camera tools to MCP clients on this Mac. Off by default. */
@@ -380,8 +368,6 @@ export interface Preferences {
     visionModels: VisionModelId[]
     /** Which Depth Pro 2 size runs; switching unloads the old one and loads the new one. */
     depthModelSize: DepthModelSize
-    /** Developer Mode's live picture: the camera's live view, or this Mac's webcam in its place. */
-    liveFeed: LiveFeedChoice
     /** The macOS material behind the window (View › Window Material); switches live. */
     windowMaterial: WindowMaterial
     /** Let the material go flat while Studio is in the background, as Finder and Messages do; from the next launch. */
