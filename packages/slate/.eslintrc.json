@@ -28,5 +28,5 @@
         "no-empty": ["error", { "allowEmptyCatch": true }],
         "prefer-const": "error"
     },
-    "ignorePatterns": ["dist", "dist-web", "node_modules", "*.config.ts", "*.config.js"]
+    "ignorePatterns": ["dist", "node_modules", "*.config.ts", "*.config.js"]
 }

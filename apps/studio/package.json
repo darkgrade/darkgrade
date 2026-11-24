@@ -34,7 +34,6 @@
         "zod": "^4.2.0"
     },
     "devDependencies": {
-        "@darkgrade/typescript-config": "workspace:*",
         "@tailwindcss/vite": "^4.3.5",
         "@types/node": "^22",
         "@types/react": "^19",

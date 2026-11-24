@@ -14,15 +14,10 @@ out/
 *.pem
 *.key
 
-# captured images
-captured_images/
-
 # macOS
 .DS_Store
 
 /docs/
-
-.svelte-kit/
 
 # local probes and captured test data
 .scratch/

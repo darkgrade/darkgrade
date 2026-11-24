@@ -3,6 +3,12 @@ title: "Quickstart"
 description: "Get started with Darkgrade Slate in minutes"
 ---
 
+## Before you connect
+
+- Put the camera in its USB remote-control mode.
+- Close other applications that hold the camera. Only one program can own its USB session at a time.
+- On Linux, your user needs permission to open the USB device.
+
 ## Basic Usage
 
 ```typescript
@@ -105,6 +111,8 @@ await camera.startRecording()
 await camera.stopRecording()
 ```
 
+A successful stop means the camera acknowledged the command; it does not verify the saved movie. Check the file on the card before relying on a take. If a start fails, treat the recording state as uncertain until a stop succeeds.
+
 ### File Management
 
 List and download files from the camera:
@@ -182,8 +190,13 @@ const camera = new Camera({
 await camera.connect()
 ```
 
+## Errors and recovery
+
+Transactions are bounded by timeouts, replies are checked against PTP container framing, and failures are typed (`PTPTimeoutError`, `PTPProtocolError`, `PTPDecodeError`, `PTPResponseError`, `PTPDisconnectedError`, `PTPRecoveryRequiredError`). Tune them with `new Camera({ transactionPolicy: { timeoutMilliseconds, deviceBusyRetries } })`. After a USB timeout or framing violation, the next command first sends the still-image class Device Reset Request, waits for the abandoned I/O to settle and reopens the session. Only if that automatic reset fails, or on PTP/IP (which has no class reset), do further commands fail with `PTPRecoveryRequiredError` until a disconnect/connect. Set `automaticUSBReset: false` to keep the latch, or supply `recoverTransport` to replace the reset with your own recovery (for example one that honors recording guards).
+
 ## Next Steps
 
+- See [Vendor features](/slate/getting_started/vendor-features) and [PTP/IP over Wi-Fi](/slate/getting_started/ptp-ip)
 - Learn about [PTP](/slate/getting_started/what-is-ptp) - Understanding the protocol
 - Check [Feature Compatibility](/slate/getting_started/feature-compatibility) - See what your camera supports
 - Explore the [Camera API](/slate/getting_started/camera) - Complete API reference
