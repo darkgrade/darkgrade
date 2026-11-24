@@ -61,7 +61,7 @@ export async function runDarkgradeCli(argumentsList: readonly string[]): Promise
             const client = await nodeDiagnostics()
             if (action === 'login') {
                 await client.requestContact(args[0])
-                console.log('Confirmation email requested. Open its link to finish linking this installation.')
+                console.log('Confirmation email requested. The submitted address is unverified until you open its link (expires in 2 hours). A verified replacement reassigns this installation’s retained history.')
             } else {
                 if (saved.installKey) await client.removeContact()
                 console.log('Email association removed. Your sharing preference is unchanged.')

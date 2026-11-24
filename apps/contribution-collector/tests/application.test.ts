@@ -85,7 +85,7 @@ test('email enrollment works before camera use; verification, logout and opt-out
         await client.requestContact('camera@example.com', { name: 'Camera Contributor', publish: true })
         assert.equal(client.status().enrolled, true)
         assert.equal(messages.length, 1)
-        assert.equal(await client.contactStatus(), null)
+        assert.deepEqual(await client.contactStatus(),{email:'camera@example.com',verified:false,credit:null})
         const token = new URL(messages[0].confirmationUrl).hash.slice(1)
         const confirm = () =>
             handle(

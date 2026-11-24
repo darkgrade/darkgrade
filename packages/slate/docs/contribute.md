@@ -68,14 +68,19 @@ darkgrade telemetry logout
 ```
 
 Resend sends the confirmation from the collector's configured verified sender. The key stays
-on the server. Links expire after 15 minutes and can be used once. `status --email` explicitly
-reads the confirmed association; ordinary `status` remains offline. Email identifies telemetry
+on the server. Links expire after 2 hours and can be used once. `status --email` explicitly
+reads the current submitted/verified association and any pending replacement; ordinary `status` remains offline. Email identifies telemetry
 contributors only, without subscribing them to product updates or publishing contributor credit.
 Addresses stay outside camera events, diagnostic batches, client settings and Matrix exports.
 Login requires sharing to be enabled; logout remains available after opting out and does not
 change that preference. Installation withdrawal also removes the association. Hosts can use
 the existing `requestContact`, `contactStatus` and `removeContact` methods for the same flow.
 Full encrypted transport recordings are separate.
+
+Private **Telemetry → Contributors** joins submitted addresses to the installation's retained
+camera/session history, including earlier sessions. Unverified addresses are marked as claims.
+An existing verified address stays current until its replacement is verified; then the same
+installation's retained history is reassociated. [Test enrollment](telemetry-email-enrollment.md).
 
 The `@darkgrade/slate/contribute` entry retains the previous single-camera observer API. New
 integrations should use the shared application/settings entry points. The old signed-grant

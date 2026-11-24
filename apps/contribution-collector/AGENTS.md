@@ -10,6 +10,13 @@ Email linking reuses `requestContact`, `contactStatus`, `removeContact` and the 
 existing single-use challenges. Keep Resend credentials in server Secret Manager configuration;
 never put them in Slate, CLI, Studio, diagnostic events, Matrix exports or client preferences.
 Confirmed addresses identify contributors only, without mailing-list signup or provider contacts.
+Private support lookup belongs in Telemetry, never Matrix exports. Join current/pending
+addresses to retained sessions by installation ID; shared camera fingerprints never merge
+people. Pending submissions are claims. Keep the old verified identity until the latest
+replacement is confirmed; generation checks must prevent old links restoring it. Confirmation
+expires after two hours, and logout/withdrawal remove pending as well as verified identities.
+Use existing per-session signal summaries to distinguish explicit failures from busy/retry
+warnings; do not label every non-OK response as a red error.
 Plain `telemetry status` stays offline; `status --email` explicitly reads the collector.
 Do not claim email delivery from an HTTP acknowledgement or a fake sender: verify a real
 provider receipt and, when authorized, the recipient's inbox. Sending requires a verified domain.
@@ -98,7 +105,8 @@ with restricted configuration secrets; validation is not a live deployment.
 
 The Outpost Telemetry app uses `/internal/api` for bounded issues/session reports,
 installation lookup, batch review, full Matrix exports and authenticated revocation.
-Never expose credential hashes/contact details. Operator mutations require JSON, the
+Never expose credential hashes. Contact details belong only to the authenticated private
+contributor support lookup, not event reports or Matrix exports. Operator mutations require JSON, the
 operator header, no browser Origin and an exact ID confirmation for deletion. Keep
 deletion shared with the installation API so pending cleanup and revocation stay consistent.
 `bootstrap_principal` in Terraform grants scoped actAs on the collector service account;

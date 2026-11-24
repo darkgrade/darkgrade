@@ -7,6 +7,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 
 export const RETENTION_DAYS = 90
 export const DAILY_BATCH_LIMIT = 4096
+export const CONTACT_CONFIRMATION_MILLISECONDS = 2 * 60 * 60_000
 const DAY = 86_400_000
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const dateKey = (date: Date) => date.toISOString().slice(0, 10)
@@ -191,8 +192,10 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     groupId: digest(challenge!.email),
                     confirmedAt: now(),
                     credit: challenge!.credit,
+                    requestedAt: challenge!.requestedAt,
                 })
                 transaction.delete(challengePath)
+                transaction.delete(`contactRequests/${challenge!.installId}`)
                 changeMatrixGeneration(transaction)
             })
             return Response.json({ confirmed: true })
@@ -234,11 +237,16 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
         if (path === '/v2/installation' && method === 'GET') {
             const install = await database.get(`installations/${installId}`)
             const contact = install?.revoked ? undefined : await database.get(`contacts/${installId}`)
+            const pending = install?.revoked ? undefined : await database.get(`contactRequests/${installId}`)
+            const identity = contact ?? pending
             return Response.json({
                 installId,
                 revoked: !!install?.revoked,
                 deletionPending: !!install?.pendingDeletion,
-                contact: contact ? { email: contact.email, verified: true, credit: contact.credit } : null,
+                contact: identity ? {
+                    email: identity.email, verified: !!contact?.confirmedAt, credit: contact?.confirmedAt ? contact.credit : null,
+                    ...(contact && pending && pending.email !== contact.email && { pendingEmail: pending.email }),
+                } : null,
             })
         }
         if (path === '/v2/installation' && method === 'DELETE') {
@@ -333,7 +341,10 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
             await database.transaction(async transaction => {
                 const install = await active(transaction, installId, keyHash)
                 const count = install.emailDay === dateKey(date) ? install.emailCount : 0
-                if (count >= 5 || (install.lastEmailAt && +date - +install.lastEmailAt < 60_000))
+                const previousRequest = await transaction.get(`contactRequests/${installId}`)
+                const previousContact = await transaction.get(`contacts/${installId}`)
+                const sameAddress = (previousRequest?.email ?? previousContact?.email) === email
+                if (count >= 5 || (sameAddress && install.lastEmailAt && +date - +install.lastEmailAt < 60_000))
                     fail(429, 'Wait before requesting another confirmation')
                 const generation = install.emailGeneration + 1
                 transaction.set(`installations/${installId}`, {
@@ -348,8 +359,12 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     email,
                     credit,
                     generation,
-                    expiresAt: new Date(+date + 15 * 60_000),
+                    requestedAt: date,
+                    expiresAt: new Date(+date + CONTACT_CONFIRMATION_MILLISECONDS),
                 })
+                // Keep an existing verified identity until the replacement is confirmed.
+                // Delivery failure still retains the user's explicit, unverified submission.
+                transaction.set(`contactRequests/${installId}`, { installId, email, requestedAt: date })
             })
             await options.sendContact!({
                 email,
@@ -366,6 +381,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                     emailGeneration: install.emailGeneration + 1,
                 })
                 transaction.delete(`contacts/${installId}`)
+                transaction.delete(`contactRequests/${installId}`)
                 changeMatrixGeneration(transaction)
             })
             await removeRows(database, 'contactChallenges', installId)
@@ -440,6 +456,7 @@ export async function cleanupInstallation(database: Database, installId: string,
     for (const collection of [
         'diagnostics',
         'contacts',
+        'contactRequests',
         'contactChallenges',
         'reviewedPatterns',
         'protocolFindings',
@@ -511,7 +528,7 @@ export function resendContactSender(apiKey: string, from: string, request: typeo
                     from: from.trim(),
                     to: [email],
                     subject: 'Confirm your Darkgrade diagnostics email',
-                    text: `Confirm this email for your Darkgrade installation:\n${confirmationUrl}\n\nThis link expires in 15 minutes. If you did not request it, ignore this message. This only identifies your telemetry contributions; it does not subscribe you to product updates. Camera diagnostic events never contain your email.`,
+                    text: `Confirm this email for your Darkgrade installation:\n${confirmationUrl}\n\nThis link expires in 2 hours. Your submitted address is associated with this installation's retained camera sessions as unverified until confirmed, so the team can investigate reported problems. If you did not request it, ignore this message. This only identifies your telemetry contributions; it does not subscribe you to product updates. Camera diagnostic events never contain your email.`,
                 }),
                 signal: AbortSignal.timeout(10_000),
                 redirect: 'error',

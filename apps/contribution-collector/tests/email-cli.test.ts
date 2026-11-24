@@ -103,7 +103,8 @@ test('actual CLI and HTTPS collector link a verified email, report status and un
         assert.equal(requests, 0, 'email status cannot enroll a new installation')
         assert.match((await run('login', 'Contributor@example.com')).stdout, /Confirmation email requested/)
         assert.equal(messages.length, 1)
-        assert.equal(JSON.parse((await run('status', '--email')).stdout).contact, null)
+        assert.deepEqual(JSON.parse((await run('status', '--email')).stdout).contact,
+            { email: 'contributor@example.com', verified: false, credit: null })
         const token = new URL(messages[0].confirmationUrl).hash.slice(1)
         const confirm = () =>
             new Promise<number>((resolve, reject) => {
@@ -149,7 +150,8 @@ test('actual CLI and HTTPS collector link a verified email, report status and un
         await assert.rejects(run('login', 'contributor@example.com'), error =>
             /Email confirmation is temporarily unavailable/.test(String((error as { stderr: string }).stderr))
         )
-        assert.equal(JSON.parse((await run('status', '--email')).stdout).contact, null)
+        assert.deepEqual(JSON.parse((await run('status', '--email')).stdout).contact,
+            { email: 'contributor@example.com', verified: false, credit: null })
         assert.equal((await fixture.database.list('diagnostics')).length, 0)
         await run('delete')
         assert.equal(JSON.parse((await run('status')).stdout).sharing, false)
