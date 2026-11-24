@@ -23,7 +23,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { IPTransport } from '@transport/ip/ip-transport'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const CONTAINER = { command: 1, data: 2, response: 3, event: 4 }
 
@@ -567,7 +567,45 @@ describe('DeviceBusy', () => {
             container(CONTAINER.response, 0x2019, command.transactionId),
         ])
         expect((await camera.send(operations.InitiateCapture, {})).code).toBe(0x2019)
-        expect(transport.commands).toHaveLength(5)
+        expect(transport.commands).toHaveLength(7)
+    })
+
+    describe('backoff', () => {
+        afterEach(() => vi.useRealTimers())
+
+        async function busyStorm(policy: Parameters<GenericCamera['configureTransactions']>[0]) {
+            vi.useFakeTimers()
+            const { camera, transport, operations } = cameraOn(command => [
+                container(CONTAINER.response, 0x2019, command.transactionId),
+            ])
+            camera.configureTransactions({ deviceBusyBackoffMilliseconds: 50, ...policy })
+            const delays: number[] = []
+            const wait = (camera as any).waitMs.bind(camera)
+            ;(camera as any).waitMs = (milliseconds: number) => (delays.push(milliseconds), wait(milliseconds))
+            const startedAt = Date.now()
+            const sent = camera.send(operations.InitiateCapture, {})
+            await vi.runAllTimersAsync()
+            return { code: (await sent).code, delays, elapsed: Date.now() - startedAt, transport }
+        }
+
+        it('doubles each delay and stops within the two-second budget', async () => {
+            const { code, delays, elapsed, transport } = await busyStorm({ timeoutMilliseconds: 30_000 })
+            expect(code).toBe(0x2019)
+            expect(delays).toEqual([50, 100, 200, 400, 800, 450])
+            expect(elapsed).toBeLessThanOrEqual(2_000)
+            expect(transport.commands).toHaveLength(7)
+        })
+
+        it('keeps deviceBusyRetries as the retry count', async () => {
+            const { delays, transport } = await busyStorm({ timeoutMilliseconds: 30_000, deviceBusyRetries: 1 })
+            expect(delays).toEqual([50])
+            expect(transport.commands).toHaveLength(2)
+        })
+
+        it('ends retries when the budget is spent even with retries left', async () => {
+            const { delays } = await busyStorm({ timeoutMilliseconds: 30_000, deviceBusyRetries: 32, deviceBusyBudgetMilliseconds: 300 })
+            expect(delays).toEqual([50, 100, 150])
+        })
     })
 
     it('leaves vendor operations alone: their busy answers carry vendor meaning', async () => {
@@ -594,6 +632,8 @@ describe('local failures and vanished transports', () => {
             expect(() => camera.configureTransactions({ timeoutMilliseconds })).toThrow()
         for (const deviceBusyRetries of [-1, 0.5, 33])
             expect(() => camera.configureTransactions({ deviceBusyRetries })).toThrow()
+        for (const deviceBusyBudgetMilliseconds of [-1, 0.5, Infinity])
+            expect(() => camera.configureTransactions({ deviceBusyBudgetMilliseconds })).toThrow()
         expect(() => camera.configureTransactions({ minimumThroughputBytesPerSecond: 0 })).toThrow()
         expect(() => camera.configureTransactions({ automaticUSBReset: 'yes' as unknown as boolean })).toThrow()
         expect(transport.sent).toHaveLength(0)
@@ -719,5 +759,95 @@ describe('vendor reconnect after a failed transaction', () => {
         const response = await camera.send(camera.registry.operations.GetDeviceInfo, {})
         expect(response.data?.model).toBe('Fresh')
         await camera.disconnect().catch(() => undefined)
+    })
+})
+
+/** Sony's 0x9202 dataset: UINT16 version, then counted UINT16 property and control codes. */
+function sonyExtendedDeviceInfo(version: number, propertyCodes: number[] = [0x5007], controlCodes: number[] = [0xd2c1]) {
+    const bytes = new Uint8Array(2 + 4 + propertyCodes.length * 2 + 4 + controlCodes.length * 2)
+    const view = new DataView(bytes.buffer)
+    view.setUint16(0, version, true)
+    let offset = 2
+    for (const codes of [propertyCodes, controlCodes]) {
+        view.setUint32(offset, codes.length, true)
+        offset += 4
+        for (const code of codes) {
+            view.setUint16(offset, code, true)
+            offset += 2
+        }
+    }
+    return bytes
+}
+
+describe('Sony connect handshake', () => {
+    const SDIO_CONNECT = 0x9201
+    const SDIO_GET_EXT_DEVICE_INFO = 0x9202
+
+    function sonyOn(options: { refusedVersions?: number[]; extendedInfo?: Uint8Array } = {}) {
+        const transport = new ScriptedTransport(command => {
+            if (command.operation !== SDIO_GET_EXT_DEVICE_INFO) return [ok(command.transactionId)]
+            const announced = command.parameters[0]
+            if (options.refusedVersions?.includes(announced))
+                return [container(CONTAINER.response, 0x2006, command.transactionId)]
+            const dataset = options.extendedInfo ?? sonyExtendedDeviceInfo(announced === 300 ? 0x012c : 0x00c8)
+            return [container(CONTAINER.data, command.operation, command.transactionId, dataset), ok(command.transactionId)]
+        })
+        const camera = new SonyCamera(transport, quietLogger())
+        camera.configureTransactions({ timeoutMilliseconds: 50 })
+        camera.refreshPropertyStates = async () => []
+        const set = vi.fn(async () => undefined)
+        camera.set = set as typeof camera.set
+        return { camera, transport, set }
+    }
+    const handshake = (transport: ScriptedTransport) =>
+        transport.commands.filter(command => [SDIO_CONNECT, SDIO_GET_EXT_DEVICE_INFO].includes(command.operation))
+            .map(command => [command.operation, ...command.parameters])
+
+    it('announces 3.00, records the version the camera returns and clears it on disconnect', async () => {
+        const { camera, transport } = sonyOn()
+        await camera.connect()
+        expect(handshake(transport)).toEqual([
+            [SDIO_CONNECT, 1, 0, 0], [SDIO_CONNECT, 2, 0, 0], [SDIO_GET_EXT_DEVICE_INFO, 300, 1], [SDIO_CONNECT, 3, 0, 0],
+        ])
+        expect(camera.sdioProtocolVersion).toBe(300)
+        await camera.disconnect()
+        expect(camera.sdioProtocolVersion).toBeUndefined()
+    })
+
+    it('restarts the handshake announcing 2.00 when 3.00 is refused', async () => {
+        const { camera, transport } = sonyOn({ refusedVersions: [300] })
+        await camera.connect()
+        expect(handshake(transport)).toEqual([
+            [SDIO_CONNECT, 1, 0, 0], [SDIO_CONNECT, 2, 0, 0], [SDIO_GET_EXT_DEVICE_INFO, 300, 1],
+            [SDIO_CONNECT, 1, 0, 0], [SDIO_CONNECT, 2, 0, 0], [SDIO_GET_EXT_DEVICE_INFO, 200], [SDIO_CONNECT, 3, 0, 0],
+        ])
+        expect(camera.sdioProtocolVersion).toBe(200)
+    })
+
+    it('fails naming both versions when 3.00 and 2.00 are refused', async () => {
+        const { camera, transport } = sonyOn({ refusedVersions: [300, 200] })
+        const failure = camera.connect()
+        await expect(failure).rejects.toBeInstanceOf(PTPResponseError)
+        await expect(failure).rejects.toThrow('refused initiator versions 3.00 (0x2006) and 2.00 (0x2006)')
+        expect(handshake(transport).filter(([operation, phase]) => operation === SDIO_CONNECT && phase === 3)).toEqual([])
+        expect(camera.sdioProtocolVersion).toBeUndefined()
+    })
+
+    it('stays connected without a version when the accepted dataset is unreadable', async () => {
+        const { camera } = sonyOn({ extendedInfo: Uint8Array.of(0x2c, 0x01, 9, 0, 0, 0) })
+        await camera.connect()
+        expect(camera.sdioProtocolVersion).toBeUndefined()
+    })
+
+    it('treats refused host-preference writes as warnings, but not transport failures', async () => {
+        const refused = sonyOn()
+        refused.set.mockRejectedValue(new PTPResponseError(0x2005))
+        await expect(refused.camera.connect()).resolves.toBeUndefined()
+        expect(refused.set).toHaveBeenCalledTimes(2)
+
+        const timedOut = sonyOn()
+        timedOut.set.mockRejectedValue(new PTPTimeoutError('response', 50, {}))
+        await expect(timedOut.camera.connect()).rejects.toBeInstanceOf(PTPTimeoutError)
+        expect(timedOut.set).toHaveBeenCalledTimes(1)
     })
 })

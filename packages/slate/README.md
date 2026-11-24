@@ -39,6 +39,10 @@ try {
 }
 ```
 
+A value or choice Slate cannot name keeps its raw value in `unrecognized` (`value`,
+`choices`); such a control reads `Unrecognized (0x3e7)` and is read-only, and unrecognized
+choices are never offered in `allowedValues`.
+
 ## Shared diagnostics
 
 Diagnostics are part of Slate. Node hosts use `@darkgrade/slate/contribute/settings`;

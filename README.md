@@ -117,6 +117,12 @@ actual frame rate, for example `setExposureTime('180°', { framesPerSecond: 2400
 `ExposureTime` is the physical-value type, and `setExposureTime()` is its convenience
 method. Bulb, Time and flash-sync remain distinct states.
 
+A value or choice the body reports that Slate cannot name stays visible rather than
+disappearing: `unrecognized.value` and `unrecognized.choices` hold the raw values
+(`0x3e7`), the control's `value` reads `Unrecognized (0x3e7)` and it is read-only, and
+unrecognized choices are never added to `allowedValues`. Each one is reported to diagnostics
+once per session with its property code and raw number.
+
 Capability observations report active properties, allowed values and current write
 guards. They do not certify a model or prove that an advertised operation is implemented.
 Re-read after mode changes; setters re-check before writing. Concrete protocol types

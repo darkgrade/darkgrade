@@ -2,6 +2,7 @@ import type { createApplicationDiagnostics } from '@contribute/application'
 import type { ProtocolEvidence } from '@contribute/protocol'
 import { cameraHardwareFingerprint, type CameraContext } from '@contribute/schema'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
+import { isSonyModelName } from '@vendors/sony/model-name'
 
 declare const __SLATE_TELEMETRY_REVISION__: string
 declare const __SLATE_TELEMETRY_DIRTY__: boolean
@@ -232,16 +233,11 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
             awaitingWifiConnect = command.cmd === 'fingerprint'
             // The caller names the body it is reaching over Wi-Fi; a failed attempt is still about that body.
             if (['connect_wifi', 'connect_bluetooth_direct', 'fingerprint'].includes(command.cmd) &&
-                ['ILCE-6700', 'ILME-FX2'].includes(command.model)) model = command.model
+                isSonyModelName(command.model)) model = command.model
             let failed = false
             try {
                 const result = await work()
-                if (
-                    command.cmd === 'connect' &&
-                    typeof result.model === 'string' &&
-                    /^(?:ILCE|ILME|DSC|NEX)-[A-Za-z0-9-]{1,40}$/.test(result.model)
-                )
-                    model = result.model
+                if (command.cmd === 'connect' && isSonyModelName(result.model)) model = result.model
                 if (command.cmd === 'connect' && result.ok === true && evidence === 'hardware' && model !== 'Unknown') {
                     // The SDK bridge selects a device by this exact USB serial before acknowledging connection.
                     try {
@@ -254,10 +250,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                         hardwareFingerprint = undefined
                     }
                 }
-                if (
-                    ['connect_wifi', 'connect_bluetooth_direct'].includes(command.cmd) &&
-                    ['ILCE-6700', 'ILME-FX2'].includes(command.model)
-                )
+                if (['connect_wifi', 'connect_bluetooth_direct'].includes(command.cmd) && isSonyModelName(command.model))
                     model = command.model
                 return result
             } catch (error) {

@@ -1,4 +1,7 @@
 export { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+export { recordFirstContact } from '@workflows/first-contact'
+export { isValidatedModel, isVerifiedFeature, validatedCameraModels, verifiedFeatureModels } from '@camera/validated-models'
+export type { VerifiedFeature } from '@camera/validated-models'
 export { configureSlateTelemetry } from '@core/telemetry'
 export { identifyCamera } from '@camera/identification/camera-identification'
 export { observeCameraEvents } from '@workflows/camera-event-observation'
@@ -15,7 +18,7 @@ export { Camera } from '@camera/index'
 export { cameraControlDefinitions, resolveCameraControl } from '@camera/controls'
 export { CameraConfirmationError } from '@camera/confirmation'
 export type { CameraRecordingState } from '@camera/controls'
-export type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState, CameraControlSession } from '@camera/controls'
+export type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState, CameraControlSession, UnrecognizedValues } from '@camera/controls'
 export { parseExposureTime, exposureSeconds, matchExposureTime } from '@camera/exposure-time'
 export type { ExposureTime, ExposureTimeInput, ExposureContext } from '@camera/exposure-time'
 export type { CameraOptions } from '@camera/index'
@@ -102,6 +105,8 @@ export type {
     SonySdkProperty,
     SonyWifiAuthentication,
     SonyBluetoothDirectAuthentication,
+    SonyWifiCameraModel,
+    SonyWirelessConnection,
 } from '@vendors/sony/sdk-camera'
 export { decodeSonyMonitoringFormat, sonyPreviewCapabilities } from '@vendors/sony/sdk-preview'
 export type { SonyMonitoringFormat } from '@vendors/sony/sdk-preview'

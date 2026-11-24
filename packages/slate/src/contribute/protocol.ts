@@ -45,7 +45,21 @@ export type ProtocolEvidence = {
           current?: ProtocolNumber
           values?: ProtocolNumber[]
       }
-    | { type: 'benchmark'; status: 'started' | 'complete' | 'partial' | 'cancelled'; checks: number; failures: number }
+    | {
+          /** A value or choice the property's codec rejected, sent as its raw number. `choice` marks an advertised option. */
+          type: 'unrecognized-value'
+          property: number
+          dataType: number
+          raw: ProtocolNumber
+          choice: boolean
+      }
+    | {
+          type: 'benchmark'
+          status: 'started' | 'complete' | 'partial' | 'cancelled'
+          checks: number
+          failures: number
+          purpose?: 'first-contact'
+      }
 )
 const integer = (value: unknown, maximum = 0xffffffff) =>
     typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= maximum
@@ -142,10 +156,20 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
                     !item.values.every(value => fits(value, item.dataType))))
         )
             throw new Error('Invalid numeric descriptor')
+    } else if (item.type === 'unrecognized-value') {
+        fields = ['property', 'dataType', 'raw', 'choice']
+        if (
+            !integer(item.property) ||
+            !isSafeProtocolProperty(item.vendorId, item.property) ||
+            !integer(item.dataType, 10) || item.dataType < 1 ||
+            !fits(item.raw, item.dataType) ||
+            typeof item.choice !== 'boolean'
+        ) throw new Error('Invalid unrecognized value evidence')
     } else if (item.type === 'benchmark') {
-        fields = ['status', 'checks', 'failures']
+        fields = ['status', 'checks', 'failures', 'purpose']
         if (
             !item.benchmarkId ||
+            (item.purpose !== undefined && item.purpose !== 'first-contact') ||
             !['started', 'complete', 'partial', 'cancelled'].includes(item.status) ||
             !integer(item.checks, 1024) ||
             !integer(item.failures, 1024) ||

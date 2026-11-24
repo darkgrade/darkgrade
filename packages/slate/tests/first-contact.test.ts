@@ -29,7 +29,7 @@ const fujifilm: DeviceInfo = {
     devicePropertiesSupportedDecoded: [],
     imageFormatsDecoded: [],
 }
-const packet = (type: number, code: number, transactionId: number, data = new Uint8Array()) => {
+const packet = (type: number, code: number, transactionId: number, data: Uint8Array = new Uint8Array()) => {
     const bytes = new Uint8Array(12 + data.length)
     const view = new DataView(bytes.buffer)
     view.setUint32(0, bytes.length, true)

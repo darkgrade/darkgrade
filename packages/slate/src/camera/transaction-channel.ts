@@ -7,10 +7,12 @@ export interface TransactionPolicy {
     timeoutMilliseconds: number
     /** Large data phases get extra time at this rate on top of the base timeout. */
     minimumThroughputBytesPerSecond: number
-    /** Standard (0x1xxx) operations answered DeviceBusy are retried this many times. */
+    /** Standard (0x1xxx) operations answered DeviceBusy are retried at most this many times. */
     deviceBusyRetries: number
     /** First retry delay; each further retry doubles it. */
     deviceBusyBackoffMilliseconds: number
+    /** Retries stop once this much time has passed since the first attempt; the last delay is shortened to fit. */
+    deviceBusyBudgetMilliseconds: number
     /**
      * After a timeout or framing violation on a USB transport, automatically send the still-image
      * class Device Reset Request, wait for the abandoned I/O to settle and reopen the session before
@@ -31,8 +33,10 @@ export interface TransactionPolicy {
 export const DEFAULT_TRANSACTION_POLICY: TransactionPolicy = {
     timeoutMilliseconds: 30_000,
     minimumThroughputBytesPerSecond: 2 * 1024 * 1024,
-    deviceBusyRetries: 4,
-    deviceBusyBackoffMilliseconds: 25,
+    // 50, 100, 200, 400, 800 ms, then whatever is left of the two-second budget.
+    deviceBusyRetries: 6,
+    deviceBusyBackoffMilliseconds: 50,
+    deviceBusyBudgetMilliseconds: 2_000,
     automaticUSBReset: true,
 }
 
@@ -124,11 +128,25 @@ export class TransactionChannel {
             throw new Error('DeviceBusy retries must be an integer from 0 to 32')
         if (!Number.isSafeInteger(policy.deviceBusyBackoffMilliseconds) || policy.deviceBusyBackoffMilliseconds < 0)
             throw new Error('DeviceBusy backoff must be a nonnegative integer')
+        if (!Number.isSafeInteger(policy.deviceBusyBudgetMilliseconds) || policy.deviceBusyBudgetMilliseconds < 0)
+            throw new Error('DeviceBusy budget must be a nonnegative integer')
         if (typeof policy.automaticUSBReset !== 'boolean')
             throw new Error('Automatic USB reset must be enabled or disabled with a boolean')
         if (policy.recoverTransport !== undefined && typeof policy.recoverTransport !== 'function')
             throw new Error('Transport recovery must be an explicitly supplied callback')
         this.policy = policy
+    }
+
+    /**
+     * The wait before DeviceBusy retry `retry` (0 for the first), or undefined when the retry count
+     * or the time budget is spent. Delays double from the base and never exceed the transaction timeout.
+     */
+    deviceBusyDelay(retry: number, elapsedMilliseconds: number): number | undefined {
+        const { deviceBusyRetries, deviceBusyBackoffMilliseconds, deviceBusyBudgetMilliseconds, timeoutMilliseconds } =
+            this.policy
+        const remainingMilliseconds = deviceBusyBudgetMilliseconds - elapsedMilliseconds
+        if (retry >= deviceBusyRetries || remainingMilliseconds <= 0) return undefined
+        return Math.min(timeoutMilliseconds, remainingMilliseconds, deviceBusyBackoffMilliseconds * 2 ** retry)
     }
 
     async send(container: Uint8Array, sessionId: number, context: PTPErrorContext): Promise<void> {

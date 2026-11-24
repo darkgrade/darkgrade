@@ -6,6 +6,7 @@ import {
     type CameraControlId,
     type CameraControlInputs,
     type CameraControlState,
+    type UnrecognizedValues,
 } from '@camera/controls'
 import {
     exposureSeconds,
@@ -20,7 +21,7 @@ import { NikonCamera } from '@camera/nikon-camera'
 import { SonyCamera } from '@camera/sony-camera'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
+import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import type { CodecInstance } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
@@ -43,6 +44,7 @@ interface PropertyState {
     writable: boolean
     enabled?: boolean
     range?: CameraControlState['range']
+    unrecognized?: UnrecognizedValues
 }
 
 const scalar = (value: unknown): value is string | number | bigint =>
@@ -65,13 +67,15 @@ function descriptorState(descriptor: DevicePropDesc): PropertyState {
                   step: Number(descriptor.stepSize),
               }
             : undefined
+    const { allowedValues, unrecognized } = recognizedDescriptorValues(descriptor)
     return {
         code: descriptor.devicePropertyCode,
         name: descriptor.devicePropertyName,
         value: descriptor.currentValueDecoded,
-        allowedValues: descriptor.supportedValuesDecoded,
+        allowedValues,
         writable: descriptor.getSet === 'GET_SET',
         ...(range ? { range } : {}),
+        ...(unrecognized && { unrecognized }),
     }
 }
 
@@ -171,14 +175,18 @@ export async function readCameraCapabilities(
         await camera.refreshEventProperties()
         states = camera
             .listPropertyStates()
-            .filter(state => canonLabel(state.value) !== undefined)
+            .flatMap(state => {
+                const value = canonLabel(state.value) ?? state.unrecognized?.value
+                return value === undefined ? [] : [{ ...state, value }]
+            })
             .map(state => ({
                 code: state.code,
                 name: state.name,
-                value: canonLabel(state.value)!,
+                value: state.value,
                 allowedValues: state.allowedValues?.map(canonLabel).filter(scalar),
                 // Canon event inventories do not carry a dynamic get/set flag.
                 writable: state.access === 'GetSet' && Boolean(state.allowedValues?.length),
+                ...(state.unrecognized && { unrecognized: state.unrecognized }),
             }))
         mappings = canonControlProperties
     } else if (camera instanceof NikonCamera) {
@@ -216,8 +224,9 @@ export async function readCameraCapabilities(
             typeof state.value === 'string' ||
             (camera instanceof NikonCamera &&
                 ['NikonMovieShutterSpeed', 'NikonPhotoShutterSpeed', 'MovieShutterAngle'].includes(state.name))
+        const unrecognizedValue = state.unrecognized?.value
         let exposureTime: CameraControlState['exposureTime']
-        if (id === 'shutterSpeed' && knownExposure) {
+        if (id === 'shutterSpeed' && knownExposure && unrecognizedValue === undefined) {
             try {
                 exposureTime = parseExposureTime(value)
             } catch {
@@ -230,10 +239,16 @@ export async function readCameraCapabilities(
             label: definition.label,
             aliases: definition.aliases,
             source: { name: state.name, code: state.code, protocol: 'ptp' },
-            value: id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${value})` : value,
+            value:
+                unrecognizedValue !== undefined
+                    ? `Unrecognized (${unrecognizedValue})`
+                    : id === 'shutterSpeed' && !exposureTime
+                      ? `Unknown exposure (${value})`
+                      : value,
             ...(allowedValues ? { allowedValues } : {}),
             enabled: state.enabled !== false,
             writable:
+                unrecognizedValue === undefined &&
                 state.writable &&
                 state.enabled !== false &&
                 (id !== 'shutterSpeed' || Boolean(exposureTime)) &&
@@ -252,6 +267,7 @@ export async function readCameraCapabilities(
                   }
                 : {}),
             ...(exposureTime ? { exposureTime } : {}),
+            ...(state.unrecognized && { unrecognized: { ...state.unrecognized } }),
         }
     }
     return {

@@ -165,11 +165,21 @@ describe('Sony session response validation', () => {
         expect(sent).toEqual(['SDIO_OpenSession', 'CloseSession'])
     })
 
-    it.each([1, 2, 3, 4])('stops at failed handshake step %i', async failedStep => {
+    it.each([1, 2, 4])('stops at failed handshake step %i', async failedStep => {
         const { camera, replies, sent } = cameraFixture()
         replies.push(...Array.from({ length: failedStep }, () => ({ code: 0x2001 })), { code: 0x200f })
         await expect(camera.connect()).rejects.toMatchObject({ code: 0x200f })
         expect(sent).toHaveLength(failedStep + 1)
+        expect(camera.set).not.toHaveBeenCalled()
+    })
+
+    it('stops when extended device information refuses both initiator versions', async () => {
+        const { camera, replies, sent } = cameraFixture()
+        replies.push({ code: 0x2001 }, { code: 0x2001 }, { code: 0x2001 }, { code: 0x200f })
+        replies.push({ code: 0x2001 }, { code: 0x2001 }, { code: 0x200f })
+        await expect(camera.connect()).rejects.toMatchObject({ code: 0x200f })
+        expect(sent).toEqual(['SDIO_OpenSession', ...Array(2).fill(['SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo']).flat()])
+        // eslint-disable-next-line @typescript-eslint/unbound-method
         expect(camera.set).not.toHaveBeenCalled()
     })
 })

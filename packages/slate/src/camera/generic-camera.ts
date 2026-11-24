@@ -1,3 +1,4 @@
+import type { UnrecognizedValues } from '@camera/controls'
 import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@camera/transaction-channel'
 import { Logger } from '@core/logger'
 import {
@@ -12,7 +13,7 @@ import {
 import { slateTelemetry } from '@core/telemetry'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
 import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@contribute/protocol'
-import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
+import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
@@ -53,6 +54,7 @@ export interface StandardPropertyState {
     minimumValue?: number | bigint | string
     maximumValue?: number | bigint | string
     stepSize?: number | bigint | string
+    unrecognized?: UnrecognizedValues
 }
 
 export interface CameraRecoveryOptions {
@@ -117,7 +119,13 @@ export class GenericCamera {
         this.profileObserver = { id, observe }
         return () => { if (this.profileObserver?.id === id) this.profileObserver = undefined }
     }
+    /** Validated, deduplicated and never thrown into the camera workflow that observed it. */
     recordProtocol(evidence: ProtocolEvidence, operation?: number) {
+        try {
+            this.shareProtocol(evidence, operation)
+        } catch { /* Optional diagnostics must never interfere with a camera workflow. */ }
+    }
+    private shareProtocol(evidence: ProtocolEvidence, operation?: number) {
         try {
             validateProtocol(evidence)
             if ((evidence.type === 'descriptor' || evidence.type === 'property-value') && evidence.current !== undefined) {
@@ -131,9 +139,11 @@ export class GenericCamera {
             this.profileObserver?.observe(scoped)
             return
         }
+        // Each distinct unrecognized raw value of a property is its own fact.
         const key = [scoped.benchmarkId ?? '', scoped.type,
             'property' in scoped ? scoped.property : 'category' in scoped ? scoped.category : '',
-            'code' in scoped ? scoped.code : 'status' in scoped ? scoped.status : ''].join(':')
+            'code' in scoped ? scoped.code : 'status' in scoped ? scoped.status
+                : scoped.type === 'unrecognized-value' ? `${scoped.raw}:${scoped.choice}` : ''].join(':')
         const encoded = JSON.stringify(scoped)
         if (this.protocolSeen.get(key) === encoded) return
         if (this.protocolSeen.size >= 8192) this.protocolSeen.clear()
@@ -516,16 +526,14 @@ export class GenericCamera {
         const encodedParams = this.encodeParameters(operation, paramsRecord)
         await this.resynchronizeIfNeeded()
 
-        const { deviceBusyRetries, deviceBusyBackoffMilliseconds } = this.channel.policy
         const retriesDeviceBusy = operation.code >= STANDARD_OPERATIONS.from && operation.code <= STANDARD_OPERATIONS.to
+        const startedAt = Date.now()
         for (let attempt = 0; ; attempt++) {
             const response = await this.runTransaction(operation, paramsRecord, encodedParams, data, maxDataLength)
-            if (response.code !== DeviceBusy.code || !retriesDeviceBusy || attempt >= deviceBusyRetries) {
-                return response
-            }
-            await this.waitMs(
-                Math.min(this.channel.policy.timeoutMilliseconds, deviceBusyBackoffMilliseconds * 2 ** attempt)
-            )
+            if (response.code !== DeviceBusy.code || !retriesDeviceBusy) return response
+            const delayMilliseconds = this.channel.deviceBusyDelay(attempt, Date.now() - startedAt)
+            if (delayMilliseconds === undefined) return response
+            await this.waitMs(delayMilliseconds)
         }
     }
 
@@ -1109,6 +1117,8 @@ export class GenericCamera {
             } catch (error) {
                 if (error instanceof PTPTimeoutError || error instanceof PTPDisconnectedError ||
                     error instanceof PTPProtocolError || error instanceof PTPRecoveryRequiredError) throw error
+                if (error instanceof PTPDecodeError)
+                    this.recordProtocol({ type: 'unknown', vendorId: this.vendorId ?? 0, category: 'property', code, advertised: true })
                 this.logger.addLog({
                     type: 'console',
                     level: 'warn',
@@ -1164,6 +1174,7 @@ export class GenericCamera {
     }
 
     private standardPropertyState(descriptor: DevicePropDesc): StandardPropertyState {
+        const { allowedValues, unrecognized } = recognizedDescriptorValues(descriptor)
         return {
             code: descriptor.devicePropertyCode,
             codeHex: `0x${descriptor.devicePropertyCode.toString(16).padStart(4, '0')}`,
@@ -1173,10 +1184,11 @@ export class GenericCamera {
             rawValue: descriptor.currentValueRaw,
             writable: descriptor.getSet === 'GET_SET',
             form: descriptor.formFlag === 0x02 ? 'enum' : descriptor.formFlag === 0x01 ? 'range' : 'none',
-            ...(descriptor.supportedValuesDecoded ? { allowedValues: descriptor.supportedValuesDecoded } : {}),
+            ...(allowedValues ? { allowedValues } : {}),
             ...(descriptor.minimumValue !== undefined ? { minimumValue: descriptor.minimumValue } : {}),
             ...(descriptor.maximumValue !== undefined ? { maximumValue: descriptor.maximumValue } : {}),
             ...(descriptor.stepSize !== undefined ? { stepSize: descriptor.stepSize } : {}),
+            ...(unrecognized && { unrecognized }),
         }
     }
 

@@ -36,6 +36,20 @@ export type CameraControlInputs = {
           : string
 }
 
+/** Raw wire values the camera reported that Slate has no name for, spelled by `unrecognizedValueLabel`. */
+export interface UnrecognizedValues {
+    /** The current value; the control is then read-only and its `value` reads `Unrecognized (<raw>)`. */
+    value?: string
+    /** Advertised choices left out of `allowedValues`; they are never writable. */
+    choices?: string[]
+}
+
+/** Hexadecimal for integers (`0x1234`), verbatim for text. */
+export function unrecognizedValueLabel(raw: number | bigint | string): string {
+    if (typeof raw === 'string') return raw
+    return raw < 0 ? `-0x${(-raw).toString(16)}` : `0x${raw.toString(16)}`
+}
+
 export interface CameraControlState {
     id: CameraControlId
     label: string
@@ -48,6 +62,7 @@ export interface CameraControlState {
     enabled: boolean
     range?: { minimum: number; maximum: number; step: number }
     exposureTime?: ExposureTime
+    unrecognized?: UnrecognizedValues
 }
 
 export interface CameraCapabilities {

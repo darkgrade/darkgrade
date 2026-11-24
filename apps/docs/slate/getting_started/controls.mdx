@@ -55,6 +55,10 @@ Sony USB flags, Nikon descriptors and Canon events retain their different protoc
 semantics inside Slate. Common exposure/focus/white-balance controls and Canon
 structured photo/movie formats share this application model. Empty or ambiguous
 choices cannot become writable. A refusal or failed readback stays a failure.
+A value or choice the body reports that Slate cannot name keeps its raw value in
+`unrecognized.value` or `unrecognized.choices` (for example `0x3e7`): the control reads
+`Unrecognized (0x3e7)` and is read-only, and unrecognized choices are never offered in
+`allowedValues`. Each is reported to diagnostics once per session.
 
 `advertisedOperations` is the standard DeviceInfo list (or `null` where unavailable); advertisement does not
 prove workflow implementation or physical qualification. Capability reads do not
