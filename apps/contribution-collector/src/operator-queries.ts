@@ -29,7 +29,7 @@ const signalName=`CASE WHEN signal='failed' THEN 'Failed'
     WHEN signal='ok' THEN 'OK'
     ELSE replace(signal,'operation:','') END`
 
-/** Parameterized, bounded operator queries; never return installation credentials or contact data. */
+/** Parameterized, bounded operator queries. Contact data is restricted to the explicit support lookup. */
 export function operatorQueries(pool: Pool) {
     const activeSource = `EXISTS (SELECT 1 FROM telemetry_state d WHERE d.path=telemetry_events.batch_path
         AND d.data->>'expiresAt' > to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
@@ -64,6 +64,78 @@ export function operatorQueries(pool: Pool) {
         filters.signal || null,
     ]
     return {
+        async contributors(filters: { email?: string; installations?: string[]; after?: string; includeHistory?: boolean } = {}) {
+            // Join the current submitted identity to retained summaries by installation. This includes
+            // sessions uploaded before enrollment without copying addresses into diagnostic records.
+            const includeHistory=filters.includeHistory!==false,pageSize=includeHistory?20:100
+            const result = await pool.query(
+                `WITH selected AS (
+                    SELECT split_part(i.path,'/',2) AS id, c.data AS contact, p.data AS pending
+                    FROM telemetry_state i
+                    LEFT JOIN telemetry_state c ON c.path='contacts/'||split_part(i.path,'/',2)
+                    LEFT JOIN telemetry_state p ON p.path='contactRequests/'||split_part(i.path,'/',2)
+                    WHERE split_part(i.path,'/',1)='installations'
+                      AND NOT coalesce((i.data->>'revoked')::boolean,false)
+                      AND ($1::text IS NULL OR lower(c.data->>'email')=$1 OR lower(p.data->>'email')=$1)
+                      AND ($2::uuid[] IS NULL OR split_part(i.path,'/',2)::uuid=ANY($2))
+                      AND ($2::uuid[] IS NOT NULL OR coalesce(c.data->>'email',p.data->>'email') IS NOT NULL)
+                      AND ($3::text IS NULL OR split_part(i.path,'/',2) COLLATE "C" > $3 COLLATE "C")
+                    ORDER BY i.path COLLATE "C" LIMIT $5::int
+                )
+                SELECT selected.id, coalesce(contact->>'email',pending->>'email') AS email,
+                    contact->>'confirmedAt' IS NOT NULL AS verified,
+                    CASE WHEN contact->>'email' IS NOT NULL AND pending->>'email'<>contact->>'email'
+                        THEN pending->>'email' END AS pending_email,
+                    coalesce(pending->>'requestedAt',contact->>'requestedAt') AS requested_at, contact->>'confirmedAt' AS confirmed_at,
+                    coalesce(summary.sessions,0)::int AS sessions, coalesce(summary.events,0)::bigint AS events,
+                    coalesce(summary.errors,0)::bigint AS errors, coalesce(summary.signals,0)::bigint AS signals,
+                    summary.first_seen, summary.last_seen,
+                    coalesce(cameras.items,'[]'::jsonb) AS cameras
+                FROM selected
+                LEFT JOIN LATERAL (
+                    SELECT count(*) FILTER(WHERE s.session_id<>${sessionless}) AS sessions,
+                        sum(s.events) AS events,sum(failed.events) AS errors,sum(s.signals) AS signals,
+                        min(s.started_at) AS first_seen,max(s.latest_received_at) AS last_seen
+                    FROM telemetry_sessions s LEFT JOIN telemetry_session_signals failed
+                        ON failed.installation_id=s.installation_id AND failed.session_id=s.session_id AND failed.signal='failed'
+                    WHERE $4::boolean AND s.installation_id=selected.id::uuid
+                      AND s.latest_received_at>=now()-interval '90 days'
+                ) summary ON true
+                LEFT JOIN LATERAL (
+                    SELECT jsonb_agg(to_jsonb(camera)) AS items FROM (
+                        SELECT s.manufacturer,s.model,
+                            count(*) FILTER(WHERE s.session_id<>${sessionless})::int AS sessions,
+                            sum(s.events)::bigint AS events,coalesce(sum(failed.events),0)::bigint AS errors,sum(s.signals)::bigint AS signals,
+                            min(s.started_at) AS first_seen,max(s.latest_received_at) AS last_seen,
+                            ARRAY(SELECT DISTINCT unnest(t.hardware_fingerprints) FROM telemetry_sessions t
+                                WHERE t.installation_id=selected.id::uuid AND t.manufacturer=s.manufacturer AND t.model=s.model
+                                AND t.latest_received_at>=now()-interval '90 days' ORDER BY 1 LIMIT 100) AS hardware_fingerprints,
+                            ARRAY(SELECT DISTINCT unnest(t.transports) FROM telemetry_sessions t
+                                WHERE t.installation_id=selected.id::uuid AND t.manufacturer=s.manufacturer AND t.model=s.model
+                                AND t.latest_received_at>=now()-interval '90 days' ORDER BY 1) AS transports,
+                            ARRAY(SELECT DISTINCT unnest(t.backends) FROM telemetry_sessions t
+                                WHERE t.installation_id=selected.id::uuid AND t.manufacturer=s.manufacturer AND t.model=s.model
+                                AND t.latest_received_at>=now()-interval '90 days' ORDER BY 1) AS backends,
+                            ARRAY(SELECT DISTINCT unnest(t.revisions) FROM telemetry_sessions t
+                                WHERE t.installation_id=selected.id::uuid AND t.manufacturer=s.manufacturer AND t.model=s.model
+                                AND t.latest_received_at>=now()-interval '90 days' ORDER BY 1 LIMIT 100) AS revisions,
+                            ARRAY(SELECT DISTINCT unnest(t.evidence) FROM telemetry_sessions t
+                                WHERE t.installation_id=selected.id::uuid AND t.manufacturer=s.manufacturer AND t.model=s.model
+                                AND t.latest_received_at>=now()-interval '90 days' ORDER BY 1) AS evidence
+                        FROM telemetry_sessions s LEFT JOIN telemetry_session_signals failed
+                            ON failed.installation_id=s.installation_id AND failed.session_id=s.session_id AND failed.signal='failed'
+                        WHERE $4::boolean AND s.installation_id=selected.id::uuid
+                          AND s.latest_received_at>=now()-interval '90 days'
+                        GROUP BY s.manufacturer,s.model ORDER BY max(s.latest_received_at) DESC,s.manufacturer,s.model LIMIT 50
+                    ) camera
+                ) cameras ON true ORDER BY selected.id COLLATE "C"`,
+                [filters.email?.trim().toLowerCase() || null, filters.installations ?? null, filters.after || null,includeHistory,pageSize+1]
+            )
+            const items = result.rows.slice(0, pageSize).map(row => ({
+                ...row, events: Number(row.events), errors: Number(row.errors), signals: Number(row.signals),
+            }))
+            return { items, next: result.rows.length > pageSize ? items.at(-1)!.id : null, retentionDays: 90, cameraLimit: 50, identityOnly:!includeHistory }
+        },
         async protocol(filters: EventFilters, after?: string) {
             // Session, body and signal scopes are narrow enough to read their own events. Everything
             // else reads the per-installation summary kept current at ingest.
@@ -210,13 +282,17 @@ export function operatorQueries(pool: Pool) {
                 pool.query(
                     `SELECT coalesce(sum(s.events),0)::int AS events, coalesce(sum(s.errors),0)::int AS errors,
                     count(DISTINCT s.installation_id)::int AS installations,
-                    count(*) FILTER (WHERE s.session_id<>${sessionless})::int AS sessions, max(s.latest_received_at) AS latest
-                    FROM telemetry_sessions s WHERE ${sessionWhere}`,
+                    count(*) FILTER (WHERE s.session_id<>${sessionless})::int AS sessions, max(s.latest_received_at) AS latest,
+                    coalesce(sum(failed.events),0)::int AS failures
+                    FROM telemetry_sessions s LEFT JOIN telemetry_session_signals failed
+                        ON failed.installation_id=s.installation_id AND failed.session_id=s.session_id AND failed.signal='failed'
+                    WHERE ${sessionWhere}`,
                     parameters
                 ),
                 pool.query(
                     `SELECT manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,
                     properties->>'operation' AS operation,count(*)::int AS occurrences,
+                    count(*) FILTER(WHERE failed)::int AS failures,
                     count(DISTINCT installation_id)::int AS installations,max(received_at) AS latest
                     FROM telemetry_events WHERE ${errors} AND ${where}
                     GROUP BY manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,properties->>'operation'
@@ -233,10 +309,12 @@ export function operatorQueries(pool: Pool) {
                 pool.query(
                     `SELECT s.installation_id,s.session_id,s.events::int AS events,s.errors::int AS errors,s.signals::int AS signals,
                     s.started_at,s.ended_at,s.model,s.manufacturer,s.transports,s.evidence,s.backends,s.revisions,
-                    s.hardware_fingerprints,s.truncated
+                    s.hardware_fingerprints,s.truncated,coalesce(failed.events,0)::int AS failures
                     ,to_char(s.latest_received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
                     ,(${order})::text AS cursor_value
-                    FROM telemetry_sessions s WHERE ${sessionWhere} AND s.session_id<>${sessionless}
+                    FROM telemetry_sessions s LEFT JOIN telemetry_session_signals failed
+                        ON failed.installation_id=s.installation_id AND failed.session_id=s.session_id AND failed.signal='failed'
+                    WHERE ${sessionWhere} AND s.session_id<>${sessionless}
                     AND ($9::${cursorType} IS NULL OR (${order},s.installation_id,s.session_id)${comparison}($9::${cursorType},$10::uuid,$11::uuid))
                     ORDER BY ${order} ${direction},s.installation_id ${direction},s.session_id ${direction} LIMIT 101`,
                     [

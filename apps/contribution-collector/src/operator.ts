@@ -31,7 +31,7 @@ async function body(request: Request) {
     return value as Record<string, unknown>
 }
 
-/** Server-to-server operator API. No credentials/contact details or arbitrary SQL are exposed. */
+/** Server-to-server operator API. Explicit support lookup exposes submitted identities, never credentials. */
 export async function operatorApi(
     request: Request,
     key: string | undefined,
@@ -44,7 +44,7 @@ export async function operatorApi(
     const parameters = Object.fromEntries(url.searchParams)
     if (
         new Set(url.searchParams.keys()).size !== [...url.searchParams].length ||
-        Object.values(parameters).some(value => value.length > 800)
+        Object.entries(parameters).some(([name,value]) => value.length > (name === 'installations' && path === '/internal/api/contributors' ? 3700 : 800))
     )
         return json({ error: 'Invalid filters' }, 400)
     if (
@@ -52,6 +52,18 @@ export async function operatorApi(
         (request.headers.has('origin') || request.headers.get('x-darkgrade-operator') !== '1')
     )
         return json({ error: 'Server operator request required' }, 403)
+    if (path === '/internal/api/contributors' && request.method === 'GET') {
+        const installations = parameters.installations?.split(',')
+        if (Object.keys(parameters).some(name => !['email','installations','after','includeHistory'].includes(name)) ||
+            (parameters.includeHistory !== undefined && !['true','false'].includes(parameters.includeHistory)) ||
+            (parameters.email !== undefined && (parameters.email.length > 254 ||
+                !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(parameters.email))) ||
+            (installations !== undefined && (installations.length > 100 || !installations.every(id => uuid.test(id)))) ||
+            (parameters.after !== undefined && !uuid.test(parameters.after)))
+            return json({ error: 'Invalid contributor lookup' },400)
+        return json(await database.operator.contributors({email:parameters.email,installations,after:parameters.after,
+            includeHistory:parameters.includeHistory!=='false'}))
+    }
     if (path === '/internal/api/protocol' && request.method === 'GET') {
         if (Object.keys(parameters).some(key => !['days','installation','session','model','revision','transport','hardware','after'].includes(key)) ||
             ![1,7,30,90].includes(Number(parameters.days || 7)) ||

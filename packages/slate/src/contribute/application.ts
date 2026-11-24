@@ -591,7 +591,8 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 )
             return data.contact as {
                 email: string
-                verified: true
+                verified: boolean
+                pendingEmail?: string
                 credit: { name: string; publish: true } | null
             } | null
         },
