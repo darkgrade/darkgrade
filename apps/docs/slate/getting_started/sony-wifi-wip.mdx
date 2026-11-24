@@ -27,7 +27,7 @@ The Console keeps a Wi-Fi SDK session open for menu and setting operations. HDMI
 
 ## SDK installation and safety
 
-Install Sony's accepted licensed SDK outside the repositories. The testbench supplies native adapter source and a build script; SDK binaries and headers are not redistributed. Both the TypeScript backend and native connection verify the trusted fingerprint before authentication. No SDK handshake capture, reverse engineering, or authentication bypass is used.
+Sony's SDK is not included in this release, and Slate accepts only the ILCE-6700 (α6700) and ILME-FX2 for its Wi-Fi workflows (`SonyWifiCameraModel`). `SonyBluetoothRemote` does not use the SDK and has been tested only on the α6700. Other Sony bodies, including the α7 V, are USB only. Install Sony's accepted licensed SDK outside the repositories. The testbench supplies native adapter source and a build script; SDK binaries and headers are not redistributed. Both the TypeScript backend and native connection verify the trusted fingerprint before authentication. No SDK handshake capture, reverse engineering, or authentication bypass is used.
 
 The reference replacement hub is Genesys Logic 05e3:0625 / 05e3:0610. Guarded handoff keeps it awake, disables the kernel ports, and sends direct power requests to both halves. Automated USB disappearance and subsequent SDK control were verified. This is functional transport verification; VBUS voltage was not measured. The older ROSONWAY/VIA connector did not reliably release the camera's USB mode.
 
