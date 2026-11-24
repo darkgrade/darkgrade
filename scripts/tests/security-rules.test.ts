@@ -5,11 +5,10 @@ describe('Leak and workspace boundary checks', () => {
     test('rejects extra workspace packages while allowing existing product and infrastructure workspaces', () => {
         for (const file of ['packages/contribute/package.json', 'packages/runtime/package.json',
             'packages/telemetry/package.json', 'packages/ui/package.json', 'apps/new-product/package.json',
-            'apps/testbench/package.json', 'apps/example-web/package.json'])
+            'apps/testbench/package.json', 'apps/example-web/package.json', 'packages/typescript-config/package.json'])
             expect(scanSecurityFile(file, '{}').map(f => f.rule)).toContain('unapproved-workspace-package')
         for (const file of ['packages/slate/package.json', 'packages/cli/package.json',
-            'apps/studio/package.json', 'apps/contribution-collector/package.json',
-            'packages/typescript-config/package.json'])
+            'apps/studio/package.json', 'apps/contribution-collector/package.json'])
             expect(scanSecurityFile(file, '{}')).toEqual([])
     })
     test('finds credentials without returning their contents, including accidental test-file secrets', () => {

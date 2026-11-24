@@ -1,3 +1,5 @@
+// The compiler options this repository builds with (Slate and Darkgrade Studio extend it).
+// It is not guidance for projects that use Slate: its packaged types are checked under strict NodeNext.
 {
     "$schema": "https://json.schemastore.org/tsconfig",
     "compilerOptions": {
