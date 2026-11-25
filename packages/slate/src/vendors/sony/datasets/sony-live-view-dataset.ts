@@ -1,4 +1,5 @@
 import type { PTPRegistry } from '@ptp/types/codec'
+import { jpegThroughEnd } from '@vendors/generic/jpeg-end'
 
 /** The header of a Sony image dataset: two (offset, size) pairs of uint32, offsets from the dataset start. */
 export function sonyDatasetHeader(buffer: Uint8Array, registry: PTPRegistry): [number, number, number, number] {
@@ -14,7 +15,10 @@ export function sonyDatasetSection(buffer: Uint8Array, start: number, size: numb
 }
 
 export interface LiveViewDataset {
+    /** The whole JPEG; empty when the dataset holds none, or one without its end marker. */
     liveViewImage: Uint8Array
+    /** The dataset held image bytes, but no JPEG end marker: the picture is incomplete. */
+    incomplete?: true
     /** Sony FocalFrameInfo bytes (`@vendors/sony/focal-frame-info`), when the frame carries them. */
     focalFrameInfo?: Uint8Array
 }
@@ -22,8 +26,11 @@ export interface LiveViewDataset {
 export function parseLiveViewDataset(data: Uint8Array, registry: PTPRegistry): LiveViewDataset {
     const [imageOffset, imageSize, frameInfoOffset, frameInfoSize] = sonyDatasetHeader(data, registry)
     const focalFrameInfo = sonyDatasetSection(data, frameInfoOffset, frameInfoSize)
+    const section = sonyDatasetSection(data, imageOffset, imageSize)
+    const image = section && jpegThroughEnd(section)
     return {
-        liveViewImage: sonyDatasetSection(data, imageOffset, imageSize) ?? new Uint8Array(),
+        liveViewImage: image ?? new Uint8Array(),
+        ...(section && !image && { incomplete: true as const }),
         ...(focalFrameInfo && { focalFrameInfo }),
     }
 }

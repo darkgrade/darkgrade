@@ -400,6 +400,11 @@ describe('photo controls in Slate\'s spelling on every vendor', () => {
         expect(properties.get(0xd100)!.value).toBe(0x000a0019)
         expect(await fixture.camera.setControl('shutterSpeed', 'Bulb')).toMatchObject({ value: 'Bulb' })
         expect(properties.get(0xd100)!.value).toBe(0xffffffff)
+        // An input that is no exposure is refused like an unadvertised value, nothing sent.
+        fixture.writes.length = 0
+        for (const attempt of [() => fixture.camera.setControl('shutterSpeed', 'fast'), () => fixture.camera.setControl('shutterSpeed', '0/0')])
+            expect(await attempt().catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        expect(fixture.writes).toEqual([])
     })
 
     it('names Sony BULB as Bulb and writes the Sony value behind it', async () => {

@@ -6,6 +6,7 @@ import type { Camera } from '@camera/index'
 import type { CameraDriverInstance } from '@camera/camera-context'
 import { readCameraStorages } from '@vendors/generic/storage'
 import { GetThumb } from '@ptp/definitions/operation-definitions'
+import { completePreview } from '@vendors/generic/jpeg-end'
 import { OK } from '@ptp/definitions/response-definitions'
 import { operationsAdvertised } from '@vendors/generic/generic-operations'
 import { decodeMediaId, newestFirst, type ObjectMediaReference } from '@vendors/generic/media-id'
@@ -73,7 +74,7 @@ export function ptpMediaCapability(driver: CameraDriverInstance, owner: Camera):
                 throw new CameraRefusedError('getMediaPreview', `The camera refused the thumbnail (0x${response.code.toString(16)})`)
             if (!(response.data instanceof Uint8Array) || response.data.length === 0)
                 throw new CameraRefusedError('getMediaPreview', 'The camera returned an empty thumbnail')
-            return response.data
+            return completePreview(response.data)
         },
 
         async downloadMedia(id: string, options: MediaDownloadOptions): Promise<Uint8Array> {

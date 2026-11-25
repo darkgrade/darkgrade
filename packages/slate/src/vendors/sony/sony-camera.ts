@@ -45,7 +45,8 @@ import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 import type { EventDefinition } from '@ptp/types/event'
-import type { EventParams } from '@ptp/types/type-helpers'
+import type { EventParams, OperationParams, OperationResponse } from '@ptp/types/type-helpers'
+import type { OperationDefinition } from '@ptp/types/operation'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { controlValueNames } from '@vendors/control-properties'
@@ -71,11 +72,12 @@ import { parseSonyContentInfoList, type SonyContentInfoList } from '@vendors/son
 import type { SonyExtendedDeviceInfo } from '@vendors/sony/datasets/sdi-ext-device-info-dataset'
 import type { SonyDevicePropDesc } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import { parseLiveViewDataset } from '@vendors/sony/datasets/sony-live-view-dataset'
+import { completePreview } from '@vendors/generic/jpeg-end'
 import { parseOsdImageDataset, type OsdImageMetaInfo } from '@vendors/sony/datasets/sony-osd-image-dataset'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { sonyFocalLengthMillimetres } from '@vendors/sony/lens'
-import { findSonyCardItem, sonyMediaCapability } from '@vendors/sony/media'
+import { findSonyCardItem, sonyMediaCapability, type SonyNewestContent } from '@vendors/sony/media'
 import { openSonyRecordingMode, sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
 import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
 
@@ -115,6 +117,9 @@ const SONY_CONTENT_LIST_OVERLAP_MS = 2_000
 const SONY_CONTENT_LIST_MAX_PAGES = 64
 const SONY_CONTENT_LIST_MAX_BYTES = 64 * 1024 * 1024
 const SONY_CONTENT_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
+/** Sony's CameraStatusError, and how long a card-index read waits before asking once more. */
+const SONY_CAMERA_STATUS_ERROR = 0xa106
+const SONY_CAMERA_STATUS_SETTLE_MS = 500
 const SONY_DATE_TIME_RESULTS: Record<number, string> = {
     0: 'invalid',
     2: 'parameter error',
@@ -626,7 +631,7 @@ export class SonyCamera extends GenericCamera {
 
     /**
      * The card's contents as the camera indexes them (Remote Control with Transfer Mode). This
-     * does not enter content-transfer mode, so live view keeps running.
+     * leaves content-transfer mode rather than entering it, so live view keeps running.
      */
     /**
      * The card index from `sinceUtcMs` on. The camera answers oldest first, at most `limit` contents
@@ -655,7 +660,7 @@ export class SonyCamera extends GenericCamera {
 
     private async readContentPage(slot: 1 | 2, limit: number, sinceUtcMs: number): Promise<SonyContentInfoList> {
         const since = BigInt(sinceUtcMs)
-        const response = await this.send(
+        const response = await this.sendCardIndexRead(
             this.registry.operations.SDIO_GetContentInfoList,
             {
                 CreateTimeLower: Number(since & 0xffffffffn),
@@ -664,10 +669,9 @@ export class SonyCamera extends GenericCamera {
                 Extra1: slot,
                 Extra2: 0,
             },
-            undefined,
-            SONY_CONTENT_LIST_MAX_BYTES
+            SONY_CONTENT_LIST_MAX_BYTES,
+            'Sony content list'
         )
-        this.assertOk(response.code, 'Sony content list')
         if (!(response.data instanceof Uint8Array) || response.data.length === 0)
             return { version: 0, listCreatedUtcMs: 0, slot, contents: [] }
         return parseSonyContentInfoList(response.data)
@@ -681,23 +685,21 @@ export class SonyCamera extends GenericCamera {
     ): Promise<Uint8Array> {
         const slot = options.slot ?? 1
         // Right after a download the body is still in content-transfer mode and answers previews with
-        // CameraStatusError (0xA106, an a6700 on darkgrade01, 2026-11-25): leave it first. Live view
-        // still returns the body to shooting by itself afterwards.
-        await this.disableContentTransferMode()
-        const response = await this.send(
+        // CameraStatusError (0xA106, an a6700 on darkgrade01, 2026-11-25): the read leaves it first.
+        // Live view still returns the body to shooting by itself afterwards.
+        const response = await this.sendCardIndexRead(
             this.registry.operations.SDIO_GetContentCompressedData,
             {
                 ContentID: contentId,
                 SlotAndFileID: ((slot & 0xff) << 24) | (fileId & 0xffff),
                 Type: options.size === 'screennail' ? 2 : 1,
             },
-            undefined,
-            SONY_CONTENT_PREVIEW_MAX_BYTES
+            SONY_CONTENT_PREVIEW_MAX_BYTES,
+            'Sony content preview'
         )
-        this.assertOk(response.code, 'Sony content preview')
         if (!(response.data instanceof Uint8Array) || response.data.length === 0)
             throw new Error('The camera returned no preview')
-        return response.data
+        return completePreview(response.data)
     }
 
     /**
@@ -897,14 +899,24 @@ export class SonyCamera extends GenericCamera {
             info = infoResponse.data
         }
         if (!includeData) return { info, data: undefined, sonyFocalFrames: undefined }
-        const objectResponse = await this.nextLiveViewObject()
-        this.assertOk(objectResponse.code, 'Sony live-view image')
-        if (!objectResponse.data?.length) throw new Error('Sony live-view response contained no dataset')
-        const { liveViewImage, focalFrameInfo } = parseLiveViewDataset(objectResponse.data, this.registry)
-        if (!liveViewImage.length) throw new Error('Sony live-view dataset contained no image')
-        this.recordLiveViewFrame(objectResponse.requestStartedMs)
-        const sonyFocalFrames = focalFrameInfo ? parseSonyFocalFrameInfo(focalFrameInfo).frames : []
-        return { info, data: liveViewImage, sonyFocalFrames }
+        // A picture without its JPEG end marker is read once more (a read, never a command that
+        // changes the camera); a second one is reported, never handed back as a picture.
+        for (let attempt = 0; ; attempt++) {
+            const objectResponse = await this.nextLiveViewObject()
+            this.assertOk(objectResponse.code, 'Sony live-view image')
+            if (!objectResponse.data?.length) throw new Error('Sony live-view response contained no dataset')
+            const { liveViewImage, focalFrameInfo, incomplete } = parseLiveViewDataset(objectResponse.data, this.registry)
+            this.recordLiveViewFrame(objectResponse.requestStartedMs)
+            if (incomplete && attempt === 0) continue
+            if (incomplete)
+                throw new CameraOutcomeUnknownError(
+                    'getLiveViewFrame',
+                    'The camera sent two live-view pictures without a JPEG end marker; no picture was returned'
+                )
+            if (!liveViewImage.length) throw new Error('Sony live-view dataset contained no image')
+            const sonyFocalFrames = focalFrameInfo ? parseSonyFocalFrameInfo(focalFrameInfo).frames : []
+            return { info, data: liveViewImage, sonyFocalFrames }
+        }
     }
 
     private liveViewLastFrameRequestMs = 0
@@ -1228,10 +1240,33 @@ export class SonyCamera extends GenericCamera {
         )
     }
 
+    /** Throws the camera's response by name (Sony's own and the standard ones) and code. */
     private assertOk(responseCode: number, action: string): void {
-        if (responseCode !== OK.code) {
-            throw new PTPResponseError(responseCode, `${action} returned PTP response 0x${responseCode.toString(16)}`)
+        if (responseCode === OK.code) return
+        const name = Object.values(this.registry.responses).find(response => response.code === responseCode)?.name
+        throw new PTPResponseError(responseCode, `${action} returned ${name ?? 'PTP response'} (0x${responseCode.toString(16)})`)
+    }
+
+    /**
+     * A card-index read (the list, a preview) out of content-transfer mode, which the camera answers
+     * with CameraStatusError (0xA106) while still in it: an FX2 after a download, 2/2 (darkgrade02,
+     * 2026-11-25). Still CameraStatusError, the read is asked once more after a short settle: it
+     * is a read, which changes nothing on the camera.
+     */
+    private async sendCardIndexRead<Op extends OperationDefinition>(
+        operation: Op,
+        params: OperationParams<Op>,
+        maxDataLength: number,
+        action: string
+    ): Promise<OperationResponse<Op>> {
+        await this.disableContentTransferMode()
+        let response = await this.send(operation, params, undefined, maxDataLength)
+        if (response.code === SONY_CAMERA_STATUS_ERROR) {
+            await this.waitMs(SONY_CAMERA_STATUS_SETTLE_MS)
+            response = await this.send(operation, params, undefined, maxDataLength)
         }
+        this.assertOk(response.code, action)
+        return response
     }
 
     /** Sony's Remote Control with Transfer Mode needs Set LiveView Enable and Set PostView Enable. */
@@ -1423,8 +1458,8 @@ export class SonyCamera extends GenericCamera {
     #clipWatch?: SonyCardIndexWatch
     /** Whether this session's DeviceInfo lists the card-index event, so a new file's media id can be read once saved. */
     #announcesCardIndex?: boolean
-    /** The newest card-index creation time this session read, so a lookup lists only newer contents. */
-    #newestContent?: { sessionId: number | null; createdUtcMs: number }
+    /** The highest-numbered card-index content this session read, so a lookup lists only newer contents. */
+    #newestContent?: SonyNewestContent & { sessionId: number | null }
 
     protected override async mediaGroup(): Promise<MediaCapability> {
         return (this.#sonyMedia ??= sonyMediaCapability(this))
@@ -1495,14 +1530,15 @@ export class SonyCamera extends GenericCamera {
      * Listens for the card index to announce a new file. `find` waits for an announcement and then
      * reads the card index once (only contents newer than this session's last lookup) for the file
      * `matches` accepts; a further announcement reads it once more. No announcement in time is an
-     * unknown outcome: the card is never scanned instead.
+     * unknown outcome: the card is never scanned instead. The camera indexes by its own clock, so a
+     * read from the last creation time that shows no newer content is read again in full, still
+     * taking only contents numbered above the last: an FX2 whose clock was set back listed its new
+     * photo (17:21) before older-numbered ones (18:07) (darkgrade02, 2026-11-25).
      */
     private watchCardIndex(operation: 'takePhoto' | 'stopRecording'): SonyCardIndexWatch {
         let announcements = 0
         const stop = this.onCardIndexAddition(() => announcements++)
         const newest = this.#newestContent?.sessionId === this.sessionId ? this.#newestContent : undefined
-        // Two seconds back, as a creation time may be stored at whole-second precision.
-        const sinceUtcMs = newest && newest.createdUtcMs - 2_000
         return {
             stop,
             find: async (matches, timeoutMilliseconds) => {
@@ -1517,9 +1553,10 @@ export class SonyCamera extends GenericCamera {
                                 `The camera did not list the new file in its card index within ${timeoutMilliseconds / 1000} seconds`
                             )
                         handled = announcements
-                        const found = await findSonyCardItem(this, operation, matches, sinceUtcMs)
-                        if (found.newestUtcMs !== undefined)
-                            this.#newestContent = { sessionId: this.sessionId, createdUtcMs: found.newestUtcMs }
+                        let found = await findSonyCardItem(this, operation, matches, newest)
+                        if (newest && !found.newer)
+                            found = await findSonyCardItem(this, operation, matches, newest, { everything: true })
+                        if (found.newest) this.#newestContent = { sessionId: this.sessionId, ...found.newest }
                         if (found.item) return found.item
                     }
                 } finally {

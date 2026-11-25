@@ -66,14 +66,14 @@ const jpeg = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)
 const png = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
 
 /** Sony's live-view dataset: four uint32 offsets and sizes, then the image and the focal frames. */
-function sonyLiveViewDataset(): Uint8Array {
+function sonyLiveViewDataset(image: Uint8Array = jpeg): Uint8Array {
     const header = new Uint8Array(16)
     const view = new DataView(header.buffer)
     view.setUint32(0, 16, true)
-    view.setUint32(4, jpeg.length, true)
-    view.setUint32(8, 16 + jpeg.length, true)
+    view.setUint32(4, image.length, true)
+    view.setUint32(8, 16 + image.length, true)
     view.setUint32(12, a7vFocalFrames.length, true)
-    return concatenate([header, jpeg, a7vFocalFrames])
+    return concatenate([header, image, a7vFocalFrames])
 }
 
 /** Sony's OSD dataset: offsets and sizes, then the PNG. */
@@ -153,6 +153,8 @@ function sonyBody(
         inventoryGate: undefined as Promise<void> | undefined,
         /** The reply to writing OsdImageMode off. */
         osdOffReply: OK,
+        /** The pictures the next live-view reads carry, in order; then the plain test JPEG. */
+        liveViewImages: [] as Uint8Array[],
     }
     const sent: string[] = []
     const zoomCommands: number[] = []
@@ -202,7 +204,7 @@ function sonyBody(
                 return { code: reply }
             }
             case 'GetObject':
-                return { code: OK, data: sonyLiveViewDataset() }
+                return { code: OK, data: sonyLiveViewDataset(body.liveViewImages.shift()) }
             case 'SDIO_GetOsdImage':
                 return { code: OK, data: sonyOsdDataset() }
         }
@@ -598,6 +600,29 @@ describe('getLiveViewFrame', () => {
         expect(focus!.centerX).toBeCloseTo(500 / 640)
         expect(focus!.centerY).toBeCloseTo(400 / 480)
         expect(focus!.width).toBeCloseTo(38 / 640)
+    })
+
+    it('returns a Sony picture without the 0xFF fill after its end marker, as the FX2 pads its image size', async () => {
+        // FX2 fw 1.01 (darkgrade02, 2026-11-25): size 22,016 = 43 x 512, FF D9 at 21,992, then 0xFF.
+        const picture = concatenate([Uint8Array.of(0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43), new Uint8Array(21_986).fill(0x11), Uint8Array.of(0xff, 0xd9)])
+        const padded = concatenate([picture, new Uint8Array(22_016 - picture.length).fill(0xff)])
+        const { camera, body } = sonyBody()
+        body.liveViewImages.push(padded)
+        expect((await camera.getLiveViewFrame()).jpeg).toEqual(picture)
+    })
+
+    it('reads a Sony picture without its JPEG end marker once more, and reports a second as unknown', async () => {
+        const cut = Uint8Array.of(0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x11, 0x11)
+        const { camera, body, sent } = sonyBody()
+        await camera.getCapabilities()
+        body.liveViewImages.push(cut)
+        expect((await camera.getLiveViewFrame()).jpeg).toEqual(jpeg)
+        expect(sent.filter(name => name === 'GetObject')).toHaveLength(2)
+        body.liveViewImages.push(cut, cut, jpeg)
+        const outcome = await camera.getLiveViewFrame().catch(error => error)
+        expect(outcome).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(outcome.message).toContain('without a JPEG end marker')
+        expect(sent.filter(name => name === 'GetObject')).toHaveLength(4)
     })
 
     it('adds the camera on-screen display on request and switches its output off once overlays stop', async () => {

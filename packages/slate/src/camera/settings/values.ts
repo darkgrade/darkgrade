@@ -244,7 +244,7 @@ export type VideoQuality = CodecValue<'videoQuality'>
 /** A frame rate: `24p`, `23.98p`, `60p`, `50i`. */
 export type FrameRate = CodecValue<'frameRate'>
 /** Movie sound, Canon only for now: `On`, `Off` or `On (manual level)`. */
-export type AudioRecording = Exclude<CodecValue<'audioRecording'>, '0'>
+export type AudioRecording = CodecValue<'audioRecording'>
 
 /** Canonical names for Sony's digital zoom codec values; type-only imports keep it browser-safe. */
 export const videoValueNames = {

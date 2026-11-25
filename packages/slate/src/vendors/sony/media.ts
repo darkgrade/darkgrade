@@ -101,28 +101,41 @@ async function listSlot(driver: SonyCamera, operation: string, slot: 1 | 2, sinc
     }
 }
 
+/** The card-index content with the highest id a lookup saw: the camera numbers each new content higher. */
+export interface SonyNewestContent {
+    contentId: number
+    createdUtcMs: number
+}
+
 /**
  * The newest card file `matches` accepts, as `listMedia()` lists it, from one card-index read per
- * readable slot of the contents created since `sinceUtcMs` (all of them when undefined), and the
- * newest creation time that read saw.
+ * readable slot, and the content with the highest id that read saw. With `after`, only contents
+ * numbered above it are candidates, and the read starts two seconds (a creation time may be stored
+ * at whole-second precision) before its creation time, unless `everything` reads the whole index.
  */
 export async function findSonyCardItem(
     driver: SonyCamera,
     operation: string,
     matches: (item: MediaItem) => boolean,
-    sinceUtcMs?: number
-): Promise<{ item?: MediaItem; newestUtcMs?: number }> {
+    after?: SonyNewestContent,
+    { everything = false } = {}
+): Promise<{ item?: MediaItem; newest?: SonyNewestContent; newer: boolean }> {
+    const sinceUtcMs = after && !everything ? after.createdUtcMs - 2_000 : undefined
     let found: { item: MediaItem; contentId: number } | undefined
-    let newestUtcMs: number | undefined
+    let newest: SonyNewestContent | undefined
+    let newer = false
     for (const slot of await reportingRefusals(operation, () => readableSlots(driver))) {
         for (const content of (await listSlot(driver, operation, slot, sinceUtcMs)).contents) {
-            newestUtcMs = Math.max(newestUtcMs ?? 0, content.createdUtcMs)
+            if (!newest || content.contentId > newest.contentId)
+                newest = { contentId: content.contentId, createdUtcMs: content.createdUtcMs }
+            if (after && content.contentId <= after.contentId) continue
+            newer = true
             if (found && found.contentId > content.contentId) continue
             const item = content.files.map(file => sonyItem(slot, content, file)).find(matches)
             if (item) found = { item, contentId: content.contentId }
         }
     }
-    return { ...(found && { item: found.item }), ...(newestUtcMs !== undefined && { newestUtcMs }) }
+    return { ...(found && { item: found.item }), ...(newest && { newest }), newer }
 }
 
 function contentReference(operation: string, id: string): SonyContentMediaReference {

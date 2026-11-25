@@ -330,6 +330,19 @@ describe('colour temperature in kelvin', () => {
         const outcome = await camera.getColorTemperature().catch(error => error)
         expect(outcome).toBeInstanceOf(CameraUnsupportedError)
         expect(outcome.message).toContain('does not apply with the current white balance')
+        // An FX2 in Auto reports it enabled at 0 K: getCapabilities and the getter agree it does not apply.
+        Object.assign(body.properties.get(sonyCodes.colorTemperature)!, { current: 0, enabled: true })
+        expect((await camera.getCapabilities()).controls.colorTemperature).toMatchObject({ value: '0', enabled: false, writable: false })
+        expect((await camera.getColorTemperature().catch(error => error)).message).toContain('does not apply')
+    })
+
+    it('says a Sony drive mode 0x0 with nothing to choose (movie mode) does not apply', async () => {
+        const { camera, body } = sonyCamera()
+        Object.assign(body.properties.get(sonyCodes.driveMode)!, { current: 0, choices: [] })
+        expect((await camera.getCapabilities()).controls.driveMode).toMatchObject({ enabled: false, writable: false })
+        const outcome = await camera.getDriveMode().catch(error => error)
+        expect(outcome).toBeInstanceOf(CameraUnsupportedError)
+        expect(outcome.message).toContain("does not apply in the camera's current mode")
     })
 })
 

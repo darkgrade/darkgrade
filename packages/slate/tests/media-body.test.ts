@@ -240,6 +240,8 @@ function sonyCamera() {
         dateTimeResponse: 0x2001,
         previewResponse: 0x2001,
         listResponse: 0x2001,
+        /** Card-index reads answered CameraStatusError (0xA106) before the body answers again. */
+        statusErrors: 0,
         transferModeChanges: [] as string[],
         downloads: [] as number[],
         dateTimeWrites: [] as string[],
@@ -296,6 +298,8 @@ function sonyCamera() {
                     data: deviceInfo(driver.registry, { manufacturer: 'Sony Corporation', model: 'ILCE-7M5', firmware: '1.00' }, [], [0x1001]),
                 }
             case 'SDIO_GetContentInfoList': {
+                if (body.transfer) return { code: 0xa106 } // CameraStatusError in content-transfer mode (FX2)
+                if (body.statusErrors > 0 && body.statusErrors--) return { code: 0xa106 }
                 if (body.listResponse !== 0x2001) return { code: body.listResponse }
                 expect(parameters.Extra1).toBe(1)
                 // Oldest first, from the creation time asked, at most ContentLimit contents.
@@ -706,6 +710,31 @@ describe('a simulated Sony body', () => {
         expect(body.transferModeChanges).toEqual(['ENABLE', 'DISABLE'])
     })
 
+    it('leaves content-transfer mode before listing the card index after a download, as the FX2 needs', async () => {
+        const { camera, driver, body } = sonyCamera()
+        const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
+        await camera.downloadMedia(photo.id)
+        // A new session's preview checks the id against the card index first.
+        driver.sessionId = 8
+        expect(await camera.getMediaPreview(photo.id, 'thumbnail')).toEqual(jpeg(1))
+        expect(body.transferModeChanges).toEqual(['ENABLE', 'DISABLE'])
+        await camera.downloadMedia(photo.id)
+        expect((await camera.listMedia()).map(item => item.name)).toContain('DSC00001.ARW')
+        expect(body.transferModeChanges).toEqual(['ENABLE', 'DISABLE', 'ENABLE', 'DISABLE'])
+    })
+
+    it('asks a card-index read once more after CameraStatusError, and refuses naming it when it stays', async () => {
+        const { camera, body } = sonyCamera()
+        body.statusErrors = 1
+        expect(await camera.listMedia()).toHaveLength(3)
+        expect(body.listQueries).toHaveLength(1)
+        body.statusErrors = 2
+        const refused = await camera.listMedia().catch(error => error)
+        expect(refused).toBeInstanceOf(CameraRefusedError)
+        expect(refused.message).toContain('CameraStatusError (0xa106)')
+        expect(body.statusErrors).toBe(0)
+    })
+
     it('reopens once on the live-view frame after a download that left the body in playback', async () => {
         const { camera, driver, body } = sonyCamera()
         const reopen = vi.spyOn(driver, 'reopenSession').mockImplementation(async () => {
@@ -897,6 +926,19 @@ describe.each([
         expect(vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'GetThumb')).toHaveLength(1)
         expect(await camera.downloadMedia(jpegItem.id)).toEqual(jpeg(1))
         expect(state.downloads).toEqual([0x11])
+    })
+
+    it('returns a padded thumbnail through its end marker, and never one without it', async () => {
+        const { camera, driver, files } = simulate()
+        const jpegItem = (await camera.listMedia()).find(item => item.name === 'IMG_0001.JPG')!
+        const file = files.find(candidate => candidate.handle === 0x11)!
+        file.thumbnail = concatenate([jpeg(0x51), new Uint8Array(27)])
+        expect(await camera.getMediaPreview(jpegItem.id, 'thumbnail')).toEqual(jpeg(0x51))
+        file.thumbnail = jpeg(0x51).slice(0, 4)
+        const outcome = await camera.getMediaPreview(jpegItem.id, 'thumbnail').catch(error => error)
+        expect(outcome).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(outcome.message).toContain('without a JPEG end marker')
+        expect(vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'GetThumb')).toHaveLength(2)
     })
 
     it('reports a refused thumbnail and a refused download as refused, without asking again', async () => {

@@ -13,7 +13,7 @@ import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { canonEvents, canonObjectAdded, canonValue } from '@tests/fixtures/canon-events'
-import { sonyContentList } from '@tests/fixtures/sony-content-list'
+import { sonyContentList, type SimulatedSonyContent } from '@tests/fixtures/sony-content-list'
 import { decodeMediaId, encodeMediaId, type MediaReference } from '@vendors/generic/media-id'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
@@ -93,6 +93,14 @@ function sonyBody() {
         exposureProgram: 'Movie Manual',
         /** Exposure programs written, in order. */
         modeChanges: [] as string[],
+        /**
+         * When set, the camera clock: each press saves a new content numbered one higher at this
+         * time, and the card index lists only contents created from the time asked, by that clock.
+         */
+        clockUtcMs: undefined as number | undefined,
+        shots: [] as SimulatedSonyContent[],
+        /** The creation time each card-index read asked from. */
+        listQueries: [] as number[],
     }
     const resumeShooting = vi.spyOn(driver, 'resumeShooting').mockResolvedValue()
     // The save destination reads as writable again once the body has finished with the shot.
@@ -117,6 +125,8 @@ function sonyBody() {
         }
         if (property.name !== 'ShutterReleaseButton' || value !== 'DOWN') return
         body.presses++
+        if (body.clockUtcMs !== undefined)
+            body.shots.push({ contentId: 7 + body.shots.length, createdLocalMs: body.clockUtcMs, files: [{ fileId: 1, path: 'DCIM/101MSDCF/DSC00001.JPG', size: cardFile.length }] })
         if (body.delivers) emit(driver, { code: 0xc201, parameters: [0xffffc001] })
         // The card index announces the saved file (SDIE_ContentInfoListChanged, slot 1, type 1).
         if (body.delivers && body.cardIndex === 'lists') emit(driver, { code: 0xc234, parameters: [1, 1] })
@@ -131,6 +141,13 @@ function sonyBody() {
                 return { code: 0x2001, data: deviceInfo(camera, body.cardIndex === 'unsupported' ? [] : [0xc234]) }
             case 'SDIO_GetContentInfoList': {
                 if (body.cardIndex === 'unsupported') return { code: 0x2005 }
+                const since = Number(parameters.CreateTimeLower) + Number(parameters.CreateTimeUpper) * 2 ** 32
+                body.listQueries.push(since)
+                if (body.clockUtcMs !== undefined) {
+                    // Ordered by creation time, as an FX2 orders it, not by content id.
+                    const page = body.shots.filter(shot => shot.createdLocalMs >= since).sort((a, b) => a.createdLocalMs - b.createdLocalMs)
+                    return { code: 0x2001, data: sonyContentList(1, page) }
+                }
                 const older = { contentId: 2, createdLocalMs: Date.UTC(2026, 0, 1), files: [{ fileId: 1, path: 'DCIM/100MSDCF/DSC00001.JPG', size: olderFile.length }] }
                 const taken = {
                     contentId: 7,
@@ -485,6 +502,27 @@ describe('takePhoto outcomes around the release', () => {
         const names = send.mock.calls.map(([operation]) => operation.name)
         expect(names.filter(name => name === 'SDIO_GetContentInfoList')).toHaveLength(1)
         expect(names).not.toContain('GetObjectHandles')
+    })
+
+    it('finds a Sony photo its camera clock dates before the last one, after the clock was set back', async () => {
+        // FX2 (darkgrade02, 2026-11-25): contents 620-623 at 18:07, then the clock set back and 624 at 17:21.
+        const { camera, body } = sonyBody()
+        body.clockUtcMs = Date.UTC(2026, 10, 25, 18, 7)
+        const first = await camera.takePhoto()
+        body.clockUtcMs = Date.UTC(2026, 10, 25, 17, 21)
+        body.listQueries.length = 0
+        const second = await camera.takePhoto()
+        expect(second.mediaId).not.toBe(first.mediaId)
+        expect((await camera.listMedia())[0]?.id).toBe(second.mediaId)
+        // From the last photo's time, then the whole index once, since nothing newer was listed.
+        expect(body.listQueries.slice(0, 2)).toEqual([Date.UTC(2026, 10, 25, 18, 7) - 2_000, 0])
+        // Later lookups start from the newest-numbered content's time: one read again.
+        body.clockUtcMs = Date.UTC(2026, 10, 25, 17, 22)
+        body.listQueries.length = 0
+        const third = await camera.takePhoto()
+        expect((await camera.listMedia())[0]?.id).toBe(third.mediaId)
+        expect(body.listQueries[0]).toBe(Date.UTC(2026, 10, 25, 17, 21) - 2_000)
+        expect(body.listQueries).toHaveLength(2) // the lookup, then listMedia
     })
 
     it('reports a Sony photo its card index never lists as unknown, pressing once', async () => {

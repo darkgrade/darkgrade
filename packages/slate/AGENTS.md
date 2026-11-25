@@ -123,6 +123,17 @@ with GeneralError, so a Nikon with 0x9207 focuses through it (OutOfFocus is a re
 are numbered in GetStorageIDs order (Canon's SD is 0x0002 on a one-slot R8 Mark II). EOS setClock
 writes UTCTime 0xD17C as libgphoto2 does; it has not run on hardware yet, so safe-probe it on the
 bench before claiming Canon clock support.
+darkgrade02 the same day (FX2 1.01, R6 Mark III 3-1.0.1, Z6 III V2.00): Camera.discover lists PTP
+interfaces from USB descriptors without opening them, so a body already open in the process (or
+claimed elsewhere) is still listed, without its strings. The FX2 pads its live-view JPEG with 0xFF
+to a multiple of 512 bytes: a picture (live view or preview) is returned through its end marker, and
+one without it is read once more (live view) or reported, never returned. After a download a Sony
+body stays in content-transfer mode and answers card-index reads (list, preview) with
+CameraStatusError 0xA106: they leave it first. The FX2's card index is ordered by its clock, which
+was set back during the session: lookups take only contents numbered above the last one, reading
+the whole index once when the time window shows none. Sony colour temperature 0 and an unnamed value
+with nothing to choose (FX2 drive mode 0x0 in movie mode) do not apply; the R6 Mark III offers movie
+sound 0 and 1, and its clip at 0 has audio, so 0 is On there.
 
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
 existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;

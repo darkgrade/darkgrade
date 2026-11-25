@@ -74,8 +74,6 @@ export const canonControlValues = {
     exposureMode: { canonical: canonExposureMode },
     exposureCompensation: { canonical: canonEighthsOfAStop },
     meteringMode: { canonical: canonMetering },
-    // Movie sound 0 has no verified meaning: it reads as unrecognized and is never offered.
-    audioRecording: { canonical: label => (label === '0' ? undefined : label) },
 } as const satisfies ControlValueTable
 
 type Names<Value extends string> = Readonly<Record<Value, string>>

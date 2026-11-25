@@ -343,8 +343,9 @@ export const CanonExposureSimMode = uint16Property(0xd1b7, 'CanonExposureSimMode
 
 /** EDSDK 13.20.21, section 5.2.105; PTP wire mapping verified in the SDK and EOS 80D. */
 export const CanonMovieSoundRecording = enumProperty(0xd195, 'CanonMovieSoundRecording', 'Sound recorded in the camera movie', 'uint32', [
-    // R6 Mark III (choices 0/1) and R8 Mark II report 0; what it records is not known, so it keeps its raw number.
-    { value: 0, name: '0', description: 'Reported by the R6 Mark III and R8 Mark II; its audio meaning is not verified' },
+    // The R6 Mark III offers 0 and 1 (R8 Mark II likewise), and a clip it recorded at 0 carried an audio
+    // track (darkgrade02 acceptance, 2026-11-25): 0 records sound, at a level not yet verified.
+    { value: 0, name: 'On', description: 'Sound recorded (R6 Mark III, R8 Mark II)' },
     { value: 1, name: 'Off', description: 'Sound recording disabled' },
     { value: 2, name: 'On', description: 'Sound recorded at an automatic level' },
     { value: 3, name: 'On (manual level)', description: 'Sound recorded at a manually set level' },

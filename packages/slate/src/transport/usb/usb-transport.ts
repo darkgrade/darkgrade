@@ -58,6 +58,48 @@ function narrowInterfaceFilters(filters: USBDeviceFilter[], devices: NodeUSBDevi
     })
 }
 
+/** One string descriptor through node-usb's callback API; undefined when the device has none or will not say. */
+function stringDescriptor(device: NodeUSBDevice, index: number): Promise<string | undefined> {
+    if (!index) return Promise.resolve(undefined)
+    return new Promise(resolve => {
+        try {
+            device.getStringDescriptor(index, (error, value) => resolve(error ? undefined : value || undefined))
+        } catch {
+            resolve(undefined)
+        }
+    })
+}
+
+/**
+ * A device's manufacturer, product and serial strings. One this process already has open (its
+ * interfaces are set) is read on that handle and left open; another is opened for the read and
+ * closed after. A device that cannot be opened (claimed by another process) is listed without them.
+ */
+async function deviceStrings(device: NodeUSBDevice): Promise<{ manufacturer?: string; model?: string; serialNumber?: string }> {
+    const alreadyOpen = device.interfaces !== undefined
+    if (!alreadyOpen) {
+        try {
+            device.open(false)
+        } catch {
+            return {}
+        }
+    }
+    try {
+        const { iManufacturer, iProduct, iSerialNumber } = device.deviceDescriptor
+        const [manufacturer, model, serialNumber] = await Promise.all(
+            [iManufacturer, iProduct, iSerialNumber].map(index => stringDescriptor(device, index))
+        )
+        return { ...(manufacturer && { manufacturer }), ...(model && { model }), ...(serialNumber && { serialNumber }) }
+    } finally {
+        if (!alreadyOpen)
+            try {
+                device.close()
+            } catch {
+                /* The strings were read or not; closing a handle this call opened never fails the list. */
+            }
+    }
+}
+
 function isUsbDeviceGone(error: unknown): boolean {
     return error instanceof Error && /LIBUSB_(?:ERROR|TRANSFER)_NO_DEVICE\b/.test(error.message)
 }
@@ -153,6 +195,30 @@ export class USBTransport implements TransportInterface {
                     protocolCode: alternate?.interfaceProtocol,
                 }
             })
+    }
+
+    /**
+     * Every attached PTP still-image body, for Camera.discover, read from USB descriptors rather than
+     * through node-usb's WebUSB: that drops any device it cannot open (and closes one it finds open),
+     * so a body this process already had open was never listed (darkgrade02, 2026-11-25). In a browser,
+     * or with a supplied WebUSB, it is `discover()`.
+     */
+    async listAttached(): Promise<
+        { vendorId: number; productId: number; manufacturer?: string; model?: string; serialNumber?: string }[]
+    > {
+        if ((typeof navigator !== 'undefined' && 'usb' in navigator) || this.suppliedUsb)
+            return (await this.discover()).map(({ vendorId, productId, manufacturer, model, serialNumber }) => ({
+                vendorId,
+                productId,
+                ...(manufacturer && { manufacturer }),
+                ...(model && { model }),
+                ...(serialNumber && { serialNumber }),
+            }))
+        const cameras = usb.getDeviceList().filter(device => hasMatchingInterface(device, PTP_STILL_IMAGE_FILTER))
+        const listed = []
+        for (const device of cameras)
+            listed.push({ vendorId: device.deviceDescriptor.idVendor, productId: device.deviceDescriptor.idProduct, ...(await deviceStrings(device)) })
+        return listed
     }
 
     private matchesFilter(device: USBDevice, filter: USBDeviceFilter): boolean {

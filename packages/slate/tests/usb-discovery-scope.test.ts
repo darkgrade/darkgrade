@@ -166,3 +166,41 @@ describe('USB discovery scope', () => {
         expect(fixture.touched).toEqual([])
     })
 })
+
+describe('Camera.discover', () => {
+    /** A node-usb device as getDeviceList gives it: descriptors, string reads and its own open/close. */
+    function nativeDevice(vendorId: number, productId: number, strings: string[], state: 'closed' | 'open here' | 'claimed', interfaceClass = 6) {
+        const configDescriptor = { interfaces: [[{ bInterfaceClass: interfaceClass, bInterfaceSubClass: 1, bInterfaceProtocol: 1 }]] }
+        const opened = { count: 0, closed: 0 }
+        return {
+            opened,
+            deviceDescriptor: { idVendor: vendorId, idProduct: productId, iManufacturer: 1, iProduct: 2, iSerialNumber: 3 },
+            allConfigDescriptors: [configDescriptor],
+            interfaces: state === 'open here' ? [] : undefined,
+            open: vi.fn(() => {
+                if (state === 'claimed') throw new Error('LIBUSB_ERROR_ACCESS')
+                opened.count++
+            }),
+            close: vi.fn(() => void opened.closed++),
+            getStringDescriptor: vi.fn((index: number, callback: (error?: Error, value?: string) => void) => callback(undefined, strings[index - 1])),
+        }
+    }
+
+    it('lists a body this process has open, and one claimed elsewhere, without WebUSB and without closing either', async () => {
+        const { Camera } = await import('@camera/index')
+        const open = nativeDevice(0x054c, 0x0f4a, ['Sony', 'ILME-FX2', 'fx2-serial'], 'open here')
+        const claimed = nativeDevice(0x04a9, 0x3329, ['Canon Inc.', 'Canon EOS R6m3', 'r6'], 'claimed')
+        const closed = nativeDevice(0x04b0, 0x0450, ['Nikon Corporation', 'Z6_3', 'z6'], 'closed')
+        const hubDevice = nativeDevice(0x2109, 0x0822, [], 'closed', 9)
+        vi.mocked(usb.getDeviceList).mockReturnValue([open, claimed, closed, hubDevice] as any)
+        expect(await Camera.discover()).toEqual([
+            { vendorId: 0x054c, productId: 0x0f4a, manufacturer: 'Sony', model: 'ILME-FX2', serialNumber: 'fx2-serial' },
+            { vendorId: 0x04a9, productId: 0x3329 },
+            { vendorId: 0x04b0, productId: 0x0450, manufacturer: 'Nikon Corporation', model: 'Z6_3', serialNumber: 'z6' },
+        ])
+        expect(fixture.options).toEqual([])
+        expect([open.open.mock.calls.length, open.close.mock.calls.length]).toEqual([0, 0])
+        expect([closed.opened.count, closed.opened.closed]).toEqual([1, 1])
+        expect(hubDevice.open).not.toHaveBeenCalled()
+    })
+})

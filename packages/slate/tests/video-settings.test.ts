@@ -129,12 +129,14 @@ describe('Canon typed audio recording', () => {
         expect(writes).toEqual([1])
     })
 
-    it('shows movie sound 0, whose meaning is not verified, as unrecognized and never offers it', async () => {
-        // The R6 Mark III offers 0/1 and the R8 Mark II reports 0.
-        const { camera } = canonCamera({ value: 0, choices: [0, 1] })
-        const { controls } = await camera.getCapabilities()
-        expect(controls.audioRecording).toMatchObject({ value: 'Unrecognized (0)', allowedValues: ['Off'], writable: false })
-        await expect(camera.getAudioRecording()).rejects.toBeInstanceOf(CameraUnsupportedError)
+    it('names movie sound 0 On, as the R6 Mark III records sound there, and restores it', async () => {
+        // The R6 Mark III offers 0 and 1; a clip it recorded at 0 carried an audio track.
+        const { camera, writes } = canonCamera({ value: 0, choices: [0, 1] })
+        expect((await camera.getCapabilities()).controls.audioRecording).toMatchObject({ value: 'On', allowedValues: ['On', 'Off'], writable: true })
+        expect(await camera.getAudioRecording()).toBe('On')
+        expect(await camera.setAudioRecording('Off')).toBe('Off')
+        expect(await camera.setAudioRecording('On')).toBe('On')
+        expect(writes).toEqual([1, 0])
     })
 
     it('has no frame rate or quality of its own: they are part of the video format record', async () => {

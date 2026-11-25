@@ -203,9 +203,7 @@ export const typedSettingReaders: { [Id in TypedSettingId]: SettingReader<Settin
     videoFormat: settingReader(isVideoFormat),
     videoQuality: settingReader((value): value is VideoQuality => videoCodecValueNames('videoQuality').has(value)),
     frameRate: settingReader((value): value is FrameRate => videoCodecValueNames('frameRate').has(value)),
-    audioRecording: settingReader(
-        (value): value is AudioRecording => value !== '0' && videoCodecValueNames('audioRecording').has(value)
-    ),
+    audioRecording: settingReader((value): value is AudioRecording => videoCodecValueNames('audioRecording').has(value)),
     digitalZoom: enumeratedSettingReader<DigitalZoom>(digitalZoomValues),
     liveViewQuality: enumeratedSettingReader<LiveViewQuality>(liveViewQualityValues),
 }
@@ -237,6 +235,9 @@ function readSetting(id: TypedSettingId, state: CameraControlState | undefined) 
             id,
             `${cameraControlDefinitions[id].label} is not available on this camera in its current mode`
         )
+    // A disabled setting whose value has no name (Sony drive mode 0x0 in movie mode) does not apply now.
+    if (state.enabled === false && state.unrecognized?.value !== undefined)
+        throw new CameraUnsupportedError(id, `${state.label} does not apply in the camera's current mode`)
     return typedSettingReaders[id](state)
 }
 
