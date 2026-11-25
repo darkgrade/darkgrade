@@ -99,7 +99,7 @@
         "docs/pre-release-audit.md"
     ],
     "scripts": {
-        "build": "vite build",
+        "build": "bun run scripts/generate-camera-operations.ts --compatibility && vite build",
         "dev": "vite build --watch",
         "test": "bun run scripts/test.ts",
         "test:unit": "bun run scripts/test.ts",
@@ -116,7 +116,7 @@
         "test:runtime": "bun run build && bun test ./tests/runtime",
         "mcp": "bun run src/runtime/stdio.ts",
         "generate:operations": "bun run scripts/generate-camera-operations.ts",
-        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit",
+        "typecheck": "bun run scripts/generate-camera-operations.ts --compatibility && tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit",
         "bench:recover": "bun run scripts/recover-camera.ts",
         "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
         "test:cli": "bun run build && node --test tests/cli/*.test.ts",
