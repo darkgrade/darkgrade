@@ -120,8 +120,8 @@ export const CAMERA_CONTROL_NAMES = [
     'subjectDetection',
     'detectionSubject',
     'eyeSelection',
-    'stillFormat',
-    'imageSize',
+    'photoFormat',
+    'photoSize',
     'aspectRatio',
     'jpegQuality',
     'movieFormat',
@@ -215,21 +215,22 @@ export interface LogEntry {
 }
 
 export interface FileEntry {
-    storageId: number
-    storageDescription: string
-    objectHandle: number
+    /** Slate's media id: opaque, and still valid after a reconnect while the file stays on the card. */
+    id: string
+    slot: number
     filename: string
     sizeBytes: number
-    format: string
+    kind: 'photo' | 'clip' | 'other'
+    /** The camera's local wall time, ISO 8601 without an offset; empty when the camera doesn't say. */
     captureDate: string
     /** Pixel size of a photo or video, when the camera reports it. */
     width?: number
     height?: number
-    /** Sony's content index for this file: thumbnails and screennails come from here. */
-    sonyContent?: { contentId: number; fileId: number; slot: 1 | 2 }
+    /** The preview sizes the camera can serve for this file without downloading it. */
+    previews: readonly ('thumbnail' | 'preview')[]
 }
 
-export type DownloadRequest = Pick<FileEntry, 'objectHandle' | 'sizeBytes' | 'filename' | 'captureDate' | 'sonyContent'>
+export type DownloadRequest = Pick<FileEntry, 'id' | 'sizeBytes' | 'filename' | 'captureDate' | 'kind' | 'previews'>
 
 /** The card list as the main process last read it; files is null while a read is in flight or failed. */
 export interface FilesUpdate {

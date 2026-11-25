@@ -1,6 +1,7 @@
 import { CustomCodec } from '@ptp/types/codec'
 
-const singleFormatNames = new Map<number, string>([
+/** Canon's single image formats: RAW sizes and JPEG size/quality, as the body's menu spells them. */
+const singleFormats = [
     [0x0c, 'RAW'],
     [0x1c, 'mRAW'],
     [0x2c, 'sRAW'],
@@ -21,7 +22,13 @@ const singleFormatNames = new Map<number, string>([
     [0x63, 'M2'],
     [0x52, 'cM1'],
     [0x62, 'cM2'],
-])
+] as const
+
+export type CanonSingleImageFormat = (typeof singleFormats)[number][1]
+/** A Canon photo format: one format, or a RAW and a JPEG recorded together (`RAW+L`). */
+export type CanonImageFormatLabel = CanonSingleImageFormat | `${CanonSingleImageFormat}+${CanonSingleImageFormat}`
+
+const singleFormatNames = new Map<number, string>(singleFormats)
 
 export interface CanonImageFormat {
     packed: number
@@ -55,7 +62,7 @@ export function canonImageFormatFromPacked(packed: number): CanonImageFormat {
         code,
         label: singleFormatNames.get(code) || `0x${code.toString(16).padStart(2, '0')}`,
     }))
-    return { packed, label: entries.map(entry => entry.label).join(' + '), entries }
+    return { packed, label: entries.map(entry => entry.label).join('+'), entries }
 }
 
 export class CanonImageFormatCodec extends CustomCodec<CanonImageFormat> {

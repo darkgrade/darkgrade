@@ -15,6 +15,7 @@ import {
     discoverCamera,
     errorMessage,
     requiresReconnect,
+    vendorIdForMake,
 } from '@main/camera-service/shared'
 import { killMacCameraDaemons } from '@main/macos-camera-daemon'
 import { experimentalCameraOptions } from '@main/usb-experiments'
@@ -118,7 +119,8 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         }
 
         // Slate selects the actual opened USB body's driver, including when discovery missed it.
-        this.detectedVendorId ??= camera.getInstance().vendorId ?? null
+        this.cameraInfo = await camera.getInfo().catch(() => null)
+        this.detectedVendorId ??= vendorIdForMake(this.cameraInfo?.manufacturer)
 
         this.camera = camera
         this.connected = true
@@ -126,7 +128,6 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         this.subscribeToCameraEvents()
         this.startBatteryPolling()
         this.startClockSync()
-        this.knownObjects.clear()
         this.previewCache.clear()
         this.scheduleFilesRefresh(FILES_REFRESH_DELAY_MS * 2)
         this.log('system', `Connected to ${this.vendorName()}`)
@@ -197,8 +198,8 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         this.card = null
         this.lens = null
         this.clock = null
-        if (this.clockTimer) clearInterval(this.clockTimer)
-        this.clockTimer = null
+        this.stopClockSync()
+        this.cameraInfo = null
         this.detectedVendorId = null
         this.detectedName = null
         this.detectedModel = null

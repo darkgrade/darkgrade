@@ -68,7 +68,8 @@ export interface CameraCapabilities {
     advertisedOperations: number[] | null
     /**
      * Whether each public operation is possible right now, with the reason when it is not. Camera
-     * fills this from its driver's capability groups; a missing entry means not yet reported.
+     * fills this from its driver's capability groups; an operation absent here has no availability
+     * report yet, and a call still answers CameraUnsupportedError when it cannot run.
      */
     operations?: Partial<Record<string, OperationAvailability>>
 }

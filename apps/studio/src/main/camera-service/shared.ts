@@ -4,8 +4,7 @@ import {
     PTPDisconnectedError,
     PTPRecoveryRequiredError,
     VendorIDs,
-    type SonyContent,
-    type SonyContentFile,
+    type MediaItem,
     type TransactionPolicy,
 } from '@darkgrade/slate'
 import type { CameraControlName, FileEntry, FilePreview } from '@shared/ipc'
@@ -54,8 +53,6 @@ export const SETTINGS_EVENT_DEBOUNCE_MS = 400
 
 export const STILL_IMAGE_CLASS = 0x06
 
-export const PTP_OK = 0x2001
-
 export const DOWNLOAD_PROGRESS_INTERVAL_MS = 100
 
 /** Settings that change what the camera focuses on: changing one refocuses. */
@@ -93,6 +90,12 @@ export const VENDOR_NAMES: Record<number, string> = {
     [VendorIDs.CANON]: 'Canon',
 }
 
+/** The USB vendor whose make Slate reports, for the Studio features still chosen by vendor. */
+export function vendorIdForMake(make: string | undefined): number | null {
+    const entry = Object.entries(VENDOR_NAMES).find(([, name]) => name === make)
+    return entry ? Number(entry[0]) : null
+}
+
 export const KNOWN_CAMERA_VENDOR_IDS = new Set<number>([VendorIDs.SONY, VendorIDs.NIKON, VendorIDs.CANON])
 
 export function errorMessage(error: unknown): string {
@@ -115,24 +118,18 @@ export function kelvinSteps(): string[] {
     return steps
 }
 
-/** One card file from Sony's content index, shaped like a PTP listing entry (no object handle yet). */
-export function sonyContentEntry(slot: 1 | 2, content: SonyContent, file: SonyContentFile): FileEntry {
-    const filename = file.path.split('/').pop() ?? file.path
-    const local = new Date(content.createdLocalMs)
-    const pad = (value: number): string => String(value).padStart(2, '0')
-    // The camera's local wall time stored as if UTC; format it as PTP's YYYYMMDDThhmmss.
-    const captureDate = `${local.getUTCFullYear()}${pad(local.getUTCMonth() + 1)}${pad(local.getUTCDate())}T${pad(local.getUTCHours())}${pad(local.getUTCMinutes())}${pad(local.getUTCSeconds())}`
+/** One card file as the renderer shows it. */
+export function fileEntry(item: MediaItem): FileEntry {
     return {
-        storageId: slot === 2 ? 0x20001 : 0x10001,
-        storageDescription: `Slot ${slot}`,
-        objectHandle: -1,
-        filename,
-        sizeBytes: file.sizeBytes,
-        format: file.video ? 'Video' : (filename.split('.').pop()?.toUpperCase() ?? ''),
-        captureDate,
-        width: file.video?.width ?? file.width,
-        height: file.video?.height ?? file.height,
-        sonyContent: { contentId: content.contentId, fileId: file.fileId, slot },
+        id: item.id,
+        slot: item.slot,
+        filename: item.name,
+        sizeBytes: item.sizeBytes ?? 0,
+        kind: item.kind,
+        captureDate: item.capturedAt ?? '',
+        ...(item.widthPixels !== undefined && { width: item.widthPixels }),
+        ...(item.heightPixels !== undefined && { height: item.heightPixels }),
+        previews: item.previews,
     }
 }
 
@@ -143,12 +140,6 @@ export function describeModel(vendorId: number, productId: number): string | nul
     const model = candidate?.models[0]?.replace(/\s*\(.*\)$/, '')
     if (!model) return null
     return identification.status === 'matched' ? model : `${model} (or similar)`
-}
-
-export function vendorKind(vendorId: number | null): 'sony' | 'canon' | 'standard' {
-    if (vendorId === VendorIDs.SONY) return 'sony'
-    if (vendorId === VendorIDs.CANON) return 'canon'
-    return 'standard'
 }
 
 export interface DiscoveredCamera {

@@ -1,15 +1,16 @@
 import { CanonCamera } from '@camera/canon-camera'
+import type { CardPhoto, ComputerPhoto, ConfirmedPhotoFile, Photo, TakePhotoOptions } from '@camera/driver/photo'
+import { CameraOutcomeUnknownError, CameraRefusedError } from '@camera/errors'
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
-import { cameraContext } from '@camera/operations/context'
+import { cameraContext, requireCapability } from '@camera/operations/context'
 import { SonyCamera } from '@camera/sony-camera'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
-import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
-import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
+import { withCanonPhotoMode } from '@vendors/canon/photo-mode'
+import { sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
 
-const SONY_CAMERA_OPERATING_MODE = 0xd0bc
-const SONY_OPERATING_MODE_PLAYBACK = 2
+export type { CardPhoto, ComputerPhoto, Photo, PhotoDestination, TakePhotoOptions } from '@camera/driver/photo'
 
 export interface CaptureImageOptions {
     includeInfo?: boolean
@@ -20,6 +21,17 @@ export interface CaptureImageOptions {
 }
 
 export interface PhotoOperations {
+    /**
+     * Takes one photo and resolves only once the camera shows the new file: its media id, name and
+     * size, and for `destination: 'computer'` its bytes. Photo or video mode preparation happens
+     * inside and is undone afterwards. The shutter command is never resent: an unconfirmed release
+     * is CameraOutcomeUnknownError, a release the camera refuses is CameraRefusedError, and a
+     * camera that cannot take one now is CameraUnsupportedError. It is refused while the camera
+     * reports a recording, so Stop never waits behind a photo's confirmation.
+     */
+    takePhoto(options?: TakePhotoOptions & { destination?: 'card' }): Promise<CardPhoto>
+    takePhoto(options: TakePhotoOptions & { destination: 'computer' }): Promise<ComputerPhoto>
+    takePhoto(options?: TakePhotoOptions): Promise<Photo>
     captureImage(params?: CaptureImageOptions): Promise<{ info?: ObjectInfo; data?: Uint8Array }>
     /**
      * Sony: return the body to remote shooting after card access. Reading the card switches the
@@ -31,7 +43,45 @@ export interface PhotoOperations {
     resumeSonyShooting(): Promise<boolean>
 }
 
+function photoFrom(file: ConfirmedPhotoFile, destination: 'card' | 'computer'): Photo {
+    const described = { ...(file.mediaId !== undefined && { mediaId: file.mediaId }), name: file.name, sizeBytes: file.sizeBytes }
+    if (destination === 'card') return { destination, ...described }
+    if (!file.data) throw new CameraOutcomeUnknownError('takePhoto', 'The photo was taken, but its bytes did not reach the computer')
+    return { destination, ...described, data: file.data }
+}
+
+/**
+ * A photo holds the camera's operation queue until its file is confirmed, which on Nikon can take
+ * well over a minute after a long exposure. startRecording waits on the same queue, so refusing a
+ * photo while a recording is observed means Stop never waits behind one. An unreadable or unknown
+ * recording state is not a recording: generic bodies report none.
+ */
+async function refuseWhileRecording(camera: Camera): Promise<void> {
+    const state = await camera.getRecordingState().catch(() => 'unknown' as const)
+    if (state === 'recording' || state === 'starting' || state === 'stopping')
+        throw new CameraRefusedError('takePhoto', `The camera is ${state === 'recording' ? 'recording' : `${state} a recording`}; stop it before taking a photo`)
+}
+
+function takePhoto(this: Camera, options?: TakePhotoOptions & { destination?: 'card' }): Promise<CardPhoto>
+function takePhoto(this: Camera, options: TakePhotoOptions & { destination: 'computer' }): Promise<ComputerPhoto>
+function takePhoto(this: Camera, options?: TakePhotoOptions): Promise<Photo>
+async function takePhoto(this: Camera, options: TakePhotoOptions = {}): Promise<Photo> {
+    const autofocus = options.autofocus ?? true
+    const destination = options.destination ?? 'card'
+    if (typeof autofocus !== 'boolean') throw new CameraRefusedError('takePhoto', 'autofocus must be true or false')
+    if (destination !== 'card' && destination !== 'computer')
+        throw new CameraRefusedError('takePhoto', "destination must be 'card' or 'computer'")
+    const photo = requireCapability(this, 'photo', 'takePhoto')
+    const file = await cameraContext(this).controlsQueue.run('camera', async () => {
+        await refuseWhileRecording(this)
+        return photo.takePhoto({ autofocus, destination })
+    })
+    return photoFrom(file, destination)
+}
+
 export const photoOperations: PhotoOperations & ThisType<Camera> = {
+    takePhoto,
+
     async captureImage(params?: CaptureImageOptions) {
         const { driver } = cameraContext(this)
         if (params?.rawCompression !== undefined && driver.vendorId !== VendorIDs.NIKON)
@@ -46,20 +96,14 @@ export const photoOperations: PhotoOperations & ThisType<Camera> = {
         )
             throw new Error('Capture without autofocus is only implemented for Canon EOS, Nikon and Sony cameras')
         const capture = () => driver.captureImage({ includeInfo: true, includeData: true, ...params })
-        if (driver instanceof SonyCamera) return withSonyPhotoMode(this, capture)
-        if (driver instanceof CanonCamera) return withCanonPhotoMode(this, capture)
+        if (driver instanceof SonyCamera) return withSonyPhotoMode(sonyPhotoModeDriver(driver), capture)
+        if (driver instanceof CanonCamera) return withCanonPhotoMode(driver, capture)
         return capture()
     },
 
     async resumeSonyShooting(): Promise<boolean> {
-        const context = cameraContext(this)
-        const { driver } = context
+        const { driver } = cameraContext(this)
         if (!(driver instanceof SonyCamera)) return false
-        await driver.resumeShooting()
-        const states = await driver.refreshPropertyStates()
-        const operatingMode = states.find(state => state.code === SONY_CAMERA_OPERATING_MODE)
-        if (operatingMode?.rawValue !== SONY_OPERATING_MODE_PLAYBACK) return false
-        await driver.reopenSession(context.deviceDescriptor)
-        return true
+        return driver.returnToShooting()
     },
 }

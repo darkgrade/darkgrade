@@ -1,4 +1,4 @@
-import { Camera, runCameraBenchmark, VendorIDs, type CameraRecordingState } from '@darkgrade/slate'
+import { Camera, runCameraBenchmark, VendorIDs, type CameraInfo, type CameraRecordingState } from '@darkgrade/slate'
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'
@@ -28,7 +28,6 @@ import type {
     CameraSettings,
     CameraState,
     ConnectionPhase,
-    FileEntry,
     FilePreview,
     LogEntry,
 } from '@shared/ipc'
@@ -103,12 +102,14 @@ export class CameraService {
     detectedVendorId: number | null = null
     detectedName: string | null = null
     detectedModel: string | null = null
+    /** Make, model and firmware as Slate reported them on connect. */
+    cameraInfo: CameraInfo | null = null
 
     vendorName(): string | null {
         if (!this.connected) return null
-        const vendorId = this.detectedVendorId ?? this.camera?.getInstance().vendorId
+        const vendorId = this.detectedVendorId
         if (vendorId && VENDOR_NAMES[vendorId]) return VENDOR_NAMES[vendorId]
-        return this.detectedName ?? 'Generic PTP'
+        return this.cameraInfo?.manufacturer ?? this.detectedName ?? 'Generic PTP'
     }
 
     broadcastState(): void {
@@ -240,9 +241,6 @@ export class CameraService {
 
     // ------------------------------------------------------------------ files
 
-    /** Object handles survive Sony's transfer-mode switches, so only new handles need their info read. */
-    knownObjects = new Map<number, FileEntry | null>()
-
     // ------------------------------------------------------- automatic card list
 
     filesRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -252,7 +250,8 @@ export class CameraService {
 
     // ---------------------------------------------------------------- preview
 
-    previewCache = new Map<number, FilePreview>()
+    /** By Slate media id. */
+    previewCache = new Map<string, FilePreview>()
 
     /** Reads a card file and returns something viewable: the JPEG, a RAW file's embedded JPEG, or the clip. */
     /** The card read behind the open preview, aborted when the preview closes. */

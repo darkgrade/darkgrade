@@ -2,17 +2,83 @@ import { describe, expect, it, vi } from 'vitest'
 import { NikonCamera } from '@camera/nikon-camera'
 import { Logger } from '@core/logger'
 import { TransportType } from '@transport/interfaces/transport-types'
+import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
+import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import type { Registry } from '@ptp/registry'
 
+/** A DeviceInfo reply exactly as the codec decodes it from the wire. */
+function deviceInfo(registry: Registry, operationsSupportedRaw: number[]): DeviceInfo {
+    const codec = new DeviceInfoCodec(registry)
+    return codec.decode(
+        codec.encode({
+            standardVersion: 100,
+            vendorExtensionID: 0x0a,
+            vendorExtensionVersion: 100,
+            vendorExtensionDesc: '',
+            functionalMode: 0,
+            operationsSupportedRaw,
+            operationsSupportedDecoded: [],
+            eventsSupportedRaw: [],
+            eventsSupportedDecoded: [],
+            devicePropertiesSupported: [],
+            devicePropertiesSupportedDecoded: [],
+            captureFormats: [],
+            imageFormatsRaw: [],
+            imageFormatsDecoded: [],
+            manufacturer: 'Nikon Corporation',
+            model: 'Z 5_2',
+            deviceVersion: '1.00',
+            serialNumber: '0001',
+        })
+    ).value
+}
+
+/** A card file's ObjectInfo reply exactly as the codec decodes it from the wire. */
+function cardObjectInfo(registry: Registry, filename: string, size: number): ObjectInfo {
+    const codec = new ObjectInfoCodec(registry)
+    return codec.decode(
+        codec.encode({
+            storageID: 0x00010001,
+            objectFormat: 0x3801,
+            objectFormatDecoded: '',
+            protectionStatus: 0,
+            objectCompressedSize: size,
+            thumbFormat: 0,
+            thumbFormatDecoded: '',
+            thumbCompressedSize: 0,
+            thumbPixWidth: 0,
+            thumbPixHeight: 0,
+            imagePixWidth: 0,
+            imagePixHeight: 0,
+            imageBitDepth: 0,
+            parentObject: 0,
+            associationType: 0,
+            associationDesc: 0,
+            sequenceNumber: 0,
+            filename,
+            captureDate: '20261124T120000',
+            modificationDate: '20261124T120000',
+            keywords: '',
+        })
+    ).value
+}
+
+const rawCompressionNames: Record<number, string> = { 0: 'Lossless', 3: 'High efficiency★', 4: 'High efficiency' }
+
+/** Nikon queues ObjectAdded (card) or ObjectAddedInSdram (memory) for each release, read by GetEventEx. */
 function fixture(truncate = false, transportType = TransportType.USB) {
-    let polls = 0
+    const queued: { code: number; parameters: number[] }[] = []
     const camera = new NikonCamera({
         isLittleEndian: () => true, isConnected: () => true, on: () => undefined, getType: () => transportType,
     } as any, new Logger({ captureConsole: false, renderInTerminal: false }))
     vi.spyOn(camera, 'get').mockImplementation(async property => property.name === 'LiveViewSelector' ? 'PHOTO' : 'OFF' as any)
-    const send = vi.spyOn(camera, 'send').mockImplementation(async operation => {
-        if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: { operationsSupportedRaw: [0x9207, 0x941c] } } as any
-        if (operation.name === 'GetEventEx') return { code: 0x2001, data: ++polls === 1 ? [] : [{ code: 0xc101, parameters: [0xffff0001] }] } as any
-        if (operation.name === 'GetObjectInfo') return { code: 0x2001, data: { objectCompressedSize: 4, filename: 'NEW.JPG' } } as any
+    const send = vi.spyOn(camera, 'send').mockImplementation(async (operation, parameters) => {
+        if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera.registry, [0x9207, 0x941c]) } as any
+        if (operation.name === 'InitiateCaptureRecInMedia' || operation.name === 'InitiateCapture')
+            queued.push((parameters as { Target?: number } | undefined)?.Target === 1
+                ? { code: 0xc101, parameters: [0xffff0001] } : { code: 0x4002, parameters: [0x00010001] })
+        if (operation.name === 'GetEventEx') return { code: 0x2001, data: queued.splice(0) } as any
+        if (operation.name === 'GetObjectInfo') return { code: 0x2001, data: cardObjectInfo(camera.registry, 'NEW.JPG', 4) } as any
         if (operation.name === 'GetPartialObjectEx') return { code: 0x2001, data: truncate ? new Uint8Array() : Uint8Array.of(0xff, 0xd8, 0xff, 0xd9) } as any
         return { code: 0x2001 } as any
     })
@@ -40,13 +106,13 @@ describe('Nikon event-identified SDRAM capture', () => {
         let selector = 'VIDEO', compression = 3
         const changes: unknown[] = []
         camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector
-            : property.name === 'NikonRawCompression' ? compression : 'OFF') as any
+            : property.name === 'NikonRawCompression' ? rawCompressionNames[compression] : 'OFF') as any
         camera.getVendorPropertyCodes = vi.fn(async () => [0xd016])
         camera.set = vi.fn(async (property, value) => {
             if (property.name === 'LiveViewSelector') selector = String(value)
             if (property.name === 'NikonRawCompression') {
                 expect(selector).toBe('PHOTO')
-                compression = Number(value)
+                compression = Number(Object.keys(rawCompressionNames).find(key => rawCompressionNames[Number(key)] === value))
                 changes.push(compression)
             }
         }) as any
@@ -54,6 +120,7 @@ describe('Nikon event-identified SDRAM capture', () => {
         send.mockImplementation(async (...args) => {
             if (args[0].name === 'GetDevicePropDescEx') return { code: 0x2001, data: {
                 formFlag: 2, getSet: 'GET_SET', currentValueRaw: compression, supportedValuesRaw: [0, 3, 4],
+                supportedValuesDecoded: [0, 3, 4].map(code => rawCompressionNames[code]),
             } } as any
             if (args[0].name === 'InitiateCaptureRecInMedia') expect(compression).toBe(0)
             return original(...args)
@@ -72,7 +139,7 @@ describe('Nikon event-identified SDRAM capture', () => {
                 : property.name === 'MovieRecProhibitionCondition' && Date.now() - started < 7000
                     ? 'imagesInBuffer' : 'OFF') as any
             const capture = camera.captureImage({ autofocus: false })
-            const result = expect(capture).resolves.toEqual({ info: undefined, data: undefined })
+            const result = expect(capture).resolves.toMatchObject({ info: { filename: 'NEW.JPG' }, data: undefined })
             await vi.advanceTimersByTimeAsync(7100)
             await result
         } finally { vi.useRealTimers() }
@@ -81,7 +148,7 @@ describe('Nikon event-identified SDRAM capture', () => {
         const { camera, send } = fixture()
         let selector = 'VIDEO', compression = 3, released = false, silentPolls = 0, ready = false
         camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector
-            : property.name === 'NikonRawCompression' ? compression : 'OFF') as any
+            : property.name === 'NikonRawCompression' ? rawCompressionNames[compression] : 'OFF') as any
         camera.getVendorPropertyCodes = vi.fn(async () => [0xd016])
         camera.set = vi.fn(async (property, value) => {
             if (property.name === 'LiveViewSelector') {
@@ -91,13 +158,14 @@ describe('Nikon event-identified SDRAM capture', () => {
             if (property.name === 'NikonRawCompression') {
                 if (released) expect(ready).toBe(true)
                 expect(selector).toBe('PHOTO')
-                compression = Number(value)
+                compression = Number(Object.keys(rawCompressionNames).find(key => rawCompressionNames[Number(key)] === value))
             }
         }) as any
         const original = send.getMockImplementation()!
         send.mockImplementation(async (...args) => {
             if (args[0].name === 'GetDevicePropDescEx') return { code: 0x2001, data: {
                 formFlag: 2, getSet: 'GET_SET', currentValueRaw: compression, supportedValuesRaw: [0, 3, 4],
+                supportedValuesDecoded: [0, 3, 4].map(code => rawCompressionNames[code]),
             } } as any
             if (args[0].name === 'InitiateCaptureRecInMedia') released = true
             if (args[0].name === 'DeviceReady' && released) {
@@ -151,7 +219,7 @@ describe('Nikon event-identified SDRAM capture', () => {
                 return original(...args)
             })
             const result = expect(camera.captureImage({ autofocus: false }))
-                .resolves.toEqual({ info: undefined, data: undefined })
+                .resolves.toMatchObject({ info: { filename: 'NEW.JPG' }, data: undefined })
             await vi.advanceTimersByTimeAsync(32000)
             await result
             expect(selector).toBe('VIDEO')

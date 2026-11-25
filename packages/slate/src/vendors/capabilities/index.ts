@@ -19,7 +19,7 @@ export function resolveDriverCapabilities(driver: CameraDriverInstance, owner: C
         settings: settingsCapability(driver, owner),
         focus: focusCapability(driver, owner),
         zoom: zoomCapability(driver, owner),
-        photo: photoCapability(driver, owner),
+        photo: photoCapability(driver),
         liveView: liveViewCapability(driver, owner),
         video: videoCapability(driver, owner),
         media: mediaCapability(driver, owner),

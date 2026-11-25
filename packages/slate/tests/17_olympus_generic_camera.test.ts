@@ -177,6 +177,7 @@ describe('Olympus generic PTP support', () => {
         await expect(camera.captureImage({ includeInfo: true, includeData: false })).resolves.toEqual({
             info: { filename: 'OLYMPUS.JPG' },
             data: undefined,
+            objectHandle: 42,
         })
     })
 })

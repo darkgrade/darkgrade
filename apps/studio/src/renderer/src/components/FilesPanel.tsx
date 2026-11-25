@@ -13,7 +13,7 @@ function formatBytes(bytes: number): string {
 
 /** PTP dates arrive as "YYYYMMDDThhmmss"; show them the way Finder would. */
 export function formatCaptureDate(raw: string): string {
-    const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/.exec(raw)
+    const match = /^(\d{4})-?(\d{2})-?(\d{2})T(\d{2}):?(\d{2})/.exec(raw)
     if (!match) return raw
     const [, year, month, day, hour, minute] = match
     const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute))
@@ -31,7 +31,7 @@ function shortenHomePath(path: string): string {
 }
 
 function isVideo(entry: FileEntry): boolean {
-    return /\.(mp4|mov|m4v|mts)$/i.test(entry.filename)
+    return entry.kind === 'clip'
 }
 
 interface FilesPanelProps {
@@ -95,9 +95,9 @@ export function FilesPanel(props: FilesPanelProps): React.JSX.Element {
             ) : (
                 <ul className="-mx-2 flex max-h-80 flex-col overflow-y-auto" aria-label="Files on the card">
                     {files.map(entry => {
-                        const selected = props.previewing?.objectHandle === entry.objectHandle
+                        const selected = props.previewing?.id === entry.id
                         return (
-                            <li key={`${entry.storageId}-${entry.objectHandle}`} className="group relative">
+                            <li key={entry.id} className="group relative">
                                 <button
                                     type="button"
                                     className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? 'bg-primary/15' : 'hover:bg-foreground/6'}`}

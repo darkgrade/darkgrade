@@ -676,8 +676,8 @@ describe('focus on a standard PTP body', () => {
     it('reports every focus operation as unsupported, with the reason, and throws CameraUnsupportedError', async () => {
         const camera = genericCamera()
         const { operations, controls } = await camera.getCapabilities()
-        expect(Object.values(operations ?? {}).every(availability => availability?.supported === false)).toBe(true)
-        expect(Object.keys(operations ?? {})).toEqual(['autofocus', 'setFocusPoint', 'resetFocusPoint', 'nudgeFocus'])
+        const focusOperations = ['autofocus', 'setFocusPoint', 'resetFocusPoint', 'nudgeFocus'] as const
+        expect(focusOperations.every(name => operations?.[name]?.supported === false)).toBe(true)
         expect(controls.focusMode).toMatchObject({ value: 'AF', allowedValues: ['MF', 'AF'] })
         await expect(camera.autofocus()).rejects.toBeInstanceOf(CameraUnsupportedError)
         await expect(camera.setFocusPoint(0.5, 0.5)).rejects.toBeInstanceOf(CameraUnsupportedError)

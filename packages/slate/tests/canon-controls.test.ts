@@ -242,7 +242,7 @@ describe('Canon camera controls', () => {
             const format = canonImageFormatFromPacked(packed)
             expect(codec.decode(codec.encode(format)).value).toEqual(format)
         }
-        expect(canonImageFormatFromPacked(0x0c03).label).toBe('RAW + L')
+        expect(canonImageFormatFromPacked(0x0c03).label).toBe('RAW+L')
     })
 
     it('round-trips and labels complete Canon movie-format records', () => {

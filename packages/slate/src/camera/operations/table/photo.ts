@@ -7,22 +7,9 @@ import type { AreaOperationTable } from '@camera/operations/table/operation-entr
  */
 export const photoOperationTable = {
     current: {
-        captureImage: {
-            area: 'photo',
-            disposition: { kind: 'rename-to', target: 'takePhoto' },
-        },
-        resumeSonyShooting: {
-            area: 'photo',
-            disposition: {
-                kind: 'private',
-                handledBy: 'takePhoto and listMedia (resuming shooting after a card read)',
-            },
-        },
-    },
-    planned: {
         takePhoto: {
             area: 'photo',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Takes a photo and returns only once a new file is confirmed. Returns its media id, name, size and, for computer, the bytes',
             surfaces: {
                 cli: {
@@ -34,5 +21,21 @@ export const photoOperationTable = {
                 },
             },
         },
+        captureImage: {
+            area: 'photo',
+            disposition: {
+                kind: 'replaced-by',
+                target: 'takePhoto',
+                note: "'computer' saves to the card and returns the bytes; host-only and SDRAM delivery ('memory') is not offered. Nikon lossless RAW is setRawCompression('Lossless') before the photo",
+            },
+        },
+        resumeSonyShooting: {
+            area: 'photo',
+            disposition: {
+                kind: 'private',
+                handledBy: 'takePhoto and listMedia (resuming shooting after a card read)',
+            },
+        },
     },
+    planned: {},
 } as const satisfies AreaOperationTable

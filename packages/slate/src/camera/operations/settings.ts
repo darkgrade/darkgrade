@@ -2,13 +2,8 @@ import { CanonCamera } from '@camera/canon-camera'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState } from '@camera/controls'
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
 import type { Camera } from '@camera/index'
-import {
-    canonDriver,
-    cameraContext,
-    driverCapabilities,
-    operationAvailability,
-    requireCapability,
-} from '@camera/operations/context'
+import { readOperationAvailability } from '@camera/operations/availability'
+import { canonDriver, cameraContext, driverCapabilities, requireCapability } from '@camera/operations/context'
 import { SonyCamera } from '@camera/sony-camera'
 import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
 
@@ -89,7 +84,7 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
     async getCapabilities(): Promise<CameraCapabilities> {
         const capabilities = await requireCapability(this, 'settings', 'getCapabilities').readCapabilities()
         await driverCapabilities(this).focus?.capabilitiesObserved?.(capabilities)
-        return { ...capabilities, operations: operationAvailability(this, capabilities) }
+        return { ...capabilities, operations: await readOperationAvailability(this, capabilities) }
     },
 
     async getExposureTime(): Promise<ExposureTime> {

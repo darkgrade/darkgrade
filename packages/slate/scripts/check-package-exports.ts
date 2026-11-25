@@ -94,6 +94,8 @@ try {
             type WhiteBalance, type PictureStyle, type PictureProfile, type PhotoVideoMode, type DriveMode,
             type FocusMode, type FocusArea, type FocusResult, type OperationAvailability,
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
+            type CardPhoto, type ComputerPhoto, type PhotoFormat, type RawCompression,
+            type CardStatus, type MediaItem, type Battery, type CameraInfo,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
         const camera = new Camera()
@@ -226,6 +228,33 @@ try {
         camera.setDriveMode(anyString)
         // @ts-expect-error A typed setter never takes a plain string.
         camera.setPictureStyle(anyString)
+        // Photo: takePhoto returns the confirmed file; only a computer photo carries its bytes.
+        const cardPhoto: Promise<CardPhoto> = camera.takePhoto()
+        const computerPhoto: Promise<ComputerPhoto> = camera.takePhoto({ autofocus: false, destination: 'computer' })
+        void camera.takePhoto({ destination: 'computer' }).then(photo => photo.data.byteLength + (photo.mediaId?.length ?? 0))
+        // @ts-expect-error A card photo has no bytes; ask for destination 'computer'.
+        void camera.takePhoto({ destination: 'card' }).then(photo => photo.data)
+        // @ts-expect-error The destination is the card or the computer; 'memory' is not a destination.
+        camera.takePhoto({ destination: 'memory' })
+        // @ts-expect-error RAW compression is a setting (setRawCompression), not a photo option.
+        camera.takePhoto({ rawCompression: 'lossless' })
+        // @ts-expect-error The old capture name is not on a control session.
+        sdk.takePhoto()
+        const photoFormat: Promise<PhotoFormat> = camera.setPhotoFormat('RAW+JPEG')
+        const rawCompression: Promise<RawCompression> = camera.setRawCompression('Lossless')
+        camera.setPhotoSize('Large')
+        camera.setAspectRatio('16:9')
+        camera.setJpegQuality('Fine')
+        camera.setFlashMode('Off')
+        sdk.setPhotoFormat('RAW')
+        // @ts-expect-error Photo formats use the codecs' canonical spelling.
+        camera.setPhotoFormat('RAW + JPEG')
+        // @ts-expect-error The old setting id is not a typed setter.
+        camera.setStillFormat('RAW')
+        // @ts-expect-error A flash mode is a canonical word, not the vendor's.
+        camera.setFlashMode('Fill-flash')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setJpegQuality(anyString)
         type PlainStringSetters = { [Name in keyof TypedSettingMethods]: Name extends \`set\${string}\`
             ? TypedSettingMethods[Name] extends (value: infer Value, ...options: never[]) => unknown
                 ? string extends Value ? Name : never : never
@@ -268,11 +297,39 @@ try {
         camera.setSubjectDetection(true)
         // @ts-expect-error Eye selection says Left or Right, not Sony's Left Eye.
         camera.setEyeSelection('Left Eye')
+        // Card, media, body and events: generic operations with typed results.
+        const cards: Promise<CardStatus[]> = camera.getCardStatus()
+        const media: Promise<MediaItem[]> = camera.listMedia()
+        const preview: Promise<Uint8Array> = camera.getMediaPreview('id', 'preview')
+        const download: Promise<Uint8Array> = camera.downloadMedia('id', {
+            onProgress: (receivedBytes: number, totalBytes: number) => void [receivedBytes, totalBytes],
+            signal: new AbortController().signal,
+        })
+        const battery: Promise<Battery> = camera.getBattery()
+        const clock: Promise<void> = camera.setClock(new Date())
+        const info: Promise<CameraInfo> = camera.getInfo()
+        const listMediaAvailability: Promise<OperationAvailability | undefined> =
+            camera.getCapabilities().then(current => current.operations?.listMedia)
+        camera.on('mediaAdded', () => {})
+        camera.off('settingsChanged')
+        // @ts-expect-error Preview sizes are thumbnail or preview.
+        camera.getMediaPreview('id', 'large')
+        // @ts-expect-error Media ids are the strings listMedia returns, not object handles.
+        camera.downloadMedia(42)
+        // @ts-expect-error setClock takes a Date.
+        camera.setClock('2026-11-24T12:00:00')
+        // @ts-expect-error The named events are settingsChanged and mediaAdded.
+        camera.on('objectAdded', () => {})
+        // @ts-expect-error A named event passes nothing to its handler.
+        camera.on('mediaAdded', (item: MediaItem) => void item)
+        // @ts-expect-error Battery power sources are a closed set.
+        const invented: Battery['powerSource'] = 'solar'
+        void [cards, media, preview, download, battery, clock, info, listMediaAvailability, invented]
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
             confirmedShutter, currentShutter, noPlainStringSetters, errors, confirmedAperture, currentIso, confirmedMode,
             confirmedCompensation, confirmedMetering, confirmedWhiteBalance, currentKelvin, look, profile, mode, drive,
-            focused, focusMode, focusArea, focusedFlag]
+            focused, focusMode, focusArea, focusedFlag, cardPhoto, computerPhoto, photoFormat, rawCompression]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

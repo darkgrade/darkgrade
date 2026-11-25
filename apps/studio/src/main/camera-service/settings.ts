@@ -76,7 +76,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
         const controls = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => [name, pick(name)])) as CameraControls
         if (this.detectedVendorId === VendorIDs.SONY) {
             const states = await camera.getSonyPropertyStates()
-            this.updateCardFromStates(states)
+            await this.readCardStatus(camera)
             this.updateLensFromStates(states)
         }
         return controls

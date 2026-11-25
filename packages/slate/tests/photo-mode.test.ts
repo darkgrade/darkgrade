@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
+import { withCanonPhotoMode, type CanonPhotoModeDriver } from '@vendors/canon/photo-mode'
 import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
 
 describe('Temporary still mode', () => {
@@ -7,11 +7,11 @@ describe('Temporary still mode', () => {
         vi.useFakeTimers()
         let movie = true
         const camera = {
-            getCanonUnknownPropertyStates: async () => [{ name: 'FixedMovie', rawValue: movie ? 1 : 0 }],
-            getCanonPropertyStates: async () => [{ name: 'CanonAutoExposureMode', value: 0 }],
+            listUnknownPropertyStates: () => [{ code: 0xd1c2, codeHex: '0xd1c2', name: 'FixedMovie', rawValue: movie ? 1 : 0 }],
+            listPropertyStates: () => [{ code: 0xd105, name: 'CanonAutoExposureMode', description: '', access: 'GetSet', value: 0 }],
             leaveMovieMode: async () => { movie = false },
             enterMovieMode: async () => { movie = true },
-        }
+        } as unknown as CanonPhotoModeDriver
         try {
             const capture = vi.fn(async () => { expect(movie).toBe(false); if (failure) throw new Error('Transfer failed'); return 'fresh photo' })
             const result = withCanonPhotoMode(camera, capture)
@@ -26,10 +26,10 @@ describe('Temporary still mode', () => {
         try {
             const capture = vi.fn()
             const camera = {
-                getCanonUnknownPropertyStates: async () => [{ name: 'FixedMovie', rawValue: 1 }],
-                getCanonPropertyStates: async () => [{ name: 'CanonAutoExposureMode', value: 0 }],
+                listUnknownPropertyStates: () => [{ code: 0xd1c2, codeHex: '0xd1c2', name: 'FixedMovie', rawValue: 1 }],
+                listPropertyStates: () => [{ code: 0xd105, name: 'CanonAutoExposureMode', description: '', access: 'GetSet', value: 0 }],
                 leaveMovieMode: async () => {}, enterMovieMode: async () => {},
-            }
+            } as unknown as CanonPhotoModeDriver
             const check = expect(withCanonPhotoMode(camera, capture)).rejects.toThrow('retained movie mode')
             await vi.runAllTimersAsync(); await check
             expect(capture).not.toHaveBeenCalled()
@@ -38,10 +38,9 @@ describe('Temporary still mode', () => {
     it('Sony restores the exact advertised movie value after failed transfer', async () => {
         vi.useFakeTimers()
         let mode = 'Movie Flexible Exposure'
-        const camera: any = {
-            getSonyPropertyStates: async () => [{ code: 0x500e, value: mode, allowedValues: ['Manual', mode] }],
-            getInstance: () => ({ registry: { properties: { ExposureProgramMode: {} } } }),
-            set: async (_property: unknown, value: string) => { mode = value },
+        const camera = {
+            refreshPropertyStates: async () => [{ code: 0x500e, value: mode, allowedValues: ['Manual', mode] }],
+            setExposureProgram: async (value: string) => { mode = value },
         }
         try {
             const check = expect(withSonyPhotoMode(camera, async () => {

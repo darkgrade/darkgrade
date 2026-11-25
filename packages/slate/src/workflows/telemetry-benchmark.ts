@@ -201,8 +201,8 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
             })
             if (options.capture && !firstContact)
                 await check('photo-transfer', async () => {
-                    const image = await camera.captureImage({ includeData: true, autofocus: false })
-                    if (!image.data?.length) throw new Error('No image transferred')
+                    const photo = await camera.takePhoto({ autofocus: false, destination: 'computer' })
+                    if (!photo.data.length) throw new Error('No image transferred')
                 })
             if (options.live && !firstContact)
                 await check('live-transfer', async () => {

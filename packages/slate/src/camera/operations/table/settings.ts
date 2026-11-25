@@ -429,16 +429,14 @@ export const settingsOperationTable = {
                 },
             },
         },
-    },
-    planned: {
         getPhotoFormat: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current photo format, in canonical spelling',
         },
         setPhotoFormat: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the photo format and returns the value read back',
             surfaces: {
                 cli: {
@@ -448,12 +446,12 @@ export const settingsOperationTable = {
         },
         getPhotoSize: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current photo size, in canonical spelling',
         },
         setPhotoSize: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the photo size and returns the value read back',
             surfaces: {
                 cli: {
@@ -463,12 +461,12 @@ export const settingsOperationTable = {
         },
         getAspectRatio: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current aspect ratio, in canonical spelling',
         },
         setAspectRatio: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the aspect ratio and returns the value read back',
             surfaces: {
                 cli: {
@@ -478,12 +476,12 @@ export const settingsOperationTable = {
         },
         getJpegQuality: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current JPEG quality, in canonical spelling',
         },
         setJpegQuality: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the JPEG quality and returns the value read back',
             surfaces: {
                 cli: {
@@ -493,12 +491,12 @@ export const settingsOperationTable = {
         },
         getRawCompression: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current RAW compression, in canonical spelling',
         },
         setRawCompression: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the RAW compression and returns the value read back',
             surfaces: {
                 cli: {
@@ -508,12 +506,12 @@ export const settingsOperationTable = {
         },
         getFlashMode: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current flash mode, in canonical spelling',
         },
         setFlashMode: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the flash mode and returns the value read back',
             surfaces: {
                 cli: {
@@ -521,6 +519,8 @@ export const settingsOperationTable = {
                 },
             },
         },
+    },
+    planned: {
         getVideoFormat: {
             area: 'settings',
             disposition: { kind: 'add' },

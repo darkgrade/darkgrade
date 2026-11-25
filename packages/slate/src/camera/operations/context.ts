@@ -1,5 +1,4 @@
 import { CanonCamera } from '@camera/canon-camera'
-import type { CameraCapabilities } from '@camera/controls'
 import type { CameraDriverCapabilities, CapabilityArea } from '@camera/driver/contract'
 import { CameraUnsupportedError } from '@camera/errors'
 import type { GenericCamera } from '@camera/generic-camera'
@@ -59,15 +58,6 @@ export function driverCapabilities(camera: Camera): CameraDriverCapabilities {
         capabilities.set(driver, resolved)
     }
     return resolved
-}
-
-/**
- * Which operations the current driver can do now, from an observation already made (no reads).
- * Each capability group with an `availability` report adds its operations here.
- */
-export function operationAvailability(camera: Camera, capabilities: CameraCapabilities): CameraCapabilities['operations'] {
-    const groups = driverCapabilities(camera)
-    return { ...groups.focus?.availability(capabilities) }
 }
 
 /** One capability group, or CameraUnsupportedError naming the operation that needed it. */

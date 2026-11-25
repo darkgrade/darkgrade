@@ -7,7 +7,7 @@ export async function sonyStorageRecordingCapability(camera: any, storageId: num
     const card = await readSonyMovieCard(camera)
     const slot = storageId >>> 16
     return {
-        recordingReady: card.status === 'ready' && card.slots.includes(slot) && card.remainingMovieSeconds !== 0,
+        recordingReady: card.status === 'ready' && card.slots.some(cardSlot => cardSlot === slot) && card.remainingMovieSeconds !== 0,
         recordingEvidence: card,
     }
 }

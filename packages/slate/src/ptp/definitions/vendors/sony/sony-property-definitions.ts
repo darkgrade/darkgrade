@@ -274,18 +274,18 @@ export const CompressionSetting = {
                 { value: 0x03, name: 'JPEG Fine', description: 'JPEG Fine' },
                 { value: 0x04, name: 'JPEG Extra Fine', description: 'JPEG Extra Fine' },
                 { value: 0x10, name: 'RAW', description: 'RAW' },
-                { value: 0x11, name: 'RAW + JPEG Light', description: 'RAW plus JPEG Light' },
-                { value: 0x12, name: 'RAW + JPEG Standard', description: 'RAW plus JPEG Standard' },
-                { value: 0x13, name: 'RAW + JPEG Fine', description: 'RAW plus JPEG Fine' },
-                { value: 0x14, name: 'RAW + JPEG Extra Fine', description: 'RAW plus JPEG Extra Fine' },
+                { value: 0x11, name: 'RAW+JPEG Light', description: 'RAW plus JPEG Light' },
+                { value: 0x12, name: 'RAW+JPEG Standard', description: 'RAW plus JPEG Standard' },
+                { value: 0x13, name: 'RAW+JPEG Fine', description: 'RAW plus JPEG Fine' },
+                { value: 0x14, name: 'RAW+JPEG Extra Fine', description: 'RAW plus JPEG Extra Fine' },
                 { value: 0x31, name: 'HEIF Light', description: 'HEIF Light' },
                 { value: 0x32, name: 'HEIF Standard', description: 'HEIF Standard' },
                 { value: 0x33, name: 'HEIF Fine', description: 'HEIF Fine' },
                 { value: 0x34, name: 'HEIF Extra Fine', description: 'HEIF Extra Fine' },
-                { value: 0x41, name: 'RAW + HEIF Light', description: 'RAW plus HEIF Light' },
-                { value: 0x42, name: 'RAW + HEIF Standard', description: 'RAW plus HEIF Standard' },
-                { value: 0x43, name: 'RAW + HEIF Fine', description: 'RAW plus HEIF Fine' },
-                { value: 0x44, name: 'RAW + HEIF Extra Fine', description: 'RAW plus HEIF Extra Fine' },
+                { value: 0x41, name: 'RAW+HEIF Light', description: 'RAW plus HEIF Light' },
+                { value: 0x42, name: 'RAW+HEIF Standard', description: 'RAW plus HEIF Standard' },
+                { value: 0x43, name: 'RAW+HEIF Fine', description: 'RAW plus HEIF Fine' },
+                { value: 0x44, name: 'RAW+HEIF Extra Fine', description: 'RAW plus HEIF Extra Fine' },
             ] as const,
             registry.codecs.uint8
         ),
@@ -461,7 +461,7 @@ export const StillFileFormat = {
             registry,
             [
                 { value: 0x01, name: 'RAW', description: 'RAW' },
-                { value: 0x02, name: 'RAW + JPEG', description: 'RAW plus JPEG' },
+                { value: 0x02, name: 'RAW+JPEG', description: 'RAW plus JPEG' },
                 { value: 0x03, name: 'JPEG', description: 'JPEG' },
             ] as const,
             registry.codecs.uint8
@@ -945,27 +945,8 @@ export const ExposureMeteringMode = {
 // value through the Sony SDIO path and reading back the SDK's CrFlashMode: PTP 0x0003=Fill
 // (SDK 3), 0x8001=Slow Sync (SDK 5), 0x8003=Rear Sync (SDK 6). The body under test has no
 // flash so it rejected 0x0001/0x0002; those map to Autoflash/Flash Off by the standard-PTP
-// and SDK low-range alignment that the verified 0x0003=Fill anchors. Unknown modes decode
-// to a readable "Mode 0x…".
-const SONY_FLASH_MODE_NAMES: Record<number, string> = {
-    0x0001: 'Autoflash',
-    0x0002: 'Flash Off',
-    0x0003: 'Fill-flash',
-    0x8001: 'Slow Sync',
-    0x8003: 'Rear Sync',
-}
-class SonyFlashModeCodec extends CustomCodec<string> {
-    encode(value: string): Uint8Array {
-        const entry = Object.entries(SONY_FLASH_MODE_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
-        const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
-        if (!Number.isFinite(raw)) throw new Error(`Unknown flash mode: ${value}`)
-        return this.baseCodecs.uint16.encode(raw)
-    }
-    decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
-        const result = this.baseCodecs.uint16.decode(buffer, offset)
-        return { value: SONY_FLASH_MODE_NAMES[result.value] ?? `Mode 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
-    }
-}
+// and SDK low-range alignment that the verified 0x0003=Fill anchors. Names are Slate's
+// canonical flash modes; unknown modes stay unrecognized (read-only, never a writable choice).
 // Overrides the generic 0x500c definition (raw uint16) for Sony bodies.
 export const FlashMode = {
     code: 0x500c,
@@ -973,7 +954,18 @@ export const FlashMode = {
     description: 'Sony flash mode.',
     datatype: UINT16,
     access: 'GetSet',
-    codec: registry => new SonyFlashModeCodec(registry),
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'Auto', description: 'Autoflash' },
+                { value: 0x0002, name: 'Off', description: 'Flash off' },
+                { value: 0x0003, name: 'Fill', description: 'Fill-flash' },
+                { value: 0x8001, name: 'Slow sync', description: 'Slow sync' },
+                { value: 0x8003, name: 'Rear sync', description: 'Rear sync' },
+            ] as const,
+            registry.codecs.uint16
+        ),
 } as const satisfies PropertyDefinition
 
 export const StillCaptureMode = {

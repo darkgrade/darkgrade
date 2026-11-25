@@ -575,7 +575,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
             await driver.setMovieFormat(choice.key)
             return
         }
-        if (driver instanceof CanonCamera && id === 'stillFormat') {
+        if (driver instanceof CanonCamera && id === 'photoFormat') {
             const choices = driver
                 .listPropertyStates()
                 .find(property => property.code === state.source.code)?.allowedValues

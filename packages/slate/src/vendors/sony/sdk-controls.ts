@@ -50,7 +50,7 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
     driveMode: { code: 270, label: 'Drive mode' },
     imageFormat: { code: 262, label: 'Image format' },
     jpegQuality: { code: 301, label: 'JPEG quality' },
-    imageSize: { code: 272, label: 'Image size', values: { '1': 'L', '2': 'M', '3': 'S' } },
+    imageSize: { code: 272, label: 'Image size', values: { '1': 'Large', '2': 'Medium', '3': 'Small' } },
     aspectRatio: { code: 273, label: 'Aspect ratio', values: { '1': '3:2', '2': '16:9', '3': '4:3', '4': '1:1' } },
     movieFormat: { code: 295, label: 'Movie format' },
     movieSetting: { code: 296, label: 'Movie recording profile' },
@@ -66,7 +66,12 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
     isoMode: { code: 312, label: 'ISO auto/manual' },
     exposureComp: { code: 257, label: 'Exposure compensation' },
     colorTemperature: { code: 277, label: 'Color temperature' },
-    flashMode: { code: 290, label: 'Flash mode' },
+    // SDK CrFlashMode, aligned with PTP 0x500c on the bench (SDK 3 Fill, 5 Slow sync, 6 Rear sync).
+    flashMode: {
+        code: 267,
+        label: 'Flash mode',
+        values: { '1': 'Auto', '2': 'Off', '3': 'Fill', '4': 'External sync', '5': 'Slow sync', '6': 'Rear sync' },
+    },
     meteringMode: { code: 266, label: 'Metering' },
     focusArea: { code: 275, label: 'Focus area' },
     zoomPosition: { code: 333, label: 'Focal length' },

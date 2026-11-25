@@ -40,13 +40,8 @@ export const connectionOperationTable = {
             },
         },
     },
-    planned: {
-        getInfo: {
-            area: 'connection',
-            disposition: { kind: 'add' },
-            summary: 'Make, model, firmware, lens mount, connection type',
-        },
-    },
+    // getInfo is implemented with the body operations (`@camera/operations/table/body`).
+    planned: {},
 } as const satisfies AreaOperationTable
 
 /** Static methods on Camera, checked against `typeof Camera`. */

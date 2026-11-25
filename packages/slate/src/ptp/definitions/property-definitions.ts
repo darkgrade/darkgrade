@@ -158,13 +158,27 @@ export const ExposureMeteringMode = {
     codec: baseCodecs.uint16,
 } as const satisfies PropertyDefinition
 
+// PTP 1.1 (ISO 15740) FlashMode 0x0001-0x0006, in Slate's canonical flash vocabulary. Vendor
+// extensions (0x8000 and above) stay unrecognized: read-only, never a writable choice.
 export const FlashMode = {
     code: 0x500c,
     name: 'FlashMode',
     description: 'Flash mode',
     datatype: UINT16,
     access: 'GetSet',
-    codec: baseCodecs.uint16,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'Auto', description: 'Auto flash' },
+                { value: 0x0002, name: 'Off', description: 'Flash off' },
+                { value: 0x0003, name: 'Fill', description: 'Fill flash' },
+                { value: 0x0004, name: 'Red-eye auto', description: 'Red-eye reduction, auto' },
+                { value: 0x0005, name: 'Red-eye fill', description: 'Red-eye reduction, fill' },
+                { value: 0x0006, name: 'External sync', description: 'External sync' },
+            ] as const,
+            registry.codecs.uint16
+        ),
 } as const satisfies PropertyDefinition
 
 export const ExposureTime = {

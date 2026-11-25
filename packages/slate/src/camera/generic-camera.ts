@@ -11,6 +11,7 @@ import {
     type PTPErrorContext,
 } from '@core/ptp-errors'
 import { slateTelemetry } from '@core/telemetry'
+import { afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@camera/shutter-outcome'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
 import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@contribute/protocol'
 import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
@@ -448,7 +449,7 @@ export class GenericCamera {
         this.recovery = undefined
     }
 
-    private async closeSessionAndTransport(): Promise<void> {
+    protected async closeSessionAndTransport(): Promise<void> {
         const failures: unknown[] = []
         try {
             // A tainted pipe gets no CloseSession; the transport is still released below.
@@ -1246,9 +1247,11 @@ export class GenericCamera {
         return this.setStandardProperty('ExposureIndex', value)
     }
 
+    /** One InitiateCapture. With info or data, resolves with the new object's handle once ObjectAdded names it. */
     async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
+        objectHandle?: number
     }> {
         if (!includeInfo && !includeData) {
             const captureResponse = await this.send(this.registry.operations.InitiateCapture, {})
@@ -1262,32 +1265,39 @@ export class GenericCamera {
         }
 
         const capturedImageObjectHandle = await this.initiateCaptureAndWaitForObjectHandle()
+        // The shutter has fired: a failure from here on leaves a photo that may exist, never a retry.
+        return afterShutterRelease(async () => {
+            let info: ObjectInfo | undefined = undefined
+            let data: Uint8Array | undefined = undefined
 
-        let info: ObjectInfo | undefined = undefined
-        let data: Uint8Array | undefined = undefined
-
-        if (includeInfo) {
-            const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
-                ObjectHandle: capturedImageObjectHandle,
-            })
-            info = objectInfoResponse.data
-        }
-        if (includeData) {
-            const objectResponse = await this.send(
-                this.registry.operations.GetObject,
-                {
+            if (includeInfo) {
+                const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
                     ObjectHandle: capturedImageObjectHandle,
-                },
-                undefined,
-                (info?.objectCompressedSize || this.liveViewBufferSize) + this.bufferPadding
-            )
-            data = objectResponse.data
-        }
+                })
+                if (objectInfoResponse.code !== OK.code)
+                    throw new PTPResponseError(objectInfoResponse.code, undefined, { operation: 'GetObjectInfo' })
+                info = objectInfoResponse.data
+            }
+            if (includeData) {
+                const objectResponse = await this.send(
+                    this.registry.operations.GetObject,
+                    {
+                        ObjectHandle: capturedImageObjectHandle,
+                    },
+                    undefined,
+                    (info?.objectCompressedSize || this.liveViewBufferSize) + this.bufferPadding
+                )
+                if (objectResponse.code !== OK.code)
+                    throw new PTPResponseError(objectResponse.code, undefined, { operation: 'GetObject' })
+                data = objectResponse.data
+            }
 
-        return {
-            info: info,
-            data: data,
-        }
+            return {
+                info: info,
+                data: data,
+                objectHandle: capturedImageObjectHandle,
+            }
+        })
     }
 
     async captureLiveView(_options: { includeInfo?: boolean; includeData?: boolean } = {}): Promise<{
@@ -1388,7 +1398,7 @@ export class GenericCamera {
             )
 
             if (response.code !== OK.code)
-                throw new Error(`GetPartialObject returned 0x${response.code.toString(16)}`)
+                throw new PTPResponseError(response.code, `GetPartialObject returned 0x${response.code.toString(16)}`)
             return response.data
         }, onProgress, signal)
     }
@@ -1492,6 +1502,10 @@ export class GenericCamera {
         this.emitter.emit<Record<string, number | bigint | string>>(eventDef.name, decodedParams)
     }
 
+    /**
+     * Sends InitiateCapture and resolves with the new object's handle. A refused InitiateCapture is
+     * CameraRefusedError; once it is sent, a missing ObjectAdded is CameraOutcomeUnknownError.
+     */
     protected initiateCaptureAndWaitForObjectHandle(timeoutMilliseconds = 15_000): Promise<number> {
         return new Promise((resolve, reject) => {
             const objectAdded = this.registry.events.ObjectAdded
@@ -1499,9 +1513,9 @@ export class GenericCamera {
                 clearTimeout(timeout)
                 this.off(objectAdded, handleObjectAdded)
             }
-            const fail = (error: unknown) => {
+            const fail = (error: Error) => {
                 cleanup()
-                reject(error instanceof Error ? error : new Error(String(error)))
+                reject(error)
             }
             const handleObjectAdded = (event: { ObjectHandle?: number }) => {
                 if (!event.ObjectHandle) return
@@ -1509,7 +1523,12 @@ export class GenericCamera {
                 resolve(event.ObjectHandle)
             }
             const timeout = setTimeout(
-                () => fail(new Error(`Timed out after ${timeoutMilliseconds}ms waiting for the captured image object`)),
+                () =>
+                    fail(
+                        shutterOutcomeUnknown(
+                            new Error(`Timed out after ${timeoutMilliseconds}ms waiting for the captured image object`)
+                        )
+                    ),
                 timeoutMilliseconds
             )
 
@@ -1518,14 +1537,16 @@ export class GenericCamera {
                 .then(response => {
                     if (response.code !== OK.code) {
                         fail(
-                            new PTPResponseError(
-                                response.code,
-                                `InitiateCapture returned 0x${response.code.toString(16)}`
+                            shutterRefused(
+                                new PTPResponseError(
+                                    response.code,
+                                    `InitiateCapture returned 0x${response.code.toString(16)}`
+                                )
                             )
                         )
                     }
                 })
-                .catch(fail)
+                .catch(error => fail(shutterOutcomeUnknown(error)))
         })
     }
 

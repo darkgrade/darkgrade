@@ -20,20 +20,28 @@ export async function withNikonRawCompression<T>(
     if (original === 0) return capture()
     if (descriptor.getSet !== 'GET_SET')
         throw new Error('Nikon RAW compression is currently read-only; no shutter command sent')
+    const name = (raw: number) => {
+        const decoded = descriptor.supportedValuesDecoded?.[descriptor.supportedValuesRaw?.indexOf(raw) ?? -1]
+        if (decoded !== 'Lossless' && decoded !== 'High efficiency★' && decoded !== 'High efficiency')
+            throw new Error('Nikon RAW compression value has no known name; no shutter command sent')
+        return decoded
+    }
+    const lossless = name(0)
+    const originalName = name(original)
     let failure: unknown
-    const setAndVerify = async (value: number) => {
+    const setAndVerify = async (value: typeof lossless) => {
         await camera.set(property, value)
-        if (Number(await camera.get(property)) !== value) throw new Error('Nikon RAW compression readback mismatch')
+        if ((await camera.get(property)) !== value) throw new Error('Nikon RAW compression readback mismatch')
     }
     try {
-        await setAndVerify(0)
+        await setAndVerify(lossless)
         return await capture()
     } catch (error) {
         failure = error
         throw error
     } finally {
         // Restore even after a lost write acknowledgement or a rejected shutter.
-        try { await setAndVerify(original) }
+        try { await setAndVerify(originalName) }
         catch (error) {
             if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Nikon RAW compression: ${String(error)}`)
             throw error

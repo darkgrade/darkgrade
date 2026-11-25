@@ -1,4 +1,5 @@
 import type { Camera } from '@camera/index'
+import type { SonyCamera, SonyPropertyState } from '@camera/sony-camera'
 import { isSonyMovieExposureProgram, sonyCounterpartExposureProgram } from '@vendors/sony/exposure-program'
 import { readSonyMovieCard } from '@vendors/sony/card-storage'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
@@ -71,23 +72,39 @@ export async function openSonyRecordingMode(camera: Camera) {
     }
 }
 
+/** What still-mode preparation needs from a Sony session: fresh property states and one mode write. */
+export interface SonyPhotoModeDriver {
+    refreshPropertyStates(): Promise<Pick<SonyPropertyState, 'code' | 'value' | 'allowedValues'>[]>
+    setExposureProgram(value: string): Promise<void>
+}
+
+/** The Sony driver as a photo-mode session. */
+export function sonyPhotoModeDriver(driver: SonyCamera): SonyPhotoModeDriver {
+    return {
+        refreshPropertyStates: () => driver.refreshPropertyStates(),
+        setExposureProgram: value => driver.set(driver.registry.properties.ExposureProgramMode, value),
+    }
+}
+
+const SONY_EXPOSURE_PROGRAM_MODE = 0x500e
+const SONY_STILL_MODES = ['Manual', 'Program Auto', 'Program', 'Still']
+
 /** Hold an advertised still mode across capture/transfer and restore the original movie mode. */
-export async function withSonyPhotoMode<T>(camera: Camera, capture: () => Promise<T>): Promise<T> {
-    const mode = (await camera.getSonyPropertyStates()).find(property => property.code === 0x500e)
+export async function withSonyPhotoMode<T>(driver: SonyPhotoModeDriver, capture: () => Promise<T>): Promise<T> {
+    const mode = (await driver.refreshPropertyStates()).find(property => property.code === SONY_EXPOSURE_PROGRAM_MODE)
     if (!mode || !/movie|s&q/i.test(String(mode.value))) return capture()
-    const target = mode.allowedValues?.find(value => ['Manual', 'Program Auto', 'Still'].includes(String(value)))
+    const target = mode.allowedValues?.find(value => SONY_STILL_MODES.includes(String(value)))
     if (target === undefined) return capture()
-    const property = camera.getInstance().registry.properties.ExposureProgramMode
     let failure: unknown
     try {
-        await camera.set(property, String(target))
+        await driver.setExposureProgram(String(target))
         await new Promise(resolve => setTimeout(resolve, 500))
         return await capture()
     } catch (error) {
         failure = error
         throw error
     } finally {
-        try { await camera.set(property, String(mode.value)) }
+        try { await driver.setExposureProgram(String(mode.value)) }
         catch (error) {
             if (failure) throw new AggregateError([failure, error], `${String(failure)}; restoring Sony movie mode: ${String(error)}`)
             throw error
