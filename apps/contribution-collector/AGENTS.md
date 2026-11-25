@@ -1,6 +1,7 @@
 # Telemetry and the collector
 
-Read the root `AGENTS.md` first; this file only adds to it.
+Read the root [`AGENTS.md`](../../AGENTS.md) first: its rules apply here too, and this file only adds
+to them.
 
 Notes for work on telemetry: the collector in `apps/contribution-collector`, the diagnostics
 client in `packages/slate/src/contribute`, and the Matrix export. The repository-wide rules

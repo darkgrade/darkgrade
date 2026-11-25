@@ -73,23 +73,26 @@ Artifacts and the leased/locked hardware runner are in `/home/darkgrade02/canon-
 
 The existing `bench:canon` script also accepts `--round-trip-iso`, `--round-trip-aperture`, `--round-trip-shutter-speed`, `--round-trip-white-balance`, `--round-trip-color-temperature`, `--round-trip-live-view-af`, and `--round-trip-live-view-zoom`. Run one labelled capability per trace. The zoom probe restores its observed initial magnification.
 
-Library API:
+Library API (renamed on 2026-11-24, when the Canon-named Camera methods left the public API; the
+traces below were recorded with the earlier names):
 
 ```ts
-const frame = await camera.captureCanonViewfinderFrame()
-// frame.image is JPEG; frame.segments preserves raw metadata.
-await camera.setCanonLiveViewZoom(5)
-await camera.setCanonLiveViewZoom(1)
-await camera.stopCanonLiveView()
+import { protocolSession } from '@darkgrade/slate/protocol'
 
-const originalKelvin = await camera.getCanonColorTemperature()
-const originalAfArea = await camera.getCanonLiveViewAutofocusMode()
-// Select writes from getCanonPropertyStates().allowedValues.
-await camera.setCanonColorTemperature(originalKelvin)
-await camera.setCanonLiveViewAutofocusMode(originalAfArea)
+const { jpeg } = await camera.getLiveViewFrame() // was captureLiveView(); live-view output is restored by Slate
+const session = protocolSession(camera) // unsupported bench access
+const frame = await session.captureCanonViewfinderFrame() // raw EVF dataset; was camera.captureCanonViewfinderFrame()
+await session.setCanonLiveViewZoom(5) // magnification; was camera.setCanonLiveViewZoom()
+await session.setCanonLiveViewZoom(1)
+
+const originalKelvin = await camera.getColorTemperature() // was getCanonColorTemperature()
+const originalAfArea = await camera.getFocusArea() // Canon's live-view AF mode; was getCanonLiveViewAutofocusMode()
+// Choose writes from getCapabilities().controls.<setting>.allowedValues.
+await camera.setColorTemperature(originalKelvin)
+await camera.setFocusArea(originalAfArea)
 ```
 
-Always disconnect in cleanup. Temperature/AF setters persist settings until explicitly restored; stopping live view restores output, not arbitrary user settings. The generic `camera.captureLiveView()` now also works for Canon.
+Always disconnect in cleanup. Temperature/AF setters persist settings until explicitly restored; stopping live view restores output, not arbitrary user settings.
 
 ## Retained verification traces
 
@@ -120,11 +123,11 @@ Two negative traces are retained: `861bef30-8671-4561-8913-7deaef8ac789` (zoom r
 
 `CanonModelId` now uses datatype `0x0006` and a `uint32` codec. The R6 III property event bytes `18 05 00 80` decode as `0x80000518`; the previous `uint16` codec truncated them to `0x518`. Hardware trace `bfab9672-474f-4c93-9fcd-f8c550752cb3` verified the correction, and 21 focused regression tests plus TypeScript checking passed. This corrects identifier telemetry; it does not change a camera setting or establish MENU control.
 
-The explicit `camera.getCanonExtendedDeviceInfo()` API (or `CanonCamera.getExtendedDeviceInfo()`) reads advertised Canon operation `0x9108` and returns `CanonExtendedDeviceInfo`: the preserved `headerWord`, event/property code arrays, numeric supported `remoteModes`, and `trailingByteCount`. It is not called during connection. Trace `6fd88577-b9ba-48c9-a086-3c6c3202c546` verified the native reader against an independent raw probe on the R6 III: header 892, 20 events, 194 properties, modes `[0, 1, 2, 4, 8]`, and zero trailing bytes. All 38 defined baseline property values matched afterward. Capability advertisement does not establish property writability or MENU/button behavior; remote modes remain numbers without unverified labels.
+The explicit `protocolSession(camera).getCanonExtendedDeviceInfo()` API (or `CanonCamera.getExtendedDeviceInfo()`; `camera.getCanonExtendedDeviceInfo()` when recorded) reads advertised Canon operation `0x9108` and returns `CanonExtendedDeviceInfo`: the preserved `headerWord`, event/property code arrays, numeric supported `remoteModes`, and `trailingByteCount`. It is not called during connection. Trace `6fd88577-b9ba-48c9-a086-3c6c3202c546` verified the native reader against an independent raw probe on the R6 III: header 892, 20 events, 194 properties, modes `[0, 1, 2, 4, 8]`, and zero trailing bytes. All 38 defined baseline property values matched afterward. Capability advertisement does not establish property writability or MENU/button behavior; remote modes remain numbers without unverified labels.
 
 Library: 25 focused regression tests pass; TypeScript passes; package build passes. Testbench: TypeScript and 91 unit/integration tests pass, including the exact MCP catalog and realistic Linux USB submit statuses. Hardware tests ran through the shared leases/locks, with settings restored and no new card writes.
 
-The companion MCP registry adds `camera_set_canon_color_temperature` and `camera_set_canon_live_view_autofocus_mode`; `camera_controls` includes both controls and known/raw property inventories. An isolated server on port 8791 verified those tools and existing frame capture, then was stopped. That initial isolated-server check is separate from the subsequent feature-checkout bench runs recorded in the companion investigation ledger.
+The companion MCP registry added `camera_set_canon_color_temperature` and `camera_set_canon_live_view_autofocus_mode`; `camera_controls` included both controls and known/raw property inventories. Since 2026-11-24 these are `camera_set_color_temperature`, `camera_set_focus_area` and `camera_get_capabilities`, generated from Slate's operation table. An isolated server on port 8791 verified those tools and existing frame capture, then was stopped. That initial isolated-server check is separate from the subsequent feature-checkout bench runs recorded in the companion investigation ledger.
 
 Useful follow-ups are Canon menu/button/OSD protocol evidence, R6 III movie-format structures, manual lens drive, histogram interpretation, richer SDK metadata mapping, and fixing captureImage's info/data contract. Those features remain separate from the verified additions above.
 

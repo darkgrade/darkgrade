@@ -1,6 +1,7 @@
 # Thin executable
 
-Read the root `AGENTS.md` first; this file only adds to it.
+Read the root [`AGENTS.md`](../../AGENTS.md) first: its rules apply here too, and this file only adds
+to them.
 
 All command behavior belongs in `packages/slate/src/cli`, exported by `@darkgrade/slate/cli`.
 This package contains only the `darkgrade` entry point, npm packaging, documentation and

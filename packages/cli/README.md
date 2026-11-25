@@ -14,6 +14,7 @@ The wrapper passes its own version and writes `dist/darkgrade.1` at build time.
 darkgrade                      # every command on one screen
 darkgrade doctor               # is this computer and camera ready?
 darkgrade cameras              # what is attached
+darkgrade camera set-iso 'ISO 800'  # operate the attached camera
 darkgrade telemetry benchmark  # run every check on the attached camera
 darkgrade telemetry status     # is sharing on?
 ```
@@ -76,6 +77,40 @@ on a terminal, so pipes and scripts get plain, stable output:
   cameras, and say how to fix what it finds. A missing camera is a warning (exit 0); a failed
   check exits 1. The home folder is written as `~`, so the output can be pasted into an issue.
   `--json` prints `{ version, healthy, checks }`.
+
+### `darkgrade camera`
+
+One command per public Camera operation, named after the library method in kebab-case
+(`takePhoto` is `take-photo`), with the same inputs as the library and the `camera_` MCP tools:
+required inputs are positional and the rest are flags. Each command opens the attached camera,
+does one thing and closes it again. All of them take `--camera VID:PID` and `--json`.
+
+```sh
+darkgrade camera get-info
+darkgrade camera get-capabilities --json      # every setting, its choices, and what works now
+darkgrade camera set-shutter-speed 1/250      # prints the value the camera read back
+darkgrade camera get-white-balance
+darkgrade camera set-control iso "ISO 800"    # any setting by id or alias
+darkgrade camera set-focus-point 0.5 0.4      # 0-1 from the top-left
+darkgrade camera zoom-to 35
+darkgrade camera take-photo --destination computer --output photo.jpg
+darkgrade camera start-recording --duration 10s
+darkgrade camera list-media --json
+darkgrade camera download-media <id> --output clip.mp4
+```
+
+Every setting has `get-<setting>` and `set-<setting>` (`get-iso`, `set-photo-video-mode`,
+`set-video-quality` …); `darkgrade help camera` lists them all. Values are Slate's canonical
+names (`'f/2.8'`, `'ISO 800'`, `Manual`), and a value the camera does not offer now is refused
+before anything is sent. A command is sent once: an unconfirmed result is reported and exits
+non-zero, never resent. `start-recording` stays in the foreground holding the session and stops
+on Ctrl-C or after `--duration`. When a stop cannot be confirmed, `start-recording` and
+`stop-recording` report the error and do not close the session, because closing it under a take
+that may still be running can leave the camera in another mode. `start-zoom`/`stop-zoom` are library and MCP only (use `zoom-to`), as are `connect` and
+`disconnect`: every command connects itself. `recover` is the software recovery and does not
+connect first.
+
+### `darkgrade telemetry`
 
 The rest are under `darkgrade telemetry`. What is collected and why is in the [privacy policy](https://darkgrade.com/privacy).
 

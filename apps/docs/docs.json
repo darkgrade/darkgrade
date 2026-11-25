@@ -4,7 +4,11 @@
     "name": "Darkgrade",
     "redirects": [
         { "source": "/link", "destination": "/slate" },
-        { "source": "/link/:slug*", "destination": "/slate/:slug*" }
+        { "source": "/link/:slug*", "destination": "/slate/:slug*" },
+        {
+            "source": "/slate/getting_started/vendor-features",
+            "destination": "/slate/getting_started/feature-compatibility"
+        }
     ],
     "logo": {
         "light": "/assets/darkgrade_combo_light.svg",
@@ -73,7 +77,6 @@
                             "slate/getting_started/what-is-ptp",
                             "slate/getting_started/feature-compatibility",
                             "slate/getting_started/controls",
-                            "slate/getting_started/vendor-features",
                             "slate/getting_started/ptp-ip",
                             "slate/getting_started/camera"
                         ]

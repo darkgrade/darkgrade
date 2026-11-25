@@ -1,6 +1,6 @@
 ---
 title: 'Feature Compatibility'
-description: 'Camera feature compatibility matrix for Darkgrade Slate'
+description: 'Which cameras Slate has been tested on, and which operations and settings each camera supports'
 ---
 
 ## Cameras
@@ -43,25 +43,38 @@ Sony Wi-Fi control uses Sony's licensed Camera Remote SDK, which is not included
 | Sigma | fp data-group, capture-status, snap and live-view operations defined (USB vendor `0x1003`). |
 | Pentax / Ricoh Imaging, Hasselblad, GoPro and others | Standard PTP only; no vendor definitions and no hardware testing. |
 
-## Feature Compatibility
+## Operations by camera
 
-| Feature                       | Generic PTP                | Sony                      | Nikon           | Canon           | Olympus                    |
+Every operation has one name on every camera (see the [Camera API](/slate/getting_started/camera)).
+This table says which drivers implement it. Whether the attached body can do it now depends on its
+model, firmware, mode and lens: `getCapabilities().operations` answers that, with the reason when
+it cannot, and a call it cannot make fails with `CameraUnsupportedError` before anything is sent.
+
+```typescript
+const { operations, controls, lens } = await camera.getCapabilities()
+for (const [name, availability] of Object.entries(operations ?? {}))
+    console.log(name, availability?.supported ? 'available' : availability?.reason)
+console.log(controls.photoFormat?.allowedValues, lens?.focalLengthMillimetres)
+if (operations?.getLiveViewFrame?.options?.overlay?.supported) await camera.getLiveViewFrame({ overlay: true })
+```
+
+| Operation                     | Generic PTP                | Sony                      | Nikon           | Canon           | Olympus                    |
 | ----------------------------- | -------------------------- | ------------------------- | --------------- | --------------- | -------------------------- |
-| **USB connection**            | ✅                         | ✅                        | ✅              | ✅              | ✅                         |
+| **USB connection** (`connect`, `disconnect`, `recover`, `getInfo`) | ✅ | ✅                  | ✅              | ✅              | ✅                         |
 | **Standard PTP/IP transport** | ✅                         | ❌ <sup>5</sup>           | 🟡              | 🟡 <sup>5</sup> | Body-dependent             |
-| **Get/Set Properties**        | ✅ advertised only         | ✅                        | ✅              | ✅              | ✅ advertised only <sup>6</sup> |
-| **Event Handling**            | ✅                         | ✅                        | ✅              | ✅              | ✅ when advertised         |
-| **Aperture Control**          | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
-| **Shutter Speed Control**     | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
-| **ISO Control**               | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
-| **Capture Image**             | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
-| **List Objects**              | ✅                         | ✅                        | ✅              | ✅              | ✅                         |
-| **Download Objects**          | ✅                         | ✅                        | ✅              | ✅              | ✅                         |
-| **Live View**                 | ❌ <sup>1</sup>            | ✅                        | ✅              | 🟡              | ❌ on E-PL5                |
-| **Video Recording**           | ❌ <sup>2</sup>            | ✅                        | ✅ <sup>3</sup> | 🟡              | ❌ on E-PL5                |
+| **Settings** (`getCapabilities`, `setControl`, typed setters) | ✅ advertised only | ✅ | ✅              | ✅              | ✅ advertised only <sup>6</sup> |
+| **Aperture, shutter speed, ISO** (`setAperture`, `setShutterSpeed`, `setIso`) | ✅ when advertised | ✅ | ✅ | ✅ | Body/mode-dependent <sup>6</sup> |
+| **Events** (`on('settingsChanged')`, `on('mediaAdded')`) | ✅ | ✅                       | ✅              | ✅              | ✅ when advertised         |
+| **Autofocus** (`autofocus`)   | ❌                         | ✅ <sup>10</sup>          | ✅              | ✅ when DoAf or half-press is advertised | ❌     |
+| **Focus point** (`setFocusPoint`, `resetFocusPoint`) | ❌  | ✅ when a focus area is reported | ✅ <sup>11</sup> | ✅ when viewfinder position is advertised | ❌ |
+| **Manual focus steps** (`nudgeFocus`) | ❌                 | ❌ over USB               | ✅ <sup>11</sup> | ❌             | ❌                         |
+| **Power zoom** (`zoomTo`, `startZoom`, `stopZoom`) | ❌    | 🟡 <sup>5</sup>           | ❌              | ❌              | ❌                         |
+| **Photo** (`takePhoto`)       | ✅ when advertised         | ✅                        | ✅              | ✅              | Body/mode-dependent <sup>6</sup> |
+| **Live view** (`getLiveViewFrame`) | ❌ <sup>1</sup>       | ✅ focus frames and overlay | ✅ focus frames, no overlay | 🟡 no focus frames or overlay | ❌ on E-PL5 |
+| **Video** (`startRecording`, `stopRecording`, `getRecordingState`) | ❌ <sup>2</sup> | ✅ | ✅ <sup>3</sup> | 🟡     | ❌ on E-PL5                |
+| **Card and media** (`getCardStatus`, `listMedia`, `getMediaPreview`, `downloadMedia`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Battery and clock** (`getBattery`, `setClock`) | ✅ when advertised | ✅            | ✅ when advertised | ✅ battery; clock when advertised | ✅ <sup>6</sup> |
 | **Mode-aware control inventory** | ✅ standard descriptors | ✅ <sup>5</sup>           | ✅              | ✅              | ✅ standard descriptors    |
-| **Still/movie format controls** | When advertised         | ✅ <sup>5</sup>           | ❌              | ✅              | When advertised            |
-| **Remote power zoom**         | ❌                         | 🟡 <sup>5</sup>           | ❌              | ❌              | ❌                         |
 | **Wi-Fi / Bluetooth control** | Untested                   | 🟡 α6700, FX2 <sup>7</sup> | 🟡 Z6 III <sup>8</sup> | Untested <sup>5</sup> | Untested            |
 | **Prompt-free USB reconnect** | Body setting               | Body setting <sup>4</sup> | Body setting    | Body setting    | Body setting               |
 | Tested by us:                 |                            | α6700<br/>FX2<br/>α7 V <sup>9</sup> | Z6 III<br/>Z5 II | EOS R6 Mk.III<br/>EOS R8 Mk.II<br/>EOS 80D | E-PL5 |
@@ -73,6 +86,72 @@ above record model-specific evidence. "Tested by us" means a Darkgrade bench or 
 session on that body; "Public capture" means a recording or report someone else published,
 which shows what the body sent but is not a Darkgrade test. Advertised operations and
 simulated scenarios do not certify a camera family or >99% long-run reliability.
+
+## Settings by camera
+
+Each of the 29 settings has a typed getter and setter and the same canonical values on every
+camera. Sony's Creative Look, Canon's Picture Style and Nikon's Picture Control are all
+`setPictureStyle`; Sony's Flexible Spot is a `Spot` focus area. This table says which drivers map
+a setting to the camera's own property. A mapped setting appears in `controls` only when the
+attached body reports it in its current mode, and offers only the values the body offers now.
+
+| Setting | Generic PTP and Olympus | Sony | Nikon | Canon |
+| --- | --- | --- | --- | --- |
+| Shutter speed, aperture, ISO, exposure mode, exposure compensation, metering, white balance, focus mode | ✅ when advertised | ✅ | ✅ | ✅ |
+| Photo / video (`setPhotoVideoMode`) | ❌ | ✅ <sup>12</sup> | ✅ | ✅ <sup>13</sup> |
+| Drive mode | ✅ when advertised | ✅ | ✅ photo mode | ✅ |
+| Colour temperature, look (`setPictureStyle`) | ❌ | ✅ | ✅ | ✅ |
+| Picture profile | ❌ | ✅ | ❌ | ❌ |
+| Focus area | ❌ | ✅ | ❌ | ✅ |
+| Subject detection, detection subject, eye selection | ❌ | ✅ | ❌ | ❌ |
+| Photo format | ❌ | ✅ | ❌ | ✅ |
+| Photo size | ✅ when advertised | ✅ | ✅ | ❌ |
+| Aspect ratio, JPEG quality | ❌ | ✅ | ❌ | ❌ |
+| RAW compression | ❌ | ❌ | ✅ photo mode | ❌ |
+| Flash | ✅ when advertised | ✅ | ✅ photo mode | ❌ |
+| Video format | ❌ | ✅ | ❌ <sup>14</sup> | ✅ |
+| Video quality, frame rate, digital zoom, live-view quality | ❌ | ✅ | ❌ <sup>14</sup> | ❌ |
+| Audio recording | ❌ | ❌ <sup>15</sup> | ❌ | ✅ |
+
+Every setter accepts only values the attached camera offers now, writes once and resolves to the
+value read back. A value the camera refuses is `CameraRefusedError` and nothing changed; a write
+the camera never shows is `CameraOutcomeUnknownError` and is never resent.
+
+```typescript
+await camera.setFocusMode('AF-S')
+await camera.setPhotoFormat('RAW+JPEG')
+await camera.setAspectRatio('3:2')
+console.log(await camera.setPictureStyle('Standard'))
+```
+
+## Raw vendor access for bench work
+
+Vendor inventories, Sony buttons and menu sessions, Canon network state, magnification and pan,
+Nikon vendor property codes and raw events are protocol access on `protocolSession(camera)` from
+the unsupported `@darkgrade/slate/protocol` entry. They follow the vendors' own names and are not
+confirmed the way `Camera` operations are:
+
+```typescript
+import { protocolSession } from '@darkgrade/slate/protocol'
+
+const session = protocolSession(camera)
+if (session.vendorId === 0x054c) console.log((await session.getSonyPropertyStates()).length)
+if (session.vendorId === 0x04a9) console.log(session.getCanonNetworkState().communicationMode)
+```
+
+Sony's inventory preserves its mode-aware availability flags: an enabled flag of `2` is
+display-only in the current body mode. `setCanonNetworkCommunicationMode(value)` accepts only a
+mode advertised by that camera. `getNikonVendorPropertyCodes()` enumerates advertised extended
+property IDs (355 on the tested Z6 III); unknown properties are not made writable. Nikon property
+access and event polling fall back to legacy operations only on `OperationNotSupported`
+(`0x2005`); a property refusal (`0x200a`) remains a refusal.
+
+## Known behaviors
+
+- **Canon keep-alive.** A Canon session sends `KeepDeviceOn` every ten seconds when the body advertises it, so the camera does not sleep mid-session. Pass `new Camera({ keepAlive: false })` to turn this off. No power setting saved on the body is changed.
+- **Canon HDMI output.** The tested EOS 80D resets its HDMI live-view mode when its PTP session closes; Slate manages live-view output itself.
+- **EOS R6 Mark III movie lever.** With the lever at Movie, the body cannot be put in still mode over PTP (firmware 1.0.1). Set the lever on the camera.
+- **Sony files over 4 GiB.** `ObjectInfo` reports the size as `0xffffffff` for these. Slate reads the real size from the object's `ObjectSize` property; a 5.1 GB FX2 original transferred and decoded in full. The α6700 splits recordings at 4 GB instead.
 
 ## Notes
 
@@ -86,7 +165,7 @@ simulated scenarios do not certify a camera family or >99% long-run reliability.
 
 4. A physical α6700 test found no advertised persistent USB-mode property or `USBConnectionModeRequest` control. Sending the unadvertised request returned PTP `OK` but the next reconnect still opened the mode chooser; requesting the advertised OSD image restarted the body into its pre-PTP HID mode. With USB unplugged, setting **Setup → USB → USB Connection Mode → Remote Shoot (PC Remote)** on the body was then verified to make the next connection enumerate automatically without a prompt. PTP cannot configure the mode that must be selected before the PTP interface exists.
 
-5. The physical α6700 verified mode-aware focus, still-format, movie-format, and aspect-ratio round trips. White balance was display-only in the tested body mode. Remote zoom confirms optical focal length or Clear Image/digital scale; optical movement requires a power-zoom lens. Modern α6700 PC Remote uses Sony access authentication and is not implemented by the standard PTP/IP transport. See [Sony Wi-Fi WIP](/slate/getting_started/sony-wifi-wip). The SDK bridge has separate connection evidence. Canon PTP/IP passes simulator tests but EOS 80D first pairing remains physically unverified.
+5. The physical α6700 verified mode-aware focus, still-format, movie-format, and aspect-ratio round trips (AF-A/AF-S, JPEG/RAW, XAVC S HD/XAVC HS 4K, 3:2/4:3), restoring each. White balance was display-only in the tested body mode. Remote zoom (`zoomTo`, `startZoom`) confirms optical focal length or Clear Image/digital scale; optical movement requires a power-zoom lens, and some bodies need **Shooting → Zoom → Remote Zoom Speed** enabled. Modern α6700 PC Remote uses Sony access authentication and is not implemented by the standard PTP/IP transport. See [Sony Wi-Fi WIP](/slate/getting_started/sony-wifi-wip). The SDK bridge has separate connection evidence. Canon PTP/IP passes simulator tests but EOS 80D first pairing remains physically unverified.
 
 6. The physical E-PL5 MTP mode publishes battery and date/time but no exposure, focus, or capture property. Darkgrade exposes the capability boundary instead of treating Olympus recognition as proof of control support.
 
@@ -95,6 +174,18 @@ simulated scenarios do not certify a camera family or >99% long-run reliability.
 8. Native PTP/IP was verified on the Z6 III (V2.00) on 2026-10-29 with an already-registered smart-device profile: settings, still and movie transfer and preview. First-time pairing is unverified. Wireless status reads work where the body advertises them and on the Z6 III, which omits them from DeviceInfo. Other Nikon bodies are untested over Wi-Fi.
 
 9. α7 V (ILCE-7M5, firmware 1.00) evidence is USB Telemetry from 109 Darkgrade Studio sessions on 2026-11-18 to 2026-11-20. It shows connection and DeviceInfo, the extended property inventory, acknowledged setting writes, live-view frames, still captures (the body reported four new objects; one 304 KB transfer was inspected but not independently decoded), and a movie start that the body's movie state confirmed. Movie stop and clip transfer, card readiness (Slate's single-slot card fallback is α6700-only), reconnect qualification and Wi-Fi are untested. The body answered live-view polls with `0x200F` Access_Denied 186,751 times while no new frame was ready; Slate waits and asks again, so these are not failed commands, but they dominate its diagnostics.
+
+10. Sony bodies in movie mode stayed at UNLOCK on a half-press in bench tests, so `autofocus()` there answers `'unknown'` rather than `'acquired'`. A Sony focus timeout includes the last focus status; a Canon refusal names the SDK reason.
+
+11. On Nikon (validated over USB on Z6 III firmware V2.00) `setFocusPoint` needs ChangeAfArea and live view, and the point is read back from live view. A nudge drives small lens steps in **AF-S**; AF-F can remain busy and MF rejects the drive. The small, medium and large steps are not yet bench-calibrated. Accepted commands and AF-point placement do not establish focus lock: only `'acquired'` does.
+
+12. Sony photo/video is the half the exposure program is in: Movie and S&Q programs are video. A switch selects the same program in the other half (Manual ↔ Movie Manual), and only when the camera advertises it.
+
+13. Canon switches with MovieSelectSwitchOn/Off and reads FixedMovie back. A body whose hardware lever is at Movie stays in video (see the EOS R6 Mark III under Known behaviors).
+
+14. Nikon's movie format, size and frame rate have no decoded properties yet.
+
+15. Sony's AudioRecording property is not mapped: on the α7 V (2026-11-24) a take recorded with it at 0 still carried a sound track. Until its meaning is measured or documented, audio recording is unsupported on Sony rather than a confirmed Off that may still record sound.
 
 ## Legend
 

@@ -4,6 +4,11 @@
 
 ## Available APIs
 
+A single clip needs only `camera.startRecording()` and `camera.stopRecording()`, which prepare
+and restore the camera themselves. The workflows below coordinate several cameras or bench
+evidence. `SonyVideoRecording`, `openCanonRecordingMode` and `sonyMovieCard` are vendor-named and
+so are exported from the unsupported `@darkgrade/slate/protocol` entry, not the main one.
+
 | API | Responsibility |
 | --- | --- |
 | `VideoTake` | Prepare selected devices, dispatch starts, stop attempted starts after a partial failure, track each camera, collect originals and preserve unresolved states |

@@ -1,6 +1,7 @@
 # Slate
 
-Read the root `AGENTS.md` first; this file only adds to it.
+Read the root [`AGENTS.md`](../../AGENTS.md) first: its rules apply here too, and this file only adds
+to them.
 
 Notes for work inside `packages/slate`. The repository-wide rules are in the root `AGENTS.md`;
 telemetry and collector rules are in `apps/contribution-collector/AGENTS.md`.
@@ -18,7 +19,11 @@ The shared camera runtime (operation ordering, leases, the common MCP tools) liv
 `/ownership`). There is no `packages/runtime`: put new camera code in Slate. Its tests run under
 Bun (`bun run --cwd packages/slate test:runtime`, which builds first) because they check package
 resolution with Bun's bundler; Vitest excludes `tests/runtime`. Hosts that load it by path
-(Test Bench) use `packages/slate/src/runtime/index.ts` and `mcp.ts`.
+(Test Bench) use `packages/slate/src/runtime/index.ts` and `mcp.ts`. A host hands the runtime its
+Camera (`CameraProvider.camera(id)`, with `discover`, `assertAllowed` and optional `saveFile` and
+`benchmark`) and the runtime runs every operation through that Camera; HTTP hosts serve
+`POST /api/cameras/<id>/operations/<name>`, `/api/cameras/discover` and
+`/api/cameras/<id>/benchmark`. Hosts keep no vendor tables and no tool list of their own.
 DeviceInfo carries numeric lists as `operationsSupportedRaw`, `eventsSupportedRaw` and
 `devicePropertiesSupported`; there is no `operationsSupported` or `devicePropertiesSupportedRaw`.
 Two recoveries read fields that do not exist and their tests faked them. Build test replies with

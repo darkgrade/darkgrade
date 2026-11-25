@@ -37,12 +37,16 @@ import { Camera } from '@darkgrade/slate'
 const camera = new Camera()
 await camera.connect()
 try {
-    const observed = await camera.setControl('iso', 'ISO 800')
-    console.log(observed.value)
+    console.log(await camera.setIso('ISO 800')) // the value the camera read back
+    const photo = await camera.takePhoto()
+    console.log(photo.name)
 } finally {
     await camera.disconnect()
 }
 ```
+
+The same operations are MCP tools (`camera_set_iso`, `camera_take_photo`) and terminal commands
+(`darkgrade camera set-iso 'ISO 800'`).
 
 Camera control, speech recognition and text models run on your machine by default.
 See [which cameras we’ve tested](https://darkgrade.com/docs/slate/getting_started/feature-compatibility)

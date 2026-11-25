@@ -19,8 +19,8 @@ await camera.connect()
 try {
     const { controls } = await camera.getCapabilities()
     if (controls.iso?.writable && controls.iso.allowedValues?.includes('ISO 800')) {
-        const observed = await camera.setControl('iso', 'ISO 800')
-        console.log(observed.value)
+        // Writes once and resolves to the value the camera read back.
+        console.log(await camera.setIso('ISO 800'))
     }
     // Resolves once the camera shows the new file; 'computer' also returns its bytes.
     const photo = await camera.takePhoto({ destination: 'computer' })
@@ -30,12 +30,12 @@ try {
 }
 ```
 
-The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. The example assumes the body advertises those controls and remote capture; camera model, USB mode, and shooting mode can change the available surface. `getCapabilities().operations` says which operations this camera can do right now, and why not.
+The `Camera` class detects your camera's brand and uses the matching driver; every method has the same name and behaviour on every camera that supports it. The example assumes the body advertises those controls and remote capture; camera model, USB mode, and shooting mode can change the available surface. `getCapabilities().operations` says which operations this camera can do right now, and why not.
 
-For application UIs, use the [shared control model](/slate/getting_started/controls):
-`getCapabilities()` exposes current choices across vendors, and `shutterSpeed`
-covers exposure duration and shutter angle without implicit mode changes. Multiple USB
-bodies require an explicit device filter.
+For application UIs that list every setting, use the [shared control model](/slate/getting_started/controls):
+`getCapabilities()` exposes current choices across vendors and `setControl(id, value)` writes any
+of them; `shutterSpeed` covers exposure duration and shutter angle without implicit mode changes.
+Multiple USB bodies require an explicit device filter.
 
 For any body, including a generic or Olympus one, read the live capabilities first:
 
@@ -52,7 +52,7 @@ When you call `connect()`, Darkgrade Slate:
 
 1. Scans for connected USB devices
 2. Identifies the camera's vendor ID
-3. Selects the appropriate vendor driver (the classes are exported only from the unsupported `@darkgrade/slate/protocol` entry):
+3. Selects the matching driver (internal; the classes are exported only from the unsupported `@darkgrade/slate/protocol` entry):
    - **Sony ⍺ Series** → `SonyCamera` with live view, video recording, SDIO
    - **Nikon Z Series** → `NikonCamera` with extended properties
    - **Canon EOS R Series** → `CanonCamera` with remote control
@@ -81,25 +81,41 @@ Values use one spelling on every camera: `'f/4'`, `'ISO 1600'` or `'Auto'`, `'Ma
 `'Aperture priority'` (`M`/`A`/`S`/`P` and Canon's `Av`/`Tv` are accepted too), `'+0.7'`, `'Spot'`.
 `getCapabilities().controls` lists the choices this camera offers now.
 
+Every setting has a typed getter and setter: `setPhotoVideoMode('video')`, `setWhiteBalance('Daylight')`,
+`setFocusMode('AF-C')`, `setPhotoFormat('RAW+JPEG')`, `setVideoQuality(...)`, `setFrameRate('24p')` and
+the rest are listed in the [Camera API](/slate/getting_started/camera#settings).
+
+### Focus and zoom
+
+```typescript
+await camera.setFocusPoint(0.5, 0.25) // 0–1 from the top-left; focuses there
+const focus = await camera.autofocus() // 'acquired', 'not-acquired' or 'unknown'
+await camera.resetFocusPoint()
+console.log(focus)
+
+// On a power-zoom lens: resolves to the focal length where the lens landed.
+const { operations } = await camera.getCapabilities()
+if (operations?.zoomTo?.supported) console.log(await camera.zoomTo(35))
+```
+
+Only `'acquired'` means the camera confirmed focus; an accepted command or a placed point does not.
+[Feature compatibility](/slate/getting_started/feature-compatibility#operations-by-camera) lists which
+cameras offer each operation.
+
 ### Event Handling
 
 ```typescript
-import { protocolSession } from '@darkgrade/slate/protocol'
+const onSettings = () => console.log('A setting changed on the camera')
+camera.on('settingsChanged', onSettings)
+camera.on('mediaAdded', () => console.log('A new photo or clip is on the card'))
 
-// Raw PTP events come from the session's registry (unsupported, for bench work).
-const { events } = protocolSession(camera).registry
-
-camera.on(events.ObjectAdded, event => {
-    console.log('New object added:', event.ObjectHandle)
-})
-
-camera.on(events.DevicePropChanged, event => {
-    console.log('Property changed:', event.DevicePropCode)
-})
-
-// Remove event listeners
-camera.off(events.ObjectAdded)
+// Stop one handler, or every handler of an event
+camera.off('settingsChanged', onSettings)
+camera.off('mediaAdded')
 ```
+
+Re-read `getCapabilities()` or `listMedia()` when an event arrives. Raw PTP events are protocol access
+(`camera.on(protocolSession(camera).registry.events.ObjectAdded, ...)`), for bench work only.
 
 ### Live View
 
@@ -212,11 +228,34 @@ await camera.connect()
 
 ## Errors and recovery
 
-Transactions are bounded by timeouts, replies are checked against PTP container framing, and failures are typed (`PTPTimeoutError`, `PTPProtocolError`, `PTPDecodeError`, `PTPResponseError`, `PTPDisconnectedError`, `PTPRecoveryRequiredError`). Tune them with `new Camera({ transactionPolicy: { timeoutMilliseconds, deviceBusyRetries } })`. After a USB timeout or framing violation, the next command first sends the still-image class Device Reset Request, waits for the abandoned I/O to settle and reopens the session. Only if that automatic reset fails, or on PTP/IP (which has no class reset), do further commands fail with `PTPRecoveryRequiredError` until a disconnect/connect. Set `automaticUSBReset: false` to keep the latch, or supply `recoverTransport` to replace the reset with your own recovery (for example one that honors recording guards).
+Camera operations fail in three ways:
+
+- `CameraUnsupportedError`: this camera cannot do it right now; `getCapabilities()` says why. Nothing was sent.
+- `CameraRefusedError`: the camera said no, or the value is not one it offers now. Nothing changed.
+- `CameraOutcomeUnknownError`: the command was sent but its result could not be confirmed. It is never
+  resent, so a photo or a Stop is never repeated by accident; read the camera again before retrying.
+
+```typescript
+import { CameraOutcomeUnknownError, CameraRefusedError } from '@darkgrade/slate'
+
+try {
+    await camera.setWhiteBalance('Shade')
+} catch (error) {
+    if (error instanceof CameraRefusedError) console.log('Not offered now:', error.message)
+    else if (error instanceof CameraOutcomeUnknownError) console.log('Unconfirmed:', await camera.getWhiteBalance())
+    else throw error
+}
+```
+
+When a camera stops answering, `camera.recover()` tries a fresh session, a PTP Device Reset and a USB
+port reset, each proven by GetDeviceInfo; its report says when only unplugging or a power cycle is left.
+Call `connect()` again afterwards.
+
+Underneath, transactions are bounded by timeouts, replies are checked against PTP container framing, and failures are typed (`PTPTimeoutError`, `PTPProtocolError`, `PTPDecodeError`, `PTPResponseError`, `PTPDisconnectedError`, `PTPRecoveryRequiredError`). Tune them with `new Camera({ transactionPolicy: { timeoutMilliseconds, deviceBusyRetries } })`. After a USB timeout or framing violation, the next command first sends the still-image class Device Reset Request, waits for the abandoned I/O to settle and reopens the session. Only if that automatic reset fails, or on PTP/IP (which has no class reset), do further commands fail with `PTPRecoveryRequiredError` until a disconnect/connect. Set `automaticUSBReset: false` to keep the latch, or supply `recoverTransport` to replace the reset with your own recovery (for example one that honors recording guards).
 
 ## Next Steps
 
-- See [Vendor features](/slate/getting_started/vendor-features) and [PTP/IP over Wi-Fi](/slate/getting_started/ptp-ip)
+- See [PTP/IP over Wi-Fi](/slate/getting_started/ptp-ip)
 - Learn about [PTP](/slate/getting_started/what-is-ptp) - Understanding the protocol
-- Check [Feature Compatibility](/slate/getting_started/feature-compatibility) - See what your camera supports
+- Check [Feature Compatibility](/slate/getting_started/feature-compatibility) - See what each camera supports
 - Explore the [Camera API](/slate/getting_started/camera) - Complete API reference

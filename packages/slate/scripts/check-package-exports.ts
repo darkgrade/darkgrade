@@ -468,7 +468,8 @@ try {
         ['root', join(import.meta.dirname, '../../../README.md')],
         ['slate', join(import.meta.dirname, '../README.md')],
         ['quickstart', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/quickstart.mdx')],
-        ['vendor-features', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/vendor-features.mdx')],
+        ['feature-compatibility', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/feature-compatibility.mdx')],
+        ['controls', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/controls.mdx')],
         ['ptp-ip', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/ptp-ip.mdx')],
     ] as const) {
         const markdown = readFileSync(path, 'utf8')
