@@ -87,7 +87,7 @@ export class CameraRuntime implements CameraClient {
             await this.provider.assertAllowed(camera, name)
             // Resolved after queuing: the host may have replaced its camera meanwhile.
             const target = await this.provider.camera(camera)
-            const outcome = await runOperation(target, name, accepted)
+            const outcome = await runOperation(target, name, accepted, 'mcp')
             return this.reply(camera, outcome.result, outcome.files)
         }
         return this.run(camera, execute, operation.immediate)

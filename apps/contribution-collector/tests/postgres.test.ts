@@ -1,7 +1,7 @@
 import { investigate } from '#collector/investigate'
 import { operatorApi } from '#collector/operator'
 import { postgresDatabase } from '#collector/postgres'
-import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
+import { diagnosticPattern, exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
 import { createTelemetry } from '#collector/telemetry'
 import { NOTICE_VERSION } from '@darkgrade/slate/contribute/batch'
 import assert from 'node:assert/strict'
@@ -850,4 +850,43 @@ test('the one-time removal deletes only old unidentified events, keeps identifie
         await handle(request('/v2/installation','DELETE',user.installKey)).catch(()=>{})
         await database.close();await pool.end()
     }
+})
+
+test('public API calls are their own signals, group issues by operation and error, and link the PTP work under them', {skip:!process.env.DATABASE_URL}, async()=>{
+    const database=await postgresDatabase(process.env.DATABASE_URL!),handle=createTelemetry(database,{publicUrl:'https://telemetry.example'}),user=await enroll(handle)
+    try{
+        const payload=batch(),sessionId=randomUUID(),refused=randomUUID(),read=randomUUID(),at=new Date().toISOString()
+        const call=(operation:string,outcome:string,extra:Record<string,unknown>={})=>({operation,tool:'camera_'+operation.replace(/[A-Z]/g,c=>'_'+c.toLowerCase()),
+            command:'darkgrade camera '+operation.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()),surface:'mcp',outcome,attribution:'async-context',...extra})
+        payload.contributions[0].entries=[
+            {kind:'command',direction:'out',code:0x9205,transactionId:7,callId:refused,bytes:16,durationMilliseconds:1,failed:false,sessionId,occurredAt:at},
+            {kind:'response',direction:'in',code:0x2005,transactionId:7,callId:refused,bytes:12,durationMilliseconds:1,failed:false,sessionId,occurredAt:at},
+            {kind:'call',direction:'lifecycle',callId:refused,bytes:0,durationMilliseconds:3,failed:true,sessionId,occurredAt:at,
+                call:call('setShutterSpeed','refused',{arguments:[{name:'value',type:'text',value:'1/250'}],
+                    error:{type:'CameraRefusedError',operation:'shutterSpeed',message:'The camera refused 1/250 (0x2005)',response:0x2005}})},
+            {kind:'call',direction:'lifecycle',callId:read,bytes:0,durationMilliseconds:2,failed:false,sessionId,occurredAt:at,call:call('getBattery','ok')},
+        ] as any
+        assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
+        const report=await database.operator.report({days:1,installation:user.installId})
+        const issue=report.issues.find(row=>row.kind==='call')
+        assert.deepEqual([issue.call_operation,issue.call_outcome,issue.call_error,issue.call_response,issue.call_surfaces],
+            ['setShutterSpeed','refused','CameraRefusedError',0x2005,['mcp']])
+        assert.match(issue.call_message,/refused 1\/250/)
+        assert.equal(report.issues.filter(row=>row.kind==='call').length,1,'a successful call is not an issue')
+        const suggested=await database.operator.suggestions('signal','shutter',{days:1,installation:user.installId})
+        assert.deepEqual(suggested.items.map(item=>item.value).sort(),['call:setShutterSpeed','call:setShutterSpeed:refused'])
+        assert.ok(suggested.items.some(item=>item.label==='setShutterSpeed · Refused'))
+        for(const signal of ['call:setShutterSpeed','call:setShutterSpeed:refused']){
+            const filtered=await database.operator.report({days:1,installation:user.installId,signal})
+            assert.equal(filtered.sessions.length,1,signal)
+            assert.deepEqual(filtered.events.map(event=>event.properties.call.operation),['setShutterSpeed'])
+        }
+        assert.equal((await database.operator.report({days:1,installation:user.installId,signal:'call:setShutter'})).sessions.length,0)
+        const replay=await database.operator.session(user.installId,sessionId)
+        assert.deepEqual(replay.events.filter(event=>event.properties.callId===refused).map(event=>event.kind).sort(),['call','command','response'])
+        // Matrix's pattern schema has no call kind: its export leaves call records out.
+        const stored=await database.get(`diagnostics/${user.installId}_${payload.id}`)
+        const pattern=diagnosticPattern(`${user.installId}_${payload.id}`,stored!)
+        assert.deepEqual(pattern.patterns[0].observed.map((row:{kind:string})=>row.kind).sort(),['command','response'])
+    }finally{await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
 })

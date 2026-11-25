@@ -64,6 +64,26 @@ Collector purge markers `purge-unidentified-2026-11-14` and `-14b` are one-time 
 
 ## What clients record
 
+Public API calls (2026-11-25): every public Camera operation a caller makes is one `call` entry
+(`kind: 'call'`, `callId`, `call`: the operation table's name such as `setShutterSpeed`, its MCP tool
+and CLI command, the surface `library`/`mcp`/`cli`/`studio` (Electron), `ok`/`unsupported`/`refused`/
+`outcome-unknown`/`invalid-input`/`error`, the typed error's class, operation, redacted message and the
+PTP response it came from, and inputs: values only for switches, numbers, listed choices and setting
+values, never media ids, times or objects). Every PTP, protocol-evidence and SDK entry made during
+the call carries its `callId`. One wrapper in `core/telemetry.ts` (`instrumentCameraOperations`,
+installed on `Camera.prototype` from the generated operation table) does this; calls Slate makes
+inside a call (a typed setter's `setControl`, a getter's `getCapabilities`) are part of it, not
+calls of their own. Node and Bun link work by AsyncLocalStorage (`core/call-context.ts`); a host
+without it links work only while one call runs (`attribution: 'only-active-call'`). Timers and polls a
+call started stop being linked once it returns. The collector's signal for a call is
+`call:<operation>:<outcome>` (ahead of `failed`); `call:<operation>` as a signal filter matches every
+outcome and suggestions offer it. Only `call` entries take that branch, so no earlier event's signal
+changed and no rebuild marker was needed. Issues group calls by operation, outcome, error class and
+response. Matrix patterns leave call entries out: its strict import has no call kind. An older
+collector rejects a batch with call entries; the client (`contribute/application.ts`) then sends it
+again without them and leaves them out for the rest of the process, so protocol entries still arrive,
+but calls reach Telemetry only once this collector is deployed.
+
 Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
 failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
 writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,

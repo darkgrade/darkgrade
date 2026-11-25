@@ -41,10 +41,12 @@ import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError }
 import type { ExposureContext } from '@camera/exposure-time'
 import { installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 import { Logger } from '@core/logger'
+import { instrumentCameraOperations } from '@core/telemetry'
 import { LoggerConfig } from '@core/logger-config'
 import { CameraOperationQueue } from '@core/operation-queue'
 import { PTPError, PTPResponseError } from '@core/ptp-errors'
 import type { TransactionPolicy } from '@ptp/transaction-channel'
+import { surfaceOperations } from '@runtime/operations'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
@@ -368,6 +370,8 @@ export class Camera {
 
 export interface Camera extends TypedSettingMethods {}
 installTypedSettings(Camera.prototype)
+// Every public operation, typed settings included, is recorded once per caller's call (core/telemetry).
+instrumentCameraOperations(Camera.prototype, surfaceOperations(), camera => cameraContext(camera).driver)
 
 type DriverWith<Name extends DriverOperationName> = CameraDriver & Pick<DriverOperations, Name>
 

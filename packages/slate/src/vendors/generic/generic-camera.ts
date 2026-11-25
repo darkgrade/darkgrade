@@ -23,6 +23,8 @@ import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { ExposureContext } from '@camera/exposure-time'
 import type { Camera } from '@camera/index'
 import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@contribute/protocol'
+import type { DiagnosticEntry } from '@contribute/schema'
+import { noteCallResponse } from '@core/call-context'
 import { Logger } from '@core/logger'
 import {
     PTPDecodeError,
@@ -293,6 +295,11 @@ export class GenericCamera {
         } else await this.resynchronizeIfNeeded()
     }
 
+    /** @internal Camera records each public call it was asked for in this connection's telemetry session. */
+    recordApiCall(entry: DiagnosticEntry): void {
+        this.telemetry.record(entry)
+    }
+
     /** @internal Release a discarded driver's instrumentation without closing the selected transport. */
     detachTransportObserver(): void {
         this.telemetry.detach()
@@ -550,6 +557,7 @@ export class GenericCamera {
         this.transactionQueue = result.then(() => undefined, () => undefined)
         const response = await result
         for (const observe of this.responseObservers) observe(operation.name, response.code)
+        if (response.code !== OK.code) noteCallResponse(response.code)
         if (response.code !== OK.code || !('data' in response) || !response.data) return response
         if (operation.code === 0x1001) await this.telemetry.identify(response.data as unknown as DeviceInfo)
         try {

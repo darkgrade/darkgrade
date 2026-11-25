@@ -70,6 +70,16 @@ export function validateInstallationState(state: unknown): asserts state is Inst
     )
         throw new Error('Invalid diagnostics settings; restore preferences before enabling collection')
 }
+/** The batch without public-call records and their links, or undefined when it has none. */
+function withoutCalls(batch: DiagnosticBatch): DiagnosticBatch | undefined {
+    if (!batch.contributions.some(camera => camera.entries.some(entry => entry.call || entry.callId))) return
+    const contributions = batch.contributions.map(camera => ({
+        ...camera,
+        entries: camera.entries.filter(entry => entry.kind !== 'call').map(({ callId: _callId, ...entry }) => entry),
+    }))
+    return { ...batch, contributions: contributions.filter(camera => camera.entries.length || camera.droppedEntries) }
+}
+
 /** Create once per application process and observe every camera through this shared queue. */
 export async function createApplicationDiagnostics(options: ApplicationDiagnosticsOptions) {
     const url = new URL(options.endpoint)
@@ -102,6 +112,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         dropped = 0,
         retryAt = 0
     let storageError = false,
+        callsRejected = false,
         lastError: string | null = null
     const queue = new Map<string, Contribution>()
     let pending: DiagnosticBatch | undefined
@@ -263,6 +274,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             count = 0
             queueBytes = 0
         }
+        if (callsRejected) pending = withoutCalls(pending) ?? pending
         const batch = pending
         try {
             validateBatch(batch)
@@ -285,6 +297,14 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 return 'disabled'
             }
             if ([400, 404, 405, 409, 413, 415, 422].includes(response.status)) {
+                // A collector older than public-call records rejects the whole batch: keep its
+                // protocol entries by sending it again without them, and leave them out from now on.
+                const legacy = callsRejected ? undefined : withoutCalls(batch)
+                if (legacy) {
+                    callsRejected = true
+                    pending = legacy
+                    return send()
+                }
                 pending = undefined
                 lastError = 'Collector rejected this diagnostic batch'
                 return 'rejected'
@@ -437,7 +457,11 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             validateContribution(newContribution(camera, [entry]))
             append(structuredClone(camera), structuredClone(entry))
         },
-        observe<Device, Kind extends string>(source: CameraTransport<Device, Kind>, context: CameraContext) {
+        observe<Device, Kind extends string>(
+            source: CameraTransport<Device, Kind>,
+            context: CameraContext,
+            options: { callId?: () => string | undefined } = {}
+        ) {
             const checked = (value: CameraContext) => {
                 const camera = structuredClone(value)
                 validateContribution(newContribution(camera, []))
@@ -449,7 +473,8 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 () => !closed && !storageError,
                 (entry: DiagnosticEntry) => append(camera, entry),
                 () => epoch,
-                () => camera
+                () => camera,
+                options.callId
             )
             return {
                 ...observer,

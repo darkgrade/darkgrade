@@ -115,7 +115,9 @@ CREATE TABLE IF NOT EXISTS telemetry_unknown_code_repairs (
 );
 CREATE OR REPLACE FUNCTION telemetry_event_signal(failed boolean, kind text, code integer, properties jsonb)
 RETURNS text LANGUAGE sql IMMUTABLE AS $f$
-    SELECT CASE WHEN failed THEN 'failed'
+    SELECT CASE WHEN kind='call' THEN 'call:'||coalesce(properties->'call'->>'operation','unknown')
+            ||':'||coalesce(properties->'call'->>'outcome','unknown')
+        WHEN failed THEN 'failed'
         WHEN coalesce((properties->>'droppedEntries')::int,0)>0 THEN 'dropped-events'
         WHEN properties ? 'operation' THEN 'operation:'||(properties->>'operation')
         WHEN kind='response' AND code=8193 THEN 'ok'

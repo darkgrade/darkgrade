@@ -1,5 +1,6 @@
 import { cameraOperations } from '@generated/camera-operations'
 import type { Camera } from '@camera/index'
+import { announceCallSurface } from '@core/call-context'
 
 /**
  * The public Camera operations as the MCP tools and the CLI run them. The list is generated at
@@ -207,10 +208,24 @@ function separateFiles(operation: string, result: unknown, input: Record<string,
 }
 
 /** Runs one public operation on a Camera with inputs already read by `readOperationInput`. */
-export async function runOperation(camera: Camera, name: string, input: Record<string, unknown>): Promise<OperationOutcome> {
+export async function runOperation(
+    camera: Camera,
+    name: string,
+    input: Record<string, unknown>,
+    surface?: 'mcp' | 'cli'
+): Promise<OperationOutcome> {
     const operation = surfaceOperation(name)
     const method: unknown = operation && !operation.static ? Reflect.get(camera, name) : undefined
     if (!operation || typeof method !== 'function') throw new Error(`${name} is not an operation these surfaces run`)
-    const result: unknown = await Reflect.apply(method, camera, argumentsFor(operation, input))
+    const values = argumentsFor(operation, input)
+    // Telemetry names the surface: the call reads it synchronously as it starts.
+    announceCallSurface(surface)
+    let pending: unknown
+    try {
+        pending = Reflect.apply(method, camera, values)
+    } finally {
+        announceCallSurface(undefined)
+    }
+    const result: unknown = await pending
     return separateFiles(name, result, input)
 }

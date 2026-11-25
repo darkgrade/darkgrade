@@ -32,7 +32,8 @@ export function diagnosticPattern(
             }
         >()
         for (const entry of contribution.entries) {
-            if (entry.protocol) continue
+            // Public call records are Telemetry's debugging view; Matrix's pattern schema has no call kind.
+            if (entry.protocol || entry.call) continue
             const key = `${entry.kind}/${entry.direction}/${entry.operation ?? 'ptp'}/${entry.code ?? 'none'}`
             const summary = observed.get(key) ?? {
                 kind: entry.kind,

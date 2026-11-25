@@ -81,7 +81,9 @@ export function observeTransport<Device, Kind extends string>(
     enabled: () => boolean,
     record: (entry: DiagnosticEntry) => void,
     generation: () => number,
-    camera: () => Pick<CameraContext, 'manufacturer'> = () => ({ manufacturer: 'Unknown' })
+    camera: () => Pick<CameraContext, 'manufacturer'> = () => ({ manufacturer: 'Unknown' }),
+    /** The public call this work is part of, if the host knows one (see `ApiCall`). */
+    callId: () => string | undefined = () => undefined
 ) {
     let detached = false
     let sessionId = crypto.randomUUID()
@@ -90,7 +92,8 @@ export function observeTransport<Device, Kind extends string>(
     const save = (entry: DiagnosticEntry) => {
         if (detached || !enabled()) return
         try {
-            record({ ...entry, occurredAt: new Date().toISOString(), sessionId })
+            const call = entry.callId ?? callId()
+            record({ ...entry, ...(call && { callId: call }), occurredAt: new Date().toISOString(), sessionId })
         } catch {
             /* Diagnostics must not break camera cleanup. */
         }

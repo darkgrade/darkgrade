@@ -97,12 +97,12 @@ export async function runCameraOperationCommand(options: CameraOperationOptions,
                 keepSession = (await camera.getRecordingState().catch(() => 'unknown' as const)) !== 'idle'
             throw error
         }
-        let outcome = await runOperation(camera, options.operation.name, input).catch(keepIfRecording)
+        let outcome = await runOperation(camera, options.operation.name, input, 'cli').catch(keepIfRecording)
         if (options.hold) {
             if (!terminal.quiet && !options.json) terminal.report('Press Ctrl-C to stop.')
             await untilStopRequested(dependencies, options.hold.durationMilliseconds)
             // Stop is sent once and never waits behind anything else.
-            outcome = await runOperation(camera, options.hold.stop.name, {}).catch(keepIfRecording)
+            outcome = await runOperation(camera, options.hold.stop.name, {}, 'cli').catch(keepIfRecording)
         }
         const written: { role: OperationFile['role']; path: string; bytes: number }[] = []
         for (const [index, file] of outcome.files.entries()) {

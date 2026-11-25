@@ -1,6 +1,26 @@
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { createApplicationDiagnostics } from '@contribute/application'
 import type { ProtocolEvidence } from '@contribute/protocol'
-import { cameraHardwareFingerprint, type CameraContext } from '@contribute/schema'
+import {
+    cameraHardwareFingerprint,
+    isSafeArgumentText,
+    redactMessage,
+    type ApiCall,
+    type ApiCallArgument,
+    type ApiCallError,
+    type CameraContext,
+    type DiagnosticEntry,
+} from '@contribute/schema'
+import {
+    attributedCallId,
+    callAttribution,
+    callFinished,
+    enclosingCall,
+    runInCall,
+    takeCallSurface,
+    type CallScope,
+} from '@core/call-context'
+import { PTPResponseError } from '@core/ptp-errors'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { isSonyModelName } from '@vendors/sony/model-name'
 
@@ -154,6 +174,12 @@ export function slateTelemetry(source: TransportInterface) {
         operation<Result>(name: string, work: () => Promise<Result>): Promise<Result> {
             return observed ? observed.operation(name, work) : work()
         },
+        /** A public call's own entry, in this connection's session. Nothing before the connection is observed. */
+        record(entry: DiagnosticEntry) {
+            try {
+                observed?.record(entry)
+            } catch { /* Optional evidence never changes camera behavior. */ }
+        },
         async prepare() {
             if (!identity || !source.isConnected())
                 await this.identify({ manufacturer: 'Unknown', model: 'Unknown', deviceVersion: 'unknown' })
@@ -182,7 +208,7 @@ export function slateTelemetry(source: TransportInterface) {
                     evidence: hardware ? 'hardware' : 'synthetic',
                 }
                 if (observed) observed.identify(context)
-                else observed = client.observe(source, context)
+                else observed = client.observe(source, context, { callId: attributedCallId })
                 observed.transport.on?.(relay)
                 identity = next
                 // The shared fingerprint, never the raw serial, scopes what was already reported.
@@ -224,6 +250,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
     return {
         async operation(command: Record<string, string>, work: () => Promise<Record<string, unknown>>) {
             const started = performance.now()
+            const callId = attributedCallId()
             // A Wi-Fi connection begins with the trust (fingerprint) step; it belongs to the same
             // session as the connect that follows it.
             const continuesWifi = awaitingWifiConnect && command.cmd !== 'connect' && command.cmd !== 'fingerprint'
@@ -283,6 +310,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                                     durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
                                     occurredAt: new Date().toISOString(),
                                     sessionId,
+                                    ...(callId && { callId }),
                                 }
                             )
                     }
@@ -295,5 +323,167 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                 }
             }
         },
+    }
+}
+
+/** What the instrumentation needs of one public operation (`SurfaceOperation` from the generated table). */
+interface InstrumentedOperation {
+    name: string
+    static?: boolean
+    mcpTool: string
+    cliCommand: string
+    parameters: readonly {
+        name: string
+        type: string
+        argument: number
+        property?: string
+        choices?: readonly string[]
+    }[]
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object'
+
+/** Values only for switches, numbers, listed choices and setting values; ids, times and objects by type alone. */
+function describeArguments(operation: InstrumentedOperation, values: readonly unknown[]): ApiCallArgument[] {
+    const described: ApiCallArgument[] = []
+    for (const parameter of operation.parameters) {
+        const holder = values[parameter.argument]
+        const value =
+            parameter.property === undefined ? holder : isRecord(holder) ? holder[parameter.property] : undefined
+        if (value === undefined || described.length >= 8) continue
+        const { name } = parameter
+        if (typeof value === 'boolean') described.push({ name, type: 'switch', value })
+        else if (typeof value === 'number')
+            described.push({
+                name,
+                type: 'number',
+                ...(Number.isFinite(value) && { value: Math.round(value * 1e6) / 1e6 }),
+            })
+        else if (typeof value === 'string') {
+            const type = parameter.type === 'choice' ? 'choice' : 'text'
+            const kept =
+                (type === 'choice' && parameter.choices?.includes(value)) || (type === 'text' && name === 'value')
+            described.push({ name, type, ...(kept && isSafeArgumentText(value) && { value }) })
+        } else described.push({ name, type: value instanceof Date ? 'time' : 'object' })
+    }
+    return described
+}
+
+function describeError(
+    error: unknown,
+    response: number | undefined
+): { outcome: ApiCall['outcome']; error: ApiCallError } {
+    const outcome: ApiCall['outcome'] =
+        error instanceof CameraUnsupportedError
+            ? 'unsupported'
+            : error instanceof CameraRefusedError
+              ? 'refused'
+              : error instanceof CameraOutcomeUnknownError
+                ? 'outcome-unknown'
+                : error instanceof TypeError || error instanceof RangeError
+                  ? 'invalid-input'
+                  : 'error'
+    const className = (value: unknown) =>
+        isRecord(value) && typeof value.name === 'string' && /^[A-Z][A-Za-z]{2,47}$/.test(value.name)
+            ? value.name
+            : undefined
+    const described: ApiCallError = { type: className(error) ?? 'Error' }
+    if (isRecord(error) && typeof error.operation === 'string' && /^[a-zA-Z]{1,48}$/.test(error.operation))
+        described.operation = error.operation
+    if (error instanceof Error && error.message) described.message = redactMessage(error.message)
+    // The first protocol error underneath says what the camera answered.
+    let cause: unknown = error
+    for (let depth = 0; depth < 4 && isRecord(cause); depth++) {
+        if (
+            cause instanceof PTPResponseError &&
+            Number.isSafeInteger(cause.code) &&
+            cause.code >= 0 &&
+            cause.code <= 0xffff
+        ) {
+            described.response = cause.code
+            break
+        }
+        cause = cause.cause
+        if (depth === 0 && className(cause)) described.cause = className(cause)
+    }
+    // A refusal Slate worded itself (no protocol error underneath) still names what the camera answered.
+    if (described.response === undefined && outcome === 'refused' && response !== undefined)
+        described.response = response
+    return { outcome, error: described }
+}
+
+/**
+ * Wraps every public Camera operation once, so each call the caller makes (not the calls Slate
+ * makes inside it) is recorded with its operation, surface, inputs, outcome and duration, and the
+ * protocol work under it carries its id. Telemetry never changes a call: no await is added before
+ * the method runs, and a failure to record is ignored.
+ */
+export function instrumentCameraOperations<Target extends object>(
+    prototype: Target,
+    operations: readonly InstrumentedOperation[],
+    driverOf: (camera: Target) => { recordApiCall?(entry: DiagnosticEntry): void } | undefined
+): void {
+    for (const operation of operations) {
+        const method: unknown = Reflect.get(prototype, operation.name)
+        if (operation.static || typeof method !== 'function') continue
+        const instrumented = function (this: Target, ...values: unknown[]): unknown {
+            const surface = takeCallSurface()
+            const id = enclosingCall() ? undefined : globalThis.crypto?.randomUUID?.()
+            if (!id) return Reflect.apply(method, this, values)
+            const scope: CallScope = { id, active: true }
+            const started = performance.now()
+            const finish = (failure?: { error: unknown }) => {
+                callFinished(scope)
+                try {
+                    const ended = failure ? describeError(failure.error, scope.response) : undefined
+                    const described = describeArguments(operation, values)
+                    const call: ApiCall = {
+                        operation: operation.name,
+                        tool: operation.mcpTool,
+                        command: operation.cliCommand,
+                        surface,
+                        outcome: ended?.outcome ?? 'ok',
+                        attribution: callAttribution,
+                        ...(described.length && { arguments: described }),
+                        ...(ended && { error: ended.error }),
+                    }
+                    driverOf(this)?.recordApiCall?.({
+                        kind: 'call',
+                        direction: 'lifecycle',
+                        callId: id,
+                        call,
+                        bytes: 0,
+                        failed: call.outcome !== 'ok',
+                        durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
+                    })
+                } catch {
+                    /* Telemetry never changes the call's result. */
+                }
+            }
+            let result: unknown
+            try {
+                result = runInCall(scope, () => Reflect.apply(method, this, values))
+            } catch (error) {
+                finish({ error })
+                throw error
+            }
+            if (!(result instanceof Promise)) {
+                finish()
+                return result
+            }
+            return result.then(
+                value => (finish(), value),
+                (error: unknown) => {
+                    finish({ error })
+                    throw error
+                }
+            )
+        }
+        Object.defineProperty(prototype, operation.name, {
+            value: instrumented,
+            writable: true,
+            configurable: true,
+            enumerable: false,
+        })
     }
 }

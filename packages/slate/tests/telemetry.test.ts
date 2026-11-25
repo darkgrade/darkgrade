@@ -1,5 +1,7 @@
 import { configureSlateTelemetry, slateTelemetry, sdkTelemetry } from '@core/telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
+import { redactMessage, validateContribution } from '@contribute/schema'
+import { runOperation } from '@runtime/operations'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
@@ -418,4 +420,75 @@ test('a connection that fails before any identity read is attributed to the came
         expect(failures.filter((camera: any) => camera.model === 'Unknown')).toHaveLength(1) // a body never seen stays unidentified
         expect(JSON.stringify(batches)).not.toMatch(/PRIVATE/)
     } finally { client.close(); configureKnownCameras(undefined); configureSlateTelemetry(undefined) }
+})
+
+/** A standard body on the wire: DeviceInfo answers, every other command is refused with `refusal`. */
+async function refusingCamera(refusal = 0x2005) {
+    const { Camera } = await import('@camera/index')
+    const { protocolSession } = await import('@camera/protocol-session')
+    const { DeviceInfoCodec } = await import('@ptp/datasets/device-info-dataset')
+    const { answeringTransport, ptpContainer } = await import('@tests/fixtures/ptp-wire')
+    const { encodedDeviceInfo } = await import('@tests/fixtures/camera-fixtures')
+    let camera!: InstanceType<typeof Camera>
+    const { transport } = answeringTransport(sent => {
+        if (sent.type !== 1) return []
+        if (sent.code !== 0x1001) return [ptpContainer(3, refusal, sent.transactionId)]
+        const fields = { manufacturer: 'Fixture', model: 'Body', devicePropertiesSupported: [0x5011], operationsSupportedRaw: [0x1001, 0x1014, 0x1016] }
+        const dataset = new DeviceInfoCodec(protocolSession(camera).driver.registry).encode(encodedDeviceInfo(camera, fields))
+        return [ptpContainer(2, 0x1001, sent.transactionId, dataset), ptpContainer(3, 0x2001, sent.transactionId)]
+    })
+    camera = new Camera({ transport, logger: { renderInTerminal: false, captureConsole: false } })
+    protocolSession(camera).driver.sessionId = 1
+    return camera
+}
+
+test('each public call is recorded once, with its operation, surface and typed error, and the PTP work under it carries its id', async () => {
+    const { client, saved } = await telemetryClient()
+    try {
+        const camera = await refusingCamera()
+        await camera.getInfo() // Identifies the body; its own call is recorded once the session is observed.
+        await expect(runOperation(camera, 'setClock', { moment: new Date() }, 'mcp')).rejects.toMatchObject({ name: 'CameraRefusedError' })
+        // A typed getter reads getCapabilities inside: one call, the getter's, not two.
+        await expect(camera.getShutterSpeed()).rejects.toMatchObject({ name: 'CameraUnsupportedError' })
+        const entries = saved.map(item => item.entry)
+        const calls = entries.filter(entry => entry.kind === 'call')
+        expect(calls.map(entry => entry.call.operation)).toEqual(['getInfo', 'setClock', 'getShutterSpeed'])
+        const [info, clock, shutter] = calls
+        expect(info).toMatchObject({ failed: false, call: { surface: 'library', outcome: 'ok', tool: 'camera_get_info', attribution: 'async-context' } })
+        expect(clock).toMatchObject({
+            failed: true,
+            call: {
+                tool: 'camera_set_clock', command: 'darkgrade camera set-clock', surface: 'mcp', outcome: 'refused',
+                arguments: [{ name: 'moment', type: 'time' }],
+                error: { type: 'CameraRefusedError', operation: 'setClock', response: 0x2005 },
+            },
+        })
+        expect(shutter.call).toMatchObject({ outcome: 'unsupported', error: { type: 'CameraUnsupportedError', operation: 'shutterSpeed' } })
+        // The failing response under setClock is linked to it, and nothing under it belongs to another call.
+        const underClock = entries.filter(entry => entry.callId === clock.callId && entry.kind !== 'call')
+        expect(underClock.some(entry => entry.kind === 'response' && entry.code === 0x2005)).toBe(true)
+        expect(new Set(entries.map(entry => entry.callId)).size).toBe(3)
+        validateContribution({ schema: 'darkgrade.diagnostics/v1', disclosure: 'protocol-metadata-only/v1', id: crypto.randomUUID(),
+            camera: saved.at(-1).camera, entries, droppedEntries: 0 })
+    } finally { client.close() }
+})
+
+test('call inputs keep setting values and listed choices but never media ids, and messages lose paths, addresses and serials', async () => {
+    const { client, saved } = await telemetryClient()
+    try {
+        const camera = await refusingCamera()
+        await camera.getInfo()
+        await runOperation(camera, 'getMediaPreview', { id: '/DCIM/100MSDCF/DSC09876.JPG', size: 'preview' }, 'cli').catch(() => {})
+        await camera.setShutterSpeed('1/250').catch(() => {})
+        const calls = saved.map(item => item.entry).filter(entry => entry.kind === 'call')
+        expect(calls[1].call).toMatchObject({ surface: 'cli', arguments: [{ name: 'id', type: 'text' }, { name: 'size', type: 'choice', value: 'preview' }] })
+        expect(calls[2].call.arguments).toEqual([{ name: 'value', type: 'text', value: '1/250' }])
+        expect(JSON.stringify(saved)).not.toMatch(/DCIM|DSC09876/)
+        expect(redactMessage('No file /Users/me/DCIM/a.JPG on 4294950914 for me@example.com (0x2009)')).toBe(
+            'No file [path] on [id] for [email] (0x2009)'
+        )
+        const leaking = { ...calls[2], call: { ...calls[2].call, error: { type: 'CameraRefusedError', message: 'see /Users/me/x' } } }
+        expect(() => validateContribution({ schema: 'darkgrade.diagnostics/v1', disclosure: 'protocol-metadata-only/v1',
+            id: crypto.randomUUID(), camera: saved.at(-1).camera, entries: [leaking], droppedEntries: 0 })).toThrow('Invalid API call error')
+    } finally { client.close() }
 })

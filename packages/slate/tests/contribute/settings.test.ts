@@ -390,3 +390,42 @@ test('the record of cameras last seen at a USB identity keeps what the body repo
         await rm(directory, { recursive: true, force: true })
     }
 })
+
+test('a collector that rejects public-call records still receives the protocol entries, without the calls', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-legacy-collector-'))
+    const sent: string[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: sharedSettings(directory),
+        fetch: async (url, init) => {
+            if (String(url).endsWith('/v2/installations')) {
+                const body = JSON.parse(String(init!.body))
+                return Response.json({ installKey: body.installKey, noticeVersion: body.noticeVersion })
+            }
+            sent.push(String(init!.body))
+            // An older collector's strict validation: no call kind, no callId field.
+            return /"call"|callId/.test(String(init!.body))
+                ? Response.json({ error: 'Invalid diagnostic entry' }, { status: 400 })
+                : Response.json({ accepted: true }, { status: 202 })
+        },
+    })
+    try {
+        const callId = crypto.randomUUID()
+        const call = { operation: 'getBattery', tool: 'camera_get_battery', command: 'darkgrade camera get-battery',
+            surface: 'library' as const, outcome: 'ok' as const, attribution: 'async-context' as const }
+        client.record(camera, { ...entry, callId })
+        client.record(camera, { kind: 'call', direction: 'lifecycle', bytes: 0, failed: false, durationMilliseconds: 2, callId, call })
+        assert.equal(await client.flush(), 'sent')
+        assert.equal(sent.length, 2)
+        const delivered = JSON.parse(sent[1]).contributions[0].entries
+        assert.deepEqual(delivered.map((item: { kind: string }) => item.kind), ['command'])
+        assert.equal(client.status().error, null)
+        // Later batches leave calls out from the start.
+        client.record(camera, { ...entry, callId })
+        assert.equal(await client.flush(), 'sent')
+        assert.equal(sent.length, 3)
+    } finally {
+        client.close()
+        await rm(directory, { recursive: true, force: true })
+    }
+})

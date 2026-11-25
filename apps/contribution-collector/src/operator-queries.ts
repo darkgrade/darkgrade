@@ -16,7 +16,12 @@ export interface EventFilters {
 }
 export type SuggestionField = 'model' | 'installation' | 'session' | 'revision' | 'hardware' | 'signal'
 
-const eventSignal=`CASE WHEN failed THEN 'failed'
+// A public Camera call is its own signal, `call:<operation>:<outcome>`, before the generic failure:
+// the PTP response under it keeps its own. Only `call` entries (new in 2026-11) take this branch,
+// so every earlier event's signal, and the summaries built from it, are unchanged.
+const eventSignal=`CASE WHEN kind='call' THEN 'call:'||coalesce(properties->'call'->>'operation','unknown')
+        ||':'||coalesce(properties->'call'->>'outcome','unknown')
+    WHEN failed THEN 'failed'
     WHEN coalesce((properties->>'droppedEntries')::int,0)>0 THEN 'dropped-events'
     WHEN properties ? 'operation' THEN 'operation:'||(properties->>'operation')
     WHEN kind='response' AND code=8193 THEN 'ok'
@@ -27,7 +32,12 @@ const signalName=`CASE WHEN signal='failed' THEN 'Failed'
     WHEN signal='dropped-events' THEN 'Dropped events'
     WHEN signal='response:0x2019' THEN 'Device busy · 0x2019'
     WHEN signal='ok' THEN 'OK'
+    WHEN signal LIKE 'call:%:%' THEN split_part(signal,':',2)||' · '||initcap(replace(split_part(signal,':',3),'-',' '))
+    WHEN signal LIKE 'call:%' THEN split_part(signal,':',2)||' · any outcome'
     ELSE replace(signal,'operation:','') END`
+/** `call:<operation>` (no outcome) selects every outcome of that public operation. */
+const signalMatches=(column:string,parameter:string)=>`(${column}=${parameter} OR (${parameter} LIKE 'call:%'
+    AND ${parameter} NOT LIKE 'call:%:%' AND ${column} LIKE ${parameter}||':%'))`
 
 /** Parameterized, bounded operator queries. Contact data is restricted to the explicit support lookup. */
 export function operatorQueries(pool: Pool) {
@@ -42,7 +52,7 @@ export function operatorQueries(pool: Pool) {
         AND ($5::text IS NULL OR revision=$5)
         AND ($6::text IS NULL OR transport=$6)
         AND ($7::text IS NULL OR hardware_fingerprint=$7)
-        AND ($8::text IS NULL OR ${eventSignal}=$8)`
+        AND ($8::text IS NULL OR ${signalMatches(eventSignal,'$8')})`
     const sessionWhere = `s.latest_received_at >= now() - ($1::int * interval '1 day')
         AND ($2::uuid IS NULL OR s.installation_id=$2)
         AND ($3::text IS NULL OR s.model=$3)
@@ -51,7 +61,7 @@ export function operatorQueries(pool: Pool) {
         AND ($6::text IS NULL OR $6=ANY(s.transports))
         AND ($7::text IS NULL OR $7=ANY(s.hardware_fingerprints))
         AND ($8::text IS NULL OR EXISTS (SELECT 1 FROM telemetry_session_signals wanted
-            WHERE wanted.installation_id=s.installation_id AND wanted.session_id=s.session_id AND wanted.signal=$8))`
+            WHERE wanted.installation_id=s.installation_id AND wanted.session_id=s.session_id AND ${signalMatches('wanted.signal','$8')}))`
     const errors = `(failed OR (kind='response' AND code IS NOT NULL AND code<>8193))`
     const values = (filters: EventFilters) => [
         filters.days,
@@ -200,10 +210,15 @@ export function operatorQueries(pool: Pool) {
         async suggestions(field: SuggestionField, query: string, filters: EventFilters) {
             // Suggestions read the per-session summaries, never raw events.
             if(field==='signal'){
-                const result=await pool.query(`WITH grouped AS (
-                    SELECT g.signal,sum(g.events)::int AS events,max(g.latest) AS latest
+                // Each public operation is offered once with every outcome (`call:<operation>`) beside its outcomes.
+                const result=await pool.query(`WITH matched AS (
+                    SELECT g.signal,g.events,g.latest
                     FROM telemetry_session_signals g JOIN telemetry_sessions s USING (installation_id,session_id)
-                    WHERE ${sessionWhere} GROUP BY g.signal)
+                    WHERE ${sessionWhere}), grouped AS (
+                    SELECT signal,sum(events)::int AS events,max(latest) AS latest FROM matched GROUP BY signal
+                    UNION ALL
+                    SELECT 'call:'||split_part(signal,':',2),sum(events)::int,max(latest) FROM matched
+                    WHERE signal LIKE 'call:%:%' GROUP BY split_part(signal,':',2))
                     SELECT signal AS value,${signalName} AS label,events,latest FROM grouped
                     WHERE strpos(lower(signal||' '||(${signalName})),lower($9::text))>0
                     ORDER BY events DESC,signal LIMIT 21`,[...values({...filters,signal:undefined}),query])
@@ -293,9 +308,17 @@ export function operatorQueries(pool: Pool) {
                     `SELECT manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,
                     properties->>'operation' AS operation,count(*)::int AS occurrences,
                     count(*) FILTER(WHERE failed)::int AS failures,
-                    count(DISTINCT installation_id)::int AS installations,max(received_at) AS latest
+                    count(DISTINCT installation_id)::int AS installations,max(received_at) AS latest,
+                    properties->'call'->>'operation' AS call_operation,properties->'call'->>'outcome' AS call_outcome,
+                    properties->'call'->'error'->>'type' AS call_error,
+                    (properties->'call'->'error'->>'response')::int AS call_response,
+                    (array_agg(properties->'call'->'error'->>'message' ORDER BY received_at DESC))[1] AS call_message,
+                    (array_agg(DISTINCT properties->'call'->>'surface')
+                        FILTER(WHERE properties ? 'call')) AS call_surfaces
                     FROM telemetry_events WHERE ${errors} AND ${where}
-                    GROUP BY manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,properties->>'operation'
+                    GROUP BY manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,properties->>'operation',
+                        properties->'call'->>'operation',properties->'call'->>'outcome',properties->'call'->'error'->>'type',
+                        properties->'call'->'error'->>'response'
                     ORDER BY max(received_at) DESC LIMIT 100`,
                     parameters
                 ),
