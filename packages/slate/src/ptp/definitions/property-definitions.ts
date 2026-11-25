@@ -92,13 +92,8 @@ export const FNumber = {
             decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
                 const uint16 = this.baseCodecs.uint16
                 const result = uint16.decode(buffer, offset)
-                const fNumber = result.value / 100
-                // Format as f/x.x
-                if (fNumber === Math.floor(fNumber)) {
-                    return { value: `f/${Math.floor(fNumber)}`, bytesRead: result.bytesRead }
-                } else {
-                    return { value: `f/${fNumber.toFixed(1)}`, bytesRead: result.bytesRead }
-                }
+                // Hundredths without trailing zeros (f/4, f/2.8, f/0.95): never rounded to one decimal.
+                return { value: `f/${result.value / 100}`, bytesRead: result.bytesRead }
             }
         })(),
 } as const satisfies PropertyDefinition

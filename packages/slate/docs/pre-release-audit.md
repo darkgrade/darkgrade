@@ -234,3 +234,29 @@ and 66 tests, its actual main/preload/renderer bundles, the basic Test Bench bui
 21 host tests, seven Chrome fixture HTTP/UI checks, strict packed ESM/CommonJS types,
 fatal-exit injection checks, and security checks. Existing physical-test skips remain
 explicit; fixture browser runs and type checks do not establish hardware reliability.
+
+## Exposure vocabulary exceptions — 2026-11-24
+
+The exposure settings (`aperture`, `iso`, `exposureMode`, `exposureCompensation`,
+`meteringMode`) read and write canonical names. Three recorded exceptions remain:
+
+- Canon's AE mode, metering and compensation properties are plain UINT16 codecs, so their
+  canonical tables live in `src/vendors/control-properties/exposure.ts` (attributed to
+  libgphoto2 and EDSDK) rather than in `createEnumCodec` names. Moving them into the codec
+  would change the numeric AE codes the transitional `exposureProgram` control, recording
+  preparation and Studio still compare. The tables are covered by simulated Canon replies
+  only; no Canon body has confirmed them on this branch.
+- `exposureProgram` stays a public control carrying the camera's own shooting-mode word
+  until photoVideoMode replaces its consumers (Sony photo-mode, Studio's RecordingPanel,
+  CameraPill, counterpartMode and the assistant). Until it is deleted, `exposure program`
+  resolves to that id by name instead of being an alias of `exposureMode`.
+- A ranged property keeps a range behind a canonical name only when the name is an exact
+  number on its wire scale: ExposureIndex and NikonMovieISO (`ISO 800` is 800), FNumber and
+  NikonMovieFNumber (`f/2.8` is 280 hundredths). Writes off the step or outside the range
+  are refused, never rounded. Other ranged canonical controls stay read-only.
+
+Canon's codec names its 0x0000, 0xffff and 0x00b0 apertures `auto`; Slate reads them as
+`Auto` but never offers or writes Auto, because a write by that name could send a code the
+camera did not advertise. Aperture input accepts only exact spellings: `F4.0` is `f/4`, and
+`f/2.83` is refused on a body that offers f/2.8. The Sony SDK session writes a setting once
+and polls the canonical readback, so an ignored write is a `CameraConfirmationError`.

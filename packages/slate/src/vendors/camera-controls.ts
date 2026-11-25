@@ -61,17 +61,62 @@ function canonLabel(value: unknown): string | number | bigint | undefined {
     if (value && typeof value === 'object' && 'label' in value && typeof value.label === 'string') return value.label
 }
 
+/**
+ * Ranged properties whose canonical spelling is an exact number on the property's own wire scale:
+ * `ISO 800` is 800, `f/2.8` is 280 hundredths. Only these keep a range behind a canonical name, so a
+ * ranged write is never rounded; any other ranged canonical control stays read-only.
+ */
+const canonicalRanges: Readonly<Record<string, { id: CameraControlId; pattern: RegExp; wirePerUnit: number }>> = {
+    ExposureIndex: { id: 'iso', pattern: /^ISO (\d+)$/, wirePerUnit: 1 },
+    NikonMovieISO: { id: 'iso', pattern: /^ISO (\d+)$/, wirePerUnit: 1 },
+    FNumber: { id: 'aperture', pattern: /^f\/(\d+(?:\.\d+)?)$/, wirePerUnit: 100 },
+    NikonMovieFNumber: { id: 'aperture', pattern: /^f\/(\d+(?:\.\d+)?)$/, wirePerUnit: 100 },
+}
+
+function canonicalRange(id: CameraControlId, propertyName: string) {
+    const range = canonicalRanges[propertyName]
+    return range?.id === id ? range : undefined
+}
+
+/** The wire number a canonical name stands for on a ranged property, when it is exact. */
+function canonicalRangeWireValue(id: CameraControlId, propertyName: string, value: string): number | undefined {
+    const range = canonicalRange(id, propertyName)
+    const match = range?.pattern.exec(value)
+    if (!range || !match) return undefined
+    const wire = Number(match[1]) * range.wirePerUnit
+    const rounded = Math.round(wire)
+    return Math.abs(wire - rounded) < 1e-9 ? rounded : undefined
+}
+
+/**
+ * A range on the property's wire scale. String codecs decode the limits as labels (`ISO 100`,
+ * `f/2.8`); those are read back to wire numbers only for the exact canonical ranges below.
+ */
+function wireRange(
+    propertyName: string,
+    limits: readonly (number | bigint | string | undefined)[]
+): CameraControlState['range'] | undefined {
+    const ranged = canonicalRanges[propertyName]
+    const wire = limits.map(limit =>
+        typeof limit === 'number'
+            ? limit
+            : ranged && typeof limit === 'string'
+              ? canonicalRangeWireValue(ranged.id, propertyName, limit)
+              : undefined
+    )
+    const [minimum, maximum, step] = wire
+    if (minimum === undefined || maximum === undefined || step === undefined) return undefined
+    return { minimum, maximum, step }
+}
+
 function descriptorState(descriptor: DevicePropDesc): PropertyState {
     const range =
-        descriptor.formFlag === 1 &&
-        [descriptor.minimumValue, descriptor.maximumValue, descriptor.stepSize].every(
-            value => typeof value === 'number'
-        )
-            ? {
-                  minimum: Number(descriptor.minimumValue),
-                  maximum: Number(descriptor.maximumValue),
-                  step: Number(descriptor.stepSize),
-              }
+        descriptor.formFlag === 1
+            ? wireRange(descriptor.devicePropertyName, [
+                  descriptor.minimumValue,
+                  descriptor.maximumValue,
+                  descriptor.stepSize,
+              ])
             : undefined
     const { allowedValues, unrecognized } = recognizedDescriptorValues(descriptor)
     return {
@@ -227,14 +272,10 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
     } else {
         const standardMappings: ControlPropertyMap<CameraControlId> = standardControlProperties
         states = (await camera.getStandardPropertyStates(requested ? standardMappings[requested]?.[0]?.name : undefined)).map(
-            state => ({
-                ...state,
-                ...(typeof state.minimumValue === 'number' &&
-                typeof state.maximumValue === 'number' &&
-                typeof state.stepSize === 'number'
-                    ? { range: { minimum: state.minimumValue, maximum: state.maximumValue, step: state.stepSize } }
-                    : {}),
-            })
+            state => {
+                const range = wireRange(state.name, [state.minimumValue, state.maximumValue, state.stepSize])
+                return { ...state, ...(range ? { range } : {}) }
+            }
         )
         mappings = standardControlProperties
     }
@@ -274,6 +315,7 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
             }
         }
         const uniqueChoices = !allowedValues || new Set(allowedValues).size === allowedValues.length
+        const rangedCanonical = canonical && state.range && !allowedValues ? canonicalRange(id, state.name) : undefined
         controls[id] = {
             id,
             label: definition.label,
@@ -293,13 +335,18 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
                 state.enabled !== false &&
                 (id !== 'shutterSpeed' || Boolean(exposureTime)) &&
                 uniqueChoices &&
-                // A canonical name needs an advertised choice behind it; a vendor range has none.
-                (canonical ? allowedValues !== undefined : true) &&
+                // A canonical name needs an advertised choice behind it, or a range on its exact wire scale.
+                (canonical ? allowedValues !== undefined || Boolean(rangedCanonical) : true) &&
                 (allowedValues === undefined || allowedValues.length > 0),
-            ...(state.range && !canonical
+            ...(state.range && (!canonical || rangedCanonical)
                 ? {
-                      range:
-                          id === 'shutterSpeed' && (state.name === 'ExposureTime' || state.name === 'MovieShutterAngle')
+                      range: rangedCanonical
+                          ? {
+                                minimum: state.range.minimum / rangedCanonical.wirePerUnit,
+                                maximum: state.range.maximum / rangedCanonical.wirePerUnit,
+                                step: state.range.step / rangedCanonical.wirePerUnit,
+                            }
+                          : id === 'shutterSpeed' && (state.name === 'ExposureTime' || state.name === 'MovieShutterAngle')
                               ? {
                                     minimum: state.range.minimum / (state.name === 'ExposureTime' ? 10000 : 100),
                                     maximum: state.range.maximum / (state.name === 'ExposureTime' ? 10000 : 100),
@@ -380,8 +427,14 @@ export async function writeCameraControl<Id extends CameraControlId>(
         if (state.allowedValues && !state.allowedValues.includes(requested))
             throw new CameraRefusedError(id, `Requested ${id} value is not advertised by the camera`)
         if (state.range) {
-            const numeric = Number(requested),
-                { minimum, maximum, step } = state.range
+            // A canonical name on a ranged property is checked on the wire scale it stands for.
+            const ranged = canonicalRange(id, state.source.name)
+            const scale = ranged?.wirePerUnit ?? 1
+            const numeric = ranged ? canonicalRangeWireValue(id, state.source.name, requested) ?? NaN : Number(requested)
+            const onWireScale = (limit: number) => (ranged ? Math.round(limit * scale) : limit)
+            const minimum = onWireScale(state.range.minimum),
+                maximum = onWireScale(state.range.maximum),
+                step = onWireScale(state.range.step)
             if (
                 !Number.isFinite(numeric) ||
                 numeric < minimum ||
@@ -440,26 +493,35 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 target === undefined &&
                 descriptor.formFlag === 1 &&
                 state.range &&
-                (id === 'colorTemperature' || id === 'shutterSpeed')
+                (id === 'colorTemperature' || id === 'shutterSpeed' || canonicalRange(id, property.name))
             ) {
                 const numeric = property.name === 'MovieShutterAngle' ? parseExposureTime(requested) : undefined
-                const raw =
-                    property.name === 'MovieShutterAngle' && numeric?.kind === 'angle'
-                        ? numeric.degrees * 100
-                        : property.name === 'ExposureTime'
-                          ? Number(requested) * 10000
-                          : Number(requested)
+                const canonicalWire = canonicalRangeWireValue(id, property.name, requested)
+                const raw = canonicalRange(id, property.name)
+                    ? (canonicalWire ?? NaN)
+                    : property.name === 'MovieShutterAngle' && numeric?.kind === 'angle'
+                      ? numeric.degrees * 100
+                      : property.name === 'ExposureTime'
+                        ? Number(requested) * 10000
+                        : Number(requested)
+                const limits = wireRange(property.name, [
+                    descriptor.minimumValue,
+                    descriptor.maximumValue,
+                    descriptor.stepSize,
+                ])
                 if (
-                    typeof descriptor.minimumValue === 'number' &&
-                    typeof descriptor.maximumValue === 'number' &&
-                    typeof descriptor.stepSize === 'number' &&
+                    limits &&
                     Number.isSafeInteger(raw) &&
-                    raw >= descriptor.minimumValue &&
-                    raw <= descriptor.maximumValue &&
-                    (descriptor.stepSize === 0 || (raw - descriptor.minimumValue) % descriptor.stepSize === 0)
+                    raw >= limits.minimum &&
+                    raw <= limits.maximum &&
+                    (limits.step === 0 || (raw - limits.minimum) % limits.step === 0)
                 ) {
                     target = raw
-                    decoded = property.name === 'ExposureTime' ? requested : raw
+                    // String codecs (ExposureTime, ExposureIndex, FNumber) take the spelling; scalars the number.
+                    decoded =
+                        property.name === 'ExposureTime' || property.name === 'ExposureIndex' || property.name === 'FNumber'
+                            ? requested
+                            : raw
                 }
             }
             if (descriptor.getSet !== 'GET_SET' || target === undefined)

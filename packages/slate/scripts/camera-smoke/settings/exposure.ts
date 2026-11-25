@@ -121,6 +121,21 @@ async function refusedIso(camera: Camera, report: SmokeReport) {
     report.confirmed(`setIso('ISO 3') refused, unchanged`, { error: refused.name, iso: after })
 }
 
+/** An f-number that only rounds to an offered one (f/2.83 beside f/2.8) is refused, never written. */
+async function refusedNearbyAperture(camera: Camera, report: SmokeReport) {
+    const control = (await camera.getCapabilities()).controls.aperture
+    if (!control?.writable) return report.skipped('setAperture (nearby, refused)', 'aperture is not writable in the current mode')
+    const offered = control.allowedValues?.find(value => /^f\/\d+\.\d$/.test(value))
+    if (!offered) return report.skipped('setAperture (nearby, refused)', 'the camera offers no one-decimal f-number')
+    const nearby = `${offered}3` as `f/${number}`
+    const before = await camera.getAperture()
+    const refused = await camera.setAperture(nearby).catch((error: unknown) => error)
+    if (!(refused instanceof CameraRefusedError)) throw new Error(`setAperture('${nearby}') was not refused: ${String(refused)}`)
+    const after = await camera.getAperture()
+    if (after !== before) throw new Error(`A refused aperture changed the camera from ${before} to ${after}`)
+    report.confirmed(`setAperture('${nearby}') refused, unchanged`, { error: refused.name, aperture: after })
+}
+
 /**
  * The smoke check, as an operation, may set up the mode it needs and restore it afterwards; a
  * setting write itself never changes the mode. Manual exposure makes shutter, aperture and ISO
@@ -176,5 +191,6 @@ export async function exposureSettingsSmoke(camera: Camera, report: SmokeReport)
         await changeAndRestore(camera, report, typed.aperture)
         await changeAndRestore(camera, report, typed.iso)
         await refusedIso(camera, report)
+        await refusedNearbyAperture(camera, report)
     })
 }

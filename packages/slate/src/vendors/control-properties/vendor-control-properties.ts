@@ -28,6 +28,12 @@ export interface ControlValueVocabulary {
      * photo modes); only the current value's family is offered.
      */
     family?(label: string): string
+    /**
+     * Canonical names that are read but never offered as a choice, because the vendor codec gives
+     * several codes that one word (Canon's 0x0000, 0xffff and 0x00b0 apertures are all `auto`) and a
+     * write by that word could send a code the camera did not advertise.
+     */
+    readOnly?: readonly string[]
 }
 
 /** Where a value vocabulary applies: each property inventory, plus the Sony Camera Remote SDK session. */

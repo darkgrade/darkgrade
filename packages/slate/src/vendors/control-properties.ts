@@ -114,6 +114,7 @@ export function canonicalControlValues(
             unnamed.push(choice)
             return
         }
+        if (vocabulary.readOnly?.includes(canonical)) return
         offered.push(canonical)
         if (!vendorIndex.has(canonical)) vendorIndex.set(canonical, index)
     })

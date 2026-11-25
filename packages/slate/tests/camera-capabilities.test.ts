@@ -1,5 +1,7 @@
 import { CanonCamera } from '@camera/canon-camera'
 import { CameraConfirmationError } from '@camera/confirmation'
+import { CameraRefusedError } from '@camera/errors'
+import { NikonShotControls } from '@vendors/nikon/shot-controls'
 import { cameraControlDefinitions, resolveCameraControl } from '@camera/controls'
 import { exposureSeconds, matchExposureTime, parseExposureTime } from '@camera/exposure-time'
 import { Camera } from '@camera/index'
@@ -270,6 +272,38 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         expect((await fixture.camera.getCapabilities()).controls.iso).toMatchObject({ value: 'Auto', writable: false })
         await expect(fixture.camera.setControl('iso', 'ISO 800')).rejects.toThrow('not writable')
         expect(fixture.writes).toEqual([])
+    })
+    it('writes movie ISO and aperture once through the movie shot controls and confirms canonically', async () => {
+        const fixture = nikonFixture()
+        fixture.properties.set(0xd1a9, { type: 4, value: 280, choices: [280, 400, 560], writable: true })
+        const { controls } = await fixture.camera.getCapabilities()
+        expect(controls.iso).toMatchObject({ value: 'ISO 400', allowedValues: ['ISO 100', 'ISO 400', 'ISO 800'] })
+        expect(controls.aperture).toMatchObject({ value: 'f/2.8', allowedValues: ['f/2.8', 'f/4', 'f/5.6'] })
+        const shotControls = vi.spyOn(NikonShotControls.prototype, 'apply')
+        expect(await fixture.camera.setIso('ISO 800')).toBe('ISO 800')
+        expect(await fixture.camera.setAperture('f/4')).toBe('f/4')
+        expect(shotControls.mock.calls).toEqual([
+            ['set-iso', 'ISO 800'],
+            ['set-aperture', 'f/4'],
+        ])
+        expect(fixture.writes).toEqual([0xd1aa, 0xd1a9])
+        expect(fixture.properties.get(0xd1aa)!.value).toBe(800)
+        expect(fixture.properties.get(0xd1a9)!.value).toBe(400)
+        await expect(fixture.camera.setAperture('f/4.5')).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(fixture.writes).toEqual([0xd1aa, 0xd1a9])
+        shotControls.mockRestore()
+    })
+    it('admits a ranged movie ISO at its exact value through the movie shot controls', async () => {
+        const fixture = nikonFixture()
+        Object.assign(fixture.properties.get(0xd1aa)!, { range: [100, 25600, 100] })
+        expect((await fixture.camera.getCapabilities()).controls.iso).toMatchObject({
+            value: 'ISO 400',
+            writable: true,
+            range: { minimum: 100, maximum: 25600, step: 100 },
+        })
+        await expect(fixture.camera.setIso('ISO 450')).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(await fixture.camera.setIso('ISO 3200')).toBe('ISO 3200')
+        expect(fixture.writes).toEqual([0xd1aa])
     })
     it('requires confirmed idle for native angle changes', async () => {
         const fixture = nikonFixture()

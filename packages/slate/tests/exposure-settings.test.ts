@@ -26,6 +26,7 @@ import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-
 import { LiveViewSelector } from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { canonicalControlValues } from '@vendors/control-properties'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
@@ -79,6 +80,8 @@ interface SimulatedProperty {
     current: number
     choices: number[]
     available: boolean
+    /** A range form (minimum, maximum, step) instead of an enumeration; descriptor bodies only. */
+    range?: [number, number, number]
 }
 
 type Body = Record<number, SimulatedProperty>
@@ -209,7 +212,14 @@ function descriptorCamera(vendorId: number, body: Body): Simulation {
     const writes: Simulation['writes'] = []
     const applies = { value: true }
     const selector = LiveViewSelector.code
-    const descriptor = (code: number, datatype: number, current: number, choices: number[], writable: boolean) => {
+    const descriptor = (
+        code: number,
+        datatype: number,
+        current: number,
+        choices: number[],
+        writable: boolean,
+        range?: SimulatedProperty['range']
+    ) => {
         const value = datatype === 2 ? registry.codecs.uint8 : wireCodec(camera, datatype as SimulatedProperty['datatype'])
         const wire = concatenate([
             registry.codecs.uint16.encode(code),
@@ -217,9 +227,13 @@ function descriptorCamera(vendorId: number, body: Body): Simulation {
             Uint8Array.of(writable ? 1 : 0),
             value.encode(current),
             value.encode(current),
-            Uint8Array.of(2),
-            registry.codecs.uint16.encode(choices.length),
-            ...choices.map(choice => value.encode(choice)),
+            ...(range
+                ? [Uint8Array.of(1), ...range.map(limit => value.encode(limit))]
+                : [
+                      Uint8Array.of(2),
+                      registry.codecs.uint16.encode(choices.length),
+                      ...choices.map(choice => value.encode(choice)),
+                  ]),
         ])
         return new DevicePropDescCodec(registry, false).decode(wire).value
     }
@@ -244,7 +258,14 @@ function descriptorCamera(vendorId: number, body: Body): Simulation {
         if (!simulated) return { code: 0x200a }
         return {
             code: 0x2001,
-            data: descriptor(code, simulated.datatype, simulated.current, simulated.choices, simulated.available),
+            data: descriptor(
+                code,
+                simulated.datatype,
+                simulated.current,
+                simulated.choices,
+                simulated.available,
+                simulated.range
+            ),
         }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
@@ -411,6 +432,91 @@ describe('exposure vocabulary', () => {
         expect(formatExposureCompensation(0)).toBe('0.0')
     })
 
+    it('refuses an aperture that only rounds to an offered f-number, sending nothing', async () => {
+        expect(canonicalExposureInput('aperture', 'f/2.83')).toBe('f/2.83')
+        expect(canonicalExposureInput('aperture', 'F3.45')).toBe('f/3.45')
+        expect(canonicalExposureInput('aperture', 'f/2.833')).toBe('f/2.833')
+        expect(canonicalExposureInput('aperture', 'F2.80')).toBe('f/2.8')
+        const body = standardBody()
+        body[0x5007] = property(4, 280, [280, 350])
+        const { camera, writes } = descriptorCamera(0x1234, body)
+        for (const requested of ['f/2.83', 'f/3.45', 'f/5.65'] as const)
+            await expect(camera.setAperture(requested)).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(writes).toEqual([])
+        expect(await camera.setAperture('f/3.5')).toBe('f/3.5')
+        expect(writes).toEqual([{ code: 0x5007, raw: 350 }])
+    })
+
+    it('reads a standard FNumber of 95 hundredths as f/0.95, not f/0.9', async () => {
+        const body = sonyBody()
+        body[0x5007] = property(4, 95, [95, 283, 400])
+        const { camera, writes } = sonyCamera(body)
+        expect((await camera.getCapabilities()).controls.aperture).toMatchObject({
+            value: 'f/0.95',
+            allowedValues: ['f/0.95', 'f/2.83', 'f/4'],
+        })
+        await expect(camera.setAperture('f/2.8')).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(writes).toEqual([])
+    })
+
+    it('names an f/0.95 at hundredths rather than rounding it to f/0.9', () => {
+        // Nikon movie apertures are labelled from hundredths (NikonMovieFNumber 95 is f/0.95).
+        expect(canonicalControlValues('nikonMovie', 'aperture', 'f/0.95', ['f/0.95', 'f/2.8'])).toMatchObject({
+            value: 'f/0.95',
+            allowedValues: ['f/0.95', 'f/2.8'],
+        })
+        expect(canonicalExposureInput('aperture', 'f/0.95')).toBe('f/0.95')
+    })
+
+    it('reads a Canon implicit auto aperture as Auto and never writes it', async () => {
+        const body = canonBody()
+        // 0x0000 implicit auto (Tv/P); 0xffff is the codec's other `auto` code.
+        body[0xd101] = property(4, 0x0000, [0xffff, 0x20, 0x28])
+        const { camera, writes } = canonCamera(body)
+        const aperture = (await camera.getCapabilities()).controls.aperture
+        expect(aperture).toMatchObject({ value: 'Auto', allowedValues: ['f/2.8', 'f/4'], writable: true })
+        expect(aperture?.unrecognized).toBeUndefined()
+        expect(await camera.getAperture()).toBe('Auto')
+        await expect(camera.setAperture('Auto')).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(writes).toEqual([])
+        expect(await camera.setAperture('f/4')).toBe('f/4')
+        expect(writes).toEqual([{ code: 0xd101, raw: 0x28 }])
+    })
+
+    it.each([
+        ['Nikon in photo mode', 0x04b0],
+        ['generic PTP', 0x1234],
+    ] as const)('admits exact ISO and f-numbers on a ranged %s property, unrounded', async (_body, vendorId) => {
+        const body = standardBody()
+        body[0x500f] = { ...property(4, 100, []), range: [100, 6400, 100] }
+        body[0x5007] = { ...property(4, 280, []), range: [280, 2200, 10] }
+        const { camera, writes } = descriptorCamera(vendorId, body)
+        const { controls } = await camera.getCapabilities()
+        expect(controls.iso).toMatchObject({ value: 'ISO 100', writable: true, range: { minimum: 100, maximum: 6400, step: 100 } })
+        expect(controls.aperture).toMatchObject({ value: 'f/2.8', writable: true, range: { minimum: 2.8, maximum: 22, step: 0.1 } })
+        await expect(camera.setIso('ISO 850')).rejects.toBeInstanceOf(CameraRefusedError)
+        await expect(camera.setAperture('f/4.05')).rejects.toBeInstanceOf(CameraRefusedError)
+        await expect(camera.setAperture('f/32')).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(writes).toEqual([])
+        expect(await camera.setIso('ISO 800')).toBe('ISO 800')
+        expect(await camera.setAperture('f/4')).toBe('f/4')
+        expect(writes).toEqual([
+            { code: 0x500f, raw: 800 },
+            { code: 0x5007, raw: 400 },
+        ])
+    })
+
+    it('keeps a ranged canonical control with no exact wire scale read-only', async () => {
+        const body = standardBody()
+        body[0x500b] = { ...property(4, 3, []), range: [1, 4, 1] }
+        const { camera, writes } = descriptorCamera(0x1234, body)
+        const metering = (await camera.getCapabilities()).controls.meteringMode
+        expect(metering).toMatchObject({ value: 'Multi', writable: false })
+        expect(metering?.range).toBeUndefined()
+        await expect(camera.setMeteringMode('Spot')).rejects.toBeInstanceOf(CameraUnsupportedError)
+        expect(writes).toEqual([])
+    })
+
     it('types values from the canonical names, not plain strings', () => {
         const camera = new Camera({ transport: transport() })
         expectTypeOf(camera.setExposureMode).parameter(0).toEqualTypeOf<ExposureMode | ExposureModeAlias>()
@@ -425,6 +531,7 @@ describe('exposure vocabulary', () => {
 
 describe('exposure settings on the Sony SDK session', () => {
     function sdkCamera() {
+        const applies = { value: true }
         const properties = [
             { code: 256, type: 2, value: '280', writable: true, allowedValues: ['280', '400'] },
             { code: 260, type: 3, value: '100', writable: true, allowedValues: ['16777215', '100', '800'] },
@@ -439,14 +546,17 @@ describe('exposure settings on the Sony SDK session', () => {
                 if (request.cmd === 'set') {
                     writes.push({ code: request.code!, value: request.value! })
                     const target = properties.find(entry => entry.code === Number(request.code))
-                    if (target) target.value = request.value!
+                    if (target && applies.value) target.value = request.value!
                 }
                 return { ok: true }
             },
             close: async () => {},
         }
-        return { camera: new SonyWifiCamera(bridge), writes }
+        return { camera: new SonyWifiCamera(bridge), writes, properties, applies }
     }
+
+    const exposureWrites = (writes: { code: string }[]) =>
+        writes.filter(write => ['256', '257', '260', '261', '266'].includes(write.code))
 
     it('reads canonical names and writes the SDK value behind each', async () => {
         const { camera, writes } = sdkCamera()
@@ -468,5 +578,43 @@ describe('exposure settings on the Sony SDK session', () => {
             { code: '266', value: '8' },
         ])
         await expect(camera.setAperture('f/1.4')).rejects.toBeInstanceOf(CameraRefusedError)
+    })
+
+    it('is unsupported when the SDK reports a setting not writable, sending nothing', async () => {
+        const { camera, writes, properties } = sdkCamera()
+        await camera.connectUsb('unit-test')
+        properties.find(entry => entry.code === 266)!.writable = false
+        expect((await camera.getCapabilities()).controls.meteringMode).toMatchObject({ value: 'Multi', writable: false })
+        await expect(camera.setMeteringMode('Spot')).rejects.toBeInstanceOf(CameraUnsupportedError)
+        expect(exposureWrites(writes)).toEqual([])
+    })
+
+    it('reports an SDK write the camera never shows as unknown, after exactly one set', async () => {
+        const { camera, writes, applies } = sdkCamera()
+        await camera.connectUsb('unit-test')
+        applies.value = false
+        vi.useFakeTimers()
+        const pending = camera.setExposureCompensation('+0.7').catch(error => error)
+        await vi.advanceTimersByTimeAsync(5200)
+        const unknown = await pending
+        expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(unknown).toMatchObject({ operation: 'exposureCompensation' })
+        expect(exposureWrites(writes)).toEqual([{ code: '257', value: '700' }])
+    })
+
+    it('keeps an SDK exposure mode Slate has no name for read-only and out of the choices', async () => {
+        const { camera, writes, properties } = sdkCamera()
+        await camera.connectUsb('unit-test')
+        Object.assign(properties.find(entry => entry.code === 261)!, { value: '7', allowedValues: ['1', '7'] })
+        const mode = (await camera.getCapabilities()).controls.exposureMode
+        expect(mode).toMatchObject({
+            value: 'Unrecognized (Portrait)',
+            writable: false,
+            allowedValues: ['Manual'],
+            unrecognized: { value: 'Portrait', choices: ['Portrait'] },
+        })
+        await expect(camera.getExposureMode()).rejects.toBeInstanceOf(CameraUnsupportedError)
+        await expect(camera.setExposureMode('M')).rejects.toBeInstanceOf(CameraUnsupportedError)
+        expect(exposureWrites(writes)).toEqual([])
     })
 })

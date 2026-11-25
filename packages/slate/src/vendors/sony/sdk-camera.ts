@@ -218,11 +218,16 @@ export class SonyWifiCamera {
             : typeof value === 'string' ? canonicalControlInput(id, value) : String(value)
         if (!requested || !control.allowedValues?.includes(requested)) throw new CameraRefusedError(id, 'Requested SDK control value is not advertised')
         const wire = sonySdkControlWireValue(properties, id, requested)
-        await this.setSonySetting(wire.code, wire.value)
-        const observed = (await this.getCapabilities()).controls[id]
-        if (!observed || observed.source.code !== control.source.code || observed.value !== requested)
-            throw new CameraConfirmationError(id, requested, observed?.value ?? null)
-        return observed
+        // One write; confirmation polls the canonical readback and never resends it.
+        await this.setSonyProperty(wire.code, wire.value)
+        let observed: CameraControlState | undefined
+        await confirmCameraValue(id, requested, async () => {
+            observed = (await this.getCapabilities()).controls[id]
+            if (observed && observed.source.code !== control.source.code)
+                throw new CameraConfirmationError(id, requested, `control changed to ${observed.source.name}`)
+            return observed?.value ?? null
+        }, 5000)
+        return observed!
         })
     }
 

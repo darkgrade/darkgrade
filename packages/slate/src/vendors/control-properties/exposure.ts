@@ -64,8 +64,11 @@ export const exposureControlProperties = {
     },
 } as const satisfies VendorControlProperties<ExposureId>
 
+/** An f-number label (`f/2.8`, `F4.0`), or the `auto` Canon's codec names its automatic codes. */
 const fNumber = (label: string) => {
-    const match = /^f\/?(\d+(?:\.\d+)?)$/i.exec(label.trim())
+    const text = label.trim()
+    if (/^auto$/i.test(text)) return 'Auto'
+    const match = /^f\/?(\d+(?:\.\d+)?)$/i.exec(text)
     return match ? formatAperture(Number(match[1])) : undefined
 }
 
@@ -235,7 +238,8 @@ export const exposureControlValues = {
         meteringMode: { canonical: sonySdkMetering },
     },
     canon: {
-        aperture: { canonical: fNumber },
+        // 0x0000 (implicit auto in Tv/P), 0xffff and 0x00b0 are all `auto` in the Canon codec: read, never written.
+        aperture: { canonical: fNumber, readOnly: ['Auto'] },
         iso: { canonical: label => (/^auto(?:_iso)?$/.test(label) ? 'Auto' : isoLabel(`ISO ${label}`)) },
         exposureMode: { canonical: canonExposureMode },
         exposureCompensation: { canonical: canonEighthsOfAStop },

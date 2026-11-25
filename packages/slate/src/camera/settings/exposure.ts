@@ -14,7 +14,9 @@ export const exposureControlDefinitions = {
     aperture: { label: 'Aperture', aliases: ['f number', 'f-stop', 'iris', 'T-stop'] },
     exposureMode: {
         label: 'Exposure mode',
-        // 'exposure program' joins these once the transitional exposureProgram id below is gone.
+        // Until the transitional exposureProgram id below is deleted (with Sony photo-mode, Studio's
+        // RecordingPanel, CameraPill, counterpartMode and the assistant moved to photoVideoMode),
+        // 'exposure program' resolves to that id by its own name; it joins these aliases then.
         aliases: ['exposure mode', 'PASM', 'mode dial', 'exposureProgramMode'],
     },
     exposureCompensation: {
@@ -130,9 +132,12 @@ export const exposureSettingReaders: SettingReaders<ExposureSettingTypes> = {
     meteringMode: canonicalReader('meteringMode', 'Metering', isMeteringMode),
 }
 
-/** `f/` and the f-number with at most one decimal and no trailing zero. */
+/**
+ * `f/` and the f-number without trailing zeros (`f/4`, `f/2.8`, `f/0.95`). Two decimals, the
+ * resolution of the PTP FNumber unit (hundredths), so a camera's f/0.95 is never named f/0.9.
+ */
 export function formatAperture(fNumber: number): Aperture {
-    return `f/${Number(fNumber.toFixed(1))}`
+    return `f/${Number(fNumber.toFixed(2))}`
 }
 
 /** Stops with a sign and one decimal; thirds read as .3 and .7, halves as .5. */
@@ -165,7 +170,10 @@ export function canonicalExposureInput(id: string, value: string): string {
     if (id === 'aperture') {
         if (/^auto$/i.test(text)) return 'Auto'
         const fNumber = new RegExp(`^(?:f\\s*/?\\s*)?(${number})$`, 'i').exec(text)
-        return fNumber ? formatAperture(Number(fNumber[1])) : text
+        if (!fNumber) return text
+        // Only trailing zeros are dropped (F4.0 is f/4); f/2.83 stays f/2.83 and is refused, never written as f/2.8.
+        const exact = formatAperture(Number(fNumber[1]))
+        return exact === `f/${Number(fNumber[1])}` ? exact : text
     }
     if (id === 'exposureCompensation') {
         const stops = new RegExp(`^([+-]?${number})(?:\\s*EV)?$`, 'i').exec(text)
