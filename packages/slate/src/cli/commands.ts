@@ -1,3 +1,5 @@
+import { cameraOperationTable, cliCommand, type OperationEntry } from '@camera/operations/table'
+
 /** The one description of the command tree. Help, the manual page, shell completions,
  * argument checks and typo suggestions are all drawn from it. */
 export interface FlagDefinition {
@@ -141,6 +143,47 @@ const telemetry: CommandDefinition = {
     ],
 }
 
+/** A camera operation's command, named and described by its operation-table entry. */
+function cameraOperationCommand(operation: string, extra: Omit<CommandDefinition, 'name' | 'summary'> = {}): CommandDefinition {
+    const table: Readonly<Record<string, OperationEntry>> = cameraOperationTable
+    const entry = table[operation]
+    const line = entry && cliCommand(operation, entry)
+    if (!entry || !line?.startsWith('darkgrade camera ') || !entry.summary)
+        throw new Error(`${operation} has no darkgrade camera command in the operation table`)
+    const surface = entry.surfaces?.cli
+    const tableFlags = surface && 'flags' in surface ? (surface.flags ?? []) : []
+    return {
+        name: line.slice('darkgrade camera '.length),
+        summary: entry.summary,
+        section: 'Camera',
+        ...extra,
+        flags: [
+            ...tableFlags.map(flag => ({ name: flag.name.slice(2), value: flag.value, summary: flag.description })),
+            ...(extra.flags ?? []),
+        ],
+    }
+}
+
+const cameraCommands: CommandDefinition = {
+    name: 'camera',
+    summary: 'Operate the attached camera',
+    description:
+        'Each command opens the attached camera, does one thing through the same operations as the library, ' +
+        'and closes it again.',
+    section: 'Camera',
+    examples: ['darkgrade camera start-recording --duration 10s'],
+    commands: [
+        cameraOperationCommand('startRecording', {
+            description:
+                'Gets the camera ready (video mode, card, audio), starts recording and stays in the foreground ' +
+                'holding the session. Stops on Ctrl-C or after --duration, waits for the finished clip on the card, ' +
+                'puts the camera back and prints the clip. Nothing on the card is deleted or overwritten.',
+            flags: [camera, json],
+            examples: ['darkgrade camera start-recording', 'darkgrade camera start-recording --duration 10s --json'],
+        }),
+    ],
+}
+
 export const rootCommand: CommandDefinition = {
     name: programName,
     summary: 'Camera diagnostics and telemetry preferences',
@@ -169,6 +212,7 @@ export const rootCommand: CommandDefinition = {
             flags: [json],
             examples: ['darkgrade doctor', 'darkgrade doctor --json'],
         },
+        cameraCommands,
         telemetry,
         {
             name: 'completions',
