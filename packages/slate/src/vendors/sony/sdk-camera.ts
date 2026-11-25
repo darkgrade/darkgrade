@@ -13,6 +13,11 @@ import { isSonyModelName } from '@vendors/sony/model-name'
 import { isVerifiedFeature } from '@camera/validated-models'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
+import type { Battery } from '@camera/driver/body'
+import type { CardStatus } from '@camera/driver/media'
+import { batteryFromPower } from '@vendors/capabilities/body'
+import { normalizeCameraPower } from '@vendors/camera-power'
+import { sonySdkCardStatus } from '@vendors/media/sony-media'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
 export interface SonySdkBridge {
@@ -591,6 +596,16 @@ export class SonyWifiCamera {
             await this.bridge.request({ cmd: 'command', id: '1', param: '0' })
             await confirmCameraValue('record_stop', 'idle', () => this.getRecordingState(), 15000)
         })
+    }
+
+    /** Level, minutes left and power source, from the SDK's battery properties. */
+    async getBattery(): Promise<Battery> {
+        return batteryFromPower(normalizeCameraPower('sony', await this.getSonyPropertyStates()))
+    }
+
+    /** Per card slot: photos left and recording time left, from the SDK's slot properties. */
+    async getCardStatus(): Promise<CardStatus[]> {
+        return sonySdkCardStatus(await this.getSonyPropertyStates())
     }
 
     async getRecordingState(): Promise<CameraRecordingState> {

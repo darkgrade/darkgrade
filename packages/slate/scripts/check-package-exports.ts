@@ -92,6 +92,7 @@ try {
             type CameraRecordingState, SonyWifiCamera, SonyCamera, type ShutterSpeed, type TypedSettingMethods,
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
             type CardPhoto, type ComputerPhoto, type PhotoFormat, type RawCompression,
+            type CardStatus, type MediaItem, type Battery, type CameraInfo, type OperationAvailability,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
         const camera = new Camera()
@@ -204,6 +205,34 @@ try {
                 ? string extends Value ? Name : never : never
             : never }[keyof TypedSettingMethods]
         const noPlainStringSetters: [PlainStringSetters] extends [never] ? true : PlainStringSetters = true
+        // Card, media, body and events: generic operations with typed results.
+        const cards: Promise<CardStatus[]> = camera.getCardStatus()
+        const media: Promise<MediaItem[]> = camera.listMedia()
+        const preview: Promise<Uint8Array> = camera.getMediaPreview('id', 'preview')
+        const download: Promise<Uint8Array> = camera.downloadMedia('id', {
+            onProgress: (receivedBytes: number, totalBytes: number) => void [receivedBytes, totalBytes],
+            signal: new AbortController().signal,
+        })
+        const battery: Promise<Battery> = camera.getBattery()
+        const clock: Promise<void> = camera.setClock(new Date())
+        const info: Promise<CameraInfo> = camera.getInfo()
+        const listMediaAvailability: Promise<OperationAvailability | undefined> =
+            camera.getCapabilities().then(current => current.operations?.listMedia)
+        camera.on('mediaAdded', () => {})
+        camera.off('settingsChanged')
+        // @ts-expect-error Preview sizes are thumbnail or preview.
+        camera.getMediaPreview('id', 'large')
+        // @ts-expect-error Media ids are the strings listMedia returns, not object handles.
+        camera.downloadMedia(42)
+        // @ts-expect-error setClock takes a Date.
+        camera.setClock('2026-11-24T12:00:00')
+        // @ts-expect-error The named events are settingsChanged and mediaAdded.
+        camera.on('objectAdded', () => {})
+        // @ts-expect-error A named event passes nothing to its handler.
+        camera.on('mediaAdded', (item: MediaItem) => void item)
+        // @ts-expect-error Battery power sources are a closed set.
+        const invented: Battery['powerSource'] = 'solar'
+        void [cards, media, preview, download, battery, clock, info, listMediaAvailability, invented]
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
             confirmedShutter, currentShutter, noPlainStringSetters, errors, cardPhoto, computerPhoto, photoFormat,

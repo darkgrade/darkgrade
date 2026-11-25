@@ -53,6 +53,8 @@ export class NikonCamera extends GenericCamera {
     private ownsLiveView = false
     private manualVideoExposureRequested = false
     private lostSessionId?: number
+    /** SDRAM objects announced by any event poll (an event listener's pump or a capture), oldest first. */
+    private announcedSdramObjects: number[] = []
 
     vendorId = VendorIDs.NIKON
     declare public registry: NikonRegistry
@@ -284,8 +286,12 @@ export class NikonCamera extends GenericCamera {
             if (!Array.isArray(extended.data)) throw new Error('Nikon GetEventEx returned no event dataset')
             events = extended.data.map(event => ({ code: event.code, parameters: [...event.parameters] }))
         }
-        for (const event of events)
+        for (const event of events) {
+            const handle = event.parameters[0]
+            if (event.code === this.registry.events.ObjectAddedInSdram.code && handle !== undefined)
+                this.announcedSdramObjects.push(Number(handle))
             this.handleEvent({ ...event, transactionId: 0 })
+        }
         return events
     }
 
@@ -330,6 +336,7 @@ export class NikonCamera extends GenericCamera {
             // Events queued before this release must not count as its file.
             await this.pollEvents()
             cardHandles.length = 0
+            this.announcedSdramObjects = []
             if (!memory && options.autofocus !== false) {
                 releaseSent = true
                 const response = await this.send(this.registry.operations.InitiateCapture, {})
@@ -487,9 +494,10 @@ export class NikonCamera extends GenericCamera {
                 await this.waitMs(10)
                 continue
             }
-            const events = await this.pollEvents()
-            const added = events.find(event => event.code === this.registry.events.ObjectAddedInSdram.code)
-            const handle = added?.parameters[0]
+            // Another poll (an event listener's pump) may have drained the queue first; its
+            // announcements are kept, so a capture never loses its object.
+            await this.pollEvents()
+            const handle = this.announcedSdramObjects.shift()
             if (handle !== undefined) {
                 const response = await this.send(this.registry.operations.GetObjectInfo, { ObjectHandle: handle })
                 this.assertNikonResponse(response.code, 'GetObjectInfo')

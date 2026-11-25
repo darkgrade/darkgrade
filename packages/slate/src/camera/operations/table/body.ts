@@ -7,16 +7,12 @@ import type { AreaOperationTable } from '@camera/operations/table/operation-entr
  */
 export const bodyOperationTable = {
     current: {
-        setSonyDateTime: {
-            area: 'body',
-            disposition: { kind: 'replaced-by', target: 'setClock' },
+        // The plan lists getInfo under Connection; it is implemented with the body operations.
+        getInfo: {
+            area: 'connection',
+            disposition: { kind: 'add' },
+            summary: 'Make, model, firmware, lens mount, connection type',
         },
-        keepDeviceOn: {
-            area: 'body',
-            disposition: { kind: 'private', handledBy: 'connect (the keep-alive heartbeat)' },
-        },
-    },
-    planned: {
         getBattery: {
             area: 'body',
             disposition: { kind: 'add' },
@@ -26,6 +22,20 @@ export const bodyOperationTable = {
             area: 'body',
             disposition: { kind: 'add' },
             summary: 'Sets the camera\'s date and time',
+            surfaces: {
+                cli: {
+                    flags: [{ name: '--time', value: 'ISO 8601', description: 'the time to set (default: now)' }],
+                },
+            },
+        },
+        setSonyDateTime: {
+            area: 'body',
+            disposition: { kind: 'replaced-by', target: 'setClock' },
+        },
+        keepDeviceOn: {
+            area: 'body',
+            disposition: { kind: 'private', handledBy: 'connect (the keep-alive heartbeat)' },
         },
     },
+    planned: {},
 } as const satisfies AreaOperationTable

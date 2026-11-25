@@ -3,6 +3,7 @@ import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } 
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
 import { cameraContext, type CameraContext, type CameraDriverInstance } from '@camera/operations/context'
+import { clearNamedEvents, reattachNamedEvents } from '@camera/operations/events'
 import { SonyCamera } from '@camera/sony-camera'
 import { VendorExtensionCamera } from '@camera/vendor-extension-camera'
 import { Logger } from '@core/logger'
@@ -116,6 +117,7 @@ export const connectionOperations: ConnectionOperations & ThisType<Camera> = {
             context.driver = createCameraDriver(context, vendorId)
             for (const subscription of context.subscriptions)
                 context.driver.on(subscription.event, subscription.handler as never)
+            reattachNamedEvents(this)
         }
         context.deviceDescriptor = descriptor
         // Preserve the caller-owned partial session for standard protocol diagnostics when
@@ -149,7 +151,10 @@ export const connectionOperations: ConnectionOperations & ThisType<Camera> = {
         try {
             await context.driver.disconnect()
         } finally {
-            if (context.driver.sessionId === null) context.subscriptions.clear()
+            if (context.driver.sessionId === null) {
+                context.subscriptions.clear()
+                clearNamedEvents(this)
+            }
         }
     },
 }

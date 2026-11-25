@@ -7,24 +7,6 @@ import type { AreaOperationTable } from '@camera/operations/table/operation-entr
  */
 export const mediaOperationTable = {
     current: {
-        listObjects: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'listMedia' },
-        },
-        getObject: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'downloadMedia' },
-        },
-        listSonyContents: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'listMedia' },
-        },
-        getSonyContentPreview: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'getMediaPreview' },
-        },
-    },
-    planned: {
         getCardStatus: {
             area: 'media',
             disposition: { kind: 'add' },
@@ -56,5 +38,22 @@ export const mediaOperationTable = {
                 },
             },
         },
+        listObjects: {
+            area: 'media',
+            disposition: { kind: 'replaced-by', target: 'listMedia' },
+        },
+        getObject: {
+            area: 'media',
+            disposition: { kind: 'replaced-by', target: 'downloadMedia' },
+        },
+        listSonyContents: {
+            area: 'media',
+            disposition: { kind: 'replaced-by', target: 'listMedia' },
+        },
+        getSonyContentPreview: {
+            area: 'media',
+            disposition: { kind: 'replaced-by', target: 'getMediaPreview' },
+        },
     },
+    planned: {},
 } as const satisfies AreaOperationTable
