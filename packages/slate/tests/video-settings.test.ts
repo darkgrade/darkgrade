@@ -93,11 +93,11 @@ describe('Sony typed video settings', () => {
 })
 
 /** Canon movie sound as CanonGetEventData records; writes through CanonSetPropValue. */
-function canonCamera() {
+function canonCamera(initial: { value: number; choices: number[] } = { value: 2, choices: [1, 2, 3] }) {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
     const driver = protocolSession(camera).driver as CanonCamera
     const sound = driver.registry.properties.CanonMovieSoundRecording.code
-    const body = { value: 2, choices: [1, 2, 3] }
+    const body = { ...initial }
     const writes: number[] = []
     const send = async (operation: OperationDefinition, _parameters: unknown, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(driver.registry, []) }
@@ -127,6 +127,14 @@ describe('Canon typed audio recording', () => {
         ])
         expect(await camera.setAudioRecording('Off')).toBe('Off')
         expect(writes).toEqual([1])
+    })
+
+    it('shows movie sound 0, whose meaning is not verified, as unrecognized and never offers it', async () => {
+        // The R6 Mark III offers 0/1 and the R8 Mark II reports 0.
+        const { camera } = canonCamera({ value: 0, choices: [0, 1] })
+        const { controls } = await camera.getCapabilities()
+        expect(controls.audioRecording).toMatchObject({ value: 'Unrecognized (0)', allowedValues: ['Off'], writable: false })
+        await expect(camera.getAudioRecording()).rejects.toBeInstanceOf(CameraUnsupportedError)
     })
 
     it('has no frame rate or quality of its own: they are part of the video format record', async () => {

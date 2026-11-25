@@ -30,6 +30,7 @@ import { canonImageFormatFromPacked } from '@vendors/canon/datasets/canon-image-
 import { canonLiveViewPosition, type CanonLiveViewFrame, type CanonLiveViewPosition } from '@vendors/canon/datasets/canon-live-view-dataset'
 import { CANON_PROPERTY_NAMES } from '@vendors/canon/definitions/canon-property-names'
 import { canonControlProperties } from '@vendors/control-properties'
+import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@vendors/generic/generic-camera'
 import {
     cardObjectFile,
@@ -183,8 +184,8 @@ export class CanonCamera extends GenericCamera {
     private settingsListeners = new Set<CameraEventHandler>()
     /** The last value and choices bytes of each setting property, so only a real change is `settingsChanged`. */
     private settingSignatures = new Map<string, string>()
-    /** What setFocusPoint changed this connection, so resetFocusPoint can put it back. */
-    private focusChanges: { previousArea?: string; placedArea?: string } = {}
+    /** What setFocusPoint changed on this body, so resetFocusPoint and disconnect can put it back. */
+    private readonly focusChanges = new FocusPointChanges()
     private addedObjectWatchers = new Set<(object: CanonAddedObject) => void>()
     private pollingLoop?: Promise<void>
     private liveViewEnabled = false
@@ -258,6 +259,7 @@ export class CanonCamera extends GenericCamera {
         }
         let failure: unknown
         for (const cleanup of [
+            () => restoreAll('disconnect', this.focusRestoreSteps()),
             () => this.disableLiveView(),
             () => this.setSessionMode('remote', false),
             () => this.setSessionMode('event', false),
@@ -315,7 +317,6 @@ export class CanonCamera extends GenericCamera {
         this.lastKeepAliveAttempt = undefined
         this.keepAliveUnavailable = false
         this.settingSignatures.clear()
-        this.focusChanges = {}
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -1194,33 +1195,43 @@ export class CanonCamera extends GenericCamera {
         const offered = (this.getPropertyAllowedValues(property) ?? []).map(String)
         const point = CANON_FOCUS_POINT_AREAS.find(candidate => offered.includes(candidate))
         if (!point) throw new CameraUnsupportedError('setFocusPoint', `The camera offers no single-point focus area from ${area}`)
+        const changes = await this.focusPointChanges()
         await this.set(property, point).catch(error => focusFailure('setFocusPoint', error))
-        this.focusChanges.previousArea ??= area
-        this.focusChanges.placedArea = point
+        changes.changed(property.name, area, point)
     }
 
     /** Recentres a host-positioned frame (also right while magnified), then puts back the area a focus point replaced. */
     async resetFocusPoint(): Promise<void> {
         const property = this.registry.properties.CanonLiveViewAutofocusMode
-        const changes = this.focusChanges
+        await this.focusPointChanges()
         await restoreAll('resetFocusPoint', [
             async () => {
                 const area = this.propertyCache.has(property) ? String(await this.get(property)) : undefined
                 if (area === undefined || CANON_POSITIONED_AF_AREAS.includes(area))
                     await this.placeFocusFrame('resetFocusPoint', 0.5, 0.5)
             },
-            async () => {
-                const { previousArea, placedArea } = changes
-                changes.previousArea = changes.placedArea = undefined
-                // Only undo the switch a focus point made: an area chosen since then stays.
-                if (previousArea && String(await this.get(property)) === placedArea)
-                    await this.setNamed(property, previousArea)
-            },
+            ...this.focusRestoreSteps(),
         ])
     }
 
+    /** The AF area a focus point replaced, put back where the body still shows the one it chose. */
+    private focusRestoreSteps(): (() => Promise<void>)[] {
+        const property = this.registry.properties.CanonLiveViewAutofocusMode
+        return this.focusChanges.restoreSteps(
+            async () => String(await this.get(property)),
+            (_name, value) => this.setNamed(property, value)
+        )
+    }
+
+    /** This body's focus-point record, joined by its serial number once the body has been identified. */
+    private async focusPointChanges(): Promise<FocusPointChanges> {
+        const info = await this.getInfo().catch(() => undefined)
+        if (info) this.focusChanges.identify(info)
+        return this.focusChanges
+    }
+
     settingWritten(id: CameraControlId): void {
-        if (id === 'focusArea') this.focusChanges = {}
+        if (id === 'focusArea') this.focusChanges.forget(this.registry.properties.CanonLiveViewAutofocusMode.name)
     }
 
     private async placeFocusFrame(operation: 'setFocusPoint' | 'resetFocusPoint', x: number, y: number) {

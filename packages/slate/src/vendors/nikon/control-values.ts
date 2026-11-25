@@ -3,8 +3,11 @@ import { nikonShutterLabel } from '@vendors/nikon/shutter-values'
 
 /** Nikon's photo (0xd061) and movie (0xd1fa) focus-mode codes, as the USB reference lists them. */
 export const NIKON_FOCUS_MODE_LABELS = { 0: 'AF-S', 1: 'AF-C', 2: 'AF-F', 4: 'Manual' } as const
-export type NikonFocusModeLabel = (typeof NIKON_FOCUS_MODE_LABELS)[keyof typeof NIKON_FOCUS_MODE_LABELS]
+/** The photo focus mode adds AF-A as 5 (see NikonStillFocusMode). */
+export const NIKON_STILL_FOCUS_MODE_LABELS = { ...NIKON_FOCUS_MODE_LABELS, 5: 'AF-A' } as const
+export type NikonFocusModeLabel = (typeof NIKON_STILL_FOCUS_MODE_LABELS)[keyof typeof NIKON_STILL_FOCUS_MODE_LABELS]
 const nikonFocusModeLabels: Readonly<Record<number, NikonFocusModeLabel>> = NIKON_FOCUS_MODE_LABELS
+const nikonStillFocusModeLabels: Readonly<Record<number, NikonFocusModeLabel>> = NIKON_STILL_FOCUS_MODE_LABELS
 
 /** Decode Nikon's scalar extensions in one place. Standard decoded properties stay untouched. */
 export function nikonControlLabel(propertyName: string, value: string | number | bigint): string {
@@ -24,7 +27,7 @@ export function nikonControlLabel(propertyName: string, value: string | number |
         return nikonWhiteBalanceValues.find(entry => entry.value === numeric)?.name ?? `Unknown white balance (${value})`
     }
     if (propertyName === 'LiveViewSelector') return value === 'VIDEO' || numeric === 1 ? 'video' : value === 'PHOTO' || numeric === 0 ? 'photo' : String(value)
-    if (propertyName === 'NikonMovieFocusMode' || propertyName === 'NikonStillFocusMode')
-        return nikonFocusModeLabels[numeric] ?? `Unknown focus (${value})`
+    if (propertyName === 'NikonMovieFocusMode') return nikonFocusModeLabels[numeric] ?? `Unknown focus (${value})`
+    if (propertyName === 'NikonStillFocusMode') return nikonStillFocusModeLabels[numeric] ?? `Unknown focus (${value})`
     return String(value)
 }

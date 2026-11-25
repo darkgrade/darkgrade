@@ -25,7 +25,7 @@ import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import type { PropertyDefinition } from '@ptp/types/property'
-import { kelvinInput } from '@camera/settings/values'
+import { formatShutterSpeed, kelvinInput } from '@camera/settings/values'
 import { canonicalControlInput } from '@camera/settings/typed-settings'
 import {
     canonControlProperties,
@@ -195,6 +195,13 @@ async function nikonStates(
             iso.writable = false
         }
     }
+    // Right after power-on a Z5 II reported FNumber 0 with 0 as its one choice: no aperture yet, not f/0.
+    // It reads as unrecognized, so it is never written.
+    const noAperture = (value: unknown) => value === 0 || value === 'f/0'
+    for (const state of states.filter(state => state.name === 'FNumber' || state.name === 'NikonMovieFNumber')) {
+        state.allowedValues = state.allowedValues?.filter(value => !noAperture(value))
+        if (noAperture(state.value)) state.unrecognized = { ...state.unrecognized, value: 'f/0' }
+    }
     const inventory: ControlValueInventory = movie === true ? 'nikonMovie' : movie === false ? 'nikonPhoto' : 'standard'
     return { states, mappings, inventory }
 }
@@ -297,7 +304,7 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
                     { label: vendorAllowedValues![index]!, raw: state.allowedValues![index]! },
                 ])
             )
-        const value = canonical?.value ?? vendorValue,
+        let value = canonical?.value ?? vendorValue,
             allowedValues = canonical ? canonical.allowedValues : vendorAllowedValues
         const unrecognized = mergeUnrecognized(state.unrecognized, canonical?.unrecognized)
         const knownExposure =
@@ -314,6 +321,15 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
                 /* Preserve the unknown observation without inventing units. */
             }
         }
+        // Shutter speeds are named in Slate's one spelling on every vendor (Canon "30" is 30", Nikon
+        // "13/10" is 1.3", Sony BULB is Bulb); a write still sends the camera's own choice behind each.
+        const shutter =
+            id === 'shutterSpeed' && !canonical && unrecognizedValue === undefined
+                ? canonicalShutterChoices(vendorAllowedValues, state.allowedValues)
+                : undefined
+        if (shutter) vendorChoices[id] = shutter.vendorChoices
+        if (shutter) allowedValues = shutter.allowedValues
+        if (exposureTime) value = formatShutterSpeed(exposureTime, value)
         const uniqueChoices = !allowedValues || new Set(allowedValues).size === allowedValues.length
         const rangedCanonical = canonical && state.range && !allowedValues ? canonicalRange(id, state.name) : undefined
         controls[id] = {
@@ -366,6 +382,28 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
 }
 
 type ControlRange = NonNullable<CameraControlState['range']>
+
+/**
+ * Each shutter choice in Slate's spelling, with the camera's own choice behind it. A label Slate
+ * cannot read is left out (it is never given units); two labels for the same exposure are one choice.
+ */
+function canonicalShutterChoices(
+    labels: readonly string[] | undefined,
+    raw: readonly (string | number | bigint)[] | undefined
+): { allowedValues?: string[]; vendorChoices: Map<string, VendorChoice> } | undefined {
+    if (!labels || !raw) return undefined
+    const vendorChoices = new Map<string, VendorChoice>()
+    labels.forEach((label, index) => {
+        let spelled: string
+        try {
+            spelled = formatShutterSpeed(parseExposureTime(label), label)
+        } catch {
+            return
+        }
+        if (!vendorChoices.has(spelled)) vendorChoices.set(spelled, { label, raw: raw[index]! })
+    })
+    return { allowedValues: [...vendorChoices.keys()], vendorChoices }
+}
 
 function scaledRange({ minimum, maximum, step }: ControlRange, divisor: number): ControlRange {
     return { minimum: minimum / divisor, maximum: maximum / divisor, step: step / divisor }
@@ -469,7 +507,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 return
             }
             if (state.source.name === 'NikonPhotoShutterSpeed' || state.source.name === 'NikonMovieShutterSpeed') {
-                await driver.setShutterSpeed(requested)
+                await driver.setShutterSpeed(vendorLabel)
                 return
             }
             const property = propertyWithCode(driver, state.source.code)
@@ -579,6 +617,7 @@ function sameExposureTicks(driver: GenericCamera, code: number): (observed: stri
     const codec = property && driver.resolveCodec<unknown>(property.codec)
     return (observed, expected) => {
         if (observed === expected) return true
+        if (sameExposure(observed, expected)) return true
         if (!codec) return false
         try {
             const actual = codec.encode(observed),
@@ -587,6 +626,18 @@ function sameExposureTicks(driver: GenericCamera, code: number): (observed: stri
         } catch {
             return false
         }
+    }
+}
+
+/** Two spellings of the same exposure ("0.01" written, 1/100 read back in Slate's spelling). */
+function sameExposure(observed: string, expected: string): boolean {
+    try {
+        const left = parseExposureTime(observed),
+            right = parseExposureTime(expected)
+        if (left.kind !== 'duration' || right.kind !== 'duration') return false
+        return Math.abs(left.seconds - right.seconds) <= 1e-9 * Math.max(left.seconds, right.seconds)
+    } catch {
+        return false
     }
 }
 

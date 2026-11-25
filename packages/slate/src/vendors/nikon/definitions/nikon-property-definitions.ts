@@ -30,6 +30,29 @@ export const FocusMode = enumProperty('FocusMode', 0x500a, 'uint16', 'Focus mode
     { value: 0x8013, name: 'AF-F', description: 'Full-time autofocus' },
 ])
 
+/**
+ * The standard FocusMeteringMode (0x501C) as Nikon uses it for the AF-area mode, with Nikon's vendor
+ * values (libgphoto2 camlibs/ptp2/config.c `nikon_d850_focus_metering`, 6d5c61ef, which marks
+ * Pinpoint and the Wide-area values "on Z" and reads the property for the Z 6). A value without a
+ * name here is left unrecognized, so it is never offered as a choice.
+ */
+export const NIKON_AF_AREA_VALUES = [
+    { value: 0x0002, name: 'Dynamic-area AF (25 points)', description: 'Dynamic-area AF, 25 points' },
+    { value: 0x8010, name: 'Single-point AF', description: 'Single-point AF' },
+    { value: 0x8011, name: 'Auto-area AF', description: 'Auto-area AF: the camera chooses the focus point' },
+    { value: 0x8012, name: '3D-tracking', description: '3D-tracking' },
+    { value: 0x8013, name: 'Dynamic-area AF (72 points)', description: 'Dynamic-area AF, 72 points' },
+    { value: 0x8014, name: 'Dynamic-area AF (153 points)', description: 'Dynamic-area AF, 153 points' },
+    { value: 0x8015, name: 'Group-area AF', description: 'Group-area AF' },
+    { value: 0x8016, name: 'Dynamic-area AF (9 points)', description: 'Dynamic-area AF, 9 points' },
+    { value: 0x8017, name: 'Pinpoint AF', description: 'Pinpoint AF' },
+    { value: 0x8018, name: 'Wide-area AF (S)', description: 'Wide-area AF, small' },
+    { value: 0x8019, name: 'Wide-area AF (L)', description: 'Wide-area AF, large' },
+    { value: 0x801e, name: 'Wide-area AF (C1)', description: 'Wide-area AF, custom 1' },
+    { value: 0x801f, name: 'Wide-area AF (C2)', description: 'Wide-area AF, custom 2' },
+] as const satisfies readonly EnumValue<number>[]
+export const FocusMeteringMode = enumProperty('FocusMeteringMode', 0x501c, 'uint16', 'Nikon AF-area mode', NIKON_AF_AREA_VALUES)
+
 /** A UINT8 GetSet property naming its values 0 and 1; decoded names stay plain strings. */
 const twoStateProperty = <const Code extends number, const Name extends string>(
     code: Code,
@@ -105,6 +128,7 @@ export const nikonPropertyRegistry = {
     ConnectionPath,
     NikonWarningStatus,
     FocusMode,
+    FocusMeteringMode,
     LiveViewStatus,
     LiveViewSelector,
     MovieRecProhibitionCondition,

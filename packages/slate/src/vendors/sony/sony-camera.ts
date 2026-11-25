@@ -50,6 +50,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { controlValueNames } from '@vendors/control-properties'
 import type { MediaCapability, VideoCapability } from '@vendors/generic/capability-groups'
+import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import {
     cardSteps,
@@ -330,6 +331,7 @@ export class SonyCamera extends GenericCamera {
         if (!this.transport.isConnected()) return super.disconnect()
         let cleanupError: unknown
         const steps = [
+            () => restoreAll('disconnect', this.focusRestoreSteps(this.#focusChanges)),
             () => this.disableContentTransferMode(),
             () => this.stopLiveView(),
             async () => this.osdImageModeEnabled && (await this.setOsdImageMode(false)),
@@ -1373,8 +1375,10 @@ export class SonyCamera extends GenericCamera {
 
     // Driver contract (`@camera/driver`).
 
-    /** What setFocusPoint changed this session, so resetFocusPoint can put it back; a new session starts fresh. */
+    /** The spot size and face-frame check of this session; a new session starts fresh. */
     #focus: SonyFocusSession = freshFocusSession(null)
+    /** What setFocusPoint changed on this body, so resetFocusPoint and disconnect can put it back. */
+    readonly #focusChanges = new FocusPointChanges()
     /** True until the camera confirms its overlay output is off. */
     #overlayOutput = false
     /** When the overlay output may next be switched off: an idle interval after the last overlay request or failed attempt. */
@@ -1605,18 +1609,18 @@ export class SonyCamera extends GenericCamera {
         const properties = this.registry.properties
         const current = this.focusSession()
         const area = String(await this.get(properties.FocusArea))
+        const changes = await this.focusPointChanges()
         if (isMovableFocusArea(area)) current.lastSpot = sonyPlainArea(area)
         else {
             if (!this.propertyCache.get(properties.FocusArea.code)?.vendorExtensions.enabled)
                 throw new CameraUnsupportedError('setFocusPoint', focusAreaLockedReason)
             const spot = await this.spotFor(area)
             await this.set(properties.FocusArea, spot)
-            current.changes.previousArea ??= area
-            current.changes.placedArea = spot
+            changes.changed(properties.FocusArea.name, area, spot)
         }
         if ((await this.get(properties.SubjectRecognitionInAF)) === 'On') {
             await this.set(properties.SubjectRecognitionInAF, 'Off')
-            current.changes.pausedSubjectDetection = true
+            changes.changed(properties.SubjectRecognitionInAF.name, 'On', 'Off')
         }
         await this.setAfAreaPosition(Math.round(x * SONY_AF_AREA_X_MAX), Math.round(y * SONY_AF_AREA_Y_MAX))
         if (options.autofocus) await this.performAutofocus(SONY_FOCUS_DURATION_MILLISECONDS)
@@ -1624,7 +1628,7 @@ export class SonyCamera extends GenericCamera {
 
     async resetFocusPoint(): Promise<void> {
         const properties = this.registry.properties
-        const { changes } = this.focusSession()
+        const changes = await this.focusPointChanges()
         await restoreAll('resetFocusPoint', [
             async () => {
                 if (isMovableFocusArea(String(await this.get(properties.FocusArea))))
@@ -1633,28 +1637,33 @@ export class SonyCamera extends GenericCamera {
                         Math.floor((SONY_AF_AREA_Y_MAX + 1) / 2)
                     )
             },
-            async () => {
-                const { previousArea, placedArea } = changes
-                changes.previousArea = changes.placedArea = undefined
-                // Only undo the switch a focus point made: an area chosen since then stays.
-                if (previousArea && String(await this.get(properties.FocusArea)) === placedArea)
-                    await this.set(properties.FocusArea, previousArea)
-            },
-            async () => {
-                const paused = changes.pausedSubjectDetection
-                changes.pausedSubjectDetection = undefined
-                if (paused && (await this.get(properties.SubjectRecognitionInAF)) === 'Off')
-                    await this.set(properties.SubjectRecognitionInAF, 'On')
-            },
+            ...this.focusRestoreSteps(changes),
         ])
     }
 
+    /** The focus area and subject detection a focus point changed, put back where the body still shows them. */
+    private focusRestoreSteps(changes: FocusPointChanges): (() => Promise<void>)[] {
+        const { FocusArea, SubjectRecognitionInAF } = this.registry.properties
+        return changes.restoreSteps(
+            async name => String(await this.get(name === FocusArea.name ? FocusArea : SubjectRecognitionInAF)),
+            (name, value) =>
+                name === FocusArea.name ? this.set(FocusArea, value) : this.set(SubjectRecognitionInAF, value === 'Off' ? 'Off' : 'On')
+        )
+    }
+
+    /** This body's focus-point record, joined by its serial number once the body has been identified. */
+    private async focusPointChanges(): Promise<FocusPointChanges> {
+        const info = await this.getInfo().catch(() => undefined)
+        if (info) this.#focusChanges.identify(info)
+        return this.#focusChanges
+    }
+
     settingWritten(id: CameraControlId): void {
-        const current = this.focusSession()
-        if (id === 'focusArea') current.changes.previousArea = current.changes.placedArea = undefined
+        const properties = this.registry.properties
+        if (id === 'focusArea') this.#focusChanges.forget(properties.FocusArea.name)
         if (id === 'subjectDetection') {
-            current.changes.pausedSubjectDetection = undefined
-            current.faceFramesChecked = false
+            this.#focusChanges.forget(properties.SubjectRecognitionInAF.name)
+            this.focusSession().faceFramesChecked = false
         }
     }
 
@@ -2002,7 +2011,6 @@ interface SonyCardIndexWatch {
  */
 interface SonyFocusSession {
     sessionId: number | null
-    changes: { previousArea?: string; placedArea?: string; pausedSubjectDetection?: boolean }
     /** The spot size last active on the camera, without its tracking prefix. */
     lastSpot: string
     /** Face/Eye Frame Display was checked since subject detection was last seen turning on. */
@@ -2010,7 +2018,7 @@ interface SonyFocusSession {
 }
 
 function freshFocusSession(sessionId: number | null): SonyFocusSession {
-    return { sessionId, changes: {}, lastSpot: SONY_DEFAULT_SPOT, faceFramesChecked: false }
+    return { sessionId, lastSpot: SONY_DEFAULT_SPOT, faceFramesChecked: false }
 }
 
 function sonyTrackingPrefix(area: string): string | undefined {

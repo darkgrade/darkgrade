@@ -13,6 +13,13 @@ describe('Original card movie audio inspection',()=>{
   expect(inspectMovieTrackHandlers(box('moov',track('vide'),misplaced)).status).toBe('absent')
   expect(inspectMovieTrackHandlers(box('moov',track('soun'))).status).toBe('unverified')
  })
+ it('reads atoms sized to the end of their container (0) and with a 64-bit largesize (1)',()=>{
+  const largesize=(atom:Uint8Array)=>{const out=new Uint8Array(atom.length+8),view=new DataView(out.buffer);view.setUint32(0,1);out.set(atom.subarray(4,8),4);view.setBigUint64(8,BigInt(out.length));out.set(atom.subarray(8),16);return out}
+  const toEnd=(atom:Uint8Array)=>{const out=atom.slice();new DataView(out.buffer).setUint32(0,0);return out}
+  expect(inspectMovieTrackHandlers(box('moov',largesize(track('vide')),toEnd(track('soun')))).status).toBe('present')
+  expect(inspectMovieTrackHandlers(largesize(box('moov',track('vide'),track('soun')))).status).toBe('present')
+  expect(inspectMovieTrackHandlers(box('moov',track('vide'),Uint8Array.of(0,0,0,1,102,114,101,101,0,0,0,0,0,0,0,9))).status).toBe('unverified')
+ })
  it('does not turn malformed metadata into a claim of missing sound',()=>{
   expect(inspectMovieTrackHandlers(Uint8Array.of(0,0,0,100,109,111,111,118)).status).toBe('unverified')
  })

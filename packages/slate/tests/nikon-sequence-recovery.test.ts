@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from 'vitest'
 import {TransportType} from '@transport/interfaces/transport-types'
 import {nikonCamera} from '@tests/fixtures/nikon'
+import {PTPResponseError} from '@core/ptp-errors'
 
 function setup() {
     const camera=nikonCamera({getType:()=>TransportType.USB}),transport=camera.transport
@@ -89,12 +90,25 @@ describe('Nikon documented sequence-error recovery',()=>{
         expect(operations).not.toContain(0x9207)
     })
     it('does not retry a refused shutter release or claim success while a warning remains',async()=>{
-        const refused=setup();refused.setReleaseCode(0xa001)
+        const refused=setup();refused.setReleaseCode(0x2019)
         await expect(refused.camera.recoverSequenceError()).rejects.toThrow()
         expect(refused.operations.filter(code=>code===0x9207)).toHaveLength(1)
         const stuck=setup();stuck.warnings[2]=1
         await expect(stuck.camera.recoverSequenceError()).rejects.toThrow('did not clear')
         expect(stuck.operations.filter(code=>code===0x9207)).toHaveLength(1)
+    })
+    it('says the camera is not ready yet when, right after power-on, it refuses the clearing release too',async()=>{
+        // darkgrade01 Z5 II, 2026-11-25: StartLiveView and the 0x9207 release both answered HardwareError with
+        // WarningStatus 1; the same photo worked 2.5 minutes later.
+        const {camera,operations,setReleaseCode}=setup();setReleaseCode(0xa001)
+        camera.get=vi.fn(async property=>property.code===0xd102?1:property.name==='LiveViewStatus'?'OFF':[]) as any
+        const send=camera.send as any,inner=send.getMockImplementation()
+        send.mockImplementation(async(operation:any,...rest:any[])=>operation.code===0x9201?(operations.push(0x9201),{code:0xa001}):inner(operation,...rest))
+        const refused=await (camera as any).enableLiveView().catch((error:unknown)=>error)
+        expect(refused).toBeInstanceOf(PTPResponseError)
+        expect(refused.message).toMatch(/^The camera is not ready yet/)
+        expect(operations.filter(code=>code===0x9207)).toHaveLength(1)
+        expect(operations.filter(code=>code===0x9201)).toHaveLength(1)
     })
     it('retries live-view startup once after verified recovery, without an unbounded release loop',async()=>{
         const {camera}=setup();let starts=0

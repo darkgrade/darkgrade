@@ -172,12 +172,16 @@ export function namedControlValues(id: CameraControlId): ReadonlySet<string> {
 }
 
 /**
- * A per-property name table as a vocabulary. A word missing from the table keeps the camera's own
- * label; the typed getters refuse to name it.
+ * A per-property name table as a vocabulary. A property without a table keeps the camera's own
+ * labels; a word missing from its property's table has no canonical name, so it reads as
+ * unrecognized and is never offered as a choice (a placeholder such as "Unknown focus (5)" is not a value).
  */
 function nameTableVocabulary(names: ControlPropertyValueNames): ControlValueVocabulary {
     return {
-        canonical: (label, property) => names[property]?.[label] ?? label,
+        canonical: (label, property) => {
+            const table = names[property]
+            return table ? table[label] : label
+        },
         vendorWords: (canonical, property) =>
             Object.entries(names[property] ?? {})
                 .filter(([, name]) => name === canonical)

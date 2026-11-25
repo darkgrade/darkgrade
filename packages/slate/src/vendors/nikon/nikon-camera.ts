@@ -1,4 +1,4 @@
-import type { CameraCapabilities, CameraRecordingState, OperationAvailability } from '@camera/controls'
+import type { CameraCapabilities, CameraControlId, CameraRecordingState, OperationAvailability } from '@camera/controls'
 import type {
     CameraEventHandler,
     CameraEventName,
@@ -17,7 +17,7 @@ import { CameraClipNotFoundError, CameraOutcomeUnknownError, CameraRefusedError,
 import { Logger } from '@core/logger'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
+import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
@@ -27,6 +27,7 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import type { VideoCapability } from '@vendors/generic/capability-groups'
+import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import {
     cardObjectFile,
@@ -39,13 +40,16 @@ import {
     requireImage,
     requireNudge,
     requirePoint,
+    restoreAll,
     unstatedSize,
+    unsupported,
 } from '@vendors/generic/generic-operations'
 import { encodeMediaId, mediaKind } from '@vendors/generic/media-id'
 import { recordingCapability } from '@vendors/generic/recording-lifecycle'
 import { afterPossibleRelease, afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import type { NikonLiveViewDataset } from '@vendors/nikon/datasets/nikon-live-view-dataset'
 import { ISOAutoControl } from '@vendors/nikon/definitions/nikon-operation-definitions'
+import { NIKON_AF_AREA_VALUES } from '@vendors/nikon/definitions/nikon-property-definitions'
 import { HardwareError, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@vendors/nikon/definitions/nikon-response-definitions'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { prepareNikonManualExposure } from '@vendors/nikon/manual-exposure'
@@ -95,6 +99,8 @@ export class NikonCamera extends GenericCamera {
     private liveViewMode: 'PHOTO' | 'VIDEO' | 'UNKNOWN' = 'UNKNOWN'
     private applicationMode: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
     private liveViewStatus: 'ON' | 'OFF' | 'UNKNOWN' = 'UNKNOWN'
+    /** What setFocusPoint changed on this body, so resetFocusPoint and disconnect can put it back. */
+    private readonly focusChanges = new FocusPointChanges()
     private liveViewStartPending = false
     private ownsLiveView = false
     private manualVideoExposureRequested = false
@@ -136,7 +142,13 @@ export class NikonCamera extends GenericCamera {
     async disconnect(): Promise<void> {
         this.lostSessionId = !this.transport.isConnected() ? (this.sessionId ?? this.lostSessionId) : undefined
         try {
-            if (this.transport.isConnected() && (this.ownsLiveView || this.liveViewStartPending)) await this.disableLiveView()
+            if (this.transport.isConnected())
+                await restoreAll('disconnect', [
+                    ...this.focusRestoreSteps(),
+                    async () => {
+                        if (this.ownsLiveView || this.liveViewStartPending) await this.disableLiveView()
+                    },
+                ])
         } finally {
             this.forgetModes()
             this.manualVideoExposureRequested = false
@@ -882,6 +894,13 @@ export class NikonCamera extends GenericCamera {
         // Refresh immediately before the release: an old cache or another fault cannot authorize it.
         if ((await this.get(warning)) !== 1) return false
         const released = await this.send(this.registry.operations.InitiateCaptureRecInMedia, { AfMode: 0xffffffff, Target: 0 })
+        // Right after power-on a Z5 II refused live view and this release alike with HardwareError while
+        // WarningStatus stayed 1, and worked minutes later: the camera is not ready, and nothing was taken.
+        if (released.code === HardwareError.code)
+            throw new PTPResponseError(
+                released.code,
+                'The camera is not ready yet: it refuses live view and the release that clears its sequence error (HardwareError, WarningStatus 1), as a Nikon does for a while after power-on; nothing was taken, try again in a few minutes'
+            )
         this.assertNikonResponse(released.code, 'sequence-error shutter release')
         await this.pollDeviceReady()
         const observed = await this.get(warning)
@@ -1031,6 +1050,7 @@ export class NikonCamera extends GenericCamera {
 
     async setFocusPoint(x: number, y: number, options: FocusPointOptions): Promise<void> {
         requirePoint(x, y)
+        await publicOutcome('setFocusPoint', () => this.usePositionedFocusArea())
         const placed = await publicOutcome('setFocusPoint', () => this.touchFocus(x, y, { focus: options.autofocus }))
         if (!placed.positionVerified)
             throw new CameraOutcomeUnknownError(
@@ -1040,7 +1060,61 @@ export class NikonCamera extends GenericCamera {
     }
 
     async resetFocusPoint(): Promise<void> {
-        await publicOutcome('resetFocusPoint', () => this.touchFocus(0.5, 0.5, { focus: false }))
+        await this.focusPointChanges()
+        await publicOutcome('resetFocusPoint', () =>
+            restoreAll('resetFocusPoint', [
+                async () => void (await this.touchFocus(0.5, 0.5, { focus: false })),
+                ...this.focusRestoreSteps(),
+            ])
+        )
+    }
+
+    /**
+     * Auto-area AF picks its own point: a bench Z5 II in auto-area accepted ChangeAfArea and then
+     * showed its AF frame at (0, 0). So a focus point first switches the AF-area mode (FocusMeteringMode,
+     * where the body advertises it) to an advertised Single-point or Pinpoint and remembers the area,
+     * as Canon does. A body in auto-area that cannot be switched is refused before any focus command.
+     */
+    private async usePositionedFocusArea(): Promise<void> {
+        const property = this.registry.properties.FocusMeteringMode
+        if ((await this.deviceInformation()).devicePropertiesSupported.includes(property.code)) {
+            const descriptor = await this.propertyDescriptor(property)
+            const area = String(descriptor.currentValueDecoded)
+            if (area !== NIKON_AUTO_AREA) return
+            const offered = (recognizedDescriptorValues(descriptor).allowedValues ?? []).map(String)
+            const point = NIKON_FOCUS_POINT_AREAS.find(candidate => offered.includes(candidate))
+            if (descriptor.getSet !== 'GET_SET' || !point) throw new CameraUnsupportedError('setFocusPoint', nikonAutoAreaReason)
+            const changes = await this.focusPointChanges()
+            await this.set(property, point)
+            changes.changed(property.name, area, point)
+            return
+        }
+        await this.requireFocusOperations(this.focusOperations('focusPoint'))
+        if ((await this.freshFocusMetadata()).afModeState === NIKON_AUTO_AREA_STATE)
+            throw new CameraUnsupportedError('setFocusPoint', nikonAutoAreaReason)
+    }
+
+    /** The AF-area mode a focus point replaced, put back where the body still shows the one it chose. */
+    private focusRestoreSteps(): (() => Promise<void>)[] {
+        const property = this.registry.properties.FocusMeteringMode
+        return this.focusChanges.restoreSteps(
+            async () => String(await this.get(property)),
+            async (_name, value) => {
+                const area = NIKON_FOCUS_AREAS.find(candidate => candidate === value)
+                if (area) await this.set(property, area)
+            }
+        )
+    }
+
+    /** This body's focus-point record, joined by its serial number once the body has been identified. */
+    private async focusPointChanges(): Promise<FocusPointChanges> {
+        const info = await this.getInfo().catch(() => undefined)
+        if (info) this.focusChanges.identify(info)
+        return this.focusChanges
+    }
+
+    settingWritten(id: CameraControlId): void {
+        if (id === 'focusArea') this.focusChanges.forget(this.registry.properties.FocusMeteringMode.name)
     }
 
     async nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<void> {
@@ -1168,7 +1242,13 @@ export class NikonCamera extends GenericCamera {
         switch (operation) {
             case 'autofocus':
                 return operationsAdvertised(capabilities, this.focusOperations('autofocus'))
-            case 'setFocusPoint':
+            case 'setFocusPoint': {
+                const area = capabilities.controls.focusArea
+                const switchable =
+                    area?.writable && NIKON_FOCUS_POINT_CHOICES.some(choice => area.allowedValues?.includes(choice))
+                if (area?.value === NIKON_AUTO_AREA_CHOICE && !switchable) return unsupported(nikonAutoAreaReason)
+                return operationsAdvertised(capabilities, this.focusOperations('focusPoint'))
+            }
             case 'resetFocusPoint':
                 return operationsAdvertised(capabilities, this.focusOperations('focusPoint'))
             case 'nudgeFocus':
@@ -1186,6 +1266,18 @@ const cardFiles = (inspected: Map<number, ObjectInfo | null>) =>
 
 /** A 64-bit byte count as Nikon's lower and upper UINT32 parameter words. */
 const split64 = (value: number) => [value & 0xffffffff, Math.floor(value / 0x100000000)] as const
+
+/** The AF-area mode without a host position, and the ones a focus point switches to, in preference order. */
+const NIKON_AUTO_AREA = 'Auto-area AF'
+const NIKON_FOCUS_POINT_AREAS = ['Single-point AF', 'Pinpoint AF'] as const
+const NIKON_FOCUS_AREAS = NIKON_AF_AREA_VALUES.map(entry => entry.name)
+/** The same areas by their canonical names, as getCapabilities shows them. */
+const NIKON_AUTO_AREA_CHOICE = 'Auto Area'
+const NIKON_FOCUS_POINT_CHOICES = ['Single Point', 'Pinpoint']
+/** LiveViewObject afModeState: 2 is auto-area AF (Nikon PTP reference §9.7.1). */
+const NIKON_AUTO_AREA_STATE = 2
+const nikonAutoAreaReason =
+    'The camera is in auto-area AF, which picks its own focus point, and offers no single-point AF-area mode Slate can switch to; choose another AF-area mode on the camera'
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
 

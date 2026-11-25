@@ -187,9 +187,10 @@ export class Camera {
 
     /**
      * Focuses on a point in the picture, 0–1 from the top-left. Where the focus area has no position
-     * (Sony Wide, Zone, Center), Slate switches to a spot; on Sony it also pauses subject detection so
-     * eye tracking does not pull focus back to a face. `resetFocusPoint` puts both back. An area
-     * chosen with a setter since the point stays. `autofocus: false` only moves the point.
+     * (Sony Wide, Zone, Center, Canon Wide, Nikon Auto Area), Slate switches to a spot or single point;
+     * on Sony it also pauses subject detection so eye tracking does not pull focus back to a face.
+     * `resetFocusPoint` and `disconnect` put both back, also from a later Camera on the same body. An
+     * area chosen with a setter or on the camera since the point stays. `autofocus: false` only moves the point.
      * @param x 0 (left) to 1 (right)
      * @param y 0 (top) to 1 (bottom)
      */

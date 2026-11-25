@@ -195,7 +195,7 @@ export const typedSettingReaders: { [Id in TypedSettingId]: SettingReader<Settin
     videoQuality: settingReader((value): value is VideoQuality => videoCodecValueNames('videoQuality').has(value)),
     frameRate: settingReader((value): value is FrameRate => videoCodecValueNames('frameRate').has(value)),
     audioRecording: settingReader(
-        (value): value is AudioRecording => value !== 'camera-specific-0' && videoCodecValueNames('audioRecording').has(value)
+        (value): value is AudioRecording => value !== '0' && videoCodecValueNames('audioRecording').has(value)
     ),
     digitalZoom: enumeratedSettingReader<DigitalZoom>(digitalZoomValues),
     liveViewQuality: enumeratedSettingReader<LiveViewQuality>(liveViewQualityValues),

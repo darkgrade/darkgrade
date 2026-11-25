@@ -103,6 +103,19 @@ Focus refusals say what the body reported: a Sony focus timeout includes the las
 and a Canon refusal names the SDK reason. Sony bodies in movie mode stayed at UNLOCK on a
 half-press in bench tests, so focus confirmation was never obtained there.
 
+Public API hardware check (darkgrade01, 2026-11-25: a6700 2.00, Z5 II V1.00, R8 Mark II 3-1.0.0, USB).
+What a focus point changes (focus area, Sony subject detection, Nikon AF-area mode) is kept per body by
+serial number (`vendors/generic/focus-point-changes.ts`) and put back by resetFocusPoint and disconnect,
+also from a later Camera on the same body (Test Bench opens one per idle period), only where the body
+still shows Slate's value. A Z5 II in auto-area AF accepts ChangeAfArea and shows its frame at (0, 0):
+Slate switches an advertised FocusMeteringMode (0x501C, libgphoto2's Nikon values) to Single-point, or
+refuses from LiveViewObject afModeState 2 when the body has none (the Z5 II does not advertise 0x501C;
+its own AF-area property and values are not known here). Right after power-on the Z5 II refused
+StartLiveView and the clearing release with HardwareError while WarningStatus stayed 1: that is "not
+ready yet", a refusal, never retried. FNumber 0 then is no aperture. 0xD061 value 5 is AF-A. Shutter
+choices are named in Slate's spelling on every vendor; a write sends the camera's own choice. ISO BMFF
+atoms of size 0 and 1 are legal (R8 Mark II MP4s). A name table's missing word is unrecognized, not a choice.
+
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
 existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
 no saved body power setting is rewritten. Explicit KeepDeviceOn rejects non-OK responses.

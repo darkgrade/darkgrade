@@ -375,6 +375,49 @@ describe('library construction and vendor dispatch', () => {
     })
 })
 
+describe('photo controls in Slate\'s spelling on every vendor', () => {
+    it('names Nikon shutter choices canonically, keeps unknown words and f/0 out of the choices, and writes the camera value', async () => {
+        const fixture = nikonFixture()
+        const { properties, driver } = fixture
+        properties.get(driver.registry.properties.LiveViewSelector.code)!.value = 0
+        const add = (code: number, type: number, value: number, choices: number[]) =>
+            properties.set(code, { type, value, choices, writable: true })
+        add(0xd100, 6, 0x000d000a, [0x000a0019, 0x000d000a, 0x0001007d, 0xffffffff]) // 10/25, 13/10, 1/125, Bulb
+        add(0xd061, 2, 5, [0, 1, 4, 5, 7]) // 5 is AF-A on the Z5 II; 7 has no name
+        add(0x5007, 4, 0, [0]) // FNumber right after power-on
+        const { controls } = await fixture.camera.getCapabilities()
+        expect(controls.shutterSpeed).toMatchObject({ value: '1.3"', allowedValues: ['0.4"', '1.3"', '1/125', 'Bulb'], writable: true })
+        expect(controls.focusMode).toMatchObject({ value: 'AF-A', allowedValues: ['AF-S', 'AF-C', 'MF', 'AF-A'] })
+        expect(controls.focusMode?.unrecognized).toEqual({ choices: ['Unknown focus (7)'] })
+        expect(controls.aperture).toMatchObject({ value: 'Unrecognized (f/0)', allowedValues: [], writable: false })
+        expect(await fixture.camera.getFocusMode()).toBe('AF-A')
+        fixture.writes.length = 0
+        expect(await fixture.camera.setShutterSpeed('0.4"')).toBe('0.4"')
+        expect(properties.get(0xd100)!.value).toBe(0x000a0019)
+        expect(await fixture.camera.setControl('shutterSpeed', 'Bulb')).toMatchObject({ value: 'Bulb' })
+        expect(properties.get(0xd100)!.value).toBe(0xffffffff)
+    })
+
+    it('names Sony BULB as Bulb and writes the Sony value behind it', async () => {
+        const camera = new Camera({ vendorId: 0x054c, transport: transport() })
+        const driver = protocolSession(camera).driver as SonyCamera
+        const shutter = { code: driver.registry.properties.ShutterSpeed.code, datatype: 6, current: 0x00010032, choices: [0, 0x00010032] }
+        const send = async (operation: OperationDefinition, _parameters: unknown, data?: Uint8Array) => {
+            if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: info(camera, [], [0x1001, 0x9209]) }
+            if (operation.name === 'SDIO_SetExtDevicePropValue') {
+                shutter.current = new DataView(data!.buffer, data!.byteOffset).getUint32(0, true)
+                return { code: 0x2001 }
+            }
+            expect(operation.name).toBe('SDIO_GetAllExtDevicePropInfo')
+            return { code: 0x2001, data: sonyPropertyInventory(driver.registry, [shutter]) }
+        }
+        vi.spyOn(driver, 'send').mockImplementation(send as never)
+        expect((await camera.getCapabilities()).controls.shutterSpeed).toMatchObject({ value: '1/50', allowedValues: ['Bulb', '1/50'] })
+        expect(await camera.setShutterSpeed('Bulb')).toBe('Bulb')
+        expect(shutter.current).toBe(0)
+    })
+})
+
 describe('Sony native and SDK capabilities share the same exposure contract', () => {
     it('reads actual Sony SDIO availability and refuses a display-only exposure', async () => {
         const camera = new Camera({ vendorId: 0x054c, transport: transport() })

@@ -87,8 +87,13 @@ export const NikonPhotoShutterSpeed = scalarProperty(
 export const NikonMovieFNumber = scalarProperty(
     'NikonMovieFNumber', 0xd1a9, 'uint16', 'Movie aperture in hundredths of an f-number'
 )
+/**
+ * 5 is AF-A: on the bench Z5 II (firmware V1.00, darkgrade01, 2026-11-25) 0xD061 read 5 while the
+ * standard FocusMode (0x500A) read 0x8012 AF-A in the same read and the camera's screen showed AF-A;
+ * its descriptor offers 0, 1, 4 and 5, the Z5 II's four photo focus modes.
+ */
 export const NikonStillFocusMode = scalarProperty(
-    'NikonStillFocusMode', 0xd061, 'uint8', 'Photo focus mode: 0 AF-S, 1 AF-C, 4 manual'
+    'NikonStillFocusMode', 0xd061, 'uint8', 'Photo focus mode: 0 AF-S, 1 AF-C, 4 manual, 5 AF-A'
 )
 export const NikonMovieFocusMode = scalarProperty(
     'NikonMovieFocusMode', 0xd1fa, 'uint8', 'Movie focus mode: 0 AF-S, 1 AF-C, 2 AF-F, 4 manual'

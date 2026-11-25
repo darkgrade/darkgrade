@@ -18,7 +18,7 @@ import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { canonAllowedValues, canonEvents, canonValue } from '@tests/fixtures/canon-events'
-import { concatenate, deviceInfo, fakeTransport, propertyDescriptor } from '@tests/fixtures/camera-fixtures'
+import { concatenate, deviceInfo, encodedDeviceInfo, fakeTransport, propertyDescriptor } from '@tests/fixtures/camera-fixtures'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -42,7 +42,9 @@ interface SonyValue {
  */
 const SONY_AREAS = ['Wide', 'Zone', 'Center', 'Flexible Spot S', 'Flexible Spot M', 'Lock on AF Wide', 'Lock on AF Flexible Spot M']
 
-function sonyCamera(initial: { focusArea?: string; focusMode?: string; subjectDetection?: string; areas?: string[] } = {}) {
+function sonyCamera(
+    initial: { focusArea?: string; focusMode?: string; subjectDetection?: string; areas?: string[]; serialNumber?: string } = {}
+) {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
     const driver = protocolSession(camera).driver as SonyCamera
     const registry = driver.registry
@@ -96,7 +98,13 @@ function sonyCamera(initial: { focusArea?: string; focusMode?: string; subjectDe
     }
     const send = async (operation: OperationDefinition, parameters: Record<string, unknown>, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo')
-            return { code: 0x2001, data: deviceInfo(camera, [], [0x1001, 0x9209, 0x9205, 0x9207]) }
+            return {
+                code: 0x2001,
+                data: encodedDeviceInfo(camera, {
+                    operationsSupportedRaw: [0x1001, 0x9209, 0x9205, 0x9207],
+                    serialNumber: initial.serialNumber ?? '',
+                }),
+            }
         if (operation.name === 'SDIO_GetAllExtDevicePropInfo') {
             inventoryReads.count++
             const entries = [...body.values.entries()]
@@ -237,18 +245,41 @@ describe('focus on a simulated Sony body', () => {
         expect(value(properties.SubjectRecognitionInAF)).toBe('Off')
     })
 
-    it('forgets what a point changed when the same Camera disconnects and connects again', async () => {
+    it('puts the focus area and subject detection back when the camera disconnects, once', async () => {
         const { camera, value, properties, writes } = sonyCamera()
         await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
-        expect(value(properties.FocusArea)).toBe('Flexible Spot M')
+        expect([value(properties.FocusArea), value(properties.SubjectRecognitionInAF)]).toEqual(['Flexible Spot M', 'Off'])
         await camera.disconnect()
+        expect([value(properties.FocusArea), value(properties.SubjectRecognitionInAF)]).toEqual(['Wide', 'On'])
         await camera.connect()
-        // The user's spot in the new session stays where it is: nothing from the old session is undone.
+        // Nothing is left to undo: a spot chosen in the new session stays.
         const before = writes.length
         await camera.resetFocusPoint()
+        await camera.disconnect()
         expect(writes.slice(before).filter(write => write.name !== 'FaceEyeFrameDisplay')).toEqual([])
-        expect(value(properties.FocusArea)).toBe('Flexible Spot M')
-        expect(value(properties.SubjectRecognitionInAF)).toBe('Off')
+    })
+
+    it('lets a new Camera on the same body undo what an earlier one left, unless the body has changed since', async () => {
+        // A host that opens a Camera per call and lost the first one before it could disconnect (Test Bench).
+        const first = sonyCamera({ serialNumber: 'focus-body-1' })
+        await first.camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+
+        const changedOnCamera = sonyCamera({ serialNumber: 'focus-body-1', focusArea: 'Zone', subjectDetection: 'Off' })
+        await changedOnCamera.camera.resetFocusPoint()
+        expect(changedOnCamera.value(changedOnCamera.properties.FocusArea)).toBe('Zone')
+
+        const second = sonyCamera({ serialNumber: 'focus-body-2' })
+        await second.camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+        const next = sonyCamera({ serialNumber: 'focus-body-2', focusArea: 'Flexible Spot M', subjectDetection: 'Off' })
+        await next.camera.resetFocusPoint()
+        expect([next.value(next.properties.FocusArea), next.value(next.properties.SubjectRecognitionInAF)]).toEqual([
+            'Wide',
+            'On',
+        ])
+        // Another body, or one never identified, keeps its own settings.
+        const other = sonyCamera({ focusArea: 'Flexible Spot M', subjectDetection: 'Off' })
+        await other.camera.resetFocusPoint()
+        expect(other.value(other.properties.FocusArea)).toBe('Flexible Spot M')
     })
 
     it('refuses a point outside the picture before sending anything', async () => {
@@ -336,7 +367,13 @@ describe('focus on a simulated Sony body', () => {
 // ------------------------------------------------------------------------------------------ Nikon
 
 /** Nikon LiveViewObject (big-endian, version 2.1), with the AF fields the focus operations read. */
-function nikonLiveView(frame: { centerX: number; centerY: number; judgement: number; driving: number }): Uint8Array {
+function nikonLiveView(frame: {
+    centerX: number
+    centerY: number
+    judgement: number
+    driving: number
+    afModeState: number
+}): Uint8Array {
     const jpeg = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)
     const header = new Uint8Array(56)
     const view = new DataView(header.buffer)
@@ -353,6 +390,7 @@ function nikonLiveView(frame: { centerX: number; centerY: number; judgement: num
     view.setUint8(40, 1)
     view.setUint8(41, frame.driving)
     view.setUint8(42, frame.judgement)
+    view.setUint8(43, frame.afModeState)
     view.setUint16(48, 400)
     view.setUint16(50, 400)
     view.setUint16(52, frame.centerX)
@@ -360,21 +398,48 @@ function nikonLiveView(frame: { centerX: number; centerY: number; judgement: num
     return concatenate([header, jpeg])
 }
 
-function nikonCamera(options: { advertised?: string[] } = {}) {
+/** `afArea` advertises the AF-area mode (FocusMeteringMode 0x501C) with these Nikon values. */
+function nikonCamera(
+    options: { advertised?: string[]; afArea?: { current: number; choices: number[] }; afModeState?: number; serialNumber?: string } = {}
+) {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
     const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const operations = driver.registry.operations
     const advertised = (options.advertised ?? ['AfDrive', 'AfDriveCancel', 'ChangeAfArea', 'MfDrive', 'DeviceReady', 'StartLiveView', 'GetLiveViewImageEx'])
         .map(name => Object.values(operations).find(operation => operation.name === name)!.code)
-    const frame = { centerX: 3024, centerY: 1700, judgement: 0, driving: 0 }
-    const body = { acquires: true, followsPoint: true, responses: new Map<string, number>() }
+    const frame = { centerX: 3024, centerY: 1700, judgement: 0, driving: 0, afModeState: options.afModeState ?? 0 }
+    const body = { acquires: true, followsPoint: true, responses: new Map<string, number>(), afArea: options.afArea }
+    const { FocusMeteringMode: afArea, LiveViewSelector: selector } = driver.registry.properties
     const calls: { name: string; parameters: Record<string, unknown> }[] = []
-    const send = async (operation: OperationDefinition, parameters: Record<string, number>) => {
+    const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
         calls.push({ name: operation.name, parameters })
         const code = body.responses.get(operation.name)
         if (code !== undefined) return { code }
-        if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera, [], [0x1001, ...advertised]) }
+        if (operation.name === 'GetDeviceInfo')
+            return {
+                code: 0x2001,
+                data: encodedDeviceInfo(camera, {
+                    devicePropertiesSupported: body.afArea ? [afArea.code, selector.code] : [],
+                    operationsSupportedRaw: [0x1001, ...advertised],
+                    serialNumber: options.serialNumber ?? '',
+                }),
+            }
+        if (operation.name === 'GetDevicePropDescEx' && parameters.DevicePropCode === afArea.code && body.afArea)
+            return {
+                code: 0x2001,
+                data: propertyDescriptor(driver.registry, { code: afArea.code, datatype: 0x0004, ...body.afArea }, true),
+            }
+        if (operation.name === 'GetDevicePropDescEx' && parameters.DevicePropCode === selector.code && body.afArea)
+            return {
+                code: 0x2001,
+                data: propertyDescriptor(driver.registry, { code: selector.code, datatype: 0x0002, current: 0, choices: [0, 1] }, true),
+            }
+        if (operation.name === 'SetDevicePropValueEx' && parameters.DevicePropCode === afArea.code && body.afArea) {
+            body.afArea.current = new DataView(data!.buffer, data!.byteOffset).getUint16(0, true)
+            frame.afModeState = body.afArea.current === 0x8011 ? 2 : 0
+            return { code: 0x2001 }
+        }
         if (operation.name === 'GetLiveViewImageEx')
             return { code: 0x2001, data: new NikonLiveViewDatasetCodec(driver.registry).decode(nikonLiveView(frame)).value }
         if (operation.name === 'AfDrive') {
@@ -449,6 +514,47 @@ describe('focus on a simulated Nikon body', () => {
         await expect(camera.autofocus()).rejects.toBeInstanceOf(CameraUnsupportedError)
         await expect(camera.nudgeFocus('far', 'small')).rejects.toBeInstanceOf(CameraUnsupportedError)
         expect(calls.map(call => call.name)).toEqual(['GetDeviceInfo', 'GetDeviceInfo'])
+    })
+
+    it('switches auto-area AF to an advertised single point before placing a point, and puts it back', async () => {
+        const autoArea = 0x8011,
+            singlePoint = 0x8010
+        const { camera, body, calls } = nikonCamera({ afArea: { current: autoArea, choices: [autoArea, singlePoint, 0x8018] } })
+        expect((await camera.getCapabilities()).controls.focusArea).toMatchObject({
+            value: 'Auto Area',
+            allowedValues: ['Auto Area', 'Single Point', 'Wide S'],
+        })
+        await camera.setFocusPoint(0.25, 0.75, { autofocus: false })
+        expect(body.afArea!.current).toBe(singlePoint)
+        expect(calls.find(call => call.name === 'ChangeAfArea')?.parameters).toEqual({ X: 1512, Y: 2549 })
+        await camera.resetFocusPoint()
+        expect(body.afArea!.current).toBe(autoArea)
+
+        // Disconnecting puts it back too; an area chosen since the point stays.
+        await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+        await camera.disconnect()
+        expect(body.afArea!.current).toBe(autoArea)
+        await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+        expect(await camera.setFocusArea('Wide S')).toBe('Wide S')
+        await camera.resetFocusPoint()
+        expect(body.afArea!.current).toBe(0x8018)
+    })
+
+    it('refuses a point in auto-area AF it cannot switch, before any focus command, and says so in getCapabilities', async () => {
+        // Advertised, but auto-area is the only choice.
+        const fixed = nikonCamera({ afArea: { current: 0x8011, choices: [0x8011] } })
+        expect((await fixed.camera.getCapabilities()).operations?.setFocusPoint).toMatchObject({
+            supported: false,
+            reason: expect.stringContaining('auto-area AF'),
+        })
+        await expect(fixed.camera.setFocusPoint(0.5, 0.5)).rejects.toBeInstanceOf(CameraUnsupportedError)
+        // Not advertised (the bench Z5 II): its live view reports auto-area AF.
+        const z5 = nikonCamera({ afModeState: 2 })
+        const refused = await z5.camera.setFocusPoint(0.5, 0.5).catch(error => error)
+        expect(refused).toBeInstanceOf(CameraUnsupportedError)
+        expect(refused.message).toContain('auto-area AF')
+        for (const { calls } of [fixed, z5])
+            expect(calls.filter(call => ['ChangeAfArea', 'AfDrive', 'SetDevicePropValueEx'].includes(call.name))).toEqual([])
     })
 })
 

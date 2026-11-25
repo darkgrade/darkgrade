@@ -31,6 +31,7 @@ export const nikonPhotoControlProperties = {
     colorTemperature: [nikon.NikonWhiteBalanceKelvin],
     pictureStyle: [nikon.NikonPictureControl],
     focusMode: [nikon.NikonStillFocusMode, nikonCamera.FocusMode],
+    focusArea: [nikonCamera.FocusMeteringMode],
     photoSize: [standard.ImageSize],
     flashMode: [standard.FlashMode],
     rawCompression: [nikon.NikonRawCompression],
@@ -71,6 +72,7 @@ const nikonFocusModes = {
     'AF-S': 'AF-S',
     'AF-C': 'AF-C',
     'AF-F': 'AF-F',
+    'AF-A': 'AF-A',
     Manual: 'MF',
 } as const satisfies Names<NikonFocusModeLabel>
 
@@ -83,9 +85,27 @@ const nikonStandardFocusModes = {
     'AF-F': 'AF-F',
 } as const satisfies Names<CodecType<typeof nikonCamera.FocusMode.codec>>
 
+/** Nikon's AF-area modes; Single Point is Canon's word too. Auto Area is the one without a host position. */
+const nikonFocusAreas = {
+    'Dynamic-area AF (25 points)': 'Dynamic 25',
+    'Single-point AF': 'Single Point',
+    'Auto-area AF': 'Auto Area',
+    '3D-tracking': '3D Tracking',
+    'Dynamic-area AF (72 points)': 'Dynamic 72',
+    'Dynamic-area AF (153 points)': 'Dynamic 153',
+    'Group-area AF': 'Group',
+    'Dynamic-area AF (9 points)': 'Dynamic 9',
+    'Pinpoint AF': 'Pinpoint',
+    'Wide-area AF (S)': 'Wide S',
+    'Wide-area AF (L)': 'Wide L',
+    'Wide-area AF (C1)': 'Wide C1',
+    'Wide-area AF (C2)': 'Wide C2',
+} as const satisfies Names<CodecType<typeof nikonCamera.FocusMeteringMode.codec>>
+
 /** The canonical name of each Nikon value, per setting and property (see `sonyControlValueNames`). */
 export const nikonPhotoControlValueNames = {
     focusMode: { NikonStillFocusMode: nikonFocusModes, FocusMode: nikonStandardFocusModes },
+    focusArea: { FocusMeteringMode: nikonFocusAreas },
 } as const satisfies ControlValueNameTable
 
 export const nikonMovieControlValueNames = {
