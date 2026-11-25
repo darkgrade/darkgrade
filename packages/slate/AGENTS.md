@@ -24,6 +24,18 @@ DeviceInfo carries numeric lists as `operationsSupportedRaw`, `eventsSupportedRa
 Two recoveries read fields that do not exist and their tests faked them. Build test replies with
 the real codec.
 
+## Tests and the attached camera
+
+`bun run --cwd packages/slate test` never opens a camera: hardware tests run only with
+`SLATE_HARDWARE_TESTS=1`, and without it native USB enumeration reports no devices
+(`tests/setup/`). Anything that opens a USB camera runs under the shared lease:
+`bun run --cwd packages/slate camera:lease -- <command>` waits for exclusive use across every
+checkout and worktree (`~/.darkgrade/leases`), stops the macOS camera daemons while it runs, sets
+the variable and always releases. `camera:smoke -- --area <name>` exercises one area through the
+public Camera API (`scripts/camera-smoke/<area>.ts`). `check:guards` (in `test` and
+`test:package`) fails on new vendor-named exports or Camera members, on a file exceeding its
+`any`/`as never`/`as unknown as` budget, and on a Camera method without an operation-table entry.
+
 ## Driver invariants
 
 The Camera façade must open USB through the driver's existing `connectTransport` lifecycle.
