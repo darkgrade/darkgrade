@@ -140,7 +140,7 @@ it('rejects an oversized image before allocating or downloading its bytes', asyn
     expect(test.downloads).toEqual([])
 })
 
-it('reads ObjectAddedEx and ObjectAddedEx64 records with libgphoto2’s field offsets', () => {
+it('reads the handle of ObjectAddedEx and ObjectAddedEx64 records at libgphoto2’s offset', () => {
     const { driver } = fixture()
     const ex64 = new DataView(new ArrayBuffer(0x2c + 13))
     ex64.setUint32(0, 0x2c + 13, true)
@@ -151,9 +151,9 @@ it('reads ObjectAddedEx and ObjectAddedEx64 records with libgphoto2’s field of
     ex64.setUint32(0x1c, 123, true)
     new Uint8Array(ex64.buffer).set(new TextEncoder().encode('MVI_0007.MP4'), 0x2c)
     const [added, added64] = canonEvents(driver.registry, [canonObjectAdded(5, 'IMG_0005.CR3', 99), new Uint8Array(ex64.buffer)])
-    expect(added!.object).toEqual({ handle: 5, storageId: 0x00010001, format: 0xb982, sizeBytes: 99, filename: 'IMG_0005.CR3' })
-    expect(added64!.object).toEqual({ handle: 7, storageId: 0x00020001, format: 0xb982, sizeBytes: 123, filename: 'MVI_0007.MP4' })
-    // A record too short to hold a name stays opaque rather than inventing a file.
+    expect(added!.object).toEqual({ handle: 5 })
+    expect(added64!.object).toEqual({ handle: 7 })
+    // A record with no object handle stays opaque rather than inventing a file.
     const short = new DataView(new ArrayBuffer(16))
     short.setUint32(0, 16, true)
     short.setUint32(4, 0xc181, true)

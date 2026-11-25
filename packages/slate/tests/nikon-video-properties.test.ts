@@ -1,13 +1,11 @@
-import {NikonCamera} from '@vendors/nikon/nikon-camera'
-import {Logger} from '@core/logger'
+import {nikonCamera} from '@tests/fixtures/nikon'
 import {OK} from '@ptp/definitions/response-definitions'
 import {createNikonRegistry} from '@vendors/registry'
 import {ExternalDCIn, MovieShutterAngle, MovieShutterMode} from '@vendors/nikon/video-properties'
 import {describe, expect, it, vi} from 'vitest'
 
 function fixture() {
-    const transport = {isLittleEndian: () => true, isConnected: () => true, getType: () => 'USB'}
-    const camera = new NikonCamera(transport as any, new Logger({captureConsole: false, renderInTerminal: false}))
+    const camera = nikonCamera({getType: () => 'USB'})
     const send = vi.spyOn(camera, 'send').mockResolvedValue({code: OK.code} as any)
     return {camera, send}
 }

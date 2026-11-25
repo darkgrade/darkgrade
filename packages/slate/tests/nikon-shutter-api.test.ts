@@ -1,11 +1,8 @@
-import {NikonCamera} from '@vendors/nikon/nikon-camera'
-import {Logger} from '@core/logger'
-import type {TransportInterface} from '@transport/interfaces/transport.interface'
+import {nikonCamera} from '@tests/fixtures/nikon'
 import {describe, expect, it, vi} from 'vitest'
 
 function fixture(mode = 'PHOTO') {
-    const camera = new NikonCamera({isLittleEndian: () => true, on: () => undefined} as unknown as TransportInterface,
-        new Logger({captureConsole: false, renderInTerminal: false}))
+    const camera = nikonCamera()
     let current = 0x0001007d
     const writes: {code: number; value: number}[] = []
     const state = {mode, readOnly: false, refusal: 0, angle: false, wrongProperty: false, ignoreWrite: false, flipMode: false}

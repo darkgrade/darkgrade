@@ -4,6 +4,7 @@ import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
+import { ptpContainer } from '@tests/fixtures/ptp-wire'
 
 /**
  * A USB camera that speaks just enough PTP (OpenSession, CloseSession, GetDeviceInfo) and can be
@@ -31,12 +32,7 @@ function wedgedCamera(wedge: Wedge, options: { absentConnects?: number; deniedRe
     const queued: Uint8Array[] = []
     const waiting: { resolve: (value: Uint8Array) => void; reject: (error: unknown) => void }[] = []
     const calls = { connect: 0, deviceResets: 0, portResets: 0, operations: [] as number[] }
-    const container = (type: number, code: number, transactionId: number, payload: Uint8Array = new Uint8Array()) => {
-        const bytes = new Uint8Array(12 + payload.length), view = new DataView(bytes.buffer)
-        view.setUint32(0, bytes.length, true); view.setUint16(4, type, true); view.setUint16(6, code, true); view.setUint32(8, transactionId, true)
-        bytes.set(payload, 12)
-        return bytes
-    }
+    const container = ptpContainer
     const reply = (bytes: Uint8Array) => {
         const reader = waiting.shift()
         if (reader) reader.resolve(bytes)

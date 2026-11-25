@@ -19,6 +19,24 @@ function cameraFixture() {
     return { camera, sent, replies }
 }
 
+/** A full-inventory descriptor as the Sony dataset codec yields it. */
+function descriptor(code: number, raw: number, decoded: unknown = raw, getSet = 'GET'): SonyDevicePropDesc {
+    const fields = { currentValueRaw: raw, currentValueDecoded: decoded, vendorExtensions: { enabled: true }, getSet }
+    return { devicePropertyCode: code, ...fields } as SonyDevicePropDesc
+}
+
+/** A live-view dataset whose four-byte JPEG starts at the declared offset 24. */
+function liveViewFrame(): Uint8Array {
+    const bytes = new Uint8Array(28)
+    const header = new DataView(bytes.buffer)
+    header.setUint32(0, 24, true)
+    header.setUint32(4, 4, true)
+    bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
+    return bytes
+}
+
+const HANDSHAKE = ['SDIO_OpenSession', 'SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo', 'SDIO_Connect', 'GetDeviceInfo']
+
 describe('Sony incremental property boundaries', () => {
     it.each(['final-step', 'disabled', 'range-changed'] as const)('%s uses each fresh descriptor', async scenario => {
         const camera = new SonyCamera(
@@ -88,14 +106,7 @@ describe('Sony session response validation', () => {
         const connect = vi.spyOn(camera, 'connect')
         await facade.connect({ observeOnly: true })
         expect(connect).toHaveBeenCalledWith(descriptor, { configure: false })
-        expect(sent).toEqual([
-            'SDIO_OpenSession',
-            'SDIO_Connect',
-            'SDIO_Connect',
-            'SDIO_GetExtDeviceInfo',
-            'SDIO_Connect',
-            'GetDeviceInfo',
-        ])
+        expect(sent).toEqual(HANDSHAKE)
         expect(camera.set).not.toHaveBeenCalled()
     })
 
@@ -103,14 +114,7 @@ describe('Sony session response validation', () => {
         const { camera, sent } = cameraFixture()
         camera.refreshPropertyStates = async () => []
         await camera.connect(undefined, { configure: false })
-        expect(sent).toEqual([
-            'SDIO_OpenSession',
-            'SDIO_Connect',
-            'SDIO_Connect',
-            'SDIO_GetExtDeviceInfo',
-            'SDIO_Connect',
-            'GetDeviceInfo',
-        ])
+        expect(sent).toEqual(HANDSHAKE)
         expect(camera.set).not.toHaveBeenCalled()
     })
 
@@ -174,7 +178,6 @@ describe('Sony session response validation', () => {
         replies.push({ code: 0x2001 }, { code: 0x2001 }, { code: 0x200f })
         await expect(camera.connect()).rejects.toMatchObject({ code: 0x200f })
         expect(sent).toEqual(['SDIO_OpenSession', ...Array(2).fill(['SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo']).flat()])
-        // eslint-disable-next-line @typescript-eslint/unbound-method
         expect(camera.set).not.toHaveBeenCalled()
     })
 })
@@ -184,23 +187,7 @@ describe('Sony authoritative property refresh', () => {
         const { camera, replies, sent } = cameraFixture()
         Object.assign(camera, { liveViewPostViewEnabled: true })
         const property = camera.registry.properties.ContentTransferEnable
-        replies.push(
-            { code: 0x2001 },
-            {
-                code: 0x2001,
-                data: {
-                    properties: [
-                        {
-                            devicePropertyCode: property.code,
-                            currentValueRaw: 1,
-                            currentValueDecoded: 'ENABLE',
-                            vendorExtensions: { enabled: true },
-                            getSet: 'GET',
-                        },
-                    ],
-                },
-            }
-        )
+        replies.push({ code: 0x2001 }, { code: 0x2001, data: { properties: [descriptor(property.code, 1, 'ENABLE')] } })
         await camera.prepareStorageRead()
         expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.SetLiveViewEnable, 'DISABLE')
         expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.SetPostViewEnable, 'DISABLE')
@@ -221,20 +208,7 @@ describe('Sony authoritative property refresh', () => {
         const { camera, replies, sent } = cameraFixture()
         const property = camera.registry.properties.ContentTransferEnable
         Object.assign(camera, { contentTransferModeEnabled: true })
-        replies.push({
-            code: 0x2001,
-            data: {
-                properties: [
-                    {
-                        devicePropertyCode: property.code,
-                        currentValueRaw: 1,
-                        currentValueDecoded: 'ENABLE',
-                        vendorExtensions: { enabled: true },
-                        getSet: 'GET',
-                    },
-                ],
-            },
-        })
+        replies.push({ code: 0x2001, data: { properties: [descriptor(property.code, 1, 'ENABLE')] } })
         expect(await camera.get(property)).toBe('ENABLE')
         expect(sent).toEqual(['SDIO_GetAllExtDevicePropInfo'])
         replies.push({ code: 0x2001, data: { properties: [] } })
@@ -243,13 +217,7 @@ describe('Sony authoritative property refresh', () => {
 
     it('removes controls absent from the next full inventory and retains the last valid inventory after a refusal', async () => {
         const { camera, replies } = cameraFixture()
-        const property = {
-            devicePropertyCode: 0xd309,
-            currentValueRaw: 1,
-            currentValueDecoded: 1,
-            vendorExtensions: { enabled: true },
-            getSet: 'GET_SET',
-        } as SonyDevicePropDesc
+        const property = descriptor(0xd309, 1, 1, 'GET_SET')
         replies.push({ code: 0x2001, data: { properties: [property] } })
         expect((await camera.refreshPropertyStates()).map(entry => entry.code)).toEqual([0xd309])
         replies.push({ code: 0x2019 })
@@ -263,20 +231,10 @@ describe('Sony authoritative property refresh', () => {
 describe('Sony preview results', () => {
     it('waits for advertised live-view readiness before requesting the image', async () => {
         const { camera, replies, sent } = cameraFixture()
-        const status = (value: number) =>
-            ({
-                devicePropertyCode: 0xd221,
-                currentValueRaw: value,
-                currentValueDecoded: value,
-                vendorExtensions: { enabled: true },
-                getSet: 'GET',
-            }) as SonyDevicePropDesc
+        const status = (value: number) => descriptor(0xd221, value)
         replies.push({ code: 0x2001, data: { properties: [status(0)] } })
         await camera.refreshPropertyStates()
-        const bytes = new Uint8Array(28)
-        new DataView(bytes.buffer).setUint32(0, 24, true)
-        new DataView(bytes.buffer).setUint32(4, 4, true)
-        bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
+        const bytes = liveViewFrame()
         replies.push({ code: 0x2001, data: { properties: [status(1)] } }, { code: 0x2001, data: bytes })
         expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
         expect(sent.slice(-2)).toEqual(['SDIO_GetAllExtDevicePropInfo', 'GetObject'])
@@ -284,12 +242,7 @@ describe('Sony preview results', () => {
 
     it('does not request an image when the camera reports live view unsupported', async () => {
         const { camera, replies, sent } = cameraFixture()
-        const status = {
-            devicePropertyCode: 0xd221,
-            currentValueRaw: 2,
-            vendorExtensions: { enabled: true },
-            getSet: 'GET',
-        } as SonyDevicePropDesc
+        const status = descriptor(0xd221, 2)
         replies.push({ code: 0x2001, data: { properties: [status] } })
         await camera.refreshPropertyStates()
         replies.push({ code: 0x2001, data: { properties: [status] } })
@@ -304,13 +257,9 @@ describe('Sony preview results', () => {
         await expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
     })
 
-    it('asks again when the next live-view frame is not ready yet', async () => {
+    it('asks again when the next live-view frame is not ready yet, then reads the image at its declared offset', async () => {
         const { camera, replies } = cameraFixture()
-        const bytes = new Uint8Array(28)
-        const header = new DataView(bytes.buffer)
-        header.setUint32(0, 24, true)
-        header.setUint32(4, 4, true)
-        bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
+        const bytes = liveViewFrame()
         replies.push({ code: 0x200f, data: new Uint8Array(4) }, { code: 0x2001, data: bytes })
         expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
     })
@@ -329,10 +278,7 @@ describe('Sony preview results', () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] })
         try {
             const { camera, sent } = cameraFixture()
-            const bytes = new Uint8Array(28)
-            new DataView(bytes.buffer).setUint32(0, 24, true)
-            new DataView(bytes.buffer).setUint32(4, 4, true)
-            bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
+            const bytes = liveViewFrame()
             const started = Date.now()
             const requestTimes: number[] = []
             camera.send = (async operation => {
@@ -387,17 +333,6 @@ describe('Sony preview results', () => {
             await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow(/no (dataset|image)/)
         }
     )
-
-    it('extracts the image from the camera-declared offset', async () => {
-        const { camera, replies } = cameraFixture()
-        const bytes = new Uint8Array(28)
-        const header = new DataView(bytes.buffer)
-        header.setUint32(0, 24, true)
-        header.setUint32(4, 4, true)
-        bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
-        replies.push({ code: 0x2001, data: bytes })
-        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
-    })
 })
 
 describe('Sony partial downloads', () => {

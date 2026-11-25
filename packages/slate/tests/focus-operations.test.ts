@@ -8,19 +8,17 @@ import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError }
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
 import { CanonLiveViewDatasetCodec } from '@vendors/canon/datasets/canon-live-view-dataset'
 import { NikonLiveViewDatasetCodec } from '@vendors/nikon/datasets/nikon-live-view-dataset'
 import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { CodecInstance } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { PropertyDefinition } from '@ptp/types/property'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
+import { canonAllowedValues, canonEvents, canonValue } from '@tests/fixtures/canon-events'
+import { concatenate, deviceInfo, fakeTransport, propertyDescriptor } from '@tests/fixtures/camera-fixtures'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -28,50 +26,7 @@ afterEach(() => {
 })
 
 const transport = () =>
-    ({
-        isLittleEndian: () => true,
-        isConnected: () => true,
-        connect: async () => undefined,
-        disconnect: async () => undefined,
-        on: () => undefined,
-        getType: () => 'USB',
-    }) as unknown as TransportInterface
-
-function concatenate(parts: Uint8Array[]): Uint8Array {
-    const wire = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
-    let offset = 0
-    for (const part of parts) {
-        wire.set(part, offset)
-        offset += part.length
-    }
-    return wire
-}
-
-function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: operations,
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: properties,
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: 'Fixture',
-            model: 'Fixture',
-            deviceVersion: '1',
-            serialNumber: '',
-        })
-    ).value
-}
+    fakeTransport({ connect: async () => undefined, disconnect: async () => undefined, getType: () => 'USB' })
 
 // ------------------------------------------------------------------------------------------- Sony
 
@@ -555,11 +510,10 @@ function canonCamera(initial: { focusMode?: number; servo?: number; video?: bool
             return { code: 0x2001, data: deviceInfo(camera, [], [0x1001, ...advertised]) }
         if (operation.name === 'CanonGetEventData') {
             const records = [...body.values.entries()].flatMap(([code, state]) => [
-                words(16, 16, 0xc189, code, state.current),
-                words(20 + state.choices.length * 4, 20 + state.choices.length * 4, 0xc18a, code, 3, state.choices.length, ...state.choices),
+                canonValue(code, state.current),
+                canonAllowedValues(code, state.choices),
             ])
-            const wire = concatenate([...records, words(16, 16, 0xc189, 0xd1c2, body.fixedMovie), words(8, 8, 0)])
-            return { code: 0x2001, data: new CanonEventDataCodec(driver.registry).decode(wire).value }
+            return { code: 0x2001, data: canonEvents(driver.registry, [...records, canonValue(0xd1c2, body.fixedMovie)]) }
         }
         if (operation.name === 'CanonSetPropValue') {
             const view = new DataView(data!.buffer, data!.byteOffset, data!.byteLength)
@@ -664,20 +618,8 @@ describe('focus on a standard PTP body', () => {
         const camera = new Camera({ transport: transport() })
         const registry = protocolSession(camera).driver.registry
         const focusMode = registry.properties.FocusMode
-        const descriptor = () => {
-            const wire = concatenate([
-                registry.codecs.uint16.encode(focusMode.code),
-                registry.codecs.uint16.encode(focusMode.datatype),
-                Uint8Array.of(1),
-                registry.codecs.uint16.encode(2),
-                registry.codecs.uint16.encode(2),
-                Uint8Array.of(2),
-                registry.codecs.uint16.encode(2),
-                registry.codecs.uint16.encode(1),
-                registry.codecs.uint16.encode(2),
-            ])
-            return new DevicePropDescCodec(registry).decode(wire).value
-        }
+        const descriptor = () =>
+            propertyDescriptor(registry, { code: focusMode.code, datatype: focusMode.datatype, current: 2, choices: [1, 2] })
         vi.spyOn(protocolSession(camera).driver, 'send').mockImplementation((async (operation: OperationDefinition) => {
             if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera, [focusMode.code], [0x1001]) }
             if (operation.name === 'GetDevicePropDesc') return { code: 0x2001, data: descriptor() }

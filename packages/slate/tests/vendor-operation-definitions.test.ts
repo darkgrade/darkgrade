@@ -9,63 +9,29 @@ import { Logger } from '@core/logger'
 import { NikonEventListCodec } from '@vendors/nikon/datasets/nikon-event-list-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@vendors/registry'
-import { TransportType } from '@transport/interfaces/transport-types'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
 import { describe, expect, it } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 
-/** Records command containers and answers every transaction with OK. */
+/** Records command containers and answers every transaction with OK, after a data phase when one is given. */
 function recordingTransport(dataReplies: Map<number, Uint8Array> = new Map()) {
     const commands: number[][] = []
     const dataPhases: Uint8Array[] = []
-    let pending: Uint8Array[] = []
-    const transport: TransportInterface = {
-        connect: async () => undefined,
-        disconnect: async () => undefined,
-        isConnected: () => true,
-        classRequestReset: async () => undefined,
-        getType: () => TransportType.USB,
-        isLittleEndian: () => true,
-        send: async data => {
-            const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-            const transactionId = view.getUint32(8, true)
-            if (view.getUint16(4, true) === 2) {
-                dataPhases.push(data.slice(12))
-                return
-            }
-            const words = [view.getUint16(6, true)]
-            for (let offset = 12; offset < data.length; offset += 4) words.push(view.getUint32(offset, true))
-            commands.push(words)
-            const response = new Uint8Array(12)
-            const responseView = new DataView(response.buffer)
-            responseView.setUint32(0, 12, true)
-            responseView.setUint16(4, 3, true)
-            responseView.setUint16(6, 0x2001, true)
-            responseView.setUint32(8, transactionId, true)
-            const dataReply = dataReplies.get(words[0])
-            if (dataReply) {
-                const container = new Uint8Array(12 + dataReply.length)
-                const header = new DataView(container.buffer)
-                header.setUint32(0, container.length, true)
-                header.setUint16(4, 2, true)
-                header.setUint16(6, words[0], true)
-                header.setUint32(8, transactionId, true)
-                container.set(dataReply, 12)
-                pending = [container, response]
-            } else pending = [response]
-        },
-        receive: async () => pending.shift()!,
-    }
+    const { transport } = answeringTransport(container => {
+        if (container.type === 2) return void dataPhases.push(container.payload)
+        commands.push([container.code, ...container.parameters])
+        const data = dataReplies.get(container.code)
+        return [
+            ...(data ? [ptpContainer(2, container.code, container.transactionId, data)] : []),
+            ptpContainer(3, 0x2001, container.transactionId),
+        ]
+    })
     return { transport, commands, dataPhases }
 }
 
 function cameraFor(vendorId: number) {
     const recorded = recordingTransport()
-    const camera = new Camera({
-        transport: recorded.transport,
-        vendorId,
-        logger: { renderInTerminal: false, captureConsole: false },
-    })
+    const camera = new Camera({ transport: recorded.transport, vendorId, logger: { renderInTerminal: false, captureConsole: false } })
     return { ...recorded, camera, registry: protocolSession(camera).driver.registry }
 }
 
@@ -76,11 +42,7 @@ describe('Canon EOS definitions', () => {
     it('reads the captured R6 III folder record without inventing a decoder or additional selectors', async () => {
         const bytes = Uint8Array.from(Buffer.from('14000000000020a33130304d5344434600000000', 'hex'))
         const recorded = recordingTransport(new Map([[0x9195, bytes]]))
-        const camera = new Camera({
-            transport: recorded.transport,
-            vendorId: VendorIDs.CANON,
-            logger: { renderInTerminal: false, captureConsole: false },
-        })
+        const camera = new Camera({ transport: recorded.transport, vendorId: VendorIDs.CANON, logger: { renderInTerminal: false, captureConsole: false } })
         const response = await protocolSession(camera).send(registry.operations.CanonGetFolderRecord, { Selector: 'OBSERVED_FOLDER' })
         expect(recorded.commands).toEqual([[0x9195, 1]])
         expect(response.code).toBe(0x2001)
@@ -217,14 +179,10 @@ describe('vendor classes selected by USB vendor ID', () => {
     })
 
     it('keeps vendor code spaces apart: 0x9016 is Sigma SetDataGroup1, not a Leica operation', () => {
-        const sigma = Object.values(cameraFor(VendorIDs.SIGMA).registry.operations).filter(
-            operation => operation.code === 0x9016
-        )
-        const leica = Object.values(cameraFor(VendorIDs.LEICA).registry.operations).filter(
-            operation => operation.code === 0x9016
-        )
-        expect(sigma.map(operation => operation.name)).toEqual(['SigmaSetDataGroup1'])
-        expect(leica).toEqual([])
+        const named = (vendorId: number) =>
+            Object.values(cameraFor(vendorId).registry.operations).filter(operation => operation.code === 0x9016).map(operation => operation.name)
+        expect(named(VendorIDs.SIGMA)).toEqual(['SigmaSetDataGroup1'])
+        expect(named(VendorIDs.LEICA)).toEqual([])
     })
 
     it('still behaves as a GenericCamera for standard operations', async () => {

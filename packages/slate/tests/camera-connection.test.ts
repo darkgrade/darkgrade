@@ -9,56 +9,27 @@ import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
 import { protocolAccess, protocolSession } from '@camera/protocol-session'
 import { PTPResponseError, PTPTimeoutError } from '@core/ptp-errors'
-import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyRemoteSdkTransport } from '@transport/sony-remote/sony-remote-sdk-transport'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { encodedDeviceInfo, fakeTransport } from '@tests/fixtures/camera-fixtures'
+import { canonEvents, canonValue } from '@tests/fixtures/canon-events'
 
 afterEach(() => vi.restoreAllMocks())
 
 const logger = { captureConsole: false, renderInTerminal: false }
 
-function transport(type = TransportType.USB) {
-    return {
-        isLittleEndian: () => true,
-        isConnected: () => true,
-        on: () => undefined,
-        getType: () => type,
-        disconnect: async () => undefined,
-    } as unknown as TransportInterface
-}
+const transport = (type = TransportType.USB) => fakeTransport({ getType: () => type, disconnect: async () => undefined })
 
 const identity = { manufacturer: 'Sony Corporation', model: 'ILCE-7M5', deviceVersion: '1.00', serialNumber: '0123456789' }
 
 /** A DeviceInfo dataset as the body sends it: encoded and decoded with the real codec. */
-function deviceInfo(driver: GenericCamera, fields: Partial<DeviceInfo> = {}): DeviceInfo {
-    const codec = new DeviceInfoCodec(driver.registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0x11,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: [0x1001, 0x1002, 0x1003],
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: [],
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            ...identity,
-            ...fields,
-        })
-    ).value
-}
+const deviceInfo = (driver: GenericCamera, fields: Partial<DeviceInfo> = {}) =>
+    encodedDeviceInfo(driver.registry, { vendorExtensionID: 0x11, operationsSupportedRaw: [0x1001, 0x1002, 0x1003], ...identity, ...fields })
 
 /** Simulated Sony body: the SDIO session and authentication, then the two host-preference writes. */
 function sonyBody() {
@@ -267,17 +238,8 @@ function canonBody(recordingDestination = 0) {
             return { code: 0x2001, data: deviceInfo(driver, { operationsSupportedRaw: [0x1001, 0x1002, 0x1003, 0x9114, 0x9115, 0x9116] }) }
         if (operation.name !== 'CanonGetEventData') return { code: 0x2001 }
         // One CanonRecordingDestination value record on the first read, then only the terminator.
-        const first = eventReads++ === 0
-        const wire = new Uint8Array(first ? 24 : 8)
-        const view = new DataView(wire.buffer)
-        if (first) {
-            view.setUint32(0, 16, true)
-            view.setUint32(4, 0xc189, true)
-            view.setUint32(8, driver.registry.properties.CanonRecordingDestination.code, true)
-            view.setUint32(12, recordingDestination, true)
-        }
-        view.setUint32(first ? 16 : 0, 8, true)
-        return { code: 0x2001, data: new CanonEventDataCodec(driver.registry).decode(wire).value }
+        const destination = canonValue(driver.registry.properties.CanonRecordingDestination.code, recordingDestination)
+        return { code: 0x2001, data: canonEvents(driver.registry, eventReads++ === 0 ? [destination] : []) }
     }) as never)
     return { camera, driver, sent }
 }

@@ -41,6 +41,14 @@ function session(
     }
     return { camera: new SonyWifiCamera(bridge), commands }
 }
+const authentication = {
+    host: '192.0.2.98',
+    mac: '00:11:22:33:44:55',
+    username: 'example',
+    password: 'example',
+    fingerprint: 'trusted-example',
+}
+
 describe('Sony preview session', () => {
     it('keeps an enabled OSD without rewriting or polling it for every frame', async () => {
         const { camera, commands } = session()
@@ -60,53 +68,26 @@ describe('Sony preview session', () => {
     })
     it('preserves classic preview even when monitoring formats exist', async () => {
         const { camera, commands } = session({ monitoring: true })
-        await camera.connect({
-            host: '192.0.2.98',
-            mac: '00:11:22:33:44:55',
-            username: 'example',
-            password: 'example',
-            fingerprint: 'trusted-example',
-        })
-        expect(await camera.captureLiveView('/tmp/frame.jpg', { attempts: 2, monitoringFallback: true })).toMatchObject(
-            { source: 'classic' }
-        )
+        await camera.connect(authentication)
+        const frame = await camera.captureLiveView('/tmp/frame.jpg', { attempts: 2, monitoringFallback: true })
+        expect(frame).toMatchObject({ source: 'classic' })
         expect(commands.some(command => command.cmd === 'monitoring_start')).toBe(false)
         await expect(camera.captureLiveView('/tmp/frame.jpg', { attempts: 0 })).rejects.toThrow('1–25')
         await camera.disconnect()
     })
     it('starts advertised JPEG monitoring only after classic delivery fails', async () => {
         const { camera, commands } = session({ monitoring: true, failPreview: true })
-        await camera.connect({
-            host: '192.0.2.98',
-            mac: '00:11:22:33:44:55',
-            username: 'example',
-            password: 'example',
-            fingerprint: 'trusted-example',
-        })
-        expect(await camera.captureLiveView('/tmp/frame.jpg', { attempts: 2, monitoringFallback: true })).toMatchObject(
-            { source: 'monitoring' }
-        )
-        expect(commands.find(command => command.cmd === 'monitoring_start')).toEqual({
-            cmd: 'monitoring_start',
-            quality: '1',
-        })
+        await camera.connect(authentication)
+        const frame = await camera.captureLiveView('/tmp/frame.jpg', { attempts: 2, monitoringFallback: true })
+        expect(frame).toMatchObject({ source: 'monitoring' })
+        expect(commands.find(command => command.cmd === 'monitoring_start')).toEqual({ cmd: 'monitoring_start', quality: '1' })
         await camera.disconnect()
     })
     it('stops failed monitoring and does not repeatedly delay subsequent controls', async () => {
         const { camera, commands } = session({ monitoring: true, failPreview: true, failMonitoring: true })
-        await camera.connect({
-            host: '192.0.2.98',
-            mac: '00:11:22:33:44:55',
-            username: 'example',
-            password: 'example',
-            fingerprint: 'trusted-example',
-        })
-        await expect(camera.captureLiveView('/tmp/frame.jpg', { monitoringFallback: true })).rejects.toThrow(
-            'No preview'
-        )
-        await expect(camera.captureLiveView('/tmp/frame.jpg', { monitoringFallback: true })).rejects.toThrow(
-            'No preview'
-        )
+        await camera.connect(authentication)
+        for (let attempt = 0; attempt < 2; attempt++)
+            await expect(camera.captureLiveView('/tmp/frame.jpg', { monitoringFallback: true })).rejects.toThrow('No preview')
         expect(commands.filter(command => command.cmd === 'monitoring_start')).toHaveLength(1)
         expect(commands.some(command => command.cmd === 'monitoring_stop')).toBe(true)
         await camera.disconnect()

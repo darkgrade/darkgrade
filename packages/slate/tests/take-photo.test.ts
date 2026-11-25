@@ -11,83 +11,39 @@ import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError }
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { canonEvents, canonObjectAdded } from '@tests/fixtures/canon-events'
 import { sonyContentList } from '@tests/fixtures/sony-content-list'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { decodeMediaId, encodeMediaId, type MediaReference } from '@vendors/generic/media-id'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
+import { encodedDeviceInfo, encodedObjectInfo, fakeTransport } from '@tests/fixtures/camera-fixtures'
 
 afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
 })
 
-const transport = () =>
-    ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined, getType: () => 'usb' }) as unknown as TransportInterface
+const transport = () => fakeTransport({ getType: () => 'usb' })
 
 const jpeg = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)
 const CARD_STORAGE = 0x00010001
 
 /** An ObjectInfo reply exactly as the codec decodes it from the wire. */
-function objectInfo(camera: Camera, filename: string, size = jpeg.length, associationType = 0): ObjectInfo {
-    const codec = new ObjectInfoCodec(protocolSession(camera).driver.registry)
-    return codec.decode(
-        codec.encode({
-            storageID: CARD_STORAGE,
-            objectFormat: associationType ? 0x3001 : 0x3801,
-            objectFormatDecoded: '',
-            protectionStatus: 0,
-            objectCompressedSize: size,
-            thumbFormat: 0,
-            thumbFormatDecoded: '',
-            thumbCompressedSize: 0,
-            thumbPixWidth: 0,
-            thumbPixHeight: 0,
-            imagePixWidth: 0,
-            imagePixHeight: 0,
-            imageBitDepth: 0,
-            parentObject: 0,
-            associationType,
-            associationDesc: 0,
-            sequenceNumber: 0,
-            filename,
-            captureDate: '20261124T120000',
-            modificationDate: '20261124T120000',
-            keywords: '',
-        })
-    ).value
-}
+const objectInfo = (camera: Camera, filename: string, size = jpeg.length, associationType = 0) =>
+    encodedObjectInfo(protocolSession(camera).driver.registry, {
+        storageID: CARD_STORAGE,
+        objectFormat: associationType ? 0x3001 : 0x3801,
+        objectCompressedSize: size,
+        associationType,
+        filename,
+        captureDate: '20261124T120000',
+        modificationDate: '20261124T120000',
+    })
 
 /** A DeviceInfo reply exactly as the codec decodes it: GetObjectInfo, GetObject and GetThumb. */
-function deviceInfo(camera: Camera, eventsSupportedRaw: number[] = []): DeviceInfo {
-    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: [0x1008, 0x1009, 0x100a],
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw,
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: [],
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: 'Simulated',
-            model: 'Simulated',
-            deviceVersion: '1.00',
-            serialNumber: '0001',
-        })
-    ).value
-}
+const deviceInfo = (camera: Camera, eventsSupportedRaw: number[] = []) =>
+    encodedDeviceInfo(camera, { operationsSupportedRaw: [0x1008, 0x1009, 0x100a], eventsSupportedRaw })
 
 /** Delivers an event the way the transport does (the driver's event handler is internal). */
 function emit(driver: object, event: { code: number; parameters: number[] }) {

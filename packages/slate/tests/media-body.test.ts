@@ -11,9 +11,9 @@ import { readCameraObjectHandles } from '@vendors/generic/storage'
 import type { CanonCamera } from '@vendors/canon/canon-camera'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
+import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfoCodec } from '@ptp/datasets/storage-info-dataset'
 import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
 import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
@@ -26,6 +26,8 @@ import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
+import { concatenate, encodedDeviceInfo, encodedObjectInfo } from '@tests/fixtures/camera-fixtures'
+import { sonyContentList } from '@tests/fixtures/sony-content-list'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -47,46 +49,20 @@ function simulatedTransport(type = TransportType.USB) {
     return { transport, emit: (event: PTPEvent) => deliver?.(event) }
 }
 
-function concatenate(parts: Uint8Array[]): Uint8Array {
-    const wire = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
-    let offset = 0
-    for (const part of parts) {
-        wire.set(part, offset)
-        offset += part.length
-    }
-    return wire
-}
-
-function deviceInfo(
+const deviceInfo = (
     registry: Registry,
-    identity: { manufacturer: string; model: string; firmware: string },
-    properties: number[],
-    operations: number[]
-): DeviceInfo {
-    const codec = new DeviceInfoCodec(registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: operations,
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: properties,
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: identity.manufacturer,
-            model: identity.model,
-            deviceVersion: identity.firmware,
-            serialNumber: '0001',
-        })
-    ).value
-}
+    { manufacturer, model, firmware }: { manufacturer: string; model: string; firmware: string },
+    devicePropertiesSupported: number[],
+    operationsSupportedRaw: number[]
+): DeviceInfo =>
+    encodedDeviceInfo(registry, {
+        operationsSupportedRaw,
+        devicePropertiesSupported,
+        manufacturer,
+        model,
+        deviceVersion: firmware,
+        serialNumber: '0001',
+    })
 
 interface CardFile {
     handle: number
@@ -101,32 +77,22 @@ interface CardFile {
 }
 
 function objectInfo(registry: Registry, file: CardFile): ObjectInfo {
-    const codec = new ObjectInfoCodec(registry)
-    return codec.decode(
-        codec.encode({
-            storageID: file.storageId,
-            objectFormat: file.folder ? 0x3001 : 0x3801,
-            objectFormatDecoded: '',
-            protectionStatus: 0,
-            objectCompressedSize: file.reportedSize ?? file.bytes.length,
-            thumbFormat: file.thumbnail ? 0x3801 : 0,
-            thumbFormatDecoded: '',
-            thumbCompressedSize: file.thumbnail?.length ?? 0,
-            thumbPixWidth: file.thumbnail ? 160 : 0,
-            thumbPixHeight: file.thumbnail ? 120 : 0,
-            imagePixWidth: file.folder ? 0 : 6000,
-            imagePixHeight: file.folder ? 0 : 4000,
-            imageBitDepth: 24,
-            parentObject: 0,
-            associationType: file.folder ? 1 : 0,
-            associationDesc: 0,
-            sequenceNumber: 0,
-            filename: file.name,
-            captureDate: file.captureDate,
-            modificationDate: file.captureDate,
-            keywords: '',
-        })
-    ).value
+    return encodedObjectInfo(registry, {
+        storageID: file.storageId,
+        objectFormat: file.folder ? 0x3001 : 0x3801,
+        objectCompressedSize: file.reportedSize ?? file.bytes.length,
+        thumbFormat: file.thumbnail ? 0x3801 : 0,
+        thumbCompressedSize: file.thumbnail?.length ?? 0,
+        thumbPixWidth: file.thumbnail ? 160 : 0,
+        thumbPixHeight: file.thumbnail ? 120 : 0,
+        imagePixWidth: file.folder ? 0 : 6000,
+        imagePixHeight: file.folder ? 0 : 4000,
+        imageBitDepth: 24,
+        associationType: file.folder ? 1 : 0,
+        filename: file.name,
+        captureDate: file.captureDate,
+        modificationDate: file.captureDate,
+    })
 }
 
 function storageInfo(registry: Registry, freeBytes: number, freeImages: number) {
@@ -238,61 +204,6 @@ function standardCard(
         return { code: 0x2005 }
     }
     return { files, state, send }
-}
-
-/** A Sony content list (Camera Control PTP 3, ContentInfoList) in the layout the parser reads. */
-function sonyContentList(
-    slot: number,
-    contents: { contentId: number; createdLocalMs: number; files: { fileId: number; path: string; size: number; video?: boolean }[] }[]
-): Uint8Array {
-    const parts: Uint8Array[] = []
-    const view = (bytes: number, write: (data: DataView) => void) => {
-        const data = new Uint8Array(bytes)
-        write(new DataView(data.buffer))
-        parts.push(data)
-    }
-    const u16 = (value: number) => view(2, data => data.setUint16(0, value, true))
-    const u32 = (value: number) => view(4, data => data.setUint32(0, value, true))
-    const u64 = (value: number) => view(8, data => data.setBigUint64(0, BigInt(value), true))
-    const zeros = (bytes: number) => parts.push(new Uint8Array(bytes))
-    u16(1)
-    u16(0)
-    u64(Date.UTC(2026, 10, 24))
-    zeros(128)
-    u32(slot)
-    u32(contents.length)
-    for (const content of contents) {
-        u32(1)
-        u32(content.contentId)
-        zeros(16)
-        u32(1)
-        u64(content.createdLocalMs)
-        u64(content.createdLocalMs)
-        u64(content.createdLocalMs)
-        u64(content.createdLocalMs)
-        u32(0)
-        u32(0)
-        u32(0)
-        u32(0)
-        u32(content.files.length)
-        for (const file of content.files) {
-            const path = new TextEncoder().encode(`${file.path}\0`)
-            u16(file.fileId)
-            u16(0)
-            u32(path.length)
-            parts.push(path)
-            u32(file.video ? 0xb982 : 0x3801)
-            u64(file.size)
-            zeros(32)
-            u32(1)
-            u32(file.video ? 3840 : 7008)
-            u32(file.video ? 2160 : 4672)
-            u32(file.video ? 1 : 0)
-            if (file.video) for (let word = 0; word < 19; word++) u32(word === 5 ? 3840 : word === 6 ? 2160 : 0)
-            u32(0)
-        }
-    }
-    return concatenate(parts)
 }
 
 /** A Sony live-view dataset: offset and size of the JPEG, no focal frames, then the JPEG at offset 24. */

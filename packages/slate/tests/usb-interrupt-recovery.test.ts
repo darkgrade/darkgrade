@@ -1,7 +1,7 @@
 import {EventEmitter} from 'node:events'
 import {Logger} from '@core/logger'
 import {PTPDisconnectedError} from '@core/ptp-errors'
-import {USBTransport,EndpointType} from '@transport/usb/usb-transport'
+import {USBTransport} from '@transport/usb/usb-transport'
 import {describe,it,expect,vi,afterEach} from 'vitest'
 function fixture(){
  const transport:any=new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
@@ -20,7 +20,7 @@ describe('USB event polling recovery',()=>{
   const {endpoint,clear}=fixture();endpoint.emit('error',new Error('LIBUSB_TRANSFER_ERROR'))
   expect(clear).not.toHaveBeenCalled();expect(endpoint.startPoll).toHaveBeenCalledTimes(1)
   endpoint.emit('end');await new Promise(resolve=>setImmediate(resolve))
-  expect(clear).toHaveBeenCalledWith(EndpointType.INTERRUPT);expect(endpoint.startPoll).toHaveBeenCalledTimes(2)
+  expect(clear).toHaveBeenCalledWith('interrupt');expect(endpoint.startPoll).toHaveBeenCalledTimes(2)
  })
  it('does not resurrect event polling after disconnect',async()=>{
   const {endpoint,transport,clear}=fixture();endpoint.emit('error',new Error('failed'));transport.connected=false
@@ -73,19 +73,19 @@ describe('USB camera serial selection', () => {
 
 
 describe('USB halt recovery errors', () => {
- it.each([EndpointType.BULK_IN, EndpointType.BULK_OUT, EndpointType.INTERRUPT])('retains a disconnect failure for %s', async type => {
+ it.each(['bulkIn', 'bulkOut', 'interrupt'])('retains a disconnect failure for %s', async type => {
   const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
   const failure = new Error('LIBUSB_TRANSFER_NO_DEVICE')
   transport.device = {clearHalt:vi.fn().mockRejectedValue(failure)}
   transport.endpoints = {bulkIn:{endpointNumber:1},bulkOut:{endpointNumber:2},interrupt:{endpointNumber:3}}
   await expect(transport.clearHalt(type)).rejects.toBe(failure)
-  expect(transport.device.clearHalt).toHaveBeenCalledWith(type === EndpointType.BULK_OUT ? 'out' : 'in', type === EndpointType.INTERRUPT ? 3 : type === EndpointType.BULK_OUT ? 2 : 1)
+  expect(transport.device.clearHalt).toHaveBeenCalledWith(type === 'bulkOut' ? 'out' : 'in', type === 'interrupt' ? 3 : type === 'bulkOut' ? 2 : 1)
  })
  it.each(['LIBUSB_TRANSFER_CANCELLED','LIBUSB_TRANSFER_ERROR'])('allows the existing %s recovery case', async message => {
   const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
   transport.device = {clearHalt:vi.fn().mockRejectedValue(new Error(message))}
   transport.endpoints = {interrupt:{endpointNumber:3}}
-  await expect(transport.clearHalt(EndpointType.INTERRUPT)).resolves.toBeUndefined()
+  await expect(transport.clearHalt('interrupt')).resolves.toBeUndefined()
  })
 })
 

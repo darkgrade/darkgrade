@@ -23,12 +23,7 @@ describe('SonyRemoteSdkTransport', () => {
         const sdkChannel = channel()
         const createChannel = vi.fn(async () => sdkChannel)
         const transport = new SonyRemoteSdkTransport(
-            {
-                host: '192.0.2.10',
-                username: 'user',
-                password: 'secret',
-                fingerprint: 'sha256:test',
-            },
+            { host: '192.0.2.10', username: 'user', password: 'secret', fingerprint: 'sha256:test' },
             createChannel
         )
         const event = vi.fn()

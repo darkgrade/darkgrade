@@ -1,7 +1,7 @@
 import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { Camera } from '@camera/index'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
-import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { encodedObjectInfo } from '@tests/fixtures/camera-fixtures'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { encodeMediaId } from '@vendors/generic/media-id'
 import { expect, it, vi } from 'vitest'
@@ -11,34 +11,13 @@ const transport = () =>
     ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined, getType: () => 'usb' }) as unknown as TransportInterface
 
 /** The new photo's ObjectInfo exactly as the codec decodes it from the wire. */
-function photoInfo(camera: Camera): ObjectInfo {
-    const codec = new ObjectInfoCodec(protocolSession(camera).driver.registry)
-    return codec.decode(
-        codec.encode({
-            storageID: 0x00010001,
-            objectFormat: 0x3801,
-            objectFormatDecoded: '',
-            protectionStatus: 0,
-            objectCompressedSize: 2,
-            thumbFormat: 0,
-            thumbFormatDecoded: '',
-            thumbCompressedSize: 0,
-            thumbPixWidth: 0,
-            thumbPixHeight: 0,
-            imagePixWidth: 0,
-            imagePixHeight: 0,
-            imageBitDepth: 0,
-            parentObject: 0,
-            associationType: 0,
-            associationDesc: 0,
-            sequenceNumber: 0,
-            filename: 'DSC00001.JPG',
-            captureDate: '20261124T120000',
-            modificationDate: '20261124T120000',
-            keywords: '',
-        })
-    ).value
-}
+const photoInfo = (camera: Camera) =>
+    encodedObjectInfo(protocolSession(camera).driver.registry, {
+        objectCompressedSize: 2,
+        filename: 'DSC00001.JPG',
+        captureDate: '20261124T120000',
+        modificationDate: '20261124T120000',
+    })
 
 it.each([false, true])('takePhoto on Sony restores movie mode after success/failure (%s)', async fail => {
     vi.useFakeTimers()

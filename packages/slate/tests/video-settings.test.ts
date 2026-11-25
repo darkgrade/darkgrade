@@ -9,60 +9,22 @@ import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError }
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { PTPRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { AudioRecording, FrameRate, VideoFormat, VideoQuality } from '@camera/settings/video'
 import { protocolSession } from '@camera/protocol-session'
+import { canonAllowedValues, canonEvents, canonValue } from '@tests/fixtures/canon-events'
+import { concatenate, encodedDeviceInfo, fakeTransport as transport, sonyPropertyInventory } from '@tests/fixtures/camera-fixtures'
 
 afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
 })
 
-const transport = () =>
-    ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined }) as unknown as TransportInterface
-
-function concatenate(parts: Uint8Array[]): Uint8Array {
-    const wire = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
-    let offset = 0
-    for (const part of parts) {
-        wire.set(part, offset)
-        offset += part.length
-    }
-    return wire
-}
-
-function deviceInfo(registry: PTPRegistry, properties: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: [0x1001],
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: properties,
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: 'Fixture',
-            model: 'Fixture',
-            deviceVersion: '1',
-            serialNumber: '',
-        })
-    ).value
-}
+const deviceInfo = (registry: PTPRegistry, properties: number[]) =>
+    encodedDeviceInfo(registry, { devicePropertiesSupported: properties })
 
 interface SonyRecord {
     type: 2 | 4
@@ -85,8 +47,6 @@ function sonyCamera() {
     ])
     const body = { applies: true }
     const writes: [number, number][] = []
-    const encode = (type: 2 | 4, value: number) =>
-        type === 2 ? registry.codecs.uint8.encode(value) : registry.codecs.uint16.encode(value)
     const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(registry, []) }
         if (operation.name === 'SDIO_SetExtDevicePropValue') {
@@ -97,22 +57,8 @@ function sonyCamera() {
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('SDIO_GetAllExtDevicePropInfo')
-        const wire = concatenate([
-            registry.codecs.uint32.encode(records.size),
-            registry.codecs.uint32.encode(0),
-            ...[...records].flatMap(([code, record]) => [
-                registry.codecs.uint16.encode(code),
-                registry.codecs.uint16.encode(record.type),
-                registry.codecs.uint8.encode(1),
-                registry.codecs.uint8.encode(record.enabled),
-                encode(record.type, record.value),
-                encode(record.type, record.value),
-                registry.codecs.uint8.encode(2),
-                registry.codecs.uint16.encode(record.choices.length),
-                ...record.choices.map(choice => encode(record.type, choice)),
-            ]),
-        ])
-        return { code: 0x2001, data: new SDIDevicePropInfoArrayCodec(registry).decode(wire).value }
+        const inventory = [...records].map(([code, record]) => ({ code, datatype: record.type, ...record, current: record.value }))
+        return { code: 0x2001, data: sonyPropertyInventory(registry, inventory) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
     return { camera, records, body, writes }
@@ -189,19 +135,8 @@ function canonCamera() {
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('CanonGetEventData')
-        const wire = new DataView(new ArrayBuffer(16 + 20 + body.choices.length * 4 + 8))
-        wire.setUint32(0, 16, true)
-        wire.setUint32(4, 0xc189, true)
-        wire.setUint32(8, sound, true)
-        wire.setUint32(12, body.value, true)
-        wire.setUint32(16, 20 + body.choices.length * 4, true)
-        wire.setUint32(20, 0xc18a, true)
-        wire.setUint32(24, sound, true)
-        wire.setUint32(28, 3, true)
-        wire.setUint32(32, body.choices.length, true)
-        body.choices.forEach((choice, index) => wire.setUint32(36 + index * 4, choice, true))
-        wire.setUint32(36 + body.choices.length * 4, 8, true)
-        return { code: 0x2001, data: new CanonEventDataCodec(driver.registry).decode(new Uint8Array(wire.buffer)).value }
+        const records = [canonValue(sound, body.value), canonAllowedValues(sound, body.choices)]
+        return { code: 0x2001, data: canonEvents(driver.registry, records) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
     return { camera, body, writes }

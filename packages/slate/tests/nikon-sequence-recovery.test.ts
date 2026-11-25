@@ -1,12 +1,9 @@
 import {describe,it,expect,vi} from 'vitest'
-import {NikonCamera} from '@vendors/nikon/nikon-camera'
-import {Logger} from '@core/logger'
 import {TransportType} from '@transport/interfaces/transport-types'
-import type {TransportInterface} from '@transport/interfaces/transport.interface'
+import {nikonCamera} from '@tests/fixtures/nikon'
 
 function setup() {
-    const transport={isLittleEndian:()=>true,on:()=>{},getType:()=>TransportType.USB} as unknown as TransportInterface
-    const camera=new NikonCamera(transport,new Logger({expanded:false,captureConsole:false,renderInTerminal:false}))
+    const camera=nikonCamera({getType:()=>TransportType.USB}),transport=camera.transport
     const warnings=[1,1,0],operations:number[]=[],movie:string[]=[]
     let releaseCode=0x2001
     const vendorProperties=[0xd102]

@@ -11,59 +11,17 @@ import type { SonyCamera } from '@vendors/sony/sony-camera'
 import type { ExposureTime } from '@camera/exposure-time'
 import { formatShutterSpeed, type ShutterSpeed } from '@camera/settings/shutter-speed'
 import { settingGetterName, settingSetterName, typedSettingIds } from '@camera/settings/typed-settings'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
+import { canonAllowedValues, canonEvents, canonValue } from '@tests/fixtures/canon-events'
+import { deviceInfo, fakeTransport as transport, propertyDescriptor, sonyPropertyInventory, vendorCodeList } from '@tests/fixtures/camera-fixtures'
 
 afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
 })
-
-const transport = () =>
-    ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined }) as unknown as TransportInterface
-
-function concatenate(parts: Uint8Array[]): Uint8Array {
-    const wire = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
-    let offset = 0
-    for (const part of parts) {
-        wire.set(part, offset)
-        offset += part.length
-    }
-    return wire
-}
-
-function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: operations,
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: properties,
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: 'Fixture',
-            model: 'Fixture',
-            deviceVersion: '1',
-            serialNumber: '',
-        })
-    ).value
-}
 
 /** Simulated Sony body: SDIO inventory and SetExtDevicePropValue, raw 0xNNNNDDDD shutter values. */
 function sonyCamera() {
@@ -83,20 +41,8 @@ function sonyCamera() {
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('SDIO_GetAllExtDevicePropInfo')
-        const wire = concatenate([
-            codecs.uint32.encode(1),
-            codecs.uint32.encode(0),
-            codecs.uint16.encode(shutter.code),
-            codecs.uint16.encode(6),
-            codecs.uint8.encode(1),
-            codecs.uint8.encode(body.enabled),
-            codecs.uint32.encode(body.current),
-            codecs.uint32.encode(body.current),
-            codecs.uint8.encode(2),
-            codecs.uint16.encode(body.choices.length),
-            ...body.choices.map(choice => codecs.uint32.encode(choice)),
-        ])
-        return { code: 0x2001, data: new SDIDevicePropInfoArrayCodec(driver.registry).decode(wire).value }
+        const shutterRecord = { code: shutter.code, datatype: 6, current: body.current, choices: body.choices, enabled: body.enabled }
+        return { code: 0x2001, data: sonyPropertyInventory(driver.registry, [shutterRecord]) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
     return { camera, body, writes, makeUnavailable: () => (body.enabled = 2) }
@@ -122,20 +68,8 @@ function canonCamera() {
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('CanonGetEventData')
-        const wire = new Uint8Array(16 + 20 + body.choices.length * 4 + 8)
-        const view = new DataView(wire.buffer)
-        view.setUint32(0, 16, true)
-        view.setUint32(4, 0xc189, true)
-        view.setUint32(8, shutter.code, true)
-        view.setUint32(12, body.current, true)
-        view.setUint32(16, 20 + body.choices.length * 4, true)
-        view.setUint32(20, 0xc18a, true)
-        view.setUint32(24, shutter.code, true)
-        view.setUint32(28, 3, true)
-        view.setUint32(32, body.choices.length, true)
-        body.choices.forEach((choice, index) => view.setUint32(36 + index * 4, choice, true))
-        view.setUint32(36 + body.choices.length * 4, 8, true)
-        return { code: 0x2001, data: new CanonEventDataCodec(driver.registry).decode(wire).value }
+        const records = [canonValue(shutter.code, body.current), canonAllowedValues(shutter.code, body.choices)]
+        return { code: 0x2001, data: canonEvents(driver.registry, records) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
     return { camera, body, writes, makeUnavailable: () => (body.choices = []) }
@@ -156,30 +90,15 @@ function nikonCamera() {
     }
     const selector = driver.registry.properties.LiveViewSelector.code
     const writes: number[] = []
-    const descriptor = (code: number, type: number, value: number, choices: number[], writable: boolean) => {
-        const builder = driver.registry.codecs[type === 2 ? 'uint8' : 'uint32']
-        const wire = concatenate([
-            driver.registry.codecs.uint32.encode(code),
-            driver.registry.codecs.uint16.encode(type),
-            Uint8Array.of(writable ? 1 : 0),
-            builder.encode(value),
-            builder.encode(value),
-            Uint8Array.of(2),
-            driver.registry.codecs.uint16.encode(choices.length),
-            ...choices.map(choice => builder.encode(choice)),
-        ])
-        return new DevicePropDescCodec(driver.registry, true).decode(wire).value
-    }
+    const descriptor = (code: number, datatype: number, current: number, choices: number[], writable: boolean) =>
+        propertyDescriptor(driver.registry, { code, datatype, current, choices, writable }, true)
     const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo')
             return {
                 code: 0x2001,
                 data: deviceInfo(camera, [selector], [0x1001, 0x9439, 0x943a, 0x943b, 0x943c]),
             }
-        if (operation.name === 'GetVendorCodes') {
-            const wire = concatenate([driver.registry.codecs.uint32.encode(1), driver.registry.codecs.uint32.encode(shutterCode)])
-            return { code: 0x2001, data: wire }
-        }
+        if (operation.name === 'GetVendorCodes') return { code: 0x2001, data: vendorCodeList(driver.registry, [shutterCode]) }
         if (operation.name === 'SetDevicePropValueEx') {
             const raw = driver.registry.codecs.uint32.decode(data!).value
             writes.push(raw)

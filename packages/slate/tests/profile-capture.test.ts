@@ -4,7 +4,7 @@ import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry, createNikonRegistry } from '@vendors/registry'
-import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
+import { TransportType } from '@transport/interfaces/transport.interface'
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
 import {
     captureCameraProfile,
@@ -14,6 +14,7 @@ import {
 } from '@vendors/profile-capture'
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { configureSlateTelemetry } from '@core/telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
@@ -103,21 +104,11 @@ const identity: DeviceInfo = {
     devicePropertiesSupportedDecoded: [],
     imageFormatsDecoded: [],
 }
-function packet(type: number, code: number, transactionId: number, data: Uint8Array = new Uint8Array()): Uint8Array {
-    const bytes = new Uint8Array(12 + data.length)
-    const view = new DataView(bytes.buffer)
-    view.setUint32(0, bytes.length, true)
-    view.setUint16(4, type, true)
-    view.setUint16(6, code, true)
-    view.setUint32(8, transactionId, true)
-    bytes.set(data, 12)
-    return bytes
-}
+const packet = ptpContainer
 function fixture(refuseProperty = false, nikonEventResponse?: number, inventory = identity) {
     const commands: number[] = []
     const eventParameters: number[][] = []
     const replies: Uint8Array[] = []
-    let connected = false
     const descriptor = join(
         codecs.uint16.encode(0x5001),
         codecs.uint16.encode(4),
@@ -126,45 +117,30 @@ function fixture(refuseProperty = false, nikonEventResponse?: number, inventory 
         codecs.uint16.encode(75),
         Uint8Array.of(0)
     )
-    const transport: TransportInterface = {
-        connect: async () => {
-            connected = true
-        },
-        disconnect: async () => {
-            connected = false
-        },
-        isConnected: () => connected,
-        isLittleEndian: () => true,
-        getType: () => TransportType.USB,
-        classRequestReset: async () => {
-            throw new Error('Capture must not reset hardware')
-        },
-        send: async bytes => {
-            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-            if (view.getUint16(4, true) !== 1) throw new Error('Unexpected settings write')
-            const code = view.getUint16(6, true)
-            const id = view.getUint32(8, true)
-            commands.push(code)
-            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? inventory : {
-                ...identity, manufacturer: 'Nikon', model: 'Z 6', operationsSupportedRaw: [...identity.operationsSupportedRaw, 0x941c],
-            })))
-            if (code === 0x1004) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
-            if (code === 0x1014 && !refuseProperty) replies.push(packet(2, code, id, descriptor))
-            if (code === 0x941c) {
-                const parameters = Array.from({ length: (bytes.length - 12) / 4 }, (_, index) => view.getUint32(12 + index * 4, true))
-                eventParameters.push(parameters)
-                const response = parameters.length ? nikonEventResponse! : 0x2001
-                if (response === 0x2001) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
-                replies.push(packet(3, response, id))
-                return
-            }
-            replies.push(packet(3, code === 0x1014 && refuseProperty ? 0x200a : 0x2001, id))
-        },
-        receive: async () => {
-            const bytes = replies.shift()
-            if (!bytes) throw new Error('Unexpected read')
-            return bytes
-        },
+    const { transport } = answeringTransport(({ type, code, transactionId: id, parameters }) => {
+        if (type !== 1) throw new Error('Unexpected settings write')
+        commands.push(code)
+        if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? inventory : {
+            ...identity, manufacturer: 'Nikon', model: 'Z 6', operationsSupportedRaw: [...identity.operationsSupportedRaw, 0x941c],
+        })))
+        if (code === 0x1004) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
+        if (code === 0x1014 && !refuseProperty) replies.push(packet(2, code, id, descriptor))
+        if (code === 0x941c) {
+            eventParameters.push(parameters)
+            const response = parameters.length ? nikonEventResponse! : 0x2001
+            if (response === 0x2001) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
+            replies.push(packet(3, response, id))
+            return
+        }
+        replies.push(packet(3, code === 0x1014 && refuseProperty ? 0x200a : 0x2001, id))
+    }, { connected: false })
+    transport.classRequestReset = async () => {
+        throw new Error('Capture must not reset hardware')
+    }
+    transport.receive = async () => {
+        const bytes = replies.shift()
+        if (!bytes) throw new Error('Unexpected read')
+        return bytes
     }
     return { transport, commands, descriptor, eventParameters }
 }

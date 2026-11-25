@@ -1,79 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { NikonCamera } from '@vendors/nikon/nikon-camera'
-import { Logger } from '@core/logger'
 import { TransportType } from '@transport/interfaces/transport-types'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import type { Registry } from '@vendors/registry'
-
-/** A DeviceInfo reply exactly as the codec decodes it from the wire. */
-function deviceInfo(registry: Registry, operationsSupportedRaw: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0x0a,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw,
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: [],
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: 'Nikon Corporation',
-            model: 'Z 5_2',
-            deviceVersion: '1.00',
-            serialNumber: '0001',
-        })
-    ).value
-}
-
-/** A card file's ObjectInfo reply exactly as the codec decodes it from the wire. */
-function cardObjectInfo(registry: Registry, filename: string, size: number): ObjectInfo {
-    const codec = new ObjectInfoCodec(registry)
-    return codec.decode(
-        codec.encode({
-            storageID: 0x00010001,
-            objectFormat: 0x3801,
-            objectFormatDecoded: '',
-            protectionStatus: 0,
-            objectCompressedSize: size,
-            thumbFormat: 0,
-            thumbFormatDecoded: '',
-            thumbCompressedSize: 0,
-            thumbPixWidth: 0,
-            thumbPixHeight: 0,
-            imagePixWidth: 0,
-            imagePixHeight: 0,
-            imageBitDepth: 0,
-            parentObject: 0,
-            associationType: 0,
-            associationDesc: 0,
-            sequenceNumber: 0,
-            filename,
-            captureDate: '20261124T120000',
-            modificationDate: '20261124T120000',
-            keywords: '',
-        })
-    ).value
-}
+import { cardObjectInfo, nikonCamera, nikonDeviceInfo } from '@tests/fixtures/nikon'
 
 const rawCompressionNames: Record<number, string> = { 0: 'Lossless', 3: 'High efficiency★', 4: 'High efficiency' }
 
 /** Nikon queues ObjectAdded (card) or ObjectAddedInSdram (memory) for each release, read by GetEventEx. */
 function fixture(truncate = false, transportType = TransportType.USB) {
     const queued: { code: number; parameters: number[] }[] = []
-    const camera = new NikonCamera({
-        isLittleEndian: () => true, isConnected: () => true, on: () => undefined, getType: () => transportType,
-    } as any, new Logger({ captureConsole: false, renderInTerminal: false }))
+    const camera = nikonCamera({ getType: () => transportType })
     vi.spyOn(camera, 'get').mockImplementation(async property => property.name === 'LiveViewSelector' ? 'PHOTO' : 'OFF' as any)
     const send = vi.spyOn(camera, 'send').mockImplementation(async (operation, parameters) => {
-        if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera.registry, [0x9207, 0x941c]) } as any
+        if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: nikonDeviceInfo(camera.registry, [0x9207, 0x941c]) } as any
         if (operation.name === 'InitiateCaptureRecInMedia' || operation.name === 'InitiateCapture')
             queued.push((parameters as { Target?: number } | undefined)?.Target === 1
                 ? { code: 0xc101, parameters: [0xffff0001] } : { code: 0x4002, parameters: [0x00010001] })

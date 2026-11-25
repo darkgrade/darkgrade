@@ -1,10 +1,8 @@
 import { expect, it, vi } from 'vitest'
-import { NikonCamera } from '@vendors/nikon/nikon-camera'
-import { Logger } from '@core/logger'
+import { nikonCamera } from '@tests/fixtures/nikon'
 
 function fixture(recording = false, reject = false) {
-    const camera = new NikonCamera({ isLittleEndian: () => true } as any,
-        new Logger({ captureConsole: false, renderInTerminal: false }))
+    const camera = nikonCamera()
     let selector = 'VIDEO', pipeline: string | undefined = 'VIDEO', quality = 7
     camera.get = vi.fn(async property => property.name === 'LiveViewSelector' ? selector
         : property.name === 'LiveViewStatus' ? (pipeline ? 'ON' : 'OFF')
@@ -45,4 +43,20 @@ it('refuses a photo-quality change while Nikon is recording', async () => {
     await expect(camera.setStandardProperty('CompressionSetting', '4')).rejects.toThrow('active recording')
     expect(camera.set).not.toHaveBeenCalled()
     expect(state().quality).toBe(7)
+})
+
+it('the generic Nikon ISO getter preserves Auto when an ISO test restores its original value', async () => {
+    const camera = nikonCamera()
+    let auto = 'ON', sensitivity = 'ISO 400'
+    camera.get = vi.fn(async property => property.name === 'ISOAutoControl' ? auto : sensitivity) as any
+    camera.set = vi.fn(async (property, value) => {
+        if (property.name === 'ISOAutoControl') auto = String(value)
+        else sensitivity = String(value)
+    }) as any
+    const original = await camera.getIso()
+    expect(original).toBe('ISO AUTO')
+    await camera.setIso('ISO 100')
+    expect(await camera.getIso()).toBe('ISO 100')
+    await camera.setIso(original)
+    expect(await camera.getIso()).toBe('ISO AUTO')
 })

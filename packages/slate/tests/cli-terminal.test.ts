@@ -3,25 +3,14 @@ import { runBenchmarkCommand, type BenchmarkCommandDependencies, type Discovered
 import { attachedCameras, runCamerasCommand } from '@cli/cameras'
 import { closestMatch } from '@cli/commands'
 import { doctorChecks } from '@cli/doctor'
-import { colorEnabled, createTerminal, type TerminalStreams } from '@cli/terminal'
+import { colorEnabled, createTerminal } from '@cli/terminal'
 import type { runBenchmark } from '@workflows/telemetry-benchmark'
-import { PassThrough } from 'node:stream'
+import { streams } from '@tests/fixtures/terminal-streams'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const sony: DiscoveredCamera = { vendorId: 0x054c, productId: 0x0e78, model: 'ILCE-7M5' }
 const fujifilm: DiscoveredCamera = { vendorId: 0x04cb, productId: 0x0305, model: 'X100VI' }
 
-function streams(options: { terminal: boolean; environment?: Record<string, string | undefined> }) {
-    const written = { output: '', error: '' }
-    const input = Object.assign(new PassThrough(), { isTTY: options.terminal, setRawMode: () => undefined })
-    const value: TerminalStreams = {
-        input: input as unknown as TerminalStreams['input'],
-        output: { isTTY: options.terminal, write: text => (written.output += text) },
-        error: { isTTY: options.terminal, columns: 200, write: text => (written.error += text) },
-        environment: options.environment ?? {},
-    }
-    return { value, written, input }
-}
 const flags = { noColor: false, noInput: false, noProgress: false, quiet: false }
 
 afterEach(() => vi.useRealTimers())

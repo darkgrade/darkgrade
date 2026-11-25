@@ -14,18 +14,15 @@ import type { DigitalZoom } from '@camera/settings/video'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { PTPTimeoutError } from '@core/ptp-errors'
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
 import { CanonLiveViewDatasetCodec } from '@vendors/canon/datasets/canon-live-view-dataset'
 import { NikonLiveViewDatasetCodec } from '@vendors/nikon/datasets/nikon-live-view-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
+import { canonEvents, canonValue } from '@tests/fixtures/canon-events'
+import { concatenate, deviceInfo, fakeTransport, propertyDescriptor, sonyPropertyInventory } from '@tests/fixtures/camera-fixtures'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -33,49 +30,7 @@ afterEach(() => {
 })
 
 const OK = 0x2001
-const transport = () =>
-    ({
-        isLittleEndian: () => true,
-        isConnected: () => true,
-        on: () => undefined,
-        getType: () => TransportType.USB,
-    }) as unknown as TransportInterface
-
-function concatenate(parts: Uint8Array[]): Uint8Array {
-    const wire = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
-    let offset = 0
-    for (const part of parts) {
-        wire.set(part, offset)
-        offset += part.length
-    }
-    return wire
-}
-
-function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: operations,
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: properties,
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: 'Fixture',
-            model: 'Fixture',
-            deviceVersion: '1',
-            serialNumber: '',
-        })
-    ).value
-}
+const transport = () => fakeTransport({ getType: () => TransportType.USB })
 
 const INT8 = 0x0001
 const UINT8 = 0x0002
@@ -204,8 +159,6 @@ function sonyBody(
     const sent: string[] = []
     const zoomCommands: number[] = []
     const writes: { code: number; raw: number }[] = []
-    const encode = (datatype: number, value: number | string) =>
-        new VariableValueCodec(registry, datatype).encode(value)
     const inventory = () => {
         const focal = properties.get(ZOOM_DISTANCE)!
         if (body.zoomDirection !== 0 && options.powerZoom !== false) {
@@ -216,39 +169,13 @@ function sonyBody(
         const digitalZoomOn = properties.get(ZOOM_SETTING)!.value !== 1
         if (scale && body.zoomDirection !== 0 && options.powerZoom === false && digitalZoomOn)
             scale.value = Math.max(1000, Number(scale.value) + body.zoomDirection * 100)
-        const entries = [...properties.values()].map(property => {
-            const form = property.range
-                ? [
-                      Uint8Array.of(1),
-                      encode(property.datatype, property.range.minimum),
-                      encode(property.datatype, property.range.maximum),
-                      encode(property.datatype, property.range.step),
-                  ]
-                : property.choices
-                  ? [
-                        Uint8Array.of(2),
-                        registry.codecs.uint16.encode(property.choices.length),
-                        ...property.choices.map(choice => encode(property.datatype, choice)),
-                        registry.codecs.uint16.encode(property.choices.length),
-                        ...property.choices.map(choice => encode(property.datatype, choice)),
-                    ]
-                  : [Uint8Array.of(0)]
-            return concatenate([
-                registry.codecs.uint16.encode(property.code),
-                registry.codecs.uint16.encode(property.datatype),
-                Uint8Array.of(property.writable ? 1 : 0),
-                Uint8Array.of(property.enabled),
-                encode(property.datatype, property.value),
-                encode(property.datatype, property.value),
-                ...form,
-            ])
-        })
-        const wire = concatenate([
-            registry.codecs.uint32.encode(entries.length),
-            registry.codecs.uint32.encode(0),
-            ...entries,
-        ])
-        return new SDIDevicePropInfoArrayCodec(registry).decode(wire).value
+        const records = [...properties.values()].map(property => ({
+            ...property,
+            current: property.value,
+            range: property.range && ([property.range.minimum, property.range.maximum, property.range.step] as const),
+            settableChoices: true,
+        }))
+        return sonyPropertyInventory(registry, records)
     }
     const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
         sent.push(operation.name)
@@ -337,18 +264,8 @@ function nikonBody(fields: Partial<NikonFrameFields> = {}) {
     const liveViewStatus = registry.properties.LiveViewStatus.code
     const focalLength = registry.properties.FocalLength.code
     const sent: string[] = []
-    const descriptor = (code: number, type: number, value: number, writable: boolean) => {
-        const codec = new VariableValueCodec(registry, type)
-        const wire = concatenate([
-            registry.codecs.uint32.encode(code),
-            registry.codecs.uint16.encode(type),
-            Uint8Array.of(writable ? 1 : 0),
-            codec.encode(value),
-            codec.encode(value),
-            Uint8Array.of(0),
-        ])
-        return new DevicePropDescCodec(registry, true).decode(wire).value
-    }
+    const descriptor = (code: number, datatype: number, current: number, writable: boolean) =>
+        propertyDescriptor(registry, { code, datatype, current, writable }, true)
     const liveViewObject = nikonLiveViewObject({
         displayAreaSize: { horizontal: 6000, vertical: 4000 },
         displayCenterCoords: { horizontal: 3000, vertical: 2000 },
@@ -403,15 +320,7 @@ function canonBody() {
         if (operation.name === 'GetDeviceInfo') return { code: OK, data: info }
         if (operation.name === 'CanonGetEventData') {
             // PropValueChanged (0xc189): CanonLiveViewMode HOST (2), then the terminating record.
-            const wire = concatenate([
-                registry.codecs.uint32.encode(16),
-                registry.codecs.uint32.encode(0xc189),
-                registry.codecs.uint32.encode(registry.properties.CanonLiveViewMode.code),
-                registry.codecs.uint32.encode(2),
-                registry.codecs.uint32.encode(8),
-                registry.codecs.uint32.encode(0),
-            ])
-            return { code: OK, data: new CanonEventDataCodec(registry).decode(wire).value }
+            return { code: OK, data: canonEvents(registry, [canonValue(registry.properties.CanonLiveViewMode.code, 2)]) }
         }
         if (operation.name === 'CanonGetViewfinderData') {
             const wire = concatenate([

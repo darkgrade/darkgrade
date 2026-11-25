@@ -17,27 +17,21 @@ import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { PTPDisconnectedError, PTPResponseError } from '@core/ptp-errors'
-import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfoCodec } from '@ptp/datasets/storage-info-dataset'
 import { canonAllowedValues, canonEvents, canonObjectAdded, canonValue } from '@tests/fixtures/canon-events'
 import { encodeMediaId } from '@vendors/generic/media-id'
-import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { PTPRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
+import { concatenate, encodedDeviceInfo, encodedObjectInfo, fakeTransport as transport, sonyPropertyInventory } from '@tests/fixtures/camera-fixtures'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
 })
-
-const transport = () =>
-    ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined }) as unknown as TransportInterface
 
 /** Advances fake time until the operation settles, so camera polling and settle waits run at once. */
 async function settled<T>(operation: Promise<T>, limitMilliseconds = 120000): Promise<T> {
@@ -54,73 +48,15 @@ async function failure(operation: Promise<unknown>): Promise<unknown> {
     return settled(operation.then(() => undefined, (error: unknown) => error))
 }
 
-function concatenate(parts: Uint8Array[]): Uint8Array {
-    const wire = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
-    let offset = 0
-    for (const part of parts) {
-        wire.set(part, offset)
-        offset += part.length
-    }
-    return wire
-}
-
-function deviceInfo(registry: PTPRegistry, model: string, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(registry)
-    return codec.decode(
-        codec.encode({
-            standardVersion: 100,
-            vendorExtensionID: 0,
-            vendorExtensionVersion: 100,
-            vendorExtensionDesc: '',
-            functionalMode: 0,
-            operationsSupportedRaw: operations,
-            operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
-            eventsSupportedDecoded: [],
-            devicePropertiesSupported: properties,
-            devicePropertiesSupportedDecoded: [],
-            captureFormats: [],
-            imageFormatsRaw: [],
-            imageFormatsDecoded: [],
-            manufacturer: 'Fixture',
-            model,
-            deviceVersion: '1',
-            serialNumber: '',
-        })
-    ).value
-}
+const deviceInfo = (registry: PTPRegistry, model: string, properties: number[], operations: number[]) =>
+    encodedDeviceInfo(registry, { model, devicePropertiesSupported: properties, operationsSupportedRaw: operations })
 
 /** A card of movie files: GetStorageIDs, GetStorageInfo, GetObjectHandles and GetObjectInfo replies. */
 function simulatedCard(registry: PTPRegistry, accessCapability = 0) {
     const files = new Map<number, { name: string; bytes: number }>([[1, { name: 'C0001.MP4', bytes: 1000 }]])
-    const objectInfo = (handle: number): ObjectInfo => {
+    const objectInfo = (handle: number) => {
         const file = files.get(handle)!
-        const codec = new ObjectInfoCodec(registry)
-        return codec.decode(
-            codec.encode({
-                storageID: 0x10001,
-                objectFormat: 0x300d,
-                objectFormatDecoded: '',
-                protectionStatus: 0,
-                objectCompressedSize: file.bytes,
-                thumbFormat: 0,
-                thumbFormatDecoded: '',
-                thumbCompressedSize: 0,
-                thumbPixWidth: 0,
-                thumbPixHeight: 0,
-                imagePixWidth: 0,
-                imagePixHeight: 0,
-                imageBitDepth: 0,
-                parentObject: 0,
-                associationType: 0,
-                associationDesc: 0,
-                sequenceNumber: 0,
-                filename: file.name,
-                captureDate: '',
-                modificationDate: '',
-                keywords: '',
-            })
-        ).value
+        return encodedObjectInfo(registry, { objectFormat: 0x300d, objectCompressedSize: file.bytes, filename: file.name })
     }
     const storageInfo = () => {
         const codec = new StorageInfoCodec(registry)
@@ -191,31 +127,11 @@ function sonyCamera(options: { mode?: number; remainingSeconds?: number; firstCo
         { code: 0xd24a, type: 6, value: body.mode === sonyMovieManual ? body.remainingSeconds : 0, enabled: 2, getSet: 0 },
         { code: 0xd295, type: 2, value: body.transfer, enabled: 1, getSet: 1 },
     ]
-    const encode = (type: SonyProperty['type'], value: number) =>
-        type === 2 ? registry.codecs.uint8.encode(value) : type === 4 ? registry.codecs.uint16.encode(value) : registry.codecs.uint32.encode(value)
-    const inventory = () => {
-        const records = properties()
-        const wire = concatenate([
-            registry.codecs.uint32.encode(records.length),
-            registry.codecs.uint32.encode(0),
-            ...records.flatMap(record => [
-                registry.codecs.uint16.encode(record.code),
-                registry.codecs.uint16.encode(record.type),
-                registry.codecs.uint8.encode(record.getSet),
-                registry.codecs.uint8.encode(record.enabled),
-                encode(record.type, record.value),
-                encode(record.type, record.value),
-                ...(record.choices
-                    ? [
-                          registry.codecs.uint8.encode(2),
-                          registry.codecs.uint16.encode(record.choices.length),
-                          ...record.choices.map(choice => encode(record.type, choice)),
-                      ]
-                    : [registry.codecs.uint8.encode(0)]),
-            ]),
-        ])
-        return new SDIDevicePropInfoArrayCodec(registry).decode(wire).value
-    }
+    const inventory = () =>
+        sonyPropertyInventory(
+            registry,
+            properties().map(record => ({ ...record, datatype: record.type, current: record.value, writable: record.getSet === 1 }))
+        )
     const send = async (operation: OperationDefinition, parameters: Record<string, number | string>, data?: Uint8Array) => {
         const cardReply = card.reply(operation, parameters as Record<string, number>)
         if (cardReply) return cardReply

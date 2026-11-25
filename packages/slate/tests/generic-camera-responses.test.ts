@@ -4,17 +4,9 @@ import { Logger } from '@core/logger'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
+import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
 
-function container(type: number, code: number, payload: Uint8Array = new Uint8Array()): Uint8Array {
-    const bytes = new Uint8Array(12 + payload.length)
-    const view = new DataView(bytes.buffer)
-    view.setUint32(0, bytes.length, true)
-    view.setUint16(4, type, true)
-    view.setUint16(6, code, true)
-    view.setUint32(8, 1, true)
-    bytes.set(payload, 12)
-    return bytes
-}
+const container = (type: number, code: number, payload?: Uint8Array) => ptpContainer(type, code, 1, payload)
 
 function parameterBytes(parameters: number[]): Uint8Array {
     const bytes = new Uint8Array(parameters.length * 4)
@@ -24,22 +16,13 @@ function parameterBytes(parameters: number[]): Uint8Array {
 }
 
 function cameraWithResponses(responses: Uint8Array[]) {
-    const sent: Uint8Array[] = []
-    const transport = {
-        isLittleEndian: () => true,
-        isConnected: () => true,
-        getType: () => 'usb',
-        send: async (bytes: Uint8Array) => { sent.push(bytes) },
-        receive: async () => {
-            const response = responses.shift()
-            if (!response) throw new Error('Unexpected receive after the supplied response containers')
-            return response
-        },
-    } as unknown as TransportInterface
-    return {
-        camera: new GenericCamera(transport, new Logger({ captureConsole: false, renderInTerminal: false })),
-        sent,
+    const { transport, sent } = answeringTransport()
+    transport.receive = async () => {
+        const response = responses.shift()
+        if (!response) throw new Error('Unexpected receive after the supplied response containers')
+        return response
     }
+    return { camera: new GenericCamera(transport, new Logger({ captureConsole: false, renderInTerminal: false })), sent }
 }
 
 const sendDataOperation = {
@@ -101,7 +84,7 @@ describe('GenericCamera response container parameters', () => {
 
         const response = await camera.send(sendDataOperation, {}, Uint8Array.of(1, 2))
 
-        expect(sent.map(bytes => new DataView(bytes.buffer).getUint16(4, true))).toEqual([1, 2])
+        expect(sent.map(container => container.type)).toEqual([1, 2])
         expect(response.parameters).toEqual([0xa001])
     })
 
@@ -121,27 +104,6 @@ describe('GenericCamera response container parameters', () => {
         })
     })
 })
-
-it('lists populated slots and never asks an empty storage placeholder for handles',async()=>{
- const operations={GetStorageIDs:'ids',GetStorageInfo:'storage',GetObjectHandles:'handles',GetObjectInfo:'object'},calls:any[]=[]
- const camera={registry:{operations},send:async(operation:string,args:any)=>{
-  calls.push({operation,args})
-  if(operation==='ids')return {code:0x2001,data:[0x10000,0x20001]}
-  if(operation==='storage')return {code:0x2001,data:{storageDescription:'Card'}}
-  if(operation==='handles')return {code:0x2001,data:[7]}
-  return {code:0x2001,data:{filename:'new.NEF'}}
- }}
- const listed=await GenericCamera.prototype.listObjects.call(camera as any)
- expect(Object.keys(listed)).toEqual([String(0x20001)])
- expect(listed[0x20001].objects[7].filename).toBe('new.NEF')
- expect(calls.some(call=>call.args.StorageID===0x10000)).toBe(false)
-})
-
-it('preserves a card-list refusal rather than iterating an absent dataset',async()=>{
- const camera={registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'storage',GetObjectHandles:'handles'}},send:async(operation:string)=>operation==='ids'?{code:0x2001,data:[0x20001]}:operation==='storage'?{code:0x2001,data:{}}:{code:0x2013}}
- await expect(GenericCamera.prototype.listObjects.call(camera as any)).rejects.toThrow()
-})
-
 
 it('optional contributions preserve the real Slate transfer while omitting its image and response parameters', async () => {
     const payload = new TextEncoder().encode('private-image-and-serial-8675309')

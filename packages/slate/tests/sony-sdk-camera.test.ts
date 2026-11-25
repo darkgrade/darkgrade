@@ -176,9 +176,7 @@ describe('Sony SDK Bluetooth Direct connection', () => {
     })
 
     it('supports normal property writes and disconnect cleanup after direct connection', async () => {
-        const { bridge, requests } = bridgeForProperties([
-            { code: '0x100', type: 2, value: '160', writable: true },
-        ])
+        const { bridge, requests } = bridgeForProperties([{ code: '0x100', type: 2, value: '160', writable: true }])
         let closed = false
         bridge.close = async () => {
             closed = true
@@ -227,9 +225,7 @@ describe('Sony SDK Wi-Fi camera', () => {
             return request(command)
         }
         await camera.stopRecording()
-        expect(requests.filter(command => command.cmd === 'command')).toEqual([
-            { cmd: 'command', id: '1', param: '0' },
-        ])
+        expect(requests.filter(command => command.cmd === 'command')).toEqual([{ cmd: 'command', id: '1', param: '0' }])
         expect(await camera.getRecordingState()).toBe('idle')
         await camera.disconnect()
     })
@@ -374,12 +370,7 @@ describe('Sony SDK Wi-Fi camera', () => {
         await camera.stopRecording()
         expect(
             requests.filter(request => request.cmd === 'command').map(request => [request.id, request.param])
-        ).toEqual([
-            ['0', '1'],
-            ['0', '0'],
-            ['1', '1'],
-            ['1', '0'],
-        ])
+        ).toEqual([['0', '1'], ['0', '0'], ['1', '1'], ['1', '0']])
     })
 })
 

@@ -2,22 +2,11 @@ import type { Camera } from '@camera/index'
 import { runCameraOperationCommand } from '@cli/camera-operation'
 import { cameraCommandOperations, resolveCommand } from '@cli/commands'
 import { runDarkgradeCli } from '@cli/index'
-import { createTerminal, type TerminalStreams } from '@cli/terminal'
+import { createTerminal } from '@cli/terminal'
 import { surfaceOperation, surfaceOperations } from '@runtime/operations'
-import { PassThrough } from 'node:stream'
+import { streams } from '@tests/fixtures/terminal-streams'
 import { describe, expect, it } from 'vitest'
 
-function streams() {
-    const written = { output: '', error: '' }
-    const input = Object.assign(new PassThrough(), { isTTY: false })
-    const value: TerminalStreams = {
-        input,
-        output: { isTTY: false, write: text => (written.output += text) },
-        error: { isTTY: false, columns: 200, write: text => (written.error += text) },
-        environment: {},
-    }
-    return { value, written }
-}
 const flags = { noColor: true, noInput: true, noProgress: true, quiet: true }
 
 /** A Camera stand-in that records each call; only the methods these tests reach exist. */
