@@ -3,7 +3,9 @@ import type { CameraEventHandler, CameraEventName, EventsCapability } from '@cam
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
 import type { CameraDriverInstance } from '@camera/operations/context'
+import { SonyCamera } from '@camera/sony-camera'
 import type { EventDefinition } from '@ptp/types/event'
+import type { EventParams } from '@ptp/types/type-helpers'
 
 /** Event names, across the standard and vendor registries, that mean each public event. */
 const EVENT_DEFINITION_NAMES: Record<CameraEventName, readonly string[]> = {
@@ -19,6 +21,21 @@ const EVENT_DEFINITION_NAMES: Record<CameraEventName, readonly string[]> = {
 const CANON_EVENT_CODES: Record<CameraEventName, readonly number[]> = {
     settingsChanged: [0xc189, 0xc18a],
     mediaAdded: [0xc181, 0xc1a7],
+}
+
+/**
+ * A Sony body saving to its card sends no ObjectAdded; its card index announces the file instead.
+ * Event type 1 followed each new photo on an α7 V (bench, 2026-11-24); other types are not mapped.
+ */
+const SONY_CONTENT_ADDED_EVENT_TYPE = 1
+
+function sonyCardIndexAdditions(driver: SonyCamera, handler: CameraEventHandler): () => void {
+    const definition = driver.registry.events.SDIE_ContentInfoListChanged
+    const listener = (params: EventParams<typeof definition>) => {
+        if (Number(params['Event Type']) === SONY_CONTENT_ADDED_EVENT_TYPE) handler()
+    }
+    driver.on(definition, listener)
+    return () => driver.off(definition, listener)
 }
 
 /** How often Nikon's event queue is read while someone is listening. */
@@ -97,5 +114,17 @@ export function eventsCapability(driver: CameraDriverInstance, _owner: Camera): 
             },
         }
     }
+    if (driver instanceof SonyCamera)
+        return {
+            subscribe(event, handler) {
+                const stopEmitted = emittedEvents(driver, event, handler)
+                if (event !== 'mediaAdded') return stopEmitted
+                const stopIndex = sonyCardIndexAdditions(driver, handler)
+                return () => {
+                    stopEmitted()
+                    stopIndex()
+                }
+            },
+        }
     return { subscribe: (event, handler) => emittedEvents(driver, event, handler) }
 }

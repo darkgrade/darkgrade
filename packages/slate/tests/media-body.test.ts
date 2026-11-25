@@ -726,11 +726,15 @@ describe('a simulated Sony body', () => {
         emit({ code: 0xc203, parameters: [0], transactionId: 0 })
         emit({ code: 0xc201, parameters: [0x21], transactionId: 0 })
         emit({ code: 0x4002, parameters: [0x22], transactionId: 0 })
+        // A card save announces itself through the card index (slot 1, event type 1).
+        emit({ code: 0xc234, parameters: [1, 1], transactionId: 0 })
+        emit({ code: 0xc234, parameters: [1, 2], transactionId: 0 })
         expect(settings).toHaveBeenCalledOnce()
-        expect(media).toHaveBeenCalledTimes(2)
+        expect(media).toHaveBeenCalledTimes(3)
         camera.off('mediaAdded', media)
         emit({ code: 0xc201, parameters: [0x23], transactionId: 0 })
-        expect(media).toHaveBeenCalledTimes(2)
+        emit({ code: 0xc234, parameters: [1, 1], transactionId: 0 })
+        expect(media).toHaveBeenCalledTimes(3)
     })
 })
 
