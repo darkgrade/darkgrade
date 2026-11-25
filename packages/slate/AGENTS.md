@@ -31,6 +31,9 @@ the real codec.
 
 ## Tests and the attached camera
 
+To check the public API on real cameras, run `bun run --cwd packages/slate camera:api-check`
+(every attached Sony, Canon and Nikon, in parallel, once) and follow `docs/camera-api-check.md`.
+
 `bun run --cwd packages/slate test` never opens a camera: hardware tests run only with
 `SLATE_HARDWARE_TESTS=1`, and without it native USB enumeration reports no devices
 (`tests/setup/`). Anything that opens a USB camera runs under the shared lease:

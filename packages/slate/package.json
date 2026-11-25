@@ -122,7 +122,8 @@
         "typecheck": "bun run scripts/generate-camera-operations.ts && tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit",
         "bench:recover": "bun run scripts/recover-camera.ts",
         "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
-        "test:cli": "bun run build && node --test tests/cli/*.test.ts"
+        "test:cli": "bun run build && node --test tests/cli/*.test.ts",
+        "camera:api-check": "bun run scripts/camera-api-check.ts"
     },
     "keywords": [
         "ptp",
