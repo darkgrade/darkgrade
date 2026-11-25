@@ -6,26 +6,14 @@ import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 
-/**
- * Sony-specific device property descriptor extensions
- * Extends the standard DevicePropDesc with Sony-specific features
- */
+type SonyEnumValues = { raw: (number | bigint | string)[]; decoded: (number | bigint | string)[] }
+
+/** A standard DevicePropDesc with Sony's flags and its two value lists: display (Set) and Get/Set. */
 export interface SonyDevicePropDesc extends DevicePropDesc {
     sonyDescriptorKind: 'property' | 'control'
     sonyGetSetFlag: number
     sonyEnabledFlag: number
-    vendorExtensions: {
-        enabled: boolean
-        // Sony provides two sets of enum values: one for display (Set) and one for actual Get/Set operations
-        enumValuesSet?: {
-            raw: (number | bigint | string)[]
-            decoded: (number | bigint | string)[]
-        }
-        enumValuesGetSet?: {
-            raw: (number | bigint | string)[]
-            decoded: (number | bigint | string)[]
-        }
-    }
+    vendorExtensions: { enabled: boolean; enumValuesSet?: SonyEnumValues; enumValuesGetSet?: SonyEnumValues }
 }
 
 export interface SDIDevicePropInfoArray {
@@ -52,46 +40,30 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: SonyDevicePropDesc; bytesRead: number } {
-        let currentOffset = offset
-
         if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 6) {
             throw new Error(`Buffer too short: expected at least 6 bytes, got ${buffer.length}`)
         }
-
+        let currentOffset = offset
+        const read = <Value>(codec: { decode(buffer: Uint8Array, offset: number): { value: Value; bytesRead: number } }) => {
+            const result = codec.decode(buffer, currentOffset)
+            currentOffset += result.bytesRead
+            return result.value
+        }
         const u8 = this.registry.codecs.uint8
         const u16 = this.registry.codecs.uint16
 
-        const devicePropertyCodeResult = u16.decode(buffer, currentOffset)
-        const devicePropertyCode = devicePropertyCodeResult.value
-        currentOffset += devicePropertyCodeResult.bytesRead
-
-        const dataTypeResult = u16.decode(buffer, currentOffset)
-        const dataType: DatatypeCode = dataTypeResult.value
-        currentOffset += dataTypeResult.bytesRead
-
-        const getSetResult = u8.decode(buffer, currentOffset)
-        const getSet = getSetResult.value
-        currentOffset += getSetResult.bytesRead
-
-        const isEnabledResult = u8.decode(buffer, currentOffset)
-        const isEnabled = isEnabledResult.value
-        currentOffset += isEnabledResult.bytesRead
-
+        const devicePropertyCode = read(u16)
+        const dataType: DatatypeCode = read(u16)
+        const getSet = read(u8)
+        const isEnabled = read(u8)
         const valueCodec = new VariableValueCodec(this.registry, dataType)
-
-        const factoryDefaultResult = valueCodec.decode(buffer, currentOffset)
-        const factoryDefaultValue = factoryDefaultResult.value.value
-        currentOffset += factoryDefaultResult.bytesRead
-
-        const currentValueResult = valueCodec.decode(buffer, currentOffset)
-        const currentValueRaw = currentValueResult.value.value
-        const currentValueBytes = currentValueResult.value.rawBytes
-        currentOffset += currentValueResult.bytesRead
-
-        const formFlagResult = u8.decode(buffer, currentOffset)
-        const formFlag = formFlagResult.value
+        const readValue = () => read(valueCodec).value
+        const factoryDefaultValue = readValue()
+        const current = read(valueCodec)
+        const currentValueRaw = current.value
+        const currentValueBytes = current.rawBytes
+        const formFlag = read(u8)
         if (formFlag > 2) throw new Error(`Invalid Sony property form flag: ${formFlag}`)
-        currentOffset += formFlagResult.bytesRead
 
         const enumValuesSet: (number | bigint | string)[] = []
         const enumValuesGetSet: (number | bigint | string)[] = []
@@ -100,39 +72,16 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
         let stepSize: number | bigint | string | undefined
 
         if (formFlag === 0x01) {
-            const minimumResult = valueCodec.decode(buffer, currentOffset)
-            minimumValue = minimumResult.value.value
-            currentOffset += minimumResult.bytesRead
-
-            const maximumResult = valueCodec.decode(buffer, currentOffset)
-            maximumValue = maximumResult.value.value
-            currentOffset += maximumResult.bytesRead
-
-            const stepResult = valueCodec.decode(buffer, currentOffset)
-            stepSize = stepResult.value.value
-            currentOffset += stepResult.bytesRead
+            minimumValue = readValue()
+            maximumValue = readValue()
+            stepSize = readValue()
         } else if (formFlag === 0x02) {
-            const numEnumSetResult = u16.decode(buffer, currentOffset)
-            const numEnumSet = numEnumSetResult.value
-            currentOffset += numEnumSetResult.bytesRead
-
-            for (let i = 0; i < numEnumSet; i++) {
-                const enumValueResult = valueCodec.decode(buffer, currentOffset)
-                enumValuesSet.push(enumValueResult.value.value)
-                currentOffset += enumValueResult.bytesRead
-            }
-
-            if (currentOffset + 2 <= buffer.length) {
-                const possibleSecondCountResult = u16.decode(buffer, currentOffset)
-                const possibleSecondCount = possibleSecondCountResult.value
-                if (possibleSecondCount < 0x0200) {
-                    currentOffset += possibleSecondCountResult.bytesRead
-                    for (let index = 0; index < possibleSecondCount; index++) {
-                        const enumValueResult = valueCodec.decode(buffer, currentOffset)
-                        enumValuesGetSet.push(enumValueResult.value.value)
-                        currentOffset += enumValueResult.bytesRead
-                    }
-                }
+            const numEnumSet = read(u16)
+            for (let index = 0; index < numEnumSet; index++) enumValuesSet.push(readValue())
+            // A second (Get/Set) list follows when its count is plausible.
+            if (currentOffset + 2 <= buffer.length && u16.decode(buffer, currentOffset).value < 0x0200) {
+                const possibleSecondCount = read(u16)
+                for (let index = 0; index < possibleSecondCount; index++) enumValuesGetSet.push(readValue())
             }
         }
 
@@ -155,8 +104,7 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
                     : typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
 
             try {
-                const decodedResult = codecInstance.decode(currentValueBytes, 0)
-                currentValueDecoded = decodedResult.value
+                currentValueDecoded = codecInstance.decode(currentValueBytes, 0).value
             } catch {
                 currentValueUnrecognized = true
             }
@@ -205,14 +153,8 @@ export class SDIExtDevicePropInfoCodec extends CustomCodec<SonyDevicePropDesc> {
                     // Sony mode 3 reports 0=grayed out, 1=enabled, and 2=display-only.
                     // A display-only property may advertise choices but silently ignore writes.
                     enabled: isEnabled === 0x01,
-                    enumValuesSet: {
-                        raw: enumValuesSet,
-                        decoded: enumValuesSetDecoded,
-                    },
-                    enumValuesGetSet: {
-                        raw: enumValuesGetSet,
-                        decoded: enumValuesGetSetDecoded,
-                    },
+                    enumValuesSet: { raw: enumValuesSet, decoded: enumValuesSetDecoded },
+                    enumValuesGetSet: { raw: enumValuesGetSet, decoded: enumValuesGetSetDecoded },
                 },
             },
             bytesRead: currentOffset - offset,
@@ -226,30 +168,17 @@ export class SDIDevicePropInfoArrayCodec extends CustomCodec<SDIDevicePropInfoAr
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: SDIDevicePropInfoArray; bytesRead: number } {
-        let currentOffset = offset
         const u32 = this.registry.codecs.uint32
-
-        const numOfElementsResult = u32.decode(buffer, currentOffset)
-        const numOfElements = numOfElementsResult.value
-        currentOffset += numOfElementsResult.bytesRead
-        const reservedResult = u32.decode(buffer, currentOffset)
-        currentOffset += reservedResult.bytesRead
-
+        const numOfElements = u32.decode(buffer, offset).value
+        u32.decode(buffer, offset + 4) // A reserved word follows the count and must be present.
+        let currentOffset = offset + 8
         const properties: SonyDevicePropDesc[] = []
         const propCodec = new SDIExtDevicePropInfoCodec(this.registry)
-
-        for (let i = 0; i < numOfElements; i++) {
-            const propResult = propCodec.decode(buffer, currentOffset)
-            properties.push(propResult.value)
-            currentOffset += propResult.bytesRead
+        for (let index = 0; index < numOfElements; index++) {
+            const { value, bytesRead } = propCodec.decode(buffer, currentOffset)
+            properties.push(value)
+            currentOffset += bytesRead
         }
-
-        return {
-            value: {
-                numOfElements,
-                properties,
-            },
-            bytesRead: currentOffset - offset,
-        }
+        return { value: { numOfElements, properties }, bytesRead: currentOffset - offset }
     }
 }

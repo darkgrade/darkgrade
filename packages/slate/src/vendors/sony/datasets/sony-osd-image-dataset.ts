@@ -1,4 +1,5 @@
-import { CustomCodec, type PTPRegistry } from '@ptp/types/codec'
+import type { PTPRegistry } from '@ptp/types/codec'
+import { sonyDatasetHeader, sonyDatasetSection } from '@vendors/sony/datasets/sony-live-view-dataset'
 
 /**
  * Placement of the OSD over the live-view frame: nine uint32 LE values. Fields two to
@@ -28,53 +29,30 @@ export interface OsdImageDataset {
     metaInfo: OsdImageMetaInfo | null
 }
 
-const META_INFO_FIELDS = 9
-
-export class OsdImageDatasetCodec extends CustomCodec<OsdImageDataset> {
-    encode(_value: OsdImageDataset): Uint8Array {
-        throw new Error('Encoding OsdImageDataset is not yet implemented')
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: OsdImageDataset; bytesRead: number } {
-        const u32 = this.registry.codecs.uint32
-        const [offsetToImage, imageSize, offsetToMetaInfo, metaInfoSize] = [0, 4, 8, 12].map(
-            field => u32.decode(buffer, offset + field).value
-        )
-
-        let image: Uint8Array = new Uint8Array()
-        if (offsetToImage > 0 && imageSize > 0 && buffer.length >= offset + offsetToImage + imageSize) {
-            image = buffer.slice(offset + offsetToImage, offset + offsetToImage + imageSize)
-        }
-
-        let metaInfo: OsdImageMetaInfo | null = null
-        if (
-            offsetToMetaInfo > 0 &&
-            metaInfoSize >= META_INFO_FIELDS * 4 &&
-            buffer.length >= offset + offsetToMetaInfo + META_INFO_FIELDS * 4
-        ) {
-            const fields = Array.from({ length: META_INFO_FIELDS }, (_, index) =>
-                u32.decode(buffer, offset + offsetToMetaInfo + index * 4).value
-            )
-            metaInfo = {
-                leadingValue: fields[0]!,
-                liveViewPositionExists: fields[1] === 1,
-                osdWidth: fields[2]!,
-                osdHeight: fields[3]!,
-                liveViewPositionX: fields[4]!,
-                liveViewPositionY: fields[5]!,
-                liveViewWidth: fields[6]!,
-                liveViewHeight: fields[7]!,
-                degree: fields[8]!,
-            }
-        }
-
-        return {
-            value: { offsetToImage, imageSize, offsetToMetaInfo, metaInfoSize, image, metaInfo },
-            bytesRead: buffer.length - offset,
-        }
-    }
-}
+const META_INFO_BYTES = 9 * 4
 
 export function parseOsdImageDataset(data: Uint8Array, registry: PTPRegistry): OsdImageDataset {
-    return new OsdImageDatasetCodec(registry).decode(data).value
+    const [offsetToImage, imageSize, offsetToMetaInfo, metaInfoSize] = sonyDatasetHeader(data, registry)
+    const meta = metaInfoSize >= META_INFO_BYTES ? sonyDatasetSection(data, offsetToMetaInfo, META_INFO_BYTES) : undefined
+    const fields = meta && Array.from({ length: 9 }, (_, index) => registry.codecs.uint32.decode(meta, index * 4).value)
+    return {
+        offsetToImage,
+        imageSize,
+        offsetToMetaInfo,
+        metaInfoSize,
+        image: sonyDatasetSection(data, offsetToImage, imageSize) ?? new Uint8Array(),
+        metaInfo: fields
+            ? {
+                  leadingValue: fields[0]!,
+                  liveViewPositionExists: fields[1] === 1,
+                  osdWidth: fields[2]!,
+                  osdHeight: fields[3]!,
+                  liveViewPositionX: fields[4]!,
+                  liveViewPositionY: fields[5]!,
+                  liveViewWidth: fields[6]!,
+                  liveViewHeight: fields[7]!,
+                  degree: fields[8]!,
+              }
+            : null,
+    }
 }

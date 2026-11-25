@@ -43,10 +43,7 @@ export function canonLiveViewPosition(frame: CanonLiveViewFrame): CanonLiveViewP
         crop[0] !== x ||
         crop[1] !== y ||
         ![1, 5, 6, 10, 15].includes(zoom[0]) ||
-        width === 0 ||
-        height === 0 ||
-        sensorWidth === 0 ||
-        sensorHeight === 0 ||
+        [width, height, sensorWidth, sensorHeight].includes(0) ||
         x + width > sensorWidth ||
         y + height > sensorHeight ||
         visibleWidth < width ||
@@ -59,19 +56,8 @@ export function canonLiveViewPosition(frame: CanonLiveViewFrame): CanonLiveViewP
         y > maximumY
     )
         return undefined
-    return {
-        x,
-        y,
-        width,
-        height,
-        sensorWidth,
-        sensorHeight,
-        magnification: zoom[0],
-        minimumX,
-        minimumY,
-        maximumX,
-        maximumY,
-    }
+    const magnification = zoom[0]
+    return { x, y, width, height, sensorWidth, sensorHeight, magnification, minimumX, minimumY, maximumX, maximumY }
 }
 
 /** Length-prefixed EOS viewfinder segments, including the optional 0xffffffff header. */
@@ -81,9 +67,8 @@ export class CanonLiveViewDatasetCodec extends CustomCodec<CanonLiveViewFrame> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: CanonLiveViewFrame; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || offset > buffer.length) {
+        if (!Number.isInteger(offset) || offset < 0 || offset > buffer.length)
             throw new Error('Invalid Canon live-view dataset offset')
-        }
         const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
         const segments: CanonLiveViewFrame['segments'] = []
         let image: Uint8Array | undefined
@@ -92,23 +77,19 @@ export class CanonLiveViewDatasetCodec extends CustomCodec<CanonLiveViewFrame> {
             if (buffer.length - position < 8) throw new Error('Truncated Canon live-view segment header')
             const length = view.getUint32(position, true)
             const type = view.getUint32(position + 4, true)
-            if (length < 8 || length > buffer.length - position) {
+            if (length < 8 || length > buffer.length - position)
                 throw new Error(`Invalid Canon live-view segment length ${length}`)
-            }
             const data = buffer.subarray(position + 8, position + length)
             segments.push({ type, data })
             if ([1, 9, 11].includes(type) && data[0] === 0xff && data[1] === 0xd8) {
-                if (data[data.length - 2] !== 0xff || data[data.length - 1] !== 0xd9) {
+                if (data[data.length - 2] !== 0xff || data[data.length - 1] !== 0xd9)
                     throw new Error('Truncated Canon live-view JPEG')
-                }
                 image ??= data
             }
             position += length
         }
         if (!image)
-            throw new Error(
-                'Canon viewfinder data contains no JPEG frame; the current output format may be unsupported'
-            )
+            throw new Error('Canon viewfinder data contains no JPEG frame; the current output format may be unsupported')
         return { value: { image, segments }, bytesRead: position - offset }
     }
 }

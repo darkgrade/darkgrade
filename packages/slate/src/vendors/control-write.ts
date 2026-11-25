@@ -2,6 +2,7 @@ import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError }
 import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { PTPResponseError } from '@core/ptp-errors'
 import { OK } from '@ptp/definitions/response-definitions'
+import { isTypedFailure, messageOf, withCause, type TypedFailure } from '@vendors/generic/typed-failure'
 
 /**
  * The transactions that carry a requested setting change: property writes in each vendor's
@@ -18,15 +19,8 @@ const writeOperations = new Set([
     'CanonMovieSelectSwitchOff',
 ])
 
-type CameraError = CameraUnsupportedError | CameraRefusedError | CameraOutcomeUnknownError
-
-const isCameraError = (error: unknown): error is CameraError =>
-    error instanceof CameraUnsupportedError ||
-    error instanceof CameraRefusedError ||
-    error instanceof CameraOutcomeUnknownError
-
 /** The same failure, named for the setting the caller asked for rather than the driver property. */
-function forSetting(error: CameraError, id: string): CameraError {
+function forSetting(error: TypedFailure, id: string): TypedFailure {
     if (error.operation === id) return error
     const Kind =
         error instanceof CameraOutcomeUnknownError
@@ -34,9 +28,7 @@ function forSetting(error: CameraError, id: string): CameraError {
             : error instanceof CameraRefusedError
               ? CameraRefusedError
               : CameraUnsupportedError
-    const renamed = new Kind(id, error.message)
-    renamed.cause = error
-    return renamed
+    return withCause(new Kind(id, error.message), error)
 }
 
 /**
@@ -53,21 +45,18 @@ export async function sendControlWrite(driver: GenericCamera, id: string, write:
             if (responseCode === OK.code && writeOperations.has(operationName)) acknowledged = true
         }, write)
     } catch (error) {
-        if (isCameraError(error)) throw forSetting(error, id)
-        const message = error instanceof Error ? error.message : String(error)
-        if (acknowledged) {
-            const unknown = new CameraOutcomeUnknownError(
-                id,
-                `The camera acknowledged ${id} but a later step failed (${message}). Read the camera again before retrying.`
+        if (isTypedFailure(error)) throw forSetting(error, id)
+        const message = messageOf(error)
+        if (acknowledged)
+            throw withCause(
+                new CameraOutcomeUnknownError(
+                    id,
+                    `The camera acknowledged ${id} but a later step failed (${message}). Read the camera again before retrying.`
+                ),
+                error
             )
-            unknown.cause = error
-            throw unknown
-        }
-        if (error instanceof PTPResponseError) {
-            const refused = new CameraRefusedError(id, `The camera refused ${id}: ${message}`)
-            refused.cause = error
-            throw refused
-        }
+        if (error instanceof PTPResponseError)
+            throw withCause(new CameraRefusedError(id, `The camera refused ${id}: ${message}`), error)
         throw error
     }
 }

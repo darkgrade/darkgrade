@@ -1,38 +1,22 @@
-import { FormatDefinition } from '@ptp/types/format'
+import type { FormatDefinition } from '@ptp/types/format'
 
-export const RAW = {
-    code: 0xb101,
-    name: 'RAW',
-    description: 'For RAW File',
-    category: 'image',
-} as const satisfies FormatDefinition
-
-export const HEIF = {
-    code: 0xb110,
-    name: 'HEIF',
-    description: 'For HEIF File',
-    category: 'image',
-} as const satisfies FormatDefinition
-
-export const MPO = {
-    code: 0xb301,
-    name: 'MPO',
-    description: 'For MPO File',
-    category: 'image',
-} as const satisfies FormatDefinition
-
-export const MP4 = {
-    code: 0xb982,
-    name: 'MP4',
-    description: 'For MP4 File',
-    category: 'video',
-} as const satisfies FormatDefinition
+const sonyFormat = <
+    const Code extends number,
+    const Name extends string,
+    const Description extends string,
+    const Category extends FormatDefinition['category'],
+>(
+    code: Code,
+    name: Name,
+    description: Description,
+    category: Category
+) => ({ code, name, description, category }) as const
 
 export const sonyFormatRegistry = {
-    RAW,
-    HEIF,
-    MPO,
-    MP4,
+    RAW: sonyFormat(0xb101, 'RAW', 'For RAW File', 'image'),
+    HEIF: sonyFormat(0xb110, 'HEIF', 'For HEIF File', 'image'),
+    MPO: sonyFormat(0xb301, 'MPO', 'For MPO File', 'image'),
+    MP4: sonyFormat(0xb982, 'MP4', 'For MP4 File', 'video'),
 } as const
 
 export type SonyFormatDef = (typeof sonyFormatRegistry)[keyof typeof sonyFormatRegistry]

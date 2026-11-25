@@ -3,13 +3,7 @@ import type { MediaItem } from '@camera/driver'
 import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import {
-    GetDeviceInfo,
-    GetObjectHandles,
-    GetObjectInfo,
-    GetStorageIDs,
-    GetThumb,
-} from '@ptp/definitions/operation-definitions'
+import { GetDeviceInfo, GetObjectHandles, GetObjectInfo, GetStorageIDs, GetThumb } from '@ptp/definitions/operation-definitions'
 import { OK } from '@ptp/definitions/response-definitions'
 import { encodeMediaId, mediaKind, ptpDateToIso, type ObjectMediaReference } from '@vendors/generic/media-id'
 
@@ -150,10 +144,7 @@ export class PtpObjectIndex {
             slot: storageId >>> 16,
             ...(sizeBytes !== undefined && { sizeBytes }),
             ...(capturedAt && { capturedAt }),
-            ...(info.imagePixWidth > 0 && info.imagePixHeight > 0 && {
-                widthPixels: info.imagePixWidth,
-                heightPixels: info.imagePixHeight,
-            }),
+            ...(info.imagePixWidth > 0 && info.imagePixHeight > 0 && { widthPixels: info.imagePixWidth, heightPixels: info.imagePixHeight }),
             previews: thumbnails && info.thumbCompressedSize > 0 ? ['thumbnail'] : [],
         }
         return { storageId, objectHandle, info, item }

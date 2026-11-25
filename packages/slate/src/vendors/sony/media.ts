@@ -86,7 +86,6 @@ const CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS = 1_000
 async function readableSlots(driver: SonyCamera): Promise<(1 | 2)[]> {
     const cards = sonyCardStatus(await driver.recentPropertyStates(CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS))
     const slots = SLOTS.filter(slot => cards.some(card => card.slot === slot && card.state === 'ready'))
-    // A body that reports no slot status still has its first slot read.
     return slots.length || cards.length ? slots : [1]
 }
 

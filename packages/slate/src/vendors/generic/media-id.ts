@@ -1,11 +1,6 @@
 import { CameraRefusedError } from '@camera/errors'
 import type { MediaItem } from '@camera/driver'
 
-/**
- * Media ids are opaque to callers. Each carries the file's name and size, so a driver can find the
- * same file again after a reconnect, when the camera may number its objects differently.
- */
-
 /** A file found through standard PTP object handles. */
 export interface ObjectMediaReference {
     source: 'object'
@@ -30,16 +25,14 @@ export type MediaReference = ObjectMediaReference | SonyContentMediaReference
 const OBJECT_PREFIX = 'ptp'
 const SONY_CONTENT_PREFIX = 'sony'
 
+/**
+ * Media ids are opaque to callers. Each carries the file's name and size, so a driver can find the
+ * same file again after a reconnect, when the camera may number its objects differently.
+ */
 export function encodeMediaId(reference: MediaReference): string {
     const name = encodeURIComponent(reference.name)
     if (reference.source === 'object')
-        return [
-            OBJECT_PREFIX,
-            reference.storageId.toString(16),
-            reference.objectHandle.toString(16),
-            reference.sizeBytes ?? '',
-            name,
-        ].join(':')
+        return [OBJECT_PREFIX, reference.storageId.toString(16), reference.objectHandle.toString(16), reference.sizeBytes ?? '', name].join(':')
     return [SONY_CONTENT_PREFIX, reference.slot, reference.contentId, reference.fileId, reference.sizeBytes, name].join(':')
 }
 

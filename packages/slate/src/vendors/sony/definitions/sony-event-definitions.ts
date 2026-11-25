@@ -1,392 +1,136 @@
 import { FocusIndicationCodec } from '@vendors/sony/definitions/sony-property-definitions'
 import { baseCodecs } from '@ptp/types/codec'
-import { EventDefinition } from '@ptp/types/event'
+import type { EventDefinition } from '@ptp/types/event'
 
-export const SDIE_ObjectAdded = {
-    code: 0xc201,
-    name: 'SDIE_ObjectAdded',
-    description: 'Notify that a shot file is ready to transfer',
-    parameters: [
+/** One Sony event definition, typed as literally as an `as const` object. */
+const sonyEvent = <
+    const Code extends number,
+    const Name extends string,
+    const Description extends string,
+    const Parameters extends EventDefinition['parameters'],
+>(
+    code: Code,
+    name: Name,
+    description: Description,
+    parameters: Parameters
+) => ({ code, name, description, parameters }) as const
+
+export const sonyEventRegistry = {
+    SDIE_ObjectAdded: sonyEvent(0xc201, 'SDIE_ObjectAdded', 'Notify that a shot file is ready to transfer', [
         { name: 'ObjectHandle', description: 'Handle of the added object', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ObjectRemoved = {
-    code: 0xc202,
-    name: 'SDIE_ObjectRemoved',
-    description: 'Notify that a shot file is deleted',
-    parameters: [
+    ]),
+    SDIE_ObjectRemoved: sonyEvent(0xc202, 'SDIE_ObjectRemoved', 'Notify that a shot file is deleted', [
         { name: 'ObjectHandle', description: 'Handle of the removed object', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_DevicePropChanged = {
-    code: 0xc203,
-    name: 'SDIE_DevicePropChanged',
-    description: 'Notify that the DevicePropValue is changed',
-    parameters: [{ name: 'Reserved', description: 'Optional reserved word observed on a6700 and FX2 notifications', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_DateTimeSettingResult = {
-    code: 0xc205,
-    name: 'SDIE_DateTimeSettingResult',
-    description: 'Notify Date/Time Setting result',
-    parameters: [
+    ]),
+    SDIE_DevicePropChanged: sonyEvent(0xc203, 'SDIE_DevicePropChanged', 'Notify that the DevicePropValue is changed', [
+        { name: 'Reserved', description: 'Optional reserved word observed on a6700 and FX2 notifications', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_DateTimeSettingResult: sonyEvent(0xc205, 'SDIE_DateTimeSettingResult', 'Notify Date/Time Setting result', [
         { name: 'Setting Result', description: 'Date/Time setting result code', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_CapturedEvent = {
-    code: 0xc206,
-    name: 'SDIE_CapturedEvent',
-    description: 'Notify a captured event',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_CWBCapturedResult = {
-    code: 0xc208,
-    name: 'SDIE_CWBCapturedResult',
-    description: 'Notify the result of Custom WB capture',
-    parameters: [{ name: 'Result', description: 'Custom WB capture result code', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_CameraSettingReadResult = {
-    code: 0xc209,
-    name: 'SDIE_CameraSettingReadResult',
-    description: 'Notify the result of camera-setting read',
-    parameters: [{ name: 'Result', description: 'Camera setting read result code', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_FTPSettingReadResult = {
-    code: 0xc20a,
-    name: 'SDIE_FTPSettingReadResult',
-    description: 'Notify the result of FTP-setting read',
-    parameters: [{ name: 'Result', description: 'FTP setting read result code', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_MediaFormatResult = {
-    code: 0xc20b,
-    name: 'SDIE_MediaFormatResult',
-    description: 'Notify the result of media format',
-    parameters: [{ name: 'Result', description: 'Media format result code', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ContentsTransferEvent = {
-    code: 0xc20d,
-    name: 'SDIE_ContentsTransferEvent',
-    description: 'Notify that the ContentTransferEvent',
-    parameters: [{ name: 'Event ID', description: 'Contents transfer event ID', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ZoomandFocusPositionEvent = {
-    code: 0xc20e,
-    name: 'SDIE_ZoomandFocusPositionEvent',
-    description: 'Notify the Zoom and Focus Position Event',
-    parameters: [
+    ]),
+    SDIE_CapturedEvent: sonyEvent(0xc206, 'SDIE_CapturedEvent', 'Notify a captured event', []),
+    SDIE_CWBCapturedResult: sonyEvent(0xc208, 'SDIE_CWBCapturedResult', 'Notify the result of Custom WB capture', [
+        { name: 'Result', description: 'Custom WB capture result code', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_CameraSettingReadResult: sonyEvent(0xc209, 'SDIE_CameraSettingReadResult', 'Notify the result of camera-setting read', [
+        { name: 'Result', description: 'Camera setting read result code', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_FTPSettingReadResult: sonyEvent(0xc20a, 'SDIE_FTPSettingReadResult', 'Notify the result of FTP-setting read', [
+        { name: 'Result', description: 'FTP setting read result code', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_MediaFormatResult: sonyEvent(0xc20b, 'SDIE_MediaFormatResult', 'Notify the result of media format', [
+        { name: 'Result', description: 'Media format result code', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_ContentsTransferEvent: sonyEvent(0xc20d, 'SDIE_ContentsTransferEvent', 'Notify that the ContentTransferEvent', [
+        { name: 'Event ID', description: 'Contents transfer event ID', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_ZoomandFocusPositionEvent: sonyEvent(0xc20e, 'SDIE_ZoomandFocusPositionEvent', 'Notify the Zoom and Focus Position Event', [
         { name: 'Event ID', description: 'Zoom and focus position event ID', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_DisplayListChangedEvent = {
-    code: 0xc20f,
-    name: 'SDIE_DisplayListChangedEvent',
-    description: 'Notify an update of DisplayStringList',
-    parameters: [
+    ]),
+    SDIE_DisplayListChangedEvent: sonyEvent(0xc20f, 'SDIE_DisplayListChangedEvent', 'Notify an update of DisplayStringList', [
         { name: 'Display String List Type', description: 'Display string list type', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_MediaProfileChanged = {
-    code: 0xc210,
-    name: 'SDIE_MediaProfileChanged',
-    description: 'Notify that the media profile is changed',
-    parameters: [{ name: 'Media', description: 'Media identifier', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ControlJobListEvent = {
-    code: 0xc211,
-    name: 'SDIE_ControlJobListEvent',
-    description: 'Notify the Control Job List Event',
-    parameters: [
+    ]),
+    SDIE_MediaProfileChanged: sonyEvent(0xc210, 'SDIE_MediaProfileChanged', 'Notify that the media profile is changed', [
+        { name: 'Media', description: 'Media identifier', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_ControlJobListEvent: sonyEvent(0xc211, 'SDIE_ControlJobListEvent', 'Notify the Control Job List Event', [
         { name: 'Result', description: 'Control job list result code', codec: baseCodecs.uint32 },
         { name: 'ControlType', description: 'Control type', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ControlUploadDataResultOld = {
-    code: 0xc213,
-    name: 'SDIE_ControlUploadDataResultOld',
-    description: 'Notify the result of ControlUpload (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ControlUploadDataResult = {
-    code: 0xc214,
-    name: 'SDIE_ControlUploadDataResult',
-    description: 'Notify the result of ControlUpload',
-    parameters: [
+    ]),
+    SDIE_ControlUploadDataResultOld: sonyEvent(0xc213, 'SDIE_ControlUploadDataResultOld', 'Notify the result of ControlUpload (older version)', []),
+    SDIE_ControlUploadDataResult: sonyEvent(0xc214, 'SDIE_ControlUploadDataResult', 'Notify the result of ControlUpload', [
         { name: 'Result', description: 'Control upload result code', codec: baseCodecs.uint32 },
         { name: 'ControlType', description: 'Control type', codec: baseCodecs.uint32 },
         { name: 'OptionParam', description: 'Optional parameter', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ZoomPositionResultOld = {
-    code: 0xc216,
-    name: 'SDIE_ZoomPositionResultOld',
-    description: 'Notify the zoom position result (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ZoomPositionResult = {
-    code: 0xc217,
-    name: 'SDIE_ZoomPositionResult',
-    description: 'Notify the zoom position result',
-    parameters: [{ name: 'Result', description: 'Zoom position result code', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_FocusPositionResult = {
-    code: 0xc218,
-    name: 'SDIE_FocusPositionResult',
-    description: 'Notify the focus position result',
-    parameters: [{ name: 'Result', description: 'Focus position result code', codec: baseCodecs.uint32 }] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_LensInformationChangedOld = {
-    code: 0xc219,
-    name: 'SDIE_LensInformationChangedOld',
-    description: 'Notify that the lens information is changed (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_FirmwareUpdateCheckResultOld = {
-    code: 0xc21a,
-    name: 'SDIE_FirmwareUpdateCheckResultOld',
-    description: 'Firmware update check result (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_LensInformationChanged = {
-    code: 0xc21b,
-    name: 'SDIE_LensInformationChanged',
-    description: 'Notify that the lens information is changed',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_FirmwareUpdateEventOld = {
-    code: 0xc21c,
-    name: 'SDIE_FirmwareUpdateEventOld',
-    description: 'Firmware update event (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_FirmwareUpdateCheckResult = {
-    code: 0xc21d,
-    name: 'SDIE_FirmwareUpdateCheckResult',
-    description: 'Firmware update check result',
-    parameters: [
+    ]),
+    SDIE_ZoomPositionResultOld: sonyEvent(0xc216, 'SDIE_ZoomPositionResultOld', 'Notify the zoom position result (older version)', []),
+    SDIE_ZoomPositionResult: sonyEvent(0xc217, 'SDIE_ZoomPositionResult', 'Notify the zoom position result', [
+        { name: 'Result', description: 'Zoom position result code', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_FocusPositionResult: sonyEvent(0xc218, 'SDIE_FocusPositionResult', 'Notify the focus position result', [
+        { name: 'Result', description: 'Focus position result code', codec: baseCodecs.uint32 },
+    ]),
+    SDIE_LensInformationChangedOld: sonyEvent(0xc219, 'SDIE_LensInformationChangedOld', 'Notify that the lens information is changed (older version)', []),
+    SDIE_FirmwareUpdateCheckResultOld: sonyEvent(0xc21a, 'SDIE_FirmwareUpdateCheckResultOld', 'Firmware update check result (older version)', []),
+    SDIE_LensInformationChanged: sonyEvent(0xc21b, 'SDIE_LensInformationChanged', 'Notify that the lens information is changed', []),
+    SDIE_FirmwareUpdateEventOld: sonyEvent(0xc21c, 'SDIE_FirmwareUpdateEventOld', 'Firmware update event (older version)', []),
+    SDIE_FirmwareUpdateCheckResult: sonyEvent(0xc21d, 'SDIE_FirmwareUpdateCheckResult', 'Firmware update check result', [
         { name: 'Result', description: 'Firmware update check result code', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_FirmwareUpdateEvent = {
-    code: 0xc21e,
-    name: 'SDIE_FirmwareUpdateEvent',
-    description: 'Firmware update event',
-    parameters: [
+    ]),
+    SDIE_FirmwareUpdateEvent: sonyEvent(0xc21e, 'SDIE_FirmwareUpdateEvent', 'Firmware update event', [
         { name: 'Event ID', description: 'Firmware update event ID', codec: baseCodecs.uint32 },
         { name: 'Param1', description: 'Event parameter 1', codec: baseCodecs.uint32 },
         { name: 'Param2', description: 'Event parameter 2', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_StreamStatusEvent = {
-    code: 0xc21f,
-    name: 'SDIE_StreamStatusEvent',
-    description: 'Notify the stream status event',
-    parameters: [
+    ]),
+    SDIE_StreamStatusEvent: sonyEvent(0xc21f, 'SDIE_StreamStatusEvent', 'Notify the stream status event', [
         { name: 'Stream ID', description: 'Stream identifier', codec: baseCodecs.uint32 },
         { name: 'Status', description: 'Stream status', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_OperationResultsOld = {
-    code: 0xc220,
-    name: 'SDIE_OperationResultsOld',
-    description: 'Notify the operation results (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_OperationResults = {
-    code: 0xc222,
-    name: 'SDIE_OperationResults',
-    description: 'Notify the operation results',
-    parameters: [
+    ]),
+    SDIE_OperationResultsOld: sonyEvent(0xc220, 'SDIE_OperationResultsOld', 'Notify the operation results (older version)', []),
+    SDIE_OperationResults: sonyEvent(0xc222, 'SDIE_OperationResults', 'Notify the operation results', [
         { name: 'ResultCode', description: 'Operation result code', codec: baseCodecs.uint32 },
         { name: 'Result', description: 'Result value', codec: baseCodecs.uint32 },
         { name: 'Reserved', description: 'Reserved parameter', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_AFStatus = {
-    code: 0xc223,
-    name: 'SDIE_AFStatus',
-    description: 'Notify the AF status',
-    parameters: [
+    ]),
+    SDIE_AFStatus: sonyEvent(0xc223, 'SDIE_AFStatus', 'Notify the AF status', [
         {
             name: 'Status',
             description: 'Autofocus status (same as Focus Indication 0xD213)',
             codec: FocusIndicationCodec,
         },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_MovieRecOperationResults = {
-    code: 0xc224,
-    name: 'SDIE_MovieRecOperationResults',
-    description: 'Notify the execution results of Movie Rec Operation',
-    parameters: [
+    ]),
+    SDIE_MovieRecOperationResults: sonyEvent(0xc224, 'SDIE_MovieRecOperationResults', 'Notify the execution results of Movie Rec Operation', [
         { name: 'Results', description: 'Movie recording operation results', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_PresetInfoListChangedOld = {
-    code: 0xc225,
-    name: 'SDIE_PresetInfoListChangedOld',
-    description: 'Notify that the PresetInfo List is changed (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_PresetInfoListChanged = {
-    code: 0xc226,
-    name: 'SDIE_PresetInfoListChanged',
-    description: 'Notify that the PresetInfo List is changed',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_CautionDisplayEventOld = {
-    code: 0xc227,
-    name: 'SDIE_CautionDisplayEventOld',
-    description: 'Notify the CautionDisplayEvent (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_CautionDisplayEvent = {
-    code: 0xc228,
-    name: 'SDIE_CautionDisplayEvent',
-    description: 'Notify the CautionDisplayEvent',
-    parameters: [
+    ]),
+    SDIE_PresetInfoListChangedOld: sonyEvent(0xc225, 'SDIE_PresetInfoListChangedOld', 'Notify that the PresetInfo List is changed (older version)', []),
+    SDIE_PresetInfoListChanged: sonyEvent(0xc226, 'SDIE_PresetInfoListChanged', 'Notify that the PresetInfo List is changed', []),
+    SDIE_CautionDisplayEventOld: sonyEvent(0xc227, 'SDIE_CautionDisplayEventOld', 'Notify the CautionDisplayEvent (older version)', []),
+    SDIE_CautionDisplayEvent: sonyEvent(0xc228, 'SDIE_CautionDisplayEvent', 'Notify the CautionDisplayEvent', [
         { name: 'Reserve', description: 'Reserved parameter 1', codec: baseCodecs.uint32 },
         { name: 'Reserve', description: 'Reserved parameter 2', codec: baseCodecs.uint32 },
         { name: 'Reserve', description: 'Reserved parameter 3', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ContentInfoListChangedOld = {
-    code: 0xc229,
-    name: 'SDIE_ContentInfoListChangedOld',
-    description: 'Notify that the ContentInfo List is changed (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ContentInfoListChanged = {
-    code: 0xc234,
-    name: 'SDIE_ContentInfoListChanged',
-    description: 'Notify that the ContentInfo List is changed',
-    parameters: [
+    ]),
+    SDIE_ContentInfoListChangedOld: sonyEvent(0xc229, 'SDIE_ContentInfoListChangedOld', 'Notify that the ContentInfo List is changed (older version)', []),
+    SDIE_ContentInfoListChanged: sonyEvent(0xc234, 'SDIE_ContentInfoListChanged', 'Notify that the ContentInfo List is changed', [
         { name: 'Slot Info', description: 'Slot information', codec: baseCodecs.uint32 },
         { name: 'Event Type', description: 'Event type', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ControlPTZFResultOld = {
-    code: 0xc235,
-    name: 'SDIE_ControlPTZFResultOld',
-    description: 'Notify the ControlPTZF result (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_PresetPTZFEventOld = {
-    code: 0xc237,
-    name: 'SDIE_PresetPTZFEventOld',
-    description: 'Notify the PresetPTZF Event (older version)',
-    parameters: [] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_ControlPTZFResult = {
-    code: 0xc238,
-    name: 'SDIE_ControlPTZFResult',
-    description: 'Notify the ControlPTZF result',
-    parameters: [
+    ]),
+    SDIE_ControlPTZFResultOld: sonyEvent(0xc235, 'SDIE_ControlPTZFResultOld', 'Notify the ControlPTZF result (older version)', []),
+    SDIE_PresetPTZFEventOld: sonyEvent(0xc237, 'SDIE_PresetPTZFEventOld', 'Notify the PresetPTZF Event (older version)', []),
+    SDIE_ControlPTZFResult: sonyEvent(0xc238, 'SDIE_ControlPTZFResult', 'Notify the ControlPTZF result', [
         { name: 'Result', description: 'Control PTZF result code', codec: baseCodecs.uint32 },
         { name: 'Control Type', description: 'Control type', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_PresetPTZFEvent = {
-    code: 0xc239,
-    name: 'SDIE_PresetPTZFEvent',
-    description: 'Notify the PresetPTZF Event',
-    parameters: [
+    ]),
+    SDIE_PresetPTZFEvent: sonyEvent(0xc239, 'SDIE_PresetPTZFEvent', 'Notify the PresetPTZF Event', [
         { name: 'Event Type', description: 'Event type', codec: baseCodecs.uint32 },
         { name: 'Reserved', description: 'Reserved parameter 1', codec: baseCodecs.uint32 },
         { name: 'Reserved', description: 'Reserved parameter 2', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const SDIE_DeleteContentResult = {
-    code: 0xc240,
-    name: 'SDIE_DeleteContentResult',
-    description: 'Notify the DeleteContentResult',
-    parameters: [
+    ]),
+    SDIE_DeleteContentResult: sonyEvent(0xc240, 'SDIE_DeleteContentResult', 'Notify the DeleteContentResult', [
         { name: 'Result', description: 'Delete content result code', codec: baseCodecs.uint32 },
         { name: 'contentID', description: 'Content identifier', codec: baseCodecs.uint32 },
         { name: 'Slot Info', description: 'Slot information', codec: baseCodecs.uint32 },
-    ] as const,
-} as const satisfies EventDefinition
-
-export const sonyEventRegistry = {
-    SDIE_ObjectAdded,
-    SDIE_ObjectRemoved,
-    SDIE_DevicePropChanged,
-    SDIE_DateTimeSettingResult,
-    SDIE_CapturedEvent,
-    SDIE_CWBCapturedResult,
-    SDIE_CameraSettingReadResult,
-    SDIE_FTPSettingReadResult,
-    SDIE_MediaFormatResult,
-    SDIE_ContentsTransferEvent,
-    SDIE_ZoomandFocusPositionEvent,
-    SDIE_DisplayListChangedEvent,
-    SDIE_MediaProfileChanged,
-    SDIE_ControlJobListEvent,
-    SDIE_ControlUploadDataResultOld,
-    SDIE_ControlUploadDataResult,
-    SDIE_ZoomPositionResultOld,
-    SDIE_ZoomPositionResult,
-    SDIE_FocusPositionResult,
-    SDIE_LensInformationChangedOld,
-    SDIE_FirmwareUpdateCheckResultOld,
-    SDIE_LensInformationChanged,
-    SDIE_FirmwareUpdateEventOld,
-    SDIE_FirmwareUpdateCheckResult,
-    SDIE_FirmwareUpdateEvent,
-    SDIE_StreamStatusEvent,
-    SDIE_OperationResultsOld,
-    SDIE_OperationResults,
-    SDIE_AFStatus,
-    SDIE_MovieRecOperationResults,
-    SDIE_PresetInfoListChangedOld,
-    SDIE_PresetInfoListChanged,
-    SDIE_CautionDisplayEventOld,
-    SDIE_CautionDisplayEvent,
-    SDIE_ContentInfoListChangedOld,
-    SDIE_ContentInfoListChanged,
-    SDIE_ControlPTZFResultOld,
-    SDIE_PresetPTZFEventOld,
-    SDIE_ControlPTZFResult,
-    SDIE_PresetPTZFEvent,
-    SDIE_DeleteContentResult,
+    ]),
 } as const
 
 export type SonyEventDef = (typeof sonyEventRegistry)[keyof typeof sonyEventRegistry]

@@ -8,43 +8,27 @@ export interface CanonEventRecord {
     valueData?: Uint8Array
     allowedValues?: number[]
     allowedValueData?: Uint8Array[]
-    /** The file an ObjectAddedEx or ObjectAddedEx64 record announces. */
+    /** The file an ObjectAddedEx, ObjectAddedEx64 or ObjectAddedEx64LFN record announces. */
     object?: CanonAddedObject
 }
 
+/** Only the handle is relied on: ObjectInfo is read for the file's name, format and real size. */
 export interface CanonAddedObject {
     handle: number
-    storageId: number
-    format: number
-    /** 32 bits on the wire, also in ObjectAddedEx64; ObjectInfo is read for the real size. */
-    sizeBytes: number
-    filename: string
 }
 
 /**
- * ObjectAddedEx (0xc181) and ObjectAddedEx64 (0xc1a7), from gphoto/libgphoto2
- * @6d5c61ef7687b74fe792e4aeae7fc40f2ad42d88 camlibs/ptp2/ptp.h (event codes) and ptp-pack.c
- * (PTP_cee_OA_* / PTP_cee_OA64_*). Offsets there count from the record start; these count from the
- * end of its size/code header: handle 0, storage 4, format 8 (uint16), size 0x14, and a
- * NUL-terminated name at 0x20 (Ex) or 0x24 (Ex64).
+ * ObjectAddedEx (0xc181), ObjectAddedEx64 (0xc1a7) and ObjectAddedEx64LFN (0xc1b6), from
+ * gphoto/libgphoto2 @6d5c61ef7687b74fe792e4aeae7fc40f2ad42d88 camlibs/ptp2/ptp.h (event codes)
+ * and ptp-pack.c (PTP_cee_OA*_Handle 0x08 from the record start, so 0 after its size/code header).
+ * The name offset differs between the three and libgphoto2 decodes none for 0xc1b6.
  */
-const objectAddedNameOffsets = new Map([
-    [0xc181, 0x20],
-    [0xc1a7, 0x24],
-])
+const objectAddedCodes = new Set([0xc181, 0xc1a7, 0xc1b6])
 
-function addedObject(body: Uint8Array, nameOffset: number): CanonAddedObject | undefined {
-    if (body.length <= nameOffset) return undefined
-    const view = new DataView(body.buffer, body.byteOffset, body.byteLength)
-    const nameEnd = body.indexOf(0, nameOffset)
-    const filename = new TextDecoder('latin1').decode(body.subarray(nameOffset, nameEnd < 0 ? body.length : nameEnd))
-    return {
-        handle: view.getUint32(0, true),
-        storageId: view.getUint32(4, true),
-        format: view.getUint16(8, true),
-        sizeBytes: view.getUint32(0x14, true),
-        filename,
-    }
+function addedObject(body: Uint8Array): CanonAddedObject | undefined {
+    if (body.length < 4) return undefined
+    const handle = new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(0, true)
+    return handle === 0 ? undefined : { handle }
 }
 
 const imageFormatPropertyCodes = new Set([0xd120, 0xd121, 0xd122, 0xd123])
@@ -61,81 +45,61 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
         const events: CanonEventRecord[] = []
         let currentOffset = offset
         const u32 = this.codecs.uint32
+        const readWord = () => {
+            const value = u32.decode(buffer, currentOffset).value
+            currentOffset += 4
+            return value
+        }
 
+        // EOS GetEvent records use uint32 size and event code, unlike USB event containers.
+        // gphoto/libgphoto2@02d92fea8a269eb94330a4eade204ba799433606:camlibs/ptp2/ptp-pack.c
         while (currentOffset < buffer.length) {
             if (buffer.length - currentOffset < 8) throw new Error('Truncated Canon event header')
             const eventOffset = currentOffset
-            const sizeResult = u32.decode(buffer, currentOffset)
-            const size = sizeResult.value
-            currentOffset += sizeResult.bytesRead
-            if (size < 8) throw new Error('Invalid Canon event record size')
+            const size = readWord()
             const eventEnd = eventOffset + size
+            if (size < 8) throw new Error('Invalid Canon event record size')
             if (eventEnd > buffer.length) throw new Error('Truncated Canon event record')
-
-            // EOS GetEvent records use uint32 size and event code, unlike USB event containers.
-            // gphoto/libgphoto2@02d92fea8a269eb94330a4eade204ba799433606:camlibs/ptp2/ptp-pack.c
-            const eventCodeResult = u32.decode(buffer, currentOffset)
-            const eventCode = eventCodeResult.value
-            currentOffset += eventCodeResult.bytesRead
-            if (size === 8 && eventCode === 0) {
-                break
-            }
+            const eventCode = readWord()
+            if (size === 8 && eventCode === 0) break
             const rawData = buffer.slice(currentOffset, eventEnd)
 
             if (eventCode === 0xc189) {
                 if (size < 12) throw new Error('Truncated Canon property event')
-                const propCodeResult = u32.decode(buffer, currentOffset)
-                const propCode = propCodeResult.value
-                currentOffset += propCodeResult.bytesRead
+                const propCode = readWord()
                 const valueData = buffer.slice(currentOffset, eventEnd)
                 const value = valueData.length >= 4 ? u32.decode(valueData).value : 0
-
-                events.push({
-                    code: eventCode,
-                    parameters: [propCode, value],
-                    rawData,
-                    valueData,
-                })
+                events.push({ code: eventCode, parameters: [propCode, value], rawData, valueData })
             } else if (eventCode === 0xc18a) {
                 if (size < 20) throw new Error('Truncated Canon allowed-values event')
-                const propCodeResult = u32.decode(buffer, currentOffset)
-                const propCode = propCodeResult.value
-                currentOffset += propCodeResult.bytesRead
-
-                const typeResult = u32.decode(buffer, currentOffset)
-                const type = typeResult.value
-                currentOffset += typeResult.bytesRead
-
-                const countResult = u32.decode(buffer, currentOffset)
-                const count = countResult.value
-                currentOffset += countResult.bytesRead
-
+                const propCode = readWord()
+                const type = readWord()
+                const count = readWord()
                 const allowedValues: number[] = []
                 const allowedValueData: Uint8Array[] = []
+                const takeChoice = (valueSize: number) => {
+                    allowedValueData.push(buffer.slice(currentOffset, currentOffset + valueSize))
+                    currentOffset += valueSize
+                }
 
                 if (type === 3) {
                     if (count > Math.floor((eventEnd - currentOffset) / 4))
                         throw new Error('Truncated Canon allowed-values list')
                     for (let index = 0; index < count; index++) {
                         if (currentOffset + 4 > eventEnd) throw new Error('Truncated Canon allowed value')
+                        const word = u32.decode(buffer, currentOffset).value
                         if (imageFormatPropertyCodes.has(propCode)) {
-                            const entryCount = u32.decode(buffer, currentOffset).value
-                            const valueSize = 4 + entryCount * 16
-                            if ((entryCount !== 1 && entryCount !== 2) || currentOffset + valueSize > eventEnd)
+                            const valueSize = 4 + word * 16
+                            if ((word !== 1 && word !== 2) || currentOffset + valueSize > eventEnd)
                                 throw new Error('Invalid Canon image-format choice')
-                            allowedValueData.push(buffer.slice(currentOffset, currentOffset + valueSize))
-                            currentOffset += valueSize
+                            takeChoice(valueSize)
                         } else if (lengthPrefixedPropertyCodes.has(propCode)) {
-                            const valueSize = u32.decode(buffer, currentOffset).value
-                            if (valueSize < 4 || valueSize % 4 !== 0 || currentOffset + valueSize > eventEnd)
+                            if (word < 4 || word % 4 !== 0 || currentOffset + word > eventEnd)
                                 throw new Error('Invalid Canon length-prefixed choice')
-                            allowedValueData.push(buffer.slice(currentOffset, currentOffset + valueSize))
-                            currentOffset += valueSize
+                            takeChoice(word)
                         } else {
-                            const valueResult = u32.decode(buffer, currentOffset)
-                            allowedValues.push(valueResult.value)
-                            allowedValueData.push(buffer.slice(currentOffset, currentOffset + 4))
-                            currentOffset += 4
+                            allowedValues.push(word)
+                            takeChoice(4)
                         }
                     }
                 }
@@ -147,8 +111,8 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                     allowedValues: allowedValues.length > 0 || (type === 3 && count === 0) ? allowedValues : undefined,
                     allowedValueData: type === 3 ? allowedValueData : undefined,
                 })
-            } else if (objectAddedNameOffsets.has(eventCode)) {
-                const object = addedObject(rawData, objectAddedNameOffsets.get(eventCode)!)
+            } else if (objectAddedCodes.has(eventCode)) {
+                const object = addedObject(rawData)
                 events.push({ code: eventCode, parameters: object ? [object.handle] : [], rawData, ...(object && { object }) })
             } else {
                 // Preserve opaque events for capture/replay without inventing parameter semantics.
@@ -157,9 +121,6 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
             currentOffset = eventEnd
         }
 
-        return {
-            value: events,
-            bytesRead: currentOffset - offset,
-        }
+        return { value: events, bytesRead: currentOffset - offset }
     }
 }

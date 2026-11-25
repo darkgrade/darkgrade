@@ -9,10 +9,7 @@ import { FocalLength } from '@ptp/definitions/property-definitions'
  * Standard PTP has no lens name. A refused read leaves the lens unreported rather than failing the
  * whole capability read.
  */
-export async function standardLens(
-    camera: GenericCamera,
-    advertisedProperties: readonly number[]
-): Promise<CameraLens | undefined> {
+export async function standardLens(camera: GenericCamera, advertisedProperties: readonly number[]): Promise<CameraLens | undefined> {
     if (!advertisedProperties.includes(FocalLength.code)) return undefined
     let hundredths: number
     try {

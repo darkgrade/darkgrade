@@ -38,9 +38,8 @@ export class NikonEventListCodec extends CustomCodec<NikonQueuedEvent[]> {
         const view = new DataView(buffer.buffer, buffer.byteOffset + offset, available)
         const count = view.getUint16(0, true)
         const length = COUNT_BYTES + count * ENTRY_BYTES
-        if (length > available) {
+        if (length > available)
             throw new Error(`Nikon event list declares ${count} events (${length} bytes) but has ${available} bytes`)
-        }
         if (length !== available) throw new Error('Unexpected bytes after Nikon legacy event records')
         const events: NikonQueuedEvent[] = []
         for (let index = 0; index < count; index++) {

@@ -17,16 +17,15 @@ import {
     type ExposureContext,
     type ExposureTimeInput,
 } from '@camera/exposure-time'
-import { GenericCamera } from '@vendors/generic/generic-camera'
+import { GenericCamera, standardPropertyState, type StandardPropertyState } from '@vendors/generic/generic-camera'
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { SonyCamera } from '@vendors/sony/sony-camera'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
-import type { CodecInstance } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
+import { kelvinInput } from '@camera/settings/colour'
 import { canonicalControlInput } from '@camera/settings/typed-settings'
 import {
     canonControlProperties,
@@ -80,6 +79,10 @@ const canonicalRanges: Readonly<Record<string, { id: CameraControlId; pattern: R
     NikonMovieFNumber: { id: 'aperture', pattern: /^f\/(\d+(?:\.\d+)?)$/, wirePerUnit: 100 },
 }
 
+function propertyWithCode(driver: GenericCamera, code: number): PropertyDefinition | undefined {
+    return Object.values(driver.registry.properties).find(property => property.code === code)
+}
+
 function canonicalRange(id: CameraControlId, propertyName: string) {
     const range = canonicalRanges[propertyName]
     return range?.id === id ? range : undefined
@@ -116,25 +119,10 @@ function wireRange(
     return { minimum, maximum, step }
 }
 
-function descriptorState(descriptor: DevicePropDesc): PropertyState {
-    const range =
-        descriptor.formFlag === 1
-            ? wireRange(descriptor.devicePropertyName, [
-                  descriptor.minimumValue,
-                  descriptor.maximumValue,
-                  descriptor.stepSize,
-              ])
-            : undefined
-    const { allowedValues, unrecognized } = recognizedDescriptorValues(descriptor)
-    return {
-        code: descriptor.devicePropertyCode,
-        name: descriptor.devicePropertyName,
-        value: descriptor.currentValueDecoded,
-        allowedValues,
-        writable: descriptor.getSet === 'GET_SET',
-        ...(range ? { range } : {}),
-        ...(unrecognized && { unrecognized }),
-    }
+/** A standard descriptor's state, with its range on the property's wire scale. */
+function withWireRange(state: StandardPropertyState): PropertyState {
+    const range = wireRange(state.name, [state.minimumValue, state.maximumValue, state.stepSize])
+    return { ...state, ...(range ? { range } : {}) }
 }
 
 async function nikonStates(
@@ -185,7 +173,7 @@ async function nikonStates(
         const property = (camera.registry.properties as Record<string, PropertyDefinition>)[name]
         if (!property || !advertised.has(property.code)) continue
         try {
-            states.push(descriptorState(await camera.propertyDescriptor(property)))
+            states.push(withWireRange(standardPropertyState(await camera.propertyDescriptor(property))))
         } catch (error) {
             if (!(error instanceof PTPResponseError) || ![0x2005, 0x200a].includes(error.code)) throw error
         }
@@ -226,10 +214,7 @@ interface ControlObservations {
 }
 
 /** Adapt existing observed inventories; a static registry entry alone never becomes a capability. */
-export async function readCameraCapabilities(
-    camera: GenericCamera,
-    requested?: CameraControlId
-): Promise<CameraCapabilities> {
+export async function readCameraCapabilities(camera: GenericCamera, requested?: CameraControlId): Promise<CameraCapabilities> {
     return (await observeControls(camera, requested)).capabilities
 }
 
@@ -277,28 +262,18 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
                 writable: state.access === 'GetSet' && Boolean(state.allowedValues?.length),
                 ...(state.unrecognized && { unrecognized: state.unrecognized }),
             }))
-        const videoMode = camera
-            .listUnknownPropertyStates()
-            .some(state => state.name === 'FixedMovie' && state.rawValue === 1)
+        const videoMode = camera.listUnknownPropertyStates().some(state => state.name === 'FixedMovie' && state.rawValue === 1)
         states = canonFocusModeStates(states, videoMode)
         mappings = canonControlProperties
         inventory = 'canon'
     } else if (camera instanceof NikonCamera) {
-        ;({ states, mappings, inventory } = await nikonStates(
-            camera,
-            new Set(deviceInfo!.devicePropertiesSupported),
-            deviceInfo!.operationsSupportedRaw,
-            requested
-        ))
+        const advertised = new Set(deviceInfo!.devicePropertiesSupported)
+        ;({ states, mappings, inventory } = await nikonStates(camera, advertised, deviceInfo!.operationsSupportedRaw, requested))
         if (requested === undefined) lens = await standardLens(camera, deviceInfo!.devicePropertiesSupported)
     } else {
         const standardMappings: ControlPropertyMap<CameraControlId> = standardControlProperties
-        states = (await camera.getStandardPropertyStates(requested ? standardMappings[requested]?.[0]?.name : undefined)).map(
-            state => {
-                const range = wireRange(state.name, [state.minimumValue, state.maximumValue, state.stepSize])
-                return { ...state, ...(range ? { range } : {}) }
-            }
-        )
+        const requestedName = requested ? standardMappings[requested]?.[0]?.name : undefined
+        states = (await camera.getStandardPropertyStates(requestedName)).map(withWireRange)
         mappings = standardControlProperties
         if (deviceInfo) lens = await standardLens(camera, deviceInfo.devicePropertiesSupported)
     }
@@ -366,18 +341,10 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
             ...(state.range && (!canonical || rangedCanonical)
                 ? {
                       range: rangedCanonical
-                          ? {
-                                minimum: state.range.minimum / rangedCanonical.wirePerUnit,
-                                maximum: state.range.maximum / rangedCanonical.wirePerUnit,
-                                step: state.range.step / rangedCanonical.wirePerUnit,
-                            }
+                          ? scaledRange(state.range, rangedCanonical.wirePerUnit)
                           : id === 'shutterSpeed' && (state.name === 'ExposureTime' || state.name === 'MovieShutterAngle')
-                              ? {
-                                    minimum: state.range.minimum / (state.name === 'ExposureTime' ? 10000 : 100),
-                                    maximum: state.range.maximum / (state.name === 'ExposureTime' ? 10000 : 100),
-                                    step: state.range.step / (state.name === 'ExposureTime' ? 10000 : 100),
-                                }
-                              : state.range,
+                            ? scaledRange(state.range, state.name === 'ExposureTime' ? 10000 : 100)
+                            : state.range,
                   }
                 : {}),
             ...(exposureTime ? { exposureTime } : {}),
@@ -398,10 +365,21 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
     }
 }
 
-function mergeUnrecognized(
-    observed: UnrecognizedValues | undefined,
-    unnamed: UnrecognizedValues | undefined
-): UnrecognizedValues | undefined {
+type ControlRange = NonNullable<CameraControlState['range']>
+
+function scaledRange({ minimum, maximum, step }: ControlRange, divisor: number): ControlRange {
+    return { minimum: minimum / divisor, maximum: maximum / divisor, step: step / divisor }
+}
+
+function outsideRange(numeric: number, { minimum, maximum, step }: ControlRange): boolean {
+    return (
+        numeric < minimum ||
+        numeric > maximum ||
+        (step > 0 && Math.abs((numeric - minimum) / step - Math.round((numeric - minimum) / step)) > 1e-8)
+    )
+}
+
+function mergeUnrecognized(observed?: UnrecognizedValues, unnamed?: UnrecognizedValues): UnrecognizedValues | undefined {
     if (!observed && !unnamed) return undefined
     const choices = [...(observed?.choices ?? []), ...(unnamed?.choices ?? [])]
     const value = observed?.value ?? unnamed?.value
@@ -441,22 +419,17 @@ export async function writeCameraControl<Id extends CameraControlId>(
                       : exposure.kind === 'duration'
                         ? (exposure.seconds * 360) / exposureSeconds('360°', context)!
                         : undefined
-            const { minimum, maximum, step } = state.range
-            if (
-                numeric === undefined ||
-                numeric < minimum ||
-                numeric > maximum ||
-                (step > 0 && Math.abs((numeric - minimum) / step - Math.round((numeric - minimum) / step)) > 1e-8)
-            )
+            if (numeric === undefined || outsideRange(numeric, state.range))
                 throw new CameraRefusedError(id, 'Requested exposure time is outside the camera range')
             requested = String(numeric) + (state.source.name === 'MovieShutterAngle' ? '°' : '')
         } else throw new CameraRefusedError(id, 'Requested exposure time is not advertised by the camera')
     } else {
-        if (
-            id === 'colorTemperature' ? typeof value !== 'number' || !Number.isFinite(value) : typeof value !== 'string'
-        )
+        // Kelvin is typed as a number, but the capabilities list it as strings ("2500"): accept either
+        // spelling of the same whole number, so every advertised choice can be written back.
+        const kelvin = id === 'colorTemperature' ? kelvinInput(value) : undefined
+        if (id === 'colorTemperature' ? kelvin === undefined : typeof value !== 'string')
             throw new CameraRefusedError(id, `Invalid ${id} value`)
-        requested = typeof value === 'string' ? canonicalControlInput(id, value) : String(value)
+        requested = kelvin !== undefined ? String(kelvin) : canonicalControlInput(id, String(value))
         if (state.allowedValues && !state.allowedValues.includes(requested))
             throw new CameraRefusedError(id, `Requested ${id} value is not advertised by the camera`)
         if (state.range) {
@@ -465,15 +438,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
             const scale = ranged?.wirePerUnit ?? 1
             const numeric = ranged ? canonicalRangeWireValue(id, state.source.name, requested) ?? NaN : Number(requested)
             const onWireScale = (limit: number) => (ranged ? Math.round(limit * scale) : limit)
-            const minimum = onWireScale(state.range.minimum),
-                maximum = onWireScale(state.range.maximum),
-                step = onWireScale(state.range.step)
-            if (
-                !Number.isFinite(numeric) ||
-                numeric < minimum ||
-                numeric > maximum ||
-                (step > 0 && Math.abs((numeric - minimum) / step - Math.round((numeric - minimum) / step)) > 1e-8)
-            )
+            const { minimum, maximum, step } = state.range
+            if (!Number.isFinite(numeric) || outsideRange(numeric, { minimum: onWireScale(minimum), maximum: onWireScale(maximum), step: onWireScale(step) }))
                 throw new CameraRefusedError(id, `Requested ${id} value is outside the camera range`)
         }
     }
@@ -497,12 +463,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 if (!status || status.recording || status.bufferedImages)
                     throw new CameraRefusedError(id, 'Nikon must confirm idle before changing shutter angle')
             }
-            const movieActions = {
-                iso: 'set-iso',
-                aperture: 'set-aperture',
-                whiteBalance: 'set-white-balance',
-                focusMode: 'set-focus-mode',
-            } as const
+            const movieActions = { iso: 'set-iso', aperture: 'set-aperture', whiteBalance: 'set-white-balance', focusMode: 'set-focus-mode' } as const
             if (state.source.name.startsWith('NikonMovie') && id in movieActions) {
                 await new NikonShotControls(owner).apply(movieActions[id as keyof typeof movieActions], vendorLabel)
                 return
@@ -511,9 +472,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 await driver.setShutterSpeed(requested)
                 return
             }
-            const property = Object.values(driver.registry.properties).find(
-                property => property.code === state.source.code
-            )
+            const property = propertyWithCode(driver, state.source.code)
             if (!property) throw new CameraUnsupportedError(id, 'Camera control property disappeared')
             const descriptor = await driver.propertyDescriptor(property)
             const index =
@@ -537,11 +496,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                       : property.name === 'ExposureTime'
                         ? Number(requested) * 10000
                         : Number(requested)
-                const limits = wireRange(property.name, [
-                    descriptor.minimumValue,
-                    descriptor.maximumValue,
-                    descriptor.stepSize,
-                ])
+                const limits = wireRange(property.name, [descriptor.minimumValue, descriptor.maximumValue, descriptor.stepSize])
                 if (
                     limits &&
                     Number.isSafeInteger(raw) &&
@@ -561,11 +516,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 throw new CameraRefusedError(id, 'Nikon control is no longer writable or advertised')
             const definition = getDatatypeByCode(descriptor.dataType)?.codec
             if (!definition) throw new CameraUnsupportedError(id, 'Nikon control datatype is unknown')
-            const wireCodec = typeof definition === 'function' ? definition(driver.registry) : definition
-            const valueCodec: CodecInstance<unknown> =
-                typeof property.codec === 'function' ? property.codec(driver.registry) : property.codec
-            const encoded = valueCodec.encode(decoded)
-            const expected = wireCodec.encode(target)
+            const encoded = driver.resolveCodec<unknown>(property.codec).encode(decoded)
+            const expected = driver.resolveCodec<unknown>(definition).encode(target)
             if (encoded.length !== expected.length || encoded.some((byte, index) => byte !== expected[index]))
                 throw new CameraRefusedError(id, 'Nikon control cannot be encoded without truncation')
             // Confirmed below by the shared polled readback of this descriptor, like every other write.
@@ -576,7 +528,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
             await driver.setStandardProperty(state.source.code, vendorLabel)
             return
         }
-        const property = Object.values(driver.registry.properties).find(property => property.code === state.source.code)
+        const property = propertyWithCode(driver, state.source.code)
         if (!property) throw new CameraUnsupportedError(id, 'Camera control property disappeared')
         if (driver instanceof CanonCamera && id === 'videoFormat') {
             const choices = driver.getPropertyAllowedValues(driver.registry.properties.CanonMovieFormat)
@@ -586,9 +538,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
             return
         }
         if (driver instanceof CanonCamera && id === 'photoFormat') {
-            const choices = driver
-                .listPropertyStates()
-                .find(property => property.code === state.source.code)?.allowedValues
+            const choices = driver.listPropertyStates().find(property => property.code === state.source.code)?.allowedValues
             const choice = choices?.find(
                 value => value && typeof value === 'object' && 'label' in value && value.label === requested
             )
@@ -625,9 +575,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
  * as a fraction (1/100). Compare at the property's own wire resolution, not as display strings.
  */
 function sameExposureTicks(driver: GenericCamera, code: number): (observed: string, expected: string) => boolean {
-    const property = Object.values(driver.registry.properties).find(property => property.code === code)
-    const codec: CodecInstance<unknown> | undefined =
-        property && (typeof property.codec === 'function' ? property.codec(driver.registry) : property.codec)
+    const property = propertyWithCode(driver, code)
+    const codec = property && driver.resolveCodec<unknown>(property.codec)
     return (observed, expected) => {
         if (observed === expected) return true
         if (!codec) return false

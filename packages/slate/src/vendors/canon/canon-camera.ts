@@ -1,8 +1,9 @@
-import type { CameraCapabilities, CameraRecordingState, OperationAvailability } from '@camera/controls'
+import type { CameraCapabilities, CameraControlId, CameraRecordingState, OperationAvailability } from '@camera/controls'
 import { unrecognizedValueLabel, type UnrecognizedValues } from '@camera/controls'
 import type {
     CameraEventHandler,
     CameraEventName,
+    CameraOperationName,
     Clip,
     ConfirmedPhotoFile,
     FocusPointOptions,
@@ -11,7 +12,6 @@ import type {
     PhotoDestination,
 } from '@camera/driver'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import type { CameraOperationName } from '@camera/driver'
 import type { StatePhase } from '@contribute/protocol'
 import { Logger } from '@core/logger'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
@@ -27,12 +27,9 @@ import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
 import type { CanonAddedObject, CanonEventRecord } from '@vendors/canon/datasets/canon-event-data-dataset'
 import type { CanonExtendedDeviceInfo } from '@vendors/canon/datasets/canon-extended-device-info-dataset'
 import { canonImageFormatFromPacked } from '@vendors/canon/datasets/canon-image-format-dataset'
-import {
-    canonLiveViewPosition,
-    type CanonLiveViewFrame,
-    type CanonLiveViewPosition,
-} from '@vendors/canon/datasets/canon-live-view-dataset'
+import { canonLiveViewPosition, type CanonLiveViewFrame, type CanonLiveViewPosition } from '@vendors/canon/datasets/canon-live-view-dataset'
 import { CANON_PROPERTY_NAMES } from '@vendors/canon/definitions/canon-property-names'
+import { canonControlProperties } from '@vendors/control-properties'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@vendors/generic/generic-camera'
 import {
     cardObjectFile,
@@ -43,6 +40,7 @@ import {
     overlayUnsupported,
     requireImage,
     requirePoint,
+    restoreAll,
     storageHost,
     supported,
     unstatedSize,
@@ -70,6 +68,7 @@ const CANON_MOVIE_FILE = /\.(mp4|mov|crm)$/i
 const exposureProperties = ['CanonIso', 'CanonAperture', 'CanonShutterSpeed', 'CanonWhiteBalance'] as const
 type ExposureProperty = (typeof exposureProperties)[number]
 type ExposureSnapshot = { mode: number; values: Map<ExposureProperty, string> }
+type PropertyValue = CodecType<PropertyDefinition['codec']>
 export interface CanonPropertyState {
     code: number
     name: string
@@ -99,10 +98,40 @@ export interface CanonNetworkState {
     wftStatus?: number
 }
 
+/** `objectHandle` is the new card object's handle, when info or data was requested. */
+type CanonCapture = { info?: ObjectInfo; data?: Uint8Array; objectHandle?: number }
+/** An announced card object, named by its ObjectInfo. */
+type AddedFile = { handle: number; info: ObjectInfo }
+
+/** EOS live-view AF areas whose frame the host positions: one point, spot or an expanded point. */
+const CANON_POSITIONED_AF_AREAS: readonly string[] = [
+    'live',
+    'one-point-without-tracking',
+    'spot',
+    'spot-without-tracking',
+    'expand-cross',
+    'expand-around',
+    'expand-cross-without-tracking',
+    'expand-around-without-tracking',
+]
+/** The point a focus point switches a self-placing area (Wide, Zone, Face, Tracking) to, in preference order. */
+const CANON_FOCUS_POINT_AREAS = ['live', 'one-point-without-tracking', 'spot', 'spot-without-tracking'] as const
+/** The properties behind Slate's controls, plus FixedMovie for photo/video mode: their changes are `settingsChanged`. */
+const CANON_SETTING_CODES = new Set([
+    ...Object.values(canonControlProperties).flatMap(properties => properties.map(property => property.code)),
+    FIXED_MOVIE,
+])
+
 export interface CanonRawEvent {
     code: number
     /** Owned copy of the complete EOS GetEvent record body, excluding its size/code header. */
     data: Uint8Array
+}
+
+/** A refused focus-frame write took nothing; any other failure leaves its outcome unknown. */
+function focusFailure(operation: 'setFocusPoint' | 'resetFocusPoint', error: unknown): never {
+    if (error instanceof PTPResponseError) throw new CameraRefusedError(operation, error.message)
+    throw new CameraOutcomeUnknownError(operation, error instanceof Error ? error.message : String(error))
 }
 
 function bytesToHex(value: Uint8Array): string {
@@ -117,12 +146,7 @@ function canonRawLabel(encoded: Uint8Array): string {
 }
 
 /**
- * TODO: reverse engineer EOS Utility with Wireshark
- *
- * Unlike other vendors Canon does not publish public docs on their PTP implementation
- *
- * They offer it under NDA which is not an option for an open-source project
- * Massive props to Julian Schroden for his work reverse-engineering Canon cameras
+ * Canon publishes its PTP implementation only under NDA. Thanks to Julian Schroden's reverse engineering:
  * https://julianschroden.com/post/2023-04-23-analyzing-the-ptp-ip-protocol-with-wireshark/
  * https://julianschroden.com/post/2023-05-10-pairing-and-initializing-a-ptp-ip-connection-with-a-canon-eos-camera/
  * https://julianschroden.com/post/2023-05-28-controlling-properties-using-ptp-ip-on-canon-eos-cameras/
@@ -156,6 +180,11 @@ export class CanonCamera extends GenericCamera {
     private lastKeepAliveAttempt?: number
     private keepAliveUnavailable = false
     private rawEventListeners = new Set<(event: CanonRawEvent) => void>()
+    private settingsListeners = new Set<CameraEventHandler>()
+    /** The last value and choices bytes of each setting property, so only a real change is `settingsChanged`. */
+    private settingSignatures = new Map<string, string>()
+    /** What setFocusPoint changed this connection, so resetFocusPoint can put it back. */
+    private focusChanges: { previousArea?: string; placedArea?: string } = {}
     private addedObjectWatchers = new Set<(object: CanonAddedObject) => void>()
     private pollingLoop?: Promise<void>
     private liveViewEnabled = false
@@ -164,21 +193,9 @@ export class CanonCamera extends GenericCamera {
     private advertisedPropertyData = new Map<PropertyDefinition, Uint8Array[]>()
     private propertyCache = new Map<
         PropertyDefinition,
-        {
-            current?: CodecType<PropertyDefinition['codec']>
-            allowed?: CodecType<PropertyDefinition['codec']>[]
-            unrecognized?: UnrecognizedValues
-        }
+        { current?: PropertyValue; allowed?: PropertyValue[]; unrecognized?: UnrecognizedValues }
     >()
-    private unknownPropertyCache = new Map<
-        number,
-        {
-            rawValue?: number
-            valueDataHex?: string
-            allowedValues?: number[]
-            allowedValueDataHex?: string[]
-        }
-    >()
+    private unknownPropertyCache = new Map<number, Omit<CanonUnknownPropertyState, 'code' | 'codeHex' | 'name'>>()
     vendorId = VendorIDs.CANON
     declare public registry: CanonRegistry
 
@@ -199,9 +216,9 @@ export class CanonCamera extends GenericCamera {
 
     /** Refresh a benchmark's event evidence while preserving the session's property cache and events. */
     async refreshEventProperties(): Promise<void> {
-        const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+        const response = await this.getEvents()
         if (response.code !== 0x2001 || !Array.isArray(response.data)) throw new Error('No Canon event inventory')
-        this.processEvents(response.data, true)
+        this.processEvents(response.data)
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
@@ -227,12 +244,9 @@ export class CanonCamera extends GenericCamera {
         if (deviceInfo.code !== OK.code) throw new PTPResponseError(deviceInfo.code, 'Canon GetDeviceInfo failed')
         if (!deviceInfo.data) throw new PTPDecodeError('Canon GetDeviceInfo failed: no DeviceInfo dataset')
         this.supportedOperations = new Set(deviceInfo.data.operationsSupportedRaw)
-        await this.enableRemoteMode()
-        await this.enableEventMode()
-
-        // Flush initial property dump from camera and cache all properties
+        await this.setSessionMode('remote', true)
+        await this.setSessionMode('event', true)
         await this.flushInitialEvents()
-
         this.startPolling()
     }
 
@@ -245,8 +259,8 @@ export class CanonCamera extends GenericCamera {
         let failure: unknown
         for (const cleanup of [
             () => this.disableLiveView(),
-            () => this.disableRemoteMode(),
-            () => this.disableEventMode(),
+            () => this.setSessionMode('remote', false),
+            () => this.setSessionMode('event', false),
             () => super.disconnect(),
         ]) {
             try {
@@ -259,8 +273,8 @@ export class CanonCamera extends GenericCamera {
         if (failure) throw failure
     }
 
+    /** EOS control sessions use the same id during connect and recovery. */
     protected override createSessionId(): number {
-        // EOS control sessions must use the same convention during connect and recovery.
         return 1
     }
 
@@ -271,13 +285,7 @@ export class CanonCamera extends GenericCamera {
         if (this.propertyCache.get(this.registry.properties.CanonRecordingDestination)?.current === 'CARD')
             throw new CameraUnsupportedError('recover', 'Stop the Canon recording before recovering its session')
         await this.stopPolling()
-        // Release the owned EOS mode before opening a replacement PTP session.
-        // An unresponsive connection still reaches the bounded recovery steps.
-        try {
-            await this.disconnect()
-        } catch {
-            /* Recovery verifies the replacement session. */
-        }
+        await this.disconnect().catch(() => {})
         try {
             return await super.recover(device, options)
         } finally {
@@ -288,12 +296,12 @@ export class CanonCamera extends GenericCamera {
     protected override async verifyRecoveryState(_information: DeviceInfo): Promise<void> {
         // GetDeviceInfo can answer while EOS controls still report SessionNotOpen.
         try {
-            await this.enableRemoteMode()
-            await this.enableEventMode()
+            await this.setSessionMode('remote', true)
+            await this.setSessionMode('event', true)
             await this.refreshEventProperties()
         } finally {
-            await this.disableRemoteMode()
-            await this.disableEventMode()
+            await this.setSessionMode('remote', false)
+            await this.setSessionMode('event', false)
         }
     }
 
@@ -306,114 +314,73 @@ export class CanonCamera extends GenericCamera {
         this.liveViewOriginalOutput = undefined
         this.lastKeepAliveAttempt = undefined
         this.keepAliveUnavailable = false
+        this.settingSignatures.clear()
+        this.focusChanges = {}
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
-        if (!property.access.includes('Get')) {
-            throw new Error(`Property ${property.name} is not readable`)
-        }
-
-        let cached = this.propertyCache.get(property)
-        if (cached?.current === undefined && this.transport.isConnected?.()) {
-            // A fast reconnect may receive the initial property dump in a later poll.
-            // Refresh only a missing value, never invent it or repeat a state-changing command.
+        if (!property.access.includes('Get')) throw new Error(`Property ${property.name} is not readable`)
+        const current = () => this.propertyCache.get(property)?.current
+        if (current() === undefined && this.transport.isConnected?.()) {
             await this.withoutPolling(async () => {
-                for (let attempt = 0; attempt < 10; attempt++) {
+                for (let attempt = 0; attempt < 10 && current() === undefined; attempt++) {
+                    if (attempt > 0) await wait(50)
                     await this.refreshEventProperties()
-                    cached = this.propertyCache.get(property)
-                    if (cached?.current !== undefined) return
-                    if (attempt < 9) await new Promise(resolve => setTimeout(resolve, 50))
                 }
             })
         }
-        if (!cached || cached.current === undefined) {
+        const value = current()
+        if (value === undefined)
             throw new Error(
                 `Property ${property.name} (0x${property.code.toString(16)}) not found in cache. The camera may not support this property or event mode is not enabled.`
             )
-        }
-
-        return cached.current as CodecType<P['codec']>
+        return value as CodecType<P['codec']>
     }
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
         return this.withoutPolling(async () => {
-            if (!property.access.includes('Set')) {
-                throw new Error(`Property ${property.name} is not writable`)
-            }
-
+            if (!property.access.includes('Set')) throw new Error(`Property ${property.name} is not writable`)
             const codec = this.resolveCodec(property.codec)
             const requestedValue = codec.encode(value)
-            const advertisedValue = this.advertisedPropertyData.get(property)?.find(encoded => {
-                try {
-                    const canonical = codec.encode(codec.decode(encoded).value)
-                    return (
-                        canonical.length === requestedValue.length &&
-                        canonical.every((byte, index) => byte === requestedValue[index])
-                    )
-                } catch {
-                    return false
-                }
-            })
-            const encodedValue = advertisedValue ?? requestedValue
+            const isRequested = (encoded?: Uint8Array) =>
+                encoded?.length === requestedValue.length &&
+                encoded.every((byte, index) => byte === requestedValue[index])
+            const encodedValue =
+                this.advertisedPropertyData.get(property)?.find(encoded => {
+                    try {
+                        return isRequested(codec.encode(codec.decode(encoded).value))
+                    } catch {
+                        return false
+                    }
+                }) ?? requestedValue
             // Record is a command/state property: stop (0) may report standby (3).
             const verifyReadback =
                 this.propertyCache.get(property)?.current !== undefined &&
                 property.code !== this.registry.properties.CanonRecordingDestination.code
-
-            const u32Codec = this.registry.codecs.uint32
-
-            const totalSize = Math.max(12, 8 + encodedValue.length)
-            const data = new Uint8Array(totalSize)
-
-            const sizeBytes = u32Codec.encode(totalSize)
-            data.set(sizeBytes, 0)
-
-            const propCodeBytes = u32Codec.encode(property.code)
-            data.set(propCodeBytes, 4)
-
+            const data = new Uint8Array(Math.max(12, 8 + encodedValue.length))
+            data.set(this.registry.codecs.uint32.encode(data.length), 0)
+            data.set(this.registry.codecs.uint32.encode(property.code), 4)
             data.set(encodedValue, 8)
 
-            let retries = 0
-            const maxRetries = 5
-
-            while (retries < maxRetries) {
+            for (let attempt = 1; ; attempt++) {
                 try {
                     const response = await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
-                    if (response.code !== OK.code) {
-                        throw new PTPResponseError(
-                            response.code,
-                            `Canon ${property.name} write returned 0x${response.code.toString(16)}`
-                        )
-                    }
+                    this.assertResponseOk(response.code, `${property.name} write`)
                     break
-                } catch (error: any) {
-                    if (error.code === 0x2019) {
-                        retries++
-                        if (retries < maxRetries) {
-                            await new Promise(resolve => setTimeout(resolve, 100))
-                            continue
-                        }
-                    }
-                    throw error
+                } catch (error) {
+                    if ((error as { code?: number }).code !== CANON_DEVICE_BUSY || attempt >= 5) throw error
+                    await wait(100)
                 }
             }
-
-            await new Promise(resolve => setTimeout(resolve, 100))
+            await wait(100)
 
             const deadline = Date.now() + 2000
             do {
-                const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-                this.assertResponseOk(response.code, 'property event readback')
-                if (Array.isArray(response.data)) this.processEvents(response.data, true)
+                const events = await this.readEvents('property event readback')
                 const current = this.propertyCache.get(property)?.current
-                const observed = current === undefined ? undefined : codec.encode(current)
-                if (
-                    observed?.length === requestedValue.length &&
-                    observed.every((byte, index) => byte === requestedValue[index])
-                )
-                    return
-                if (!verifyReadback && !response.data?.length) return
-                await new Promise(resolve => setTimeout(resolve, 50))
+                if (isRequested(current === undefined ? undefined : codec.encode(current))) return
+                if (!verifyReadback && !events.length) return
+                await wait(50)
             } while (Date.now() < deadline)
             // Acknowledged but never observed: report it unconfirmed, never resend it.
             throw new CameraOutcomeUnknownError(
@@ -427,11 +394,13 @@ export class CanonCamera extends GenericCamera {
         return this.get(this.registry.properties.CanonAperture)
     }
 
+    /** Writes a named enum value; the codec rejects a name it does not define. */
+    private setNamed<P extends PropertyDefinition>(property: P, value: string): Promise<void> {
+        return this.set(property, value as CodecType<P['codec']>)
+    }
+
     async setAperture(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.CanonAperture,
-            value as CodecType<typeof this.registry.properties.CanonAperture.codec>
-        )
+        return this.setNamed(this.registry.properties.CanonAperture, value)
     }
 
     async getShutterSpeed(): Promise<string> {
@@ -439,10 +408,7 @@ export class CanonCamera extends GenericCamera {
     }
 
     async setShutterSpeed(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.CanonShutterSpeed,
-            value as CodecType<typeof this.registry.properties.CanonShutterSpeed.codec>
-        )
+        return this.setNamed(this.registry.properties.CanonShutterSpeed, value)
     }
 
     async getIso(): Promise<string> {
@@ -450,17 +416,11 @@ export class CanonCamera extends GenericCamera {
     }
 
     async setIso(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.CanonIso,
-            value as CodecType<typeof this.registry.properties.CanonIso.codec>
-        )
+        return this.setNamed(this.registry.properties.CanonIso, value)
     }
 
     async setFocusMode(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.CanonFocusMode,
-            value as CodecType<typeof this.registry.properties.CanonFocusMode.codec>
-        )
+        return this.setNamed(this.registry.properties.CanonFocusMode, value)
     }
 
     async getColorTemperature(): Promise<number> {
@@ -468,35 +428,26 @@ export class CanonCamera extends GenericCamera {
     }
 
     async setColorTemperature(kelvin: number): Promise<void> {
-        if (!Number.isInteger(kelvin) || kelvin < 2500 || kelvin > 10000) {
+        if (!Number.isInteger(kelvin) || kelvin < 2500 || kelvin > 10000)
             throw new Error('Canon color temperature must be an integer from 2500 to 10000 kelvin')
-        }
-        await this.setAdvertisedProperty(this.registry.properties.CanonColorTemperature, kelvin)
-    }
-
-    private async setAdvertisedProperty<P extends PropertyDefinition>(
-        property: P,
-        value: CodecType<P['codec']>
-    ): Promise<void> {
-        const choices = this.getPropertyAllowedValues(property)
-        if (!choices?.includes(value))
-            throw new Error(`Canon ${property.name} value ${value} was not advertised by the attached camera`)
-        await this.set(property, value)
-        if ((await this.get(property)) !== value)
-            throw new Error(`Canon ${property.name} did not apply the requested value ${value}`)
+        const property = this.registry.properties.CanonColorTemperature
+        if (!this.getPropertyAllowedValues(property)?.includes(kelvin))
+            throw new Error(`Canon ${property.name} value ${kelvin} was not advertised by the attached camera`)
+        await this.set(property, kelvin)
+        if ((await this.get(property)) !== kelvin)
+            throw new Error(`Canon ${property.name} did not apply the requested value ${kelvin}`)
     }
 
     async setWhiteBalance(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.CanonWhiteBalance,
-            value as CodecType<typeof this.registry.properties.CanonWhiteBalance.codec>
-        )
+        return this.setNamed(this.registry.properties.CanonWhiteBalance, value)
     }
 
     async setImageFormat(packed: number): Promise<void> {
-        const property = this.imageFormatProperty()
-        if (!property)
-            throw new Error('The attached Canon camera did not report a writable still-image format property')
+        const { CanonImageFormatSd, CanonImageFormat } = this.registry.properties
+        const property = [CanonImageFormatSd, CanonImageFormat].find(
+            candidate => this.propertyCache.get(candidate)?.current !== undefined
+        )
+        if (!property) throw new Error('The attached Canon camera did not report a writable still-image format property')
         await this.set(property, canonImageFormatFromPacked(packed))
     }
 
@@ -518,23 +469,21 @@ export class CanonCamera extends GenericCamera {
     }
 
     async setNetworkCommunicationMode(value: number, allowUnadvertised = false): Promise<void> {
-        if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+        if (!Number.isInteger(value) || value < 0 || value > 0xffffffff)
             throw new Error(`Canon network communication mode must be a uint32, received ${value}`)
-        }
         const property = this.registry.properties.CanonNetworkCommunicationMode
         const advertised = this.getPropertyAllowedValues(property)
-        if (!allowUnadvertised && advertised && !advertised.includes(value)) {
+        if (!allowUnadvertised && advertised && !advertised.includes(value))
             throw new Error(`Canon network communication mode ${value} was not advertised by the attached camera`)
-        }
         await this.set(property, value)
     }
 
     /** Enable manual exposure using the EOS remote AE property and verify its event readback. */
     async setManualExposureMode(): Promise<void> {
         const property = this.registry.properties.CanonAutoExposureMode
-        if ((await this.get(property)) === 3) return
-        await this.set(property, 3)
-        if ((await this.get(property)) !== 3) throw new Error('Canon did not confirm Manual exposure mode')
+        if ((await this.get(property)) === MANUAL_EXPOSURE_MODE) return
+        await this.set(property, MANUAL_EXPOSURE_MODE)
+        if ((await this.get(property)) !== MANUAL_EXPOSURE_MODE) throw new Error('Canon did not confirm Manual exposure mode')
     }
 
     /** @internal Whether this session's DeviceInfo advertised an operation; unknown before connect. */
@@ -543,37 +492,25 @@ export class CanonCamera extends GenericCamera {
     }
 
     async enterMovieMode(): Promise<void> {
-        if (this.supportedOperations)
-            this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOn.code)
-        await this.withoutPolling(async () => {
-            for (let attempt = 0; attempt < 4; attempt++) {
-                const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOn, {})
-                if (response.code === OK.code) return
-                if (response.code !== 0x2019 || attempt === 3)
-                    throw new PTPResponseError(
-                        response.code,
-                        `Canon movie-mode switch returned 0x${response.code.toString(16)}`
-                    )
-                // Live-view/AF shutdown can briefly occupy the body. Retry only
-                // the idempotent mode request; never repeat Record or cut power.
-                await new Promise(resolve => setTimeout(resolve, 500))
-            }
-        })
+        await this.selectMovieMode(this.registry.operations.CanonMovieSelectSwitchOn, 'movie-mode switch')
     }
 
     async leaveMovieMode(): Promise<void> {
-        if (this.supportedOperations)
-            this.assertOperationSupported(this.registry.operations.CanonMovieSelectSwitchOff.code)
+        await this.selectMovieMode(this.registry.operations.CanonMovieSelectSwitchOff, 'movie-mode release')
+    }
+
+    /** Live-view/AF shutdown can briefly occupy the body; only this idempotent mode request is retried. */
+    private async selectMovieMode(
+        operation: CanonRegistry['operations']['CanonMovieSelectSwitchOn' | 'CanonMovieSelectSwitchOff'],
+        action: string
+    ): Promise<void> {
+        if (this.supportedOperations) this.assertOperationSupported(operation.code)
         await this.withoutPolling(async () => {
             for (let attempt = 0; attempt < 4; attempt++) {
-                const response = await this.send(this.registry.operations.CanonMovieSelectSwitchOff, {})
+                const response = await this.send(operation, {})
                 if (response.code === OK.code) return
-                if (response.code !== 0x2019 || attempt === 3)
-                    throw new PTPResponseError(
-                        response.code,
-                        `Canon movie-mode release returned 0x${response.code.toString(16)}`
-                    )
-                await new Promise(resolve => setTimeout(resolve, 500))
+                if (response.code !== CANON_DEVICE_BUSY || attempt === 3) this.assertResponseOk(response.code, action)
+                await wait(500)
             }
         })
     }
@@ -587,35 +524,27 @@ export class CanonCamera extends GenericCamera {
             const response = await this.send(this.registry.operations.CanonDoAutofocus, {})
             if (response.code === OK.code) {
                 try {
-                    await new Promise(resolve => setTimeout(resolve, durationMilliseconds))
+                    await wait(durationMilliseconds)
                 } finally {
                     await this.send(this.registry.operations.CanonCancelAutofocus, {})
                 }
                 return 'unknown'
             }
-
-            // Several EOS DSLRs (including the EOS 80D) advertise DoAf but only
-            // accept it while live view is active. A remote half-press works in
-            // still-photo mode and is the closest PTP equivalent to AF-ON.
-            const halfPress = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
-                ReleaseMode: 'FOCUS',
-                AFMode: 'AF',
-            })
-            if (halfPress.code !== OK.code) {
+            // EOS DSLRs such as the 80D accept DoAf only in live view; a remote half-press is the AF-ON equivalent.
+            const halfPress = await this.send(this.registry.operations.CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS', AFMode: 'AF' })
+            if (halfPress.code !== OK.code)
                 throw new CameraRefusedError(
                     'autofocus',
                     `Canon autofocus returned 0x${response.code.toString(16)} and half-press returned 0x${halfPress.code.toString(16)}`
                 )
-            }
             try {
-                // EDSDK shutter result 1: the camera could not focus. Any other result is a refusal with its reason.
                 if (halfPress.parameters?.[0] === CANON_RELEASE_RESULT_FOCUS_FAILED) return 'not-acquired'
                 try {
                     assertCanonCaptureResult(halfPress.parameters, 'autofocus half press')
                 } catch (error) {
                     throw new CameraRefusedError('autofocus', error instanceof Error ? error.message : String(error))
                 }
-                await new Promise(resolve => setTimeout(resolve, durationMilliseconds))
+                await wait(durationMilliseconds)
                 return 'unknown'
             } finally {
                 await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
@@ -638,15 +567,10 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async maintainKeepAlive(): Promise<void> {
-        if (
-            !this.keepAliveEnabled ||
-            this.keepAliveUnavailable ||
-            !this.supportedOperations?.has(this.registry.operations.CanonKeepDeviceOn.code)
-        )
+        if (!this.keepAliveEnabled || this.keepAliveUnavailable || !this.advertises(this.registry.operations.CanonKeepDeviceOn))
             return
         const now = performance.now()
-        // libgphoto2 camlibs/ptp2/config.c camera_keep_device_on: EOS R8 needs
-        // KeepDeviceOn about every 10 s; GetEvent polling alone is insufficient.
+        // libgphoto2 config.c camera_keep_device_on: the EOS R8 needs KeepDeviceOn about every 10 s besides GetEvent.
         if (this.lastKeepAliveAttempt !== undefined && now - this.lastKeepAliveAttempt < 10_000) return
         this.lastKeepAliveAttempt = now
         const response = await this.send(this.registry.operations.CanonKeepDeviceOn, {})
@@ -669,111 +593,73 @@ export class CanonCamera extends GenericCamera {
         autofocus = true,
         includeInfo = true,
         includeData = true,
-    }: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean } = {}): Promise<{
-        info?: ObjectInfo
-        data?: Uint8Array
-        /** The new card object's handle, when info or data was requested. */
-        objectHandle?: number
-    }> {
+    }: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean } = {}): Promise<CanonCapture> {
         if (typeof autofocus !== 'boolean') throw new Error('Canon capture autofocus must be true or false')
-        // Once a shutter press was sent without a definitive refusal, a photo may exist.
         let shutterSent = false
         let shutterRefusal: unknown
-        const capture = () =>
-            this.withoutPolling(async () => {
-                const release = async (afMode: 'AF' | 'MF') => {
-                    let focusPressed = false
-                    let shutterPressed = false
-                    let focusAttempted = false
-                    let shutterAttempted = false
-                    let failure: unknown
-                    try {
-                        focusAttempted = true
-                        const focus = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
-                            ReleaseMode: 'FOCUS',
-                            AFMode: afMode,
-                        })
-                        if (focus.code !== OK.code) {
-                            throw new PTPResponseError(
-                                focus.code,
-                                `Canon ${afMode} focus press returned 0x${focus.code.toString(16)}`
-                            )
-                        }
-                        focusPressed = true
-                        assertCanonCaptureResult(focus.parameters, `${afMode} focus press`)
-                        await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
+        const release = async (afMode: 'AF' | 'MF') => {
+            const pressed = { FOCUS: false, SHUTTER: false }
+            const attempted = { FOCUS: false, SHUTTER: false }
+            let failure: unknown
+            try {
+                attempted.FOCUS = true
+                const operation = this.registry.operations.CanonRemoteReleaseOn
+                const focus = await this.send(operation, { ReleaseMode: 'FOCUS', AFMode: afMode })
+                this.assertResponseOk(focus.code, `${afMode} focus press`)
+                pressed.FOCUS = true
+                assertCanonCaptureResult(focus.parameters, `${afMode} focus press`)
+                await wait(afMode === 'AF' ? 1000 : 250)
 
-                        shutterAttempted = true
-                        shutterSent = true
-                        const shutter = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
-                            ReleaseMode: 'SHUTTER',
-                            AFMode: afMode,
-                        })
-                        if (shutter.code !== OK.code) {
-                            const answer = new PTPResponseError(
-                                shutter.code,
-                                `Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`
-                            )
-                            // DeviceBusy at an AF full press generally means the body could not lock focus.
-                            shutterRefusal =
-                                afMode === 'AF' && shutter.code === CANON_DEVICE_BUSY
-                                    ? shutterRefused(
-                                          new PTPResponseError(
-                                              shutter.code,
-                                              `The camera could not lock focus, so nothing was taken (${answer.message}); ` +
-                                                  'take the photo with autofocus false to release without focusing'
-                                          )
-                                      )
-                                    : answer
-                            throw shutterRefusal
-                        }
-                        shutterPressed = true
-                        try {
-                            assertCanonCaptureResult(shutter.parameters, `${afMode} shutter press`)
-                        } catch (error) {
-                            shutterRefusal = error
-                            throw error
-                        }
+                attempted.SHUTTER = shutterSent = true
+                const shutter = await this.send(operation, { ReleaseMode: 'SHUTTER', AFMode: afMode })
+                if (shutter.code !== OK.code) {
+                    const answer = `Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`
+                    // DeviceBusy at an AF full press generally means the body could not lock focus.
+                    shutterRefusal =
+                        afMode === 'AF' && shutter.code === CANON_DEVICE_BUSY
+                            ? shutterRefused(
+                                  new PTPResponseError(
+                                      shutter.code,
+                                      `The camera could not lock focus, so nothing was taken (${answer}); ` +
+                                          'take the photo with autofocus false to release without focusing'
+                                  )
+                              )
+                            : new PTPResponseError(shutter.code, answer)
+                    throw shutterRefusal
+                }
+                pressed.SHUTTER = true
+                try {
+                    assertCanonCaptureResult(shutter.parameters, `${afMode} shutter press`)
+                } catch (error) {
+                    shutterRefusal = error
+                    throw error
+                }
+            } catch (error) {
+                failure = error
+                throw error
+            } finally {
+                const cleanupErrors: unknown[] = []
+                for (const ReleaseMode of ['SHUTTER', 'FOCUS'] as const) {
+                    if (!pressed[ReleaseMode] && !(afMode === 'MF' && attempted[ReleaseMode])) continue
+                    try {
+                        const response = await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode })
+                        this.assertResponseOk(response.code, `${ReleaseMode.toLowerCase()} release`)
                     } catch (error) {
-                        failure = error
-                        throw error
-                    } finally {
-                        const cleanupErrors: unknown[] = []
-                        for (const [ReleaseMode, required] of [
-                            ['SHUTTER', shutterPressed || (afMode === 'MF' && shutterAttempted)],
-                            ['FOCUS', focusPressed || (afMode === 'MF' && focusAttempted)],
-                        ] as const) {
-                            if (!required) continue
-                            try {
-                                const response = await this.send(this.registry.operations.CanonRemoteReleaseOff, {
-                                    ReleaseMode,
-                                })
-                                if (response.code !== OK.code)
-                                    throw new PTPResponseError(
-                                        response.code,
-                                        `Canon ${ReleaseMode.toLowerCase()} release returned 0x${response.code.toString(16)}`
-                                    )
-                            } catch (error) {
-                                cleanupErrors.push(error)
-                            }
-                        }
-                        if (cleanupErrors.length)
-                            throw new AggregateError(
-                                failure ? [failure, ...cleanupErrors] : cleanupErrors,
-                                `Canon shutter cleanup failed: ${[failure, ...cleanupErrors].filter(Boolean).map(String).join('; ')}`
-                            )
+                        cleanupErrors.push(error)
                     }
                 }
-
-                // An AF release that cannot lock focus is refused, never repeated as an MF release:
-                // the caller asked for a focused photo. Only autofocus false releases without focus.
-                await release(autofocus ? 'AF' : 'MF')
-            })
+                if (cleanupErrors.length)
+                    throw new AggregateError(
+                        failure ? [failure, ...cleanupErrors] : cleanupErrors,
+                        `Canon shutter cleanup failed: ${[failure, ...cleanupErrors].filter(Boolean).map(String).join('; ')}`
+                    )
+            }
+        }
+        const capture = () => this.withoutPolling(() => release(autofocus ? 'AF' : 'MF'))
         const pressShutter = async () => {
             try {
                 await capture()
             } catch (error) {
-                // A press the body answered with a refusal took nothing; anything else after a sent press may have.
                 const refused =
                     !shutterSent ||
                     (shutterRefusal !== undefined &&
@@ -786,7 +672,6 @@ export class CanonCamera extends GenericCamera {
             await pressShutter()
             return {}
         }
-        // Drain events already queued, then watch: only a file announced after the release counts.
         await this.withoutPolling(() => this.refreshEventProperties())
         const watch = this.watchAddedObjects(name => CANON_STILL_FILE.test(name))
         try {
@@ -794,9 +679,8 @@ export class CanonCamera extends GenericCamera {
             // The shutter was accepted: an unconfirmed or untransferred still is an unknown outcome, never a retry.
             return await afterShutterRelease(async () => {
                 const added = await watch.next(8000, 'still image')
-                // Prefer the JPEG of a RAW+JPEG pair announced together, without changing the body format.
-                const image = added.find(object => /\.jpe?g$/i.test(object.filename)) ?? added[0]!
-                const info = await this.addedObjectInfo(image)
+                const image = added.find(file => /\.jpe?g$/i.test(file.info.filename)) ?? added[0]!
+                const info = image.info
                 const size = info.objectCompressedSize
                 if (!Number.isSafeInteger(size) || size <= 0 || size > 100 * 1024 * 1024)
                     throw new Error('Canon captured-image size is invalid or exceeds the 100 MiB transfer bound')
@@ -812,7 +696,6 @@ export class CanonCamera extends GenericCamera {
 
     async sendStartRecording(): Promise<void> {
         await this.enableLiveView()
-
         await this.set(this.registry.properties.CanonRecordingDestination, 'CARD')
     }
 
@@ -824,11 +707,9 @@ export class CanonCamera extends GenericCamera {
     async prepareRecordingDestination(): Promise<() => Promise<void>> {
         const property = this.registry.properties.CanonCaptureDestination
         const original = this.propertyCache.get(property)?.current
-        if (original === undefined) return async () => {}
         if (original !== 4) return async () => {}
         const choices = this.getPropertyAllowedValues(property)
-        // Prefer the card value physically verified on the R8/R6 when advertised.
-        // Other body-specific values retain libgphoto2's advertised-choice fallback.
+        // Prefer the card value physically verified on the R8/R6; otherwise libgphoto2's advertised-choice fallback.
         const card = choices?.includes(2) ? 2 : choices?.find(value => value > 0 && value !== 4)
         if (card === undefined)
             throw new Error('Canon is routing captures to host memory and did not advertise a card destination')
@@ -844,10 +725,7 @@ export class CanonCamera extends GenericCamera {
             try {
                 await restore()
             } catch (cleanup) {
-                throw new AggregateError(
-                    [error, cleanup],
-                    'Canon card preparation failed and its destination could not be restored'
-                )
+                throw new AggregateError([error, cleanup], 'Canon card preparation failed and its destination could not be restored')
             }
             throw error
         }
@@ -876,13 +754,9 @@ export class CanonCamera extends GenericCamera {
                     0x00200000
                 )
                 if (response.code === OK.code && response.data?.image) return response.data
-                if (![0x2019, 0xa102].includes(response.code)) {
-                    throw new PTPResponseError(
-                        response.code,
-                        `Canon viewfinder read returned 0x${response.code.toString(16)}`
-                    )
-                }
-                await new Promise(resolve => setTimeout(resolve, 100))
+                if (![CANON_DEVICE_BUSY, 0xa102].includes(response.code))
+                    this.assertResponseOk(response.code, 'viewfinder read')
+                await wait(100)
             }
             throw new Error('Canon live-view frame was not ready after 30 attempts')
         })
@@ -899,19 +773,13 @@ export class CanonCamera extends GenericCamera {
         this.assertOperationSupported(this.registry.operations.CanonViewfinderZoom.code)
         await this.withoutPolling(async () => {
             await this.enableLiveView()
-            const response = await this.send(this.registry.operations.CanonViewfinderZoom, {
-                Magnification: magnification,
-            })
+            const response = await this.send(this.registry.operations.CanonViewfinderZoom, { Magnification: magnification })
             this.assertResponseOk(response.code, 'live-view zoom')
             for (let attempt = 0; attempt < 10; attempt++) {
-                const frame = await this.captureViewfinderFrame()
-                const zoomState = frame.segments.find(segment => segment.type === 4)?.data
-                if (
-                    zoomState?.length === 4 &&
-                    new DataView(zoomState.buffer, zoomState.byteOffset, 4).getUint32(0, true) === magnification
-                )
-                    return
-                await new Promise(resolve => setTimeout(resolve, 100))
+                const zoomState = (await this.captureViewfinderFrame()).segments.find(segment => segment.type === 4)?.data
+                const view = zoomState?.length === 4 && new DataView(zoomState.buffer, zoomState.byteOffset, 4)
+                if (view && view.getUint32(0, true) === magnification) return
+                await wait(100)
             }
             throw new Error(`Canon did not apply live-view zoom ${magnification}`)
         })
@@ -936,8 +804,9 @@ export class CanonCamera extends GenericCamera {
             this.assertResponseOk(result.code, 'live-view position')
             for (let attempt = 0; attempt < 15; attempt++) {
                 const position = await this.getLiveViewPosition()
-                if (this.positionMatches(position, x, y)) return position
-                await new Promise(resolve => setTimeout(resolve, 100))
+                // The R6 III rounds small requests (2786 -> 2788); a stale or ignored 200-pixel pan cannot match.
+                if (Math.abs(position.x - x) <= 4 && Math.abs(position.y - y) <= 4) return position
+                await wait(100)
             }
             throw new Error(`Canon did not apply live-view position (${x}, ${y})`)
         })
@@ -958,12 +827,6 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    private positionMatches(position: CanonLiveViewPosition, x: number, y: number): boolean {
-        // The R6 III rounds small requests (2786 -> 2788, 485 -> 486).
-        // Return the actual origin; a stale/ignored 200-pixel pan cannot satisfy this bound.
-        return Math.abs(position.x - x) <= 4 && Math.abs(position.y - y) <= 4
-    }
-
     /** Whether this session's DeviceInfo advertised the operation. */
     advertises(operation: { code: number }): boolean {
         return this.supportedOperations?.has(operation.code) ?? false
@@ -972,6 +835,18 @@ export class CanonCamera extends GenericCamera {
     private assertOperationSupported(code: number): void {
         if (!this.supportedOperations?.has(code))
             throw new Error(`Canon operation 0x${code.toString(16)} was not advertised by the attached camera`)
+    }
+
+    private getEvents() {
+        return this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+    }
+
+    private async readEvents(action: string): Promise<CanonEventRecord[]> {
+        const response = await this.getEvents()
+        this.assertResponseOk(response.code, action)
+        const events = Array.isArray(response.data) ? response.data : []
+        this.processEvents(events)
+        return events
     }
 
     private assertResponseOk(code: number, action: string): void {
@@ -983,14 +858,10 @@ export class CanonCamera extends GenericCamera {
         const deadline = Date.now() + 5000
         let stopRequested = false
         for (;;) {
-            // Reconnecting can find an already finalized movie. Read camera events before
-            // treating an idle Stop as successful; a missing property is never idle proof.
-            const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-            this.assertResponseOk(response.code, 'recording state readback')
-            if (Array.isArray(response.data)) this.processEvents(response.data, true)
+            // Reconnecting can find an already finalized movie; a missing property is never idle proof.
+            await this.readEvents('recording state readback')
             const current = this.propertyCache.get(property)?.current
-            // EOS reports 3 (legacy codec label SDRAM) in movie standby after
-            // reconnect. Only the explicit NONE/standby states prove card Record ended.
+            // EOS reports 3 (legacy label SDRAM) in movie standby after reconnect; only NONE/standby prove Record ended.
             if (current === 'NONE' || current === 'SDRAM') return
             if (Date.now() >= deadline) throw new Error('Canon did not confirm recording stopped within 5 seconds')
             if (!stopRequested) {
@@ -998,30 +869,25 @@ export class CanonCamera extends GenericCamera {
                     await this.set(property, 'NONE')
                     stopRequested = true
                 } catch (error) {
-                    if ((error as { code?: number }).code !== 0x2019) throw error
+                    if ((error as { code?: number }).code !== CANON_DEVICE_BUSY) throw error
                 }
             }
-            await new Promise(resolve => setTimeout(resolve, 250))
+            await wait(250)
         }
     }
 
     getPropertyAllowedValues<P extends PropertyDefinition>(property: P): CodecType<P['codec']>[] | undefined {
-        const cached = this.propertyCache.get(property)
-        if (!cached?.allowed) {
-            return undefined
-        }
-
-        return cached.allowed as CodecType<P['codec']>[]
+        return this.propertyCache.get(property)?.allowed as CodecType<P['codec']>[] | undefined
     }
 
     listPropertyStates(): CanonPropertyState[] {
         return [...this.propertyCache.entries()]
             .filter(([, state]) => state.current !== undefined || state.unrecognized?.value !== undefined)
-            .map(([property, state]) => ({
-                code: property.code,
-                name: property.name,
-                description: property.description,
-                access: property.access,
+            .map(([{ code, name, description, access }, state]) => ({
+                code,
+                name,
+                description,
+                access,
                 value: state.current,
                 ...(state.allowed ? { allowedValues: [...state.allowed] } : {}),
                 ...(state.unrecognized && { unrecognized: { ...state.unrecognized } }),
@@ -1031,21 +897,11 @@ export class CanonCamera extends GenericCamera {
 
     listUnknownPropertyStates(): CanonUnknownPropertyState[] {
         return [...this.unknownPropertyCache.entries()]
-            .map(([code, state]) => ({
-                code,
-                codeHex: `0x${code.toString(16).padStart(4, '0')}`,
-                name: CANON_PROPERTY_NAMES[code],
-                ...state,
-            }))
+            .map(([code, state]) => {
+                const codeHex = `0x${code.toString(16).padStart(4, '0')}`
+                return { code, codeHex, name: CANON_PROPERTY_NAMES[code], ...state }
+            })
             .sort((left, right) => left.code - right.code)
-    }
-
-    private imageFormatProperty() {
-        const sdCard = this.registry.properties.CanonImageFormatSd
-        if (this.propertyCache.get(sdCard)?.current !== undefined) return sdCard
-        const generic = this.registry.properties.CanonImageFormat
-        if (this.propertyCache.get(generic)?.current !== undefined) return generic
-        return undefined
     }
 
     private cachedOptionalNumber(property: PropertyDefinition): number | undefined {
@@ -1053,190 +909,144 @@ export class CanonCamera extends GenericCamera {
         return typeof value === 'number' ? value : undefined
     }
 
-    private async enableRemoteMode(): Promise<void> {
-        const response = await this.send(this.registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
-        this.assertResponseOk(response.code, 'remote-mode initialization')
-    }
-
-    private async disableRemoteMode(): Promise<void> {
-        await this.send(this.registry.operations.CanonSetRemoteMode, { RemoteMode: 'DISABLE' })
-    }
-
-    private async enableEventMode(): Promise<void> {
-        const response = await this.send(this.registry.operations.CanonSetEventMode, { EventMode: 'ENABLE' })
-        this.assertResponseOk(response.code, 'event-mode initialization')
-    }
-
-    private async disableEventMode(): Promise<void> {
-        await this.send(this.registry.operations.CanonSetEventMode, { EventMode: 'DISABLE' })
+    /** Enabling checks the answer; disabling is best effort. */
+    private async setSessionMode(mode: 'remote' | 'event', enabled: boolean): Promise<void> {
+        const value = enabled ? 'ENABLE' : 'DISABLE'
+        const response =
+            mode === 'remote'
+                ? await this.send(this.registry.operations.CanonSetRemoteMode, { RemoteMode: value })
+                : await this.send(this.registry.operations.CanonSetEventMode, { EventMode: value })
+        if (enabled) this.assertResponseOk(response.code, `${mode}-mode initialization`)
     }
 
     /** Shares a value Slate could not name with its raw number; never fails event processing. */
     private recordUnrecognizedValue(property: number, raw: number, choice: boolean): void {
-        this.recordProtocol({
-            type: 'unrecognized-value',
-            vendorId: VendorIDs.CANON,
-            property,
-            dataType: 6,
-            raw,
-            choice,
-        })
+        this.recordProtocol({ type: 'unrecognized-value', vendorId: VendorIDs.CANON, property, dataType: 6, raw, choice })
     }
 
-    private processEvents(
-        events: CanonEventRecord[],
-        emitGenericEvents = true
-    ): void {
-        events.forEach(event => {
+    private processEvents(events: CanonEventRecord[], emitGenericEvents = true): void {
+        let settingsChanged = false
+        for (const event of events) {
             if (event.object) for (const watcher of this.addedObjectWatchers) watcher(event.object)
-            if (event.rawData) {
-                for (const listener of this.rawEventListeners)
-                    listener({ code: event.code, data: event.rawData.slice() })
-            }
-            if (emitGenericEvents) {
-                this.handleEvent({
-                    code: event.code,
-                    parameters: event.parameters.map(p => (typeof p === 'bigint' ? Number(p) : p)),
-                    transactionId: 0,
-                })
-            }
-
-            if (event.code === 0xc189 && event.parameters && event.parameters.length >= 2) {
-                const propCode =
-                    typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
-                const rawValue =
-                    typeof event.parameters[1] === 'bigint' ? Number(event.parameters[1]) : event.parameters[1]
-
-                const property = Object.values(this.registry.properties).find(p => p.code === propCode)
-                if (property) {
-                    const codec = this.resolveCodec(property.codec)
-                    const encoded = event.valueData || this.registry.codecs.uint32.encode(rawValue)
-                    const existing = this.propertyCache.get(property)
-                    const choices = existing?.unrecognized?.choices
-                    let decoded
-                    try {
-                        decoded = codec.decode(encoded)
-                    } catch {
-                        // New bodies can publish values outside an older enum table: keep the
-                        // property visible with its raw value, read-only, without a decoded current.
-                        this.propertyCache.set(property, {
-                            allowed: existing?.allowed,
-                            unrecognized: { ...(choices && { choices }), value: canonRawLabel(encoded) },
-                        })
-                        this.unknownPropertyCache.set(propCode, {
-                            ...this.unknownPropertyCache.get(propCode),
-                            rawValue,
-                            valueDataHex: bytesToHex(encoded),
-                        })
-                        if (encoded.length === 4) this.recordUnrecognizedValue(propCode, rawValue, false)
-                        return
-                    }
-
-                    this.propertyCache.set(property, {
-                        current: decoded.value,
-                        allowed: existing?.allowed,
-                        ...(choices && { unrecognized: { choices } }),
-                    })
-                } else {
-                    const existing = this.unknownPropertyCache.get(propCode)
-                    this.unknownPropertyCache.set(propCode, {
-                        ...existing,
-                        rawValue,
-                        valueDataHex: event.valueData ? bytesToHex(event.valueData) : undefined,
-                    })
-                }
-            }
-
-            if (event.code === 0xc18a) {
-                if (event.parameters && event.parameters.length >= 1) {
-                    const propCode =
-                        typeof event.parameters[0] === 'bigint' ? Number(event.parameters[0]) : event.parameters[0]
-                    if (event.allowedValueData !== undefined || event.allowedValues !== undefined) {
-                        const property = Object.values(this.registry.properties).find(p => p.code === propCode)
-                        if (property) {
-                            const codec = this.resolveCodec(property.codec)
-                            const encodedAllowed =
-                                event.allowedValueData !== undefined
-                                    ? event.allowedValueData
-                                    : event.allowedValues!.map(rawValue => this.registry.codecs.uint32.encode(rawValue))
-                            this.advertisedPropertyData.set(
-                                property,
-                                encodedAllowed.map(encoded => encoded.slice())
-                            )
-                            const rejected: string[] = []
-                            const decodedAllowed = encodedAllowed.flatMap(encoded => {
-                                try {
-                                    return [codec.decode(encoded).value]
-                                } catch {
-                                    rejected.push(canonRawLabel(encoded))
-                                    if (encoded.length === 4)
-                                        this.recordUnrecognizedValue(
-                                            propCode,
-                                            this.registry.codecs.uint32.decode(encoded).value,
-                                            true
-                                        )
-                                    return []
-                                }
-                            })
-
-                            const existing = this.propertyCache.get(property)
-                            const value = existing?.unrecognized?.value
-                            const unrecognized = {
-                                ...(value !== undefined && { value }),
-                                ...(rejected.length > 0 && { choices: rejected }),
-                            }
-                            this.propertyCache.set(property, {
-                                current: existing?.current,
-                                allowed: decodedAllowed,
-                                ...(Object.keys(unrecognized).length > 0 && { unrecognized }),
-                            })
-                        } else {
-                            const existing = this.unknownPropertyCache.get(propCode)
-                            this.unknownPropertyCache.set(propCode, {
-                                ...existing,
-                                allowedValues: event.allowedValues ? [...event.allowedValues] : undefined,
-                                allowedValueDataHex: event.allowedValueData?.map(bytesToHex),
-                            })
-                        }
-                    }
-                }
-            }
-        })
+            if (event.rawData)
+                for (const listener of this.rawEventListeners) listener({ code: event.code, data: event.rawData.slice() })
+            const parameters = event.parameters.map(Number)
+            if (emitGenericEvents) this.handleEvent({ code: event.code, parameters, transactionId: 0 })
+            const [propertyCode, rawValue] = parameters
+            if (event.code === 0xc189 && propertyCode !== undefined && rawValue !== undefined)
+                this.recordValue(event, propertyCode, rawValue)
+            const announcesChoices = event.allowedValueData !== undefined || event.allowedValues !== undefined
+            if (event.code === 0xc18a && propertyCode !== undefined && announcesChoices)
+                this.recordChoices(event, propertyCode)
+            if (propertyCode !== undefined && this.settingRecordChanged(event, propertyCode)) settingsChanged = true
+        }
+        if (settingsChanged && emitGenericEvents) for (const listener of this.settingsListeners) listener()
     }
 
     /**
-     * Polls the camera's event queue. Each round is scheduled only after the previous one
-     * finishes: setInterval does not wait for an async callback, so when a poll takes longer than
-     * the interval it stacks up requests faster than the bus can drain them and starves every
-     * other operation.
+     * EOS repeats value and choice records it has already sent, so a setting counts as changed only
+     * when its bytes differ from the last ones seen. The first observation after connect is a baseline.
      */
-    private startPolling(intervalMs: number = 200): void {
+    private settingRecordChanged(event: CanonEventRecord, code: number): boolean {
+        if (!CANON_SETTING_CODES.has(code) || (event.code !== 0xc189 && event.code !== 0xc18a)) return false
+        const bytes =
+            event.code === 0xc189
+                ? event.valueData && bytesToHex(event.valueData)
+                : (event.allowedValueData?.map(bytesToHex) ?? event.allowedValues?.map(String))?.join(',')
+        if (bytes === undefined) return false
+        const key = `${event.code}:${code}`
+        const previous = this.settingSignatures.get(key)
+        this.settingSignatures.set(key, bytes)
+        return previous !== undefined && previous !== bytes
+    }
+
+    private findProperty(code: number): PropertyDefinition | undefined {
+        return Object.values(this.registry.properties).find(property => property.code === code)
+    }
+
+    private recordValue(event: CanonEventRecord, code: number, rawValue: number): void {
+        const property = this.findProperty(code)
+        const rememberRaw = (encoded?: Uint8Array) =>
+            this.unknownPropertyCache.set(code, {
+                ...this.unknownPropertyCache.get(code),
+                rawValue,
+                valueDataHex: encoded && bytesToHex(encoded),
+            })
+        if (!property) return void rememberRaw(event.valueData)
+        const codec = this.resolveCodec(property.codec)
+        const encoded = event.valueData || this.registry.codecs.uint32.encode(rawValue)
+        const existing = this.propertyCache.get(property)
+        const choices = existing?.unrecognized?.choices
+        let current: PropertyValue
+        try {
+            current = codec.decode(encoded).value
+        } catch {
+            // A value outside an older enum table stays visible with its raw value, read-only, without a decoded current.
+            const unrecognized = { ...(choices && { choices }), value: canonRawLabel(encoded) }
+            this.propertyCache.set(property, { allowed: existing?.allowed, unrecognized })
+            rememberRaw(encoded)
+            if (encoded.length === 4) this.recordUnrecognizedValue(code, rawValue, false)
+            return
+        }
+        this.propertyCache.set(property, { current, allowed: existing?.allowed, ...(choices && { unrecognized: { choices } }) })
+    }
+
+    private recordChoices(event: CanonEventRecord, code: number): void {
+        const property = this.findProperty(code)
+        if (!property) {
+            this.unknownPropertyCache.set(code, {
+                ...this.unknownPropertyCache.get(code),
+                allowedValues: event.allowedValues ? [...event.allowedValues] : undefined,
+                allowedValueDataHex: event.allowedValueData?.map(bytesToHex),
+            })
+            return
+        }
+        const codec = this.resolveCodec(property.codec)
+        const uint32 = this.registry.codecs.uint32
+        const encodedAllowed = event.allowedValueData ?? event.allowedValues!.map(raw => uint32.encode(raw))
+        this.advertisedPropertyData.set(property, encodedAllowed.map(encoded => encoded.slice()))
+        const rejected: string[] = []
+        const allowed = encodedAllowed.flatMap(encoded => {
+            try {
+                return [codec.decode(encoded).value]
+            } catch {
+                rejected.push(canonRawLabel(encoded))
+                if (encoded.length === 4) this.recordUnrecognizedValue(code, uint32.decode(encoded).value, true)
+                return []
+            }
+        })
+        const existing = this.propertyCache.get(property)
+        const value = existing?.unrecognized?.value
+        const unrecognized = { ...(value !== undefined && { value }), ...(rejected.length > 0 && { choices: rejected }) }
+        const hasUnrecognized = Object.keys(unrecognized).length > 0
+        this.propertyCache.set(property, { current: existing?.current, allowed, ...(hasUnrecognized && { unrecognized }) })
+    }
+
+    /**
+     * Each poll is scheduled only after the previous one finishes: setInterval does not wait for an async
+     * callback, so slow polls would stack up faster than the bus drains them and starve other operations.
+     */
+    private startPolling(intervalMilliseconds = 200): void {
         if (this.pollingSuspensions) {
             this.resumePolling = true
             return
         }
-        if (this.polling) {
-            return
-        }
-
+        if (this.polling) return
         this.polling = true
-        this.pollingLoop = this.runPollingLoop(intervalMs)
+        this.pollingLoop = this.runPollingLoop(intervalMilliseconds)
     }
 
-    private async runPollingLoop(intervalMs: number): Promise<void> {
+    private async runPollingLoop(intervalMilliseconds: number): Promise<void> {
         while (this.polling) {
             try {
                 await this.maintainKeepAlive()
                 if (!this.polling) return
-                const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
-                if (this.polling && response.data && Array.isArray(response.data) && response.data.length > 0) {
-                    this.processEvents(response.data, true)
-                }
-            } catch (error) {}
-
+                const response = await this.getEvents()
+                if (this.polling && Array.isArray(response.data) && response.data.length > 0)
+                    this.processEvents(response.data)
+            } catch {}
             if (!this.polling) return
-
-            await new Promise(resolve => setTimeout(resolve, intervalMs))
+            await wait(intervalMilliseconds)
         }
     }
 
@@ -1247,27 +1057,25 @@ export class CanonCamera extends GenericCamera {
         this.pollingLoop = undefined
     }
 
+    /** The initial dump takes a few rounds; a camera that never drains its queue must not stall connect(). */
     private async flushInitialEvents(): Promise<void> {
-        // The initial dump takes a few rounds; a camera that never drains its queue must not stall connect().
         let emptyRounds = 0
         for (let round = 0; round < MAXIMUM_INITIAL_EVENT_ROUNDS; round++) {
-            const response = await this.send(this.registry.operations.CanonGetEventData, {}, undefined, 50000)
+            const response = await this.getEvents()
             this.assertResponseOk(response.code, 'initial event readback')
-            if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
-                if (this.propertyCache.size === 0 && ++emptyRounds < 6) {
-                    await new Promise(resolve => setTimeout(resolve, 100))
-                    continue
-                }
-                break
+            if (Array.isArray(response.data) && response.data.length > 0) {
+                this.processEvents(response.data, false)
+                continue
             }
-            this.processEvents(response.data, false)
+            if (this.propertyCache.size > 0 || ++emptyRounds >= 6) break
+            await wait(100)
         }
-
-        const propertiesWithAllowedValues = Array.from(this.propertyCache.values()).filter(p => p.allowed).length
+        const withChoices = [...this.propertyCache.values()].filter(state => state.allowed).length
         console.log(
-            `Initial flush complete: ${this.propertyCache.size} properties cached, ${propertiesWithAllowedValues} properties with allowed values`
+            `Initial flush complete: ${this.propertyCache.size} properties cached, ${withChoices} properties with allowed values`
         )
     }
+
     private async enableLiveView(): Promise<void> {
         if (this.liveViewEnabled) return
         const original = await this.get(this.registry.properties.CanonLiveViewMode)
@@ -1279,53 +1087,73 @@ export class CanonCamera extends GenericCamera {
     }
 
     private async disableLiveView(): Promise<void> {
-        if (this.liveViewEnabled || this.liveViewOriginalOutput !== undefined) {
-            if (this.liveViewOriginalOutput !== undefined) {
-                await this.set(this.registry.properties.CanonLiveViewMode, this.liveViewOriginalOutput)
-            }
-            this.liveViewOriginalOutput = undefined
-            this.liveViewEnabled = false
-        }
+        if (this.liveViewOriginalOutput !== undefined)
+            await this.set(this.registry.properties.CanonLiveViewMode, this.liveViewOriginalOutput)
+        this.liveViewOriginalOutput = undefined
+        this.liveViewEnabled = false
     }
 
-    // Driver contract (`@camera/driver`).
     #video?: ReturnType<typeof recordingCapability>
 
-    /** EOS GetEvent records: a value or its choices changed, or a new file reached the card. */
+    /** EOS GetEvent records: a setting's value or choices changed, or a new file reached the card. */
     override subscribe(event: CameraEventName, handler: CameraEventHandler): () => void {
-        const events = this.registry.events
-        const codes: number[] =
-            event === 'settingsChanged'
-                ? [events.CanonValueChanged.code, events.CanonAllowedValuesChanged.code]
-                : [events.CanonObjectAddedEx.code, events.CanonObjectAddedEx64.code]
-        const listener = (raw: CanonRawEvent) => {
-            if (codes.includes(raw.code)) handler()
-        }
-        this.onRawEvent(listener)
-        return () => this.offRawEvent(listener)
+        const listeners = event === 'settingsChanged' ? this.settingsListeners : this.addedObjectWatchers
+        const listener = () => handler()
+        listeners.add(listener)
+        return () => listeners.delete(listener)
     }
 
     /**
-     * Collects the files the camera announces from now on (ObjectAddedEx/Ex64), so a capture or a
-     * clip is confirmed by the camera's own event rather than by diffing the card.
+     * Collects the files the camera announces from now on (ObjectAddedEx/Ex64/Ex64LFN), so a capture
+     * or a clip is confirmed by the camera's own event rather than by diffing the card. Each
+     * announced handle is named by its ObjectInfo, since the record layouts differ between bodies.
      */
     private watchAddedObjects(accept: (filename: string) => boolean) {
-        const added: CanonAddedObject[] = []
-        const watcher = (object: CanonAddedObject) => {
-            if (accept(object.filename)) added.push(object)
+        const announced: CanonAddedObject[] = []
+        const watcher = (object: CanonAddedObject) => announced.push(object)
+        const recordsSeen = new Set<number>()
+        const recordWatcher = (event: CanonRawEvent) => {
+            if (event.code !== 0xc189 && event.code !== 0xc18a) recordsSeen.add(event.code)
         }
         this.addedObjectWatchers.add(watcher)
-        const stop = () => this.addedObjectWatchers.delete(watcher)
-        /** Polls GetEvent (reads only) until a matching file is announced; never repeats a command. */
-        const next = async (timeoutMilliseconds: number, description: string): Promise<CanonAddedObject[]> => {
-            const deadline = Date.now() + timeoutMilliseconds
-            while (!added.length) {
-                if (Date.now() >= deadline)
-                    throw new Error(`The camera announced no new ${description} within ${timeoutMilliseconds / 1000} seconds`)
-                await this.withoutPolling(() => this.refreshEventProperties())
-                if (!added.length) await wait(Math.min(250, Math.max(0, deadline - Date.now())))
+        this.onRawEvent(recordWatcher)
+        const stop = () => {
+            this.addedObjectWatchers.delete(watcher)
+            this.offRawEvent(recordWatcher)
+        }
+        const matched: AddedFile[] = []
+        const unreadable: string[] = []
+        const named = new Set<number>()
+        const nameAnnounced = async () => {
+            for (const object of announced) {
+                if (named.has(object.handle)) continue
+                named.add(object.handle)
+                try {
+                    const info = await this.addedObjectInfo(object)
+                    if (accept(info.filename)) matched.push({ handle: object.handle, info })
+                } catch (error) {
+                    unreadable.push(`0x${object.handle.toString(16)}: ${error instanceof Error ? error.message : String(error)}`)
+                }
             }
-            return [...added]
+        }
+        const evidence = () => {
+            const records = [...recordsSeen].map(code => `0x${code.toString(16)}`).join(', ') || 'none'
+            return `other event records seen: ${records}${unreadable.length ? `; unreadable objects ${unreadable.join('; ')}` : ''}`
+        }
+        /** Polls GetEvent (reads only) until a matching file is announced; never repeats a command. */
+        const next = async (timeoutMilliseconds: number, description: string): Promise<AddedFile[]> => {
+            const deadline = Date.now() + timeoutMilliseconds
+            for (;;) {
+                await nameAnnounced()
+                if (matched.length) return [...matched]
+                if (Date.now() >= deadline)
+                    throw new Error(
+                        `The camera announced no new ${description} within ${timeoutMilliseconds / 1000} seconds (${evidence()})`
+                    )
+                await this.withoutPolling(() => this.refreshEventProperties())
+                await nameAnnounced()
+                if (!matched.length) await wait(Math.min(250, Math.max(0, deadline - Date.now())))
+            }
         }
         return { stop, next }
     }
@@ -1348,20 +1176,55 @@ export class CanonCamera extends GenericCamera {
      */
     async setFocusPoint(x: number, y: number, options: FocusPointOptions): Promise<void> {
         requirePoint(x, y)
+        await this.usePositionedFocusArea()
         await this.placeFocusFrame('setFocusPoint', x, y)
         if (options.autofocus) await this.performAutofocus(CANON_FOCUS_DURATION_MILLISECONDS)
     }
 
-    /** Recentres the frame, which is also right while magnified. */
+    /**
+     * Wide, Zone, Face and Tracking areas place their own frame and ignore a host position, so a
+     * focus point first switches to an advertised single point (or spot) and remembers the area.
+     */
+    private async usePositionedFocusArea(): Promise<void> {
+        const property = this.registry.properties.CanonLiveViewAutofocusMode
+        if (!this.propertyCache.has(property)) return
+        const area = String(await this.get(property))
+        if (CANON_POSITIONED_AF_AREAS.includes(area)) return
+        const offered = (this.getPropertyAllowedValues(property) ?? []).map(String)
+        const point = CANON_FOCUS_POINT_AREAS.find(candidate => offered.includes(candidate))
+        if (!point) throw new CameraUnsupportedError('setFocusPoint', `The camera offers no single-point focus area from ${area}`)
+        await this.set(property, point).catch(error => focusFailure('setFocusPoint', error))
+        this.focusChanges.previousArea ??= area
+        this.focusChanges.placedArea = point
+    }
+
+    /** Recentres a host-positioned frame (also right while magnified), then puts back the area a focus point replaced. */
     async resetFocusPoint(): Promise<void> {
-        await this.placeFocusFrame('resetFocusPoint', 0.5, 0.5)
+        const property = this.registry.properties.CanonLiveViewAutofocusMode
+        const changes = this.focusChanges
+        await restoreAll('resetFocusPoint', [
+            async () => {
+                const area = this.propertyCache.has(property) ? String(await this.get(property)) : undefined
+                if (area === undefined || CANON_POSITIONED_AF_AREAS.includes(area))
+                    await this.placeFocusFrame('resetFocusPoint', 0.5, 0.5)
+            },
+            async () => {
+                const { previousArea, placedArea } = changes
+                changes.previousArea = changes.placedArea = undefined
+                // Only undo the switch a focus point made: an area chosen since then stays.
+                if (previousArea && String(await this.get(property)) === placedArea)
+                    await this.setNamed(property, previousArea)
+            },
+        ])
+    }
+
+    settingWritten(id: CameraControlId): void {
+        if (id === 'focusArea') this.focusChanges = {}
     }
 
     private async placeFocusFrame(operation: 'setFocusPoint' | 'resetFocusPoint', x: number, y: number) {
-        const operations = this.registry.operations
-        const missing = [operations.CanonGetViewfinderData, operations.CanonViewfinderPosition].filter(
-            definition => !this.advertises(definition)
-        )
+        const { CanonGetViewfinderData, CanonViewfinderPosition } = this.registry.operations
+        const missing = [CanonGetViewfinderData, CanonViewfinderPosition].filter(definition => !this.advertises(definition))
         if (missing.length)
             throw new CameraUnsupportedError(
                 operation,
@@ -1375,12 +1238,7 @@ export class CanonCamera extends GenericCamera {
         const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value))
         const originX = clamp(Math.round(position.minimumX + x * visibleWidth - position.width / 2), position.minimumX, position.maximumX)
         const originY = clamp(Math.round(position.minimumY + y * visibleHeight - position.height / 2), position.minimumY, position.maximumY)
-        try {
-            await this.setLiveViewPosition(originX, originY)
-        } catch (error) {
-            if (error instanceof PTPResponseError) throw new CameraRefusedError(operation, error.message)
-            throw new CameraOutcomeUnknownError(operation, error instanceof Error ? error.message : String(error))
-        }
+        await this.setLiveViewPosition(originX, originY).catch(error => focusFailure(operation, error))
     }
 
     /** Still mode for a body in movie mode, then a release confirmed by the camera's object-added event. */
@@ -1424,7 +1282,7 @@ export class CanonCamera extends GenericCamera {
             ...cardSteps(this, this.requireOwner()),
             readState: async () => {
                 await this.refreshEventProperties()
-                const state = this.listPropertyStates().find(state => state.name === 'CanonRecordingDestination')?.value
+                const state = this.propertyCache.get(this.registry.properties.CanonRecordingDestination)?.current
                 return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
             },
             checkCard: async () => {
@@ -1432,9 +1290,7 @@ export class CanonCamera extends GenericCamera {
                 if (!cards.some(card => card.writable && card.freeBytes > 0))
                     throw new CameraRefusedError('startRecording', 'Insert a writable memory card with free space before recording')
             },
-            // Card destination, movie mode and the photo exposure copied across; movie sound is left as set.
             prepare: () => this.openMovieMode(),
-            // No card scan: the clip is the movie the camera announces from here on.
             listHandles: async () => {
                 clipWatch?.stop()
                 clipWatch = this.watchAddedObjects(name => CANON_MOVIE_FILE.test(name))
@@ -1445,9 +1301,8 @@ export class CanonCamera extends GenericCamera {
                 if (!watch) throw new Error('No Canon recording was watched for its clip')
                 try {
                     const [movie] = await watch.next(clipFinalizationMilliseconds, 'movie')
-                    const info = await this.addedObjectInfo(movie!)
-                    const reported = info.objectCompressedSize
-                    const sizeBytes = reported === unstatedSize ? undefined : reported
+                    const info = movie!.info
+                    const sizeBytes = info.objectCompressedSize === unstatedSize ? undefined : info.objectCompressedSize
                     const reference = { source: 'object', storageId: info.storageID, objectHandle: movie!.handle, name: info.filename } as const
                     return {
                         mediaId: encodeMediaId({ ...reference, ...(sizeBytes !== undefined && { sizeBytes }) }),
@@ -1465,7 +1320,7 @@ export class CanonCamera extends GenericCamera {
     }
 
     private fixedMovie(): number | undefined {
-        const value = this.listUnknownPropertyStates().find(state => state.code === FIXED_MOVIE)?.rawValue
+        const value = this.unknownPropertyCache.get(FIXED_MOVIE)?.rawValue
         return value === 0 || value === 1 ? value : undefined
     }
 
@@ -1473,10 +1328,7 @@ export class CanonCamera extends GenericCamera {
         const states = this.listPropertyStates()
         const read = (name: string) => states.find(state => state.name === name)?.value
         const values = new Map<ExposureProperty, string>()
-        for (const name of exposureProperties) {
-            const value = read(name)
-            if (value !== undefined) values.set(name, String(value))
-        }
+        for (const name of exposureProperties) if (read(name) !== undefined) values.set(name, String(read(name)))
         return { mode: Number(read('CanonAutoExposureMode')), values }
     }
 
@@ -1490,8 +1342,7 @@ export class CanonCamera extends GenericCamera {
             if (String(state?.value) === value) continue
             if (!state?.allowedValues?.map(String).includes(value))
                 throw new Error(`Canon did not advertise the previous ${name}: ${value}`)
-            const property = this.registry.properties[name]
-            await this.set(property, value as CodecType<(typeof property)['codec']>)
+            await this.setNamed(this.registry.properties[name], value)
             if (String(find()?.value) !== value) throw new Error(`Canon ${name} readback changed during the movie-mode transition`)
         }
     }
@@ -1524,14 +1375,12 @@ export class CanonCamera extends GenericCamera {
         let failure: unknown
         try {
             await this.leaveMovieMode()
-            try {
-                await this.settleMovieMode(0, true)
-            } catch {
+            await this.settleMovieMode(0, true).catch(() => {
                 throw new CameraUnsupportedError(
                     'takePhoto',
                     'Set the Canon body’s physical still/movie selector to Photo; it retained movie mode after the remote Photo command'
                 )
-            }
+            })
             return await capture()
         } catch (error) {
             failure = error
@@ -1610,9 +1459,8 @@ export class CanonCamera extends GenericCamera {
             return operationsAdvertised(capabilities, [operations.CanonGetViewfinderData, operations.CanonViewfinderPosition])
         if (operation === 'autofocus') {
             const advertised = capabilities.advertisedOperations
-            return !advertised ||
-                advertised.includes(operations.CanonDoAutofocus.code) ||
-                advertised.includes(operations.CanonRemoteReleaseOn.code)
+            const focusOperations = [operations.CanonDoAutofocus.code, operations.CanonRemoteReleaseOn.code]
+            return !advertised || focusOperations.some(code => advertised.includes(code))
                 ? supported
                 : unsupported('The camera advertises neither DoAf nor a remote half-press')
         }

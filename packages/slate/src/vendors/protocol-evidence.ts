@@ -53,34 +53,25 @@ export function propertyWriteEvidence(
 }
 
 /** Retain decoded numeric protocol datasets only; unknown payloads are never copied. */
-export function protocolEvidence(
-    vendorId: number,
-    registry: Registry,
-    operation: number,
-    data: unknown
-): ProtocolEvidence[] {
+export function protocolEvidence(vendorId: number, registry: Registry, operation: number, data: unknown): ProtocolEvidence[] {
     // Discovery starts through GenericCamera before it creates the vendor camera.
     // Judge known codes against the vendor definitions, not that temporary registry.
     registry = definitionsByVendor.get(vendorId) ?? registry
     const result: ProtocolEvidence[] = []
-    const add = (item: ProtocolEvidence) => {
+    /** Unscoped or invalid evidence is excluded; reports whether the item was kept. */
+    const add = (item: ProtocolEvidence): boolean => {
         try {
             validateProtocol(item)
-            result.push(item)
         } catch {
-            /* Unscoped/invalid data remains excluded. */
+            return false
         }
+        result.push(item)
+        return true
     }
     const inventory = (category: ProtocolCategory, input: unknown) => {
         if (!Array.isArray(input) || input.length > 4096) return
         const codes = [...new Set(input)] as number[]
-        const item: ProtocolEvidence = { type: 'inventory', vendorId, category, codes }
-        try {
-            validateProtocol(item)
-        } catch {
-            return
-        }
-        add(item)
+        if (!add({ type: 'inventory', vendorId, category, codes })) return
         const definitions =
             category === 'property'
                 ? registry.properties
@@ -97,13 +88,8 @@ export function protocolEvidence(
         const value = input as DevicePropDesc
         if (!value || !isSafeProtocolProperty(vendorId, value.devicePropertyCode)) return
         const numeric = (field: unknown) => (typeof field === 'bigint' ? field.toString() : (field as number))
-        const item: ProtocolEvidence = {
-            type: 'descriptor',
-            vendorId,
-            property: value.devicePropertyCode,
-            dataType: value.dataType,
-            writable: value.getSet === 'GET_SET',
-        }
+        const item: ProtocolEvidence = { type: 'descriptor', vendorId, property: value.devicePropertyCode,
+            dataType: value.dataType, writable: value.getSet === 'GET_SET' }
         for (const [target, source] of Object.entries({
             current: 'currentValueRaw',
             default: 'factoryDefaultValue',
@@ -130,10 +116,7 @@ export function protocolEvidence(
     } else if (operation === 0x1014 || (vendorId === 0x04b0 && operation === 0x943a)) {
         descriptor(data)
     } else if (vendorId === 0x054c && operation === 0x9209 && Array.isArray(value.properties)) {
-        inventory(
-            'property',
-            value.properties.map(property => property.devicePropertyCode)
-        )
+        inventory('property', value.properties.map(property => property.devicePropertyCode))
         for (const property of value.properties.slice(0, 4096)) descriptor(property)
     } else if (vendorId === 0x04a9 && operation === 0x9108) {
         inventory('event', value.eventCodes)
@@ -147,11 +130,7 @@ export function protocolEvidence(
             if (!isSafeProtocolProperty(vendorId, property)) continue
             if (event.code === 0xc189 && event.valueData?.length === 4)
                 add({ type: 'property-value', vendorId, property, dataType: 6, current: event.parameters[1] })
-            if (
-                event.code === 0xc18a &&
-                event.allowedValues &&
-                event.allowedValueData?.every((bytes: Uint8Array) => bytes.length === 4)
-            )
+            if (event.code === 0xc18a && event.allowedValues && event.allowedValueData?.every((bytes: Uint8Array) => bytes.length === 4))
                 add({ type: 'property-value', vendorId, property, dataType: 6, values: event.allowedValues })
         }
     }

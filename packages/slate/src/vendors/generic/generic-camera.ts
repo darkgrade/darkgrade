@@ -11,6 +11,7 @@ import type {
     CameraEventHandler,
     CameraEventName,
     CameraInfo,
+    CameraOperationName,
     CardStatus,
     ConfirmedPhotoFile,
     MediaDownloadOptions,
@@ -21,7 +22,6 @@ import type {
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { ExposureContext } from '@camera/exposure-time'
 import type { Camera } from '@camera/index'
-import type { CameraOperationName } from '@camera/driver'
 import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@contribute/protocol'
 import { Logger } from '@core/logger'
 import {
@@ -37,7 +37,6 @@ import { slateTelemetry } from '@core/telemetry'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { DeviceBusy, IncompleteTransfer, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
 import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
@@ -53,32 +52,19 @@ import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { SonyRemoteSdkTransport } from '@transport/sony-remote/sony-remote-sdk-transport'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { OBJECT_SIZE_UNREPORTED, reportingRefusals } from '@vendors/generic/ptp-object-index'
-import {
-    afterShutterRelease,
-    cardObjectFile,
-    classified,
-    shutterOutcomeUnknown,
-    shutterRefused,
-} from '@vendors/generic/shutter-outcome'
+import { afterShutterRelease, cardObjectFile, classified, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import { setStandardClock, standardClockUnavailable } from '@vendors/generic/standard-clock'
-import {
-    propertyWriteEvidence,
-    protocolEvidence,
-    stateSnapshotEvidence,
-    type CachedDiagnosticSetting,
-} from '@vendors/protocol-evidence'
+import { messageOf } from '@vendors/generic/typed-failure'
+import { propertyWriteEvidence, protocolEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
 import { createPTPRegistry, Registry } from '@vendors/registry'
 
-/** ISO 15740 standard operation codes; their DeviceBusy answers mean "not performed, retry later". */
 /** How long a camera takes to enumerate again after a USB port reset. */
 const PORT_RESET_SETTLE_MS = 1500
 /** A camera needs a moment after a Device Reset Request before it accepts OpenSession. */
 const DEVICE_RESET_SETTLE_MS = 500
 
-function delay(milliseconds: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, milliseconds))
-}
 
+/** ISO 15740 standard operation codes; their DeviceBusy answers mean "not performed, retry later". */
 const STANDARD_OPERATIONS = { from: 0x1000, to: 0x1fff } as const
 
 export interface StandardPropertyState {
@@ -133,6 +119,25 @@ interface RecoveryAttempt {
     previousSessionId: number | null
 }
 
+export function standardPropertyState(descriptor: DevicePropDesc): StandardPropertyState {
+    const { allowedValues, unrecognized } = recognizedDescriptorValues(descriptor)
+    return {
+        code: descriptor.devicePropertyCode,
+        codeHex: `0x${descriptor.devicePropertyCode.toString(16).padStart(4, '0')}`,
+        name: descriptor.devicePropertyName,
+        description: descriptor.devicePropertyDescription,
+        value: descriptor.currentValueDecoded,
+        rawValue: descriptor.currentValueRaw,
+        writable: descriptor.getSet === 'GET_SET',
+        form: descriptor.formFlag === 0x02 ? 'enum' : descriptor.formFlag === 0x01 ? 'range' : 'none',
+        ...(allowedValues ? { allowedValues } : {}),
+        ...(descriptor.minimumValue !== undefined ? { minimumValue: descriptor.minimumValue } : {}),
+        ...(descriptor.maximumValue !== undefined ? { maximumValue: descriptor.maximumValue } : {}),
+        ...(descriptor.stepSize !== undefined ? { stepSize: descriptor.stepSize } : {}),
+        ...(unrecognized && { unrecognized }),
+    }
+}
+
 export class GenericCamera {
     protected emitter = new EventEmitter()
     public vendorId: number | null = null
@@ -151,15 +156,8 @@ export class GenericCamera {
     /** Synchronous, bounded and entirely cache-based. Diagnostic failures cannot change a camera workflow. */
     recordStateSnapshot(workflow: 'recording' | 'photo' | 'benchmark', phase: StatePhase) {
         try {
-            this.recordProtocol(
-                stateSnapshotEvidence(
-                    this.vendorId ?? 0,
-                    this.diagnosticSettings.values(),
-                    workflow,
-                    phase,
-                    performance.now()
-                )
-            )
+            const settings = this.diagnosticSettings.values()
+            this.recordProtocol(stateSnapshotEvidence(this.vendorId ?? 0, settings, workflow, phase, performance.now()))
         } catch {
             /* Optional diagnostics must never interfere with capture or recovery. */
         }
@@ -177,10 +175,7 @@ export class GenericCamera {
      * completes while `work` runs, so a caller can tell a refused write from one the camera
      * acknowledged before a later step failed.
      */
-    async observeResponses<T>(
-        observe: (operationName: string, responseCode: number) => void,
-        work: () => Promise<T>
-    ): Promise<T> {
+    async observeResponses<T>(observe: (operationName: string, responseCode: number) => void, work: () => Promise<T>): Promise<T> {
         this.responseObservers.add(observe)
         try {
             return await work()
@@ -199,10 +194,7 @@ export class GenericCamera {
     private shareProtocol(evidence: ProtocolEvidence, operation?: number) {
         try {
             validateProtocol(evidence)
-            if (
-                (evidence.type === 'descriptor' || evidence.type === 'property-value') &&
-                evidence.current !== undefined
-            ) {
+            if ((evidence.type === 'descriptor' || evidence.type === 'property-value') && evidence.current !== undefined) {
                 if (this.diagnosticSettings.size >= 256 && !this.diagnosticSettings.has(evidence.property))
                     this.diagnosticSettings.clear()
                 this.diagnosticSettings.set(evidence.property, {
@@ -238,12 +230,8 @@ export class GenericCamera {
         if (this.protocolSeen.get(key) === encoded) return
         if (this.protocolSeen.size >= 8192) this.protocolSeen.clear()
         this.protocolSeen.set(key, encoded)
-        // Every reconnect re-reads the same inventory and settings. Report a fact about an
-        // identified body again only when it changes or after six hours, not once per connection.
-        // The same key can carry different facts: a probe and a vendor session scope a code
-        // differently, a setting's value and its allowed values arrive separately, and two
-        // operations list the same inventory category. Remember each kind on its own so they
-        // do not keep replacing one another and look new on every connection.
+        // A fact about an identified body is shared again only when it changes or after six hours.
+        // Each kind (vendor scope, operation, field set) is remembered separately so kinds sharing a key do not replace each other.
         const kind = `${key}:${'vendorId' in scoped ? scoped.vendorId : ''}:${operation ?? ''}:${Object.keys(scoped).sort().join(',')}`
         if (!scoped.benchmarkId && !this.telemetry.newFact(kind, encoded)) return
         this.telemetry.protocol(scoped, operation)
@@ -264,35 +252,23 @@ export class GenericCamera {
         this.transport = transport
         this.logger = logger
         this.channel = new TransactionChannel(transport, ({ container, reason }) =>
-            this.logger.addLog({
-                type: 'console',
-                level: 'warn',
-                consoleLevel: 'warn',
-                args: [`Discarded PTP container 0x${container.code.toString(16).padStart(4, '0')}: ${reason}`],
-            })
+            this.warn(`Discarded PTP container 0x${container.code.toString(16).padStart(4, '0')}: ${reason}`)
         )
         this.registry = createPTPRegistry(transport.isLittleEndian())
         logger.setRegistry(this.registry)
 
         this.transport.on?.(event => this.handleEvent(event))
-        // Record the public workflow outcome alongside its existing wire session.
-        for (const [method, operation] of [
-            ['sendStartRecording', 'record_start'],
-            ['sendStopRecording', 'record_stop'],
+        for (const [method, operation, transition] of [
+            ['sendStartRecording', 'record_start', 'start'],
+            ['sendStopRecording', 'record_stop', 'stop'],
         ] as const) {
             const work = this[method].bind(this)
             this[method] = () =>
                 this.telemetry.operation(operation, async () => {
-                    this.recordStateSnapshot(
-                        'recording',
-                        method === 'sendStartRecording' ? 'before-start' : 'before-stop'
-                    )
+                    this.recordStateSnapshot('recording', `before-${transition}`)
                     try {
                         await work()
-                        this.recordStateSnapshot(
-                            'recording',
-                            method === 'sendStartRecording' ? 'after-start' : 'after-stop'
-                        )
+                        this.recordStateSnapshot('recording', `after-${transition}`)
                     } catch (error) {
                         this.recordStateSnapshot('recording', 'failure')
                         throw error
@@ -313,9 +289,7 @@ export class GenericCamera {
             this.channel.newConnection()
             this.protocolSeen.clear()
             this.diagnosticSettings.clear()
-            this.needsResynchronization = false
-            this.lastFailure = undefined
-            this.recovery = undefined
+            this.clearRecoveryState()
         } else await this.resynchronizeIfNeeded()
     }
 
@@ -338,10 +312,8 @@ export class GenericCamera {
             if (!unanswered || !this.channel.policy.automaticUSBReset || !this.transport.resetPort) throw error
             await this.recovery?.task.catch(() => undefined)
             await this.transport.resetPort()
-            this.recovery = undefined
-            this.lastFailure = undefined
-            this.needsResynchronization = false
-            await delay(PORT_RESET_SETTLE_MS)
+            this.clearRecoveryState()
+            await this.waitMs(PORT_RESET_SETTLE_MS)
             await this.connectTransport(device)
             await this.openFreshSession()
         }
@@ -386,10 +358,7 @@ export class GenericCamera {
      */
     async disconnect(): Promise<void> {
         if (this.recovery?.status === 'pending')
-            throw new PTPRecoveryRequiredError(
-                'Transport recovery is still running; disconnect must wait',
-                this.lastFailure
-            )
+            throw new PTPRecoveryRequiredError('Transport recovery is still running; disconnect must wait', this.lastFailure)
         this.emitter.removeAllListeners()
         try {
             await this.closeSessionAndTransport()
@@ -408,20 +377,11 @@ export class GenericCamera {
     }
 
     /**
-     * Brings back a camera that has stopped answering, using only software: no power or hub
-     * cycling. Each step is tried only if the one before it failed, and each verifies a fresh
-     * camera identity and the vendor's advertised readiness check before claiming recovery:
-     *
-     * 1. session: open a fresh session (a camera that is merely idle or left with a stale session).
-     * 2. device-reset: the still-image class Device Reset Request, a wait for abandoned I/O to
-     *    settle, then a fresh session (a camera left mid-transaction by a host that died).
-     * 3. port-reset: a libusb port reset, the software equivalent of a replug, then a wait for the
-     *    camera to enumerate again and a fresh session.
-     *
-     * A camera that is not on USB at all is waited for, up to `waitForDeviceMilliseconds`, since it
-     * may still be starting. Whatever the outcome the transport is left closed, so the caller
-     * connects normally afterwards (vendor setup belongs to connect). When no step works,
-     * `needsPhysicalAction` is true: only then are power or hub cycling warranted.
+     * Brings back a camera that has stopped answering, using only software. Each step runs only if
+     * the one before failed and must read a fresh identity and pass the vendor's readiness check:
+     * a fresh session, then the class Device Reset Request, then a libusb port reset (a replug).
+     * An absent camera is waited for up to `waitForDeviceMilliseconds`. The transport is left
+     * closed; when no step works, `needsPhysicalAction` is true: only then are power or hub cycling warranted.
      */
     async recover(device?: DeviceDescriptor, options: CameraRecoveryOptions = {}): Promise<CameraRecoveryReport> {
         const stepTimeout = options.stepTimeoutMilliseconds ?? 8_000
@@ -444,44 +404,24 @@ export class GenericCamera {
                 steps.push({ step, ok: true, durationMilliseconds: Date.now() - begun })
                 return identity
             } catch (error) {
-                steps.push({
-                    step,
-                    ok: false,
-                    durationMilliseconds: Date.now() - begun,
-                    detail: error instanceof Error ? error.message : String(error),
-                })
+                steps.push({ step, ok: false, durationMilliseconds: Date.now() - begun, detail: messageOf(error) })
                 return undefined
             }
         }
         try {
             const present = await this.waitForTransport(device, waitForDevice)
             if (!present.ok) {
-                steps.push({
-                    step: 'enumerate',
-                    ok: false,
-                    durationMilliseconds: Date.now() - started,
-                    detail: present.detail,
-                })
-                return {
-                    recovered: false,
-                    needsPhysicalAction: true,
-                    steps,
-                    durationMilliseconds: Date.now() - started,
-                }
+                steps.push({ step: 'enumerate', ok: false, durationMilliseconds: Date.now() - started, detail: present.detail })
+                return { recovered: false, needsPhysicalAction: true, steps, durationMilliseconds: Date.now() - started }
             }
             let identity = await attempt('session', () => this.openFreshSession())
             if (!identity)
                 identity = await attempt('device-reset', async () => {
                     if (!this.transport.isConnected()) await this.connectTransport(device)
-                    await this.withStepTimeout(
-                        this.transport.classRequestReset(),
-                        stepTimeout,
-                        'the Device Reset Request'
-                    )
-                    if (!(await this.channel.settle(stepTimeout)))
-                        throw new Error('abandoned USB I/O did not settle after the Device Reset Request')
+                    // The recovery policy bounds this reset by stepTimeout.
+                    await this.resetUSBTransport()
                     this.clearRecoveryState()
-                    await delay(DEVICE_RESET_SETTLE_MS)
+                    await this.waitMs(DEVICE_RESET_SETTLE_MS)
                     await this.openFreshSession()
                 })
             if (!identity && options.allowPortReset !== false && this.transport.resetPort)
@@ -490,7 +430,7 @@ export class GenericCamera {
                     await this.withStepTimeout(this.transport.resetPort!(), stepTimeout, 'the USB port reset')
                     this.sessionId = null
                     this.clearRecoveryState()
-                    await delay(PORT_RESET_SETTLE_MS)
+                    await this.waitMs(PORT_RESET_SETTLE_MS)
                     const back = await this.waitForTransport(device, waitForDevice)
                     if (!back.ok)
                         throw new Error(`the camera did not enumerate again after the port reset: ${back.detail}`)
@@ -518,11 +458,7 @@ export class GenericCamera {
             })
         await this.verifyRecoveryState(response.data)
         const info = response.data as { manufacturer?: string; model?: string; deviceVersion?: string }
-        return {
-            manufacturer: String(info.manufacturer ?? ''),
-            model: String(info.model ?? ''),
-            firmware: String(info.deviceVersion ?? ''),
-        }
+        return { manufacturer: String(info.manufacturer ?? ''), model: String(info.model ?? ''), firmware: String(info.deviceVersion ?? '') }
     }
 
     /** Vendors may still reject controls while their identity remains readable. */
@@ -540,10 +476,10 @@ export class GenericCamera {
                 if (!this.transport.isConnected()) await this.connectTransport(device)
                 return { ok: true }
             } catch (error) {
-                last = error instanceof Error ? error.message : String(error)
+                last = messageOf(error)
             }
             if (Date.now() >= deadline) return { ok: false, detail: last }
-            await delay(500)
+            await this.waitMs(500)
         }
     }
 
@@ -553,10 +489,7 @@ export class GenericCamera {
             return await Promise.race([
                 work,
                 new Promise<never>((_, reject) => {
-                    timer = setTimeout(
-                        () => reject(new Error(`${what} did not complete within ${milliseconds} ms`)),
-                        milliseconds
-                    )
+                    timer = setTimeout(() => reject(new Error(`${what} did not complete within ${milliseconds} ms`)), milliseconds)
                 }),
             ])
         } finally {
@@ -600,15 +533,10 @@ export class GenericCamera {
     }
 
     /**
-     * PTP is strictly request/response over a single pair of bulk endpoints, so only one
-     * transaction may be in flight at a time. Vendor subclasses poll for events on a timer, and
-     * setInterval does not wait for its async callback, so polls can overlap each other and any
-     * caller-initiated operation. Overlapping transactions interleave on the shared endpoints and
-     * abort libusb. Queueing every transaction here keeps the bus serialized.
-     *
-     * Every phase is bounded by the transaction policy's timeout, replies are checked against
-     * ISO 15740 container framing, and failures are typed (`PTPTimeoutError`, `PTPProtocolError`,
-     * `PTPDecodeError`, `PTPDisconnectedError`). A non-OK response code is returned, not thrown.
+     * Queues one transaction: PTP allows only one in flight, and overlapping vendor event polls would
+     * interleave on the shared endpoints. Every phase is bounded by the transaction policy's timeout
+     * and failures are typed (`PTPTimeoutError`, `PTPProtocolError`, `PTPDecodeError`,
+     * `PTPDisconnectedError`). A non-OK response code is returned, not thrown.
      */
     async send<Op extends OperationDefinition>(
         operation: Op,
@@ -616,50 +544,25 @@ export class GenericCamera {
         data?: Uint8Array,
         maxDataLength?: number
     ): Promise<OperationResponse<Op>> {
-        const result = this.transactionQueue.then(
-            () => this.sendTransaction(operation, params, data, maxDataLength),
-            () => this.sendTransaction(operation, params, data, maxDataLength)
-        )
-
+        const transaction = () => this.sendTransaction(operation, params, data, maxDataLength)
+        const result = this.transactionQueue.then(transaction, transaction)
         // Keep the chain alive after a rejection so one failed transaction cannot wedge the queue.
-        this.transactionQueue = result.then(
-            () => undefined,
-            () => undefined
-        )
-
+        this.transactionQueue = result.then(() => undefined, () => undefined)
         const response = await result
         for (const observe of this.responseObservers) observe(operation.name, response.code)
-        if (operation.code === 0x1001 && response.code === OK.code && 'data' in response && response.data) {
-            await this.telemetry.identify(
-                response.data as unknown as {
-                    manufacturer: string
-                    model: string
-                    deviceVersion: string
-                    serialNumber?: string
-                }
-            )
-        }
-        if (response.code === OK.code && 'data' in response && response.data) {
-            try {
-                for (const evidence of protocolEvidence(
-                    this.vendorId ?? 0,
-                    this.registry,
-                    operation.code,
-                    response.data
-                ))
-                    this.recordProtocol(evidence, operation.code)
-            } catch {
-                /* A diagnostics failure must not turn a completed camera read into a failure. */
-            }
+        if (response.code !== OK.code || !('data' in response) || !response.data) return response
+        if (operation.code === 0x1001) await this.telemetry.identify(response.data as unknown as DeviceInfo)
+        try {
+            for (const evidence of protocolEvidence(this.vendorId ?? 0, this.registry, operation.code, response.data))
+                this.recordProtocol(evidence, operation.code)
+        } catch {
+            /* A diagnostics failure must not turn a completed camera read into a failure. */
         }
         return response
     }
 
     private async sendTransaction<Op extends OperationDefinition>(
-        operation: Op,
-        params: OperationParams<Op>,
-        data?: Uint8Array,
-        maxDataLength?: number
+        operation: Op, params: OperationParams<Op>, data?: Uint8Array, maxDataLength?: number
     ): Promise<OperationResponse<Op>> {
         // Everything that can fail locally fails before a transaction ID is spent or a byte is sent,
         // so a strict camera never sees a gap in transaction IDs or a command without its data phase.
@@ -684,28 +587,17 @@ export class GenericCamera {
         }
     }
 
-    private encodeParameters(
-        operation: OperationDefinition,
-        paramsRecord: Record<string, number | bigint | string>
-    ): Uint8Array[] {
+    private encodeParameters(operation: OperationDefinition, paramsRecord: Record<string, number | bigint | string>): Uint8Array[] {
         const encodedParams: Uint8Array[] = []
         for (const paramDef of operation.operationParameters) {
             if (!paramDef) continue
 
-            let value = paramsRecord[paramDef.name]
-
-            if (value === undefined && 'defaultValue' in paramDef && paramDef.defaultValue !== undefined) {
-                value = paramDef.defaultValue
+            const value = paramsRecord[paramDef.name] ?? ('defaultValue' in paramDef ? paramDef.defaultValue : undefined)
+            if (value === undefined) {
+                if (paramDef.required) throw new Error(`Required parameter ${paramDef.name} missing`)
+                continue
             }
-
-            if (value === undefined && !paramDef.required) continue
-
-            if (value === undefined && paramDef.required) {
-                throw new Error(`Required parameter ${paramDef.name} missing`)
-            }
-
-            const codec = this.resolveCodec(paramDef.codec)
-            const encoded = codec.encode(value)
+            const encoded = this.resolveCodec(paramDef.codec).encode(value)
             if (encoded.length > 4) throw new Error(`Parameter ${paramDef.name} exceeds a UINT32 slot`)
             encodedParams.push(encoded)
         }
@@ -714,13 +606,10 @@ export class GenericCamera {
     }
 
     /**
-     * An abandoned or malformed transfer is unsafe to reuse. Before the next command, a caller-owned
-     * TransactionPolicy.recoverTransport runs if one is configured. Otherwise, over USB, core resets
-     * automatically: the still-image class Device Reset Request (libgphoto2 sends the same request
-     * after an I/O error or timeout), a bounded wait for the abandoned I/O to settle, and a fresh
-     * OpenSession if a session was open. Only when that recovery fails, or the transport has no
-     * class reset (PTP/IP), do commands fail with PTPRecoveryRequiredError until a disconnect/connect.
-     * Timing out a recovery wait does not cancel it or permit another command to race it.
+     * After an abandoned or malformed transfer, runs the caller's TransactionPolicy.recoverTransport,
+     * or over USB the class Device Reset Request (as libgphoto2 does), a bounded settle and a fresh
+     * OpenSession. If that fails, or there is no class reset (PTP/IP), commands fail with
+     * PTPRecoveryRequiredError until disconnect/connect. A timed-out wait never lets a command race it.
      */
     private async resynchronizeIfNeeded(): Promise<void> {
         if (!this.needsResynchronization) return
@@ -740,13 +629,8 @@ export class GenericCamera {
             const attempt: RecoveryAttempt = { task, status: 'pending', automatic, previousSessionId }
             this.recovery = attempt
             void task.then(
-                () => {
-                    attempt.status = 'succeeded'
-                },
-                error => {
-                    attempt.status = 'failed'
-                    attempt.failure = error
-                }
+                () => void (attempt.status = 'succeeded'),
+                error => void Object.assign(attempt, { status: 'failed', failure: error })
             )
         }
         const attempt = this.recovery
@@ -767,24 +651,16 @@ export class GenericCamera {
             clearTimeout(timer)
         }
         if (attempt.status === 'pending')
-            throw new PTPRecoveryRequiredError(
-                'Transport recovery is still running; no further command was sent',
-                this.lastFailure
-            )
+            throw new PTPRecoveryRequiredError('Transport recovery is still running; no further command was sent', this.lastFailure)
         if (attempt.status === 'failed')
             throw new PTPRecoveryRequiredError(
-                `${attempt.automatic ? 'Automatic USB reset' : 'Transport recovery'} failed: ${attempt.failure instanceof Error ? attempt.failure.message : String(attempt.failure)}`,
+                `${attempt.automatic ? 'Automatic USB reset' : 'Transport recovery'} failed: ${messageOf(attempt.failure)}`,
                 { ...this.lastFailure, cause: attempt.failure }
             )
         if (this.channel.hasPendingIO)
-            throw new PTPRecoveryRequiredError(
-                'Recovery returned while abandoned transport I/O is still running',
-                this.lastFailure
-            )
+            throw new PTPRecoveryRequiredError('Recovery returned while abandoned transport I/O is still running', this.lastFailure)
         const failure = this.lastFailure
-        this.recovery = undefined
-        this.lastFailure = undefined
-        this.needsResynchronization = false
+        this.clearRecoveryState()
         if (!attempt.automatic || attempt.previousSessionId === null) return
         try {
             await this.reopenSessionAfterReset(attempt.previousSessionId)
@@ -793,15 +669,9 @@ export class GenericCamera {
             this.sessionId = null
             this.needsResynchronization = true
             this.lastFailure = failure
-            this.recovery = {
-                task: Promise.resolve(),
-                status: 'failed',
-                failure: error,
-                automatic: true,
-                previousSessionId: null,
-            }
+            this.recovery = { task: Promise.resolve(), status: 'failed', failure: error, automatic: true, previousSessionId: null }
             throw new PTPRecoveryRequiredError(
-                `Automatic USB reset failed to reopen the session: ${error instanceof Error ? error.message : String(error)}`,
+                `Automatic USB reset failed to reopen the session: ${messageOf(error)}`,
                 { ...failure, cause: error }
             )
         }
@@ -810,20 +680,7 @@ export class GenericCamera {
     /** Device Reset Request, then a bounded wait until the abandoned reads and writes have settled. */
     private async resetUSBTransport(): Promise<void> {
         const timeout = this.channel.policy.timeoutMilliseconds
-        let timer: ReturnType<typeof setTimeout> | undefined
-        try {
-            await Promise.race([
-                this.transport.classRequestReset(),
-                new Promise<never>((_, reject) => {
-                    timer = setTimeout(
-                        () => reject(new Error(`the Device Reset Request did not complete within ${timeout} ms`)),
-                        timeout
-                    )
-                }),
-            ])
-        } finally {
-            clearTimeout(timer)
-        }
+        await this.withStepTimeout(this.transport.classRequestReset(), timeout, 'the Device Reset Request')
         if (!(await this.channel.settle(timeout)))
             throw new Error('abandoned USB I/O did not settle after the Device Reset Request')
     }
@@ -854,7 +711,7 @@ export class GenericCamera {
             return this.resolveCodec<T>(codec).decode(bytes).value
         } catch (error) {
             throw new PTPDecodeError(
-                `could not decode ${context.what} (${bytes.length} bytes): ${error instanceof Error ? error.message : String(error)}`,
+                `could not decode ${context.what} (${bytes.length} bytes): ${messageOf(error)}`,
                 { operation: context.operation, transactionId: context.transactionId, cause: error }
             )
         }
@@ -873,7 +730,7 @@ export class GenericCamera {
         }
         const propCode = paramsRecord.DevicePropCode
         if (!operation.name.includes('GetDevicePropValue') || propCode === undefined) return undefined
-        const property = Object.values(this.registry.properties).find((p: any) => p.code === propCode)
+        const property = this.propertyByCode(propCode)
         if (!property) return undefined
         return {
             propertyName: property.name,
@@ -896,15 +753,7 @@ export class GenericCamera {
         const transactionId = this.getNextTransactionId()
         const sessionId = this.sessionId ?? 0
         try {
-            const response = await this.exchange(
-                operation,
-                paramsRecord,
-                encodedParams,
-                transactionId,
-                sessionId,
-                data,
-                maxDataLength
-            )
+            const response = await this.exchange(operation, paramsRecord, encodedParams, transactionId, sessionId, data, maxDataLength)
             this.recordPropertyWrite(operation.code, data, transactionId, response.code)
             return response
         } catch (error) {
@@ -919,12 +768,7 @@ export class GenericCamera {
         }
     }
 
-    private recordPropertyWrite(
-        operation: number,
-        data: Uint8Array | undefined,
-        transactionId: number,
-        response?: number
-    ) {
+    private recordPropertyWrite(operation: number, data: Uint8Array | undefined, transactionId: number, response?: number) {
         try {
             const evidence = propertyWriteEvidence(this.vendorId ?? 0, operation, data, transactionId, response)
             if (evidence) this.recordProtocol(evidence, operation)
@@ -942,307 +786,193 @@ export class GenericCamera {
         data?: Uint8Array,
         maxDataLength?: number
     ): Promise<OperationResponse<Op>> {
-        const decodeContext = (what: string) => ({ operation: operation.name, transactionId, what })
-
-        // Check if this is part of an active transfer (managed externally via logger.startTransfer)
-        const objectHandleValue = paramsRecord.ObjectHandle
-        const objectHandle: number | null = typeof objectHandleValue === 'number' ? objectHandleValue : null
-        const existingTransferLogId = objectHandle !== null ? this.logger.getActiveTransfer(objectHandle) : undefined
-
-        let logId: number
-        if (existingTransferLogId !== undefined) {
-            // This operation is part of an active transfer, don't create a new log
-            logId = existingTransferLogId
-        } else {
-            const shouldLog = operation.name !== 'CanonGetEventData'
-
-            if (shouldLog) {
-                logId = this.logger.addLog({
-                    type: 'ptp_operation',
-                    level: 'info',
-                    sessionId,
-                    transactionId,
-                    requestPhase: {
-                        timestamp: Date.now(),
-                        operationName: operation.name,
-                        encodedParams,
-                        decodedParams: paramsRecord,
-                    },
-                })
-            } else {
-                logId = -1
-            }
+        const context = { operation: operation.name, transactionId }
+        const decodeContext = (what: string) => ({ ...context, what })
+        const objectHandle = paramsRecord.ObjectHandle
+        const transferLogId = typeof objectHandle === 'number' ? this.logger.getActiveTransfer(objectHandle) : undefined
+        const logId =
+            transferLogId ??
+            (operation.name === 'CanonGetEventData'
+                ? -1
+                : this.logger.addLog({
+                      type: 'ptp_operation',
+                      level: 'info',
+                      sessionId,
+                      transactionId,
+                      requestPhase: {
+                          timestamp: Date.now(),
+                          operationName: operation.name,
+                          encodedParams,
+                          decodedParams: paramsRecord,
+                      },
+                  }))
+        const logDataPhase = (direction: 'in' | 'out', bytes: Uint8Array, decodedData: unknown) => {
+            if (logId === -1) return
+            this.logger.updateLog(logId, {
+                dataPhase: {
+                    timestamp: Date.now(),
+                    direction,
+                    bytes: bytes.length,
+                    encodedData: bytes,
+                    decodedData: decodedData as number | bigint | string | object | Uint8Array | undefined,
+                    maxDataLength,
+                },
+            })
         }
-
-        const commandContainer = this.buildCommand(operation.code, transactionId, encodedParams)
-        await this.channel.send(commandContainer, sessionId, { operation: operation.name, transactionId })
+        const logResponse = (code: number) => {
+            if (logId !== -1) this.logger.updateLog(logId, { responsePhase: { timestamp: Date.now(), code } })
+        }
+        const slots = new Uint8Array(encodedParams.length * 4)
+        encodedParams.forEach((parameter, index) => slots.set(parameter, index * 4))
+        await this.channel.send(this.container(CONTAINER_TYPE.command, operation.code, transactionId, slots), sessionId, context)
 
         let receivedData: Uint8Array | undefined
+        let decodedData: unknown
         let undecodableData: unknown
         if (operation.dataDirection === 'in' && data) {
-            const dataContainer = this.buildData(operation.code, transactionId, data)
-
-            let decodedData: number | bigint | string | object | Uint8Array | undefined = undefined
-            if (data.length > 0 && 'dataCodec' in operation && operation.dataCodec) {
-                try {
-                    decodedData = this.resolveCodec(operation.dataCodec).decode(data).value
-                } catch {
-                    // Logging the outgoing payload must never prevent the transaction.
-                }
-            }
-
-            // Decode property values for SetDevicePropValue operations
-            if (
-                data.length > 0 &&
-                !decodedData &&
-                (operation.name.includes('SetDevicePropValue') || operation.name.includes('ControlDevice'))
-            ) {
-                const propCode =
-                    paramsRecord.DevicePropCode !== undefined
-                        ? paramsRecord.DevicePropCode
-                        : paramsRecord.sdiControlCode !== undefined
-                          ? paramsRecord.sdiControlCode
-                          : undefined
-
-                if (propCode !== undefined) {
-                    const property = Object.values(this.registry.properties).find((p: any) => p.code === propCode)
-                    if (property) {
-                        try {
-                            const codec = this.resolveCodec(property.codec)
-                            const result = codec.decode(data)
-                            decodedData = {
-                                propertyName: property.name,
-                                propertyCode: propCode,
-                                value: result.value,
-                            }
-                        } catch {
-                            // Sony SDIO_ControlDevice uses a small signed direction
-                            // payload for otherwise UINT16/UINT32 properties. Logging
-                            // must never prevent the correctly encoded transaction.
-                            decodedData = {
-                                propertyName: property.name,
-                                propertyCode: propCode,
-                                controlPayload: [...data],
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (logId !== -1) {
-                this.logger.updateLog(logId, {
-                    dataPhase: {
-                        timestamp: Date.now(),
-                        direction: 'in',
-                        bytes: data.length,
-                        encodedData: data,
-                        decodedData,
-                        maxDataLength,
-                    },
-                })
-            }
-
-            await this.channel.send(dataContainer, sessionId, { operation: operation.name, transactionId })
+            decodedData = this.describeOutgoingData(operation, paramsRecord, data)
+            logDataPhase('in', data, decodedData)
+            await this.channel.send(this.container(CONTAINER_TYPE.data, operation.code, transactionId, data), sessionId, context)
         } else if (operation.dataDirection === 'out') {
-            const bufferSize = maxDataLength || 256 * 1024
             const dataContainer = await this.channel.receive(sessionId, {
-                operation: operation.name,
+                ...context,
                 operationCode: operation.code,
                 dataOperationCode: operation.dataOperationCode,
-                transactionId,
                 phase: 'data',
-                maxLength: bufferSize,
+                maxLength: maxDataLength || 256 * 1024,
             })
             receivedData = dataContainer.payload
-
-            // If we received a response container instead of data, treat it as the response
             if (dataContainer.type === CONTAINER_TYPE.response) {
-                const responseCode = dataContainer.code
-
-                // Update logger with response phase before returning
-                if (logId !== -1) {
-                    this.logger.updateLog(logId, {
-                        responsePhase: {
-                            timestamp: Date.now(),
-                            code: responseCode,
-                        },
-                    })
-                }
-
+                logResponse(dataContainer.code)
                 return {
-                    code: responseCode,
+                    code: dataContainer.code,
                     parameters: this.decodeResponseParameters(dataContainer.payload),
-                    data: receivedData && receivedData.length > 0 ? receivedData : undefined,
+                    data: receivedData.length > 0 ? receivedData : undefined,
                 } as OperationResponse<Op>
             }
-
-            let decodedData: number | bigint | string | object | Uint8Array | undefined = undefined
             try {
                 decodedData = this.decodeDataPhase(operation, paramsRecord, receivedData, decodeContext)
             } catch (error) {
                 // Read the response first so the camera's pipe is clean for the next transaction.
                 undecodableData = error
             }
-
-            if (logId !== -1) {
-                const currentLog = this.logger.getLogById(logId)
-                if (!currentLog || currentLog.type !== 'ptp_transfer') {
-                    this.logger.updateLog(logId, {
-                        dataPhase: {
-                            timestamp: Date.now(),
-                            direction: 'out',
-                            bytes: receivedData?.length || 0,
-                            encodedData: receivedData,
-                            decodedData: decodedData,
-                            maxDataLength,
-                        },
-                    })
-                }
-            }
+            if (transferLogId === undefined) logDataPhase('out', receivedData, decodedData)
         }
 
         const responseContainer = await this.channel.receive(sessionId, {
-            operation: operation.name,
+            ...context,
             operationCode: operation.code,
-            transactionId,
             phase: 'response',
             maxLength: 512,
         })
-
+        const parameters = this.decodeResponseParameters(responseContainer.payload)
         if (undecodableData !== undefined) {
             if (responseContainer.code === OK.code) throw undecodableData
-            return {
-                code: responseContainer.code,
-                parameters: this.decodeResponseParameters(responseContainer.payload),
-                data: receivedData,
-            } as OperationResponse<Op>
+            return { code: responseContainer.code, parameters, data: receivedData } as OperationResponse<Op>
         }
-
-        const currentLog = logId !== -1 ? this.logger.getLogById(logId) : undefined
-        const isTransferLog = currentLog && currentLog.type === 'ptp_transfer'
-
-        // If data phase had empty payload but response has payload, use response payload as data
-        if (
-            operation.dataDirection === 'out' &&
-            (!receivedData || receivedData.length === 0) &&
-            responseContainer.payload.length > 0
-        ) {
+        // Some cameras answer an empty data phase with the dataset in the response container.
+        if (operation.dataDirection === 'out' && !receivedData?.length && responseContainer.payload.length > 0) {
             receivedData = responseContainer.payload
-
-            // Decode the response payload if we have a dataCodec
-            let decodedData: number | bigint | string | object | Uint8Array | undefined = undefined
-            if ('dataCodec' in operation && operation.dataCodec) {
-                decodedData = this.decodeWith(operation.dataCodec, receivedData, decodeContext('the response payload'))
-            }
-
-            if (logId !== -1) {
-                this.logger.updateLog(logId, {
-                    dataPhase: {
-                        timestamp: Date.now(),
-                        direction: 'out',
-                        bytes: receivedData.length,
-                        encodedData: receivedData,
-                        decodedData,
-                        maxDataLength,
-                    },
-                })
-            }
+            decodedData =
+                'dataCodec' in operation && operation.dataCodec
+                    ? this.decodeWith(operation.dataCodec, receivedData, decodeContext('the response payload'))
+                    : undefined
+            logDataPhase('out', receivedData, decodedData)
         }
+        if (transferLogId === undefined) logResponse(responseContainer.code)
 
-        if (logId !== -1 && !isTransferLog) {
-            this.logger.updateLog(logId, {
-                responsePhase: {
-                    timestamp: Date.now(),
-                    code: responseContainer.code,
-                },
-            })
-        }
-
-        const isPropertyOp = operation.name.includes('GetDevicePropValue')
-        const finalData = logId !== -1 ? this.logger.getLogById(logId) : undefined
-        let returnData: any =
-            !isPropertyOp &&
-            finalData &&
-            finalData.type === 'ptp_operation' &&
-            finalData.dataPhase?.decodedData !== undefined
-                ? finalData.dataPhase.decodedData
-                : receivedData
-
-        // If logId is -1 (operation wasn't logged), still decode if dataCodec exists
-        if (
-            logId === -1 &&
-            receivedData &&
-            receivedData.length > 0 &&
-            'dataCodec' in operation &&
-            operation.dataCodec
-        ) {
-            returnData = this.decodeWith(operation.dataCodec, receivedData, decodeContext('the data phase'))
-        }
-
+        let returnData: unknown = receivedData
+        if (logId === -1) {
+            if (receivedData?.length && 'dataCodec' in operation && operation.dataCodec)
+                returnData = this.decodeWith(operation.dataCodec, receivedData, decodeContext('the data phase'))
+        } else if (
+            transferLogId === undefined &&
+            decodedData !== undefined &&
+            !operation.name.includes('GetDevicePropValue')
+        )
+            returnData = decodedData
         return {
             code: responseContainer.code,
-            parameters:
-                responseContainer.type === 3 ? this.decodeResponseParameters(responseContainer.payload) : undefined,
+            parameters: responseContainer.type === CONTAINER_TYPE.response ? parameters : undefined,
             data: returnData,
         } as OperationResponse<Op>
     }
 
+    /** The outgoing payload as the log shows it; describing it never prevents the transaction. */
+    private describeOutgoingData(
+        operation: OperationDefinition,
+        paramsRecord: Record<string, number | bigint | string>,
+        data: Uint8Array
+    ): unknown {
+        if (data.length === 0) return undefined
+        let decoded: unknown
+        if ('dataCodec' in operation && operation.dataCodec) {
+            try {
+                decoded = this.resolveCodec(operation.dataCodec).decode(data).value
+                if (decoded) return decoded
+            } catch {
+                /* fall through to the property description */
+            }
+        }
+        if (!operation.name.includes('SetDevicePropValue') && !operation.name.includes('ControlDevice')) return decoded
+        const propertyCode = paramsRecord.DevicePropCode ?? paramsRecord.sdiControlCode
+        const property = this.propertyByCode(propertyCode)
+        if (propertyCode === undefined || !property) return decoded
+        try {
+            return { propertyName: property.name, propertyCode, value: this.resolveCodec(property.codec).decode(data).value }
+        } catch {
+            // Sony SDIO_ControlDevice sends a small signed direction payload for UINT16/UINT32 properties.
+            return { propertyName: property.name, propertyCode, controlPayload: [...data] }
+        }
+    }
+
+    private requireAccess(property: PropertyDefinition, access: 'Get' | 'Set'): void {
+        if (!property.access.includes(access))
+            throw new CameraUnsupportedError(
+                property.name,
+                `Property ${property.name} is not ${access === 'Get' ? 'readable' : 'writable'}`
+            )
+    }
+
+    private propertyByCode(code: unknown): PropertyDefinition | undefined {
+        return Object.values(this.registry.properties).find(candidate => candidate.code === code)
+    }
+
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
-        if (!property.access.includes('Get')) {
-            throw new CameraUnsupportedError(property.name, `Property ${property.name} is not readable`)
-        }
-
-        const response = await this.send(this.registry.operations.GetDevicePropDesc, {
-            DevicePropCode: property.code,
-        })
-
-        if (!('data' in response) || !response.data) {
+        this.requireAccess(property, 'Get')
+        const response = await this.send(this.registry.operations.GetDevicePropDesc, { DevicePropCode: property.code })
+        if (!('data' in response) || !response.data)
             throw new PTPDecodeError(`GetDevicePropDesc returned no descriptor for ${property.name}`)
-        }
-
-        // DevicePropDesc uses the registered property codec for the decoded current value.
         return response.data.currentValueDecoded as CodecType<P['codec']>
     }
 
     /** Read a standalone value with its registered codec, without requesting a property descriptor. */
     async readValue<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
-        if (!property.access.includes('Get')) {
-            throw new CameraUnsupportedError(property.name, `Property ${property.name} is not readable`)
-        }
+        this.requireAccess(property, 'Get')
         const operation = this.registry.operations.GetDevicePropValue
         const response = await this.send(operation, { DevicePropCode: property.code })
-        if (response.code !== OK.code) {
-            throw new PTPResponseError(response.code, undefined, { operation: operation.name })
-        }
+        if (response.code !== OK.code) throw new PTPResponseError(response.code, undefined, { operation: operation.name })
         try {
-            if (!(response.data instanceof Uint8Array) || response.data.length === 0) {
+            if (!(response.data instanceof Uint8Array) || response.data.length === 0)
                 throw new Error('No property value received')
-            }
             const decoded = this.resolveCodec(property.codec).decode(response.data)
-            if (decoded.bytesRead !== response.data.length) {
+            if (decoded.bytesRead !== response.data.length)
                 throw new Error(`Decoded ${decoded.bytesRead} of ${response.data.length} bytes`)
-            }
             return decoded.value as CodecType<P['codec']>
         } catch (error) {
             throw new PTPDecodeError(
-                `could not decode ${property.name}: ${error instanceof Error ? error.message : String(error)}`,
+                `could not decode ${property.name}: ${messageOf(error)}`,
                 { operation: operation.name, cause: error }
             )
         }
     }
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
-        if (!property.access.includes('Set')) {
-            throw new CameraUnsupportedError(property.name, `Property ${property.name} is not writable`)
-        }
-
-        const codec = this.resolveCodec(property.codec)
-        const encodedValue = codec.encode(value)
-
+        this.requireAccess(property, 'Set')
         const response = await this.send(
             this.registry.operations.SetDevicePropValue,
             { DevicePropCode: property.code },
-            encodedValue
+            this.resolveCodec(property.codec).encode(value)
         )
         if (response.code !== OK.code)
             throw new PTPResponseError(response.code, undefined, { operation: 'SetDevicePropValue' })
@@ -1250,15 +980,12 @@ export class GenericCamera {
 
     async getStandardPropertyStates(propertyNameOrCode?: string | number): Promise<StandardPropertyState[]> {
         const deviceInfoResponse = await this.send(this.registry.operations.GetDeviceInfo, {})
-        if (deviceInfoResponse.code !== OK.code) {
+        if (deviceInfoResponse.code !== OK.code)
             throw new PTPResponseError(deviceInfoResponse.code, undefined, { operation: 'GetDeviceInfo' })
-        }
         if (!deviceInfoResponse.data) throw new PTPDecodeError('GetDeviceInfo returned no device dataset')
-
-        const deviceInfo = deviceInfoResponse.data
         const states: StandardPropertyState[] = []
-        for (const code of deviceInfo.devicePropertiesSupported) {
-            const property = Object.values(this.registry.properties).find(candidate => candidate.code === code)
+        for (const code of deviceInfoResponse.data.devicePropertiesSupported) {
+            const property = this.propertyByCode(code)
             if (!property) continue
             if (
                 propertyNameOrCode !== undefined &&
@@ -1272,7 +999,7 @@ export class GenericCamera {
             try {
                 const response = await this.send(this.registry.operations.GetDevicePropDesc, { DevicePropCode: code })
                 if (!response.data) continue
-                states.push(this.standardPropertyState(response.data))
+                states.push(standardPropertyState(response.data))
             } catch (error) {
                 if (
                     error instanceof PTPTimeoutError ||
@@ -1289,80 +1016,46 @@ export class GenericCamera {
                         code,
                         advertised: true,
                     })
-                this.logger.addLog({
-                    type: 'console',
-                    level: 'warn',
-                    consoleLevel: 'warn',
-                    args: [
-                        `Could not decode advertised property 0x${code.toString(16).padStart(4, '0')}`,
-                        error instanceof Error ? error.message : String(error),
-                    ],
-                })
+                this.warn(
+                    `Could not decode advertised property 0x${code.toString(16).padStart(4, '0')}`,
+                    messageOf(error)
+                )
             }
         }
         return states
     }
 
+    private warn(...args: string[]): void {
+        this.logger.addLog({ type: 'console', level: 'warn', consoleLevel: 'warn', args })
+    }
+
     async setStandardProperty(propertyNameOrCode: string | number, requestedValue: string | number): Promise<void> {
-        const states = await this.getStandardPropertyStates(propertyNameOrCode)
-        const requestedName = String(propertyNameOrCode).toLowerCase()
-        const state = states.find(candidate =>
-            typeof propertyNameOrCode === 'number'
-                ? candidate.code === propertyNameOrCode
-                : candidate.name.toLowerCase() === requestedName || candidate.codeHex.toLowerCase() === requestedName
-        )
+        const [state] = await this.getStandardPropertyStates(propertyNameOrCode)
         if (!state)
             throw new CameraUnsupportedError(String(propertyNameOrCode), `The attached camera does not advertise ${propertyNameOrCode}`)
         if (!state.writable) throw new CameraUnsupportedError(state.name, `${state.name} is read-only on the attached camera`)
 
-        const property = Object.values(this.registry.properties).find(candidate => candidate.code === state.code)
+        const property = this.propertyByCode(state.code)
         if (!property)
             throw new CameraUnsupportedError(state.name, `${state.codeHex} has no standard PTP property definition`)
 
         let value: number | bigint | string = requestedValue
         if (state.allowedValues?.length) {
             const matched = state.allowedValues.find(candidate => String(candidate) === String(requestedValue))
-            if (matched === undefined) {
+            if (matched === undefined)
                 throw new CameraRefusedError(
                     state.name,
                     `${requestedValue} is not advertised for ${state.name}; choose ${state.allowedValues.map(String).join(', ')}`
                 )
-            }
             value = matched
         }
-
-        const codec = this.resolveCodec(property.codec)
-        const encodedValue = codec.encode(value)
         const response = await this.send(
             this.registry.operations.SetDevicePropValue,
             { DevicePropCode: property.code },
-            encodedValue
+            this.resolveCodec(property.codec).encode(value)
         )
-        if (response.code !== OK.code) {
-            throw new PTPResponseError(
-                response.code,
-                `SetDevicePropValue for ${state.name} returned 0x${response.code.toString(16)}`
-            )
-        }
-    }
-
-    private standardPropertyState(descriptor: DevicePropDesc): StandardPropertyState {
-        const { allowedValues, unrecognized } = recognizedDescriptorValues(descriptor)
-        return {
-            code: descriptor.devicePropertyCode,
-            codeHex: `0x${descriptor.devicePropertyCode.toString(16).padStart(4, '0')}`,
-            name: descriptor.devicePropertyName,
-            description: descriptor.devicePropertyDescription,
-            value: descriptor.currentValueDecoded,
-            rawValue: descriptor.currentValueRaw,
-            writable: descriptor.getSet === 'GET_SET',
-            form: descriptor.formFlag === 0x02 ? 'enum' : descriptor.formFlag === 0x01 ? 'range' : 'none',
-            ...(allowedValues ? { allowedValues } : {}),
-            ...(descriptor.minimumValue !== undefined ? { minimumValue: descriptor.minimumValue } : {}),
-            ...(descriptor.maximumValue !== undefined ? { maximumValue: descriptor.maximumValue } : {}),
-            ...(descriptor.stepSize !== undefined ? { stepSize: descriptor.stepSize } : {}),
-            ...(unrecognized && { unrecognized }),
-        }
+        if (response.code !== OK.code)
+            throw new PTPResponseError(response.code, `SetDevicePropValue for ${state.name} returned 0x${response.code.toString(16)}`)
     }
 
     on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void {
@@ -1370,11 +1063,8 @@ export class GenericCamera {
     }
 
     off<E extends EventDefinition>(event: E, handler?: (params: EventParams<E>) => void): void {
-        if (handler) {
-            this.emitter.off<EventParams<E>>(event.name, handler)
-        } else {
-            this.emitter.removeAllListeners(event.name)
-        }
+        if (handler) this.emitter.off<EventParams<E>>(event.name, handler)
+        else this.emitter.removeAllListeners(event.name)
     }
 
     async getAperture(): Promise<string> {
@@ -1408,49 +1098,33 @@ export class GenericCamera {
         objectHandle?: number
     }> {
         if (!includeInfo && !includeData) {
-            const captureResponse = await this.send(this.registry.operations.InitiateCapture, {})
-            if (captureResponse.code !== OK.code) {
-                throw new PTPResponseError(
-                    captureResponse.code,
-                    `InitiateCapture returned 0x${captureResponse.code.toString(16)}`
-                )
-            }
+            const response = await this.send(this.registry.operations.InitiateCapture, {})
+            if (response.code !== OK.code)
+                throw new PTPResponseError(response.code, `InitiateCapture returned 0x${response.code.toString(16)}`)
             return {}
         }
-
-        const capturedImageObjectHandle = await this.initiateCaptureAndWaitForObjectHandle()
+        const objectHandle = await this.initiateCaptureAndWaitForObjectHandle()
         // The shutter has fired: a failure from here on leaves a photo that may exist, never a retry.
         return afterShutterRelease(async () => {
-            let info: ObjectInfo | undefined = undefined
-            let data: Uint8Array | undefined = undefined
-
+            let info: ObjectInfo | undefined
+            let data: Uint8Array | undefined
             if (includeInfo) {
-                const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
-                    ObjectHandle: capturedImageObjectHandle,
-                })
-                if (objectInfoResponse.code !== OK.code)
-                    throw new PTPResponseError(objectInfoResponse.code, undefined, { operation: 'GetObjectInfo' })
-                info = objectInfoResponse.data
+                const response = await this.send(this.registry.operations.GetObjectInfo, { ObjectHandle: objectHandle })
+                if (response.code !== OK.code)
+                    throw new PTPResponseError(response.code, undefined, { operation: 'GetObjectInfo' })
+                info = response.data
             }
             if (includeData) {
-                const objectResponse = await this.send(
+                const response = await this.send(
                     this.registry.operations.GetObject,
-                    {
-                        ObjectHandle: capturedImageObjectHandle,
-                    },
+                    { ObjectHandle: objectHandle },
                     undefined,
                     (info?.objectCompressedSize || this.liveViewBufferSize) + this.bufferPadding
                 )
-                if (objectResponse.code !== OK.code)
-                    throw new PTPResponseError(objectResponse.code, undefined, { operation: 'GetObject' })
-                data = objectResponse.data
+                if (response.code !== OK.code) throw new PTPResponseError(response.code, undefined, { operation: 'GetObject' })
+                data = response.data
             }
-
-            return {
-                info: info,
-                data: data,
-                objectHandle: capturedImageObjectHandle,
-            }
+            return { info, data, objectHandle }
         })
     }
 
@@ -1469,67 +1143,6 @@ export class GenericCamera {
         throw new CameraUnsupportedError('stopRecording', 'Video recording not supported on generic PTP cameras')
     }
 
-    /*
-     * WARNING: This operation is extremely slow for >100 objects/images on card.
-     */
-    async listObjects(): Promise<{
-        [storageId: number]: {
-            info: StorageInfo
-            objects: { [objectHandle: number]: ObjectInfo }
-        }
-    }> {
-        type StorageEntry = { info: StorageInfo; objects: { [objectHandle: number]: ObjectInfo } }
-        const result: { [storageId: number]: StorageEntry } = {}
-
-        const storageIdsResponse = await this.send(this.registry.operations.GetStorageIDs, {})
-        if (storageIdsResponse.code !== 0x2001)
-            throw new PTPResponseError(storageIdsResponse.code, undefined, { operation: 'GetStorageIDs' })
-        const storageIds = storageIdsResponse.data
-        if (!Array.isArray(storageIds)) throw new PTPDecodeError('GetStorageIDs returned no storage dataset')
-
-        for (const storageId of storageIds) {
-            if ((storageId & 0xffff) === 0) continue
-            // Get info for this storage
-            const storageInfoResponse = await this.send(this.registry.operations.GetStorageInfo, {
-                StorageID: storageId,
-            })
-            if (storageInfoResponse.code !== 0x2001)
-                throw new PTPResponseError(storageInfoResponse.code, undefined, { operation: 'GetStorageInfo' })
-            const storageInfo = storageInfoResponse.data
-            if (!storageInfo) throw new PTPDecodeError('GetStorageInfo returned no card dataset')
-
-            // Prepare container for objects in this storage
-            const storageObjects: { [objectHandle: number]: ObjectInfo } = {}
-
-            // Get all object handles for this storage
-            const objectIdsResponse = await this.send(this.registry.operations.GetObjectHandles, {
-                StorageID: storageId,
-            })
-            if (objectIdsResponse.code !== 0x2001)
-                throw new PTPResponseError(objectIdsResponse.code, undefined, { operation: 'GetObjectHandles' })
-            const objectHandles = objectIdsResponse.data
-            if (!Array.isArray(objectHandles)) throw new PTPDecodeError('GetObjectHandles returned no object dataset')
-
-            // Get detailed info for each object handle
-            for (const objectHandle of objectHandles) {
-                const objectInfoResponse = await this.send(this.registry.operations.GetObjectInfo, {
-                    ObjectHandle: objectHandle,
-                })
-                if (objectInfoResponse.code !== 0x2001)
-                    throw new PTPResponseError(objectInfoResponse.code, undefined, { operation: 'GetObjectInfo' })
-                if (!objectInfoResponse.data) throw new PTPDecodeError('GetObjectInfo returned no object metadata')
-                storageObjects[objectHandle] = objectInfoResponse.data
-            }
-
-            result[storageId] = {
-                info: storageInfo,
-                objects: storageObjects,
-            }
-        }
-
-        return result
-    }
-
     /** Downloads an object in chunks; onProgress reports bytes received after each chunk. */
     async getObject(
         objectHandle: number,
@@ -1546,20 +1159,12 @@ export class GenericCamera {
             async (offset, bytesToRead) => {
                 const response = await this.send(
                     this.registry.operations.GetPartialObject,
-                    {
-                        ObjectHandle: objectHandle,
-                        Offset: offset,
-                        MaxBytes: bytesToRead,
-                    },
+                    { ObjectHandle: objectHandle, Offset: offset, MaxBytes: bytesToRead },
                     undefined,
                     bytesToRead + 12
                 )
-
                 if (response.code !== OK.code)
-                    throw new PTPResponseError(
-                        response.code,
-                        `GetPartialObject returned 0x${response.code.toString(16)}`
-                    )
+                    throw new PTPResponseError(response.code, `GetPartialObject returned 0x${response.code.toString(16)}`)
                 return response.data
             },
             onProgress,
@@ -1601,20 +1206,13 @@ export class GenericCamera {
             this.logger.completeTransfer(objectHandle)
             return completeFile
         } catch (error) {
-            this.logger.completeTransfer(
-                objectHandle,
-                error instanceof PTPResponseError ? error.code : IncompleteTransfer.code
-            )
+            this.logger.completeTransfer(objectHandle, error instanceof PTPResponseError ? error.code : IncompleteTransfer.code)
             throw error
         }
     }
 
     public resolveCodec<T>(codec: CodecDefinition<T> | CodecDefinition<any>): CodecInstance<T> {
-        if (typeof codec === 'function') {
-            return codec(this.registry)
-        }
-
-        return codec
+        return typeof codec === 'function' ? codec(this.registry) : codec
     }
 
     protected async waitMs(ms: number): Promise<void> {
@@ -1625,37 +1223,21 @@ export class GenericCamera {
         const eventDef = Object.values(this.registry.events).find(e => e.code === event.code) as
             EventDefinition | undefined
         if (!eventDef) return
-
-        // Decode event parameters using their codecs
         const decodedParams: Record<string, number | bigint | string> = {}
         const encodedParams = event.parameters || []
-
-        for (let i = 0; i < eventDef.parameters.length; i++) {
-            const paramDef = eventDef.parameters[i]
-            if (!paramDef || i >= encodedParams.length) continue
-
+        eventDef.parameters.forEach((paramDef, index) => {
+            const rawValue = encodedParams[index]
+            if (!paramDef || index >= encodedParams.length) return
             const codec = this.resolveCodec(paramDef.codec)
-            const rawValue = encodedParams[i]
-
-            // If raw value is a number/bigint/string, decode it
-            if (typeof rawValue === 'number' || typeof rawValue === 'bigint' || typeof rawValue === 'string') {
-                // Encode to bytes first, then decode to get the proper type
-                const bytes = codec.encode(rawValue)
-                const result = codec.decode(bytes)
-                decodedParams[paramDef.name] = result.value
-            } else {
-                decodedParams[paramDef.name] = rawValue
-            }
+            decodedParams[paramDef.name] =
+                typeof rawValue === 'number' || typeof rawValue === 'bigint' || typeof rawValue === 'string'
+                    ? codec.decode(codec.encode(rawValue)).value
+                    : rawValue
+        })
+        if (typeof decodedParams.PropertyCode === 'number') {
+            const property = this.propertyByCode(decodedParams.PropertyCode)
+            if (property) decodedParams.PropertyName = property.name
         }
-
-        // If event has a PropertyCode parameter, look up and add PropertyName
-        if (decodedParams.PropertyCode !== undefined && typeof decodedParams.PropertyCode === 'number') {
-            const property = Object.values(this.registry.properties).find(p => p.code === decodedParams.PropertyCode)
-            if (property) {
-                decodedParams.PropertyName = property.name
-            }
-        }
-
         this.logger.addLog({
             type: 'ptp_event',
             level: 'info',
@@ -1665,7 +1247,6 @@ export class GenericCamera {
             encodedParams,
             decodedParams,
         })
-
         this.emitter.emit<Record<string, number | bigint | string>>(eventDef.name, decodedParams)
     }
 
@@ -1689,36 +1270,16 @@ export class GenericCamera {
                 cleanup()
                 resolve(event.ObjectHandle)
             }
-            const timeout = setTimeout(
-                () =>
-                    fail(
-                        shutterOutcomeUnknown(
-                            new Error(`Timed out after ${timeoutMilliseconds}ms waiting for the captured image object`)
-                        )
-                    ),
-                timeoutMilliseconds
-            )
-
+            const timedOut = new Error(`Timed out after ${timeoutMilliseconds}ms waiting for the captured image object`)
+            const timeout = setTimeout(() => fail(shutterOutcomeUnknown(timedOut)), timeoutMilliseconds)
             this.on(objectAdded, handleObjectAdded)
             void this.send(this.registry.operations.InitiateCapture, {})
-                .then(response => {
-                    if (response.code !== OK.code) {
-                        fail(
-                            shutterRefused(
-                                new PTPResponseError(
-                                    response.code,
-                                    `InitiateCapture returned 0x${response.code.toString(16)}`
-                                )
-                            )
-                        )
-                    }
+                .then(({ code }) => {
+                    if (code !== OK.code)
+                        fail(shutterRefused(new PTPResponseError(code, `InitiateCapture returned 0x${code.toString(16)}`)))
                 })
                 .catch(error => fail(shutterOutcomeUnknown(error)))
         })
-    }
-
-    protected getCurrentTransactionId(): number {
-        return this.transactionId
     }
 
     private getNextTransactionId(): number {
@@ -1727,78 +1288,28 @@ export class GenericCamera {
         return this.transactionId
     }
 
-    /** PTP command parameters occupy unsigned 32-bit slots even when a definition uses a narrower value codec. */
-    private buildCommand(code: number, transactionId: number, params: Uint8Array[]): Uint8Array {
-        const u16 = this.registry.codecs.uint16
-        const u32 = this.registry.codecs.uint32
-
-        if (params.length > 5) throw new Error('PTP commands accept at most five parameters')
-        const parameterSlots = params.map(parameter => {
-            if (parameter.length > 4) throw new Error('PTP command parameters must fit a 32-bit slot')
-            const slot = new Uint8Array(4)
-            slot.set(parameter)
-            return slot
-        })
-        const paramBytes = parameterSlots.length * 4
-        const length = 12 + paramBytes
-
-        const parts: Uint8Array[] = [
-            u32.encode(length),
-            u16.encode(1),
-            u16.encode(code),
-            u32.encode(transactionId),
-            ...parameterSlots,
-        ]
-
-        const buffer = new Uint8Array(length)
-        let offset = 0
-        for (const part of parts) {
-            buffer.set(part, offset)
-            offset += part.length
-        }
-
-        return buffer
+    protected getCurrentTransactionId(): number {
+        return this.transactionId
     }
 
-    private buildData(code: number, transactionId: number, data: Uint8Array): Uint8Array {
-        const u16 = this.registry.codecs.uint16
-        const u32 = this.registry.codecs.uint32
-
-        const length = 12 + data.length
-
-        const parts: Uint8Array[] = [
-            u32.encode(length),
-            u16.encode(2),
-            u16.encode(code),
-            u32.encode(transactionId),
-            data,
-        ]
-
-        const buffer = new Uint8Array(length)
-        let offset = 0
-        for (const part of parts) {
-            buffer.set(part, offset)
-            offset += part.length
-        }
-
+    /** A PTP container: length, type, code and transaction ID, then the payload. */
+    private container(type: number, code: number, transactionId: number, payload: Uint8Array): Uint8Array {
+        const buffer = new Uint8Array(12 + payload.length)
+        buffer.set(this.registry.codecs.uint32.encode(buffer.length), 0)
+        buffer.set(this.registry.codecs.uint16.encode(type), 4)
+        buffer.set(this.registry.codecs.uint16.encode(code), 6)
+        buffer.set(this.registry.codecs.uint32.encode(transactionId), 8)
+        buffer.set(payload, 12)
         return buffer
     }
 
     /** Response (and response-as-data) containers carry up to five UINT32 parameters; vendor commands report status there. */
     private decodeResponseParameters(payload: Uint8Array): number[] | undefined {
         if (payload.length === 0 || payload.length % 4 !== 0) return undefined
-
-        const parameters: number[] = []
-        for (let offset = 0; offset < payload.length; offset += 4) {
-            parameters.push(this.registry.codecs.uint32.decode(payload, offset).value)
-        }
-        return parameters
+        return Array.from({ length: payload.length / 4 }, (_, index) => this.registry.codecs.uint32.decode(payload, index * 4).value)
     }
 
-    /**
-     * @internal The Camera this driver serves, set by Camera when it creates the driver. The
-     * helpers that still take the façade read it; a driver used without a Camera has none.
-     */
+    /** @internal The Camera this driver serves, set when Camera creates the driver; a standalone driver has none. */
     owner?: Camera
 
     /** TRANSITIONAL: the façade for helpers that still take one. */
@@ -1927,12 +1438,7 @@ export class GenericCamera {
         operation: CameraOperationName,
         _capabilities: CameraCapabilities
     ): Promise<OperationAvailability | undefined> {
-        if (
-            operation === 'getCardStatus' ||
-            operation === 'listMedia' ||
-            operation === 'getMediaPreview' ||
-            operation === 'downloadMedia'
-        )
+        if (operation === 'getCardStatus' || operation === 'listMedia' || operation === 'getMediaPreview' || operation === 'downloadMedia')
             return (await (await this.mediaGroup()).availability?.())?.[operation]
         if (operation !== 'setClock') return undefined
         if (this.#clockCheck?.sessionId !== this.sessionId)
@@ -1945,7 +1451,7 @@ export class GenericCamera {
 }
 
 /** The make people use for each USB vendor; another vendor keeps the name its DeviceInfo gives. */
-export const MAKES: Record<number, string> = {
+const MAKES: Record<number, string> = {
     [VendorIDs.SONY]: 'Sony',
     [VendorIDs.CANON]: 'Canon',
     [VendorIDs.NIKON]: 'Nikon',
@@ -1957,12 +1463,8 @@ export const MAKES: Record<number, string> = {
     [VendorIDs.SIGMA]: 'Sigma',
 }
 
-/**
- * The lens mount for model families whose mount follows from the name: Sony ILCE/ILME bodies are
- * E-mount and ILCA bodies A-mount, Nikon Z bodies Z-mount and Nikon D bodies F-mount, Canon EOS R
- * bodies RF-mount. Any other model reports no mount rather than a guess.
- */
-export function lensMountForModel(vendorId: number | null, model: string): string | undefined {
+/** The lens mount where the model name implies it (Sony ILCE/ILME/ILCA, Nikon Z/D, Canon EOS R); otherwise none, never a guess. */
+function lensMountForModel(vendorId: number | null, model: string): string | undefined {
     const name = model.trim()
     if (vendorId === VendorIDs.SONY) {
         if (/^IL(CE|ME)-/i.test(name)) return 'E'
@@ -1977,20 +1479,15 @@ export function lensMountForModel(vendorId: number | null, model: string): strin
 }
 
 /** Event names, across the standard and vendor registries, that mean each public event. */
-export const EVENT_DEFINITION_NAMES: Record<CameraEventName, readonly string[]> = {
+const EVENT_DEFINITION_NAMES: Record<CameraEventName, readonly string[]> = {
     settingsChanged: ['DevicePropChanged', 'SDIE_DevicePropChanged'],
-    // A Nikon SDRAM object is a capture to the computer, not a file on the card.
     mediaAdded: ['ObjectAdded', 'SDIE_ObjectAdded'],
 }
 
-export function registryEvents(driver: GenericCamera, event: CameraEventName): EventDefinition[] {
-    const events: Record<string, EventDefinition> = driver.registry.events
-    return Object.values(events).filter(definition => EVENT_DEFINITION_NAMES[event].includes(definition.name))
-}
-
 /** Events the driver emits as they arrive: the USB interrupt pipe, or Canon's own event loop. */
-export function emittedEvents(driver: GenericCamera, event: CameraEventName, handler: CameraEventHandler): () => void {
-    const definitions = registryEvents(driver, event)
+function emittedEvents(driver: GenericCamera, event: CameraEventName, handler: CameraEventHandler): () => void {
+    const events: Record<string, EventDefinition> = driver.registry.events
+    const definitions = Object.values(events).filter(definition => EVENT_DEFINITION_NAMES[event].includes(definition.name))
     const listener = () => handler()
     for (const definition of definitions) driver.on(definition, listener)
     return () => {

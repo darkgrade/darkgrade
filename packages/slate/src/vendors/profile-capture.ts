@@ -7,7 +7,7 @@ import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { NikonEventListCodec } from '@vendors/nikon/datasets/nikon-event-list-dataset'
 import { SDIExtDevicePropInfoCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
-import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@vendors/registry'
+import { createCanonRegistry, createNikonRegistry, createSonyRegistry, type Registry } from '@vendors/registry'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
@@ -15,7 +15,6 @@ import { capturePropertyCodes, captureRegistry } from '@vendors/capture-properti
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { captureProfilePhoto } from '@vendors/profile-media'
-export { capturePropertyCodes } from '@vendors/capture-properties'
 
 type TraceTransaction = Omit<CapturedPtpTransaction, 'dataFromHost' | 'response'> & {
     dataFromHost?: string
@@ -126,15 +125,11 @@ export function sanitizeProfileTransaction(
             return { ...result, response: { code: response.code, parameters: [] },
                 redactions: ['unused-sony-handshake-reply'] }
         }
-        return {
-            ...result,
-            parameters: [],
-            response: { code: response.code, parameters: [] },
-            redactions: ['authentication-payload'],
-        }
+        return { ...result, parameters: [], response: { code: response.code, parameters: [] }, redactions: ['authentication-payload'] }
     }
     const propertyOperation = [0x1014, 0x1015, 0x1016, 0x943a, 0x943b, 0x943c, 0x9251].includes(transaction.operation) ||
         vendorId === 0x054c && [0x9205, 0x9207].includes(transaction.operation)
+    const answered = response.code === 0x2001 ? response.data : undefined
     if (vendorId === 0x04a9 && transaction.operation === 0x9110 && dataFromHost && !response.data && !transaction.parameters.length) {
         const view = new DataView(dataFromHost.buffer, dataFromHost.byteOffset, dataFromHost.byteLength)
         if (dataFromHost.length >= 12 && dataFromHost.length <= 24 &&
@@ -143,32 +138,24 @@ export function sanitizeProfileTransaction(
             return result
         }
     }
-    if (response.data && transaction.operation === 0x1001 && response.code === 0x2001) {
-        result.response.data = hex(redactDeviceInfoSerial(response.data))
+    if (answered && transaction.operation === 0x1001) {
+        result.response.data = hex(redactDeviceInfoSerial(answered))
         result.redactions = ['device-serial']
         return result
     }
-    if (
-        response.data &&
-        response.code === 0x2001 &&
-        numericCapabilityPayload(response.data, vendorId, transaction.operation)
-    ) {
-        result.response.data = hex(response.data)
+    if (answered && numericCapabilityPayload(answered, vendorId, transaction.operation)) {
+        result.response.data = hex(answered)
         return result
     }
     if (propertyOperation && safe.has(property)) {
-        if (response.data && response.code === 0x2001 && [0x1014, 0x943a, 0x9251].includes(transaction.operation)) {
+        if (answered && [0x1014, 0x943a, 0x9251].includes(transaction.operation)) {
             const codec =
                 transaction.operation === 0x9251
                     ? new SDIExtDevicePropInfoCodec(createSonyRegistry(true))
                     : new DevicePropDescCodec(captureRegistry(vendorId), transaction.operation === 0x943a)
-            const decoded = codec.decode(response.data)
-            if (
-                decoded.value.devicePropertyCode !== property ||
-                decoded.value.dataType < 1 ||
-                decoded.value.dataType > 10 ||
-                decoded.bytesRead !== response.data.length
-            )
+            const decoded = codec.decode(answered)
+            const { devicePropertyCode, dataType } = decoded.value
+            if (devicePropertyCode !== property || dataType < 1 || dataType > 10 || decoded.bytesRead !== answered.length)
                 throw new Error('Property descriptor is not a complete numeric control')
         } else if ((response.data?.length ?? 0) > 16 || (dataFromHost?.length ?? 0) > 16)
             throw new Error('Scalar property payload exceeds capture scope')
@@ -176,8 +163,8 @@ export function sanitizeProfileTransaction(
         if (dataFromHost) result.dataFromHost = hex(dataFromHost)
         return result
     }
-    if (response.data && response.code === 0x2001 && vendorId === 0x04a9 && transaction.operation === 0x9116) {
-        const bytes = response.data
+    if (answered && vendorId === 0x04a9 && transaction.operation === 0x9116) {
+        const bytes = answered
         const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
         for (let offset = 0; offset + 8 <= bytes.length;) {
             const size = view.getUint32(offset, true)
@@ -186,19 +173,13 @@ export function sanitizeProfileTransaction(
             const code = view.getUint32(offset + 4, true)
             const property = view.getUint32(offset + 8, true)
             if ((code === 0xc189 || code === 0xc18a) && safe.has(property))
-                observations.push({
-                    kind: 'canon-event-record',
-                    operation: transaction.operation,
-                    transactionId: transaction.transactionId,
-                    code,
-                    property,
-                    data: hex(bytes.subarray(offset, offset + size)),
-                })
+                observations.push({ kind: 'canon-event-record', operation: transaction.operation,
+                    transactionId: transaction.transactionId, code, property, data: hex(bytes.subarray(offset, offset + size)) })
             offset += size
         }
     }
-    if (response.data && response.code === 0x2001 && vendorId === 0x054c && transaction.operation === 0x9209) {
-        const bytes = response.data
+    if (answered && vendorId === 0x054c && transaction.operation === 0x9209) {
+        const bytes = answered
         if (bytes.length < 8) throw new Error('Truncated Sony inventory header')
         const count = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, true)
         if (count > 4096) throw new Error('Sony inventory count exceeds capture bound')
@@ -208,13 +189,8 @@ export function sanitizeProfileTransaction(
             const decoded = codec.decode(bytes, offset)
             const property = decoded.value.devicePropertyCode
             if (safe.has(property) && decoded.value.dataType >= 1 && decoded.value.dataType <= 10)
-                observations.push({
-                    kind: 'sony-property-descriptor',
-                    operation: transaction.operation,
-                    transactionId: transaction.transactionId,
-                    property,
-                    data: hex(bytes.subarray(offset, offset + decoded.bytesRead)),
-                })
+                observations.push({ kind: 'sony-property-descriptor', operation: transaction.operation,
+                    transactionId: transaction.transactionId, property, data: hex(bytes.subarray(offset, offset + decoded.bytesRead)) })
             offset += decoded.bytesRead
         }
         if (offset !== bytes.length) throw new Error('Unexpected Sony inventory trailer')
@@ -224,12 +200,7 @@ export function sanitizeProfileTransaction(
 }
 
 /** The read-only profile's own standard-PTP driver, with the capture registry and its transaction policy. */
-function readOnlyCamera(
-    transport: TransportInterface,
-    logger: Logger,
-    registry: ReturnType<typeof captureRegistry>,
-    policy: Partial<TransactionPolicy>
-): () => GenericCamera {
+function readOnlyCamera(transport: TransportInterface, logger: Logger, registry: Registry, policy: Partial<TransactionPolicy>): () => GenericCamera {
     const driver = new GenericCamera(transport, logger)
     Object.assign(driver, { registry })
     driver.configureTransactions(policy)
@@ -290,13 +261,9 @@ export async function captureCameraProfile(source: TransportInterface, options: 
             transactions.push(sanitized)
         } catch {
             observations.splice(previousObservations)
-            transactions.push({
-                operation: transaction.operation,
-                transactionId: transaction.transactionId,
-                parameters: transaction.parameters,
-                response: { code: transaction.response.code, parameters: transaction.response.parameters },
-                redactions: ['invalid-or-private-payload'],
-            })
+            const { operation, transactionId, parameters, response } = transaction
+            const redactions = ['invalid-or-private-payload']
+            transactions.push({ operation, transactionId, parameters, response: { code: response.code, parameters: response.parameters }, redactions })
         }
     })
     const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
@@ -326,11 +293,8 @@ export async function captureCameraProfile(source: TransportInterface, options: 
             return value
         } catch (error) {
             const failure = error as { name?: string; code?: number }
-            checks.push({
-                id,
-                status: 'error',
-                detail: `${failure.name || 'Error'}${typeof failure.code === 'number' ? ` (0x${failure.code.toString(16)})` : ''}`,
-            })
+            const code = typeof failure.code === 'number' ? ` (0x${failure.code.toString(16)})` : ''
+            checks.push({ id, status: 'error', detail: `${failure.name || 'Error'}${code}` })
             return undefined
         } finally {
             const last = checks.at(-1)
@@ -338,26 +302,14 @@ export async function captureCameraProfile(source: TransportInterface, options: 
         }
     }
     const send = async (operation: OperationDefinition, parameters: Record<string, unknown> = {}) => {
-        const response = (await camera().send(operation, parameters as never, undefined, 1024 * 1024)) as {
-            code: number
-            data?: unknown
-        }
+        const response: { code: number; data?: unknown } = await camera().send(operation, parameters as never, undefined, 1024 * 1024)
         if (response.code !== 0x2001) throw Object.assign(new Error('Camera refused read'), { code: response.code })
         return response.data
     }
     try {
+        const { vendorId, productId, serialNumber } = options
         const selection = {
-            usb: {
-                filters: [
-                    {
-                        vendorId: options.vendorId,
-                        productId: options.productId,
-                        ...(options.serialNumber && { serialNumber: options.serialNumber }),
-                        classCode: 6,
-                        subclassCode: 1,
-                    },
-                ],
-            },
+            usb: { filters: [{ vendorId, productId, ...(serialNumber && { serialNumber }), classCode: 6, subclassCode: 1 }] },
         }
         // Initialization opens the vendor session read-only: Sony keeps its dial priority and image routing.
         await check('session', () =>
@@ -366,11 +318,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
         const info = await check('device-info', () => send(registry.operations.GetDeviceInfo))
         if (info) {
             const identity = info as ReturnType<DeviceInfoCodec['decode']>['value']
-            Object.assign(device, {
-                manufacturer: identity.manufacturer,
-                model: identity.model,
-                firmware: identity.deviceVersion,
-            })
+            Object.assign(device, { manufacturer: identity.manufacturer, model: identity.model, firmware: identity.deviceVersion })
             const supported = new Set(identity.operationsSupportedRaw)
             const safe = capturePropertyCodes(options.vendorId)
             let properties = identity.devicePropertiesSupported.filter(code => safe.has(code))
@@ -381,14 +329,8 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                         flagOfDevicePropertyOption: 'ENABLE',
                     })
                 )
-                properties = [
-                    ...new Set([
-                        ...properties,
-                        ...observations
-                            .filter(item => item.kind === 'sony-property-descriptor')
-                            .map(item => item.property),
-                    ]),
-                ]
+                const described = observations.filter(item => item.kind === 'sony-property-descriptor')
+                properties = [...new Set([...properties, ...described.map(item => item.property)])]
             }
             // Sony's initialized inventory already contains the actual descriptors.
             // Neither standard GetDevicePropDesc nor 0x9251 is implied by those
@@ -401,15 +343,10 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 if (data instanceof Uint8Array && data.length >= 4) {
                     const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
                     const count = view.getUint32(0, true)
-                    if (count <= 4096 && data.length === 4 + count * 4)
-                        properties = [
-                            ...new Set([
-                                ...properties,
-                                ...Array.from({ length: count }, (_, index) =>
-                                    view.getUint32(4 + index * 4, true)
-                                ).filter(code => safe.has(code)),
-                            ]),
-                        ]
+                    if (count <= 4096 && data.length === 4 + count * 4) {
+                        const codes = Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, true))
+                        properties = [...new Set([...properties, ...codes.filter(code => safe.has(code))])]
+                    }
                 }
             }
             for (const property of properties.slice(0, limit)) {
@@ -470,21 +407,13 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                     checks.push({ id: 'property-roundtrip-verification', status: 'error', detail: qualification.restored ? 'Target readback failed; original restored' : 'Original-value restoration failed' })
             }
             if (properties.length > limit || Date.now() >= deadline)
-                checks.push({
-                    id: 'property-coverage',
-                    status: 'skipped',
-                    detail: 'Property count or time bound reached; capture is partial',
-                })
+                checks.push({ id: 'property-coverage', status: 'skipped', detail: 'Property count or time bound reached; capture is partial' })
         }
     } finally {
         await check('disconnect', () => (facade ? facade.disconnect() : camera().disconnect()), true)
     }
     if (budgetReached)
-        checks.push({
-            id: 'trace-coverage',
-            status: 'skipped',
-            detail: 'Trace retention bound reached; capture is partial',
-        })
+        checks.push({ id: 'trace-coverage', status: 'skipped', detail: 'Trace retention bound reached; capture is partial' })
     return {
         schema: 'darkgrade.ptp-trace/v1' as const,
         capturedAt,

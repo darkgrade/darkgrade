@@ -1,7 +1,7 @@
 import type {Camera} from '@camera/index'
 import {protocolAccess,type ProtocolSession} from '@camera/protocol-session'
 import type {OperationDefinition} from '@ptp/types/operation'
-import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
+import {requireNikonIdle} from '@vendors/nikon/recording-status'
 import {NikonMenuController} from '@vendors/nikon/menu-controls'
 
 export type NikonAccessoryKey='menu'|'up'|'down'|'left'|'right'|'ok'|'playback'|'display'
@@ -162,10 +162,7 @@ export class NikonAccessoryController {
     private requireSession(){
         if(!this.ownedInstance||this.camera.driver!==this.ownedInstance||this.ownedSession===null||this.ownedInstance.sessionId!==this.ownedSession){this.invalidate();throw new Error('Nikon PTP session changed; request accessory readiness again')}
     }
-    private async requireIdle(){
-        const recording=await readNikonRecordingStatus(this.camera)
-        if(!recording||recording.recording||recording.bufferedImages)throw new Error('Nikon must confirm recording and pending card writes are idle before accessory controls')
-    }
+    private requireIdle(){return requireNikonIdle(this.camera,'Nikon must confirm recording and pending card writes are idle before accessory controls')}
     private readinessFailure(code:number){this.currentState=needsConfirmation(code)?'needs-camera-confirmation':'not-ready'}
     private readinessResponse(code:number){
         if(code===0x2001)this.currentState='ready'

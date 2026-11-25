@@ -1,7 +1,7 @@
 import type {Camera} from '@camera/index'
 import {protocolAccess,type ProtocolSession} from '@camera/protocol-session'
 import {ChangeCameraMode,GetDevicePropDescEx,SetDevicePropValueEx} from '@vendors/nikon/definitions/nikon-operation-definitions'
-import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
+import {requireNikonIdle} from '@vendors/nikon/recording-status'
 
 /** Enable remote Manual exposure on an owned idle Nikon session.
  * Leaves REMOTE active on success so the physical dial does not override video settings.
@@ -9,8 +9,7 @@ import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
  */
 export async function prepareNikonManualExposure(target:Camera|Pick<ProtocolSession,'send'>){
     const camera=protocolAccess(target)
-    const idle=await readNikonRecordingStatus(camera)
-    if(!idle||idle.recording||idle.bufferedImages)throw new Error('Nikon must confirm idle before enabling remote Manual exposure')
+    await requireNikonIdle(camera,'Nikon must confirm idle before enabling remote Manual exposure')
     const remote=await camera.send(ChangeCameraMode,{Mode:'REMOTE'})
     if(remote.code!==0x2001)throw new Error('Nikon rejected remote exposure control')
     try{

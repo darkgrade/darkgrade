@@ -2,13 +2,9 @@ import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmatio
 import type { CameraRecordingState } from '@camera/controls'
 import type { Clip } from '@camera/driver'
 import type { VideoCapability } from '@vendors/generic/capability-groups'
-import {
-    CameraClipNotFoundError,
-    CameraOutcomeUnknownError,
-    CameraRefusedError,
-    CameraUnsupportedError,
-} from '@camera/errors'
+import { CameraClipNotFoundError, CameraOutcomeUnknownError, CameraRefusedError } from '@camera/errors'
 import { PTPError, PTPResponseError } from '@core/ptp-errors'
+import { isTypedFailure, messageOf as errorMessage, withCause } from '@vendors/generic/typed-failure'
 
 /**
  * What one vendor contributes to a recording; the lifecycle around it (`recordingCapability`) is
@@ -56,29 +52,12 @@ interface RecordingSession {
 const startConfirmationMilliseconds = 5000
 const stopConfirmationMilliseconds = 15000
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
-}
-
-function withCause<Failure extends Error>(failure: Failure, cause: unknown): Failure {
-    failure.cause = cause
-    return failure
-}
-
-function isPublicFailure(error: unknown): boolean {
-    return (
-        error instanceof CameraUnsupportedError ||
-        error instanceof CameraRefusedError ||
-        error instanceof CameraOutcomeUnknownError
-    )
-}
-
 /**
  * A failure before Record was sent. Preparation restores what it changed, so a camera refusal or
  * a precondition leaves the camera as it was; a failed restore leaves its setup unknown.
  */
 function preparationFailure(error: unknown): Error {
-    if (isPublicFailure(error) && error instanceof Error) return error
+    if (isTypedFailure(error)) return error
     if (error instanceof AggregateError)
         return withCause(new CameraOutcomeUnknownError('startRecording', errorMessage(error)), error)
     if (error instanceof PTPError && !(error instanceof PTPResponseError))
@@ -88,7 +67,7 @@ function preparationFailure(error: unknown): Error {
 
 /** A failed Record or Stop: refused only when the camera answered no and stayed as it was. */
 function transitionFailure(operation: string, error: unknown, unchanged: boolean): Error {
-    if (isPublicFailure(error) && error instanceof Error) return error
+    if (isTypedFailure(error)) return error
     if (unchanged && !(error instanceof PTPError && !(error instanceof PTPResponseError)))
         return withCause(new CameraRefusedError(operation, errorMessage(error)), error)
     return withCause(new CameraOutcomeUnknownError(operation, errorMessage(error)), error)

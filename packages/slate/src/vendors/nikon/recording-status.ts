@@ -13,3 +13,9 @@ export async function readNikonRecordingStatus(target:Camera|Pick<ProtocolSessio
         return {confirmed:true as const,source:'nikon-ptp-0xd0a4' as const,observedAt:new Date().toISOString(),prohibitionBits:flags,recording:Boolean(flags&0x400),bufferedImages:Boolean(flags&0x200)}
     }catch{return undefined}
 }
+
+/** Throws `message` unless a fresh read confirms no recording and no pending card writes. */
+export async function requireNikonIdle(target:Camera|Pick<ProtocolSession,'send'>,message:string){
+    const status=await readNikonRecordingStatus(target)
+    if(!status||status.recording||status.bufferedImages)throw new Error(message)
+}

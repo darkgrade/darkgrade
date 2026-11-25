@@ -2,6 +2,7 @@ import type { CameraCapabilities, CameraRecordingState, OperationAvailability } 
 import type {
     CameraEventHandler,
     CameraEventName,
+    CameraOperationName,
     Clip,
     ConfirmedPhotoFile,
     FocusDirection,
@@ -12,13 +13,7 @@ import type {
     LiveViewFrame,
     PhotoDestination,
 } from '@camera/driver'
-import {
-    CameraClipNotFoundError,
-    CameraOutcomeUnknownError,
-    CameraRefusedError,
-    CameraUnsupportedError,
-} from '@camera/errors'
-import type { CameraOperationName } from '@camera/driver'
+import { CameraClipNotFoundError, CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Logger } from '@core/logger'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
@@ -38,6 +33,7 @@ import {
     cardSteps,
     classified,
     clipFinalizationMilliseconds,
+    type DriverCapture,
     operationsAdvertised,
     overlayUnsupported,
     requireImage,
@@ -47,20 +43,10 @@ import {
 } from '@vendors/generic/generic-operations'
 import { encodeMediaId, mediaKind } from '@vendors/generic/media-id'
 import { recordingCapability } from '@vendors/generic/recording-lifecycle'
-import {
-    afterPossibleRelease,
-    afterShutterRelease,
-    shutterOutcomeUnknown,
-    shutterRefused,
-} from '@vendors/generic/shutter-outcome'
+import { afterPossibleRelease, afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import type { NikonLiveViewDataset } from '@vendors/nikon/datasets/nikon-live-view-dataset'
 import { ISOAutoControl } from '@vendors/nikon/definitions/nikon-operation-definitions'
-import {
-    HardwareError,
-    NotLiveView,
-    OutOfFocus,
-    SilentReleaseBusy,
-} from '@vendors/nikon/definitions/nikon-response-definitions'
+import { HardwareError, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@vendors/nikon/definitions/nikon-response-definitions'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { prepareNikonManualExposure } from '@vendors/nikon/manual-exposure'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
@@ -132,20 +118,13 @@ export class NikonCamera extends GenericCamera {
             return
         }
         if (![0x100e, 0x90c0, 0x9201, 0x9207, 0x920a].some(code => supported.includes(code)))
-            throw new CameraRefusedError(
-                'recover',
-                'Nikon advertises file transfer without camera controls; inspect camera power and mode'
-            )
+            throw new CameraRefusedError('recover', 'Nikon advertises file transfer without camera controls; inspect camera power and mode')
     }
 
     /** @internal Closing a recording session restores Nikon's photo/application modes before Stop. */
     protected async existingRecordingSession(previousSessionId: number | null): Promise<number | undefined> {
         const status = await readNikonRecordingStatus(this)
-        if (!status)
-            throw new CameraOutcomeUnknownError(
-                'connect',
-                'Nikon existing session state is unreadable; its session was preserved'
-            )
+        if (!status) throw new CameraOutcomeUnknownError('connect', 'Nikon existing session state is unreadable; its session was preserved')
         if (!status.recording) return undefined
         const existing = previousSessionId ?? this.lostSessionId
         if (existing === undefined)
@@ -156,24 +135,26 @@ export class NikonCamera extends GenericCamera {
 
     async disconnect(): Promise<void> {
         this.lostSessionId = !this.transport.isConnected() ? (this.sessionId ?? this.lostSessionId) : undefined
-        if (!this.transport.isConnected()) {
-            // A vanished transport cannot end live view; only local state is cleared.
-            this.liveViewStatus = 'UNKNOWN'
-            this.liveViewStartPending = false
-            this.ownsLiveView = false
-        }
         try {
-            if (this.ownsLiveView || this.liveViewStartPending) await this.disableLiveView()
+            if (this.transport.isConnected() && (this.ownsLiveView || this.liveViewStartPending)) await this.disableLiveView()
         } finally {
-            this.cameraMode = 'UNKNOWN'
-            this.liveViewMode = 'UNKNOWN'
-            this.applicationMode = 'UNKNOWN'
-            this.liveViewStatus = 'UNKNOWN'
-            this.liveViewStartPending = false
-            this.ownsLiveView = false
+            this.forgetModes()
             this.manualVideoExposureRequested = false
             await super.disconnect()
         }
+    }
+
+    private forgetModes(): void {
+        this.forgetObservedModes()
+        this.liveViewStartPending = false
+        this.ownsLiveView = false
+    }
+
+    private forgetObservedModes(): void {
+        this.cameraMode = 'UNKNOWN'
+        this.liveViewMode = 'UNKNOWN'
+        this.applicationMode = 'UNKNOWN'
+        this.liveViewStatus = 'UNKNOWN'
     }
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
@@ -182,20 +163,14 @@ export class NikonCamera extends GenericCamera {
 
     /** Read one known descriptor. Callers must discover whether the current body advertises it. */
     async propertyDescriptor(property: PropertyDefinition): Promise<DevicePropDesc> {
-        if (!property.access.includes('Get')) {
-            throw new Error(`Property ${property.name} is not readable`)
-        }
-
-        let operationName = 'GetDevicePropDescEx'
-        let response = await this.send(this.registry.operations.GetDevicePropDescEx, {
-            DevicePropCode: property.code,
-        })
-        // Older Nikon bodies lack the four-byte extension but still implement standard PTP properties.
-        // Only OperationNotSupported permits this fallback; a refused property is not a missing operation.
-        if (response.code === 0x2005 && property.code >= 0 && property.code <= 0xffff) {
-            operationName = 'GetDevicePropDesc'
-            response = await this.send(this.registry.operations.GetDevicePropDesc, { DevicePropCode: property.code })
-        }
+        if (!property.access.includes('Get')) throw new Error(`Property ${property.name} is not readable`)
+        const operations = this.registry.operations
+        const extended = await this.send(operations.GetDevicePropDescEx, { DevicePropCode: property.code })
+        const standard = standardFallback(extended.code, property)
+            ? await this.send(operations.GetDevicePropDesc, { DevicePropCode: property.code })
+            : undefined
+        const response = standard ?? extended
+        const operationName = standard ? 'GetDevicePropDesc' : 'GetDevicePropDescEx'
         if (response.code !== OK.code) {
             throw new PTPResponseError(
                 response.code,
@@ -203,43 +178,26 @@ export class NikonCamera extends GenericCamera {
                 { operation: operationName }
             )
         }
-        if (!response.data) {
-            throw new Error(`No data received from ${operationName}`)
-        }
-
         const descriptor = response.data
-
-        if (!descriptor || typeof descriptor !== 'object' || !('currentValueDecoded' in descriptor)) {
-            throw new Error('Invalid property descriptor structure')
-        }
+        if (!descriptor) throw new Error(`No data received from ${operationName}`)
         if (descriptor.devicePropertyCode !== property.code)
             throw new PTPDecodeError(`Nikon ${operationName} returned a descriptor for a different property`)
-
-        // Cast needed: TypeScript knows data exists but can't narrow to specific property's codec type
-        return descriptor as DevicePropDesc
+        return descriptor
     }
 
+    /** A supported native shutter never falls back after busy, denial or malformed data. */
     private async shutterDescriptor() {
-        let mode: string
         try {
-            mode = await this.get(this.registry.properties.LiveViewSelector)
-        } catch (error) {
-            if (error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)) return undefined
-            throw error
-        }
-        if (mode !== 'PHOTO' && mode !== 'VIDEO') throw new Error('Nikon shutter selector is unknown')
-        const property =
-            mode === 'PHOTO'
-                ? this.registry.properties.NikonPhotoShutterSpeed
-                : this.registry.properties.NikonMovieShutterSpeed
-        try {
+            const mode = await this.get(this.registry.properties.LiveViewSelector)
+            if (mode !== 'PHOTO' && mode !== 'VIDEO') throw new Error('Nikon shutter selector is unknown')
+            const { NikonPhotoShutterSpeed, NikonMovieShutterSpeed } = this.registry.properties
+            const property = mode === 'PHOTO' ? NikonPhotoShutterSpeed : NikonMovieShutterSpeed
             const descriptor = await this.propertyDescriptor(property)
             if (descriptor.dataType !== 6 || typeof descriptor.currentValueRaw !== 'number')
                 throw new Error('Invalid Nikon shutter descriptor datatype')
             return { property, descriptor, mode }
         } catch (error) {
-            // A supported native property must never fall back after busy, denial or malformed data.
-            if (error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)) return undefined
+            if (isUnsupportedProperty(error)) return undefined
             throw error
         }
     }
@@ -258,93 +216,82 @@ export class NikonCamera extends GenericCamera {
                 if ((await this.get(this.registry.properties.MovieShutterMode)) !== 'SHUTTER_SPEED')
                     throw new Error('Nikon movie shutter is in angle mode; choose shutter-speed mode before setting it')
             } catch (error) {
-                if (!(error instanceof PTPResponseError) || ![0x2005, 0x200a].includes(error.code)) throw error
+                if (!isUnsupportedProperty(error)) throw error
             }
         }
         if (descriptor.getSet !== 'GET_SET' || descriptor.formFlag !== 2)
             throw new Error('Nikon shutter requires a writable advertised enumeration')
-        const target = descriptor.supportedValuesRaw?.find(
-            raw => typeof raw === 'number' && matchesNikonShutter(raw, value)
-        )
+        const target = descriptor.supportedValuesRaw?.find(raw => typeof raw === 'number' && matchesNikonShutter(raw, value))
         if (typeof target !== 'number') throw new Error('Requested Nikon shutter speed is not advertised')
         if ((await this.get(this.registry.properties.LiveViewSelector)) !== mode)
             throw new Error('Nikon photo/video mode changed before shutter write')
         await this.set(property, target)
         const observed = await this.propertyDescriptor(property)
         if (observed.currentValueRaw !== target)
-            throw new CameraOutcomeUnknownError(
-                'shutterSpeed',
-                'Nikon shutter readback differs from the requested value'
-            )
+            throw new CameraOutcomeUnknownError('shutterSpeed', 'Nikon shutter readback differs from the requested value')
     }
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
-        if (!property.access.includes('Set')) {
-            throw new Error(`Property ${property.name} is not writable`)
-        }
-
-        const codec = this.resolveCodec(property.codec)
-        const encodedValue = codec.encode(value)
-
-        let operationName = 'SetDevicePropValueEx'
-        let response = await this.send(
-            this.registry.operations.SetDevicePropValueEx,
-            {
-                DevicePropCode: property.code,
-            },
-            encodedValue
-        )
-        if (response.code === 0x2005 && property.code >= 0 && property.code <= 0xffff) {
-            operationName = 'SetDevicePropValue'
-            response = await this.send(
-                this.registry.operations.SetDevicePropValue,
-                { DevicePropCode: property.code },
-                encodedValue
-            )
-        }
+        if (!property.access.includes('Set')) throw new Error(`Property ${property.name} is not writable`)
+        const encodedValue = this.resolveCodec(property.codec).encode(value)
+        const parameters = { DevicePropCode: property.code }
+        const extended = await this.send(this.registry.operations.SetDevicePropValueEx, parameters, encodedValue)
+        const standard = standardFallback(extended.code, property)
+            ? await this.send(this.registry.operations.SetDevicePropValue, parameters, encodedValue)
+            : undefined
+        const response = standard ?? extended
         if (response.code !== OK.code)
-            throw new PTPResponseError(
-                response.code,
-                `Nikon ${property.name} write failed: ${this.responseDescription(response.code)}`,
-                { operation: operationName }
-            )
+            throw new PTPResponseError(response.code, `Nikon ${property.name} write failed: ${this.responseDescription(response.code)}`, {
+                operation: standard ? 'SetDevicePropValue' : 'SetDevicePropValueEx',
+            })
     }
 
     /** Photo quality remains configurable while the physical selector is in video mode. */
     async setStandardProperty(name: string | number, value: string | number): Promise<void> {
-        const photoProperty = ['compressionsetting', 'imagesize', '0x5003', '0x5004', '20483', '20484'].includes(
-            String(name).toLowerCase()
-        )
-        if (!photoProperty) return super.setStandardProperty(name, value)
+        const photoProperties = ['compressionsetting', 'imagesize', '0x5003', '0x5004', '20483', '20484']
+        if (!photoProperties.includes(String(name).toLowerCase())) return super.setStandardProperty(name, value)
         await this.getLiveViewStatus()
         if (this.liveViewMode !== 'VIDEO') return super.setStandardProperty(name, value)
         const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
         if (condition.includes('alreadyRecording'))
             throw new Error('Nikon photo settings cannot interrupt an active recording')
+        await this.inRemoteMode(
+            async () => {
+                await this.selectLiveViewMode('PHOTO')
+                await super.setStandardProperty(name, value)
+            },
+            'VIDEO',
+            (error, failure) =>
+                failure
+                    ? new AggregateError([failure, error], `${String(failure)}; restoring Nikon movie mode: ${String(error)}`)
+                    : error
+        )
+    }
+
+    /** Runs `action` in REMOTE mode, then restores the selector (when given), live view and PC-camera mode. */
+    private async inRemoteMode(
+        action: () => Promise<void>,
+        restoreSelector: 'VIDEO' | undefined,
+        restorationError: (error: unknown, failure: unknown) => unknown
+    ): Promise<void> {
         const restoreLiveView = this.liveViewStatus === 'ON'
         const restoreLiveViewOwnership = this.ownsLiveView
         const restorePcMode = this.cameraMode !== 'REMOTE'
         let failure: unknown
         try {
-            await this.enableRemoteMode()
-            await this.selectLiveViewMode('PHOTO')
-            await super.setStandardProperty(name, value)
+            await this.changeCameraMode('REMOTE')
+            await action()
         } catch (error) {
             failure = error
             throw error
         } finally {
             try {
-                await this.selectLiveViewMode('VIDEO', true)
+                if (restoreSelector) await this.selectLiveViewMode(restoreSelector, true)
                 if (restoreLiveView) await this.enableLiveView()
                 this.ownsLiveView = restoreLiveViewOwnership
-                if (restorePcMode) await this.enablePcCameraMode()
+                if (restorePcMode) await this.changeCameraMode('PC_CAMERA')
             } catch (error) {
-                if (failure)
-                    throw new AggregateError(
-                        [failure, error],
-                        `${String(failure)}; restoring Nikon movie mode: ${String(error)}`
-                    )
-                throw error
+                throw restorationError(error, failure)
             }
         }
     }
@@ -352,24 +299,19 @@ export class NikonCamera extends GenericCamera {
     /** Drain one event batch explicitly; opening a camera does not start a background poll. */
     async pollEvents(): Promise<NikonQueuedEvent[]> {
         const extended = await this.send(this.registry.operations.GetEventEx, {})
-        let events: NikonQueuedEvent[]
-        if (extended.code === 0x2005) {
-            const legacy = await this.send(this.registry.operations.GetEvent, {})
-            if (legacy.code !== OK.code) throw new PTPResponseError(legacy.code, undefined, { operation: 'GetEvent' })
-            if (!Array.isArray(legacy.data)) throw new Error('Nikon GetEvent returned no event dataset')
-            events = legacy.data.map(event => ({ code: event.code, parameters: [event.parameter] }))
-        } else {
-            if (extended.code !== OK.code)
-                throw new PTPResponseError(extended.code, undefined, { operation: 'GetEventEx' })
-            if (!Array.isArray(extended.data)) throw new Error('Nikon GetEventEx returned no event dataset')
-            events = extended.data.map(event => ({ code: event.code, parameters: [...event.parameters] }))
-        }
+        const legacy = extended.code === 0x2005 ? await this.send(this.registry.operations.GetEvent, {}) : undefined
+        const response = legacy ?? extended
+        const operation = legacy ? 'GetEvent' : 'GetEventEx'
+        if (response.code !== OK.code) throw new PTPResponseError(response.code, undefined, { operation })
+        if (!Array.isArray(response.data)) throw new Error(`Nikon ${operation} returned no event dataset`)
+        const events: NikonQueuedEvent[] = legacy
+            ? legacy.data.map(event => ({ code: event.code, parameters: [event.parameter] }))
+            : extended.data.map(event => ({ code: event.code, parameters: [...event.parameters] }))
+        const { ObjectAddedInSdram, ObjectAdded } = this.registry.events
         for (const event of events) {
             const handle = event.parameters[0]
-            if (event.code === this.registry.events.ObjectAddedInSdram.code && handle !== undefined)
-                this.announcedSdramObjects.push(Number(handle))
-            if (event.code === this.registry.events.ObjectAdded.code && handle !== undefined)
-                this.#announcedCardObjects?.push(Number(handle))
+            if (event.code === ObjectAddedInSdram.code && handle !== undefined) this.announcedSdramObjects.push(Number(handle))
+            if (event.code === ObjectAdded.code && handle !== undefined) this.#announcedCardObjects?.push(Number(handle))
             this.handleEvent({ ...event, transactionId: 0 })
         }
         return events
@@ -381,14 +323,9 @@ export class NikonCamera extends GenericCamera {
     }
 
     async setIso(value: string): Promise<void> {
-        const isAuto = value.toLowerCase().includes('auto')
-
-        if (isAuto) {
-            return await this.set(ISOAutoControl, 'ON')
-        } else {
-            await this.set(ISOAutoControl, 'OFF')
-            return await this.set(this.registry.properties.ExposureIndex, value)
-        }
+        if (value.toLowerCase().includes('auto')) return this.set(ISOAutoControl, 'ON')
+        await this.set(ISOAutoControl, 'OFF')
+        await this.set(this.registry.properties.ExposureIndex, value)
     }
 
     /**
@@ -405,20 +342,11 @@ export class NikonCamera extends GenericCamera {
             destination?: 'card' | 'memory'
             rawCompression?: 'lossless'
         } = {}
-    ): Promise<{
-        info?: ObjectInfo
-        data?: Uint8Array
-        /** The card object's handle, for a card capture. */
-        objectHandle?: number
-    }> {
+    ): Promise<DriverCapture> {
         const memory = options.destination === 'memory'
         if (memory && options.includeData === false)
             throw new Error('Memory capture requires transfer so the new SDRAM image can be released')
-        // Wi-Fi control must retain its authenticated remote session, as live view does.
-        if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
-        let info: ObjectInfo | undefined
-        let data: Uint8Array | undefined
-        let objectHandle: number | undefined
+        if (this.transport.getType() === TransportType.IP) await this.changeCameraMode('REMOTE')
         const cardHandles: number[] = []
         const recordCardObject = (event: { ObjectHandle?: number }) => {
             if (event.ObjectHandle && !cardHandles.includes(event.ObjectHandle)) cardHandles.push(event.ObjectHandle)
@@ -432,16 +360,10 @@ export class NikonCamera extends GenericCamera {
             if (!memory && options.autofocus !== false) {
                 releaseSent = true
                 const response = await this.send(this.registry.operations.InitiateCapture, {})
-                this.assertReleaseAccepted(response.code, 'InitiateCapture')
-                return
+                return this.assertReleaseAccepted(response.code, 'InitiateCapture')
             }
-            const information = await this.send(this.registry.operations.GetDeviceInfo, {})
-            this.assertNikonResponse(information.code, 'GetDeviceInfo')
-            if (!information.data?.operationsSupportedRaw.includes(0x9207))
-                throw new CameraUnsupportedError(
-                    'takePhoto',
-                    'Nikon does not advertise the requested capture mode; no shutter command sent'
-                )
+            if (!(await this.deviceInformation()).operationsSupportedRaw.includes(0x9207))
+                throw new CameraUnsupportedError('takePhoto', 'Nikon does not advertise the requested capture mode; no shutter command sent')
             // Z6III command reference rev 2, 6.2.4.1: normal release, save to card.
             releaseSent = true
             const response = await this.send(this.registry.operations.InitiateCaptureRecInMedia, {
@@ -450,24 +372,15 @@ export class NikonCamera extends GenericCamera {
             })
             this.assertReleaseAccepted(response.code, 'InitiateCaptureRecInMedia')
         }
-        const finish = async (waitForBuffer = true) => {
-            if (memory) {
-                const captured = await this.readCapturedMemory()
-                data = captured.data
-                if (options.includeInfo !== false) info = captured.info
-            }
-            // A successful silent release may still be processing the exposure.
-            // Do not restore RAW compression or the photo/video mode until it is ready.
-            // A valid 30-second exposure still needs sensor readout and buffer completion.
-            // Wait without replaying the release before restoring RAW or photo/movie modes.
+        const includeInfo = options.includeInfo !== false
+        const finish = async (waitForBuffer: boolean): Promise<DriverCapture> => {
+            const fromMemory = memory ? await this.readCapturedMemory() : undefined
+            // A 30-second exposure still needs readout: wait, never replaying the release, before restoring modes.
             await this.pollDeviceReady(60000, [], [SilentReleaseBusy.code])
-            if (!memory && waitForBuffer) await this.waitForImageBufferReady(30000)
-            if (!memory) {
-                const captured = await this.readCapturedCardImage(cardHandles, options.includeData === true)
-                if (options.includeInfo !== false) info = captured.info
-                data = captured.data
-                objectHandle = captured.objectHandle
-            }
+            if (fromMemory) return { data: fromMemory.data, info: includeInfo ? fromMemory.info : undefined }
+            if (waitForBuffer) await this.waitForImageBufferReady(30000)
+            const card = await this.readCapturedCardImage(cardHandles, options.includeData === true)
+            return { info: includeInfo ? card.info : undefined, data: card.data, objectHandle: card.objectHandle }
         }
         const releaseAndConfirm = (waitForBuffer: boolean) =>
             withNikonRawCompression(this, options.rawCompression, async () => {
@@ -482,80 +395,49 @@ export class NikonCamera extends GenericCamera {
                             error instanceof CameraUnsupportedError || error instanceof CameraRefusedError
                         throw releaseSent && !definitive ? shutterOutcomeUnknown(error) : error
                     }
-                    await afterShutterRelease(() => finish(waitForBuffer))
+                    return await afterShutterRelease(() => finish(waitForBuffer))
                 } finally {
                     this.off(this.registry.events.ObjectAdded, recordCardObject)
                 }
             })
-        // Restoring RAW compression after a sent release never reads as a refusal.
         const capture = (waitForBuffer = true) =>
             releaseAndConfirm(waitForBuffer).catch(error => Promise.reject(afterPossibleRelease(error, releaseSent)))
 
-        // Setup capture
-
-        // Older Nikon bodies can support StartLiveView/InitiateCapture while returning
-        // no data for the newer GetDevicePropDescEx status properties. In that case,
-        // use the photo-capture path directly instead of failing before the shutter.
+        // Older bodies return no data for the extended status properties; capture directly.
         try {
             await this.getLiveViewStatus()
         } catch (error) {
-            if (!(error instanceof Error) || !error.message.includes('No data received from GetDevicePropDescEx')) {
+            if (!(error instanceof Error) || !error.message.includes('No data received from GetDevicePropDescEx'))
                 throw error
-            }
-            await capture(false)
-            return { info, data, objectHandle }
+            return capture(false)
         }
-
-        // camera's hardware dial is in photo mode, great, screen will stay on
-        if (this.liveViewMode === 'PHOTO') {
-            await capture()
-        }
-
-        // camera's hardware dial is not in photo mode
-        // we must temporarily enable remote mode which will blank out the screen, then go back to PC Camera mode
-        else if (this.liveViewMode === 'VIDEO') {
-            const restorePcMode = this.cameraMode !== 'REMOTE'
-            const failures: unknown[] = []
-            try {
-                await this.enableRemoteMode()
-                await this.selectLiveViewMode('PHOTO')
-                await capture()
-            } catch (error) {
-                failures.push(error)
-            } finally {
-                try {
-                    await this.selectLiveViewMode('VIDEO', true)
-                } catch (error) {
-                    failures.push(error)
-                } finally {
-                    try {
-                        if (restorePcMode) await this.enablePcCameraMode()
-                    } catch (error) {
-                        failures.push(error)
-                    }
-                }
-            }
-            // After a sent release a photo may exist, so a failed restoration never reads as a refusal.
-            if (failures.length === 1) throw afterPossibleRelease(failures[0], releaseSent)
-            if (failures.length > 1)
-                throw afterPossibleRelease(
-                    new AggregateError(
-                        failures,
-                        `Nikon capture/settings restoration failed: ${failures.map(String).join('; ')}`
-                    ),
-                    releaseSent
-                )
-        } else throw new Error('Nikon live-view selector is unknown; capture was not sent')
-
-        return { info, data, objectHandle }
+        if (this.liveViewMode === 'PHOTO') return capture()
+        if (this.liveViewMode !== 'VIDEO') throw new Error('Nikon live-view selector is unknown; capture was not sent')
+        // At the video dial position, remote mode (which blanks the screen) selects photo for the capture.
+        const restorePcMode = this.cameraMode !== 'REMOTE'
+        const failures: unknown[] = []
+        const attempt = (step: () => Promise<unknown>) => step().catch(error => void failures.push(error))
+        let captured: DriverCapture = {}
+        await attempt(async () => {
+            await this.changeCameraMode('REMOTE')
+            await this.selectLiveViewMode('PHOTO')
+            captured = await capture()
+        })
+        await attempt(() => this.selectLiveViewMode('VIDEO', true))
+        await attempt(async () => restorePcMode && (await this.changeCameraMode('PC_CAMERA')))
+        if (failures.length)
+            throw afterPossibleRelease(
+                failures.length === 1
+                    ? failures[0]
+                    : new AggregateError(failures, `Nikon capture/settings restoration failed: ${failures.map(String).join('; ')}`),
+                releaseSent
+            )
+        return captured
     }
 
     /** A refused release took nothing: report the camera's answer as a refusal, not an unknown outcome. */
     private assertReleaseAccepted(code: number, operation: string): void {
-        if (code !== OK.code)
-            throw shutterRefused(
-                new PTPResponseError(code, `Nikon ${operation} returned 0x${code.toString(16)}`, { operation })
-            )
+        if (code !== OK.code) throw shutterRefused(nikonResponseError(code, operation))
     }
 
     /**
@@ -565,10 +447,7 @@ export class NikonCamera extends GenericCamera {
      * pair may be announced in a later poll, so polling continues for a short bounded grace before
      * the first file is taken. Never deletes or rewrites card files.
      */
-    private async readCapturedCardImage(
-        handles: number[],
-        includeData: boolean
-    ): Promise<{ info: ObjectInfo; data?: Uint8Array; objectHandle: number }> {
+    private async readCapturedCardImage(handles: number[], includeData: boolean) {
         const deadline = Date.now() + NIKON_CARD_FILE_TIMEOUT_MS
         const inspected = new Map<number, ObjectInfo | null>()
         let pairDeadline: number | undefined
@@ -587,30 +466,30 @@ export class NikonCamera extends GenericCamera {
                 const file = info.associationType === 0 && info.objectFormat !== 0x3001 && info.objectCompressedSize > 0
                 inspected.set(handle, file ? info : null)
             }
-            const files = [...inspected.entries()].flatMap(([handle, info]) => (info ? [{ handle, info }] : []))
+            const files = cardFiles(inspected)
             const jpeg = files.find(file => /\.jpe?g$/i.test(file.info.filename))
             if (files.length && !jpeg) pairDeadline ??= Math.min(deadline, Date.now() + NIKON_PAIR_GRACE_MS)
             const chosen = jpeg ?? (pairDeadline !== undefined && Date.now() >= pairDeadline ? files[0] : undefined)
             if (chosen) return this.readCardFile(chosen.handle, chosen.info, includeData)
             await this.waitMs(100)
         }
-        const [first] = [...inspected.entries()].flatMap(([handle, info]) => (info ? [{ handle, info }] : []))
+        const [first] = cardFiles(inspected)
         if (first) return this.readCardFile(first.handle, first.info, includeData)
         throw new Error('Nikon released the shutter, but no new image file appeared on the card within 15 seconds')
     }
 
-    private async readCardFile(
-        objectHandle: number,
-        info: ObjectInfo,
-        includeData: boolean
-    ): Promise<{ info: ObjectInfo; data?: Uint8Array; objectHandle: number }> {
+    private async readCardFile(objectHandle: number, info: ObjectInfo, includeData: boolean) {
         if (!Number.isSafeInteger(info.objectCompressedSize) || info.objectCompressedSize > 512 * 1024 * 1024)
             throw new Error('Nikon card image size is invalid or exceeds the transfer bound')
         if (!includeData) return { info, objectHandle }
+        return { info, data: await this.transferWholeObject(objectHandle, info, 'card'), objectHandle }
+    }
+
+    private async transferWholeObject(objectHandle: number, info: ObjectInfo, location: 'card' | 'memory') {
         const data = await this.getObject(objectHandle, info.objectCompressedSize)
         if (data.length !== info.objectCompressedSize)
-            throw new Error('Nikon card image transfer length differs from its metadata')
-        return { info, data, objectHandle }
+            throw new Error(`Nikon ${location} image transfer length differs from its metadata`)
+        return data
     }
 
     /** Transfer the new SDRAM object identified by Nikon's event queue; never reads or deletes card images. */
@@ -632,17 +511,10 @@ export class NikonCamera extends GenericCamera {
                 const response = await this.send(this.registry.operations.GetObjectInfo, { ObjectHandle: handle })
                 this.assertNikonResponse(response.code, 'GetObjectInfo')
                 const info = response.data
-                if (
-                    !info ||
-                    !Number.isSafeInteger(info.objectCompressedSize) ||
-                    info.objectCompressedSize <= 0 ||
-                    info.objectCompressedSize > 128 * 1024 * 1024
-                )
+                const size = info?.objectCompressedSize ?? 0
+                if (!info || !Number.isSafeInteger(size) || size <= 0 || size > 128 * 1024 * 1024)
                     throw new Error('Nikon memory image metadata is missing or exceeds the transfer bound')
-                const data = await this.getObject(handle, info.objectCompressedSize)
-                if (data.length !== info.objectCompressedSize)
-                    throw new Error('Nikon memory image transfer length differs from its metadata')
-                return { info, data }
+                return { info, data: await this.transferWholeObject(handle, info, 'memory') }
             }
             await this.waitMs(100)
         }
@@ -655,54 +527,40 @@ export class NikonCamera extends GenericCamera {
         data?: Uint8Array
         nikonMetadata?: NikonLiveViewMetadata
     }> {
-        if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
+        if (this.transport.getType() === TransportType.IP) await this.changeCameraMode('REMOTE')
         await this.enableLiveView()
-
-        let data: Uint8Array | undefined = undefined
-        let nikonMetadata: NikonLiveViewMetadata | undefined
-        if (includeData) {
-            let response:
-                Awaited<ReturnType<typeof this.send<typeof this.registry.operations.GetLiveViewImageEx>>> | undefined
-            for (let attempt = 0; attempt < 20; attempt += 1) {
-                response = await this.send(
-                    this.registry.operations.GetLiveViewImageEx,
-                    {},
-                    undefined,
-                    this.liveViewBufferSize + this.bufferPadding
-                )
-                if (response.code === NotLiveView.code) {
-                    this.liveViewStatus = 'OFF'
-                    await this.enableLiveView()
-                    continue
-                }
-                if (response.code !== DeviceBusy.code) break
-                await this.waitMs(10)
+        if (!includeData) return { data: undefined }
+        const operation = this.registry.operations.GetLiveViewImageEx
+        let response: Awaited<ReturnType<typeof this.send<typeof operation>>> | undefined
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            response = await this.send(operation, {}, undefined, this.liveViewBufferSize + this.bufferPadding)
+            if (response.code === NotLiveView.code) {
+                this.liveViewStatus = 'OFF'
+                await this.enableLiveView()
+                continue
             }
-            if (!response || response.code !== OK.code || !response.data?.liveViewImage) {
-                throw new Error(
-                    `Nikon GetLiveViewImageEx failed with response ${response ? `0x${response.code.toString(16)}` : 'unknown'}`
-                )
-            }
-            const { liveViewImage, reserved, afFrameData, autoCaptureSubjectDetection, reservedEnd, ...metadata } =
-                response.data
-            data = liveViewImage
-            nikonMetadata = metadata
+            if (response.code !== DeviceBusy.code) break
+            await this.waitMs(10)
         }
-
-        return { data, ...(nikonMetadata ? { nikonMetadata } : {}) }
+        if (!response || response.code !== OK.code || !response.data?.liveViewImage)
+            throw new Error(`Nikon GetLiveViewImageEx failed with response ${response ? `0x${response.code.toString(16)}` : 'unknown'}`)
+        const { liveViewImage, reserved, afFrameData, autoCaptureSubjectDetection, reservedEnd, ...metadata } = response.data
+        return { data: liveViewImage, nikonMetadata: metadata }
     }
 
-    private async requireFocusOperations(operations: readonly OperationDefinition[]): Promise<void> {
+    private async deviceInformation(): Promise<DeviceInfo> {
         const response = await this.send(this.registry.operations.GetDeviceInfo, {})
-        const supported = response.data?.operationsSupportedRaw
-        if (response.code !== OK.code || !Array.isArray(supported))
+        if (response.code !== OK.code || !Array.isArray(response.data?.operationsSupportedRaw))
             throw new PTPResponseError(response.code, 'Nikon operation capabilities could not be read', {
                 operation: 'GetDeviceInfo',
             })
-        for (const operation of operations) {
-            if (!supported.includes(operation.code))
-                throw new CameraUnsupportedError(operation.name, `The Nikon does not advertise ${operation.name}`)
-        }
+        return response.data
+    }
+
+    private async requireFocusOperations(operations: readonly OperationDefinition[]): Promise<void> {
+        const supported = (await this.deviceInformation()).operationsSupportedRaw
+        const missing = operations.find(operation => !supported.includes(operation.code))
+        if (missing) throw new CameraUnsupportedError(missing.name, `The Nikon does not advertise ${missing.name}`)
     }
 
     /** Read the advertised extended-property IDs; this does not read or write their values. */
@@ -722,6 +580,14 @@ export class NikonCamera extends GenericCamera {
         return Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, littleEndian))
     }
 
+    /** The advertised operations each focus action needs, live view included. */
+    private focusOperations(action: 'autofocus' | 'focusPoint' | 'nudge') {
+        const operations = this.registry.operations
+        const liveView = [operations.DeviceReady, operations.StartLiveView, operations.GetLiveViewImageEx]
+        const drive = { autofocus: [operations.AfDrive, operations.AfDriveCancel], focusPoint: [operations.ChangeAfArea], nudge: [operations.MfDrive] }
+        return [...drive[action], ...liveView]
+    }
+
     private async freshFocusMetadata(): Promise<NikonLiveViewMetadata> {
         const frame = await this.captureLiveView({ includeInfo: false, includeData: true })
         if (!frame.nikonMetadata) throw new Error('Nikon live view returned no focus metadata')
@@ -733,42 +599,24 @@ export class NikonCamera extends GenericCamera {
         if (!Number.isInteger(timeoutMilliseconds) || timeoutMilliseconds < 100 || timeoutMilliseconds > 10000)
             throw new Error('Nikon autofocus timeout must be 100–10000 milliseconds')
         const operations = this.registry.operations
-        await this.requireFocusOperations([
-            operations.AfDrive,
-            operations.AfDriveCancel,
-            operations.DeviceReady,
-            operations.StartLiveView,
-            operations.GetLiveViewImageEx,
-        ])
+        await this.requireFocusOperations(this.focusOperations('autofocus'))
         await this.enableLiveView()
         const response = await this.send(operations.AfDrive, {})
         if (response.code !== OK.code && response.code !== OutOfFocus.code)
-            throw new CameraRefusedError(
-                'autofocus',
-                `Nikon AfDrive failed with response 0x${response.code.toString(16)}`
-            )
+            throw new CameraRefusedError('autofocus', `Nikon AfDrive failed with response 0x${response.code.toString(16)}`)
         let completion: number = response.code
         try {
             if (completion === OK.code) completion = await this.pollDeviceReady(timeoutMilliseconds, [OutOfFocus.code])
         } catch (error) {
             const cancel = await this.send(operations.AfDriveCancel, {}).catch(() => undefined)
-            if (!cancel || cancel.code !== OK.code)
-                throw new CameraOutcomeUnknownError(
-                    'autofocus',
-                    'Nikon autofocus did not complete and cancellation was not confirmed'
-                )
-            throw new CameraOutcomeUnknownError(
-                'autofocus',
-                `Nikon autofocus did not complete and was cancelled: ${error instanceof Error ? error.message : String(error)}`
-            )
+            const cancelled = cancel?.code === OK.code
+            throw new CameraOutcomeUnknownError('autofocus', cancelled
+                ? `Nikon autofocus did not complete and was cancelled: ${errorMessage(error)}`
+                : 'Nikon autofocus did not complete and cancellation was not confirmed')
         }
         const metadata = await this.freshFocusMetadata()
-        return {
-            commandSent: true,
-            focusAcquired:
-                completion === OK.code && metadata.focusingJudgementResult === 2 && metadata.focusDrivingStatus === 0,
-            metadata,
-        }
+        const focusAcquired = completion === OK.code && metadata.focusingJudgementResult === 2 && metadata.focusDrivingStatus === 0
+        return { commandSent: true, focusAcquired, metadata }
     }
 
     /** Coordinates are normalized over the fresh Nikon whole-size AF plane, independent of JPEG resolution. */
@@ -779,10 +627,7 @@ export class NikonCamera extends GenericCamera {
             throw new Error('Nikon focus must be true or false')
         const operations = this.registry.operations
         await this.requireFocusOperations([
-            operations.ChangeAfArea,
-            operations.DeviceReady,
-            operations.StartLiveView,
-            operations.GetLiveViewImageEx,
+            ...this.focusOperations('focusPoint'),
             ...(options.focus === false ? [] : [operations.AfDrive, operations.AfDriveCancel]),
         ])
         const before = await this.freshFocusMetadata()
@@ -794,17 +639,12 @@ export class NikonCamera extends GenericCamera {
             deviceY = Math.round(y * (height - 1))
         const response = await this.send(operations.ChangeAfArea, { X: deviceX, Y: deviceY })
         if (response.code !== OK.code)
-            throw new CameraRefusedError(
-                'setFocusPoint',
-                `Nikon ChangeAfArea failed with response 0x${response.code.toString(16)}`
-            )
+            throw new CameraRefusedError('setFocusPoint', `Nikon ChangeAfArea failed with response 0x${response.code.toString(16)}`)
         await this.pollDeviceReady()
         const focus = options.focus === false ? undefined : await this.performAutofocus()
         const metadata = focus?.metadata ?? (await this.freshFocusMetadata())
-        const tolerance = {
-            x: Math.max(1, Math.floor((metadata.afFrameSize?.horizontal || 0) / 2)),
-            y: Math.max(1, Math.floor((metadata.afFrameSize?.vertical || 0) / 2)),
-        }
+        const halfFrame = (size: number | undefined) => Math.max(1, Math.floor((size || 0) / 2))
+        const tolerance = { x: halfFrame(metadata.afFrameSize?.horizontal), y: halfFrame(metadata.afFrameSize?.vertical) }
         const center = metadata.afFrameCenterCoords
         const positionVerified =
             metadata.wholeSize?.horizontal === width &&
@@ -834,27 +674,15 @@ export class NikonCamera extends GenericCamera {
         if (!['near', 'far'].includes(direction) || !Number.isInteger(steps) || steps < 1 || steps > 32767)
             throw new Error('Nikon manual focus requires near/far and 1–32767 lens steps')
         const operations = this.registry.operations
-        await this.requireFocusOperations([
-            operations.MfDrive,
-            operations.DeviceReady,
-            operations.StartLiveView,
-            operations.GetLiveViewImageEx,
-        ])
+        await this.requireFocusOperations(this.focusOperations('nudge'))
         await this.enableLiveView()
         const response = await this.send(operations.MfDrive, { Direction: direction === 'near' ? 1 : 2, Steps: steps })
+        const advice = 'Use AF-S focus mode for manual drive.'
         if (response.code !== OK.code)
-            throw new CameraRefusedError(
-                'nudgeFocus',
-                `Nikon MfDrive failed: ${this.responseDescription(response.code)}. Use AF-S focus mode for manual drive.`
-            )
-        try {
-            await this.pollDeviceReady()
-        } catch (error) {
-            throw new CameraOutcomeUnknownError(
-                'nudgeFocus',
-                `Nikon MfDrive completion failed: ${error instanceof Error ? error.message : String(error)}. Use AF-S focus mode for manual drive.`
-            )
-        }
+            throw new CameraRefusedError('nudgeFocus', `Nikon MfDrive failed: ${this.responseDescription(response.code)}. ${advice}`)
+        await this.pollDeviceReady().catch(error => {
+            throw new CameraOutcomeUnknownError('nudgeFocus', `Nikon MfDrive completion failed: ${errorMessage(error)}. ${advice}`)
+        })
         return { commandSent: true, completed: true, metadata: await this.freshFocusMetadata() }
     }
 
@@ -875,13 +703,11 @@ export class NikonCamera extends GenericCamera {
         const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
         if (condition.includes('alreadyRecording'))
             throw new Error('Nikon is already recording; its session was preserved')
-        // USB card inspection can leave this body refusing application mode within
-        // the same PTP session. Renew the idle session before preparing a movie;
-        // this keeps USB connected and adds no power cycle or fixed sleep.
-        // Wi-Fi must retain its authenticated session rather than applying the USB workaround.
+        // USB card inspection can leave the body refusing application mode in this session: renew it while idle.
+        // Wi-Fi keeps its authenticated session.
         if (this.transport.getType() !== TransportType.IP && this.applicationMode !== 'ON' && this.sessionId !== null) {
             await this.waitForImageBufferReady()
-            const takeSession = this.sessionId === this.#movieSessionRenewal?.renewed ? this.#movieSessionRenewal.original : this.sessionId
+            const takeSession = this.takeSession()
             const nextSession = (this.sessionId + 1) >>> 0 || 1
             const closed = await this.send(this.registry.operations.CloseSession, {})
             if (closed.code !== OK.code)
@@ -892,18 +718,11 @@ export class NikonCamera extends GenericCamera {
                 throw new Error(`Nikon movie session open failed: ${this.responseDescription(opened.code)}`)
             this.sessionId = nextSession
             this.#movieSessionRenewal = { renewed: nextSession, original: takeSession }
-            this.cameraMode = 'UNKNOWN'
-            this.liveViewMode = 'UNKNOWN'
-            this.applicationMode = 'UNKNOWN'
-            this.liveViewStatus = 'UNKNOWN'
+            this.forgetObservedModes()
         }
-        if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
+        if (this.transport.getType() === TransportType.IP) await this.changeCameraMode('REMOTE')
         if (this.manualVideoExposureRequested) await this.prepareManualVideoExposure()
-        // Setup capture
-
-        // update live view status and mode
         await this.getLiveViewStatus()
-
         await this.pollDeviceReady()
 
         let ownsLiveView = false,
@@ -911,79 +730,51 @@ export class NikonCamera extends GenericCamera {
             ownsRemoteMode = false,
             ownsVideoMode = false
         try {
-            // With the hardware dial at photo, remote mode (which blanks the screen) selects video;
-            // at video the screen stays on.
             if (this.liveViewMode === 'PHOTO') {
                 ownsRemoteMode = this.cameraMode !== 'REMOTE'
-                await this.enableRemoteMode()
+                await this.changeCameraMode('REMOTE')
                 ownsVideoMode = true
-                await this.enableVideoMode()
+                await this.selectLiveViewMode('VIDEO')
             } else if (this.liveViewMode !== 'VIDEO')
                 throw new Error('Nikon live-view selector is unknown; recording was not started')
             ownsLiveView = this.liveViewStatus !== 'ON'
             await this.enableLiveView()
             ownsApplicationMode = this.applicationMode !== 'ON'
-            await this.enableApplicationMode()
+            await this.changeApplicationMode('ON')
             await this.waitForImageBufferReady()
             const prohibitionCondition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
             if (prohibitionCondition !== 'none') throw new Error(`Movie recording is prohibited: ${prohibitionCondition}`)
             const response = await this.send(this.registry.operations.StartMovieRecord, {})
-            if (response.code !== OK.code)
-                throw new PTPResponseError(
-                    response.code,
-                    `Nikon StartMovieRecord failed with response 0x${response.code.toString(16)}`,
-                    { operation: 'StartMovieRecord' }
-                )
+            if (response.code !== OK.code) throw failedWithResponse(response.code, 'StartMovieRecord')
         } catch (error) {
-            // A refused Start can still leave the body recording. Preserve its
-            // setup until a fresh observation permits restoration and explicit Stop.
-            let observed: string | undefined
-            try {
-                observed = await this.get(this.registry.properties.MovieRecProhibitionCondition)
-            } catch {
-                /* An unreadable state cannot authorize mode changes. */
-            }
+            // A refused Start can still leave the body recording; only a fresh idle observation permits restoration.
+            const observed = await this.get(this.registry.properties.MovieRecProhibitionCondition).catch(() => undefined)
             if (observed === undefined || observed.includes('alreadyRecording')) throw error
             const failures: string[] = []
-            const restore = async (name: string, operation: () => Promise<void>) => {
-                try {
-                    await operation()
-                } catch (failure) {
-                    failures.push(`${name}: ${failure instanceof Error ? failure.message : String(failure)}`)
-                }
-            }
+            const restore = (name: string, operation: () => Promise<void>) =>
+                operation().catch(failure => void failures.push(`${name}: ${errorMessage(failure)}`))
             if (ownsLiveView) await restore('live view', () => this.disableLiveView())
-            if (ownsApplicationMode) await restore('application mode', () => this.disableApplicationMode())
-            if (ownsVideoMode) await restore('photo mode', () => this.enablePhotoMode())
-            if (ownsRemoteMode) await restore('camera mode', () => this.enablePcCameraMode())
+            if (ownsApplicationMode) await restore('application mode', () => this.changeApplicationMode('OFF'))
+            if (ownsVideoMode) await restore('photo mode', () => this.selectLiveViewMode('PHOTO'))
+            if (ownsRemoteMode) await restore('camera mode', () => this.changeCameraMode('PC_CAMERA'))
             if (failures.length)
-                throw new Error(
-                    `${error instanceof Error ? error.message : String(error)}; Nikon recording setup cleanup failed: ${failures.join('; ')}`,
-                    { cause: error }
-                )
+                throw new Error(`${errorMessage(error)}; Nikon recording setup cleanup failed: ${failures.join('; ')}`, {
+                    cause: error,
+                })
             throw error
         }
     }
 
     async sendStopRecording(): Promise<void> {
         const response = await this.send(this.registry.operations.EndMovieRecord, {})
-        if (response.code !== OK.code)
-            throw new PTPResponseError(
-                response.code,
-                `Nikon EndMovieRecord failed with response 0x${response.code.toString(16)}`,
-                { operation: 'EndMovieRecord' }
-            )
+        if (response.code !== OK.code) throw failedWithResponse(response.code, 'EndMovieRecord')
         await this.pollDeviceReady()
-        const deadline = Date.now() + 10000
-        while ((await this.get(this.registry.properties.MovieRecProhibitionCondition)).includes('alreadyRecording')) {
-            if (Date.now() >= deadline)
-                throw new Error('Nikon movie stop was not confirmed within ten seconds; recording mode was preserved')
-            await this.waitMs(50)
-        }
+        const unconfirmed = 'Nikon movie stop was not confirmed within ten seconds; recording mode was preserved'
+        await this.waitUntilProhibitionClears('alreadyRecording', 10000, 50, unconfirmed)
         await this.waitForImageBufferReady()
         await this.disableLiveView()
-        await this.disableApplicationMode()
-        await this.enablePcCameraMode()
+        await this.changeApplicationMode('OFF')
+        await this.changeCameraMode('PC_CAMERA')
     }
 
     /** Downloads an object in chunks; onProgress reports bytes received after each chunk. */
@@ -1000,107 +791,49 @@ export class NikonCamera extends GenericCamera {
             objectSize,
             'GetPartialObjectEx',
             async (offset, bytesToRead) => {
-                // Split offset and size into lower/upper 32-bit values
-                const offsetLower = offset & 0xffffffff
-                const offsetUpper = Math.floor(offset / 0x100000000)
-                const maxSizeLower = bytesToRead & 0xffffffff
-                const maxSizeUpper = Math.floor(bytesToRead / 0x100000000)
-
-                const chunkResponse = await this.send(
-                    this.registry.operations.GetPartialObjectEx,
-                    {
-                        ObjectHandle: objectHandle,
-                        OffsetLower: offsetLower,
-                        OffsetUpper: offsetUpper,
-                        MaxSizeLower: maxSizeLower,
-                        MaxSizeUpper: maxSizeUpper,
-                    },
-                    undefined,
-                    bytesToRead + 12
-                )
-
-                this.assertNikonResponse(chunkResponse.code, 'GetPartialObjectEx')
-                return chunkResponse.data
+                const [OffsetLower, OffsetUpper] = split64(offset)
+                const [MaxSizeLower, MaxSizeUpper] = split64(bytesToRead)
+                const parameters = { ObjectHandle: objectHandle, OffsetLower, OffsetUpper, MaxSizeLower, MaxSizeUpper }
+                const chunk = await this.send(this.registry.operations.GetPartialObjectEx, parameters, undefined, bytesToRead + 12)
+                this.assertNikonResponse(chunk.code, 'GetPartialObjectEx')
+                return chunk.data
             },
             onProgress,
             signal
         )
     }
 
-    private async enableRemoteMode(): Promise<void> {
-        if (this.cameraMode === 'REMOTE') {
-            return
-        }
-
+    private async changeCameraMode(mode: 'REMOTE' | 'PC_CAMERA'): Promise<void> {
+        if (this.cameraMode === mode) return
         this.cameraMode = 'UNKNOWN'
-        const response = await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'REMOTE' })
-        if (response.code !== OK.code)
-            throw new PTPResponseError(
-                response.code,
-                `Nikon ChangeCameraMode REMOTE failed: ${this.responseDescription(response.code)}`,
-                { operation: 'ChangeCameraMode' }
-            )
-        this.cameraMode = 'REMOTE'
-        await this.pollDeviceReady()
-    }
-
-    private async enablePcCameraMode(): Promise<void> {
-        if (this.cameraMode === 'PC_CAMERA') {
-            return
-        }
-
-        this.cameraMode = 'UNKNOWN'
-        const response = await this.send(this.registry.operations.ChangeCameraMode, { Mode: 'PC_CAMERA' })
-        if (response.code !== OK.code)
-            throw new PTPResponseError(
-                response.code,
-                `Nikon ChangeCameraMode PC_CAMERA failed: ${this.responseDescription(response.code)}`,
-                { operation: 'ChangeCameraMode' }
-            )
-        this.cameraMode = 'PC_CAMERA'
+        const response = await this.send(this.registry.operations.ChangeCameraMode, { Mode: mode })
+        const failure = `Nikon ChangeCameraMode ${mode} failed: ${this.responseDescription(response.code)}`
+        if (response.code !== OK.code) throw new PTPResponseError(response.code, failure, { operation: 'ChangeCameraMode' })
+        this.cameraMode = mode
         await this.pollDeviceReady()
     }
 
     private async changeApplicationMode(mode: 'ON' | 'OFF'): Promise<void> {
+        if (this.applicationMode === mode) return
+        await this.sendApplicationMode(mode)
+        this.applicationMode = mode
+        await this.pollDeviceReady()
+    }
+
+    private async sendApplicationMode(mode: 'ON' | 'OFF'): Promise<void> {
         for (let attempt = 0; attempt < 3; attempt++) {
             const response = await this.send(this.registry.operations.ChangeApplicationMode, { Mode: mode })
             if (response.code === OK.code) return
-            if (response.code !== 0x200f)
-                throw new Error(
-                    `Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}`
-                )
-            // A mode command can be denied when the body already has that state.
-            // Accept only fresh camera telemetry, otherwise give its pending transition a bounded retry.
+            const failure = `Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}`
+            if (response.code !== 0x200f) throw new Error(failure)
+            // A denial may mean the body already has that state: accept only a fresh observation, else retry briefly.
             const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
             const observed = condition.includes('notInApplicationMode') ? 'OFF' : 'ON'
             if (observed === mode) return
-            if (attempt === 2)
-                throw new Error(
-                    `Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}; camera reports ${condition}`
-                )
+            if (attempt === 2) throw new Error(`${failure}; camera reports ${condition}`)
             await this.pollDeviceReady()
             await this.waitMs(250)
         }
-    }
-
-    private async enableApplicationMode(): Promise<void> {
-        if (this.applicationMode === 'ON') {
-            return
-        }
-
-        await this.changeApplicationMode('ON')
-        this.applicationMode = 'ON'
-        await this.pollDeviceReady()
-    }
-
-    private async disableApplicationMode(): Promise<void> {
-        if (this.applicationMode === 'OFF') {
-            return
-        }
-
-        await this.changeApplicationMode('OFF')
-        this.applicationMode = 'OFF'
-        await this.pollDeviceReady()
     }
 
     private async enableLiveView(): Promise<void> {
@@ -1110,26 +843,16 @@ export class NikonCamera extends GenericCamera {
                 if (status !== 'ON' && status !== 'OFF') throw new Error('Nikon live-view status is unknown')
                 this.liveViewStatus = status
             } catch (error) {
-                const unsupported = error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)
-                const legacyEmpty =
-                    error instanceof Error && error.message === 'No data received from GetDevicePropDescEx'
-                if (!unsupported && !legacyEmpty) throw error
+                const legacyEmpty = error instanceof Error && error.message === 'No data received from GetDevicePropDescEx'
+                if (!isUnsupportedProperty(error) && !legacyEmpty) throw error
             }
         }
-        if (this.liveViewStatus === 'ON') {
-            return
-        }
-
+        if (this.liveViewStatus === 'ON') return
         let response = await this.send(this.registry.operations.StartLiveView, {})
-        if (response.code === HardwareError.code && (await this.recoverSequenceError())) {
+        if (response.code === HardwareError.code && (await this.recoverSequenceError()))
             response = await this.send(this.registry.operations.StartLiveView, {})
-        }
-        if (response.code !== OK.code && response.code !== DeviceBusy.code) {
-            throw new PTPResponseError(
-                response.code,
-                `Nikon StartLiveView failed with response 0x${response.code.toString(16)}`
-            )
-        }
+        if (response.code !== OK.code && response.code !== DeviceBusy.code)
+            throw new PTPResponseError(response.code, `Nikon StartLiveView failed with response 0x${response.code.toString(16)}`)
         this.ownsLiveView = true
         this.liveViewStartPending = true
         await this.pollDeviceReady()
@@ -1146,13 +869,11 @@ export class NikonCamera extends GenericCamera {
      */
     async recoverSequenceError(): Promise<boolean> {
         if (this.transport.getType() !== TransportType.USB) return false
-        const information = await this.send(this.registry.operations.GetDeviceInfo, {})
-        this.assertNikonResponse(information.code, 'GetDeviceInfo for shutter recovery')
-        if (!information.data?.operationsSupportedRaw.includes(0x9207)) return false
+        const information = await this.deviceInformation()
+        if (!information.operationsSupportedRaw.includes(0x9207)) return false
         const warning = this.registry.properties.NikonWarningStatus
-        if (!information.data.devicePropertiesSupported.includes(warning.code)) {
-            if (!information.data.operationsSupportedRaw.includes(this.registry.operations.GetVendorCodes.code))
-                return false
+        if (!information.devicePropertiesSupported.includes(warning.code)) {
+            if (!information.operationsSupportedRaw.includes(this.registry.operations.GetVendorCodes.code)) return false
             if (!(await this.getVendorPropertyCodes()).includes(warning.code)) return false
         }
         if ((await this.get(warning)) !== 1) return false
@@ -1160,10 +881,7 @@ export class NikonCamera extends GenericCamera {
         if (movie.includes('alreadyRecording') || movie.includes('imagesInBuffer')) return false
         // Refresh immediately before the release: an old cache or another fault cannot authorize it.
         if ((await this.get(warning)) !== 1) return false
-        const released = await this.send(this.registry.operations.InitiateCaptureRecInMedia, {
-            AfMode: 0xffffffff,
-            Target: 0,
-        })
+        const released = await this.send(this.registry.operations.InitiateCaptureRecInMedia, { AfMode: 0xffffffff, Target: 0 })
         this.assertNikonResponse(released.code, 'sequence-error shutter release')
         await this.pollDeviceReady()
         const observed = await this.get(warning)
@@ -1177,7 +895,6 @@ export class NikonCamera extends GenericCamera {
         await this.pollDeviceReady()
         if (liveViewStatus !== 'ON' && liveViewStatus !== 'OFF') throw new Error('Nikon live-view status is unknown')
         this.liveViewStatus = liveViewStatus
-
         const liveViewMode = await this.get(this.registry.properties.LiveViewSelector)
         await this.pollDeviceReady()
         if (liveViewMode !== 'VIDEO' && liveViewMode !== 'PHOTO') throw new Error('Nikon live-view selector is unknown')
@@ -1186,26 +903,13 @@ export class NikonCamera extends GenericCamera {
 
     private async disableLiveView(): Promise<void> {
         if (this.liveViewStatus !== 'ON' && !this.liveViewStartPending) return
-
         const response = await this.send(this.registry.operations.EndLiveView, {})
-        if (response.code !== OK.code && response.code !== NotLiveView.code) {
-            throw new PTPResponseError(
-                response.code,
-                `Nikon EndLiveView failed with response 0x${response.code.toString(16)}`
-            )
-        }
+        if (response.code !== OK.code && response.code !== NotLiveView.code)
+            throw new PTPResponseError(response.code, `Nikon EndLiveView failed with response 0x${response.code.toString(16)}`)
         await this.pollDeviceReady()
         this.liveViewStatus = 'OFF'
         this.liveViewStartPending = false
         this.ownsLiveView = false
-    }
-
-    private async enablePhotoMode(): Promise<void> {
-        await this.selectLiveViewMode('PHOTO')
-    }
-
-    private async enableVideoMode(): Promise<void> {
-        await this.selectLiveViewMode('VIDEO')
     }
 
     private responseDescription(code: number): string {
@@ -1224,11 +928,9 @@ export class NikonCamera extends GenericCamera {
             const response = await this.send(this.registry.operations.DeviceReady, {})
             if (response.code === OK.code || acceptedResponses.includes(response.code)) return response.code
             if (response.code !== DeviceBusy.code && !pendingResponses.includes(response.code))
-                throw new PTPResponseError(
-                    response.code,
-                    `Nikon DeviceReady failed: ${this.responseDescription(response.code)}`,
-                    { operation: 'DeviceReady' }
-                )
+                throw new PTPResponseError(response.code, `Nikon DeviceReady failed: ${this.responseDescription(response.code)}`, {
+                    operation: 'DeviceReady',
+                })
             await this.waitMs(10)
         }
         throw new Error('Nikon DeviceReady timed out')
@@ -1243,38 +945,25 @@ export class NikonCamera extends GenericCamera {
      */
     async selectPhotoVideoMode(mode: 'PHOTO' | 'VIDEO'): Promise<void> {
         await this.getLiveViewStatus()
-        const restoreLiveView = this.liveViewStatus === 'ON'
-        const restoreLiveViewOwnership = this.ownsLiveView
-        const restorePcMode = this.cameraMode !== 'REMOTE'
-        let failure: unknown
-        try {
-            await this.enableRemoteMode()
-            await this.selectLiveViewMode(mode, true)
-        } catch (error) {
-            failure = error
-            throw error
-        } finally {
-            try {
-                if (restoreLiveView) await this.enableLiveView()
-                this.ownsLiveView = restoreLiveViewOwnership
-                if (restorePcMode) await this.enablePcCameraMode()
-            } catch (error) {
-                // A failed restoration leaves the body's mode unknown, whatever the selector did.
+        // A failed restoration leaves the body's mode unknown, whatever the selector did.
+        await this.inRemoteMode(
+            () => this.selectLiveViewMode(mode, true),
+            undefined,
+            (error, failure) => {
                 const restoration = new CameraOutcomeUnknownError(
                     'photoVideoMode',
                     `Restoring Nikon live view and camera mode after the photo/video switch failed: ${String(error)}` +
                         (failure ? `; the switch itself failed: ${String(failure)}` : '')
                 )
                 restoration.cause = failure ? new AggregateError([failure, error]) : error
-                throw restoration
+                return restoration
             }
-        }
+        )
     }
 
     /** A failed activation may still have changed the selector; forced restoration sends the original value despite stale caches. */
     private async selectLiveViewMode(mode: 'PHOTO' | 'VIDEO', force = false): Promise<void> {
         if (!force && this.liveViewMode === mode) return
-        // An active video pipeline must end before starting still live view.
         await this.disableLiveView()
         this.liveViewMode = 'UNKNOWN'
         await this.set(this.registry.properties.LiveViewSelector, mode)
@@ -1282,22 +971,24 @@ export class NikonCamera extends GenericCamera {
         this.liveViewMode = mode
     }
 
-    private async waitForImageBufferReady(timeoutMilliseconds = 5000): Promise<void> {
+    private waitForImageBufferReady(timeoutMilliseconds = 5000): Promise<void> {
+        const failure = `Nikon image buffer did not become ready within ${timeoutMilliseconds} milliseconds`
+        return this.waitUntilProhibitionClears('imagesInBuffer', timeoutMilliseconds, 100, failure)
+    }
+
+    /** Polls fresh prohibition reads only; the command that should clear the flag is never resent. */
+    private async waitUntilProhibitionClears(flag: string, timeoutMilliseconds: number, intervalMilliseconds: number, failure: string) {
         const deadline = Date.now() + timeoutMilliseconds
-        while (Date.now() < deadline) {
-            const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
-            if (!condition.includes('imagesInBuffer')) return
-            await this.waitMs(100)
+        while ((await this.get(this.registry.properties.MovieRecProhibitionCondition)).includes(flag)) {
+            if (Date.now() >= deadline) throw new Error(failure)
+            await this.waitMs(intervalMilliseconds)
         }
-        throw new Error(`Nikon image buffer did not become ready within ${timeoutMilliseconds} milliseconds`)
     }
 
     private assertNikonResponse(code: number, operation: string): void {
-        if (code !== OK.code)
-            throw new PTPResponseError(code, `Nikon ${operation} returned 0x${code.toString(16)}`, { operation })
+        if (code !== OK.code) throw nikonResponseError(code, operation)
     }
 
-    // Driver contract (`@camera/driver`).
     #eventListeners = 0
     #eventTimer?: ReturnType<typeof setTimeout>
     #recording?: VideoCapability
@@ -1335,9 +1026,7 @@ export class NikonCamera extends GenericCamera {
     }
 
     async autofocus(): Promise<FocusResult> {
-        return publicOutcome('autofocus', async () =>
-            (await this.performAutofocus()).focusAcquired ? 'acquired' : 'not-acquired'
-        )
+        return publicOutcome('autofocus', async () => ((await this.performAutofocus()).focusAcquired ? 'acquired' : 'not-acquired'))
     }
 
     async setFocusPoint(x: number, y: number, options: FocusPointOptions): Promise<void> {
@@ -1401,8 +1090,7 @@ export class NikonCamera extends GenericCamera {
         return (this.#recording ??= recordingCapability({
             readState: async () => {
                 const status = await readNikonRecordingStatus(this)
-                if (!status) return 'unknown'
-                return status.recording ? 'recording' : status.bufferedImages ? 'stopping' : 'idle'
+                return !status ? 'unknown' : status.recording ? 'recording' : status.bufferedImages ? 'stopping' : 'idle'
             },
             listHandles: async () => {
                 // Announcements queued before this take must not count as its clip.
@@ -1411,14 +1099,18 @@ export class NikonCamera extends GenericCamera {
                 return new Set()
             },
             findClip: () => this.announcedClip(),
-            handleSession: () =>
-                this.sessionId !== null && this.sessionId === this.#movieSessionRenewal?.renewed
-                    ? this.#movieSessionRenewal.original
-                    : this.sessionId,
+            handleSession: () => this.takeSession(),
             sendStart: () => this.sendStartRecording(),
             sendStop: () => this.sendStopRecording(),
             serialize: cardSteps(this, this.requireOwner()).serialize,
         }))
+    }
+
+    /** The session a take belongs to, across Record's renewal of an idle USB session. */
+    private takeSession(): number | null {
+        return this.sessionId !== null && this.sessionId === this.#movieSessionRenewal?.renewed
+            ? this.#movieSessionRenewal.original
+            : this.sessionId
     }
 
     /** The finished movie among the objects announced since Record; a folder or photo is skipped. */
@@ -1437,7 +1129,6 @@ export class NikonCamera extends GenericCamera {
                         skipped.add(objectHandle)
                         continue
                     }
-                    // A movie still being written reports no size yet.
                     if (info.objectCompressedSize > 0) return this.clipFile(objectHandle, info)
                 }
                 if (Date.now() >= deadline)
@@ -1454,15 +1145,8 @@ export class NikonCamera extends GenericCamera {
 
     /** A clip named with the id `listMedia()` gives the same card object. */
     private async clipFile(objectHandle: number, info: ObjectInfo): Promise<Clip> {
-        const reported = info.objectCompressedSize
-        const name = info.filename
-        const mediaId = encodeMediaId({
-            source: 'object',
-            storageId: info.storageID,
-            objectHandle,
-            name,
-            ...(reported !== unstatedSize && { sizeBytes: reported }),
-        })
+        const { objectCompressedSize: reported, filename: name, storageID: storageId } = info
+        const mediaId = encodeMediaId({ source: 'object', storageId, objectHandle, name, ...(reported !== unstatedSize && { sizeBytes: reported }) })
         return { mediaId, name, sizeBytes: await this.fullObjectSize(objectHandle, reported, 'stopRecording') }
     }
 
@@ -1481,16 +1165,14 @@ export class NikonCamera extends GenericCamera {
         operation: CameraOperationName,
         capabilities: CameraCapabilities
     ): Promise<OperationAvailability | undefined> {
-        const operations = this.registry.operations
-        const liveView = [operations.DeviceReady, operations.StartLiveView, operations.GetLiveViewImageEx]
         switch (operation) {
             case 'autofocus':
-                return operationsAdvertised(capabilities, [operations.AfDrive, operations.AfDriveCancel, ...liveView])
+                return operationsAdvertised(capabilities, this.focusOperations('autofocus'))
             case 'setFocusPoint':
             case 'resetFocusPoint':
-                return operationsAdvertised(capabilities, [operations.ChangeAfArea, ...liveView])
+                return operationsAdvertised(capabilities, this.focusOperations('focusPoint'))
             case 'nudgeFocus':
-                return operationsAdvertised(capabilities, [operations.MfDrive, ...liveView])
+                return operationsAdvertised(capabilities, this.focusOperations('nudge'))
             case 'getLiveViewFrame':
                 return { supported: true, options: { overlay: { supported: false, reason: overlayUnsupported } } }
             default:
@@ -1498,6 +1180,27 @@ export class NikonCamera extends GenericCamera {
         }
     }
 }
+
+const cardFiles = (inspected: Map<number, ObjectInfo | null>) =>
+    [...inspected.entries()].flatMap(([handle, info]) => (info ? [{ handle, info }] : []))
+
+/** A 64-bit byte count as Nikon's lower and upper UINT32 parameter words. */
+const split64 = (value: number) => [value & 0xffffffff, Math.floor(value / 0x100000000)] as const
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+const failedWithResponse = (code: number, operation: string) =>
+    new PTPResponseError(code, `Nikon ${operation} failed with response 0x${code.toString(16)}`, { operation })
+
+const nikonResponseError = (code: number, operation: string) =>
+    new PTPResponseError(code, `Nikon ${operation} returned 0x${code.toString(16)}`, { operation })
+
+/** Only OperationNotSupported permits the standard fallback; a refused property is not a missing operation. */
+const standardFallback = (code: number, property: PropertyDefinition) =>
+    code === 0x2005 && property.code >= 0 && property.code <= 0xffff
+
+const isUnsupportedProperty = (error: unknown) =>
+    error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)
 
 /**
  * Reports a failure of a Nikon operation that is not one of the three public errors: a refused
@@ -1515,9 +1218,7 @@ async function publicOutcome<Result>(operation: string, action: () => Promise<Re
         )
             throw error
         if (error instanceof PTPResponseError) throw new CameraRefusedError(operation, error.message, { cause: error })
-        throw new CameraOutcomeUnknownError(operation, error instanceof Error ? error.message : String(error), {
-            cause: error,
-        })
+        throw new CameraOutcomeUnknownError(operation, errorMessage(error), { cause: error })
     }
 }
 

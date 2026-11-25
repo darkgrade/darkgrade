@@ -33,13 +33,7 @@ const singleFormatNames = new Map<number, string>(singleFormats)
 export interface CanonImageFormat {
     packed: number
     label: string
-    entries: Array<{
-        type: 'jpeg' | 'raw'
-        size: number
-        compression: number
-        code: number
-        label: string
-    }>
+    entries: Array<{ type: 'jpeg' | 'raw'; size: number; compression: number; code: number; label: string }>
 }
 
 function normalizeSize(size: number): number {
@@ -51,9 +45,8 @@ function wireSize(size: number): number {
 }
 
 export function canonImageFormatFromPacked(packed: number): CanonImageFormat {
-    if (!Number.isInteger(packed) || packed < 0 || packed > 0xffff) {
+    if (!Number.isInteger(packed) || packed < 0 || packed > 0xffff)
         throw new Error(`Invalid Canon image format value: ${packed}`)
-    }
     const codes = [(packed >> 8) & 0xff, packed & 0xff].filter((code, index) => index === 0 || code !== 0xff)
     const entries = codes.map(code => ({
         type: (code & 0x08) !== 0 ? ('raw' as const) : ('jpeg' as const),
@@ -86,23 +79,22 @@ export class CanonImageFormatCodec extends CustomCodec<CanonImageFormat> {
 
     decode(buffer: Uint8Array, offset = 0): { value: CanonImageFormat; bytesRead: number } {
         const startOffset = offset
-        const entryCount = this.codecs.uint32.decode(buffer, offset).value
-        offset += 4
+        const read = () => {
+            const value = this.codecs.uint32.decode(buffer, offset).value
+            offset += 4
+            return value
+        }
+        const entryCount = read()
         if (entryCount !== 1 && entryCount !== 2) throw new Error(`Invalid Canon image format entry count: ${entryCount}`)
 
         const codes: number[] = []
         for (let index = 0; index < entryCount; index++) {
-            const entrySize = this.codecs.uint32.decode(buffer, offset).value
-            offset += 4
+            const entrySize = read()
             if (entrySize !== 0x10) throw new Error(`Invalid Canon image format entry size: ${entrySize}`)
-            const type = this.codecs.uint32.decode(buffer, offset).value
-            offset += 4
-            const size = this.codecs.uint32.decode(buffer, offset).value
-            offset += 4
-            const compression = this.codecs.uint32.decode(buffer, offset).value
-            offset += 4
-            const code = (normalizeSize(size) << 4) | (compression & 0x07) | (type === 6 ? 0x08 : 0)
-            codes.push(code)
+            const type = read()
+            const size = read()
+            const compression = read()
+            codes.push((normalizeSize(size) << 4) | (compression & 0x07) | (type === 6 ? 0x08 : 0))
         }
         const packed = ((codes[0] ?? 0xff) << 8) | (codes[1] ?? 0xff)
         return { value: canonImageFormatFromPacked(packed), bytesRead: offset - startOffset }

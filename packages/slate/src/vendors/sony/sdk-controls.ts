@@ -129,31 +129,26 @@ function findProperty(properties: SonySdkProperty[], key: string): SonySdkProper
     return properties.find(property => property.code === controls[key]?.code)
 }
 export function sonySdkControls(properties: SonySdkProperty[]) {
-    return Object.fromEntries(
-        Object.entries(controls).flatMap(([key, definition]) => {
-            const property = findProperty(properties, key)
-            if (!property) return []
-            return [
-                [
-                    key,
-                    {
-                        ...property,
-                        codeHex: '0x' + property.code.toString(16),
-                        description: definition.label,
-                        rawValue: property.value,
-                        value: label(property, key, property.value),
-                        allowedValues:
-                            property.valueForm === 'enum'
-                                ? property.allowedValues?.map(value => label(property, key, value))
-                                : property.allowedValues,
-                        enabled: property.writable,
-                        sonyEnabledFlag: property.writable ? 1 : 0,
-                        sonyGetSetFlag: property.writable ? 1 : 0,
-                    },
-                ],
-            ]
-        })
-    )
+    const entries = Object.entries(controls).flatMap(([key, definition]) => {
+        const property = findProperty(properties, key)
+        if (!property) return []
+        const state = {
+            ...property,
+            codeHex: '0x' + property.code.toString(16),
+            description: definition.label,
+            rawValue: property.value,
+            value: label(property, key, property.value),
+            allowedValues:
+                property.valueForm === 'enum'
+                    ? property.allowedValues?.map(value => label(property, key, value))
+                    : property.allowedValues,
+            enabled: property.writable,
+            sonyEnabledFlag: property.writable ? 1 : 0,
+            sonyGetSetFlag: property.writable ? 1 : 0,
+        }
+        return [[key, state] as const]
+    })
+    return Object.fromEntries(entries)
 }
 
 /** The canonical control one SDK setting carries, if any. */
@@ -224,8 +219,8 @@ export function sonySdkControlWireValue(
     throw new Error('Requested SDK control value is not advertised')
 }
 function settingValue(property: SonySdkProperty, key: string, value: string | number): bigint {
-    const text = String(value).trim(),
-        normalized = text.toLowerCase()
+    const text = String(value).trim()
+    const normalized = text.toLowerCase()
     if (key === 'aperture') {
         const aperture = Number(text.replace(/^f\/?/i, '')) * 100
         if (!Number.isSafeInteger(aperture)) throw new Error('Use an aperture such as f/5.6')
@@ -249,9 +244,7 @@ function settingValue(property: SonySdkProperty, key: string, value: string | nu
             throw new Error('Use a shutter speed such as 1/125 or BULB')
         return (BigInt(match[1]!) << 16n) | BigInt(match[2] || 1)
     }
-    const choice = property.allowedValues?.find(
-        candidate => label(property, key, candidate).toLowerCase() === normalized
-    )
+    const choice = property.allowedValues?.find(candidate => label(property, key, candidate).toLowerCase() === normalized)
     if (choice !== undefined) return BigInt(choice)
     if (/^-?\d+$/.test(text)) return BigInt(text)
     throw new Error('Choose a value advertised by camera_get_capabilities for this setting')
@@ -303,10 +296,7 @@ export async function performSonySdkControl(camera: SonyWifiCamera, action: stri
         result.autofocusRequested = true
         result.focusAcquired = (await camera.getSonyFocusFrames()).some(frame => frame.state === 2)
     } else if (action === 'camera-buttons') {
-        const buttons = String(value || '')
-            .split(',')
-            .map(button => button.trim())
-            .filter(Boolean)
+        const buttons = String(value || '').split(',').map(button => button.trim()).filter(Boolean)
         if (buttons.length > 30) throw new Error('At most 30 buttons per sequence')
         for (const button of buttons) {
             await camera.sonyPressButton(button as any)

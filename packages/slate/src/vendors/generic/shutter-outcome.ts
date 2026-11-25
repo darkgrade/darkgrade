@@ -2,26 +2,13 @@ import type { ConfirmedPhotoFile } from '@camera/driver'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { encodeMediaId, type MediaReference } from '@vendors/generic/media-id'
+import { isTypedFailure, messageOf, withCause } from '@vendors/generic/typed-failure'
 
 const operation = 'takePhoto'
 
-function messageOf(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
-}
-
-function withCause<Wrapped extends Error>(wrapped: Wrapped, cause: unknown): Wrapped {
-    wrapped.cause = cause
-    return wrapped
-}
-
-const typedOutcome = (error: unknown) =>
-    error instanceof CameraOutcomeUnknownError ||
-    error instanceof CameraRefusedError ||
-    error instanceof CameraUnsupportedError
-
 /** The camera said no to the focus or shutter command, so nothing was taken. The message is kept. */
 export function shutterRefused(error: unknown): Error {
-    if (typedOutcome(error)) return error instanceof Error ? error : new Error(messageOf(error))
+    if (isTypedFailure(error)) return error
     return withCause(new CameraRefusedError(operation, messageOf(error)), error)
 }
 
@@ -49,7 +36,7 @@ export async function afterShutterRelease<Result>(work: () => Promise<Result>): 
  * inside it is one of the three outcomes.
  */
 export function strongestShutterOutcome(error: unknown): Error | undefined {
-    if (!(error instanceof AggregateError)) return typedOutcome(error) && error instanceof Error ? error : undefined
+    if (!(error instanceof AggregateError)) return isTypedFailure(error) ? error : undefined
     const inner: unknown[] = error.errors
     const pick = (type: typeof CameraOutcomeUnknownError | typeof CameraRefusedError | typeof CameraUnsupportedError) =>
         inner.find(candidate => candidate instanceof type)

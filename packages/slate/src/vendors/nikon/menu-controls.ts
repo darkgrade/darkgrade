@@ -4,7 +4,7 @@ import { GetDeviceInfo } from '@ptp/definitions/operation-definitions'
 import { ChangeCameraMode } from '@vendors/nikon/definitions/nikon-operation-definitions'
 import { baseCodecs } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
+import { requireNikonIdle } from '@vendors/nikon/recording-status'
 
 export type NikonMenuKey = 'menu' | 'ok' | 'left' | 'right' | 'up' | 'down' | 'delete'
 export interface NikonMenuRunOptions {
@@ -151,11 +151,8 @@ export class NikonMenuController {
 
     private async requireIdleCamera(): Promise<void> {
         this.requireSession()
-        const recording = await readNikonRecordingStatus(this.camera)
+        await requireNikonIdle(this.camera, 'Nikon must confirm recording and pending card writes are idle before menu control')
         this.requireSession()
-        if (!recording || recording.recording || recording.bufferedImages) {
-            throw new Error('Nikon must confirm recording and pending card writes are idle before menu control')
-        }
     }
 
     private async command(command: number, argument1 = 0, argument2 = 0) {

@@ -1,17 +1,14 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
 import { STANDARD_FOCUS_MODES } from '@ptp/definitions/property-definitions'
-import { BitfieldCodec, createEnumCodec, EnumCodec } from '@ptp/types/codec'
+import { BitfieldCodec, EnumCodec, type EnumValue } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
-import {nikonVideoPropertyRegistry} from '@vendors/nikon/video-properties'
-import { nikonShootingPropertyRegistry } from '@vendors/nikon/definitions/nikon-shooting-property-definitions'
+import { nikonVideoPropertyRegistry } from '@vendors/nikon/video-properties'
+import { enumProperty, nikonShootingPropertyRegistry } from '@vendors/nikon/definitions/nikon-shooting-property-definitions'
 
 const UINT8 = getDatatypeByName('UINT8')!.code
-const UINT16 = getDatatypeByName('UINT16')!.code
 const UINT32 = getDatatypeByName('UINT32')!.code
 
-/** Nikon Z5_2 USB/MTP reference §6.5.6.24; libgphoto2 PTP_DPC_NIKON_WarningStatus.
- * Bit 0 is sequence error. Keep all bits so unrelated faults cannot be mistaken for it.
- */
+/** Nikon Z5_2 USB/MTP reference §6.5.6.24; libgphoto2 PTP_DPC_NIKON_WarningStatus. All bits are kept. */
 export const NikonWarningStatus = {
     code: 0xd102,
     name: 'NikonWarningStatus',
@@ -25,59 +22,44 @@ export const NikonWarningStatus = {
  * The standard FocusMode with Nikon's vendor values (libgphoto2 PTP_VENDOR_NIKON FocusMode:
  * 0x8010 AF-S, 0x8011 AF-C, 0x8012 AF-A, 0x8013 AF-F), next to the PTP 1.1 ones.
  */
-export const FocusMode = {
-    code: 0x500a,
-    name: 'FocusMode',
-    description: 'Focus mode, with Nikon autofocus modes',
-    datatype: UINT16,
-    access: 'GetSet',
-    codec: registry =>
-        createEnumCodec(
-            registry,
-            [
-                ...STANDARD_FOCUS_MODES,
-                { value: 0x8010, name: 'AF-S', description: 'Single-servo autofocus' },
-                { value: 0x8011, name: 'AF-C', description: 'Continuous-servo autofocus' },
-                { value: 0x8012, name: 'AF-A', description: 'Automatic AF-S / AF-C selection' },
-                { value: 0x8013, name: 'AF-F', description: 'Full-time autofocus' },
-            ] as const,
-            registry.codecs.uint16
-        ),
-} as const satisfies PropertyDefinition
+export const FocusMode = enumProperty('FocusMode', 0x500a, 'uint16', 'Focus mode, with Nikon autofocus modes', [
+    ...STANDARD_FOCUS_MODES,
+    { value: 0x8010, name: 'AF-S', description: 'Single-servo autofocus' },
+    { value: 0x8011, name: 'AF-C', description: 'Continuous-servo autofocus' },
+    { value: 0x8012, name: 'AF-A', description: 'Automatic AF-S / AF-C selection' },
+    { value: 0x8013, name: 'AF-F', description: 'Full-time autofocus' },
+])
 
-export const LiveViewStatus = {
-    code: 0xd1b8,
-    name: 'LiveViewStatus',
-    description: 'Indicates the status of live view (ON or OFF)',
-    datatype: UINT8,
-    access: 'GetSet',
-    codec: registry =>
-        new EnumCodec(
-            registry,
-            [
-                { value: 0, name: 'OFF', description: 'Live view is disabled' },
-                { value: 1, name: 'ON', description: 'Live view is enabled' },
-            ] as const,
-            registry.codecs.uint8
-        ),
-} as const satisfies PropertyDefinition
+/** A UINT8 GetSet property naming its values 0 and 1; decoded names stay plain strings. */
+const twoStateProperty = <const Code extends number, const Name extends string>(
+    code: Code,
+    name: Name,
+    description: string,
+    states: readonly [EnumValue<number>, EnumValue<number>]
+) =>
+    ({
+        code,
+        name,
+        description,
+        datatype: UINT8,
+        access: 'GetSet',
+        codec: registry => new EnumCodec(registry, states, registry.codecs.uint8),
+    }) as const satisfies PropertyDefinition
 
-export const LiveViewSelector = {
-    code: 0xd1a6,
-    name: 'LiveViewSelector',
-    description: 'Indicates the state of live view mode (Photo Lv or Video Lv)',
-    datatype: UINT8,
-    access: 'GetSet',
-    codec: registry =>
-        new EnumCodec(
-            registry,
-            [
-                { value: 0, name: 'PHOTO', description: 'Photo live view mode' },
-                { value: 1, name: 'VIDEO', description: 'Video live view mode' },
-            ] as const,
-            registry.codecs.uint8
-        ),
-} as const satisfies PropertyDefinition
+export const LiveViewStatus = twoStateProperty(0xd1b8, 'LiveViewStatus', 'Indicates the status of live view (ON or OFF)', [
+    { value: 0, name: 'OFF', description: 'Live view is disabled' },
+    { value: 1, name: 'ON', description: 'Live view is enabled' },
+])
+
+export const LiveViewSelector = twoStateProperty(
+    0xd1a6,
+    'LiveViewSelector',
+    'Indicates the state of live view mode (Photo Lv or Video Lv)',
+    [
+        { value: 0, name: 'PHOTO', description: 'Photo live view mode' },
+        { value: 1, name: 'VIDEO', description: 'Video live view mode' },
+    ]
+)
 
 export const MovieRecProhibitionCondition = {
     code: 0xd0a4,
@@ -107,9 +89,7 @@ export const MovieRecProhibitionCondition = {
         ),
 } as const satisfies PropertyDefinition
 
-/** Nikon Z6III USB/MTP specification Rev.2.00, §6.5.15.2.
- * Keep the raw byte so newer connection types remain observable.
- */
+/** Nikon Z6III USB/MTP specification Rev.2.00, §6.5.15.2; the raw byte keeps newer connection types observable. */
 export const ConnectionPath = {
     code: 0xd12e,
     name: 'ConnectionPath',
@@ -129,5 +109,3 @@ export const nikonPropertyRegistry = {
     LiveViewSelector,
     MovieRecProhibitionCondition,
 } as const
-
-export type NikonPropertyDef = (typeof nikonPropertyRegistry)[keyof typeof nikonPropertyRegistry]

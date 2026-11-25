@@ -16,9 +16,8 @@ function describeMovieFormat(wireValues: number[]): Omit<CanonMovieFormat, 'key'
         wireValues[2] === 0 ? 'Full HD' : wireValues[2] === 1 ? 'HD' : wireValues[2] === 5 ? '4K' : `size ${wireValues[2]}`
     const frameRate = (wireValues[3] || 0) / 100
 
-    // These three fields were correlated against the EOS 80D's advertised
-    // choices and Canon's recording-format table. Unknown combinations retain
-    // their complete wire record instead of receiving a speculative label.
+    // Correlated against the EOS 80D's advertised choices and Canon's recording-format table; unknown
+    // combinations keep their complete wire record instead of a speculative label.
     const isMovAllI = wireValues[6] === 1 && wireValues[7] === 0
     const isMp4 = wireValues[6] === 3 && wireValues[7] === 1
     const container = isMovAllI ? 'MOV' : isMp4 ? 'MP4' : 'unknown'
@@ -30,27 +29,16 @@ function describeMovieFormat(wireValues: number[]): Omit<CanonMovieFormat, 'key'
             ? 'IPB (Light)'
             : 'unknown'
     const frameRateLabel = Number.isInteger(frameRate) ? frameRate.toFixed(0) : frameRate.toFixed(2)
-    return {
-        resolution,
-        frameRate,
-        container,
-        compression,
-        label: `${resolution} ${frameRateLabel} fps · ${container} · ${compression}`,
-    }
+    const label = `${resolution} ${frameRateLabel} fps · ${container} · ${compression}`
+    return { resolution, frameRate, container, compression, label }
 }
 
 export function canonMovieFormatFromWire(wireValues: number[]): CanonMovieFormat {
-    if (wireValues.length < 2 || wireValues[0] !== wireValues.length * 4) {
+    if (wireValues.length < 2 || wireValues[0] !== wireValues.length * 4)
         throw new Error(`Invalid Canon movie format record (${wireValues.length} fields)`)
-    }
-    if (wireValues.some(value => !Number.isInteger(value) || value < 0 || value > 0xffffffff)) {
+    if (wireValues.some(value => !Number.isInteger(value) || value < 0 || value > 0xffffffff))
         throw new Error('Canon movie format fields must be unsigned 32-bit integers')
-    }
-    return {
-        key: wireValues.join(':'),
-        ...describeMovieFormat(wireValues),
-        wireValues: [...wireValues],
-    }
+    return { key: wireValues.join(':'), ...describeMovieFormat(wireValues), wireValues: [...wireValues] }
 }
 
 export class CanonMovieFormatCodec extends CustomCodec<CanonMovieFormat> {
@@ -64,13 +52,12 @@ export class CanonMovieFormatCodec extends CustomCodec<CanonMovieFormat> {
     decode(buffer: Uint8Array, offset = 0): { value: CanonMovieFormat; bytesRead: number } {
         if (offset + 4 > buffer.length) throw new Error('Canon movie format record is truncated')
         const byteLength = this.codecs.uint32.decode(buffer, offset).value
-        if (byteLength < 8 || byteLength % 4 !== 0 || offset + byteLength > buffer.length) {
+        if (byteLength < 8 || byteLength % 4 !== 0 || offset + byteLength > buffer.length)
             throw new Error(`Invalid Canon movie format record length: ${byteLength}`)
-        }
-        const wireValues: number[] = []
-        for (let position = offset; position < offset + byteLength; position += 4) {
-            wireValues.push(this.codecs.uint32.decode(buffer, position).value)
-        }
+        const wireValues = Array.from(
+            { length: byteLength / 4 },
+            (_, index) => this.codecs.uint32.decode(buffer, offset + index * 4).value
+        )
         return { value: canonMovieFormatFromWire(wireValues), bytesRead: byteLength }
     }
 }

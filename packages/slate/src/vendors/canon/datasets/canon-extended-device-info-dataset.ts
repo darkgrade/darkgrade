@@ -21,23 +21,19 @@ export class CanonExtendedDeviceInfoDatasetCodec extends CustomCodec<CanonExtend
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: CanonExtendedDeviceInfo; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || offset > buffer.length) {
+        if (!Number.isInteger(offset) || offset < 0 || offset > buffer.length)
             throw new Error('Invalid Canon extended device information offset')
-        }
         if (buffer.length - offset < 4) throw new Error('Truncated Canon extended device information header')
 
         const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
         const headerWord = view.getUint32(offset, true)
         let position = offset + 4
         const readCodes = (field: string): number[] => {
-            if (buffer.length - position < 4) {
-                throw new Error(`Truncated Canon extended device information ${field} count`)
-            }
+            if (buffer.length - position < 4) throw new Error(`Truncated Canon extended device information ${field} count`)
             const count = view.getUint32(position, true)
             position += 4
-            if (count > Math.floor((buffer.length - position) / 4)) {
+            if (count > Math.floor((buffer.length - position) / 4))
                 throw new Error(`Truncated Canon extended device information ${field} array`)
-            }
             const codes = Array.from({ length: count }, (_, index) => view.getUint32(position + index * 4, true))
             position += count * 4
             return codes

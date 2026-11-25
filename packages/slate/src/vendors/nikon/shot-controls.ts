@@ -4,7 +4,7 @@ import {getDatatypeByCode} from '@ptp/definitions/datatype-definitions'
 import {GetDevicePropDescEx,SetDevicePropValueEx} from '@vendors/nikon/definitions/nikon-operation-definitions'
 import {LiveViewSelector} from '@vendors/nikon/definitions/nikon-property-definitions'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
-import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
+import {requireNikonIdle} from '@vendors/nikon/recording-status'
 import type {ShotProperty,ShotSetupReport} from '@workflows/shot-setup'
 import {nikonControlLabel} from '@vendors/nikon/control-values'
 
@@ -68,10 +68,7 @@ export class NikonShotControls {
         try{return await run()}finally{this.busy=false}
     }
 
-    private async requireIdle(){
-        const status=await readNikonRecordingStatus(this.camera)
-        if(!status||status.recording||status.bufferedImages)throw new Error('Nikon must confirm idle before changing shot settings')
-    }
+    private requireIdle(){return requireNikonIdle(this.camera,'Nikon must confirm idle before changing shot settings')}
 
     private async requireVideo(){
         if(await this.camera.get(LiveViewSelector)!=='VIDEO')throw new Error('Nikon shot tuning requires video mode')

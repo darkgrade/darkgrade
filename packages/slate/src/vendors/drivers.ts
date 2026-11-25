@@ -23,13 +23,7 @@ import { SonyCamera } from '@vendors/sony/sony-camera'
 export async function discoverCameras(): Promise<DiscoveredCamera[]> {
     const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
     const devices = await transport.discover({ usb: { filters: [{ classCode: 6, subclassCode: 1 }] } })
-    return devices.map(({ vendorId, productId, serialNumber, manufacturer, model }) => ({
-        vendorId,
-        productId,
-        serialNumber,
-        manufacturer,
-        model,
-    }))
+    return devices.map(({ vendorId, productId, serialNumber, manufacturer, model }) => ({ vendorId, productId, serialNumber, manufacturer, model }))
 }
 
 export function descriptorVendor(device?: DeviceDescriptor): number | undefined {
@@ -37,18 +31,15 @@ export function descriptorVendor(device?: DeviceDescriptor): number | undefined 
     return vendors.size === 1 ? [...vendors][0] : undefined
 }
 
-/** Vendors with a driver of their own; every other vendor is served by GenericCamera. */
-const dedicatedDriverVendors = new Set<number>([
-    VendorIDs.SONY,
-    VendorIDs.NIKON,
-    VendorIDs.CANON,
-    VendorIDs.FUJIFILM,
-    VendorIDs.PANASONIC,
-    VendorIDs.OLYMPUS,
-    VendorIDs.OM_DIGITAL,
-    VendorIDs.LEICA,
-    VendorIDs.SIGMA,
-])
+/** Vendors whose support is limited to cited vendor operation definitions, served by VendorExtensionCamera. */
+const vendorOperationRegistries: Record<number, (littleEndian: boolean) => VendorOperationRegistry> = {
+    [VendorIDs.FUJIFILM]: createFujifilmRegistry,
+    [VendorIDs.PANASONIC]: createPanasonicRegistry,
+    [VendorIDs.OLYMPUS]: createOlympusRegistry,
+    [VendorIDs.OM_DIGITAL]: createOlympusRegistry,
+    [VendorIDs.LEICA]: createLeicaRegistry,
+    [VendorIDs.SIGMA]: createSigmaRegistry,
+}
 
 /**
  * True when createCameraDriver would build the same kind of driver for this vendor. GenericCamera
@@ -57,7 +48,9 @@ const dedicatedDriverVendors = new Set<number>([
  */
 export function driverServesVendor(driver: CameraDriverInstance, vendorId: number): boolean {
     if (driver.vendorId === vendorId) return true
-    return Object.getPrototypeOf(driver) === GenericCamera.prototype && !dedicatedDriverVendors.has(vendorId)
+    const dedicated =
+        new Set<number>([VendorIDs.SONY, VendorIDs.NIKON, VendorIDs.CANON]).has(vendorId) || vendorId in vendorOperationRegistries
+    return Object.getPrototypeOf(driver) === GenericCamera.prototype && !dedicated
 }
 
 export function createCameraDriver(
@@ -66,47 +59,19 @@ export function createCameraDriver(
     owner: Camera
 ): CameraDriverInstance {
     const { transport, logger, options } = context
-    let driver: CameraDriverInstance
-    switch (vendorId) {
-        case VendorIDs.SONY:
-            driver = new SonyCamera(transport, logger)
-            break
-        case VendorIDs.NIKON:
-            driver = new NikonCamera(transport, logger)
-            break
-        case VendorIDs.CANON:
-            driver = new CanonCamera(transport, logger)
-            break
-        case VendorIDs.FUJIFILM:
-        case VendorIDs.PANASONIC:
-        case VendorIDs.OLYMPUS:
-        case VendorIDs.OM_DIGITAL:
-        case VendorIDs.LEICA:
-        case VendorIDs.SIGMA:
-            driver = vendorExtensionCamera(context, vendorId)
-            break
-        default:
-            driver = new GenericCamera(transport, logger)
-            break
-    }
+    const vendorRegistry = vendorId === undefined ? undefined : vendorOperationRegistries[vendorId]
+    const driver: CameraDriverInstance =
+        vendorId === VendorIDs.SONY
+            ? new SonyCamera(transport, logger)
+            : vendorId === VendorIDs.NIKON
+              ? new NikonCamera(transport, logger)
+              : vendorId === VendorIDs.CANON
+                ? new CanonCamera(transport, logger)
+                : vendorRegistry
+                  ? new VendorExtensionCamera(transport, logger, vendorRegistry(transport.isLittleEndian()), vendorId!)
+                  : new GenericCamera(transport, logger)
     if (options.transactionPolicy) driver.configureTransactions(options.transactionPolicy)
     if (driver instanceof CanonCamera) driver.setKeepAliveEnabled(options.keepAlive ?? true)
     driver.owner = owner
     return driver
-}
-
-function vendorExtensionCamera(
-    context: Pick<CameraContext, 'transport' | 'logger'>,
-    vendorId: number
-): VendorExtensionCamera {
-    const littleEndian = context.transport.isLittleEndian()
-    const registries: Record<number, () => VendorOperationRegistry> = {
-        [VendorIDs.FUJIFILM]: () => createFujifilmRegistry(littleEndian),
-        [VendorIDs.PANASONIC]: () => createPanasonicRegistry(littleEndian),
-        [VendorIDs.OLYMPUS]: () => createOlympusRegistry(littleEndian),
-        [VendorIDs.OM_DIGITAL]: () => createOlympusRegistry(littleEndian),
-        [VendorIDs.LEICA]: () => createLeicaRegistry(littleEndian),
-        [VendorIDs.SIGMA]: () => createSigmaRegistry(littleEndian),
-    }
-    return new VendorExtensionCamera(context.transport, context.logger, registries[vendorId](), vendorId)
 }

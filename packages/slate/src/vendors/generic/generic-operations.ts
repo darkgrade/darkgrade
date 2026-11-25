@@ -7,6 +7,7 @@ import { PTPDecodeError } from '@core/ptp-errors'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { readCameraObjectHandles, waitForNewCameraMovie } from '@vendors/generic/storage'
+import { messageOf } from '@vendors/generic/typed-failure'
 
 /*
  * TRANSITIONAL (consolidation setup): the small helpers each brand's operations share. Standard
@@ -47,7 +48,7 @@ export async function restoreAll(operation: string, steps: (() => Promise<void>)
     if (failures.length)
         throw new CameraOutcomeUnknownError(
             operation,
-            failures.map(failure => (failure instanceof Error ? failure.message : String(failure))).join('; ')
+            failures.map(messageOf).join('; ')
         )
 }
 
@@ -86,7 +87,7 @@ export function storageHost(driver: GenericCamera) {
     }
 }
 
-export function clipFrom(handle: number, name: unknown, sizeBytes: number | undefined): Clip {
+function clipFrom(handle: number, name: unknown, sizeBytes: number | undefined): Clip {
     return {
         mediaId: String(handle),
         name: String(name),

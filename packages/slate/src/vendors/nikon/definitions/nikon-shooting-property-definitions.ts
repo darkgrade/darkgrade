@@ -1,5 +1,5 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
-import { createEnumCodec } from '@ptp/types/codec'
+import { createEnumCodec, type EnumValue } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 
 /**
@@ -8,10 +8,10 @@ import type { PropertyDefinition } from '@ptp/types/property'
  * Keep the wire numbers: supported choices and current writability come from the body,
  * and movie controls depend on exposure mode, Auto ISO, lens and recording state.
  */
-function scalarProperty<const Name extends string>(
+export function scalarProperty<const Name extends string>(
     name: Name,
     code: number,
-    type: 'uint8' | 'uint16' | 'uint32',
+    type: 'uint8' | 'uint16' | 'uint32' | 'int32',
     description: string,
     access: 'Get' | 'GetSet' = 'GetSet'
 ) {
@@ -25,6 +25,22 @@ function scalarProperty<const Name extends string>(
     } satisfies PropertyDefinition<number>
 }
 
+/** A property whose wire values carry the given names. */
+export function enumProperty<
+    const Name extends string,
+    const Values extends readonly EnumValue<number>[],
+    const Access extends 'Get' | 'GetSet' = 'GetSet',
+>(name: Name, code: number, type: 'uint8' | 'uint16', description: string, values: Values, access?: Access) {
+    return {
+        name,
+        code,
+        description,
+        datatype: getDatatypeByName(type.toUpperCase())!.code,
+        access: access ?? ('GetSet' as Access),
+        codec: registry => createEnumCodec(registry, values, registry.codecs[type]),
+    } as const satisfies PropertyDefinition
+}
+
 export const NikonWhiteBalanceKelvin = scalarProperty(
     'NikonWhiteBalanceKelvin', 0xd01e, 'uint16', 'Photo white balance temperature in kelvin'
 )
@@ -34,27 +50,19 @@ export const NikonMovieWhiteBalanceKelvin = scalarProperty(
 export const NikonMovieISO = scalarProperty(
     'NikonMovieISO', 0xd1aa, 'uint32', 'Movie ISO sensitivity in manual exposure mode; raw camera value'
 )
-export const NikonPhotoAutoISO = scalarProperty(
-    'NikonPhotoAutoISO', 0xd054, 'uint8', 'Photo Auto ISO: 0 off, 1 on'
-)
+export const NikonPhotoAutoISO = scalarProperty('NikonPhotoAutoISO', 0xd054, 'uint8', 'Photo Auto ISO: 0 off, 1 on')
 /** NEF compression, from the same specification; other wire values stay unrecognized and read-only. */
-export const NikonRawCompression = {
-    name: 'NikonRawCompression',
-    code: 0xd016,
-    description: 'NEF compression: 0 lossless, 3 high efficiency star, 4 high efficiency',
-    datatype: getDatatypeByName('UINT8')!.code,
-    access: 'GetSet',
-    codec: registry =>
-        createEnumCodec(
-            registry,
-            [
-                { value: 0, name: 'Lossless', description: 'Lossless compressed' },
-                { value: 3, name: 'High efficiency★', description: 'High efficiency star' },
-                { value: 4, name: 'High efficiency', description: 'High efficiency' },
-            ] as const,
-            registry.codecs.uint8
-        ),
-} as const satisfies PropertyDefinition
+export const NikonRawCompression = enumProperty(
+    'NikonRawCompression',
+    0xd016,
+    'uint8',
+    'NEF compression: 0 lossless, 3 high efficiency star, 4 high efficiency',
+    [
+        { value: 0, name: 'Lossless', description: 'Lossless compressed' },
+        { value: 3, name: 'High efficiency★', description: 'High efficiency star' },
+        { value: 4, name: 'High efficiency', description: 'High efficiency' },
+    ]
+)
 export const NikonMovieAutoISO = scalarProperty(
     'NikonMovieAutoISO', 0xd0ad, 'uint8', 'Movie Auto ISO in manual exposure mode: 0 off, 1 on'
 )
@@ -75,9 +83,7 @@ export const NikonStillFocusMode = scalarProperty(
 export const NikonMovieFocusMode = scalarProperty(
     'NikonMovieFocusMode', 0xd1fa, 'uint8', 'Movie focus mode: 0 AF-S, 1 AF-C, 2 AF-F, 4 manual'
 )
-export const NikonPrimarySlot = scalarProperty(
-    'NikonPrimarySlot', 0xd156, 'uint8', 'Primary memory card slot'
-)
+export const NikonPrimarySlot = scalarProperty('NikonPrimarySlot', 0xd156, 'uint8', 'Primary memory card slot')
 export const NikonSecondarySlotMode = scalarProperty(
     'NikonSecondarySlotMode', 0xd148, 'uint8', 'Secondary card use: 0 overflow, 1 backup, 2 RAW/JPEG split; other choices are model-specific'
 )
@@ -93,7 +99,6 @@ export const NikonFocusPointLock = scalarProperty(
 export const NikonMovieFocusPointLock = scalarProperty(
     'NikonMovieFocusPointLock', 0x0001d016, 'uint8', 'Movie focus-point lock: 0 off, 1 on'
 )
-
 
 /**
  * Nikon white balance (photo 0x5005, movie 0xD23A), named in Slate's canonical white-balance
@@ -115,54 +120,29 @@ export const nikonWhiteBalanceValues = [
 ] as const
 
 /** Photo white balance: the standard 0x5005 code with Nikon's own values. */
-export const NikonWhiteBalance = {
-    code: 0x5005,
-    name: 'WhiteBalance',
-    description: 'Photo white balance (Nikon values)',
-    datatype: getDatatypeByName('UINT16')!.code,
-    access: 'GetSet',
-    codec: registry =>
-        createEnumCodec(
-            registry,
-            nikonWhiteBalanceValues.filter(entry => entry.value !== 0x8015),
-            registry.codecs.uint16
-        ),
-} as const satisfies PropertyDefinition
-
-export const NikonMovieWhiteBalance = {
-    code: 0xd23a,
-    name: 'NikonMovieWhiteBalance',
-    description: 'Movie white balance selection',
-    datatype: getDatatypeByName('UINT16')!.code,
-    access: 'GetSet',
-    codec: registry =>
-        createEnumCodec(
-            registry,
-            nikonWhiteBalanceValues.filter(entry => entry.value !== 0x0007),
-            registry.codecs.uint16
-        ),
-} as const satisfies PropertyDefinition
+export const NikonWhiteBalance = enumProperty(
+    'WhiteBalance',
+    0x5005,
+    'uint16',
+    'Photo white balance (Nikon values)',
+    nikonWhiteBalanceValues.filter(entry => entry.value !== 0x8015)
+)
+export const NikonMovieWhiteBalance = enumProperty(
+    'NikonMovieWhiteBalance',
+    0xd23a,
+    'uint16',
+    'Movie white balance selection',
+    nikonWhiteBalanceValues.filter(entry => entry.value !== 0x0007)
+)
 
 /** Release mode: the standard 0x5013 code with Nikon's values (Z 9 USB/MTP reference §6.5.1.15). */
-export const NikonStillCaptureMode = {
-    code: 0x5013,
-    name: 'StillCaptureMode',
-    description: 'Release mode (Nikon values)',
-    datatype: getDatatypeByName('UINT16')!.code,
-    access: 'GetSet',
-    codec: registry =>
-        createEnumCodec(
-            registry,
-            [
-                { value: 0x0001, name: 'Single', description: 'Single-frame shooting' },
-                { value: 0x0002, name: 'Continuous high', description: 'Continuous high-speed shooting' },
-                { value: 0x8010, name: 'Continuous low', description: 'Continuous low-speed shooting' },
-                { value: 0x8011, name: 'Self-timer', description: 'Self-timer' },
-                { value: 0x8100, name: 'Quick setting', description: 'Release-mode dial at the quick setting position' },
-            ] as const,
-            registry.codecs.uint16
-        ),
-} as const satisfies PropertyDefinition
+export const NikonStillCaptureMode = enumProperty('StillCaptureMode', 0x5013, 'uint16', 'Release mode (Nikon values)', [
+    { value: 0x0001, name: 'Single', description: 'Single-frame shooting' },
+    { value: 0x0002, name: 'Continuous high', description: 'Continuous high-speed shooting' },
+    { value: 0x8010, name: 'Continuous low', description: 'Continuous low-speed shooting' },
+    { value: 0x8011, name: 'Self-timer', description: 'Self-timer' },
+    { value: 0x8100, name: 'Quick setting', description: 'Release-mode dial at the quick setting position' },
+])
 
 /**
  * Picture Control, named in Slate's canonical look spelling (Z 9 USB/MTP reference §6.5.13.1 and
@@ -211,29 +191,21 @@ const nikonPictureControlValues = [
 ] as const
 
 /** ActivePicCtrlItem: the photo Picture Control. */
-export const NikonPictureControl = {
-    code: 0xd200,
-    name: 'NikonPictureControl',
-    description: 'Photo Picture Control',
-    datatype: getDatatypeByName('UINT16')!.code,
-    access: 'GetSet',
-    codec: registry =>
-        createEnumCodec(
-            registry,
-            nikonPictureControlValues.filter(entry => entry.value !== 100),
-            registry.codecs.uint16
-        ),
-} as const satisfies PropertyDefinition
-
+export const NikonPictureControl = enumProperty(
+    'NikonPictureControl',
+    0xd200,
+    'uint16',
+    'Photo Picture Control',
+    nikonPictureControlValues.filter(entry => entry.value !== 100)
+)
 /** MovieActivePicCtrlItem: the video Picture Control. */
-export const NikonMoviePictureControl = {
-    code: 0xd237,
-    name: 'NikonMoviePictureControl',
-    description: 'Movie Picture Control',
-    datatype: getDatatypeByName('UINT16')!.code,
-    access: 'GetSet',
-    codec: registry => createEnumCodec(registry, nikonPictureControlValues, registry.codecs.uint16),
-} as const satisfies PropertyDefinition
+export const NikonMoviePictureControl = enumProperty(
+    'NikonMoviePictureControl',
+    0xd237,
+    'uint16',
+    'Movie Picture Control',
+    nikonPictureControlValues
+)
 
 export const nikonShootingPropertyRegistry = {
     NikonWhiteBalanceKelvin,
