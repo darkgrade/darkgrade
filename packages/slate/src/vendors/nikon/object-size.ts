@@ -1,13 +1,10 @@
+import type { Camera } from '@camera/index'
 import { protocolAccess } from '@camera/protocol-session'
-/** PTP ObjectInfo uses 0xffffffff when the real size needs Nikon's 64-bit query. */
-export async function readNikonObjectSize(camera:any,handle:number,reported:number):Promise<number>{
-    if(reported!==0xffffffff)return reported
-    const operation=protocolAccess(camera).driver.registry.operations.GetObjectSize
-    if(!operation)throw new Error('Nikon large-file size is unavailable; original transfer refused')
-    const response=await protocolAccess(camera).send(operation,{ObjectHandle:handle})
-    const value=response.data
-    const size=typeof value==='bigint'||typeof value==='number'?Number(value):NaN
-    if(response.code!==0x2001||!Number.isSafeInteger(size)||size<reported)
-        throw new Error('Nikon did not confirm the full 64-bit original size; transfer refused')
-    return size
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
+
+/** TRANSITIONAL for ptp-media and video-recording: the size query is `NikonCamera.fullObjectSize`. */
+export async function readNikonObjectSize(camera: Camera, handle: number, reported: number): Promise<number> {
+    const driver = protocolAccess(camera).driver
+    if (!(driver instanceof NikonCamera)) return reported
+    return driver.fullObjectSize(handle, reported)
 }

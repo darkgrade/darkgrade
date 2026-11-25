@@ -78,6 +78,7 @@ it.each([false, true])('takePhoto on Canon restores remote movie mode after succ
         vi.spyOn(driver, 'listPropertyStates').mockReturnValue([
             { code: 0xd105, name: 'CanonAutoExposureMode', description: '', access: 'GetSet', value: 1 },
         ])
+        vi.spyOn(driver, 'refreshEventProperties').mockResolvedValue()
         vi.spyOn(driver, 'leaveMovieMode').mockImplementation(async () => { movie = false })
         vi.spyOn(driver, 'enterMovieMode').mockImplementation(async () => { movie = true })
         vi.spyOn(driver, 'captureImage').mockImplementation(async () => {

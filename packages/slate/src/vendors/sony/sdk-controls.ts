@@ -156,14 +156,10 @@ export function sonySdkControls(properties: SonySdkProperty[]) {
     )
 }
 
-/**
- * The canonical controls one SDK setting carries. The exposure program is both the transitional
- * verbatim shooting mode and the canonical exposure mode.
- */
+/** The canonical control one SDK setting carries, if any. */
 function sdkControlIds(name: string): CameraControlId[] {
     const id = resolveCameraControl(name)
-    if (!id) return []
-    return id === 'exposureProgram' ? ['exposureProgram', 'exposureMode'] : [id]
+    return id ? [id] : []
 }
 
 /** Reuse the SDK's existing raw/label mapping; SDK ids are never mistaken for PTP ids. */

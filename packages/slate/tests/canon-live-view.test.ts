@@ -139,21 +139,6 @@ describe('Canon viewport position readback', () => {
         await expect(camera.setLiveViewPosition(2584, 1856)).rejects.toThrow('position returned 0x2005')
     })
 
-    it('sends the SDK-confirmed fourth parameter and verifies center-to-origin coordinates', async () => {
-        const { camera } = connectedCamera()
-        ;(camera as unknown as { supportedOperations: Set<number> }).supportedOperations.add(0x915b)
-        const frames = [frameAt(2784, 1856), frameAt(3184, 1856)]
-        camera.captureViewfinderFrame = async () => frames.shift()!
-        let parameters: unknown
-        camera.send = (async (_, values) => {
-            parameters = values
-            return { code: 0x2001 }
-        }) as typeof camera.send
-        const position = await camera.setLiveViewFramePoint(3880, 2320)
-        expect(parameters).toEqual({ Type: 3, X: 3880, Y: 2320, Lock: 0 })
-        expect(position.x).toBe(3184)
-    })
-
     it('returns the camera-rounded origin at the visible boundary', async () => {
         const { camera } = connectedCamera()
         ;(camera as unknown as { supportedOperations: Set<number> }).supportedOperations.add(0x9159)
@@ -310,19 +295,12 @@ describe('Canon live-view lifecycle and controls', () => {
         expect(writes).toEqual([])
     })
 
-    it('only writes advertised temperature and AF choices and verifies readback', async () => {
+    it('only writes an advertised temperature and verifies readback', async () => {
         const { camera, cache } = connectedCamera()
         cache.set(camera.registry.properties.CanonColorTemperature, { current: 5200, allowed: [5200, 5300] })
-        cache.set(camera.registry.properties.CanonLiveViewAutofocusMode, {
-            current: 'whole-area',
-            allowed: ['whole-area', 'spot'],
-        })
         await expect(camera.setColorTemperature(5100)).rejects.toThrow('not advertised')
         await camera.setColorTemperature(5300)
         expect(await camera.getColorTemperature()).toBe(5300)
-        await camera.setLiveViewAutofocusMode('spot')
-        expect(await camera.getLiveViewAutofocusMode()).toBe('spot')
-        await expect(camera.setLiveViewAutofocusMode('invented')).rejects.toThrow('not advertised')
     })
 
     it('surfaces rejected property writes instead of claiming success from stale cache', async () => {

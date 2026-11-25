@@ -91,9 +91,9 @@ async function readableSlots(driver: SonyCamera): Promise<(1 | 2)[]> {
 }
 
 /** One slot of Sony's card index; a body without one answers CameraUnsupportedError. */
-async function listSlot(driver: SonyCamera, operation: string, slot: 1 | 2) {
+async function listSlot(driver: SonyCamera, operation: string, slot: 1 | 2, sinceUtcMs?: number) {
     try {
-        return await driver.listContents({ slot })
+        return await driver.listContents({ slot, ...(sinceUtcMs !== undefined && { sinceUtcMs }) })
     } catch (error) {
         if (error instanceof PTPResponseError && error.code === OPERATION_NOT_SUPPORTED)
             throw new CameraUnsupportedError(operation, 'This camera does not offer its card index over USB')
@@ -102,42 +102,28 @@ async function listSlot(driver: SonyCamera, operation: string, slot: 1 | 2) {
     }
 }
 
-/** The newest content id in each readable slot's card index (0 for an empty card). */
-export type SonyCardIndexMark = Map<1 | 2, number>
-
 /**
- * Where each readable slot's card index ends now, so a file added later can be told from an older
- * one of the same name (the camera's numbering wraps). Content ids grow with each capture. A body
- * that does not offer its card index answers CameraUnsupportedError.
+ * The newest card file `matches` accepts, as `listMedia()` lists it, from one card-index read per
+ * readable slot of the contents created since `sinceUtcMs` (all of them when undefined), and the
+ * newest creation time that read saw.
  */
-export async function markSonyCardIndex(driver: SonyCamera, operation: string): Promise<SonyCardIndexMark> {
-    const mark: SonyCardIndexMark = new Map()
-    for (const slot of await reportingRefusals(operation, () => readableSlots(driver))) {
-        const { contents } = await listSlot(driver, operation, slot)
-        mark.set(slot, contents.reduce((newest, content) => Math.max(newest, content.contentId), 0))
-    }
-    return mark
-}
-
-/**
- * The card file of a given name that the card index added after `mark`, as `listMedia()` lists
- * it. Undefined while no readable slot lists one.
- */
-export async function findSonyCardFile(
+export async function findSonyCardItem(
     driver: SonyCamera,
     operation: string,
-    name: string,
-    mark: SonyCardIndexMark
-): Promise<MediaItem | undefined> {
+    matches: (item: MediaItem) => boolean,
+    sinceUtcMs?: number
+): Promise<{ item?: MediaItem; newestUtcMs?: number }> {
+    let found: { item: MediaItem; contentId: number } | undefined
+    let newestUtcMs: number | undefined
     for (const slot of await reportingRefusals(operation, () => readableSlots(driver))) {
-        const after = mark.get(slot) ?? 0
-        for (const content of (await listSlot(driver, operation, slot)).contents) {
-            if (content.contentId <= after) continue
-            const file = content.files.find(candidate => sonyItem(slot, content, candidate).name === name)
-            if (file) return sonyItem(slot, content, file)
+        for (const content of (await listSlot(driver, operation, slot, sinceUtcMs)).contents) {
+            newestUtcMs = Math.max(newestUtcMs ?? 0, content.createdUtcMs)
+            if (found && found.contentId > content.contentId) continue
+            const item = content.files.map(file => sonyItem(slot, content, file)).find(matches)
+            if (item) found = { item, contentId: content.contentId }
         }
     }
-    return undefined
+    return { ...(found && { item: found.item }), ...(newestUtcMs !== undefined && { newestUtcMs }) }
 }
 
 function contentReference(operation: string, id: string): SonyContentMediaReference {

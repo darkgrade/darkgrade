@@ -8,6 +8,43 @@ export interface CanonEventRecord {
     valueData?: Uint8Array
     allowedValues?: number[]
     allowedValueData?: Uint8Array[]
+    /** The file an ObjectAddedEx or ObjectAddedEx64 record announces. */
+    object?: CanonAddedObject
+}
+
+export interface CanonAddedObject {
+    handle: number
+    storageId: number
+    format: number
+    /** 32 bits on the wire, also in ObjectAddedEx64; ObjectInfo is read for the real size. */
+    sizeBytes: number
+    filename: string
+}
+
+/**
+ * ObjectAddedEx (0xc181) and ObjectAddedEx64 (0xc1a7), from gphoto/libgphoto2
+ * @6d5c61ef7687b74fe792e4aeae7fc40f2ad42d88 camlibs/ptp2/ptp.h (event codes) and ptp-pack.c
+ * (PTP_cee_OA_* / PTP_cee_OA64_*). Offsets there count from the record start; these count from the
+ * end of its size/code header: handle 0, storage 4, format 8 (uint16), size 0x14, and a
+ * NUL-terminated name at 0x20 (Ex) or 0x24 (Ex64).
+ */
+const objectAddedNameOffsets = new Map([
+    [0xc181, 0x20],
+    [0xc1a7, 0x24],
+])
+
+function addedObject(body: Uint8Array, nameOffset: number): CanonAddedObject | undefined {
+    if (body.length <= nameOffset) return undefined
+    const view = new DataView(body.buffer, body.byteOffset, body.byteLength)
+    const nameEnd = body.indexOf(0, nameOffset)
+    const filename = new TextDecoder('latin1').decode(body.subarray(nameOffset, nameEnd < 0 ? body.length : nameEnd))
+    return {
+        handle: view.getUint32(0, true),
+        storageId: view.getUint32(4, true),
+        format: view.getUint16(8, true),
+        sizeBytes: view.getUint32(0x14, true),
+        filename,
+    }
 }
 
 const imageFormatPropertyCodes = new Set([0xd120, 0xd121, 0xd122, 0xd123])
@@ -110,6 +147,9 @@ export class CanonEventDataCodec extends CustomCodec<CanonEventRecord[]> {
                     allowedValues: allowedValues.length > 0 || (type === 3 && count === 0) ? allowedValues : undefined,
                     allowedValueData: type === 3 ? allowedValueData : undefined,
                 })
+            } else if (objectAddedNameOffsets.has(eventCode)) {
+                const object = addedObject(rawData, objectAddedNameOffsets.get(eventCode)!)
+                events.push({ code: eventCode, parameters: object ? [object.handle] : [], rawData, ...(object && { object }) })
             } else {
                 // Preserve opaque events for capture/replay without inventing parameter semantics.
                 events.push({ code: eventCode, parameters: [], rawData })

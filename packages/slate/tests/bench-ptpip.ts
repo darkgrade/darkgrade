@@ -2,6 +2,7 @@ import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import type { CodecType } from '@ptp/types/codec'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { OK } from '@ptp/definitions/response-definitions'
 import { IPTransport } from '@transport/ip/ip-transport'
@@ -316,12 +317,16 @@ try {
     } else if (action === 'set-continuous-autofocus') {
         if (!rawValue) throw new Error('set-continuous-autofocus requires --value')
         ensureAdvertised(controls, 'CanonContinuousAutofocus', rawValue)
-        await vendorDriver(camera, CanonCamera).setContinuousAutofocus(rawValue)
+        const canonDriver = vendorDriver(camera, CanonCamera)
+        const property = canonDriver.registry.properties.CanonContinuousAutofocus
+        await canonDriver.set(property, rawValue as CodecType<typeof property.codec>)
         detail = `Continuous autofocus changed to ${rawValue} over PTP/IP`
     } else if (action === 'set-movie-servo-autofocus') {
         if (!rawValue) throw new Error('set-movie-servo-autofocus requires --value')
         ensureAdvertised(controls, 'CanonMovieServoAutofocus', rawValue)
-        await vendorDriver(camera, CanonCamera).setMovieServoAutofocus(rawValue)
+        const canonDriver = vendorDriver(camera, CanonCamera)
+        const property = canonDriver.registry.properties.CanonMovieServoAutofocus
+        await canonDriver.set(property, rawValue as CodecType<typeof property.codec>)
         detail = `Movie Servo AF changed to ${rawValue} over PTP/IP`
     } else if (action === 'set-iso') {
         if (!rawValue) throw new Error('set-iso requires --value')

@@ -18,12 +18,12 @@ const timeout = setTimeout(() => {
 
 try {
     await canonCamera.connect()
-    const initialWhiteBalance = await canonCamera.getWhiteBalance().catch(() => undefined)
+    const initialWhiteBalance = await canonCamera.get(canonCamera.registry.properties.CanonWhiteBalance).catch(() => undefined)
     const whiteBalanceChoices = canonCamera.getPropertyAllowedValues(canonCamera.registry.properties.CanonWhiteBalance)
-    const initialImageFormat = await canonCamera.getImageFormat().catch(() => undefined)
     const imageFormatProperty = canonCamera
         .listPropertyStates()
         .find(property => ['CanonImageFormat', 'CanonImageFormatSd'].includes(property.name))
+    const initialImageFormat = imageFormatProperty?.value as { packed: number; label: string } | undefined
     const imageFormatChoices = imageFormatProperty?.allowedValues as
         Array<{ packed: number; label: string }> | undefined
     const report: Record<string, unknown> = {
@@ -83,7 +83,7 @@ try {
 
     const forceNetworkMode = process.argv.indexOf('--force-network-mode')
     if (argumentsSet.has('--live-view')) {
-        const originalOutput = await canonCamera.getHdmiLiveViewMode()
+        const originalOutput = await canonCamera.get(canonCamera.registry.properties.CanonLiveViewMode)
         try {
             const frame = await canonCamera.captureViewfinderFrame()
             const outputIndex = process.argv.indexOf('--output')
@@ -105,7 +105,7 @@ try {
         } finally {
             await canonCamera.stopLiveView()
         }
-        const restoredOutput = await canonCamera.getHdmiLiveViewMode()
+        const restoredOutput = await canonCamera.get(canonCamera.registry.properties.CanonLiveViewMode)
         if (restoredOutput !== originalOutput) throw new Error('Live-view output was not restored')
         report.liveView = { ...(report.liveView as object), restoredOutput }
     }
@@ -129,21 +129,17 @@ try {
     }
 
     if (argumentsSet.has('--round-trip-live-view-af')) {
-        const original = await canonCamera.getLiveViewAutofocusMode()
-        const alternate = canonCamera
-            .getPropertyAllowedValues(canonCamera.registry.properties.CanonLiveViewAutofocusMode)
-            ?.find(value => value !== original)
+        const property = canonCamera.registry.properties.CanonLiveViewAutofocusMode
+        const original = await canonCamera.get(property)
+        const alternate = canonCamera.getPropertyAllowedValues(property)?.find(value => value !== original)
         if (alternate === undefined) throw new Error('No alternate live-view AF mode was advertised')
         try {
-            await canonCamera.setLiveViewAutofocusMode(alternate)
-            report.liveViewAfRoundTrip = { original, selected: await canonCamera.getLiveViewAutofocusMode() }
+            await canonCamera.set(property, alternate)
+            report.liveViewAfRoundTrip = { original, selected: await canonCamera.get(property) }
         } finally {
-            await canonCamera.setLiveViewAutofocusMode(original)
+            await canonCamera.set(property, original)
         }
-        report.liveViewAfRoundTrip = {
-            ...(report.liveViewAfRoundTrip as object),
-            restored: await canonCamera.getLiveViewAutofocusMode(),
-        }
+        report.liveViewAfRoundTrip = { ...(report.liveViewAfRoundTrip as object), restored: await canonCamera.get(property) }
     }
 
     if (argumentsSet.has('--round-trip-live-view-zoom')) {
@@ -207,13 +203,13 @@ try {
             (initialWhiteBalance === 'Daylight' ? 'Auto' : 'Daylight')
         try {
             await canonCamera.setWhiteBalance(alternate)
-            if ((await canonCamera.getWhiteBalance()) !== alternate)
+            if ((await canonCamera.get(canonCamera.registry.properties.CanonWhiteBalance)) !== alternate)
                 throw new Error('Camera did not apply white balance')
             report.whiteBalanceRoundTrip = { initial: initialWhiteBalance, selected: alternate }
         } finally {
             await canonCamera.setWhiteBalance(initialWhiteBalance)
         }
-        if ((await canonCamera.getWhiteBalance()) !== initialWhiteBalance)
+        if ((await canonCamera.get(canonCamera.registry.properties.CanonWhiteBalance)) !== initialWhiteBalance)
             throw new Error('White balance was not restored')
         report.whiteBalanceRoundTrip = { ...(report.whiteBalanceRoundTrip as object), restored: initialWhiteBalance }
     }

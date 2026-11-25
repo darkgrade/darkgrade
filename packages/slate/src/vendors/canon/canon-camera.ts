@@ -1,19 +1,18 @@
-import type { CameraCapabilities, CameraControlId, CameraRecordingState, OperationAvailability } from '@camera/controls'
+import type { CameraCapabilities, CameraRecordingState, OperationAvailability } from '@camera/controls'
 import { unrecognizedValueLabel, type UnrecognizedValues } from '@camera/controls'
 import type {
     CameraEventHandler,
     CameraEventName,
     Clip,
     ConfirmedPhotoFile,
-    FocusDirection,
     FocusPointOptions,
     FocusResult,
-    FocusStepSize,
     LiveViewFrame,
     PhotoDestination,
 } from '@camera/driver'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import type { CameraOperationName } from '@camera/operation-table/index'
+import type { CameraOperationName } from '@camera/driver'
+import type { StatePhase } from '@contribute/protocol'
 import { Logger } from '@core/logger'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
@@ -24,34 +23,53 @@ import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
-import {
-    canonEvents,
-    canonFocusCapability,
-    canonLiveView,
-    canonPhotoCapability,
-    canonRecording,
-} from '@vendors/canon/canon-operations'
 import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
-import { captureCanonCardImage } from '@vendors/canon/card-capture'
+import type { CanonAddedObject, CanonEventRecord } from '@vendors/canon/datasets/canon-event-data-dataset'
 import type { CanonExtendedDeviceInfo } from '@vendors/canon/datasets/canon-extended-device-info-dataset'
-import { canonImageFormatFromPacked, type CanonImageFormat } from '@vendors/canon/datasets/canon-image-format-dataset'
+import { canonImageFormatFromPacked } from '@vendors/canon/datasets/canon-image-format-dataset'
 import {
     canonLiveViewPosition,
     type CanonLiveViewFrame,
     type CanonLiveViewPosition,
 } from '@vendors/canon/datasets/canon-live-view-dataset'
-import type { CanonMovieFormat } from '@vendors/canon/datasets/canon-movie-format-dataset'
 import { CANON_PROPERTY_NAMES } from '@vendors/canon/definitions/canon-property-names'
-import type { FocusCapability, LiveViewCapability, VideoCapability } from '@vendors/generic/capability-groups'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@vendors/generic/generic-camera'
-import { recordingCapability } from '@vendors/generic/recording-lifecycle'
-import { shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
+import {
+    cardObjectFile,
+    cardSteps,
+    classified,
+    clipFinalizationMilliseconds,
+    operationsAdvertised,
+    overlayUnsupported,
+    requireImage,
+    requirePoint,
+    storageHost,
+    supported,
+    unstatedSize,
+    unsupported,
+    wait,
+} from '@vendors/generic/generic-operations'
+import { encodeMediaId } from '@vendors/generic/media-id'
+import { recordingCapability, type VendorRecording } from '@vendors/generic/recording-lifecycle'
+import { afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
+import { readCameraStorages } from '@vendors/generic/storage'
 import { CanonRegistry, createCanonRegistry } from '@vendors/registry'
 
 const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
 /** EDSDK shutter result for a half-press whose autofocus failed (EDSDKErrors.h TAKE_PICTURE_AF_NG). */
 const CANON_RELEASE_RESULT_FOCUS_FAILED = 1
 const CANON_DEVICE_BUSY = 0x2019
+const CANON_FOCUS_DURATION_MILLISECONDS = 800
+/** FixedMovie: 1 while the body is in movie mode (libgphoto2 PTP_DPC_CANON_EOS_FixedMovie). */
+const FIXED_MOVIE = 0xd1c2
+const MODE_SETTLE_MILLISECONDS = 700
+const MANUAL_EXPOSURE_MODE = 3
+const CANON_STILL_FILE = /\.(jpe?g|heif|heic|cr2|cr3)$/i
+const CANON_MOVIE_FILE = /\.(mp4|mov|crm)$/i
+/** The manual settings a movie-select transition can reset. */
+const exposureProperties = ['CanonIso', 'CanonAperture', 'CanonShutterSpeed', 'CanonWhiteBalance'] as const
+type ExposureProperty = (typeof exposureProperties)[number]
+type ExposureSnapshot = { mode: number; values: Map<ExposureProperty, string> }
 export interface CanonPropertyState {
     code: number
     name: string
@@ -138,6 +156,7 @@ export class CanonCamera extends GenericCamera {
     private lastKeepAliveAttempt?: number
     private keepAliveUnavailable = false
     private rawEventListeners = new Set<(event: CanonRawEvent) => void>()
+    private addedObjectWatchers = new Set<(object: CanonAddedObject) => void>()
     private pollingLoop?: Promise<void>
     private liveViewEnabled = false
     private liveViewOriginalOutput?: CodecType<CanonRegistry['properties']['CanonLiveViewMode']['codec']>
@@ -437,19 +456,11 @@ export class CanonCamera extends GenericCamera {
         )
     }
 
-    async getFocusMode(): Promise<string> {
-        return this.get(this.registry.properties.CanonFocusMode)
-    }
-
     async setFocusMode(value: string): Promise<void> {
         return this.set(
             this.registry.properties.CanonFocusMode,
             value as CodecType<typeof this.registry.properties.CanonFocusMode.codec>
         )
-    }
-
-    async getWhiteBalance(): Promise<string> {
-        return this.get(this.registry.properties.CanonWhiteBalance)
     }
 
     async getColorTemperature(): Promise<number> {
@@ -461,42 +472,6 @@ export class CanonCamera extends GenericCamera {
             throw new Error('Canon color temperature must be an integer from 2500 to 10000 kelvin')
         }
         await this.setAdvertisedProperty(this.registry.properties.CanonColorTemperature, kelvin)
-    }
-
-    async getMovieSoundRecording(): Promise<string> {
-        return this.get(this.registry.properties.CanonMovieSoundRecording)
-    }
-
-    async setMovieSoundRecording(
-        value: CodecType<CanonRegistry['properties']['CanonMovieSoundRecording']['codec']>
-    ): Promise<void> {
-        await this.setAdvertisedProperty(this.registry.properties.CanonMovieSoundRecording, value)
-    }
-
-    /** Enable missing movie sound without changing an existing manual sound-level choice. */
-    async ensureMovieSoundRecording(): Promise<boolean> {
-        const property = this.registry.properties.CanonMovieSoundRecording
-        const state = this.propertyCache.get(property)
-        if (!state || state.current !== 'Off') return false
-        if (!state.allowed?.includes('On')) throw new Error('Canon did not advertise automatic movie sound recording')
-        const mode = await this.get(this.registry.properties.CanonAutoExposureMode)
-        try {
-            // EOS 80D rejects sound changes in movie auto AE (22) with DeviceBusy.
-            if (mode !== 3) await this.setManualExposureMode()
-            await this.setMovieSoundRecording('On')
-        } finally {
-            if (mode !== 3) await this.set(this.registry.properties.CanonAutoExposureMode, mode)
-        }
-        return true
-    }
-
-    async getLiveViewAutofocusMode(): Promise<string> {
-        return this.get(this.registry.properties.CanonLiveViewAutofocusMode)
-    }
-
-    async setLiveViewAutofocusMode(mode: string): Promise<void> {
-        const property = this.registry.properties.CanonLiveViewAutofocusMode
-        await this.setAdvertisedProperty(property, mode as CodecType<typeof property.codec>)
     }
 
     private async setAdvertisedProperty<P extends PropertyDefinition>(
@@ -518,12 +493,6 @@ export class CanonCamera extends GenericCamera {
         )
     }
 
-    async getImageFormat(): Promise<CanonImageFormat> {
-        const property = this.imageFormatProperty()
-        if (!property) throw new Error('The attached Canon camera did not report a still-image format property')
-        return this.get(property)
-    }
-
     async setImageFormat(packed: number): Promise<void> {
         const property = this.imageFormatProperty()
         if (!property)
@@ -531,41 +500,11 @@ export class CanonCamera extends GenericCamera {
         await this.set(property, canonImageFormatFromPacked(packed))
     }
 
-    async getMovieSize(): Promise<number> {
-        return this.get(this.registry.properties.CanonMovieSize)
-    }
-
-    async getMovieFormat(): Promise<CanonMovieFormat> {
-        return this.get(this.registry.properties.CanonMovieFormat)
-    }
-
     async setMovieFormat(key: string): Promise<void> {
         const property = this.registry.properties.CanonMovieFormat
         const advertised = this.getPropertyAllowedValues(property)?.find(candidate => candidate.key === key)
         if (!advertised) throw new Error(`Canon movie format ${key} was not advertised by the attached camera`)
         await this.set(property, advertised)
-    }
-
-    async getMovieServoAutofocus(): Promise<string> {
-        return this.get(this.registry.properties.CanonMovieServoAutofocus)
-    }
-
-    async setMovieServoAutofocus(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.CanonMovieServoAutofocus,
-            value as CodecType<typeof this.registry.properties.CanonMovieServoAutofocus.codec>
-        )
-    }
-
-    async getContinuousAutofocus(): Promise<string> {
-        return this.get(this.registry.properties.CanonContinuousAutofocus)
-    }
-
-    async setContinuousAutofocus(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.CanonContinuousAutofocus,
-            value as CodecType<typeof this.registry.properties.CanonContinuousAutofocus.codec>
-        )
     }
 
     getNetworkState(): CanonNetworkState {
@@ -830,7 +769,7 @@ export class CanonCamera extends GenericCamera {
                 // the caller asked for a focused photo. Only autofocus false releases without focus.
                 await release(autofocus ? 'AF' : 'MF')
             })
-        const classified = async () => {
+        const pressShutter = async () => {
             try {
                 await capture()
             } catch (error) {
@@ -843,9 +782,32 @@ export class CanonCamera extends GenericCamera {
                 throw refused ? shutterRefused(error) : shutterOutcomeUnknown(error)
             }
         }
-        if (includeInfo || includeData) return captureCanonCardImage(this, classified, { includeInfo, includeData })
-        await classified()
-        return {}
+        if (!includeInfo && !includeData) {
+            await pressShutter()
+            return {}
+        }
+        // Drain events already queued, then watch: only a file announced after the release counts.
+        await this.withoutPolling(() => this.refreshEventProperties())
+        const watch = this.watchAddedObjects(name => CANON_STILL_FILE.test(name))
+        try {
+            await pressShutter()
+            // The shutter was accepted: an unconfirmed or untransferred still is an unknown outcome, never a retry.
+            return await afterShutterRelease(async () => {
+                const added = await watch.next(8000, 'still image')
+                // Prefer the JPEG of a RAW+JPEG pair announced together, without changing the body format.
+                const image = added.find(object => /\.jpe?g$/i.test(object.filename)) ?? added[0]!
+                const info = await this.addedObjectInfo(image)
+                const size = info.objectCompressedSize
+                if (!Number.isSafeInteger(size) || size <= 0 || size > 100 * 1024 * 1024)
+                    throw new Error('Canon captured-image size is invalid or exceeds the 100 MiB transfer bound')
+                const data = includeData ? await this.getObject(image.handle, size) : undefined
+                if (data && data.length !== size)
+                    throw new Error('Canon captured-image transfer length does not match its metadata')
+                return { ...(includeInfo && { info }), ...(data && { data }), objectHandle: image.handle }
+            })
+        } finally {
+            watch.stop()
+        }
     }
 
     async sendStartRecording(): Promise<void> {
@@ -981,39 +943,6 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    /** Center a magnified live-view frame. Coordinates differ from the viewport origin. */
-    async setLiveViewFramePoint(x: number, y: number, lockAfFrame = false): Promise<CanonLiveViewPosition> {
-        if (!Number.isInteger(x) || !Number.isInteger(y) || typeof lockAfFrame !== 'boolean')
-            throw new Error('Invalid Canon live-view frame point')
-        this.assertOperationSupported(this.registry.operations.CanonTouchFramePoint.code)
-        return this.withoutPolling(async () => {
-            const before = await this.getLiveViewPosition()
-            if (before.magnification === 1) throw new Error('Magnify Canon live view before setting a frame point')
-            const originX = x - Math.floor(before.width / 2)
-            const originY = y - Math.floor(before.height / 2)
-            if (
-                originX < before.minimumX ||
-                originY < before.minimumY ||
-                originX > before.maximumX ||
-                originY > before.maximumY
-            )
-                throw new Error('Canon frame point is outside the measured crop bounds')
-            const result = await this.send(this.registry.operations.CanonTouchFramePoint, {
-                Type: 3,
-                X: x,
-                Y: y,
-                Lock: lockAfFrame ? 1 : 0,
-            })
-            this.assertResponseOk(result.code, 'live-view frame point')
-            for (let attempt = 0; attempt < 15; attempt++) {
-                const position = await this.getLiveViewPosition()
-                if (this.positionMatches(position, originX, originY)) return position
-                await new Promise(resolve => setTimeout(resolve, 100))
-            }
-            throw new Error(`Canon did not apply live-view frame point (${x}, ${y})`)
-        })
-    }
-
     async panLiveView(direction: 'up' | 'down' | 'left' | 'right', step = 200): Promise<CanonLiveViewPosition> {
         if (!['up', 'down', 'left', 'right'].includes(direction) || !Number.isInteger(step) || step < 1 || step > 1000)
             throw new Error('Invalid Canon live-view pan direction or step')
@@ -1074,17 +1003,6 @@ export class CanonCamera extends GenericCamera {
             }
             await new Promise(resolve => setTimeout(resolve, 250))
         }
-    }
-
-    async getHdmiLiveViewMode(): Promise<string> {
-        return this.get(this.registry.properties.CanonLiveViewMode)
-    }
-
-    async setHdmiLiveViewMode(value: string): Promise<void> {
-        await this.set(
-            this.registry.properties.CanonLiveViewMode,
-            value as CodecType<typeof this.registry.properties.CanonLiveViewMode.codec>
-        )
     }
 
     getPropertyAllowedValues<P extends PropertyDefinition>(property: P): CodecType<P['codec']>[] | undefined {
@@ -1166,17 +1084,11 @@ export class CanonCamera extends GenericCamera {
     }
 
     private processEvents(
-        events: Array<{
-            code: number
-            parameters: Array<number | bigint>
-            rawData?: Uint8Array
-            valueData?: Uint8Array
-            allowedValues?: number[]
-            allowedValueData?: Uint8Array[]
-        }>,
+        events: CanonEventRecord[],
         emitGenericEvents = true
     ): void {
         events.forEach(event => {
+            if (event.object) for (const watcher of this.addedObjectWatchers) watcher(event.object)
             if (event.rawData) {
                 for (const listener of this.rawEventListeners)
                     listener({ code: event.code, data: event.rawData.slice() })
@@ -1376,80 +1288,336 @@ export class CanonCamera extends GenericCamera {
         }
     }
 
-    // Driver contract (`@camera/driver`). TRANSITIONAL: these methods call the capability-group
-    // code moved into `@vendors/canon/canon-operations`; fold each body into its method here.
-    #focusGroup?: FocusCapability
-    #liveViewGroup?: LiveViewCapability
-    #videoGroup?: VideoCapability
+    // Driver contract (`@camera/driver`).
+    #video?: ReturnType<typeof recordingCapability>
 
-    private focusGroup(): FocusCapability {
-        return (this.#focusGroup ??= canonFocusCapability(this))
-    }
-
-    private liveViewGroup(): LiveViewCapability {
-        return (this.#liveViewGroup ??= canonLiveView(this))
-    }
-
-    private videoGroup(): VideoCapability {
-        return (this.#videoGroup ??= recordingCapability(canonRecording(this, this.requireOwner())))
-    }
-
+    /** EOS GetEvent records: a value or its choices changed, or a new file reached the card. */
     override subscribe(event: CameraEventName, handler: CameraEventHandler): () => void {
-        return canonEvents(this, event, handler)
+        const events = this.registry.events
+        const codes: number[] =
+            event === 'settingsChanged'
+                ? [events.CanonValueChanged.code, events.CanonAllowedValuesChanged.code]
+                : [events.CanonObjectAddedEx.code, events.CanonObjectAddedEx64.code]
+        const listener = (raw: CanonRawEvent) => {
+            if (codes.includes(raw.code)) handler()
+        }
+        this.onRawEvent(listener)
+        return () => this.offRawEvent(listener)
+    }
+
+    /**
+     * Collects the files the camera announces from now on (ObjectAddedEx/Ex64), so a capture or a
+     * clip is confirmed by the camera's own event rather than by diffing the card.
+     */
+    private watchAddedObjects(accept: (filename: string) => boolean) {
+        const added: CanonAddedObject[] = []
+        const watcher = (object: CanonAddedObject) => {
+            if (accept(object.filename)) added.push(object)
+        }
+        this.addedObjectWatchers.add(watcher)
+        const stop = () => this.addedObjectWatchers.delete(watcher)
+        /** Polls GetEvent (reads only) until a matching file is announced; never repeats a command. */
+        const next = async (timeoutMilliseconds: number, description: string): Promise<CanonAddedObject[]> => {
+            const deadline = Date.now() + timeoutMilliseconds
+            while (!added.length) {
+                if (Date.now() >= deadline)
+                    throw new Error(`The camera announced no new ${description} within ${timeoutMilliseconds / 1000} seconds`)
+                await this.withoutPolling(() => this.refreshEventProperties())
+                if (!added.length) await wait(Math.min(250, Math.max(0, deadline - Date.now())))
+            }
+            return [...added]
+        }
+        return { stop, next }
+    }
+
+    /** One ObjectInfo lookup for an announced file: its card id, name and size. */
+    private async addedObjectInfo(object: CanonAddedObject): Promise<ObjectInfo> {
+        const response = await this.send(this.registry.operations.GetObjectInfo, { ObjectHandle: object.handle })
+        this.assertResponseOk(response.code, 'new object information')
+        if (!response.data) throw new Error('Canon new object metadata is missing')
+        return response.data
     }
 
     async autofocus(): Promise<FocusResult> {
-        return this.focusGroup().autofocus()
+        return this.performAutofocus(CANON_FOCUS_DURATION_MILLISECONDS)
     }
 
+    /**
+     * EOS has one rectangle for the AF point and the magnify frame (EDSDK Evf_ZoomPosition, "the
+     * focus and zoom border"). At 1x live view, moving it moves the AF point; the camera reads it back.
+     */
     async setFocusPoint(x: number, y: number, options: FocusPointOptions): Promise<void> {
-        return this.focusGroup().setFocusPoint(x, y, options)
+        requirePoint(x, y)
+        await this.placeFocusFrame('setFocusPoint', x, y)
+        if (options.autofocus) await this.performAutofocus(CANON_FOCUS_DURATION_MILLISECONDS)
     }
 
+    /** Recentres the frame, which is also right while magnified. */
     async resetFocusPoint(): Promise<void> {
-        return this.focusGroup().resetFocusPoint()
+        await this.placeFocusFrame('resetFocusPoint', 0.5, 0.5)
     }
 
-    async nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<void> {
-        return this.focusGroup().nudgeFocus(direction, size)
+    private async placeFocusFrame(operation: 'setFocusPoint' | 'resetFocusPoint', x: number, y: number) {
+        const operations = this.registry.operations
+        const missing = [operations.CanonGetViewfinderData, operations.CanonViewfinderPosition].filter(
+            definition => !this.advertises(definition)
+        )
+        if (missing.length)
+            throw new CameraUnsupportedError(
+                operation,
+                `The camera does not advertise ${missing.map(definition => definition.name).join(', ')}`
+            )
+        const position = await this.getLiveViewPosition()
+        if (operation === 'setFocusPoint' && position.magnification !== 1)
+            throw new CameraUnsupportedError(operation, 'Canon places a focus point only in unmagnified live view')
+        const visibleWidth = position.maximumX - position.minimumX + position.width
+        const visibleHeight = position.maximumY - position.minimumY + position.height
+        const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value))
+        const originX = clamp(Math.round(position.minimumX + x * visibleWidth - position.width / 2), position.minimumX, position.maximumX)
+        const originY = clamp(Math.round(position.minimumY + y * visibleHeight - position.height / 2), position.minimumY, position.maximumY)
+        try {
+            await this.setLiveViewPosition(originX, originY)
+        } catch (error) {
+            if (error instanceof PTPResponseError) throw new CameraRefusedError(operation, error.message)
+            throw new CameraOutcomeUnknownError(operation, error instanceof Error ? error.message : String(error))
+        }
     }
 
-    settingWritten(id: CameraControlId): void {
-        this.focusGroup().settingWritten(id)
+    /** Still mode for a body in movie mode, then a release confirmed by the camera's object-added event. */
+    async takePhoto({ autofocus, destination }: { autofocus: boolean; destination: PhotoDestination }): Promise<ConfirmedPhotoFile> {
+        return classified(async confirmed => {
+            const wantsData = destination === 'computer'
+            const capture = await this.withPhotoMode(async () => {
+                const captured = await this.captureImage({ autofocus, includeInfo: true, includeData: wantsData })
+                confirmed()
+                return captured
+            })
+            return cardObjectFile(capture, wantsData)
+        })
     }
 
-    async takePhoto(options: { autofocus: boolean; destination: PhotoDestination }): Promise<ConfirmedPhotoFile> {
-        return canonPhotoCapability(this).takePhoto(options)
+    /** Canon's viewfinder frames carry no focus frames Slate decodes yet; none is invented. */
+    async getLiveViewFrame({ overlay }: { overlay: boolean }): Promise<LiveViewFrame> {
+        if (overlay) throw new CameraUnsupportedError('getLiveViewFrame', overlayUnsupported)
+        return { jpeg: requireImage((await this.captureViewfinderFrame()).image), focusFrames: [] }
     }
 
-    async getLiveViewFrame(options: { overlay: boolean }): Promise<LiveViewFrame> {
-        return this.liveViewGroup().getLiveViewFrame(options)
+    private video() {
+        return (this.#video ??= recordingCapability(this.recordingSteps()))
     }
 
     async getRecordingState(): Promise<CameraRecordingState> {
-        return this.videoGroup().getRecordingState()
+        return this.video().getRecordingState()
     }
 
     async startRecording(): Promise<void> {
-        return this.videoGroup().startRecording()
+        return this.video().startRecording()
     }
 
     async stopRecording(): Promise<Clip> {
-        return this.videoGroup().stopRecording()
+        return this.video().stopRecording()
+    }
+
+    private recordingSteps(): VendorRecording {
+        let clipWatch: ReturnType<CanonCamera['watchAddedObjects']> | undefined
+        return {
+            ...cardSteps(this, this.requireOwner()),
+            readState: async () => {
+                await this.refreshEventProperties()
+                const state = this.listPropertyStates().find(state => state.name === 'CanonRecordingDestination')?.value
+                return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
+            },
+            checkCard: async () => {
+                const cards = await readCameraStorages(storageHost(this))
+                if (!cards.some(card => card.writable && card.freeBytes > 0))
+                    throw new CameraRefusedError('startRecording', 'Insert a writable memory card with free space before recording')
+            },
+            // Card destination, movie mode and the photo exposure copied across; movie sound is left as set.
+            prepare: () => this.openMovieMode(),
+            // No card scan: the clip is the movie the camera announces from here on.
+            listHandles: async () => {
+                clipWatch?.stop()
+                clipWatch = this.watchAddedObjects(name => CANON_MOVIE_FILE.test(name))
+                return new Set<number>()
+            },
+            findClip: async () => {
+                const watch = clipWatch
+                if (!watch) throw new Error('No Canon recording was watched for its clip')
+                try {
+                    const [movie] = await watch.next(clipFinalizationMilliseconds, 'movie')
+                    const info = await this.addedObjectInfo(movie!)
+                    const reported = info.objectCompressedSize
+                    const sizeBytes = reported === unstatedSize ? undefined : reported
+                    const reference = { source: 'object', storageId: info.storageID, objectHandle: movie!.handle, name: info.filename } as const
+                    return {
+                        mediaId: encodeMediaId({ ...reference, ...(sizeBytes !== undefined && { sizeBytes }) }),
+                        name: info.filename,
+                        ...(sizeBytes !== undefined && { sizeBytes }),
+                    }
+                } finally {
+                    watch.stop()
+                    if (clipWatch === watch) clipWatch = undefined
+                }
+            },
+            sendStart: () => this.sendStartRecording(),
+            sendStop: () => this.sendStopRecording(),
+        }
+    }
+
+    private fixedMovie(): number | undefined {
+        const value = this.listUnknownPropertyStates().find(state => state.code === FIXED_MOVIE)?.rawValue
+        return value === 0 || value === 1 ? value : undefined
+    }
+
+    private exposureSnapshot(): ExposureSnapshot {
+        const states = this.listPropertyStates()
+        const read = (name: string) => states.find(state => state.name === name)?.value
+        const values = new Map<ExposureProperty, string>()
+        for (const name of exposureProperties) {
+            const value = read(name)
+            if (value !== undefined) values.set(name, String(value))
+        }
+        return { mode: Number(read('CanonAutoExposureMode')), values }
+    }
+
+    /** Movie-select On/Off can reset manual exposure to the dial; put back each advertised value and verify it. */
+    private async restoreExposure(before: ExposureSnapshot): Promise<void> {
+        if (before.mode !== MANUAL_EXPOSURE_MODE) return
+        await this.setManualExposureMode()
+        for (const [name, value] of before.values) {
+            const find = () => this.listPropertyStates().find(state => state.name === name)
+            const state = find()
+            if (String(state?.value) === value) continue
+            if (!state?.allowedValues?.map(String).includes(value))
+                throw new Error(`Canon did not advertise the previous ${name}: ${value}`)
+            const property = this.registry.properties[name]
+            await this.set(property, value as CodecType<(typeof property)['codec']>)
+            if (String(find()?.value) !== value) throw new Error(`Canon ${name} readback changed during the movie-mode transition`)
+        }
+    }
+
+    /**
+     * Mode selection can be acknowledged before it takes effect. When the body reports FixedMovie,
+     * fresh event readback is required before a release, Record or restoration proceeds.
+     */
+    private async settleMovieMode(expected: 0 | 1, requiresReadback: boolean): Promise<void> {
+        if (!requiresReadback && expected === 0) return
+        await wait(MODE_SETTLE_MILLISECONDS)
+        if (!requiresReadback) return
+        const deadline = Date.now() + 2000
+        do {
+            await this.withoutPolling(() => this.refreshEventProperties())
+            if (this.fixedMovie() === expected) return
+            await wait(100)
+        } while (Date.now() < deadline)
+        throw new Error(`Canon did not confirm ${expected === 1 ? 'Movie' : 'Photo'} mode after selection`)
+    }
+
+    /**
+     * Holds still mode across one capture and its transfer, then puts the operator's movie mode and
+     * manual exposure back. A body whose physical selector holds movie mode cannot take a photo: that
+     * is reported as unsupported before any shutter command is sent. @internal
+     */
+    async withPhotoMode<Result>(capture: () => Promise<Result>): Promise<Result> {
+        if (this.fixedMovie() !== 1) return capture()
+        const before = this.exposureSnapshot()
+        let failure: unknown
+        try {
+            await this.leaveMovieMode()
+            try {
+                await this.settleMovieMode(0, true)
+            } catch {
+                throw new CameraUnsupportedError(
+                    'takePhoto',
+                    'Set the Canon body’s physical still/movie selector to Photo; it retained movie mode after the remote Photo command'
+                )
+            }
+            return await capture()
+        } catch (error) {
+            failure = error
+            throw error
+        } finally {
+            try {
+                if (this.fixedMovie() !== 1) {
+                    await this.enterMovieMode()
+                    await this.settleMovieMode(1, true)
+                }
+                await this.restoreExposure(before)
+            } catch (error) {
+                if (failure)
+                    throw new AggregateError([failure, error], `${String(failure)}; restoring movie mode: ${String(error)}`)
+                throw error
+            }
+        }
+    }
+
+    /**
+     * Holds movie mode across operator-controlled start and stop: card destination first, then movie
+     * select with the photo's manual exposure copied across. Resolves to the restore, which runs
+     * only after a confirmed idle. Movie sound stays as the operator or setAudioRecording left it.
+     */
+    private async openMovieMode(): Promise<() => Promise<void>> {
+        const snapshot = (phase: StatePhase) => this.recordStateSnapshot('recording', phase)
+        snapshot('before-prepare')
+        const before = this.exposureSnapshot()
+        const observed = this.fixedMovie()
+        const requiresReadback = observed !== undefined
+        let entered = false
+        let restoreDestination: (() => Promise<void>) | undefined
+        const restore = async () => {
+            try {
+                if (entered) {
+                    await this.leaveMovieMode()
+                    await this.settleMovieMode(0, requiresReadback)
+                    await this.restoreExposure(before)
+                    entered = false
+                }
+                await restoreDestination?.()
+            } catch (error) {
+                snapshot('failure')
+                throw error
+            } finally {
+                snapshot('after-cleanup')
+            }
+        }
+        try {
+            restoreDestination = await this.prepareRecordingDestination()
+            if (observed !== 1) {
+                await this.enterMovieMode()
+                entered = true
+                await this.settleMovieMode(1, requiresReadback)
+            }
+            await this.restoreExposure(before)
+            snapshot('after-prepare')
+        } catch (error) {
+            snapshot('failure')
+            try {
+                await restore()
+            } catch (cleanup) {
+                throw new AggregateError([error, cleanup], 'Canon recording preparation and restoration failed')
+            }
+            throw error
+        }
+        return restore
     }
 
     override async availability(
         operation: CameraOperationName,
         capabilities: CameraCapabilities
     ): Promise<OperationAvailability | undefined> {
-        if (
-            operation === 'autofocus' ||
-            operation === 'setFocusPoint' ||
-            operation === 'resetFocusPoint' ||
-            operation === 'nudgeFocus'
-        )
-            return this.focusGroup().availability(capabilities)[operation]
-        if (operation === 'getLiveViewFrame') return this.liveViewGroup().availability()[operation]
+        const operations = this.registry.operations
+        if (operation === 'setFocusPoint' || operation === 'resetFocusPoint')
+            return operationsAdvertised(capabilities, [operations.CanonGetViewfinderData, operations.CanonViewfinderPosition])
+        if (operation === 'autofocus') {
+            const advertised = capabilities.advertisedOperations
+            return !advertised ||
+                advertised.includes(operations.CanonDoAutofocus.code) ||
+                advertised.includes(operations.CanonRemoteReleaseOn.code)
+                ? supported
+                : unsupported('The camera advertises neither DoAf nor a remote half-press')
+        }
+        if (operation === 'getLiveViewFrame')
+            return { supported: true, options: { overlay: { supported: false, reason: overlayUnsupported } } }
         return super.availability(operation, capabilities)
     }
 }

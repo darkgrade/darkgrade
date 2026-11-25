@@ -321,7 +321,6 @@ describe('Sony preview results', () => {
             const { camera, replies } = cameraFixture()
             replies.push(reply)
             await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow()
-            expect(camera.takeLiveViewStatistics()).toEqual({ requests: 1, refusals: 0, frames: 0 })
             expect(camera.millisecondsUntilNextLiveViewFrame()).toBe(0)
         }
     )
@@ -347,11 +346,6 @@ describe('Sony preview results', () => {
             expect(requestTimes.length).toBeLessThanOrEqual(8)
             expect(requestTimes.at(-1)).toBeLessThanOrEqual(41)
             expect(sent.every(name => name === 'GetObject')).toBe(true)
-            expect(camera.takeLiveViewStatistics()).toEqual({
-                requests: requestTimes.length,
-                refusals: requestTimes.length - 1,
-                frames: 1,
-            })
         } finally {
             vi.useRealTimers()
         }
@@ -380,11 +374,6 @@ describe('Sony preview results', () => {
             expect(otherRequests).toEqual(['SDIO_SetContentsTransferMode', 'SDIO_GetAllExtDevicePropInfo'])
             expect(requestTimes.length).toBeLessThanOrEqual(22)
             expect(requestTimes.every(time => time < 150)).toBe(true)
-            expect(camera.takeLiveViewStatistics()).toEqual({
-                requests: requestTimes.length,
-                refusals: requestTimes.length,
-                frames: 0,
-            })
         } finally {
             vi.useRealTimers()
         }

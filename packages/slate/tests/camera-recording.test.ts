@@ -21,7 +21,8 @@ import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-data
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfoCodec } from '@ptp/datasets/storage-info-dataset'
-import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { canonAllowedValues, canonEvents, canonObjectAdded, canonValue } from '@tests/fixtures/canon-events'
+import { encodeMediaId } from '@vendors/generic/media-id'
 import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { PTPRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -484,31 +485,14 @@ function canonCamera(options: { movie?: boolean; sound?: number; access?: number
     ])
     const commands: string[] = []
     const writes: [number, number][] = []
-    const events = () => {
-        const records: Uint8Array[] = []
-        for (const [code, value] of values) {
-            const record = new DataView(new ArrayBuffer(16))
-            record.setUint32(0, 16, true)
-            record.setUint32(4, 0xc189, true)
-            record.setUint32(8, code, true)
-            record.setUint32(12, value, true)
-            records.push(new Uint8Array(record.buffer))
-        }
-        for (const [code, choices] of allowed) {
-            const record = new DataView(new ArrayBuffer(20 + choices.length * 4))
-            record.setUint32(0, 20 + choices.length * 4, true)
-            record.setUint32(4, 0xc18a, true)
-            record.setUint32(8, code, true)
-            record.setUint32(12, 3, true)
-            record.setUint32(16, choices.length, true)
-            choices.forEach((choice, index) => record.setUint32(20 + index * 4, choice, true))
-            records.push(new Uint8Array(record.buffer))
-        }
-        const terminator = new DataView(new ArrayBuffer(8))
-        terminator.setUint32(0, 8, true)
-        records.push(new Uint8Array(terminator.buffer))
-        return new CanonEventDataCodec(registry).decode(concatenate(records)).value
-    }
+    // Each GetEvent reports every value and choice list, then the files announced since the last one.
+    const announced: Uint8Array[] = []
+    const events = () =>
+        canonEvents(registry, [
+            ...[...values].map(([code, value]) => canonValue(code, value)),
+            ...[...allowed].map(([code, choices]) => canonAllowedValues(code, choices)),
+            ...announced.splice(0),
+        ])
     const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
         const cardReply = card.reply(operation, parameters)
         if (cardReply) return cardReply
@@ -538,9 +522,15 @@ function canonCamera(options: { movie?: boolean; sound?: number; access?: number
         if (!body.stopWorks) return
         values.set(canonEvent.destination, 0)
         card.finalize('MVI_0002.MP4', 8192)
+        const handle = Math.max(...card.files.keys())
+        announced.push(canonObjectAdded(handle, 'MVI_0002.MP4', 8192, 0x10001))
     })
     return { camera, driver, body, values, writes, commands, start, stop }
 }
+
+/** The id listMedia gives the clip: the same card object, name and size. */
+const canonClipId = (objectHandle: number) =>
+    encodeMediaId({ source: 'object', storageId: 0x10001, objectHandle, name: 'MVI_0002.MP4', sizeBytes: 8192 })
 
 describe('Canon recording through the generic Camera', () => {
     it('selects movie mode, records once, returns the clip and selects photo mode again', async () => {
@@ -549,7 +539,7 @@ describe('Canon recording through the generic Camera', () => {
         await settled(canon.camera.startRecording())
         expect(canon.commands).toEqual(['CanonMovieSelectSwitchOn'])
         expect(await canon.camera.getRecordingState()).toBe('recording')
-        expect(await settled(canon.camera.stopRecording())).toEqual({ mediaId: '2', name: 'MVI_0002.MP4', sizeBytes: 8192 })
+        expect(await settled(canon.camera.stopRecording())).toEqual({ mediaId: canonClipId(2), name: 'MVI_0002.MP4', sizeBytes: 8192 })
         expect(canon.commands).toEqual(['CanonMovieSelectSwitchOn', 'CanonMovieSelectSwitchOff'])
         expect(canon.start).toHaveBeenCalledOnce()
         expect(canon.stop).toHaveBeenCalledOnce()
@@ -605,7 +595,7 @@ describe('Canon recording through the generic Camera', () => {
         expect(canon.stop).toHaveBeenCalledOnce()
         expect(canon.commands).toEqual(['CanonMovieSelectSwitchOn', 'CanonMovieSelectSwitchOff'])
         await settled(canon.camera.startRecording())
-        expect((await settled(canon.camera.stopRecording())).mediaId).toBe('3')
+        expect((await settled(canon.camera.stopRecording())).mediaId).toBe(canonClipId(3))
     })
 
     it('reports a refused Record as refused and leaves the camera as it was', async () => {
@@ -627,6 +617,12 @@ function nikonCamera(options: { firstContact?: boolean } = {}) {
     const card = simulatedCard(registry)
     const status = registry.properties.MovieRecProhibitionCondition.code
     const body = { flags: 0, readable: true, stopWorks: true, finalBytes: 0xffffffff, largeSize: 5_000_000_000 }
+    /** Nikon announces each new card object with ObjectAdded, queued until GetEventEx reads it. */
+    const queued: { code: number; parameters: number[] }[] = []
+    const finalize = (name: string, bytes: number) => {
+        card.finalize(name, bytes)
+        queued.push({ code: registry.events.ObjectAdded.code, parameters: [Math.max(...card.files.keys())] })
+    }
     const descriptor = (value: number) => {
         const wire = concatenate([
             registry.codecs.uint32.encode(status),
@@ -644,6 +640,8 @@ function nikonCamera(options: { firstContact?: boolean } = {}) {
         if (operation.name === 'GetDevicePropDescEx' && parameters.DevicePropCode === status)
             return body.readable ? { code: 0x2001, data: descriptor(body.flags) } : { code: 0x2005 }
         if (operation.name === 'GetObjectSize') return { code: 0x2001, data: BigInt(body.largeSize) }
+        if (operation.name === 'GetEventEx') return { code: 0x2001, data: queued.splice(0) }
+        if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(registry, 'Z 6III', [], []) }
         throw new Error(`Unexpected Nikon operation ${operation.name}`)
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
@@ -653,9 +651,9 @@ function nikonCamera(options: { firstContact?: boolean } = {}) {
     const stop = vi.spyOn(driver, 'sendStopRecording').mockImplementation(async () => {
         if (!body.stopWorks) return
         body.flags = 0
-        card.finalize('DSC_0002.MOV', body.finalBytes)
+        finalize('DSC_0002.MOV', body.finalBytes)
     })
-    return { camera, driver, body, card, start, stop }
+    return { camera, driver, body, card, finalize, start, stop }
 }
 
 describe('Nikon recording through the generic Camera', () => {
@@ -663,11 +661,12 @@ describe('Nikon recording through the generic Camera', () => {
         const nikon = nikonCamera()
         await settled(nikon.camera.startRecording())
         expect(await nikon.camera.getRecordingState()).toBe('recording')
-        expect(await settled(nikon.camera.stopRecording())).toEqual({
-            mediaId: '2',
-            name: 'DSC_0002.MOV',
-            sizeBytes: 5_000_000_000,
-        })
+        const clip = await settled(nikon.camera.stopRecording())
+        expect(clip).toEqual({ mediaId: 'ptp:10001:2::DSC_0002.MOV', name: 'DSC_0002.MOV', sizeBytes: 5_000_000_000 })
+        const sent = vi.mocked(nikon.driver.send).mock.calls.map(([operation]) => operation.name)
+        expect(sent).not.toContain('GetObjectHandles')
+        const listed = await nikon.camera.listMedia()
+        expect(listed.find(item => item.name === 'DSC_0002.MOV')?.id).toBe(clip.mediaId)
     })
 
     it('maps a prohibited Record that left the body idle to a refusal', async () => {
@@ -695,13 +694,13 @@ describe('Nikon recording through the generic Camera', () => {
             nikon.body.flags = 0x200
             setTimeout(() => {
                 nikon.body.flags = 0
-                nikon.card.finalize('DSC_0002.MOV', 2048)
+                nikon.finalize('DSC_0002.MOV', 2048)
             }, 1000)
         })
         const stopping = nikon.camera.stopRecording()
         await vi.advanceTimersByTimeAsync(500)
         expect(await nikon.camera.getRecordingState()).toBe('stopping')
-        expect(await settled(stopping)).toEqual({ mediaId: '2', name: 'DSC_0002.MOV', sizeBytes: 2048 })
+        expect(await settled(stopping)).toEqual({ mediaId: 'ptp:10001:2:2048:DSC_0002.MOV', name: 'DSC_0002.MOV', sizeBytes: 2048 })
         expect(nikon.stop).toHaveBeenCalledOnce()
     })
 

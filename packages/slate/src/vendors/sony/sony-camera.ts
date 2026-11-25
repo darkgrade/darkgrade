@@ -2,26 +2,31 @@ import { CameraConfirmationError } from '@camera/confirmation'
 import type {
     CameraCapabilities,
     CameraControlId,
+    CameraControlInputs,
+    CameraControlState,
     CameraRecordingState,
     OperationAvailability,
     UnrecognizedValues,
 } from '@camera/controls'
-import type {
-    CameraEventHandler,
-    CameraEventName,
-    Clip,
-    ConfirmedPhotoFile,
-    FocusDirection,
-    FocusPointOptions,
-    FocusResult,
-    FocusStepSize,
-    LiveViewFrame,
-    PhotoDestination,
-    ZoomDirection,
-    ZoomOptions,
+import {
+    ZOOM_SAFETY_STOP_MILLISECONDS,
+    type CameraEventHandler,
+    type CameraEventName,
+    type Clip,
+    type ConfirmedPhotoFile,
+    type FocusFrame,
+    type FocusPointOptions,
+    type FocusResult,
+    type LiveViewFrame,
+    type MediaItem,
+    type PhotoDestination,
+    type ZoomDirection,
+    type ZoomOptions,
+    type ZoomSpeed,
 } from '@camera/driver'
-import { CameraOutcomeUnknownError, CameraRefusedError } from '@camera/errors'
-import type { CameraOperationName } from '@camera/operation-table/index'
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import type { ExposureContext } from '@camera/exposure-time'
+import type { CameraOperationName } from '@camera/driver'
 import { Logger } from '@core/logger'
 import {
     PTPDecodeError,
@@ -33,7 +38,6 @@ import {
 } from '@core/ptp-errors'
 import { recognizedDescriptorValues } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import { StorageInfo } from '@ptp/datasets/storage-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
@@ -43,10 +47,23 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import type { EventParams } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
-import type { FocusCapability, MediaCapability, VideoCapability } from '@vendors/generic/capability-groups'
+import { controlValueNames } from '@vendors/control-properties'
+import type { MediaCapability, VideoCapability } from '@vendors/generic/capability-groups'
 import { GenericCamera } from '@vendors/generic/generic-camera'
-import { recordingCapability } from '@vendors/generic/recording-lifecycle'
-import { afterPossibleRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
+import {
+    cardSteps,
+    classified,
+    clipFinalizationMilliseconds,
+    describedFile,
+    overlayUnsupported,
+    requireImage,
+    requirePoint,
+    restoreAll,
+    supported,
+    unsupported,
+} from '@vendors/generic/generic-operations'
+import { recordingCapability, type VendorRecording } from '@vendors/generic/recording-lifecycle'
+import { afterPossibleRelease, afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import { createSonyRegistry, type SonyRegistry } from '@vendors/registry'
 import { parseSonyContentInfoList, type SonyContentInfoList } from '@vendors/sony/content-info-list'
 import type { SonyExtendedDeviceInfo } from '@vendors/sony/datasets/sdi-ext-device-info-dataset'
@@ -55,20 +72,37 @@ import { parseLiveViewDataset } from '@vendors/sony/datasets/sony-live-view-data
 import { parseOsdImageDataset, type OsdImageMetaInfo } from '@vendors/sony/datasets/sony-osd-image-dataset'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
-import { sonyMediaCapability } from '@vendors/sony/media'
-import { SonyPowerZoom } from '@vendors/sony/power-zoom'
+import { sonyFocalLengthMillimetres } from '@vendors/sony/lens'
+import { findSonyCardItem, sonyMediaCapability } from '@vendors/sony/media'
+import { openSonyRecordingMode, sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
 import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
-import {
-    SonyLiveView,
-    sonyCardIndexAdditions,
-    sonyFocusCapability,
-    sonyPhotoCapability,
-    sonyRecording,
-} from '@vendors/sony/sony-operations'
 
+/** Card-index event type for a new file (bench, α7 V, 2026-11-24); other types are not mapped. */
+const SONY_CONTENT_ADDED_EVENT_TYPE = 1
+/** How long Sony's card index may take to list a photo its camera already announced. */
+const SONY_CARD_INDEX_TIMEOUT_MS = 10_000
+const SONY_FOCUS_DURATION_MILLISECONDS = 800
+const SONY_DEFAULT_SPOT = 'Flexible Spot M'
+/** Lock-on AF areas on current bodies (0x02xx), Tracking Flexible Spot on older ones (0x03xx); Slate's canonical names say Tracking too. */
+const SONY_TRACKING_PREFIXES = ['Lock on AF ', 'Tracking '] as const
+/** After this long without an overlay request, the next frame switches the camera's overlay output off. */
+const OVERLAY_IDLE_MILLISECONDS = 2_000
+const ZOOM_SPEEDS: readonly ZoomSpeed[] = ['slow', 'medium', 'fast']
+/** A landing within this distance of the requested focal length counts as arrived. */
+const ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES = 0.5
+/** Between focal-length reads while the lens moves. */
+const ZOOM_POLL_MILLISECONDS = 60
+/** No focal-length change for this long means the lens reached the end of its range. */
+const ZOOM_STALL_MILLISECONDS = 800
+/** After stopping, the reading must hold still for two reads, within this long. */
+const ZOOM_SETTLE_MILLISECONDS = 1500
+/** Beyond this distance the first pass runs at medium speed; closer, slow. */
+const ZOOM_MEDIUM_SPEED_DISTANCE_MILLIMETRES = 10
+const zoomUnavailableReason = 'The camera reports remote zoom unavailable with this lens and mode'
+const noFocalLengthReason = 'The lens does not report its focal length, so zoomTo cannot confirm where it lands'
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
+/** Zoom Position (0xD214): an incremental property, so its state reports it writable. */
 const SONY_ZOOM_CONTROL_CODE = 0xd214
-const SONY_ZOOM_SPEED_RANGE_CODE = 0xd25e
 /** Properties whose state carries the descriptor's numeric range (Zoom Speed Range bounds the zoom speed). */
 const rangedPropertyNames: ReadonlySet<string> = new Set(['ColorTemperature', 'ZoomSpeed'])
 const SONY_DATE_TIME_RESULT_TIMEOUT_MS = 5_000
@@ -191,24 +225,6 @@ export interface SonyOsdImage {
     /** RGBA PNG of the camera's on-screen display (640x480 on the ILCE-6700). */
     image: Uint8Array
     metaInfo: OsdImageMetaInfo | null
-}
-
-export interface SonyZoomResult {
-    direction: 'wide' | 'tele'
-    pulses: number
-    beforeMillimetres: number
-    afterMillimetres: number
-    /** Clear Image / digital zoom scale (thousandths) before and after, for non-power-zoom lenses. */
-    beforeScale?: number
-    afterScale?: number
-    movementConfirmed: boolean
-    method: 'speed-control' | 'incremental-position' | 'operation'
-}
-
-interface ZoomTelemetry {
-    millimetres: number
-    scale: number
-    bar: number
 }
 
 export class SonyCamera extends GenericCamera {
@@ -514,22 +530,6 @@ export class SonyCamera extends GenericCamera {
             .sort((left, right) => left.code - right.code)
     }
 
-    async getAperture(): Promise<string> {
-        return this.get(this.registry.properties.Aperture)
-    }
-
-    async setAperture(value: string): Promise<void> {
-        return this.set(this.registry.properties.Aperture, value)
-    }
-
-    async getShutterSpeed(): Promise<string> {
-        return this.get(this.registry.properties.ShutterSpeed)
-    }
-
-    async setShutterSpeed(value: string): Promise<void> {
-        return this.set(this.registry.properties.ShutterSpeed, value)
-    }
-
     async getIso(): Promise<string> {
         await this.refreshPropertyStates()
         const mode = this.propertyCache.get(this.registry.properties.GainControlSetting.code)
@@ -563,138 +563,6 @@ export class SonyCamera extends GenericCamera {
             }
             throw error
         }
-    }
-
-    async getFocusMode(): Promise<string> {
-        return this.get(this.registry.properties.FocusMode)
-    }
-
-    async setFocusMode(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.FocusMode,
-            value as CodecType<typeof this.registry.properties.FocusMode.codec>
-        )
-    }
-
-    async getWhiteBalance(): Promise<string> {
-        return this.get(this.registry.properties.WhiteBalance)
-    }
-
-    async setWhiteBalance(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.WhiteBalance,
-            value as CodecType<typeof this.registry.properties.WhiteBalance.codec>
-        )
-    }
-
-    async getImageFormat(): Promise<string> {
-        if (this.propertyCache.has(this.registry.properties.StillFileFormat.code)) {
-            return this.get(this.registry.properties.StillFileFormat)
-        }
-        return this.get(this.registry.properties.CompressionSetting)
-    }
-
-    async setImageFormat(value: string): Promise<void> {
-        if (this.propertyCache.has(this.registry.properties.StillFileFormat.code)) {
-            return this.set(
-                this.registry.properties.StillFileFormat,
-                value as CodecType<typeof this.registry.properties.StillFileFormat.codec>
-            )
-        }
-        return this.set(
-            this.registry.properties.CompressionSetting,
-            value as CodecType<typeof this.registry.properties.CompressionSetting.codec>
-        )
-    }
-
-    async getJpegQuality(): Promise<string> {
-        return this.get(this.registry.properties.JpegQuality)
-    }
-
-    async setJpegQuality(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.JpegQuality,
-            value as CodecType<typeof this.registry.properties.JpegQuality.codec>
-        )
-    }
-
-    async getMovieFileFormat(): Promise<string> {
-        return this.get(this.registry.properties.MovieFileFormat)
-    }
-
-    async setMovieFileFormat(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.MovieFileFormat,
-            value as CodecType<typeof this.registry.properties.MovieFileFormat.codec>
-        )
-    }
-
-    async getMovieRecordingSetting(): Promise<string> {
-        return this.get(this.registry.properties.MovieRecordingSetting)
-    }
-
-    async setMovieRecordingSetting(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.MovieRecordingSetting,
-            value as CodecType<typeof this.registry.properties.MovieRecordingSetting.codec>
-        )
-    }
-
-    async getMovieRecordingState(): Promise<string> {
-        return this.get(this.registry.properties.MovieRecordingState)
-    }
-
-    async getImageSize(): Promise<string> {
-        return this.get(this.registry.properties.SonyImageSize)
-    }
-
-    async setImageSize(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.SonyImageSize,
-            value as CodecType<typeof this.registry.properties.SonyImageSize.codec>
-        )
-    }
-
-    async getAspectRatio(): Promise<string> {
-        return this.get(this.registry.properties.AspectRatio)
-    }
-
-    async setAspectRatio(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.AspectRatio,
-            value as CodecType<typeof this.registry.properties.AspectRatio.codec>
-        )
-    }
-
-    async getColorTemperature(): Promise<number> {
-        return this.get(this.registry.properties.ColorTemperature)
-    }
-
-    async setColorTemperature(value: number): Promise<void> {
-        return this.set(this.registry.properties.ColorTemperature, value)
-    }
-
-    async getZoomPosition(): Promise<number> {
-        return this.get(this.registry.properties.ZoomPosition)
-    }
-
-    async getZoomEnableStatus(): Promise<string> {
-        return this.get(this.registry.properties.ZoomEnableStatus)
-    }
-
-    async getZoomSetting(): Promise<string> {
-        return this.get(this.registry.properties.ZoomSetting)
-    }
-
-    async setZoomSetting(value: string): Promise<void> {
-        return this.set(
-            this.registry.properties.ZoomSetting,
-            value as CodecType<typeof this.registry.properties.ZoomSetting.codec>
-        )
-    }
-
-    async getZoomTypeStatus(): Promise<string> {
-        return this.get(this.registry.properties.ZoomTypeStatus)
     }
 
     /**
@@ -735,7 +603,7 @@ export class SonyCamera extends GenericCamera {
      * Moves the autofocus area to a point on the frame. Coordinates use the Sony
      * 640x480 AF grid: x in [0, 639] (left→right) and y in [0, 479] (top→bottom).
      * The body must be in a Flexible Spot focus area for the point to be honoured;
-     * `touchFocus` sets that up for you.
+     * `setFocusPoint` sets that up.
      */
     async setAfAreaPosition(x: number, y: number): Promise<void> {
         if (!Number.isInteger(x) || x < 0 || x > SONY_AF_AREA_X_MAX) {
@@ -755,22 +623,6 @@ export class SonyCamera extends GenericCamera {
                 'setFocusPoint',
                 `Sony refused the AF-area position (0x${response.code.toString(16)})`
             )
-    }
-
-    /**
-     * Tap-to-focus: keep a movable focus area (Zone, Flexible Spot) or switch to Flexible Spot, move it to (x, y)
-     * on the 640x480 grid, then optionally run autofocus at that spot. Returns the
-     * coordinates that were sent.
-     */
-    async touchFocus(x: number, y: number, options: { focus?: boolean } = {}): Promise<{ x: number; y: number }> {
-        const focus = options.focus ?? true
-        // Every Flexible Spot moves to the point as it is; only
-        // areas without a position (Wide, Zone, Center) switch to Flexible Spot S first.
-        const area = String(await this.get(this.registry.properties.FocusArea))
-        if (!isMovableFocusArea(area)) await this.set(this.registry.properties.FocusArea, 'Flexible Spot S')
-        await this.setAfAreaPosition(x, y)
-        if (focus) await this.performAutofocus()
-        return { x, y }
     }
 
     /**
@@ -879,6 +731,8 @@ export class SonyCamera extends GenericCamera {
      * rather than through set(), which reads values back.
      */
     async setDateTime(moment: Date = new Date()): Promise<string> {
+        // Card-index creation times follow the camera clock: the next lookup reads every content.
+        this.#newestContent = undefined
         await this.disableContentTransferMode()
         const value = sonyDateTimeString(moment)
         let result: number | undefined
@@ -911,97 +765,6 @@ export class SonyCamera extends GenericCamera {
                 `The camera refused the date and time: ${SONY_DATE_TIME_RESULTS[result] ?? `result ${result}`}`
             )
         return value
-    }
-
-    /**
-     * Starts the zoom moving and returns at once, for press-and-hold control: the body keeps zooming
-     * (optically on a power-zoom lens, Clear Image/digital otherwise) until stopZoom(). One control
-     * transaction each, so live view and other commands keep running while the zoom moves.
-     */
-    async sendZoomStart(direction: 'wide' | 'tele', speed?: number): Promise<void> {
-        const maximum = await this.maximumZoomSpeed()
-        // Default to the fastest speed the body allows; Zoom Operation's value is the speed itself.
-        const chosen = Math.min(maximum, Math.max(1, Math.round(speed ?? maximum)))
-        await this.sendZoomOperation(direction === 'tele' ? chosen : -chosen, `Sony zoom ${direction}`)
-    }
-
-    /**
-     * The top of Zoom Speed Range (0xD25E), whose range matches Zoom Operation's. Speed 1 is the
-     * slowest; a body set to a fixed remote zoom speed reports 1.
-     */
-    private async maximumZoomSpeed(): Promise<number> {
-        const cached = this.propertyCache.get(SONY_ZOOM_SPEED_RANGE_CODE)
-        const descriptor = cached ?? (await this.readDescriptor(SONY_ZOOM_SPEED_RANGE_CODE).catch(() => undefined))
-        const maximum = Number(descriptor?.maximumValue)
-        return Number.isInteger(maximum) && maximum >= 1 ? maximum : 1
-    }
-
-    async sendZoomStop(): Promise<void> {
-        await this.sendZoomOperation(0, 'Sony zoom stop')
-    }
-
-    private async sendZoomOperation(directionValue: number, action: string): Promise<void> {
-        const response = await this.send(
-            this.registry.operations.SDIO_ControlDevice,
-            { sdiControlCode: SONY_ZOOM_OPERATION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
-            this.registry.codecs.int8.encode(directionValue)
-        )
-        this.assertOk(response.code, action)
-    }
-
-    async powerZoom(direction: 'wide' | 'tele', pulses = 1): Promise<SonyZoomResult> {
-        if (!Number.isInteger(pulses) || pulses < 1 || pulses > 30) {
-            throw new Error('Sony power-zoom pulses must be an integer between 1 and 30')
-        }
-
-        const descriptor =
-            this.propertyCache.get(SONY_ZOOM_CONTROL_CODE) ?? (await this.readDescriptor(SONY_ZOOM_CONTROL_CODE))
-        this.assertPropertyEnabled(this.registry.properties.ZoomPosition, descriptor)
-        const directionValue = direction === 'tele' ? 0x01 : -0x01
-        const before = await this.readZoomTelemetry()
-
-        // Drive the zoom through the verified Sony zoom-operation control code (0xd2dd):
-        // an int8 direction (+1 tele / -1 wide) held for a span proportional to `pulses`,
-        // then 0 to stop. On a power-zoom lens this moves the optical focal length; on a
-        // manual-zoom lens it drives Clear Image / digital zoom. The previous code targeted
-        // 0xd214 (ZoomPosition telemetry), which did nothing on the attached hardware.
-        const method: SonyZoomResult['method'] = 'operation'
-        try {
-            const response = await this.send(
-                this.registry.operations.SDIO_ControlDevice,
-                { sdiControlCode: SONY_ZOOM_OPERATION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
-                this.registry.codecs.int8.encode(directionValue)
-            )
-            this.assertOk(response.code, `Sony power zoom ${direction}`)
-            await this.waitMs(Math.max(400, pulses * 200))
-        } finally {
-            const stop = await this.send(
-                this.registry.operations.SDIO_ControlDevice,
-                { sdiControlCode: SONY_ZOOM_OPERATION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
-                this.registry.codecs.int8.encode(0)
-            )
-            this.assertOk(stop.code, 'Sony power zoom stop')
-        }
-
-        const after = await this.waitForZoomMovement(before)
-        const movementConfirmed =
-            after.millimetres !== before.millimetres || after.scale !== before.scale || after.bar !== before.bar
-        const result: SonyZoomResult = {
-            direction,
-            pulses,
-            beforeMillimetres: before.millimetres,
-            afterMillimetres: after.millimetres,
-            beforeScale: before.scale,
-            afterScale: after.scale,
-            movementConfirmed,
-            method,
-        }
-        if (!movementConfirmed) {
-            throw new Error(
-                `Sony accepted the ${direction} zoom command but neither the focal length (${before.millimetres.toFixed(3)} mm) nor the Clear Image/digital zoom scale changed; verify the lens supports remote zoom and that Remote Zoom Speed is enabled on the body`
-            )
-        }
-        return result
     }
 
     async captureImage(
@@ -1228,17 +991,8 @@ export class SonyCamera extends GenericCamera {
         return { info, data, sonyFocalFrames }
     }
 
-    /** Requests and frames since the last read, for measuring how much asking live view costs. */
-    private liveViewCounters = { requests: 0, refusals: 0, frames: 0 }
     private liveViewLastFrameRequestMs = 0
     private liveViewIntervalsMs: number[] = []
-
-    /** How many requests live view has made, and how many frames they returned, since the last call. */
-    takeLiveViewStatistics(): { requests: number; refusals: number; frames: number } {
-        const counters = this.liveViewCounters
-        this.liveViewCounters = { requests: 0, refusals: 0, frames: 0 }
-        return counters
-    }
 
     /** The camera's measured frame interval: the median of recent ones, or null until there are enough. */
     private liveViewFrameIntervalMs(): number | null {
@@ -1275,9 +1029,7 @@ export class SonyCamera extends GenericCamera {
             const response = await this.send(this.registry.operations.GetObject, {
                 ObjectHandle: SONY_LIVE_VIEW_OBJECT_HANDLE,
             })
-            this.liveViewCounters.requests++
             if (response.code !== SONY_ACCESS_DENIED) return { ...response, requestStartedMs }
-            this.liveViewCounters.refusals++
             const remainingMs = deadline - Date.now()
             if (remainingMs <= 0) return { ...response, requestStartedMs }
             await new Promise(resolve => setTimeout(resolve, Math.min(retryMs, remainingMs)))
@@ -1287,7 +1039,6 @@ export class SonyCamera extends GenericCamera {
     }
 
     private recordLiveViewFrame(requestStartedMs: number): void {
-        this.liveViewCounters.frames++
         const intervalMs = requestStartedMs - this.liveViewLastFrameRequestMs
         this.liveViewLastFrameRequestMs = requestStartedMs
         if (intervalMs < SONY_LIVE_VIEW_INTERVAL_MIN_MS || intervalMs > SONY_LIVE_VIEW_INTERVAL_MAX_MS) return
@@ -1323,18 +1074,6 @@ export class SonyCamera extends GenericCamera {
             // it toward the body's interval before the next press or release.
             this.movieButtonAttemptedAt = performance.now()
         }
-    }
-
-    async listObjects(): Promise<{
-        [storageId: number]: {
-            info: StorageInfo
-            objects: { [objectHandle: number]: ObjectInfo }
-        }
-    }> {
-        await this.enableContentTransferMode()
-        const objects = await super.listObjects()
-
-        return objects
     }
 
     /**
@@ -1621,41 +1360,6 @@ export class SonyCamera extends GenericCamera {
         )
     }
 
-    /** Reads focal length (mm), Clear Image/digital zoom scale, and zoom-bar position. */
-    private async readZoomTelemetry(): Promise<ZoomTelemetry> {
-        await this.refreshPropertyStates()
-        const asNumber = (code: number): number => {
-            const value = this.propertyCache.get(code)?.currentValueDecoded
-            return typeof value === 'number' ? value : 0
-        }
-        return {
-            millimetres: asNumber(SONY_ZOOM_CONTROL_CODE),
-            scale: asNumber(this.registry.properties.ZoomScale.code),
-            bar: asNumber(this.registry.properties.ZoomBarInfo.code),
-        }
-    }
-
-    private async waitForZoomMovement(before: ZoomTelemetry): Promise<ZoomTelemetry> {
-        const deadline = Date.now() + 3_000
-        let after = before
-        await this.waitMs(500)
-        while (Date.now() < deadline) {
-            // Some Sony bodies briefly return a value-only D214 payload right after a zoom
-            // pulse; the full inventory stays well formed, so refresh it for confirmation.
-            try {
-                after = await this.readZoomTelemetry()
-            } catch {
-                await this.waitMs(150)
-                continue
-            }
-            if (after.millimetres !== before.millimetres || after.scale !== before.scale || after.bar !== before.bar) {
-                return after
-            }
-            await this.waitMs(100)
-        }
-        return after
-    }
-
     private assertOk(responseCode: number, action: string): void {
         if (responseCode !== OK.code) {
             throw new PTPResponseError(responseCode, `${action} returned PTP response 0x${responseCode.toString(16)}`)
@@ -1777,8 +1481,9 @@ export class SonyCamera extends GenericCamera {
      * Sony session without a model, firmware or body fingerprint in diagnostics. Read it once per
      * connection. A refusal is not a connection failure: the session is already usable. */
     private async readIdentityForDiagnostics(): Promise<void> {
+        this.#announcesCardIndex = undefined
         try {
-            await this.send(this.registry.operations.GetDeviceInfo, {})
+            this.noteCardIndexEvent(await this.send(this.registry.operations.GetDeviceInfo, {}))
         } catch (error) {
             this.logger.addLog({
                 type: 'console',
@@ -1867,32 +1572,30 @@ export class SonyCamera extends GenericCamera {
         return undefined
     }
 
-    // Driver contract (`@camera/driver`). TRANSITIONAL: these methods call the capability-group
-    // code moved into `@vendors/sony/sony-operations`; fold each body into its method here.
-    #focusGroup?: FocusCapability
-    #zoomGroup?: SonyPowerZoom
-    #liveViewGroup?: SonyLiveView
-    #videoGroup?: VideoCapability
-    #sonyMediaGroup?: MediaCapability
+    // Driver contract (`@camera/driver`).
 
-    private focusGroup(): FocusCapability {
-        return (this.#focusGroup ??= sonyFocusCapability(this, this.logger))
-    }
-
-    private zoomGroup(): SonyPowerZoom {
-        return (this.#zoomGroup ??= new SonyPowerZoom(this))
-    }
-
-    private liveViewGroup(): SonyLiveView {
-        return (this.#liveViewGroup ??= new SonyLiveView(this, this.logger))
-    }
-
-    private videoGroup(): VideoCapability {
-        return (this.#videoGroup ??= recordingCapability(sonyRecording(this, this.requireOwner())))
-    }
+    /** What setFocusPoint changed this session, so resetFocusPoint can put it back; a new session starts fresh. */
+    #focus: SonyFocusSession = freshFocusSession(null)
+    /** True until the camera confirms its overlay output is off. */
+    #overlayOutput = false
+    /** When the overlay output may next be switched off: an idle interval after the last overlay request or failed attempt. */
+    #overlaySwitchOffDueMs = 0
+    #zoomSafetyStop?: ReturnType<typeof setTimeout>
+    /** True while a zoom this session started may still be moving. */
+    #zooming = false
+    /** Advanced by every stopZoom call, so a start or zoomTo in progress sends nothing more once the caller stops. */
+    #zoomStops = 0
+    #video?: VideoCapability
+    #sonyMedia?: MediaCapability
+    /** The card-index watch armed before Record, which names the clip after Stop. */
+    #clipWatch?: SonyCardIndexWatch
+    /** Whether this session's DeviceInfo lists the card-index event, so a new file's media id can be read once saved. */
+    #announcesCardIndex?: boolean
+    /** The newest card-index creation time this session read, so a lookup lists only newer contents. */
+    #newestContent?: { sessionId: number | null; createdUtcMs: number }
 
     protected override async mediaGroup(): Promise<MediaCapability> {
-        return (this.#sonyMediaGroup ??= sonyMediaCapability(this))
+        return (this.#sonyMedia ??= sonyMediaCapability(this))
     }
 
     override async openSession(
@@ -1902,89 +1605,640 @@ export class SonyCamera extends GenericCamera {
         await this.connect(device, { configure: !observeOnly })
     }
 
-    async capabilitiesObserved(capabilities: CameraCapabilities): Promise<void> {
-        await this.focusGroup().capabilitiesObserved?.(capabilities)
-    }
-
-    async zoomTo(focalLengthMillimetres: number): Promise<number> {
-        return this.zoomGroup().zoomTo(focalLengthMillimetres)
-    }
-
-    async startZoom(direction: ZoomDirection, options: ZoomOptions): Promise<void> {
-        return this.zoomGroup().startZoom(direction, options)
-    }
-
-    async stopZoom(): Promise<void> {
-        return this.zoomGroup().stopZoom()
+    /**
+     * Refuses up front what a Sony body would only half-apply: a tracking focus area while focus is
+     * AF-S (Lock-on AF needs continuous focus). Everything else is the shared write.
+     */
+    override async setControl<Id extends CameraControlId>(
+        id: Id,
+        value: CameraControlInputs[Id],
+        context?: ExposureContext
+    ): Promise<CameraControlState> {
+        if (id === 'focusArea' && sonyTrackingPrefix(String(value)) !== undefined) {
+            const focusMode = (await this.refreshPropertyStates()).find(state => state.name === 'FocusMode')
+            if (focusMode?.value === 'AF-S')
+                throw new CameraRefusedError(
+                    'focusArea',
+                    `${String(value)} tracks a subject, which needs AF-C; the camera is in AF-S`
+                )
+        }
+        return super.setControl(id, value, context)
     }
 
     override subscribe(event: CameraEventName, handler: CameraEventHandler): () => void {
         const stopEmitted = super.subscribe(event, handler)
         if (event !== 'mediaAdded') return stopEmitted
-        const stopIndex = sonyCardIndexAdditions(this, handler)
+        const stopIndex = this.onCardIndexAddition(handler)
         return () => {
             stopEmitted()
             stopIndex()
         }
     }
 
+    /**
+     * A Sony body saving to its card announces the file in its card index rather than with
+     * ObjectAdded. Event type 1 followed each new photo and clip on an α7 V (bench, 2026-11-24).
+     */
+    private onCardIndexAddition(handler: () => void): () => void {
+        const definition = this.registry.events.SDIE_ContentInfoListChanged
+        const listener = (params: EventParams<typeof definition>) => {
+            if (Number(params['Event Type']) === SONY_CONTENT_ADDED_EVENT_TYPE) handler()
+        }
+        this.on(definition, listener)
+        return () => this.off(definition, listener)
+    }
+
+    private noteCardIndexEvent(information: { data?: { eventsSupportedRaw?: unknown } }): boolean {
+        const events = information.data?.eventsSupportedRaw
+        return (this.#announcesCardIndex =
+            Array.isArray(events) && events.includes(this.registry.events.SDIE_ContentInfoListChanged.code))
+    }
+
+    /** From the DeviceInfo connect read, or read now when that read failed. */
+    private async announcesCardIndex(): Promise<boolean> {
+        return this.#announcesCardIndex ?? this.noteCardIndexEvent(await this.send(this.registry.operations.GetDeviceInfo, {}))
+    }
+
+    /**
+     * Listens for the card index to announce a new file. `find` waits for an announcement and then
+     * reads the card index once (only contents newer than this session's last lookup) for the file
+     * `matches` accepts; a further announcement reads it once more. No announcement in time is an
+     * unknown outcome: the card is never scanned instead.
+     */
+    private watchCardIndex(operation: 'takePhoto' | 'stopRecording'): SonyCardIndexWatch {
+        let announcements = 0
+        const stop = this.onCardIndexAddition(() => announcements++)
+        const newest = this.#newestContent?.sessionId === this.sessionId ? this.#newestContent : undefined
+        // Two seconds back, as a creation time may be stored at whole-second precision.
+        const sinceUtcMs = newest && newest.createdUtcMs - 2_000
+        return {
+            stop,
+            find: async (matches, timeoutMilliseconds) => {
+                const deadline = Date.now() + timeoutMilliseconds
+                let handled = 0
+                try {
+                    for (;;) {
+                        while (announcements === handled && Date.now() < deadline) await this.waitMs(50)
+                        if (announcements === handled)
+                            throw new CameraOutcomeUnknownError(
+                                operation,
+                                `The camera did not list the new file in its card index within ${timeoutMilliseconds / 1000} seconds`
+                            )
+                        handled = announcements
+                        const found = await findSonyCardItem(this, operation, matches, sinceUtcMs)
+                        if (found.newestUtcMs !== undefined)
+                            this.#newestContent = { sessionId: this.sessionId, createdUtcMs: found.newestUtcMs }
+                        if (found.item) return found.item
+                    }
+                } finally {
+                    stop()
+                }
+            },
+        }
+    }
+
+    /**
+     * Still mode for a body in a movie mode, shooting mode after a card read, then one two-stage
+     * release confirmed by the camera's object-added event. The photo is saved to the card and sent
+     * to the computer (Sony's "both" destination), so the event names the new file; its bytes are
+     * always read, which releases the camera's copy, and returned only for 'computer'. Its id and
+     * size are the ones `listMedia()` gives it, from one card-index read after the camera lists it.
+     */
+    async takePhoto({ autofocus, destination }: { autofocus: boolean; destination: PhotoDestination }): Promise<ConfirmedPhotoFile> {
+        return classified(async confirmed => {
+            await this.returnToShooting()
+            // A body without a card index has no media ids, so its photo has none.
+            const watch = (await this.announcesCardIndex()) ? this.watchCardIndex('takePhoto') : undefined
+            let capture: { info?: ObjectInfo; data?: Uint8Array }
+            try {
+                capture = await withSonyPhotoMode(sonyPhotoModeDriver(this), async () => {
+                    const captured = await this.captureImage({
+                        autofocus,
+                        includeInfo: true,
+                        includeData: true,
+                        destination: 'card',
+                    })
+                    confirmed()
+                    return captured
+                })
+            } catch (error) {
+                watch?.stop()
+                throw error
+            }
+            const { info, data } = describedFile(capture, destination === 'computer')
+            const item =
+                watch &&
+                (await afterShutterRelease(() =>
+                    watch.find(candidate => candidate.name === info.filename, SONY_CARD_INDEX_TIMEOUT_MS)
+                ))
+            return {
+                ...(item && { mediaId: item.id }),
+                name: info.filename,
+                sizeBytes: item?.sizeBytes ?? info.objectCompressedSize,
+                ...(data && { data }),
+            }
+        })
+    }
+
+    private availabilityOfFocus(capabilities: CameraCapabilities): OperationAvailability {
+        const area = capabilities.controls.focusArea
+        const spot = area && sonyAreaLabel(area.value)
+        if (spot && isMovableFocusArea(spot)) this.focusSession().lastSpot = sonyPlainArea(spot)
+        return area ? supported : unsupported('The camera reports no focus area to place a point in')
+    }
+
+    /** This session's focus memory. A point placed before a disconnect never changes a later session. */
+    private focusSession(): SonyFocusSession {
+        if (this.#focus.sessionId !== this.sessionId) this.#focus = freshFocusSession(this.sessionId)
+        return this.#focus
+    }
+
+    /**
+     * Face and eye frames stay out of live view unless Face/Eye Frame Display is on, so eye tracking
+     * would show nothing. Turned on once per session while subject detection is on, by the operations
+     * that show frames (autofocus, live view), from the property states last read; getCapabilities
+     * never writes it. This is display only: a body that refuses keeps its own setting, and the
+     * refusal is logged rather than raised.
+     */
+    private async showFaceFramesWhileDetecting(): Promise<void> {
+        const current = this.focusSession()
+        if (current.faceFramesChecked) return
+        const properties = this.registry.properties
+        const states = this.listPropertyStates()
+        if (states.find(state => state.name === properties.SubjectRecognitionInAF.name)?.value !== 'On') return
+        current.faceFramesChecked = true
+        const display = states.find(state => state.name === properties.FaceEyeFrameDisplay.name)
+        if (!display || display.value === 'ON' || !display.writable) return
+        try {
+            await this.set(properties.FaceEyeFrameDisplay, 'ON')
+        } catch (error) {
+            if (!(error instanceof PTPResponseError)) throw error
+            this.warn(`Sony Face/Eye Frame Display stayed off: ${error.message}`)
+        }
+    }
+
+    /** The spot to switch to from an area without a position, keeping tracking when it was on. */
+    private async spotFor(area: string): Promise<string> {
+        const states = await this.refreshPropertyStates()
+        const offered = (states.find(state => state.name === 'FocusArea')?.allowedValues ?? []).map(String)
+        const tracking = sonyTrackingPrefix(area) !== undefined
+        const { lastSpot } = this.focusSession()
+        const preferred = tracking ? SONY_TRACKING_PREFIXES.map(prefix => `${prefix}${lastSpot}`) : [lastSpot]
+        const match = preferred.find(candidate => offered.includes(candidate))
+        if (match) return match
+        const alternative = offered.find(
+            candidate => isMovableFocusArea(candidate) && (sonyTrackingPrefix(candidate) !== undefined) === tracking
+        )
+        if (!alternative)
+            throw new CameraUnsupportedError('setFocusPoint', `The camera offers no movable focus area from ${area}`)
+        return alternative
+    }
+
     async autofocus(): Promise<FocusResult> {
-        return this.focusGroup().autofocus()
+        await this.showFaceFramesWhileDetecting()
+        return this.performAutofocus(SONY_FOCUS_DURATION_MILLISECONDS)
     }
 
     async setFocusPoint(x: number, y: number, options: FocusPointOptions): Promise<void> {
-        return this.focusGroup().setFocusPoint(x, y, options)
+        requirePoint(x, y)
+        const properties = this.registry.properties
+        const current = this.focusSession()
+        const area = String(await this.get(properties.FocusArea))
+        if (isMovableFocusArea(area)) current.lastSpot = sonyPlainArea(area)
+        else {
+            const spot = await this.spotFor(area)
+            await this.set(properties.FocusArea, spot)
+            current.changes.previousArea ??= area
+            current.changes.placedArea = spot
+        }
+        if ((await this.get(properties.SubjectRecognitionInAF)) === 'On') {
+            await this.set(properties.SubjectRecognitionInAF, 'Off')
+            current.changes.pausedSubjectDetection = true
+        }
+        await this.setAfAreaPosition(Math.round(x * SONY_AF_AREA_X_MAX), Math.round(y * SONY_AF_AREA_Y_MAX))
+        if (options.autofocus) await this.performAutofocus(SONY_FOCUS_DURATION_MILLISECONDS)
     }
 
     async resetFocusPoint(): Promise<void> {
-        return this.focusGroup().resetFocusPoint()
-    }
-
-    async nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<void> {
-        return this.focusGroup().nudgeFocus(direction, size)
+        const properties = this.registry.properties
+        const { changes } = this.focusSession()
+        await restoreAll('resetFocusPoint', [
+            async () => {
+                if (isMovableFocusArea(String(await this.get(properties.FocusArea))))
+                    await this.setAfAreaPosition(
+                        Math.floor((SONY_AF_AREA_X_MAX + 1) / 2),
+                        Math.floor((SONY_AF_AREA_Y_MAX + 1) / 2)
+                    )
+            },
+            async () => {
+                const { previousArea, placedArea } = changes
+                changes.previousArea = changes.placedArea = undefined
+                // Only undo the switch a focus point made: an area chosen since then stays.
+                if (previousArea && String(await this.get(properties.FocusArea)) === placedArea)
+                    await this.set(properties.FocusArea, previousArea)
+            },
+            async () => {
+                const paused = changes.pausedSubjectDetection
+                changes.pausedSubjectDetection = undefined
+                if (paused && (await this.get(properties.SubjectRecognitionInAF)) === 'Off')
+                    await this.set(properties.SubjectRecognitionInAF, 'On')
+            },
+        ])
     }
 
     settingWritten(id: CameraControlId): void {
-        this.focusGroup().settingWritten(id)
+        const current = this.focusSession()
+        if (id === 'focusArea') current.changes.previousArea = current.changes.placedArea = undefined
+        if (id === 'subjectDetection') {
+            current.changes.pausedSubjectDetection = undefined
+            current.faceFramesChecked = false
+        }
     }
 
-    async takePhoto(options: { autofocus: boolean; destination: PhotoDestination }): Promise<ConfirmedPhotoFile> {
-        return sonyPhotoCapability(this).takePhoto(options)
+    /**
+     * Waits for the camera's next frame before asking (pacing, measured from the frames so far), so a
+     * caller never polls in a tight loop, and the frame request itself is one transaction. The
+     * on-screen display output is switched on by the first overlay request and off once overlays stop.
+     */
+    async getLiveViewFrame({ overlay }: { overlay: boolean }): Promise<LiveViewFrame> {
+        await this.showFaceFramesWhileDetecting()
+        const untilNextFrameMilliseconds = this.millisecondsUntilNextLiveViewFrame()
+        if (untilNextFrameMilliseconds > 0) await this.waitMs(untilNextFrameMilliseconds)
+        let frame: Awaited<ReturnType<SonyCamera['captureLiveView']>>
+        try {
+            frame = await this.captureLiveView({ includeInfo: false })
+        } catch (error) {
+            if (error instanceof Error && /unavailable in the current camera mode/.test(error.message))
+                throw new CameraUnsupportedError('getLiveViewFrame', error.message)
+            throw error
+        }
+        const focusFrames: FocusFrame[] = (frame.sonyFocalFrames ?? []).map(
+            ({ kind, focused, centerX, centerY, width, height }) => ({ kind, focused, centerX, centerY, width, height })
+        )
+        const jpeg = requireImage(frame.data)
+        if (overlay) return { jpeg, focusFrames, overlay: await this.readOverlay() }
+        if (this.#overlayOutput && Date.now() > this.#overlaySwitchOffDueMs) await this.switchOverlayOutputOff()
+        return { jpeg, focusFrames }
     }
 
-    async getLiveViewFrame(options: { overlay: boolean }): Promise<LiveViewFrame> {
-        return this.liveViewGroup().getLiveViewFrame(options)
+    /**
+     * The frame already read is never lost to this: a failed or unconfirmed switch-off is logged
+     * and tried again on a frame one idle interval later.
+     */
+    private async switchOverlayOutputOff(): Promise<void> {
+        try {
+            await this.setOsdImageMode(false)
+            this.#overlayOutput = false
+        } catch (error) {
+            this.#overlaySwitchOffDueMs = Date.now() + OVERLAY_IDLE_MILLISECONDS
+            this.warn(`Switching the camera's overlay output off was not confirmed; trying again later: ${errorText(error)}`)
+        }
+    }
+
+    private async readOverlay(): Promise<{ png: Uint8Array }> {
+        if (!this.listPropertyStates().some(state => state.name === 'OsdImageMode'))
+            throw new CameraUnsupportedError('getLiveViewFrame', overlayUnsupported)
+        this.#overlaySwitchOffDueMs = Date.now() + OVERLAY_IDLE_MILLISECONDS
+        this.#overlayOutput = true
+        const { image } = await this.captureOsdImage()
+        return { png: image }
+    }
+
+    private warn(message: string): void {
+        this.logger.addLog({ type: 'console', level: 'warn', consoleLevel: 'warn', args: [message] })
+    }
+
+    /**
+     * Native Sony PTP: 0xd21d is 0 idle and 1 recording; 2 (failed) and 3 (interval waiting) are
+     * neither. Preparation selects the advertised movie mode and checks the movie card's remaining
+     * time in it. The clip is named by the card index after Stop, so ids match `listMedia()`.
+     */
+    private video(): VideoCapability {
+        if (this.#video) return this.#video
+        const owner = this.requireOwner()
+        const steps = cardSteps(this, owner)
+        const recording: VendorRecording = {
+            ...steps,
+            readState: async () => {
+                const state = await readSonyPtpRecordingState({ getSonyPropertyStates: () => this.refreshPropertyStates() })
+                return state === 0 ? 'idle' : state === 1 ? 'recording' : 'unknown'
+            },
+            prepare: async () => (await openSonyRecordingMode(owner)).restore,
+            // A body without a card index names its clip by object handle, as before.
+            listHandles: async () => {
+                this.#clipWatch?.stop()
+                this.#clipWatch = undefined
+                if (!(await this.announcesCardIndex())) return steps.listHandles()
+                this.#clipWatch = this.watchCardIndex('stopRecording')
+                return new Set()
+            },
+            findClip: async baseline => {
+                const watch = this.#clipWatch
+                this.#clipWatch = undefined
+                if (!watch) return steps.findClip(baseline)
+                const item = await watch.find(candidate => candidate.kind === 'clip', clipFinalizationMilliseconds)
+                return { mediaId: item.id, name: item.name, sizeBytes: item.sizeBytes }
+            },
+            sendStart: () => this.sendStartRecording(),
+            sendStop: () => this.sendStopRecording(),
+            // The movie button is a press and release; Stop releases a press the body ignored.
+            releaseIgnoredStart: () => this.sendStopRecording(),
+        }
+        return (this.#video = recordingCapability(recording))
     }
 
     async getRecordingState(): Promise<CameraRecordingState> {
-        return this.videoGroup().getRecordingState()
+        return this.video().getRecordingState()
     }
 
     async startRecording(): Promise<void> {
-        return this.videoGroup().startRecording()
+        return this.video().startRecording()
     }
 
     async stopRecording(): Promise<Clip> {
-        return this.videoGroup().stopRecording()
+        return this.video().stopRecording()
+    }
+
+    /**
+     * Press-and-hold zoom with a safety stop (SDIO_ControlDevice Zoom Operation): optical on a
+     * power-zoom lens, Clear Image or digital otherwise, until stopZoom.
+     */
+    async startZoom(direction: ZoomDirection, options: ZoomOptions): Promise<void> {
+        const stopsAtStart = this.#zoomStops
+        if (direction !== 'in' && direction !== 'out')
+            throw new CameraRefusedError('startZoom', 'Zoom direction must be in or out')
+        if (!ZOOM_SPEEDS.includes(options?.speed))
+            throw new CameraRefusedError('startZoom', 'Zoom speed must be slow, medium or fast')
+        const states = await this.refreshPropertyStates()
+        if (!remoteZoomAvailable(states)) throw new CameraUnsupportedError('startZoom', zoomUnavailableReason)
+        await this.driveZoom('startZoom', direction, options.speed, states, stopsAtStart)
+    }
+
+    /** Always sent: a stop wins over a start or zoomTo still being prepared. */
+    async stopZoom(): Promise<void> {
+        this.#zoomStops++
+        await this.haltZoom()
+    }
+
+    /**
+     * Zooms towards a focal length and resolves to where the lens landed, read back once it settles:
+     * the camera, not the request, decides. One pass, then at most one slow correction after an
+     * overshoot; each is a new movement, never a resent command.
+     */
+    async zoomTo(focalLengthMillimetres: number): Promise<number> {
+        const stopsAtStart = this.#zoomStops
+        if (!Number.isFinite(focalLengthMillimetres) || focalLengthMillimetres <= 0)
+            throw new CameraRefusedError('zoomTo', 'The focal length must be a positive number of millimetres')
+        const states = await this.refreshPropertyStates()
+        if (!remoteZoomAvailable(states)) throw new CameraUnsupportedError('zoomTo', zoomUnavailableReason)
+        const start = sonyFocalLengthMillimetres(states)
+        if (start === null) throw new CameraUnsupportedError('zoomTo', noFocalLengthReason)
+        const arrived = (landed: number) => Math.abs(landed - focalLengthMillimetres) <= ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES
+        if (arrived(start)) return start
+
+        const scaleBefore = zoomScale(states)
+        const speed = Math.abs(focalLengthMillimetres - start) > ZOOM_MEDIUM_SPEED_DISTANCE_MILLIMETRES ? 'medium' : 'slow'
+        const first = await this.zoomPass(start, focalLengthMillimetres, speed, states, stopsAtStart)
+        if (first.sent && first.landed === start) this.reportUnmovedLens(start, scaleBefore)
+        const overshot = Math.sign(first.landed - focalLengthMillimetres) !== Math.sign(start - focalLengthMillimetres)
+        if (first.interrupted || !overshot || arrived(first.landed)) return first.landed
+        const correction = await this.zoomPass(
+            first.landed,
+            focalLengthMillimetres,
+            'slow',
+            this.listPropertyStates(),
+            stopsAtStart
+        )
+        return correction.landed
+    }
+
+    /**
+     * The focal length never moved. With only optical zoom and no change in Zoom Scale, nothing
+     * changed and the camera in effect refused; otherwise its digital zoom may have moved instead.
+     */
+    private reportUnmovedLens(start: number, scaleBefore: number | undefined): never {
+        const states = this.listPropertyStates()
+        const scaleAfter = zoomScale(states)
+        const unchanged =
+            scaleBefore !== undefined && scaleAfter !== undefined
+                ? scaleAfter === scaleBefore
+                : states.find(state => state.name === 'ZoomSetting')?.value === 'Optical Zoom Only'
+        if (unchanged)
+            throw new CameraRefusedError('zoomTo', `The focal length stayed at ${start} mm: zoomTo needs a power-zoom lens`)
+        throw new CameraOutcomeUnknownError(
+            'zoomTo',
+            `The focal length read back ${start} mm, unchanged, but the camera may have moved its digital zoom instead (Clear Image or Digital Zoom is on)`
+        )
+    }
+
+    /** Drives towards the target until it is reached or crossed, the lens stalls, or stopZoom is called. */
+    private async zoomPass(
+        from: number,
+        target: number,
+        speed: ZoomSpeed,
+        states: readonly SonyPropertyState[],
+        stopsAtStart: number
+    ): Promise<{ landed: number; interrupted: boolean; sent: boolean }> {
+        const direction: ZoomDirection = target > from ? 'in' : 'out'
+        const sent = await this.driveZoom('zoomTo', direction, speed, states, stopsAtStart)
+        // A stop came in before the start went out: the lens was not moved, and `from` was just read.
+        if (!sent) return { landed: from, interrupted: true, sent }
+        let last = from
+        let lastChangeMs = Date.now()
+        const deadline = Date.now() + ZOOM_SAFETY_STOP_MILLISECONDS
+        try {
+            while (Date.now() < deadline && this.#zoomStops === stopsAtStart) {
+                await this.waitMs(ZOOM_POLL_MILLISECONDS)
+                const current = sonyFocalLengthMillimetres(await this.refreshPropertyStates())
+                if (current === null) break
+                const remaining = direction === 'in' ? target - current : current - target
+                if (remaining <= ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES) break
+                if (current !== last) {
+                    last = current
+                    lastChangeMs = Date.now()
+                } else if (Date.now() - lastChangeMs > ZOOM_STALL_MILLISECONDS) break
+            }
+        } catch (error) {
+            await this.haltZoom()
+            throw new CameraOutcomeUnknownError('zoomTo', `The focal length could not be read while zooming: ${errorText(error)}`)
+        }
+        const interrupted = this.#zoomStops !== stopsAtStart
+        if (!interrupted) await this.haltZoom()
+        return { landed: await this.settledFocalLength(last), interrupted, sent }
+    }
+
+    /** Reads until two consecutive focal lengths agree; the camera's value, never the requested one. */
+    private async settledFocalLength(fallback: number): Promise<number> {
+        const deadline = Date.now() + ZOOM_SETTLE_MILLISECONDS
+        let previous: number | null = null
+        while (Date.now() < deadline) {
+            const current = sonyFocalLengthMillimetres(await this.refreshPropertyStates())
+            if (current === null)
+                throw new CameraOutcomeUnknownError('zoomTo', 'The lens stopped reporting its focal length after zooming')
+            if (current === previous) return current
+            previous = current
+            await this.waitMs(ZOOM_POLL_MILLISECONDS)
+        }
+        if (previous === null) return fallback
+        throw new CameraOutcomeUnknownError(
+            'zoomTo',
+            `The focal length was still changing (${previous} mm) after the zoom stopped`
+        )
+    }
+
+    /**
+     * One zoom-start command, unless stopZoom was called since the operation began (then nothing is
+     * sent and this resolves false). The safety stop is armed first, so even an unconfirmed start
+     * stops by itself. A stopZoom during the start's transaction queues behind it and stops the lens.
+     * Sony's speed is 1 (slowest) to the top of Zoom Speed Range from the inventory just read; a
+     * fixed-speed body, or one that reports no range, gets 1.
+     */
+    private async driveZoom(
+        operation: 'startZoom' | 'zoomTo',
+        direction: ZoomDirection,
+        speed: ZoomSpeed,
+        states: readonly SonyPropertyState[],
+        stopsAtStart: number
+    ): Promise<boolean> {
+        const reported = states.find(state => state.name === 'ZoomSpeed')?.range?.maximum
+        const maximum = reported !== undefined && Number.isInteger(reported) && reported >= 1 ? reported : 1
+        const level = speed === 'slow' ? 1 : speed === 'fast' ? maximum : Math.max(1, Math.round(maximum / 2))
+        if (this.#zoomStops !== stopsAtStart) return false
+        this.armZoomSafetyStop()
+        try {
+            await this.sendZoomOperation(direction === 'in' ? level : -level, `Sony zoom ${direction}`)
+            this.#zooming = this.#zoomStops === stopsAtStart
+            return true
+        } catch (error) {
+            if (error instanceof PTPResponseError) {
+                this.clearZoomSafetyStop()
+                throw new CameraRefusedError(operation, `The camera refused to zoom ${direction}: ${error.message}`)
+            }
+            this.#zooming = this.#zoomStops === stopsAtStart
+            throw new CameraOutcomeUnknownError(operation, `Zooming ${direction} was not confirmed: ${errorText(error)}`)
+        }
+    }
+
+    /** Sends the zoom stop. Internal stops (end of a zoomTo pass, the safety stop) do not count as stopZoom calls. */
+    private async haltZoom(): Promise<void> {
+        this.clearZoomSafetyStop()
+        const wasZooming = this.#zooming
+        this.#zooming = false
+        try {
+            await this.sendZoomOperation(0, 'Sony zoom stop')
+        } catch (error) {
+            // Nothing this session started was moving, so a refused stop changed nothing.
+            if (error instanceof PTPResponseError && !wasZooming) return
+            if (error instanceof PTPResponseError)
+                throw new CameraRefusedError('stopZoom', `The camera refused to stop zooming: ${error.message}`)
+            throw new CameraOutcomeUnknownError('stopZoom', `Stopping the zoom was not confirmed: ${errorText(error)}`)
+        }
+    }
+
+    private armZoomSafetyStop(): void {
+        this.clearZoomSafetyStop()
+        this.#zoomSafetyStop = setTimeout(() => void this.haltZoom().catch(() => undefined), ZOOM_SAFETY_STOP_MILLISECONDS)
+        // A pending safety stop never keeps a Node process alive by itself.
+        if (typeof this.#zoomSafetyStop === 'object' && 'unref' in this.#zoomSafetyStop) this.#zoomSafetyStop.unref()
+    }
+
+    private clearZoomSafetyStop(): void {
+        if (this.#zoomSafetyStop) clearTimeout(this.#zoomSafetyStop)
+        this.#zoomSafetyStop = undefined
+    }
+
+    /** Zoom Operation's value is the signed speed: positive tele, negative wide, 0 stops. */
+    private async sendZoomOperation(value: number, action: string): Promise<void> {
+        const response = await this.send(
+            this.registry.operations.SDIO_ControlDevice,
+            { sdiControlCode: SONY_ZOOM_OPERATION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
+            this.registry.codecs.int8.encode(value)
+        )
+        this.assertOk(response.code, action)
+    }
+
+    /** Date/Time Setting rather than the standard DateTime property; resolves once the camera confirms it. */
+    override async setClock(moment: Date): Promise<void> {
+        await this.setDateTime(moment)
     }
 
     override async availability(
         operation: CameraOperationName,
         capabilities: CameraCapabilities
     ): Promise<OperationAvailability | undefined> {
-        if (
-            operation === 'autofocus' ||
-            operation === 'setFocusPoint' ||
-            operation === 'resetFocusPoint' ||
-            operation === 'nudgeFocus'
-        )
-            return this.focusGroup().availability(capabilities)[operation]
-        if (operation === 'getLiveViewFrame') return this.liveViewGroup().availability()[operation]
-        if (operation === 'zoomTo' || operation === 'startZoom' || operation === 'stopZoom')
-            return this.zoomGroup().availability()[operation]
+        if (operation === 'autofocus' || operation === 'setClock') return supported
+        if (operation === 'setFocusPoint' || operation === 'resetFocusPoint') return this.availabilityOfFocus(capabilities)
+        if (operation === 'getLiveViewFrame') return this.liveViewAvailability()
+        const states = this.listPropertyStates()
+        if (operation === 'startZoom' || operation === 'zoomTo') {
+            if (!remoteZoomAvailable(states)) return unsupported(zoomUnavailableReason)
+            if (operation === 'zoomTo' && sonyFocalLengthMillimetres(states) === null)
+                return unsupported(noFocalLengthReason)
+            return supported
+        }
         return super.availability(operation, capabilities)
     }
+
+    private liveViewAvailability(): OperationAvailability {
+        const states = this.listPropertyStates()
+        const overlay = states.some(state => state.name === 'OsdImageMode') ? supported : unsupported(overlayUnsupported)
+        if (states.find(state => state.name === 'LiveViewStatus')?.value === 'NOT_SUPPORTED')
+            return {
+                supported: false,
+                reason: 'The camera reports live view unavailable in its current mode',
+                options: { overlay },
+            }
+        return { supported: true, options: { overlay } }
+    }
 }
+
+interface SonyCardIndexWatch {
+    find(matches: (item: MediaItem) => boolean, timeoutMilliseconds: number): Promise<MediaItem>
+    stop(): void
+}
+
+/**
+ * What a focus point changed on a Sony body, so `resetFocusPoint` can put it back: the focus area
+ * it switched from (Wide, Zone and Center have no position) and subject detection it paused
+ * (eye tracking would otherwise pull focus straight back to a face).
+ */
+interface SonyFocusSession {
+    sessionId: number | null
+    changes: { previousArea?: string; placedArea?: string; pausedSubjectDetection?: boolean }
+    /** The spot size last active on the camera, without its tracking prefix. */
+    lastSpot: string
+    /** Face/Eye Frame Display was checked since subject detection was last seen turning on. */
+    faceFramesChecked: boolean
+}
+
+function freshFocusSession(sessionId: number | null): SonyFocusSession {
+    return { sessionId, changes: {}, lastSpot: SONY_DEFAULT_SPOT, faceFramesChecked: false }
+}
+
+function sonyTrackingPrefix(area: string): string | undefined {
+    return SONY_TRACKING_PREFIXES.find(prefix => area.startsWith(prefix))
+}
+
+/** A spot without its tracking prefix: "Lock on AF Flexible Spot M" and "Tracking Flexible Spot M" are "Flexible Spot M". */
+function sonyPlainArea(area: string): string {
+    return area.slice(sonyTrackingPrefix(area)?.length ?? 0)
+}
+
+/** Sony's own label for a canonical focus area, from the vendor value names. */
+function sonyAreaLabel(canonical: string): string | undefined {
+    const names = controlValueNames('sony', 'focusArea')?.FocusArea ?? {}
+    return Object.entries(names).find(([, name]) => name === canonical)?.[0]
+}
+
+const remoteZoomAvailable = (states: readonly SonyPropertyState[]) =>
+    states.find(state => state.name === 'ZoomEnableStatus')?.value === 'Enabled'
+
+/** Zoom Scale (thousandths): the body's digital zoom magnification, when it reports one. */
+function zoomScale(states: readonly SonyPropertyState[]): number | undefined {
+    const scale = states.find(state => state.name === 'ZoomScale' && state.enabled)?.rawValue
+    return scale === undefined ? undefined : Number(scale)
+}
+
 
 function isTransportFailure(error: unknown): boolean {
     return (

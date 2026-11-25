@@ -1,40 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { withCanonPhotoMode, type CanonPhotoModeDriver } from '@vendors/canon/photo-mode'
 import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
 
 describe('Temporary still mode', () => {
-    it.each([false, true])('Canon restores movie mode after capture failure=%s', async failure => {
-        vi.useFakeTimers()
-        let movie = true
-        const camera = {
-            listUnknownPropertyStates: () => [{ code: 0xd1c2, codeHex: '0xd1c2', name: 'FixedMovie', rawValue: movie ? 1 : 0 }],
-            listPropertyStates: () => [{ code: 0xd105, name: 'CanonAutoExposureMode', description: '', access: 'GetSet', value: 0 }],
-            leaveMovieMode: async () => { movie = false },
-            enterMovieMode: async () => { movie = true },
-        } as unknown as CanonPhotoModeDriver
-        try {
-            const capture = vi.fn(async () => { expect(movie).toBe(false); if (failure) throw new Error('Transfer failed'); return 'fresh photo' })
-            const result = withCanonPhotoMode(camera, capture)
-            const check = failure ? expect(result).rejects.toThrow('Transfer failed') : expect(result).resolves.toBe('fresh photo')
-            await vi.runAllTimersAsync()
-            await check
-            expect(movie).toBe(true)
-        } finally { vi.useRealTimers() }
-    })
-    it('Canon refuses shutter when the physical selector overrides the remote request', async () => {
-        vi.useFakeTimers()
-        try {
-            const capture = vi.fn()
-            const camera = {
-                listUnknownPropertyStates: () => [{ code: 0xd1c2, codeHex: '0xd1c2', name: 'FixedMovie', rawValue: 1 }],
-                listPropertyStates: () => [{ code: 0xd105, name: 'CanonAutoExposureMode', description: '', access: 'GetSet', value: 0 }],
-                leaveMovieMode: async () => {}, enterMovieMode: async () => {},
-            } as unknown as CanonPhotoModeDriver
-            const check = expect(withCanonPhotoMode(camera, capture)).rejects.toThrow('retained movie mode')
-            await vi.runAllTimersAsync(); await check
-            expect(capture).not.toHaveBeenCalled()
-        } finally { vi.useRealTimers() }
-    })
     it('Sony restores the exact advertised movie value after failed transfer', async () => {
         vi.useFakeTimers()
         let mode = 'Movie Flexible Exposure'

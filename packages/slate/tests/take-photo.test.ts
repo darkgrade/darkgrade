@@ -14,6 +14,7 @@ import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
+import { canonEvents, canonObjectAdded } from '@tests/fixtures/canon-events'
 import { sonyContentList } from '@tests/fixtures/sony-content-list'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { decodeMediaId, encodeMediaId, type MediaReference } from '@vendors/generic/media-id'
@@ -62,7 +63,7 @@ function objectInfo(camera: Camera, filename: string, size = jpeg.length, associ
 }
 
 /** A DeviceInfo reply exactly as the codec decodes it: GetObjectInfo, GetObject and GetThumb. */
-function deviceInfo(camera: Camera): DeviceInfo {
+function deviceInfo(camera: Camera, eventsSupportedRaw: number[] = []): DeviceInfo {
     const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
@@ -73,7 +74,7 @@ function deviceInfo(camera: Camera): DeviceInfo {
             functionalMode: 0,
             operationsSupportedRaw: [0x1008, 0x1009, 0x100a],
             operationsSupportedDecoded: [],
-            eventsSupportedRaw: [],
+            eventsSupportedRaw,
             eventsSupportedDecoded: [],
             devicePropertiesSupported: [],
             devicePropertiesSupportedDecoded: [],
@@ -155,6 +156,8 @@ function sonyBody() {
         if (property.name !== 'ShutterReleaseButton' || value !== 'DOWN') return
         body.presses++
         if (body.delivers) emit(driver, { code: 0xc201, parameters: [0xffffc001] })
+        // The card index announces the saved file (SDIE_ContentInfoListChanged, slot 1, type 1).
+        if (body.delivers && body.cardIndex === 'lists') emit(driver, { code: 0xc234, parameters: [1, 1] })
     })
     const card = new Map([
         [0x30, olderFile],
@@ -163,7 +166,7 @@ function sonyBody() {
     const send: Send = async (operation, parameters) => {
         switch (operation.name) {
             case 'GetDeviceInfo':
-                return { code: 0x2001, data: deviceInfo(camera) }
+                return { code: 0x2001, data: deviceInfo(camera, body.cardIndex === 'unsupported' ? [] : [0xc234]) }
             case 'SDIO_GetContentInfoList': {
                 if (body.cardIndex === 'unsupported') return { code: 0x2005 }
                 const older = { contentId: 2, createdLocalMs: Date.UTC(2026, 0, 1), files: [{ fileId: 1, path: 'DCIM/100MSDCF/DSC00001.JPG', size: olderFile.length }] }
@@ -219,24 +222,25 @@ function sonyBody() {
     }
 }
 
-/** Canon: RemoteReleaseOn presses, confirmed by a new handle on the card (a card diff). */
+/** Canon: RemoteReleaseOn presses, confirmed by the ObjectAddedEx record GetEvent returns. */
 function canonBody() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
     const driver = protocolSession(camera).driver as CanonCamera
     driver.sessionId = 1
-    const body = { handles: [1], refuses: false, writes: true, presses: 0, focusPresses: [] as string[] }
+    const body = { queued: [] as Uint8Array[], refuses: false, writes: true, presses: 0, focusPresses: [] as string[] }
     vi.spyOn(driver, 'listUnknownPropertyStates').mockReturnValue([])
     vi.spyOn(driver, 'getObject').mockResolvedValue(jpeg)
     const send: Send = async (operation, parameters) => {
         if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera) }
         if (operation.name === 'GetStorageIDs') return { code: 0x2001, data: [CARD_STORAGE] }
-        if (operation.name === 'GetObjectHandles') return { code: 0x2001, data: [...body.handles] }
+        if (operation.name === 'CanonGetEventData')
+            return { code: 0x2001, data: canonEvents(driver.registry, body.queued.splice(0)) }
         if (operation.name === 'CanonRemoteReleaseOn' && parameters.ReleaseMode === 'SHUTTER') {
             body.presses++
             body.focusPresses.push(String(parameters.AFMode))
             // DeviceBusy at an AF full press: the body could not lock focus.
             if (body.refuses) return { code: 0x2019 }
-            if (body.writes) body.handles.push(2)
+            if (body.writes) body.queued.push(canonObjectAdded(2, 'IMG_0002.JPG', jpeg.length, CARD_STORAGE))
         }
         if (operation.name === 'GetObjectInfo') return { code: 0x2001, data: objectInfo(camera, 'IMG_0002.JPG') }
         return { code: 0x2001, parameters: [] }
@@ -439,6 +443,16 @@ describe('takePhoto outcomes around the release', () => {
         expect(presses()).toBe(1)
     })
 
+    it('reads the Sony card index once, after the camera announces the photo, and never lists handles', async () => {
+        const { camera } = sonyBody()
+        const send = vi.mocked(protocolSession(camera).driver.send)
+        const photo = await camera.takePhoto()
+        expect(photo.mediaId).toBeDefined()
+        const names = send.mock.calls.map(([operation]) => operation.name)
+        expect(names.filter(name => name === 'SDIO_GetContentInfoList')).toHaveLength(1)
+        expect(names).not.toContain('GetObjectHandles')
+    })
+
     it('reports a Sony photo its card index never lists as unknown, pressing once', async () => {
         vi.useFakeTimers()
         const { camera, body, presses } = sonyBody()
@@ -447,7 +461,7 @@ describe('takePhoto outcomes around the release', () => {
         await vi.advanceTimersByTimeAsync(15000)
         const unknown = await outcome
         expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
-        expect(unknown.message).toContain('card index did not list it')
+        expect(unknown.message).toContain('did not list the new file in its card index')
         expect(presses()).toBe(1)
     })
 

@@ -87,7 +87,7 @@ interface SonyValue {
  */
 const SONY_AREAS = ['Wide', 'Zone', 'Center', 'Flexible Spot S', 'Flexible Spot M', 'Lock on AF Wide', 'Lock on AF Flexible Spot M']
 
-function sonyCamera(initial: { focusArea?: string; subjectDetection?: string; areas?: string[] } = {}) {
+function sonyCamera(initial: { focusArea?: string; focusMode?: string; subjectDetection?: string; areas?: string[] } = {}) {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
     const driver = protocolSession(camera).driver as SonyCamera
     const registry = driver.registry
@@ -96,7 +96,7 @@ function sonyCamera(initial: { focusArea?: string; subjectDetection?: string; ar
         typeof property.codec === 'function' ? property.codec(registry) : property.codec
     const body = {
         values: new Map<PropertyDefinition, SonyValue>([
-            [properties.FocusMode, { value: 'AF-S', choices: ['Manual', 'AF-S', 'AF-C', 'DMF'] }],
+            [properties.FocusMode, { value: initial.focusMode ?? 'AF-S', choices: ['Manual', 'AF-S', 'AF-C', 'DMF'] }],
             [
                 properties.FocusArea,
                 {
@@ -203,15 +203,17 @@ describe('focus on a simulated Sony body', () => {
 
     it('shows face and eye frames once a session while subject detection is on, from the inventory it read', async () => {
         const { camera, value, properties, writes, inventoryReads } = sonyCamera()
+        // getCapabilities only reads; the operations that show frames turn the display on.
         await camera.getCapabilities()
+        expect(value(properties.FaceEyeFrameDisplay)).toBe('OFF')
+        await camera.autofocus()
         expect(value(properties.FaceEyeFrameDisplay)).toBe('ON')
-        await camera.getCapabilities()
-        // autofocus checks the frames from the last inventory: no read of its own beyond its focus polls.
-        const readsBeforeFirst = inventoryReads.count
+        // Checked from the last inventory: no read of its own beyond the focus polls.
+        const readsBeforeSecond = inventoryReads.count
         await camera.autofocus()
-        const readsOfFirst = inventoryReads.count - readsBeforeFirst
+        const readsOfSecond = inventoryReads.count - readsBeforeSecond
         await camera.autofocus()
-        expect(inventoryReads.count - readsBeforeFirst - readsOfFirst).toBe(readsOfFirst)
+        expect(inventoryReads.count - readsBeforeSecond - readsOfSecond).toBe(readsOfSecond)
         expect(writes.filter(write => write.name === 'FaceEyeFrameDisplay')).toHaveLength(1)
     })
 
@@ -222,6 +224,8 @@ describe('focus on a simulated Sony body', () => {
         expect(value(properties.FaceEyeFrameDisplay)).toBe('OFF')
         expect(await camera.setSubjectDetection('On')).toBe('On')
         await camera.getCapabilities()
+        expect(value(properties.FaceEyeFrameDisplay)).toBe('OFF')
+        await camera.autofocus()
         expect(value(properties.FaceEyeFrameDisplay)).toBe('ON')
     })
 
@@ -307,7 +311,7 @@ describe('focus on a simulated Sony body', () => {
             autofocus: { supported: true },
             setFocusPoint: { supported: true },
             resetFocusPoint: { supported: true },
-            nudgeFocus: { supported: false, reason: expect.stringContaining('Sony') },
+            nudgeFocus: { supported: false, reason: expect.any(String) },
         })
         await expect(camera.nudgeFocus('near', 'small')).rejects.toBeInstanceOf(CameraUnsupportedError)
     })
@@ -323,7 +327,6 @@ describe('focus on a simulated Sony body', () => {
         expect(await camera.setEyeSelection('Left')).toBe('Left')
         expect(await camera.setDetectionSubject('Birds')).toBe('Birds')
         expect(writes).toEqual([
-            { name: 'FaceEyeFrameDisplay', value: 'ON' },
             { name: 'FocusMode', value: 'Manual' },
             { name: 'RightLeftEyeSelect', value: 'Left Eye' },
             { name: 'RecognitionTarget', value: 'Bird' },
@@ -333,11 +336,12 @@ describe('focus on a simulated Sony body', () => {
     })
 
     it('writes the tracking spot this body offers when two Sony values share its name', async () => {
-        const current = sonyCamera({ subjectDetection: 'Off' })
+        const current = sonyCamera({ focusMode: 'AF-C', subjectDetection: 'Off' })
         expect(await current.camera.setFocusArea('Tracking Spot M')).toBe('Tracking Spot M')
         expect(current.wire).toEqual([{ name: 'FocusArea', data: [0x05, 0x02] }])
 
         const older = sonyCamera({
+            focusMode: 'AF-C',
             subjectDetection: 'Off',
             areas: ['Wide', 'Flexible Spot M', 'Tracking Flexible Spot S', 'Tracking Flexible Spot M'],
         })
@@ -345,14 +349,22 @@ describe('focus on a simulated Sony body', () => {
         expect(older.wire).toEqual([{ name: 'FocusArea', data: [0x02, 0x03] }])
 
         // A body offering both Sony values under one name cannot be written by that name.
-        const both = sonyCamera({ subjectDetection: 'Off', areas: ['Wide', 'Lock on AF Flexible Spot M', 'Tracking Flexible Spot M'] })
+        const both = sonyCamera({ focusMode: 'AF-C', subjectDetection: 'Off', areas: ['Wide', 'Lock on AF Flexible Spot M', 'Tracking Flexible Spot M'] })
         await expect(both.camera.setFocusArea('Tracking Spot M')).rejects.toBeInstanceOf(CameraUnsupportedError)
         expect(both.wire).toEqual([])
+    })
+
+    it('refuses a tracking focus area in AF-S before writing anything', async () => {
+        const { camera, writes } = sonyCamera({ subjectDetection: 'Off' })
+        await expect(camera.setFocusArea('Tracking Spot M')).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(writes).toEqual([])
+        expect(await camera.setFocusArea('Spot M')).toBe('Spot M')
     })
 
     it('treats an older Tracking Flexible Spot as a tracking spot of that size, not as a plain area', async () => {
         const { camera, value, properties } = sonyCamera({
             focusArea: 'Tracking Flexible Spot S',
+            focusMode: 'AF-C',
             subjectDetection: 'Off',
             areas: ['Wide', 'Flexible Spot S', 'Flexible Spot M', 'Lock on AF Wide', 'Tracking Flexible Spot S'],
         })
