@@ -1,6 +1,6 @@
 # Vendor parity
 
-✓ Slate implements it for that vendor · ✗ it doesn't · ? not measured. In brackets: what the last real-camera run saw. Measured by camera:api-check: nikon NIKON DSC Z6_3 (2026-11-25 10:20 UTC), sony ILCE-7M5 (2026-11-25 10:20 UTC), canon Canon Digital Camera (2026-11-25 10:20 UTC). Results depend on the body's mode and lens.
+✓ Slate implements it for that vendor · ✗ it doesn't · ? not measured. In brackets: what the last real-camera run saw. Measured by camera:api-check: nikon NIKON DSC Z6_3 (2026-11-25 10:14 UTC), sony ILCE-7M5 (2026-11-25 10:14 UTC), canon Canon Digital Camera (2026-11-25 10:20 UTC). Results depend on the body's mode and lens.
 
 Operations: Sony 18/19, Canon 14/19, Nikon 15/19. Settings: Sony 27/29, Canon 16/29, Nikon 15/29.
 
