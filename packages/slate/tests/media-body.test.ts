@@ -137,10 +137,13 @@ function standardCard(
     const files: CardFile[] = [
         { handle: 0x01, storageId: 0x00010001, name: 'DCIM', bytes: new Uint8Array(), captureDate: '', folder: true },
         { handle: 0x11, storageId: 0x00010001, name: 'IMG_0001.JPG', bytes: jpeg(1), captureDate: '20261124T091500', thumbnail: jpeg(0x51) },
-        { handle: 0x12, storageId: 0x00010001, name: 'IMG_0002.CR3', bytes: Uint8Array.of(1, 2, 3, 4, 5, 6, 7), captureDate: '20261124T091510' },
+        // The newest file, dated by a clock that reset (as the bench Z5 II's did): the handle still says it is newest.
+        { handle: 0x20, storageId: 0x00010001, name: 'IMG_0002.CR3', bytes: Uint8Array.of(1, 2, 3, 4, 5, 6, 7), captureDate: '20250101T000000' },
         { handle: 0x13, storageId: 0x00010001, name: 'MVI_0003.MP4', bytes: Uint8Array.of(9, 9, 9), captureDate: '20261124T091505' },
     ]
     const state = {
+        // The second entry is an empty slot's placeholder.
+        storageIds: [0x00010001, 0x00020000],
         clock: '20260101T000000',
         clockApplies: true,
         clockWritable: true,
@@ -163,8 +166,7 @@ function standardCard(
                     ),
                 }
             case 'GetStorageIDs':
-                // The second entry is an empty slot's placeholder.
-                return { code: 0x2001, data: [0x00010001, 0x00020000] }
+                return { code: 0x2001, data: state.storageIds }
             case 'GetStorageInfo':
                 return { code: 0x2001, data: storageInfo(registry, 32_000_000_000, 1250) }
             case 'GetObjectHandles':
@@ -241,6 +243,7 @@ function sonyCamera() {
         transferModeChanges: [] as string[],
         downloads: [] as number[],
         dateTimeWrites: [] as string[],
+        listQueries: [] as number[],
     }
     const bigClip = 0x1_2345_6789
     const card: CardFile[] = [
@@ -292,11 +295,20 @@ function sonyCamera() {
                     code: 0x2001,
                     data: deviceInfo(driver.registry, { manufacturer: 'Sony Corporation', model: 'ILCE-7M5', firmware: '1.00' }, [], [0x1001]),
                 }
-            case 'SDIO_GetContentInfoList':
+            case 'SDIO_GetContentInfoList': {
                 if (body.listResponse !== 0x2001) return { code: body.listResponse }
                 expect(parameters.Extra1).toBe(1)
-                return { code: 0x2001, data: sonyContentList(1, contents) }
+                // Oldest first, from the creation time asked, at most ContentLimit contents.
+                const since = Number(parameters.CreateTimeLower) + Number(parameters.CreateTimeUpper) * 2 ** 32
+                body.listQueries.push(since)
+                const page = contents
+                    .filter(content => content.createdLocalMs >= since)
+                    .sort((left, right) => left.createdLocalMs - right.createdLocalMs)
+                    .slice(0, Number(parameters.ContentLimit))
+                return { code: 0x2001, data: sonyContentList(1, page) }
+            }
             case 'SDIO_GetContentCompressedData':
+                if (body.transfer) return { code: 0xa106 } // CameraStatusError in content-transfer mode
                 if (body.previewResponse !== 0x2001) return { code: body.previewResponse }
                 return { code: 0x2001, data: jpeg(Number(parameters.Type)) }
             case 'SDIO_SetContentsTransferMode':
@@ -416,11 +428,19 @@ describe('card and media on a simulated generic PTP body', () => {
         ])
     })
 
-    it('lists files newest first without folders, reads each object once per session, and finds them again by id', async () => {
+    it('numbers card slots in the order the camera lists them: a single-slot EOS card is slot 1', async () => {
+        const { camera, state } = genericCamera()
+        state.storageIds = [0x00020001] // The R8 Mark II's only card, in Canon's SD numbering
+        expect((await camera.getCardStatus()).map(card => card.slot)).toEqual([1])
+        state.storageIds = [0x00010000, 0x00020001] // An empty first slot and a card in the second
+        expect((await camera.getCardStatus()).map(card => card.slot)).toEqual([2])
+    })
+
+    it('lists files newest first by the camera numbering, not its clock, without folders, reads each object once per session, and finds them again by id', async () => {
         const { camera, driver } = genericCamera()
         const items = await camera.listMedia()
         expect(items.map(item => [item.name, item.kind, item.capturedAt])).toEqual([
-            ['IMG_0002.CR3', 'photo', '2026-11-24T09:15:10'],
+            ['IMG_0002.CR3', 'photo', '2025-01-01T00:00:00'],
             ['MVI_0003.MP4', 'clip', '2026-11-24T09:15:05'],
             ['IMG_0001.JPG', 'photo', '2026-11-24T09:15:00'],
         ])
@@ -480,6 +500,57 @@ describe('card and media on a simulated generic PTP body', () => {
         emit({ code: 0x4002, parameters: [0x12], transactionId: 0 })
         expect(settings).toHaveBeenCalledOnce()
         expect(media).toHaveBeenCalledOnce()
+    })
+})
+
+describe('clock on an EOS body without the standard DateTime', () => {
+    /** Publishes EOS UTCTime (0xD17C) in its event data; a CanonSetPropValue of it sets the clock. */
+    function eos(options: { publishes?: boolean; response?: number; applies?: boolean } = {}) {
+        const fixture = canonCamera({ clock: false })
+        const { driver } = fixture
+        const clock = { seconds: Date.UTC(2025, 0, 1) / 1000, writes: [] as number[] }
+        const base = vi.mocked(driver.send).getMockImplementation()!
+        vi.mocked(driver.send).mockImplementation((async (operation: OperationDefinition, parameters: Record<string, unknown>, data?: Uint8Array) => {
+            if (operation.name === 'CanonGetEventData')
+                return { code: 0x2001, data: canonEvents(driver.registry, options.publishes === false ? [] : [canonValue(0xd17c, clock.seconds)]) }
+            if (operation.name === 'CanonSetPropValue') {
+                const view = new DataView(data!.buffer, data!.byteOffset, data!.byteLength)
+                expect(view.getUint32(4, true)).toBe(0xd17c)
+                clock.writes.push(view.getUint32(8, true))
+                if (options.response) return { code: options.response }
+                if (options.applies !== false) clock.seconds = view.getUint32(8, true)
+                return { code: 0x2001 }
+            }
+            return base(operation, parameters, data)
+        }) as never)
+        return { ...fixture, clock }
+    }
+
+    it('writes UTCTime once, in seconds since 1970 UTC, and confirms the clock the body publishes', async () => {
+        const { camera, clock } = eos()
+        expect((await camera.getCapabilities()).operations?.setClock).toEqual({ supported: true })
+        const moment = new Date(Date.UTC(2026, 10, 25, 16, 0, 0))
+        await camera.setClock(moment)
+        expect(clock.writes).toEqual([moment.getTime() / 1000])
+    })
+
+    it('is unsupported on a body that publishes no clock, sending nothing', async () => {
+        const { camera, clock } = eos({ publishes: false })
+        expect((await camera.getCapabilities()).operations?.setClock).toMatchObject({ supported: false })
+        await expect(camera.setClock(new Date())).rejects.toBeInstanceOf(CameraUnsupportedError)
+        expect(clock.writes).toEqual([])
+    })
+
+    it('reports a refused write as refused and an unpublished one as unknown, each sent once', async () => {
+        const refused = eos({ response: 0x2005 })
+        await expect(refused.camera.setClock(new Date())).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(refused.clock.writes).toHaveLength(1)
+        vi.useFakeTimers()
+        const ignored = eos({ applies: false })
+        const outcome = ignored.camera.setClock(new Date(Date.UTC(2026, 10, 25))).catch(error => error)
+        await vi.advanceTimersByTimeAsync(5000)
+        expect(await outcome).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(ignored.clock.writes).toHaveLength(1)
     })
 })
 
@@ -592,6 +663,25 @@ describe('a simulated Sony body', () => {
         await expect(camera.getMediaPreview(items[2]!.id)).rejects.toBeInstanceOf(CameraRefusedError)
     })
 
+    it('pages a card index of more than 1000 contents, so the newest file is listed', async () => {
+        const { camera, body, contents } = sonyCamera()
+        const start = Date.UTC(2026, 0, 1)
+        // 2,100 older photos, one a second; two share each second at the page boundary.
+        for (let index = 0; index < 2100; index++)
+            contents.push({
+                contentId: 100 + index,
+                createdLocalMs: start + Math.floor(index / 2) * 1000,
+                files: [{ fileId: 1, path: `DCIM/100MSDCF/DSC${String(index).padStart(5, '0')}.JPG`, size: 10 }],
+            })
+        contents.push({ contentId: 5000, createdLocalMs: Date.UTC(2026, 10, 25), files: [{ fileId: 1, path: 'DCIM/101MSDCF/DSC09999.JPG', size: 11 }] })
+        const items = await camera.listMedia()
+        expect(items[0]?.name).toBe('DSC09999.JPG')
+        expect(new Set(items.map(item => item.id)).size).toBe(items.length)
+        expect(items).toHaveLength(2100 + 3 + 1)
+        expect(body.listQueries.length).toBeGreaterThan(2)
+        expect(body.listQueries[0]).toBe(0)
+    })
+
     it('reports a body without a card index as unsupported and a refusal as refused', async () => {
         const unsupported = sonyCamera()
         unsupported.body.listResponse = 0x2005
@@ -611,6 +701,9 @@ describe('a simulated Sony body', () => {
         const getObject = vi.spyOn(driver, 'getObject').mockResolvedValue(Uint8Array.of(5, 6))
         await camera.downloadMedia(clip.id)
         expect(getObject).toHaveBeenCalledWith(0x22, 0x1_2345_6789, undefined, undefined)
+        // A preview right after a download leaves content-transfer mode first, as the camera needs.
+        expect(await camera.getMediaPreview(photo.id, 'thumbnail')).toEqual(jpeg(1))
+        expect(body.transferModeChanges).toEqual(['ENABLE', 'DISABLE'])
     })
 
     it('reopens once on the live-view frame after a download that left the body in playback', async () => {

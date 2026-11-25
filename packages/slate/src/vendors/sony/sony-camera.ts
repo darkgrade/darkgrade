@@ -110,6 +110,9 @@ const SONY_ZOOM_CONTROL_CODE = 0xd214
 const rangedPropertyNames: ReadonlySet<string> = new Set(['ColorTemperature', 'ZoomSpeed'])
 const SONY_DATE_TIME_RESULT_TIMEOUT_MS = 5_000
 const SONY_CONTENT_LIST_LIMIT = 1000
+/** Each further card-index page starts this far before the newest creation time already read. */
+const SONY_CONTENT_LIST_OVERLAP_MS = 2_000
+const SONY_CONTENT_LIST_MAX_PAGES = 64
 const SONY_CONTENT_LIST_MAX_BYTES = 64 * 1024 * 1024
 const SONY_CONTENT_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
 const SONY_DATE_TIME_RESULTS: Record<number, string> = {
@@ -625,26 +628,48 @@ export class SonyCamera extends GenericCamera {
      * The card's contents as the camera indexes them (Remote Control with Transfer Mode). This
      * does not enter content-transfer mode, so live view keeps running.
      */
+    /**
+     * The card index from `sinceUtcMs` on. The camera answers oldest first, at most `limit` contents
+     * a query (1000 by default), so while a page comes back full the next query starts 2 seconds
+     * before the newest creation time seen and contents are merged by id: an a6700 with over 1000
+     * contents otherwise never showed its newest file (darkgrade01, 2026-11-25).
+     */
     async listContents(
         options: { slot?: 1 | 2; limit?: number; sinceUtcMs?: number } = {}
     ): Promise<SonyContentInfoList> {
-        const since = BigInt(Math.max(0, Math.floor(options.sinceUtcMs ?? 0)))
+        const limit = options.limit ?? SONY_CONTENT_LIST_LIMIT
+        const contents = new Map<number, SonyContentInfoList['contents'][number]>()
+        let sinceUtcMs = Math.max(0, Math.floor(options.sinceUtcMs ?? 0))
+        let list: SonyContentInfoList = { version: 0, listCreatedUtcMs: 0, slot: options.slot ?? 1, contents: [] }
+        for (let page = 0; page < SONY_CONTENT_LIST_MAX_PAGES; page++) {
+            list = await this.readContentPage(options.slot ?? 1, limit, sinceUtcMs)
+            const before = contents.size
+            for (const content of list.contents) contents.set(content.contentId, content)
+            if (list.contents.length < limit || contents.size === before) break
+            const next = Math.max(...list.contents.map(content => content.createdUtcMs)) - SONY_CONTENT_LIST_OVERLAP_MS
+            if (next <= sinceUtcMs) break
+            sinceUtcMs = next
+        }
+        return { ...list, contents: [...contents.values()] }
+    }
+
+    private async readContentPage(slot: 1 | 2, limit: number, sinceUtcMs: number): Promise<SonyContentInfoList> {
+        const since = BigInt(sinceUtcMs)
         const response = await this.send(
             this.registry.operations.SDIO_GetContentInfoList,
             {
                 CreateTimeLower: Number(since & 0xffffffffn),
                 CreateTimeUpper: Number(since >> 32n),
-                ContentLimit: options.limit ?? SONY_CONTENT_LIST_LIMIT,
-                Extra1: options.slot ?? 1,
+                ContentLimit: limit,
+                Extra1: slot,
                 Extra2: 0,
             },
             undefined,
             SONY_CONTENT_LIST_MAX_BYTES
         )
         this.assertOk(response.code, 'Sony content list')
-        if (!(response.data instanceof Uint8Array) || response.data.length === 0) {
-            return { version: 0, listCreatedUtcMs: 0, slot: options.slot ?? 1, contents: [] }
-        }
+        if (!(response.data instanceof Uint8Array) || response.data.length === 0)
+            return { version: 0, listCreatedUtcMs: 0, slot, contents: [] }
         return parseSonyContentInfoList(response.data)
     }
 
@@ -655,6 +680,10 @@ export class SonyCamera extends GenericCamera {
         options: { slot?: 1 | 2; size?: 'thumbnail' | 'screennail' } = {}
     ): Promise<Uint8Array> {
         const slot = options.slot ?? 1
+        // Right after a download the body is still in content-transfer mode and answers previews with
+        // CameraStatusError (0xA106, an a6700 on darkgrade01, 2026-11-25): leave it first. Live view
+        // still returns the body to shooting by itself afterwards.
+        await this.disableContentTransferMode()
         const response = await this.send(
             this.registry.operations.SDIO_GetContentCompressedData,
             {
@@ -1534,11 +1563,17 @@ export class SonyCamera extends GenericCamera {
                 (await afterShutterRelease(() =>
                     watch.find(candidate => candidate.name === info.filename, SONY_CARD_INDEX_TIMEOUT_MS)
                 ))
+            // The host transfer (0xFFFFC001) can be a reduced copy: an a6700 sent 149,462 bytes of a 2,705,530-byte
+            // card JPEG (darkgrade01, 2026-11-25). The computer gets the card file, as on every other vendor.
+            const bytes =
+                item && data && data.length !== item.sizeBytes
+                    ? await afterShutterRelease(async () => (await this.mediaGroup()).downloadMedia(item.id, {}))
+                    : data
             return {
                 ...(item && { mediaId: item.id }),
                 name: info.filename,
                 sizeBytes: item?.sizeBytes ?? info.objectCompressedSize,
-                ...(data && { data }),
+                ...(bytes && { data: bytes }),
             }
         })
     }

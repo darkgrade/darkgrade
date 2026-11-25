@@ -87,6 +87,7 @@ export const cameraOperations: readonly CameraOperationDescription[] = [
                     "focusMode",
                     "focusArea",
                     "subjectDetection",
+                    "continuousAutofocus",
                     "detectionSubject",
                     "eyeSelection",
                     "photoFormat",
@@ -100,8 +101,7 @@ export const cameraOperations: readonly CameraOperationDescription[] = [
                     "frameRate",
                     "audioRecording",
                     "digitalZoom",
-                    "liveViewQuality",
-                    "continuousAutofocus"
+                    "liveViewQuality"
                 ],
                 "required": true,
                 "description": "a setting id, as getCapabilities lists them",
@@ -425,6 +425,11 @@ export const cameraOperations: readonly CameraOperationDescription[] = [
     {
         "name": "getSubjectDetection",
         "summary": "The current subject detection",
+        "parameters": []
+    },
+    {
+        "name": "getContinuousAutofocus",
+        "summary": "The current continuous AF",
         "parameters": []
     },
     {
@@ -1075,6 +1080,23 @@ export const cameraOperations: readonly CameraOperationDescription[] = [
                 ],
                 "required": true,
                 "description": "the new subject detection",
+                "argument": 0
+            }
+        ]
+    },
+    {
+        "name": "setContinuousAutofocus",
+        "summary": "Sets the continuous AF and returns the value read back",
+        "parameters": [
+            {
+                "name": "value",
+                "type": "choice",
+                "choices": [
+                    "Off",
+                    "On"
+                ],
+                "required": true,
+                "description": "the new continuous AF",
                 "argument": 0
             }
         ]

@@ -49,6 +49,7 @@ export type {
     RawCompression,
     ShutterSpeed,
     SubjectDetection,
+    ContinuousAutofocus,
     VideoFormat,
     VideoQuality,
     WhiteBalance,

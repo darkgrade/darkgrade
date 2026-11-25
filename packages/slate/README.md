@@ -40,7 +40,7 @@ The operations are `Camera.discover()`, `connect({ observeOnly })`, `disconnect(
 `startZoom(direction, { speed })`, `stopZoom()`; `takePhoto()`, `getLiveViewFrame({ overlay })`;
 `startRecording()`, `stopRecording()`, `getRecordingState()`; `getCardStatus()`, `listMedia()`,
 `getMediaPreview(id, size)`, `downloadMedia(id)`; `getBattery()`, `setClock()`; and
-`on`/`off('settingsChanged' | 'mediaAdded')`. Each of the 29 settings has a typed getter and
+`on`/`off('settingsChanged' | 'mediaAdded')`. Each of the 30 settings has a typed getter and
 setter (`getIso()`/`setIso()`, `setPhotoVideoMode()`, `setFocusArea()`, `setVideoQuality()` …).
 `getCapabilities().operations` says which operations the attached camera can do now, and why
 not; `controls` lists each setting's current value and the choices this camera offers.

@@ -378,12 +378,16 @@ export class NikonCamera extends GenericCamera {
             await this.pollEvents()
             cardHandles.length = 0
             this.announcedSdramObjects = []
-            if (!memory && options.autofocus !== false) {
+            const recInMedia = (await this.deviceInformation()).operationsSupportedRaw.includes(0x9207)
+            // A Z5 II answers the standard InitiateCapture with GeneralError (darkgrade01, 2026-11-25), so a
+            // body with InitiateCaptureRecInMedia focuses through it (AfMode 0xFFFFFFFE), which reports a
+            // failed focus as OutOfFocus without releasing. Older bodies keep the standard command.
+            if (!memory && options.autofocus !== false && !recInMedia) {
                 releaseSent = true
                 const response = await this.send(this.registry.operations.InitiateCapture, {})
                 return this.assertReleaseAccepted(response.code, 'InitiateCapture')
             }
-            if (!(await this.deviceInformation()).operationsSupportedRaw.includes(0x9207))
+            if (!recInMedia)
                 throw new CameraUnsupportedError('takePhoto', 'Nikon does not advertise the requested capture mode; no shutter command sent')
             // Z6III command reference rev 2, 6.2.4.1: normal release, save to card.
             releaseSent = true
@@ -458,6 +462,8 @@ export class NikonCamera extends GenericCamera {
 
     /** A refused release took nothing: report the camera's answer as a refusal, not an unknown outcome. */
     private assertReleaseAccepted(code: number, operation: string): void {
+        if (code === OutOfFocus.code)
+            throw new CameraRefusedError('takePhoto', 'The camera could not focus, so no photo was taken (Nikon OutOfFocus)')
         if (code !== OK.code) throw shutterRefused(nikonResponseError(code, operation))
     }
 

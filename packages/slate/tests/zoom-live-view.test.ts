@@ -565,7 +565,7 @@ describe('Sony zoom', () => {
 })
 
 describe('zoom on bodies without a zoom command', () => {
-    it('reports zoom unsupported, sends nothing, and still allows stopZoom', async () => {
+    it('reports zoom unsupported, stopZoom included, and sends nothing', async () => {
         for (const { camera, sent } of [canonBody(), nikonBody(), standardBody()]) {
             const operations = (await camera.getCapabilities()).operations
             expect(operations?.startZoom).toMatchObject({ supported: false })
@@ -575,7 +575,8 @@ describe('zoom on bodies without a zoom command', () => {
                 CameraUnsupportedError
             )
             expect(await camera.zoomTo(35).catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
-            await expect(camera.stopZoom()).resolves.toBeUndefined()
+            expect(operations?.stopZoom).toMatchObject({ supported: false })
+            expect(await camera.stopZoom().catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
             expect(sent).toHaveLength(before)
         }
     })

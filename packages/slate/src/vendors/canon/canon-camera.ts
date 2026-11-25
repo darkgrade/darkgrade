@@ -31,6 +31,7 @@ import { canonLiveViewPosition, type CanonLiveViewFrame, type CanonLiveViewPosit
 import { CANON_PROPERTY_NAMES } from '@vendors/canon/definitions/canon-property-names'
 import { canonControlProperties } from '@vendors/control-properties'
 import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
+import { standardClockUnavailable } from '@vendors/generic/standard-clock'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@vendors/generic/generic-camera'
 import {
     cardObjectFile,
@@ -58,6 +59,7 @@ const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
 /** EDSDK shutter result for a half-press whose autofocus failed (EDSDKErrors.h TAKE_PICTURE_AF_NG). */
 const CANON_RELEASE_RESULT_FOCUS_FAILED = 1
 const CANON_DEVICE_BUSY = 0x2019
+const canonClockUnpublished = 'This camera does not publish its clock (EOS UTCTime) over USB'
 const CANON_FOCUS_DURATION_MILLISECONDS = 800
 /** FixedMovie: 1 while the body is in movie mode (libgphoto2 PTP_DPC_CANON_EOS_FixedMovie). */
 const FIXED_MOVIE = 0xd1c2
@@ -358,21 +360,7 @@ export class CanonCamera extends GenericCamera {
             const verifyReadback =
                 this.propertyCache.get(property)?.current !== undefined &&
                 property.code !== this.registry.properties.CanonRecordStatus.code
-            const data = new Uint8Array(Math.max(12, 8 + encodedValue.length))
-            data.set(this.registry.codecs.uint32.encode(data.length), 0)
-            data.set(this.registry.codecs.uint32.encode(property.code), 4)
-            data.set(encodedValue, 8)
-
-            for (let attempt = 1; ; attempt++) {
-                try {
-                    const response = await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
-                    this.assertResponseOk(response.code, `${property.name} write`)
-                    break
-                } catch (error) {
-                    if ((error as { code?: number }).code !== CANON_DEVICE_BUSY || attempt >= 5) throw error
-                    await wait(100)
-                }
-            }
+            await this.sendPropertyValue(property, encodedValue)
             await wait(100)
 
             const deadline = Date.now() + 2000
@@ -388,6 +376,60 @@ export class CanonCamera extends GenericCamera {
                 property.name,
                 `Canon ${property.name} did not publish the requested value within 2 seconds`
             )
+        })
+    }
+
+    /** One CanonSetPropValue; DeviceBusy means nothing was applied, so only that is sent again, briefly. */
+    private async sendPropertyValue(property: PropertyDefinition, encodedValue: Uint8Array): Promise<void> {
+        const data = new Uint8Array(Math.max(12, 8 + encodedValue.length))
+        data.set(this.registry.codecs.uint32.encode(data.length), 0)
+        data.set(this.registry.codecs.uint32.encode(property.code), 4)
+        data.set(encodedValue, 8)
+        for (let attempt = 1; ; attempt++) {
+            try {
+                const response = await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
+                this.assertResponseOk(response.code, `${property.name} write`)
+                return
+            } catch (error) {
+                if ((error as { code?: number }).code !== CANON_DEVICE_BUSY || attempt >= 5) throw error
+                await wait(100)
+            }
+        }
+    }
+
+    /**
+     * The standard DateTime where the body advertises it; otherwise EOS UTCTime (0xD17C, seconds since
+     * 1970, UTC), which libgphoto2 writes for
+     * "datetimeutc" (camlibs/ptp2/config.c `_put_UINT32_as_time`, 6d5c61ef). Only a body that publishes
+     * UTCTime is tried; the write is sent once and confirmed from the clock it publishes next, which keeps
+     * ticking. Not yet run on hardware (the R8 Mark II publishes 0xD113, 0xD17C and 0xD17D): a bench
+     * safe-probe of UTCTime must confirm it before Canon clock support is claimed.
+     */
+    override async setClock(moment: Date): Promise<void> {
+        if (!(await standardClockUnavailable(this))) return super.setClock(moment)
+        const property = this.registry.properties.CanonUtcTime
+        await this.withoutPolling(() => this.refreshEventProperties())
+        if (this.propertyCache.get(property)?.current === undefined)
+            throw new CameraUnsupportedError('setClock', canonClockUnpublished)
+        const seconds = Math.floor(moment.getTime() / 1000)
+        if (!Number.isSafeInteger(seconds) || seconds < 0 || seconds > 0xffffffff)
+            throw new CameraRefusedError('setClock', 'Canon keeps its clock in seconds from 1970 to 2106')
+        await this.withoutPolling(async () => {
+            const startedAt = Date.now()
+            try {
+                await this.sendPropertyValue(property, this.registry.codecs.uint32.encode(seconds))
+            } catch (error) {
+                throw new CameraRefusedError('setClock', `The camera refused the new date and time: ${error instanceof Error ? error.message : String(error)}`)
+            }
+            const deadline = Date.now() + 2000
+            do {
+                await this.readEvents('clock readback')
+                const shown = Number(this.propertyCache.get(property)?.current)
+                const elapsedSeconds = (Date.now() - startedAt) / 1000
+                if (shown >= seconds - 1 && shown <= seconds + 2 + elapsedSeconds) return
+                await wait(50)
+            } while (Date.now() < deadline)
+            throw new CameraOutcomeUnknownError('setClock', 'The camera accepted the date and time but did not publish its new clock')
         })
     }
 
@@ -1467,6 +1509,8 @@ export class CanonCamera extends GenericCamera {
         capabilities: CameraCapabilities
     ): Promise<OperationAvailability | undefined> {
         const operations = this.registry.operations
+        if (operation === 'setClock' && this.propertyCache.get(this.registry.properties.CanonUtcTime)?.current !== undefined)
+            return supported
         if (operation === 'setFocusPoint' || operation === 'resetFocusPoint')
             return operationsAdvertised(capabilities, [operations.CanonGetViewfinderData, operations.CanonViewfinderPosition])
         if (operation === 'autofocus') {

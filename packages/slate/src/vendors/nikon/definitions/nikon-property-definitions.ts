@@ -53,6 +53,24 @@ export const NIKON_AF_AREA_VALUES = [
 ] as const satisfies readonly EnumValue<number>[]
 export const FocusMeteringMode = enumProperty('FocusMeteringMode', 0x501c, 'uint16', 'Nikon AF-area mode', NIKON_AF_AREA_VALUES)
 
+/**
+ * The standard FlashMode with the two Nikon values a bench Z5 II offered in M (darkgrade01, 2026-11-25:
+ * Off, red-eye, 0x8010 as its current value and 0x8012). A Z body's flash modes in M are front-curtain
+ * (fill), red-eye, rear-curtain and off, front-curtain being the factory setting, so 0x8010 is Fill and
+ * 0x8012 Rear sync (libgphoto2 `flash_mode` names 0x8012 "Rear Curtain Sync + Slow Sync" too; it calls
+ * 0x8010 "Auto", which no Z flash mode is). 0x8011 and 0x8013 (slow-sync variants) stay unrecognized.
+ */
+export const FlashMode = enumProperty('FlashMode', 0x500c, 'uint16', 'Flash mode, with Nikon sync modes', [
+    { value: 0x0001, name: 'Auto', description: 'Auto flash' },
+    { value: 0x0002, name: 'Off', description: 'Flash off' },
+    // Nikon's fill flash is 0x8010, so the standard 0x0003 is left out: one wire value per name.
+    { value: 0x0004, name: 'Red-eye auto', description: 'Red-eye reduction, auto' },
+    { value: 0x0005, name: 'Red-eye fill', description: 'Red-eye reduction, fill' },
+    { value: 0x0006, name: 'External sync', description: 'External sync' },
+    { value: 0x8010, name: 'Fill', description: 'Front-curtain sync (Nikon)' },
+    { value: 0x8012, name: 'Rear sync', description: 'Rear-curtain sync (Nikon)' },
+])
+
 /** A UINT8 GetSet property naming its values 0 and 1; decoded names stay plain strings. */
 const twoStateProperty = <const Code extends number, const Name extends string>(
     code: Code,
@@ -129,6 +147,7 @@ export const nikonPropertyRegistry = {
     NikonWarningStatus,
     FocusMode,
     FocusMeteringMode,
+    FlashMode,
     LiveViewStatus,
     LiveViewSelector,
     MovieRecProhibitionCondition,

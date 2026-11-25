@@ -440,7 +440,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
     // rather than reading every unrelated descriptor before each write. No cached admission.
     const observation = await observeControls(driver, id)
     const state = observation.capabilities.controls[id]
-    if (!state?.enabled || !state.writable)
+    if (!state) throw new CameraUnsupportedError(id, `${id} is not available on this camera`)
+    if (!state.enabled || !state.writable)
         throw new CameraUnsupportedError(id, `${id} is not writable in the current camera mode`)
     let requested: string
     if (id === 'shutterSpeed') {

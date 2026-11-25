@@ -323,6 +323,14 @@ describe('colour temperature in kelvin', () => {
         expect(await camera.setColorTemperature(kelvin)).toBe(kelvin)
         expect(await camera.setColorTemperature(123456).catch(error => error)).toBeInstanceOf(CameraRefusedError)
     })
+
+    it('says colour temperature does not apply when the camera reports it disabled (a Sony in Daylight)', async () => {
+        const { camera, body } = sonyCamera()
+        Object.assign(body.properties.get(sonyCodes.colorTemperature)!, { current: 0, enabled: false })
+        const outcome = await camera.getColorTemperature().catch(error => error)
+        expect(outcome).toBeInstanceOf(CameraUnsupportedError)
+        expect(outcome.message).toContain('does not apply with the current white balance')
+    })
 })
 
 describe('look (picture style) and picture profile', () => {

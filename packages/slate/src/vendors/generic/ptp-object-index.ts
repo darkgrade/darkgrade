@@ -3,6 +3,7 @@ import type { MediaItem } from '@camera/driver'
 import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { cardSlotNumbers } from '@vendors/generic/media-id'
 import { GetDeviceInfo, GetObjectHandles, GetObjectInfo, GetStorageIDs, GetThumb } from '@ptp/definitions/operation-definitions'
 import { OK } from '@ptp/definitions/response-definitions'
 import { encodeMediaId, mediaKind, ptpDateToIso, type ObjectMediaReference } from '@vendors/generic/media-id'
@@ -46,6 +47,8 @@ export async function reportingRefusals<Result>(operation: string, work: () => P
 export class PtpObjectIndex {
     private sessionId: number | null = null
     private objects = new Map<number, IndexedObject | null>()
+    /** Each storage's card slot, from the last GetStorageIDs. */
+    private slots = new Map<number, number>()
     private thumbnailsAdvertised?: boolean
 
     constructor(private readonly driver: ObjectDriver) {}
@@ -73,6 +76,7 @@ export class PtpObjectIndex {
         const response = await this.driver.send(GetStorageIDs, {})
         if (response.code !== OK.code || !Array.isArray(response.data))
             throw refused(operation, 'to list its cards', response.code)
+        this.slots = cardSlotNumbers(response.data)
         return response.data.filter(storageId => (storageId & 0xffff) !== 0)
     }
 
@@ -141,7 +145,7 @@ export class PtpObjectIndex {
             id: encodeMediaId({ source: 'object', storageId, objectHandle, name, ...(sizeBytes !== undefined && { sizeBytes }) }),
             name,
             kind,
-            slot: storageId >>> 16,
+            slot: this.slots.get(storageId) ?? storageId >>> 16,
             ...(sizeBytes !== undefined && { sizeBytes }),
             ...(capturedAt && { capturedAt }),
             ...(info.imagePixWidth > 0 && info.imagePixHeight > 0 && { widthPixels: info.imagePixWidth, heightPixels: info.imagePixHeight }),

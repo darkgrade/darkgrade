@@ -115,6 +115,14 @@ StartLiveView and the clearing release with HardwareError while WarningStatus st
 ready yet", a refusal, never retried. FNumber 0 then is no aperture. 0xD061 value 5 is AF-A. Shutter
 choices are named in Slate's spelling on every vendor; a write sends the camera's own choice. ISO BMFF
 atoms of size 0 and 1 are legal (R8 Mark II MP4s). A name table's missing word is unrecognized, not a choice.
+The full sweep the same day: the Sony card index answers oldest first, at most 1000 contents a
+query, so it is paged (2 s overlap, merged by content id); newest-first follows the camera's own
+numbering (handle, content id), never its clock (a Z5 II's had reset to 2025); a Sony computer photo
+is the card file, not the reduced 0xFFFFC001 host copy; a Z5 II answers the standard InitiateCapture
+with GeneralError, so a Nikon with 0x9207 focuses through it (OutOfFocus is a refusal); card slots
+are numbered in GetStorageIDs order (Canon's SD is 0x0002 on a one-slot R8 Mark II). EOS setClock
+writes UTCTime 0xD17C as libgphoto2 does; it has not run on hardware yet, so safe-probe it on the
+bench before claiming Canon clock support.
 
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
 existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;

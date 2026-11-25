@@ -1,4 +1,4 @@
-import type { CameraCapabilities } from '@darkgrade/slate'
+import { CameraUnsupportedError, type CameraCapabilities } from '@darkgrade/slate'
 import type { CameraService } from '@main/camera-service'
 
 /** The camera service's zoom and the lens readout. Installed on CameraService in camera-service.ts. */
@@ -41,7 +41,13 @@ export const zoomOperations: ZoomOperations & ThisType<CameraService> = {
         this.zoomReleases++
         const camera = this.camera
         if (!camera || !this.connected) return
-        await camera.stopZoom()
+        try {
+            await camera.stopZoom()
+        } catch (error) {
+            // A camera without zoom has nothing to stop.
+            if (error instanceof CameraUnsupportedError) return
+            throw error
+        }
         this.scheduleSettingsRefresh()
     },
 }

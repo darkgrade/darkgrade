@@ -114,6 +114,8 @@ export const sonyEventRegistry = {
     SDIE_ContentInfoListChanged: sonyEvent(0xc234, 'SDIE_ContentInfoListChanged', 'Notify that the ContentInfo List is changed', [
         { name: 'Slot Info', description: 'Slot information', codec: baseCodecs.uint32 },
         { name: 'Event Type', description: 'Event type', codec: baseCodecs.uint32 },
+        // The a6700 sends a third parameter (darkgrade01 trace, 2026-11-25).
+        { name: 'Reserve', description: 'Reserved parameter', codec: baseCodecs.uint32 },
     ]),
     SDIE_ControlPTZFResultOld: sonyEvent(0xc235, 'SDIE_ControlPTZFResultOld', 'Notify the ControlPTZF result (older version)', []),
     SDIE_PresetPTZFEventOld: sonyEvent(0xc237, 'SDIE_PresetPTZFEventOld', 'Notify the PresetPTZF Event (older version)', []),

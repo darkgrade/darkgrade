@@ -328,6 +328,8 @@ export const CanonPictureStyle = enumProperty(0xd110, 'CanonPictureStyle', 'Cano
 ])
 
 export const CanonAutoPowerOff = uint16Property(0xd114, 'CanonAutoPowerOff', 'Canon Auto Power Off')
+/** EOS UTCTime: the clock in seconds since 1970, UTC (libgphoto2 PTP_DPC_CANON_EOS_UTCTime, "datetimeutc"). */
+export const CanonUtcTime = uint32Property(0xd17c, 'CanonUtcTime', 'Canon clock, seconds since 1970 UTC')
 export const CanonModelId = uint32Property(0xd116, 'CanonModelId', 'Canon Model ID', 'Get')
 export const CanonAvailableShots = uint16Property(0xd11b, 'CanonAvailableShots', 'Canon Available Shots', 'Get')
 
@@ -441,6 +443,7 @@ export const canonPropertyRegistry = {
     CanonColorSpace,
     CanonPictureStyle,
     CanonAutoPowerOff,
+    CanonUtcTime,
     CanonModelId,
     CanonAvailableShots,
     CanonImageFormat,

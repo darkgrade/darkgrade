@@ -158,7 +158,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         fixture.properties.get(0x1d074)!.value = 2
         fixture.state.disappear = true
         expect((await fixture.camera.getCapabilities()).controls.shutterSpeed).toBeUndefined()
-        await expect(fixture.camera.setShutterSpeed('180°')).rejects.toThrow('not writable')
+        await expect(fixture.camera.setShutterSpeed('180°')).rejects.toThrow('shutterSpeed is not available on this camera')
         fixture.state.disappear = false
         fixture.properties.get(0x1d075)!.writable = false
         await expect(fixture.camera.setShutterSpeed('90°')).rejects.toThrow('not writable')
@@ -385,7 +385,11 @@ describe('photo controls in Slate\'s spelling on every vendor', () => {
         add(0xd100, 6, 0x000d000a, [0x000a0019, 0x000d000a, 0x0001007d, 0xffffffff]) // 10/25, 13/10, 1/125, Bulb
         add(0xd061, 2, 5, [0, 1, 4, 5, 7]) // 5 is AF-A on the Z5 II; 7 has no name
         add(0x5007, 4, 0, [0]) // FNumber right after power-on
+        add(0x500c, 4, 0x8010, [0x0002, 0x0004, 0x8010, 0x8012]) // The Z5 II's flash modes in M
         const { controls } = await fixture.camera.getCapabilities()
+        expect(controls.flashMode).toMatchObject({ value: 'Fill', allowedValues: ['Off', 'Red-eye auto', 'Fill', 'Rear sync'], writable: true })
+        expect(await fixture.camera.setFlashMode('Rear sync')).toBe('Rear sync')
+        expect(properties.get(0x500c)!.value).toBe(0x8012)
         expect(controls.shutterSpeed).toMatchObject({ value: '1.3"', allowedValues: ['0.4"', '1.3"', '1/125', 'Bulb'], writable: true })
         expect(controls.focusMode).toMatchObject({ value: 'AF-A', allowedValues: ['AF-S', 'AF-C', 'MF', 'AF-A'] })
         expect(controls.focusMode?.unrecognized).toEqual({ choices: ['Unknown focus (7)'] })

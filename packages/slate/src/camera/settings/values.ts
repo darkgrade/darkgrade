@@ -201,6 +201,8 @@ export type FocusMode = NamedControlValue<'focusMode'>
 export type FocusArea = NamedControlValue<'focusArea'>
 /** Whether the camera looks for faces, eyes and other subjects to focus on. */
 export type SubjectDetection = NamedControlValue<'subjectDetection'>
+/** Whether the camera keeps focusing before a half-press (Canon Continuous AF): On or Off. */
+export type ContinuousAutofocus = NamedControlValue<'continuousAutofocus'>
 /** What subject detection looks for: People, Animals, Birds, ... */
 export type DetectionSubject = NamedControlValue<'detectionSubject'>
 /** Which eye subject detection focuses on: Auto, Right or Left. */

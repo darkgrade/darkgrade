@@ -693,6 +693,9 @@ describe('focus on a simulated Canon body', () => {
         expect(writes).toEqual([{ code: properties.CanonFocusMode.code, value: 1 }])
         await expect(camera.setFocusMode('AF-A')).rejects.toBeInstanceOf(CameraRefusedError)
         expect(writes).toHaveLength(1)
+        expect(await camera.getContinuousAutofocus()).toBe('Off')
+        expect(await camera.setContinuousAutofocus('On')).toBe('On')
+        expect(writes.at(-1)).toEqual({ code: properties.CanonContinuousAutofocus.code, value: 1 })
     })
 
     it('folds Movie Servo AF into the focus mode in video mode, unless the lens is at MF', async () => {

@@ -231,10 +231,12 @@ export class Camera {
         await supported(this, 'startZoom').startZoom(direction, options)
     }
 
-    /** Stops zooming. Always allowed: it never waits behind another operation, and resolves on a camera without zoom. */
+    /**
+     * Stops zooming. Always allowed: it never waits behind another operation. On a camera without
+     * zoom it is CameraUnsupportedError, as getCapabilities says, and sends nothing.
+     */
     async stopZoom(): Promise<void> {
-        const driver: CameraDriver = cameraContext(this).driver
-        await driver.stopZoom?.()
+        await supported(this, 'stopZoom').stopZoom()
     }
 
     // ------------------------------------------------------------------------------------ Photo

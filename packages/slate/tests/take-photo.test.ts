@@ -171,7 +171,8 @@ function sonyBody() {
         reference: { source: 'sony-content', slot: 1, contentId: 7, fileId: 2, name: 'DSC00001.JPG', sizeBytes: cardFile.length },
         sizeBytes: cardFile.length,
         card: cardFile,
-        computer: hostCopy,
+        // The host transfer is a reduced copy; the computer gets the card file.
+        computer: cardFile,
     }
     return {
         camera,
@@ -239,8 +240,11 @@ function canonBody() {
     }
 }
 
-/** Nikon: InitiateCapture, then ObjectAdded queued for GetEventEx once the file is on the card. */
-function nikonBody() {
+/**
+ * Nikon: InitiateCapture (or, with `recInMedia`, InitiateCaptureRecInMedia 0x9207 and its AfMode),
+ * then ObjectAdded queued for GetEventEx once the file is on the card.
+ */
+function nikonBody(options: { recInMedia?: boolean } = {}) {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
     const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
@@ -250,6 +254,8 @@ function nikonBody() {
         writes: [[0x00010100, 0x00010101]] as number[][],
         refuses: false,
         presses: 0,
+        outOfFocus: false,
+        afModes: [] as number[],
     }
     const names = new Map([
         [0x00010101, 'DSC_0001.JPG'],
@@ -261,8 +267,21 @@ function nikonBody() {
     vi.spyOn(driver, 'getObject').mockResolvedValue(jpeg)
     let pending: number[][] = []
     const send: Send = async (operation, parameters) => {
-        if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera) }
+        if (operation.name === 'GetDeviceInfo')
+            return {
+                code: 0x2001,
+                data: encodedDeviceInfo(camera, {
+                    operationsSupportedRaw: [0x1008, 0x1009, 0x100a, ...(options.recInMedia ? [0x9207] : [])],
+                }),
+            }
+        if (operation.name === 'InitiateCaptureRecInMedia') {
+            body.presses++
+            body.afModes.push(Number(parameters.AfMode))
+            if (body.outOfFocus) return { code: 0xa002 }
+            pending = body.writes.map(poll => [...poll])
+        }
         if (operation.name === 'InitiateCapture') {
+            if (options.recInMedia) return { code: 0x2002 } // The bench Z5 II
             body.presses++
             if (body.refuses) return { code: 0x2019 }
             pending = body.writes.map(poll => [...poll])
@@ -486,6 +505,17 @@ describe('takePhoto outcomes around the release', () => {
         const photo = await camera.takePhoto()
         expect(photo.name).toBe('DSC_0001.JPG')
         expect(decodeMediaId('downloadMedia', photo.mediaId!)).toMatchObject({ objectHandle: 0x00010101 })
+    })
+
+    it('focuses through InitiateCaptureRecInMedia where the Nikon has it, and refuses when it cannot focus', async () => {
+        const { camera, body } = nikonBody({ recInMedia: true })
+        expect((await camera.takePhoto()).name).toBe('DSC_0001.JPG')
+        expect(body.afModes).toEqual([0xfffffffe])
+        body.outOfFocus = true
+        const refused = await camera.takePhoto().catch(error => error)
+        expect(refused).toBeInstanceOf(CameraRefusedError)
+        expect(refused.message).toContain('could not focus')
+        expect(body.presses).toBe(2)
     })
 
     it('takes the Nikon RAW once no JPEG follows it within the pair grace', async () => {

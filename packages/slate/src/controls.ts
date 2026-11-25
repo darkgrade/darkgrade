@@ -30,6 +30,7 @@ export {
     type PictureStyle,
     type ShutterSpeed,
     type SubjectDetection,
+    type ContinuousAutofocus,
     type WhiteBalance,
 } from '@camera/settings/values'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'

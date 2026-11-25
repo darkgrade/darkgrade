@@ -16,6 +16,7 @@ import {
     type AspectRatio,
     type AudioRecording,
     type ColorTemperature,
+    type ContinuousAutofocus,
     type DetectionSubject,
     type DigitalZoom,
     type DriveMode,
@@ -78,6 +79,7 @@ export interface TypedSettingTypes {
     focusMode: SettingTypes<FocusMode>
     focusArea: SettingTypes<FocusArea>
     subjectDetection: SettingTypes<SubjectDetection>
+    continuousAutofocus: SettingTypes<ContinuousAutofocus>
     detectionSubject: SettingTypes<DetectionSubject>
     eyeSelection: SettingTypes<EyeSelection>
     photoFormat: SettingTypes<PhotoFormat>
@@ -172,6 +174,12 @@ export const typedSettingReaders: { [Id in TypedSettingId]: SettingReader<Settin
     driveMode: settingReader<DriveMode>(),
     whiteBalance: settingReader<WhiteBalance>(),
     colorTemperature: state => {
+        // An a6700 in Daylight reports ColorTemperature disabled at 0: the setting does not apply now.
+        if (state.enabled === false)
+            throw new CameraUnsupportedError(
+                'colorTemperature',
+                'Colour temperature does not apply with the current white balance; choose Color Temperature first'
+            )
         const kelvin = Number(state.value)
         const unreadable = `Colour temperature: the camera reports a value Slate cannot read (${state.value})`
         if (state.unrecognized?.value !== undefined || !Number.isFinite(kelvin) || kelvin <= 0)
@@ -183,6 +191,7 @@ export const typedSettingReaders: { [Id in TypedSettingId]: SettingReader<Settin
     focusMode: enumeratedSettingReader<FocusMode>(namedControlValues('focusMode')),
     focusArea: enumeratedSettingReader<FocusArea>(namedControlValues('focusArea')),
     subjectDetection: enumeratedSettingReader<SubjectDetection>(namedControlValues('subjectDetection')),
+    continuousAutofocus: enumeratedSettingReader<ContinuousAutofocus>(namedControlValues('continuousAutofocus')),
     detectionSubject: enumeratedSettingReader<DetectionSubject>(namedControlValues('detectionSubject')),
     eyeSelection: enumeratedSettingReader<EyeSelection>(namedControlValues('eyeSelection')),
     photoFormat: settingReader<PhotoFormat>(),

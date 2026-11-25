@@ -24,7 +24,7 @@ function objectReference(operation: string, id: string): ObjectMediaReference {
 export async function readStorageCardStatus(owner: Camera): Promise<CardStatus[]> {
     const storages = await readCameraStorages(owner)
     return storages.map((storage): CardStatus => ({
-        slot: storage.storageId >>> 16,
+        slot: storage.slot,
         state: 'ready',
         writable: storage.writable,
         ...(storage.capacityBytes > 0 && { capacityBytes: storage.capacityBytes, freeBytes: storage.freeBytes }),

@@ -3,6 +3,7 @@ import { protocolAccess } from '@camera/protocol-session'
 import {nikonCanRecordToStorage} from '@vendors/nikon/card-storage'
 import {PTPDecodeError, PTPResponseError} from '@core/ptp-errors'
 import {sonyStorageRecordingCapability} from '@vendors/sony/card-storage'
+import { cardSlotNumbers } from '@vendors/generic/media-id'
 
 /** Read current card capacity and camera recording capability, independently of host upload access. */
 export async function readCameraStorages(camera: any) {
@@ -11,6 +12,7 @@ export async function readCameraStorages(camera: any) {
     const response = await protocolAccess(camera).send(operations.GetStorageIDs, {})
     if (response.code !== 0x2001) throw new PTPResponseError(response.code, 'Camera storage could not be read (GetStorageIDs: 0x' + response.code.toString(16) + ')')
     const summaries = []
+    const slots = cardSlotNumbers((response.data || []).map(Number))
     for (const storageId of response.data || []) {
         if ((Number(storageId) & 0xffff) === 0) continue
         const storage = await protocolAccess(camera).send(operations.GetStorageInfo, {StorageID: storageId})
@@ -23,6 +25,7 @@ export async function readCameraStorages(camera: any) {
             ? await nikonCanRecordToStorage(camera, access) : sony ? sony.recordingReady : access === 0
         summaries.push({
             storageId: Number(storageId),
+            slot: slots.get(Number(storageId)) ?? Number(storageId) >>> 16,
             description: String(info.storageDescription ?? info.StorageDescription ?? ''),
             volumeLabel: String(info.volumeLabel ?? info.VolumeLabel ?? ''),
             capacityBytes: Number(info.maxCapacity ?? info.MaxCapacity ?? 0),

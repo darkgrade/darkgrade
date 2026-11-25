@@ -97,10 +97,25 @@ export function ptpDateToIso(value: string | undefined): string | undefined {
     return `${year}-${month}-${day}T${hour}:${minute}:${second}`
 }
 
-/** Newest first: capture time, then the camera's own numbering, newest highest. */
+/**
+ * Newest first by the camera's own numbering (object handle, Sony content id), which grows with each
+ * new file whatever the camera's clock says: a Z5 II whose clock reset to 2025-01-01 dated its new
+ * photos before older ones (darkgrade01, 2026-11-25). Capture time only breaks a tie.
+ */
 export function newestFirst<Item extends { capturedAt?: string }>(items: Item[], order: (item: Item) => number): Item[] {
     return [...items].sort((left, right) => {
-        const byTime = (right.capturedAt ?? '').localeCompare(left.capturedAt ?? '')
-        return byTime !== 0 ? byTime : order(right) - order(left)
+        const byNumber = order(right) - order(left)
+        return byNumber !== 0 ? byNumber : (right.capturedAt ?? '').localeCompare(left.capturedAt ?? '')
     })
+}
+
+/**
+ * The card slot each storage is in, numbered from 1 in the order of the slots GetStorageIDs lists
+ * (empty slots too, as their low-word-zero placeholders). A storage id's high word is not the slot:
+ * Canon numbers its SD slot 2 whether or not the body has another (the single-slot R8 Mark II
+ * reports 0x00020001, darkgrade01, 2026-11-25).
+ */
+export function cardSlotNumbers(storageIds: readonly number[]): Map<number, number> {
+    const slots = [...new Set(storageIds.map(storageId => storageId >>> 16))].sort((left, right) => left - right)
+    return new Map(storageIds.map(storageId => [storageId, slots.indexOf(storageId >>> 16) + 1]))
 }
