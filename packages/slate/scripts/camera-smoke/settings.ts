@@ -20,7 +20,7 @@ const groups = [
 
 export const settingsSmoke: SmokeArea = {
     name: 'settings',
-    description: 'getCapabilities and the typed settings (shutterSpeed so far), restoring each value',
+    description: 'getCapabilities and the typed settings, restoring each value',
     async run(camera, report) {
         const capabilities = await camera.getCapabilities()
         report.confirmed('getCapabilities', {

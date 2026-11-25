@@ -69,11 +69,17 @@ const currentIso = await camera.getIso()
 const currentShutter = await camera.getShutterSpeed()
 const currentAperture = await camera.getAperture()
 
-// Set new values
-await camera.setIso('1600')
+// Set new values; each resolves to the value the camera read back
+await camera.setExposureMode('Manual')
+await camera.setIso('ISO 1600')
 await camera.setShutterSpeed('1/500')
-await camera.setAperture('f/4.0')
+await camera.setAperture('f/4')
+await camera.setExposureCompensation('+0.7')
 ```
+
+Values use one spelling on every camera: `'f/4'`, `'ISO 1600'` or `'Auto'`, `'Manual'` or
+`'Aperture priority'` (`M`/`A`/`S`/`P` and Canon's `Av`/`Tv` are accepted too), `'+0.7'`, `'Spot'`.
+`getCapabilities().controls` lists the choices this camera offers now.
 
 ### Event Handling
 

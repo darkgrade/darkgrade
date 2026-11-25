@@ -320,12 +320,12 @@ try {
     } else if (action === 'set-iso') {
         if (!rawValue) throw new Error('set-iso requires --value')
         ensureAdvertised(controls, 'CanonIso', rawValue)
-        await camera.setIso(rawValue)
+        await camera.setControl('iso', rawValue)
         detail = `ISO changed to ${rawValue} over PTP/IP`
     } else if (action === 'set-aperture') {
         if (!rawValue) throw new Error('set-aperture requires --value')
         ensureAdvertised(controls, 'CanonAperture', rawValue)
-        await camera.setAperture(rawValue)
+        await camera.setControl('aperture', rawValue)
         detail = `Aperture changed to ${rawValue} over PTP/IP`
     } else if (action === 'set-shutter-speed') {
         if (!rawValue) throw new Error('set-shutter-speed requires --value')

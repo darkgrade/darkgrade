@@ -90,6 +90,7 @@ try {
         import { Camera, configureSlateTelemetry, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, SonyWifiCamera, SonyCamera, type ShutterSpeed, type TypedSettingMethods,
+            type Aperture, type Iso, type ExposureMode, type ExposureCompensation, type MeteringMode,
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
@@ -171,6 +172,28 @@ try {
         camera.setShutterSpeed(anyString)
         // @ts-expect-error A vendor's own word is not a canonical shutter speed.
         camera.setShutterSpeed('fast')
+        const confirmedAperture: Promise<Aperture> = camera.setAperture('f/2.8')
+        const currentIso: Promise<Iso> = camera.getIso()
+        camera.setIso('ISO 800')
+        camera.setIso('Auto')
+        const confirmedMode: Promise<ExposureMode> = camera.setExposureMode('Aperture priority')
+        camera.setExposureMode('M')
+        camera.setExposureMode('Tv')
+        const confirmedCompensation: Promise<ExposureCompensation> = camera.setExposureCompensation('+0.7')
+        const confirmedMetering: Promise<MeteringMode> = camera.setMeteringMode('Spot')
+        sdk.setIso('ISO 100')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setAperture(anyString)
+        // @ts-expect-error An ISO keeps its ISO prefix; Canon's raw '800' is not canonical.
+        camera.setIso('800')
+        // @ts-expect-error Exposure modes are words; Canon's AE code is not one.
+        camera.setExposureMode('3')
+        // @ts-expect-error Sony's movie-family word maps to Manual; it is not an exposure mode.
+        camera.setExposureMode('Movie Manual')
+        // @ts-expect-error Compensation is a signed number of stops, not a number.
+        camera.setExposureCompensation(0.7)
+        // @ts-expect-error Canon Evaluative and Nikon Matrix are both Multi.
+        camera.setMeteringMode('Evaluative')
         type PlainStringSetters = { [Name in keyof TypedSettingMethods]: Name extends \`set\${string}\`
             ? TypedSettingMethods[Name] extends (value: infer Value, ...options: never[]) => unknown
                 ? string extends Value ? Name : never : never
@@ -178,7 +201,8 @@ try {
         const noPlainStringSetters: [PlainStringSetters] extends [never] ? true : PlainStringSetters = true
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
-            confirmedShutter, currentShutter, noPlainStringSetters, errors]
+            confirmedShutter, currentShutter, noPlainStringSetters, errors, confirmedAperture, currentIso, confirmedMode,
+            confirmedCompensation, confirmedMetering]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

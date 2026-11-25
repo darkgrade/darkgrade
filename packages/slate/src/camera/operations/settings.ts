@@ -28,10 +28,6 @@ export interface SettingsOperations {
     ): Promise<CameraControlState>
 
     // Exposure
-    getAperture(): Promise<string>
-    setAperture(value: string): Promise<void>
-    getIso(): Promise<string>
-    setIso(value: string): Promise<void>
     setCanonManualExposureMode(): Promise<void>
 
     // Colour
@@ -115,22 +111,6 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
     ): Promise<CameraControlState> {
         const settings = requireCapability(this, 'settings', 'setControl')
         return cameraContext(this).controlsQueue.run('camera', () => settings.writeControl(id, value, context))
-    },
-
-    async getAperture(): Promise<string> {
-        return cameraContext(this).driver.getAperture()
-    },
-
-    async setAperture(value: string): Promise<void> {
-        return cameraContext(this).driver.setAperture(value)
-    },
-
-    async getIso(): Promise<string> {
-        return cameraContext(this).driver.getIso()
-    },
-
-    async setIso(value: string): Promise<void> {
-        return cameraContext(this).driver.setIso(value)
     },
 
     async setCanonManualExposureMode(): Promise<void> {

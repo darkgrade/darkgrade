@@ -16,3 +16,24 @@ export interface VendorControlProperties<Ids extends string> {
     /** Nikon in movie mode (LiveViewSelector VIDEO). */
     nikonMovie: ControlPropertyMap<Ids>
 }
+
+/**
+ * How one setting's vendor words map to its canonical names. `canonical` returns undefined for a
+ * word Slate has no name for; such a choice is never offered or written.
+ */
+export interface ControlValueVocabulary {
+    canonical(label: string): string | undefined
+    /**
+     * Groups choices that belong together (Sony's movie exposure modes are a family apart from its
+     * photo modes); only the current value's family is offered.
+     */
+    family?(label: string): string
+}
+
+/** Where a value vocabulary applies: each property inventory, plus the Sony Camera Remote SDK session. */
+export type ControlValueInventory = keyof VendorControlProperties<string> | 'sonySdk'
+
+/** One settings group's value vocabularies for each inventory. */
+export type VendorControlValues<Ids extends string> = {
+    [Inventory in ControlValueInventory]: { readonly [Id in Ids]?: ControlValueVocabulary }
+}

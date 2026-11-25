@@ -3,6 +3,7 @@ import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import { sonyIsoLabel } from '@vendors/sony/iso-value'
 import { cameraControlDefinitions, resolveCameraControl, type CameraCapabilities, type CameraControlId } from '@camera/controls'
 import { parseExposureTime } from '@camera/exposure-time'
+import { canonicalControlValues } from '@vendors/control-properties'
 
 const controls: Record<string, { code: number; label: string; values?: Record<string, string> }> = {
     aperture: { code: 256, label: 'Aperture' },
@@ -125,15 +126,25 @@ export function sonySdkControls(properties: SonySdkProperty[]) {
     )
 }
 
+/**
+ * The canonical controls one SDK setting carries. The exposure program is both the transitional
+ * verbatim shooting mode and the canonical exposure mode.
+ */
+function sdkControlIds(name: string): CameraControlId[] {
+    const id = resolveCameraControl(name)
+    if (!id) return []
+    return id === 'exposureProgram' ? ['exposureProgram', 'exposureMode'] : [id]
+}
+
 /** Reuse the SDK's existing raw/label mapping; SDK ids are never mistaken for PTP ids. */
 export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabilities {
     const result: CameraCapabilities['controls'] = {}
-    for (const [name, state] of Object.entries(sonySdkControls(properties))) {
-        const id = resolveCameraControl(name)
-        if (!id) continue
+    for (const [name, state] of Object.entries(sonySdkControls(properties))) for (const id of sdkControlIds(name)) {
         if (id === 'shutterSpeed' && state.code === 259 && state.rawValue === '4294967295') continue
         const definition = cameraControlDefinitions[id]
-        const choices = state.valueForm === 'enum' ? state.allowedValues : undefined
+        const vendorChoices = state.valueForm === 'enum' ? state.allowedValues : undefined
+        const canonical = canonicalControlValues('sonySdk', id, state.value, vendorChoices)
+        const choices = canonical ? canonical.allowedValues : vendorChoices
         const unique = choices !== undefined && choices.length > 0 && new Set(choices).size === choices.length
         let exposureTime: ReturnType<typeof parseExposureTime> | undefined
         if (id === 'shutterSpeed') {
@@ -141,11 +152,13 @@ export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabi
         }
         result[id] = {
             id, label: definition.label, aliases: definition.aliases,
-            value: id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${state.value})` : state.value,
+            value: id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${state.value})` : canonical?.value ?? state.value,
             source: { code: state.code, name: state.name, protocol: 'sony-sdk' },
             allowedValues: choices, enabled: state.enabled,
-            writable: state.writable && unique && (id !== 'shutterSpeed' || Boolean(exposureTime)),
+            writable: state.writable && unique && (id !== 'shutterSpeed' || Boolean(exposureTime)) &&
+                canonical?.unrecognized?.value === undefined,
             ...(exposureTime ? { exposureTime } : {}),
+            ...(canonical?.unrecognized && { unrecognized: canonical.unrecognized }),
         }
     }
     // The SDK does not supply a standard PTP DeviceInfo operation inventory.
@@ -156,8 +169,9 @@ export function sonySdkControlWireValue(
     properties: SonySdkProperty[], id: CameraControlId, label: string
 ): { code: number; value: bigint } {
     for (const [name, state] of Object.entries(sonySdkControls(properties))) {
-        if (resolveCameraControl(name) !== id || state.valueForm !== 'enum') continue
-        const index = state.allowedValues?.indexOf(label) ?? -1
+        if (!sdkControlIds(name).includes(id) || state.valueForm !== 'enum') continue
+        const canonical = canonicalControlValues('sonySdk', id, state.value, state.allowedValues)
+        const index = canonical ? canonical.vendorIndex.get(label) ?? -1 : state.allowedValues?.indexOf(label) ?? -1
         const raw = properties.find(property => property.code === state.code)?.allowedValues?.[index]
         if (index >= 0 && raw !== undefined) return { code: state.code, value: BigInt(raw) }
     }

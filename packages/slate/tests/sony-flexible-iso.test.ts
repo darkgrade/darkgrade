@@ -87,8 +87,8 @@ describe('Sony Flexible Exposure ISO', () => {
         expect((await owner.getCapabilities()).controls.iso?.allowedValues).toContain('ISO 1250')
         await owner.setControl('iso', 'ISO AUTO')
         expect((await owner.getCapabilities()).controls.iso).toMatchObject({
-            value: 'ISO AUTO', enabled: true, writable: true,
-            allowedValues: ['ISO AUTO', 'ISO 100', 'ISO 1250'],
+            value: 'Auto', enabled: true, writable: true,
+            allowedValues: ['Auto', 'ISO 100', 'ISO 1250'],
         })
         await expect(owner.setControl('iso', 'ISO 800')).rejects.toThrow('not advertised')
         await owner.setControl('iso', 'ISO 100')
@@ -97,7 +97,7 @@ describe('Sony Flexible Exposure ISO', () => {
     })
     it('does not invent a manual sensitivity when the first observed inventory is Auto', async () => {
         const { owner, writes } = fixture(true, 1)
-        expect((await owner.getCapabilities()).controls.iso).toMatchObject({ value: 'ISO AUTO', writable: false })
+        expect((await owner.getCapabilities()).controls.iso).toMatchObject({ value: 'Auto', writable: false })
         await expect(owner.setControl('iso', 'ISO 100')).rejects.toThrow('not writable')
         expect(writes).toEqual([])
     })
@@ -114,7 +114,7 @@ describe('Sony Flexible Exposure ISO', () => {
         await owner.setControl('iso', 'ISO AUTO')
         setManualChoices([0xffffff, 100])
         await expect(owner.setControl('iso', 'ISO 1250')).rejects.toThrow('not advertised')
-        expect(await owner.getIso()).toBe('ISO AUTO')
+        expect(await owner.getIso()).toBe('Auto')
         expect(writes).toEqual([{ code: 0xd01c, value: 1 }, { code: 0xd01c, value: 2 }, { code: 0xd01c, value: 1 }])
     })
 })

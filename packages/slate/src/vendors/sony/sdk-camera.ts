@@ -12,7 +12,7 @@ import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
 import { isSonyModelName } from '@vendors/sony/model-name'
 import { isVerifiedFeature } from '@camera/validated-models'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import { installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
+import { canonicalControlInput, installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
 export interface SonySdkBridge {
@@ -214,7 +214,8 @@ export class SonyWifiCamera {
         if (id !== 'shutterSpeed' && (id === 'colorTemperature' ? typeof value !== 'number' : typeof value !== 'string'))
             throw new CameraRefusedError(id, `Invalid ${id} value`)
         const requested = id === 'shutterSpeed'
-            ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context) : String(value)
+            ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context)
+            : typeof value === 'string' ? canonicalControlInput(id, value) : String(value)
         if (!requested || !control.allowedValues?.includes(requested)) throw new CameraRefusedError(id, 'Requested SDK control value is not advertised')
         const wire = sonySdkControlWireValue(properties, id, requested)
         await this.setSonySetting(wire.code, wire.value)

@@ -2,7 +2,12 @@ import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraCo
 import { CameraUnsupportedError } from '@camera/errors'
 import type { ExposureContext } from '@camera/exposure-time'
 import { colourControlDefinitions, colourSettingReaders, type ColourSettingTypes } from '@camera/settings/colour'
-import { exposureControlDefinitions, exposureSettingReaders, type ExposureSettingTypes } from '@camera/settings/exposure'
+import {
+    canonicalExposureInput,
+    exposureControlDefinitions,
+    exposureSettingReaders,
+    type ExposureSettingTypes,
+} from '@camera/settings/exposure'
 import { focusControlDefinitions, focusSettingReaders, type FocusSettingTypes } from '@camera/settings/focus'
 import { liveViewControlDefinitions, liveViewSettingReaders, type LiveViewSettingTypes } from '@camera/settings/live-view'
 import { modeControlDefinitions, modeSettingReaders, type ModeSettingTypes } from '@camera/settings/mode'
@@ -136,4 +141,12 @@ export function installTypedSettings(prototype: TypedSettingHost): void {
             throw new Error(`${name} is already defined; remove it so the typed setting is the only one`)
         Object.defineProperty(prototype, name, { value: method, writable: true, configurable: true, enumerable: false })
     }
+}
+
+/**
+ * The canonical spelling of a requested value: each group's exact alternative spellings (`M` for
+ * `Manual`, `800` for `ISO 800`). Anything else is returned unchanged and checked against the choices.
+ */
+export function canonicalControlInput(id: CameraControlId, value: string): string {
+    return canonicalExposureInput(id, value)
 }

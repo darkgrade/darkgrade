@@ -192,7 +192,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
     it('refreshes only the requested Nikon control and its mode guards before a write', async () => {
         const fixture = nikonFixture()
         const descriptor = vi.spyOn(fixture.driver, 'propertyDescriptor')
-        await fixture.camera.setExposureTime('1/60')
+        await fixture.camera.setShutterSpeed('1/60')
         const readNames = descriptor.mock.calls.map(([property]) => property.name)
         expect(readNames).toContain('NikonMovieShutterSpeed')
         expect(readNames).not.toContain('NikonMovieISO')
@@ -208,7 +208,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         const angle = (await fixture.camera.getCapabilities()).controls.shutterSpeed!
         expect(angle.source.code).toBe(0x1d075)
         expect(angle.exposureTime).toEqual({ kind: 'angle', degrees: 180 })
-        await fixture.camera.setExposureTime({ kind: 'duration', seconds: 1 / 96 }, { framesPerSecond: 24 })
+        await fixture.camera.setShutterSpeed({ kind: 'duration', seconds: 1 / 96 }, { framesPerSecond: 24 })
         expect(fixture.properties.get(0x1d075)!.value).toBe(9000)
         expect(fixture.writes).toEqual([0x1d075])
         fixture.properties.get(fixture.driver.registry.properties.LiveViewSelector.code)!.value = 0
@@ -220,15 +220,15 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         fixture.properties.get(0x1d074)!.value = 2
         fixture.state.disappear = true
         expect((await fixture.camera.getCapabilities()).controls.shutterSpeed).toBeUndefined()
-        await expect(fixture.camera.setExposureTime('180°')).rejects.toThrow('not writable')
+        await expect(fixture.camera.setShutterSpeed('180°')).rejects.toThrow('not writable')
         fixture.state.disappear = false
         fixture.properties.get(0x1d075)!.writable = false
-        await expect(fixture.camera.setExposureTime('90°')).rejects.toThrow('not writable')
+        await expect(fixture.camera.setShutterSpeed('90°')).rejects.toThrow('not writable')
         expect(fixture.writes).toEqual([])
         fixture.properties.get(0x1d075)!.writable = true
         fixture.state.ignoreWrite = true
         vi.useFakeTimers()
-        const pending = fixture.camera.setExposureTime('90°').catch(error => error)
+        const pending = fixture.camera.setShutterSpeed('90°').catch(error => error)
         await vi.advanceTimersByTimeAsync(2100)
         expect(await pending).toBeInstanceOf(CameraConfirmationError)
         expect(fixture.writes).toEqual([0x1d075])
@@ -238,7 +238,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         fixture.properties.get(0x1d074)!.value = 2
         fixture.state.ignoreWrite = true
         vi.useFakeTimers()
-        const ignored = fixture.camera.setExposureTime('90°').catch(error => error)
+        const ignored = fixture.camera.setShutterSpeed('90°').catch(error => error)
         await vi.advanceTimersByTimeAsync(2100)
         const error = await ignored
         expect(error).toBeInstanceOf(CameraConfirmationError)
@@ -275,7 +275,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         const fixture = nikonFixture()
         fixture.properties.get(0x1d074)!.value = 2
         fixture.properties.get(0xd0a4)!.value = 0x400
-        await expect(fixture.camera.setExposureTime('90°')).rejects.toThrow('confirm idle')
+        await expect(fixture.camera.setShutterSpeed('90°')).rejects.toThrow('confirm idle')
         expect(fixture.writes).toEqual([])
     })
     it('converts an advertised angle range to degrees and rejects off-step writes', async () => {
@@ -287,9 +287,9 @@ describe('Nikon capabilities from real descriptor codecs', () => {
             maximum: 360,
             step: 90,
         })
-        await fixture.camera.setExposureTime('1/96', { framesPerSecond: 24 })
+        await fixture.camera.setShutterSpeed('1/96', { framesPerSecond: 24 })
         expect(fixture.properties.get(0x1d075)!.value).toBe(9000)
-        await expect(fixture.camera.setExposureTime('135°')).rejects.toThrow('outside')
+        await expect(fixture.camera.setShutterSpeed('135°')).rejects.toThrow('outside')
         expect(fixture.writes).toEqual([0x1d075])
     })
     it('refuses a photo/movie switch racing capability admission', async () => {
@@ -302,7 +302,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
                 fixture.properties.get(property.code)!.value = 0
             return value
         }) as never)
-        await expect(fixture.camera.setExposureTime('1/60')).rejects.toThrow('mode changed')
+        await expect(fixture.camera.setShutterSpeed('1/60')).rejects.toThrow('mode changed')
         expect(fixture.writes).toEqual([])
     })
     it('refuses a descriptor width incompatible with the known angle codec before writing', async () => {
@@ -315,7 +315,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
             writable: false,
             unrecognized: { value: '0x4650', choices: ['0x2328', '0x4650'] },
         })
-        await expect(fixture.camera.setExposureTime('90°')).rejects.toThrow('not writable')
+        await expect(fixture.camera.setShutterSpeed('90°')).rejects.toThrow('not writable')
         expect(fixture.writes).toEqual([])
     })
 })
@@ -425,11 +425,11 @@ describe('Sony native and SDK capabilities share the same exposure contract', ()
             return { code: 0x2001, data: new SDIDevicePropInfoArrayCodec(driver.registry).decode(wire).value }
         }
         vi.spyOn(driver, 'send').mockImplementation(send as never)
-        expect(await camera.getExposureTime()).toEqual({ kind: 'duration', seconds: 1 / 50 })
+        expect(await camera.getShutterSpeed()).toBe('1/50')
         enabled = 2
         expect((await camera.getCapabilities()).controls.shutterSpeed?.writable).toBe(false)
         const write = vi.spyOn(driver, 'set')
-        await expect(camera.setExposureTime('1/60')).rejects.toThrow('not writable')
+        await expect(camera.setShutterSpeed('1/60')).rejects.toThrow('not writable')
         expect(write).not.toHaveBeenCalled()
     })
     it('preserves SDK angle thousandths and verifies the advertised raw write', async () => {
@@ -459,12 +459,12 @@ describe('Sony native and SDK capabilities share the same exposure contract', ()
         await camera.connectUsb('fixture')
         try {
             expect((await camera.getCapabilities()).advertisedOperations).toBeNull()
-            expect(await camera.getExposureTime()).toEqual({ kind: 'angle', degrees: 180 })
-            await camera.setExposureTime('1/96', { framesPerSecond: 24 })
+            expect(await camera.getShutterSpeed()).toBe('180°')
+            await camera.setShutterSpeed('1/96', { framesPerSecond: 24 })
             expect(writes).toEqual([{ code: '378', value: '90000' }])
             property.writable = false
-            expect(await camera.getExposureTime()).toEqual({ kind: 'angle', degrees: 90 })
-            await expect(camera.setExposureTime('180°')).rejects.toThrow('not writable')
+            expect(await camera.getShutterSpeed()).toBe('90°')
+            await expect(camera.setShutterSpeed('180°')).rejects.toThrow('not writable')
         } finally {
             await camera.disconnect()
         }

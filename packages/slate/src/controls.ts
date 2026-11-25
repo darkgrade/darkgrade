@@ -3,6 +3,16 @@ export { cameraControlDefinitions, resolveCameraControl, unrecognizedValueLabel 
 export { CameraConfirmationError } from '@camera/confirmation'
 export { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 export { formatShutterSpeed, type ShutterSpeed } from '@camera/settings/shutter-speed'
+export {
+    exposureModes,
+    meteringModes,
+    type Aperture,
+    type ExposureCompensation,
+    type ExposureMode,
+    type ExposureModeAlias,
+    type Iso,
+    type MeteringMode,
+} from '@camera/settings/exposure'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'
 export type {
     CameraCapabilities,

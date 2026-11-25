@@ -131,7 +131,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             if (name === 'subjectRecognition') this.subjectRecognitionBeforeTouch = null
             this.log('system', `${CAMERA_CONTROL_LABELS[name]} → ${observed.value}`)
             // A mode change reshapes what the other settings allow, so those still read back before returning.
-            if (name === 'exposureProgram' || name === 'whiteBalance' || name === 'focusMode') {
+            if (name === 'exposureProgram' || name === 'exposureMode' || name === 'whiteBalance' || name === 'focusMode') {
                 await this.refreshSettingsRaw()
             }
             // A new area or subject setting only takes effect once AF runs again; in PC Remote it doesn't

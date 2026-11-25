@@ -107,6 +107,35 @@ describe('confirmed controls and recording', () => {
         expect(service.getState().settings.iso).toBe('100')
         expect(set).toHaveBeenCalledWith('iso', 'ISO 100')
     })
+    it('shows the confirmed exposure mode and re-reads the settings a mode change reshapes', async () => {
+        const { service, capabilities, getCapabilities } = fixture()
+        const exposureMode = {
+            id: 'exposureMode' as const,
+            label: 'Exposure mode',
+            aliases: [],
+            source: { name: 'ExposureProgramMode', code: 0x500e, protocol: 'ptp' as const },
+            value: 'Manual',
+            allowedValues: ['Manual', 'Aperture priority'],
+            enabled: true,
+            writable: true,
+        }
+        capabilities.controls.exposureMode = exposureMode
+        await service.refreshSettings()
+        expect(service.getState().controls?.exposureMode).toEqual({
+            value: 'Manual',
+            options: ['Manual', 'Aperture priority'],
+            enabled: true,
+        })
+        const set = vi.fn(async () => {
+            capabilities.controls.exposureMode = { ...exposureMode, value: 'Aperture priority' }
+            return capabilities.controls.exposureMode
+        })
+        Object.assign((service as unknown as { camera: object }).camera, { setControl: set })
+        await service.setControl('exposureMode', 'Aperture priority')
+        expect(set).toHaveBeenCalledWith('exposureMode', 'Aperture priority')
+        expect(service.getState().controls?.exposureMode?.value).toBe('Aperture priority')
+        expect(getCapabilities).toHaveBeenCalledTimes(2)
+    })
     it('never displays a failed control request as applied and refreshes actual observations once', async () => {
         const { service, capabilities, getCapabilities } = fixture()
         await service.refreshSettings()

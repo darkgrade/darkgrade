@@ -174,10 +174,11 @@ function cameraSummary(): string {
     const controls = state.controls
     const values = (
         [
-            'exposureProgram',
+            'exposureMode',
             'iso',
             'shutterSpeed',
             'aperture',
+            'exposureCompensation',
             'focusMode',
             'focusArea',
             'whiteBalance',

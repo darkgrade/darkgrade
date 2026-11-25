@@ -11,10 +11,10 @@ it('the generic Nikon ISO getter preserves Auto when an ISO test restores its or
         if (property.name === 'ISOAutoControl') auto = value
         else sensitivity = value
     }) as any
-    const original = await camera.getIso()
+    const original = await instance.getIso()
     expect(original).toBe('ISO AUTO')
-    await camera.setIso('ISO 100')
-    expect(await camera.getIso()).toBe('ISO 100')
-    await camera.setIso(original)
-    expect(await camera.getIso()).toBe('ISO AUTO')
+    await instance.setIso('ISO 100')
+    expect(await instance.getIso()).toBe('ISO 100')
+    await instance.setIso(original)
+    expect(await instance.getIso()).toBe('ISO AUTO')
 })

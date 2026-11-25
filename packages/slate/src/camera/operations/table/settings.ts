@@ -219,6 +219,51 @@ export const settingsOperationTable = {
                 },
             },
         },
+        getExposureMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current exposure mode, in canonical spelling',
+        },
+        setExposureMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the exposure mode and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Manual' }],
+                },
+            },
+        },
+        getExposureCompensation: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current exposure compensation, in canonical spelling',
+        },
+        setExposureCompensation: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the exposure compensation and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example +0.7' }],
+                },
+            },
+        },
+        getMeteringMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current metering mode, in canonical spelling',
+        },
+        setMeteringMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the metering mode and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Spot' }],
+                },
+            },
+        },
         getWhiteBalance: {
             area: 'settings',
             disposition: { kind: 'keep' },
@@ -251,51 +296,6 @@ export const settingsOperationTable = {
         },
     },
     planned: {
-        getExposureMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current exposure mode, in canonical spelling',
-        },
-        setExposureMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the exposure mode and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Manual' }],
-                },
-            },
-        },
-        getExposureCompensation: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current exposure compensation, in canonical spelling',
-        },
-        setExposureCompensation: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the exposure compensation and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example +0.7' }],
-                },
-            },
-        },
-        getMeteringMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current metering mode, in canonical spelling',
-        },
-        setMeteringMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the metering mode and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Spot' }],
-                },
-            },
-        },
         getPhotoVideoMode: {
             area: 'settings',
             disposition: { kind: 'add' },

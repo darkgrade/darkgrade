@@ -105,6 +105,11 @@ function formatAperture(value: string): string {
     return value.toLowerCase().startsWith('f') ? `ƒ/${value.replace(/^f\/?/i, '')}` : `ƒ/${value}`
 }
 
+/** Slate spells compensation in stops ("+0.7", "0.0"); read it as EV with a real minus sign. */
+function formatCompensation(value: string): string {
+    return value === '0.0' ? '±0 EV' : `${value.replace(/^-/, '−')} EV`
+}
+
 function formatIso(value: string): string {
     const number = value.replace(/^iso\s*/i, '')
     return /auto/i.test(number) ? 'Auto' : number
@@ -166,6 +171,25 @@ export function SettingsPanel({
                     </div>
                     {cameraState.controls && (
                         <div className="contents">
+                            <ControlRow
+                                label="Mode"
+                                control={cameraState.controls.exposureMode}
+                                disabled={disabled}
+                                onChange={value => onChangeControl('exposureMode', value)}
+                            />
+                            <ControlRow
+                                label="Exposure comp."
+                                control={cameraState.controls.exposureCompensation}
+                                disabled={disabled}
+                                onChange={value => onChangeControl('exposureCompensation', value)}
+                                format={formatCompensation}
+                            />
+                            <ControlRow
+                                label="Metering"
+                                control={cameraState.controls.meteringMode}
+                                disabled={disabled}
+                                onChange={value => onChangeControl('meteringMode', value)}
+                            />
                             <ControlRow
                                 label="White balance"
                                 control={cameraState.controls.whiteBalance}

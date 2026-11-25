@@ -175,63 +175,99 @@ off(
 
 ### getAperture
 
-Get the current aperture value.
+Get the current aperture, such as `'f/2.8'` or `'Auto'`.
 
 ```typescript
-async getAperture(): Promise&lt;string&gt;
+async getAperture(): Promise&lt;Aperture&gt;
 ```
 
 ### setAperture
 
-Set the aperture value.
+Set the aperture and return the value the camera read back. The value must be one the camera
+offers now (`getCapabilities().controls.aperture.allowedValues`).
 
 ```typescript
-async setAperture(value: string): Promise&lt;void&gt;
+async setAperture(value: Aperture): Promise&lt;Aperture&gt;
 ```
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| **value** | `string` | ✓ | The aperture value to set. |
+| **value** | `Aperture` | ✓ | `'f/'` and the f-number, such as `'f/4'`, or `'Auto'`. |
 
 ### getShutterSpeed
 
-Get the current shutter speed value.
+Get the current shutter speed, such as `'1/250'`, `'30"'`, `'180°'` or `'Bulb'`.
 
 ```typescript
-async getShutterSpeed(): Promise&lt;string&gt;
+async getShutterSpeed(): Promise&lt;ShutterSpeed&gt;
 ```
 
 ### setShutterSpeed
 
-Set the shutter speed value.
+Set the shutter speed and return the value the camera read back. A shutter angle and a duration
+convert to each other only with the actual frame rate.
 
 ```typescript
-async setShutterSpeed(value: string): Promise&lt;void&gt;
+async setShutterSpeed(value: ShutterSpeed | ExposureTime, context?: { framesPerSecond: number }): Promise&lt;ShutterSpeed&gt;
 ```
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| **value** | `string` | ✓ | The shutter speed value to set. |
+| **value** | `ShutterSpeed \| ExposureTime` | ✓ | `'1/250'`, `'30"'`, `'180°'`, `'Bulb'`, or an exposure-time object. |
+| **context** | `{ framesPerSecond: number }` |  | The actual frame rate, required to convert between angle and duration. |
 
 ### getIso
 
-Get the current ISO value.
+Get the current ISO, such as `'ISO 800'` or `'Auto'`. Sony's extended and Multi Frame NR
+sensitivities keep their own names (`'ISO 51200 (extended)'`, `'Multi Frame NR ISO 800'`).
 
 ```typescript
-async getIso(): Promise&lt;string&gt;
+async getIso(): Promise&lt;Iso&gt;
 ```
 
 ### setIso
 
-Set the ISO value.
+Set the ISO and return the value the camera read back. On a Sony body with a separate auto/manual
+gain switch, Slate switches it as part of the write.
 
 ```typescript
-async setIso(value: string): Promise&lt;void&gt;
+async setIso(value: Iso): Promise&lt;Iso&gt;
 ```
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| **value** | `string` | ✓ | The ISO value to set. |
+| **value** | `Iso` | ✓ | `'ISO 800'`, `'Auto'`, or a Sony extended / Multi Frame NR sensitivity. |
+
+### getExposureMode / setExposureMode
+
+The exposure mode as a word: `'Manual'`, `'Aperture priority'`, `'Shutter priority'`, `'Program'`,
+`'Auto'`, `'Flexible priority'` or `'Bulb'`. The setter also accepts `M`, `A`, `S`, `P` and Canon's
+`Av`, `Tv`, `Fv`. Photo or video is a separate setting: a Sony body in movie mode reads `'Manual'`
+for Movie Manual, and offers only its movie modes.
+
+```typescript
+async getExposureMode(): Promise&lt;ExposureMode&gt;
+async setExposureMode(value: ExposureMode | ExposureModeAlias): Promise&lt;ExposureMode&gt;
+```
+
+### getExposureCompensation / setExposureCompensation
+
+Exposure compensation in stops with a sign and one decimal: `'+0.7'`, `'-1.0'`, `'0.0'`.
+
+```typescript
+async getExposureCompensation(): Promise&lt;ExposureCompensation&gt;
+async setExposureCompensation(value: ExposureCompensation): Promise&lt;ExposureCompensation&gt;
+```
+
+### getMeteringMode / setMeteringMode
+
+The metering mode as a word: `'Multi'` (Canon Evaluative, Nikon Matrix), `'Center-weighted'`,
+`'Spot'`, `'Large spot'`, `'Partial'`, `'Average'` or `'Highlight'`.
+
+```typescript
+async getMeteringMode(): Promise&lt;MeteringMode&gt;
+async setMeteringMode(value: MeteringMode): Promise&lt;MeteringMode&gt;
+```
 
 ### captureImage
 

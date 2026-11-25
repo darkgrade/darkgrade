@@ -132,6 +132,9 @@ export const CAMERA_CONTROL_NAMES = [
     'aperture',
     'shutterSpeed',
     'iso',
+    'exposureMode',
+    'exposureCompensation',
+    'meteringMode',
 ] as const
 export type CameraControlName = (typeof CAMERA_CONTROL_NAMES)[number]
 
