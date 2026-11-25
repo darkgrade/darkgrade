@@ -1,30 +1,24 @@
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
+import { colourControlDefinitions } from '@camera/settings/colour'
+import { exposureControlDefinitions } from '@camera/settings/exposure'
+import { focusControlDefinitions } from '@camera/settings/focus'
+import { liveViewControlDefinitions } from '@camera/settings/live-view'
+import { modeControlDefinitions } from '@camera/settings/mode'
+import { photoControlDefinitions } from '@camera/settings/photo'
+import { videoControlDefinitions } from '@camera/settings/video'
 
-/** Canonical application vocabulary. Protocol property names belong to the vendor adapters. */
+/**
+ * Canonical application vocabulary, one file per settings group under `@camera/settings`.
+ * Protocol property names belong to the vendor adapters (`@vendors/control-properties`).
+ */
 export const cameraControlDefinitions = {
-    shutterSpeed: {
-        label: 'Shutter speed',
-        aliases: ['shutter speed', 'shutter angle', 'shutterAngle', 'exposureTime', 'exposure time'],
-    },
-    iso: { label: 'ISO', aliases: ['sensitivity', 'exposure index'] },
-    aperture: { label: 'Aperture', aliases: ['f number', 'f-stop'] },
-    whiteBalance: { label: 'White balance', aliases: ['white balance'] },
-    colorTemperature: { label: 'Colour temperature', aliases: ['colour temperature', 'color temperature', 'kelvin'] },
-    focusMode: { label: 'Focus mode', aliases: ['focus mode'] },
-    focusArea: { label: 'Focus area', aliases: ['focus area'] },
-    subjectRecognition: { label: 'Eye tracking', aliases: ['subject recognition', 'eye tracking'] },
-    recognitionTarget: { label: 'Recognition target', aliases: ['recognition target'] },
-    eyeSelect: { label: 'Eye', aliases: ['eye select'] },
-    stillFormat: { label: 'Photo format', aliases: ['still format', 'photo format', 'imageFormat'] },
-    imageSize: { label: 'Photo size', aliases: ['image size', 'photo size'] },
-    aspectRatio: { label: 'Aspect ratio', aliases: ['aspect ratio'] },
-    jpegQuality: { label: 'JPEG quality', aliases: ['jpeg quality'] },
-    movieFormat: { label: 'Movie format', aliases: ['movie format', 'recording format'] },
-    movieSetting: { label: 'Movie quality', aliases: ['movie setting', 'movie quality'] },
-    movieFrameRate: { label: 'Frame rate', aliases: ['frame rate'] },
-    zoomMode: { label: 'Zoom mode', aliases: ['zoom mode', 'zoomSetting'] },
-    liveViewQuality: { label: 'Live view quality', aliases: ['live view quality'] },
-    exposureProgram: { label: 'Shooting mode', aliases: ['exposure program', 'shooting mode'] },
+    ...exposureControlDefinitions,
+    ...modeControlDefinitions,
+    ...colourControlDefinitions,
+    ...focusControlDefinitions,
+    ...photoControlDefinitions,
+    ...videoControlDefinitions,
+    ...liveViewControlDefinitions,
 } as const
 
 export type CameraControlId = keyof typeof cameraControlDefinitions

@@ -14,7 +14,7 @@ export function normaliseShotControls(source:Record<string,ShotSourceProperty|un
  const ids=['iso','aperture','shutterSpeed','whiteBalance','focusMode']
  const aliases:Record<string,readonly string[]>=Object.fromEntries(ids.map(key=>{
   const id=resolveCameraControl(key)!,movie=nikonMovieControlProperties[id as keyof typeof nikonMovieControlProperties]??[],photo=nikonPhotoControlProperties[id as keyof typeof nikonPhotoControlProperties]??[]
-  return [key,[...new Set([...movie,...photo])]]
+  return [key,[...new Set([...movie,...photo].map(property=>property.name))]]
  }))
  for(const key of new Set([...Object.keys(source),...Object.keys(aliases)])){
   const name=source[key]?key:aliases[key]?.find(alias=>source[alias]),property=name?source[name]:undefined

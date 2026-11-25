@@ -31,8 +31,10 @@ import {
     nikonPhotoControlProperties,
     sonyControlProperties,
     standardControlProperties,
+    type ControlPropertyMap,
 } from '@vendors/control-properties'
 import { nikonControlLabel } from '@vendors/nikon/control-values'
+import { MovieShutterAngle } from '@vendors/nikon/video-properties'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import { NikonShotControls } from '@vendors/nikon/shot-controls'
 
@@ -94,26 +96,28 @@ async function nikonStates(
         movie = selector === 'VIDEO'
     }
     // Unknown mode cannot safely select a movie or still extension.
-    const mappings: Partial<Record<CameraControlId, readonly string[]>> =
+    const mappings: { -readonly [Id in CameraControlId]?: ControlPropertyMap[Id] } =
         movie === true
             ? { ...nikonMovieControlProperties }
             : movie === false
-              ? nikonPhotoControlProperties
-              : standardControlProperties
+              ? { ...nikonPhotoControlProperties }
+              : { ...standardControlProperties }
     if (
         movie &&
         (requested === undefined || requested === 'shutterSpeed') &&
         advertised.has(camera.registry.properties.MovieShutterMode.code)
     ) {
         const mode = await camera.get(camera.registry.properties.MovieShutterMode)
-        if (mode === 'SHUTTER_ANGLE') mappings.shutterSpeed = ['MovieShutterAngle']
+        if (mode === 'SHUTTER_ANGLE') mappings.shutterSpeed = [MovieShutterAngle]
         else if (mode !== 'SHUTTER_SPEED') throw new PTPDecodeError('Unknown Nikon shutter control mode')
     }
     const states: PropertyState[] = []
     const readISO = requested === undefined || requested === 'iso'
     const names = [
         ...new Set([
-            ...(requested === undefined ? Object.values(mappings).flat() : (mappings[requested] ?? [])),
+            ...(requested === undefined ? Object.values(mappings).flat() : (mappings[requested] ?? [])).map(
+                property => property.name
+            ),
             ...(readISO && movie === true
                 ? ['NikonMovieAutoISO', 'ExposureProgramMode']
                 : readISO && movie === false
@@ -165,7 +169,7 @@ export async function readCameraCapabilities(
         inventory = response.data
     }
     let states: PropertyState[]
-    let mappings: Partial<Record<CameraControlId, readonly string[]>>
+    let mappings: ControlPropertyMap<CameraControlId>
     if (camera instanceof SonyCamera) {
         const observed = await camera.refreshPropertyStates()
         const iso = camera.isoControlState(observed)
@@ -197,8 +201,8 @@ export async function readCameraCapabilities(
             requested
         ))
     } else {
-        const standardMappings: Partial<Record<CameraControlId, readonly string[]>> = standardControlProperties
-        states = (await camera.getStandardPropertyStates(requested ? standardMappings[requested]?.[0] : undefined)).map(
+        const standardMappings: ControlPropertyMap<CameraControlId> = standardControlProperties
+        states = (await camera.getStandardPropertyStates(requested ? standardMappings[requested]?.[0]?.name : undefined)).map(
             state => ({
                 ...state,
                 ...(typeof state.minimumValue === 'number' &&
@@ -212,7 +216,7 @@ export async function readCameraCapabilities(
     }
     const controls: CameraCapabilities['controls'] = {}
     for (const id of Object.keys(mappings) as CameraControlId[]) {
-        const state = mappings[id]?.map(name => states.find(state => state.name === name)).find(Boolean)
+        const state = mappings[id]?.map(property => states.find(state => state.name === property.name)).find(Boolean)
         if (!state) continue
         const label = (value: string | number | bigint) =>
             camera instanceof NikonCamera && value !== 'Auto' ? nikonControlLabel(state.name, value) : String(value)
