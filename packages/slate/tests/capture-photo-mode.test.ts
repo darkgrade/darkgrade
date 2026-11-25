@@ -1,4 +1,5 @@
 import { Camera } from '@camera/index'
+import { protocolSession } from '@camera/operations/protocol'
 import { expect, it, vi } from 'vitest'
 
 it.each([false, true])('public Sony capture restores movie mode after success/failure (%s)', async fail => {
@@ -7,7 +8,7 @@ it.each([false, true])('public Sony capture restores movie mode after success/fa
         const camera = new Camera({ vendorId: 0x054c, transport: { isLittleEndian: () => true } as any,
             logger: { captureConsole: false, renderInTerminal: false } })
         let mode = 'Movie Flexible Exposure'
-        vi.spyOn(camera, 'getSonyPropertyStates').mockResolvedValue([
+        vi.spyOn(protocolSession(camera), 'getSonyPropertyStates').mockResolvedValue([
             { code: 0x500e, value: mode, allowedValues: ['Manual', mode] } as any,
         ])
         vi.spyOn(camera, 'set').mockImplementation(async (_property, value) => { mode = String(value) })
@@ -31,9 +32,9 @@ it.each([false, true])('public Canon capture restores remote movie mode after su
         const camera = new Camera({ vendorId: 0x04a9, transport: { isLittleEndian: () => true } as any,
             logger: { captureConsole: false, renderInTerminal: false } })
         let movie = true
-        vi.spyOn(camera, 'getCanonUnknownPropertyStates').mockImplementation(async () =>
+        vi.spyOn(protocolSession(camera), 'getCanonUnknownPropertyStates').mockImplementation(async () =>
             [{ name: 'FixedMovie', rawValue: movie ? 1 : 0 }] as any)
-        vi.spyOn(camera, 'getCanonPropertyStates').mockResolvedValue([{ name: 'CanonAutoExposureMode', value: 1 }] as any)
+        vi.spyOn(protocolSession(camera), 'getCanonPropertyStates').mockResolvedValue([{ name: 'CanonAutoExposureMode', value: 1 }] as any)
         vi.spyOn(camera, 'leaveMovieMode').mockImplementation(async () => { movie = false })
         vi.spyOn(camera, 'enterMovieMode').mockImplementation(async () => { movie = true })
         vi.spyOn(camera.getInstance(), 'captureImage').mockImplementation(async () => {

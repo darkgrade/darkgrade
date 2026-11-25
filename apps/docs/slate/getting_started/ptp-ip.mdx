@@ -17,9 +17,8 @@ const transport = new IPTransport({
 })
 const camera = new Camera({ transport, vendorId: VendorIDs.CANON })
 
-await camera.connect({ ip: { host, port: 15740, protocol: 'ptp/ip', localAddress } })
-const instance = camera.getInstance()
-const deviceInfo = await camera.send(instance.registry.operations.GetDeviceInfo, {})
+await camera.connect({ device: { ip: { host, port: 15740, protocol: 'ptp/ip', localAddress } } })
+const { manufacturer, model, firmware, connection } = await camera.getInfo() // connection is 'ip'
 await camera.autofocus()
 await camera.keepDeviceOn()
 await camera.disconnect()

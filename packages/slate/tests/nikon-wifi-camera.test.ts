@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest'
 const fixture=vi.hoisted(()=>({connect:vi.fn(),disconnect:vi.fn(),transportDisconnect:vi.fn(),send:vi.fn(),transport:vi.fn()}))
 vi.mock('@transport/ip/ip-transport',()=>({IPTransport:class{constructor(options:unknown){fixture.transport(options)}disconnect=fixture.transportDisconnect}}))
-vi.mock('@camera/index',()=>({Camera:class{connect=fixture.connect;disconnect=fixture.disconnect;send=fixture.send;getInstance(){return{registry:{operations:{GetDeviceInfo:'info'}}}}}}))
+vi.mock('@camera/index',()=>({Camera:class{connect=fixture.connect;disconnect=fixture.disconnect;send=fixture.send;get driver(){return{registry:{operations:{GetDeviceInfo:'info'}}}}}}))
 import {connectNikonWifiCamera} from '@vendors/nikon/wifi-camera'
 import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 const options={address:'192.0.2.1',clientGuid:Uint8Array.from({length:16},(_,index)=>index+1),expectedSerialNumber:'3023406'}

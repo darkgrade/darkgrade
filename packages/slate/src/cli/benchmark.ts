@@ -1,7 +1,7 @@
 import type { Camera } from '@camera/index'
 import type { Terminal } from '@cli/terminal'
 import { getVendorName, isSupportedVendor, VendorIDs } from '@ptp/definitions/vendor-ids'
-import type { BenchmarkCheck, runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import type { BenchmarkCheck, runBenchmark } from '@workflows/telemetry-benchmark'
 
 export const benchmarkUsage = 'benchmark [--camera VID:PID] [--no-capture] [--no-live] [--json]'
 
@@ -87,7 +87,7 @@ export async function camerasInOtherModes(): Promise<DiscoveredCamera[]> {
     }
 }
 
-type BenchmarkResult = Awaited<ReturnType<typeof runCameraBenchmark>>
+type BenchmarkResult = Awaited<ReturnType<typeof runBenchmark>>
 /** The diagnostics client's flush outcome: 'sent', 'empty', 'retry', 'rejected', 'disabled' or 'timeout'. */
 type UploadResult = string
 
@@ -129,7 +129,7 @@ export interface BenchmarkCommandDependencies {
     discover(): Promise<DiscoveredCamera[]>
     camerasInOtherModes(): Promise<DiscoveredCamera[]>
     createCamera(device: DiscoveredCamera): Promise<Camera>
-    runBenchmark: typeof runCameraBenchmark
+    runBenchmark: typeof runBenchmark
     saveProfile(profile: BenchmarkResult['profile']): string
     flush(): Promise<UploadResult>
     print(line: string): void
@@ -153,7 +153,7 @@ async function defaultDependencies(terminal?: Terminal): Promise<BenchmarkComman
     const progress = terminal?.progress()
     // Importing the CLI's preference commands never loads USB or opens a camera.
     const { Camera } = await import('@camera/index')
-    const { runCameraBenchmark } = await import('@workflows/telemetry-benchmark')
+    const { runBenchmark } = await import('@workflows/telemetry-benchmark')
     const { nodeDiagnostics, saveDiagnosticProfile } = await import('@contribute/settings')
     return {
         discover: () => Camera.discover(),
@@ -176,7 +176,7 @@ async function defaultDependencies(terminal?: Terminal): Promise<BenchmarkComman
                 // This command runs the full inventory itself.
                 firstContact: false,
             }),
-        runBenchmark: runCameraBenchmark,
+        runBenchmark,
         saveProfile: saveDiagnosticProfile,
         flush: async () => (await nodeDiagnostics()).flush(),
         print: line => (terminal ? terminal.print(line) : console.log(line)),
@@ -255,8 +255,8 @@ export async function runBenchmarkCommand(
     try {
         await camera.connect()
         const result = await dependencies.runBenchmark(camera, {
-            capture: options.capture,
-            live: options.live,
+            photo: options.capture,
+            liveView: options.live,
             maximumProperties: 512,
             signal: cancellation.signal,
             flushEvidence: flush,

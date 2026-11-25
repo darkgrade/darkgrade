@@ -56,7 +56,7 @@ it('Sony profile storage reads enter transfer mode and restore shooting after a 
         prepareStorageRead:async()=>{calls.push('prepare')},
         resumeShooting:async()=>{calls.push('restore')},
     })
-    const camera={getInstance:()=>instance,send:async(operation:any)=>{
+    const camera={get driver(){return instance},send:async(operation:any)=>{
         if(operation.code===0x1001)return {code:0x2001,data:identity}
         calls.push('storage')
         throw new Error('Read refused')

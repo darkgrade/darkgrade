@@ -40,7 +40,7 @@ describe('Temporary still mode', () => {
         let mode = 'Movie Flexible Exposure'
         const camera: any = {
             getSonyPropertyStates: async () => [{ code: 0x500e, value: mode, allowedValues: ['Manual', mode] }],
-            getInstance: () => ({ registry: { properties: { ExposureProgramMode: {} } } }),
+            get driver(){return ({ registry: { properties: { ExposureProgramMode: {} } } })},
             set: async (_property: unknown, value: string) => { mode = value },
         }
         try {

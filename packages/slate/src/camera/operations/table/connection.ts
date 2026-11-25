@@ -15,6 +15,11 @@ export const connectionOperationTable = {
                 cli: { omitted: 'every command connects itself' },
             },
         },
+        getInfo: {
+            area: 'connection',
+            disposition: { kind: 'keep' },
+            summary: 'Make, model, firmware, lens mount, connection type',
+        },
         connectSonyMenuSession: {
             area: 'connection',
             disposition: { kind: 'protocol' },
@@ -27,9 +32,6 @@ export const connectionOperationTable = {
             area: 'connection',
             disposition: { kind: 'keep' },
             summary: 'Unsticks a camera that stopped answering',
-            surfaces: {
-                cli: { command: 'recover' },
-            },
         },
         disconnect: {
             area: 'connection',
@@ -40,13 +42,7 @@ export const connectionOperationTable = {
             },
         },
     },
-    planned: {
-        getInfo: {
-            area: 'connection',
-            disposition: { kind: 'add' },
-            summary: 'Make, model, firmware, lens mount, connection type',
-        },
-    },
+    planned: {},
 } as const satisfies AreaOperationTable
 
 /** Static methods on Camera, checked against `typeof Camera`. */

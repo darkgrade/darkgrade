@@ -19,7 +19,7 @@ function fixture(options:{manufacturer?:string;readyCode?:number;recording?:numb
         if(operation.code===0x9457)return {code:options.releaseCode??0x2001}
         return {code:0x2001}
     })
-    const camera={send,getInstance:()=>instance},controller=new NikonAccessoryController(camera as any)
+    const camera={send,get driver(){return instance}},controller=new NikonAccessoryController(camera as any)
     return {camera,controller,instance,send}
 }
 afterEach(()=>{vi.useRealTimers()})

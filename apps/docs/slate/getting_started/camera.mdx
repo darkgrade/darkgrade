@@ -43,17 +43,34 @@ await camera.setControl('colorTemperature', 5600)
 These writes require writable, advertised values; the examples do not establish
 support on every camera or in every shooting mode.
 
-### connect
+### discover
 
-Connect to a camera device.
+List attached USB cameras without opening one.
 
 ```typescript
-async connect(device?: DeviceDescriptor): Promise&lt;void&gt;
+static async discover(): Promise&lt;DiscoveredCamera[]&gt;
 ```
 
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **device** | `DeviceDescriptor` |  | Optional device descriptor. If not provided, uses the device from the constructor options. |
+### connect
+
+Open the camera: select the attached body, its vendor driver and a session.
+
+```typescript
+async connect(options?: ConnectOptions): Promise&lt;void&gt;
+```
+
+| Option | Type | Required | Description |
+| ------ | ---- | -------- | ----------- |
+| **observeOnly** | `boolean` |  | Read without changing any setting. Sony keeps its dial priority and saved image destination. Default `false`. |
+| **device** | `DeviceDescriptor` |  | The body to open. If not provided, uses the device from the constructor options. |
+
+### getInfo
+
+What the body reports about itself: manufacturer, model, firmware, serial number when reported, and the connection (`'usb'`, `'wifi'` or `'ip'`).
+
+```typescript
+async getInfo(): Promise&lt;CameraInfo&gt;
+```
 
 ### disconnect
 

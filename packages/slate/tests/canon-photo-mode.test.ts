@@ -63,7 +63,7 @@ it('reports the physical Canon selector requirement without retrying an already-
 it('records preparation, failed transitions and cleanup from cache without diagnostic errors changing recovery',async()=>{
  const phases:string[]=[],restore=vi.fn(async()=>{})
  const camera={
-  getInstance:()=>({recordStateSnapshot:(_workflow:string,phase:string)=>{phases.push(phase);throw Error('diagnostics unavailable')}}),
+  get driver(){return ({recordStateSnapshot:(_workflow:string,phase:string)=>{phases.push(phase);throw Error('diagnostics unavailable')}})},
   getCanonPropertyStates:async()=>[{name:'CanonAutoExposureMode',value:1}],getCanonUnknownPropertyStates:async()=>[],
   prepareCanonRecordingDestination:async()=>restore,enterMovieMode:async()=>{throw Error('mode refused')},
  }
@@ -75,7 +75,7 @@ it('records preparation and cleanup around a successful mode switch without extr
  vi.useFakeTimers()
  try{
   const phases:string[]=[],reads=vi.fn(async()=>[{name:'CanonAutoExposureMode',value:1}])
-  const camera={getInstance:()=>({recordStateSnapshot:(_workflow:string,phase:string)=>phases.push(phase)}),getCanonPropertyStates:reads,getCanonUnknownPropertyStates:async()=>[],enterMovieMode:async()=>{},leaveMovieMode:async()=>{}}
+  const camera={get driver(){return ({recordStateSnapshot:(_workflow:string,phase:string)=>phases.push(phase)})},getCanonPropertyStates:reads,getCanonUnknownPropertyStates:async()=>[],enterMovieMode:async()=>{},leaveMovieMode:async()=>{}}
   const opening=openCanonRecordingMode(camera);await vi.runAllTimersAsync();const mode=await opening;await mode.restore()
   expect(phases).toEqual(['before-prepare','after-prepare','after-cleanup']);expect(reads).toHaveBeenCalledTimes(1)
  }finally{vi.useRealTimers()}
@@ -87,7 +87,7 @@ it.each(['delayed','ignored'] as const)('requires observed movie mode after an a
   let mode=0,pending=false,polls=0,destination=4
   const record=vi.fn(async()=>{expect(mode).toBe(1)})
   const camera={
-   getInstance:()=>({refreshEventProperties:async()=>{if(pending&&behavior==='delayed'&&++polls>=3){mode=1;pending=false}}}),
+   get driver(){return ({refreshEventProperties:async()=>{if(pending&&behavior==='delayed'&&++polls>=3){mode=1;pending=false}}})},
    getCanonPropertyStates:async()=>[{name:'CanonAutoExposureMode',value:1}],
    getCanonUnknownPropertyStates:async()=>[{name:'FixedMovie',rawValue:mode}],
    prepareCanonRecordingDestination:async()=>{destination=2;return async()=>{destination=4}},

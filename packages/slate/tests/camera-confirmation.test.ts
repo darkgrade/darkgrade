@@ -2,6 +2,7 @@ import { CanonCamera } from '@camera/canon-camera'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import type { CameraRecordingState } from '@camera/controls'
 import { Camera } from '@camera/index'
+import { protocolSession } from '@camera/operations/protocol'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -17,7 +18,7 @@ function fixture(vendorId: number) {
         } as unknown as TransportInterface,
     })
     let state: CameraRecordingState = 'idle'
-    if (vendorId === 0x054c) vi.spyOn(camera, 'getSonyPropertyStates').mockResolvedValue([
+    if (vendorId === 0x054c) vi.spyOn(protocolSession(camera), 'getSonyPropertyStates').mockResolvedValue([
         {code:0xd160,rawValue:1,sonyEnabledFlag:1},
         {code:0xd248,rawValue:1,sonyEnabledFlag:2},
         {code:0xd24a,rawValue:120,sonyEnabledFlag:2},
@@ -96,7 +97,7 @@ describe.each([0x054c, 0x04b0, 0x04a9])('vendor %i confirmed recording lifecycle
 
 it('rejects full Sony movie capacity before sending Start, while keeping Stop available', async () => {
     const f = fixture(0x054c)
-    vi.mocked(f.camera.getSonyPropertyStates).mockResolvedValue([
+    vi.mocked(protocolSession(f.camera).getSonyPropertyStates).mockResolvedValue([
         {code:0xd160,rawValue:1,sonyEnabledFlag:1},
         {code:0xd248,rawValue:1,sonyEnabledFlag:2},
         {code:0xd24a,rawValue:0,sonyEnabledFlag:2},
@@ -227,7 +228,7 @@ it('canonical recording observation preserves native Sony transitional and unkno
             on: () => {},
         } as unknown as TransportInterface,
     })
-    const read = vi.spyOn(camera, 'getSonyPropertyStates')
+    const read = vi.spyOn(protocolSession(camera), 'getSonyPropertyStates')
     for (const [rawValue, expected] of [
         [0, 'idle'],
         [1, 'recording'],

@@ -1,4 +1,5 @@
-import { Camera, runCameraBenchmark, VendorIDs, type CameraRecordingState } from '@darkgrade/slate'
+import { Camera, runBenchmark, VendorIDs, type CameraRecordingState } from '@darkgrade/slate'
+import { protocolSession } from '@darkgrade/slate/protocol'
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'
@@ -105,7 +106,7 @@ export class CameraService {
 
     vendorName(): string | null {
         if (!this.connected) return null
-        const vendorId = this.detectedVendorId ?? this.camera?.getInstance().vendorId
+        const vendorId = this.detectedVendorId ?? (this.camera && protocolSession(this.camera).vendorId)
         if (vendorId && VENDOR_NAMES[vendorId]) return VENDOR_NAMES[vendorId]
         return this.detectedName ?? 'Generic PTP'
     }
@@ -156,7 +157,7 @@ export class CameraService {
             this.enqueue(async () => {
                 if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
                 const diagnostics = await import('@darkgrade/slate/contribute/settings')
-                const result = await runCameraBenchmark(this.camera, {
+                const result = await runBenchmark(this.camera, {
                     flushEvidence: async () => (await diagnostics.nodeDiagnostics()).flush(),
                 })
                 const path = diagnostics.saveDiagnosticProfile(result.profile)

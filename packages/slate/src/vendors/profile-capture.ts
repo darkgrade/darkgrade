@@ -1,6 +1,6 @@
 import { GenericCamera } from '@camera/generic-camera'
 import { Camera } from '@camera/index'
-import { SonyCamera } from '@camera/sony-camera'
+import { protocolSession } from '@camera/operations/protocol'
 import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
@@ -292,9 +292,11 @@ export async function captureCameraProfile(source: TransportInterface, options: 
               transport: trace.transport,
               vendorId: options.vendorId,
               logger: { renderInTerminal: false, captureConsole: false },
+              // The profile is the inventory; a first-contact inventory would add its own reads.
+              firstContact: false,
           })
         : undefined
-    const camera = facade?.getInstance() ?? new GenericCamera(trace.transport, logger)
+    const camera = facade ? protocolSession(facade).driver : new GenericCamera(trace.transport, logger)
     if (!options.initialize) Object.assign(camera, { registry })
     camera.configureTransactions({ timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false })
     const check = async <T>(id: string, action: () => Promise<T>, cleanup = false): Promise<T | undefined> => {
@@ -341,8 +343,9 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 ],
             },
         }
+        // Initialization opens the vendor session read-only: Sony keeps its dial priority and image routing.
         await check('session', () =>
-            camera instanceof SonyCamera ? camera.connect(selection, { configure: false }) : camera.connect(selection)
+            facade ? facade.connect({ device: selection, observeOnly: true }) : camera.connect(selection)
         )
         const info = await check('device-info', () => send(registry.operations.GetDeviceInfo))
         if (info) {
@@ -458,7 +461,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 })
         }
     } finally {
-        await check('disconnect', () => camera.disconnect(), true)
+        await check('disconnect', () => (facade ? facade.disconnect() : camera.disconnect()), true)
     }
     if (budgetReached)
         checks.push({

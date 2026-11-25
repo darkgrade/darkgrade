@@ -1,8 +1,15 @@
 import { CanonCamera } from '@camera/canon-camera'
+import type { CameraInfo, ConnectOptions, DiscoveredCamera } from '@camera/driver/connection'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@camera/generic-camera'
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
-import { cameraContext, type CameraContext, type CameraDriverInstance } from '@camera/operations/context'
+import {
+    cameraContext,
+    requireCapability,
+    type CameraContext,
+    type CameraDriverInstance,
+} from '@camera/operations/context'
+import { protocolSession } from '@camera/operations/protocol'
 import { SonyCamera } from '@camera/sony-camera'
 import { VendorExtensionCamera } from '@camera/vendor-extension-camera'
 import { Logger } from '@core/logger'
@@ -19,10 +26,16 @@ import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
 
 export interface ConnectionOperations {
-    connect(device?: DeviceDescriptor): Promise<void>
-    /** Opens a Sony contents-transfer session for body-menu controls. */
+    /**
+     * Opens the camera: selects the attached body, its vendor driver and a session. With
+     * `observeOnly`, reads work but no setting is changed (see ConnectOptions).
+     */
+    connect(options?: ConnectOptions): Promise<void>
+    /** What the body reports about itself: make, model, firmware and the connection type. */
+    getInfo(): Promise<CameraInfo>
+    /** @deprecated Use `protocolSession(camera).connectSonyMenuSession()` from `@darkgrade/slate/protocol`. */
     connectSonyMenuSession(device?: DeviceDescriptor): Promise<void>
-    /** Opens native Sony remote observation without changing priority or saved image routing. */
+    /** @deprecated Use `connect({ observeOnly: true })`. */
     connectSonyObservationSession(device?: DeviceDescriptor): Promise<void>
     /**
      * Software-only recovery for a camera that stopped answering: a fresh session, then a PTP
@@ -34,10 +47,16 @@ export interface ConnectionOperations {
 }
 
 /** Enumerate USB PTP devices without opening a camera session. */
-export async function discoverCameras() {
+export async function discoverCameras(): Promise<DiscoveredCamera[]> {
     const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
     const devices = await transport.discover({ usb: { filters: [{ classCode: 6, subclassCode: 1 }] } })
-    return devices.map(({ vendorId, productId, serialNumber, model }) => ({ vendorId, productId, serialNumber, model }))
+    return devices.map(({ vendorId, productId, serialNumber, manufacturer, model }) => ({
+        vendorId,
+        productId,
+        serialNumber,
+        manufacturer,
+        model,
+    }))
 }
 
 export function descriptorVendor(device?: DeviceDescriptor): number | undefined {
@@ -94,10 +113,17 @@ function vendorExtensionCamera(
     return new VendorExtensionCamera(context.transport, context.logger, registries[vendorId](), vendorId)
 }
 
+/** A descriptor passed where ConnectOptions belong would silently open another body; refuse it. */
+function assertConnectOptions(options: ConnectOptions): void {
+    if (typeof options !== 'object' || options === null || 'usb' in options || 'ip' in options)
+        throw new TypeError('Camera.connect takes { observeOnly?, device? }; pass a device descriptor as { device }')
+}
+
 export const connectionOperations: ConnectionOperations & ThisType<Camera> = {
-    async connect(device?: DeviceDescriptor): Promise<void> {
+    async connect(options: ConnectOptions = {}): Promise<void> {
+        assertConnectOptions(options)
         const context = cameraContext(this)
-        const descriptor = device ?? context.deviceDescriptor
+        const descriptor = options.device ?? context.deviceDescriptor
         let vendorId = context.options.vendorId ?? descriptorVendor(descriptor)
         if (context.transport instanceof USBTransport) {
             // Select exactly one body first, then its driver. A broad USB filter is not a vendor identity.
@@ -120,17 +146,21 @@ export const connectionOperations: ConnectionOperations & ThisType<Camera> = {
         context.deviceDescriptor = descriptor
         // Preserve the caller-owned partial session for standard protocol diagnostics when
         // vendor initialization is refused. The caller closes it with disconnect() in finally.
-        await context.driver.connect(descriptor)
+        await requireCapability(this, 'connection', 'connect').openSession(descriptor, {
+            observeOnly: options.observeOnly === true,
+        })
         if (context.options.firstContact !== false) {
             const { recordFirstContact } = await import('@workflows/first-contact')
             await recordFirstContact(this)
         }
     },
 
+    async getInfo(): Promise<CameraInfo> {
+        return requireCapability(this, 'connection', 'getInfo').getInfo()
+    },
+
     async connectSonyMenuSession(device?: DeviceDescriptor): Promise<void> {
-        const context = cameraContext(this)
-        if (!(context.driver instanceof SonyCamera)) throw new Error('Sony menu sessions require a Sony camera')
-        await context.driver.connect(device || context.deviceDescriptor, { mode: 'menus' })
+        return protocolSession(this).connectSonyMenuSession(device)
     },
 
     async connectSonyObservationSession(device?: DeviceDescriptor): Promise<void> {

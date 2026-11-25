@@ -11,7 +11,7 @@ function fixture(){
   if(op.name==='GetObjectInfo')return {code:0x2001,data:{filename:args.ObjectHandle===1?'old.MP4':name,objectCompressedSize:bytes}}
   return {code:0x2001,data:largeChunk.subarray(0,Math.min(args.MaxBytes,bytes))}
  })
- const camera={getInstance:()=>({registry:{operations},prepareStorageRead:async()=>{}}),send,
+ const camera={get driver(){return ({registry:{operations},prepareStorageRead:async()=>{}})},send,
   prepareRecordingMode:vi.fn(async()=>({restore})),
   getSonyPropertyStates:async()=>[{code:0xd21d,rawValue:state}],
   startRecording:vi.fn(async()=>{state=1}),

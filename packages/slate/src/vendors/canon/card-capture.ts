@@ -9,7 +9,7 @@ export async function captureCanonCardImage(
     capture: () => Promise<void>,
     options: { includeInfo: boolean; includeData: boolean },
 ): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
-    const storageCamera = { getInstance: () => camera, send: camera.send.bind(camera) }
+    const storageCamera = { driver: camera, send: camera.send.bind(camera) }
     const baseline = await readCameraObjectHandles(storageCamera)
     await capture()
     const deadline = Date.now() + 8000

@@ -1,17 +1,49 @@
+import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
+
 /**
- * The connection capability group of the driver contract (see `@camera/driver/contract`). A driver that
- * can do this provides it; one that cannot leaves it undefined, and Camera reports
- * CameraUnsupportedError with the reason. Signatures follow the plan's "The API" section; the
- * connection slice owns this file and finalizes the result types when the operations land.
+ * The connection capability group of the driver contract (see `@camera/driver/contract`). Every
+ * driver opens a PTP session and answers GetDeviceInfo, so every driver provides it; the vendor
+ * difference is what opening a session prepares (see `@vendors/capabilities/connection`).
  */
+
+/** How `Camera.connect` opens the camera. */
+export interface ConnectOptions {
+    /**
+     * Read without changing any setting. Slate still opens the vendor's control session (Canon's
+     * remote and event modes, Sony's authenticated remote session) because nothing can be read
+     * without it, but it writes no host preference: Sony keeps its dial priority and saved image
+     * destination. Default false.
+     */
+    observeOnly?: boolean
+    /** The body to open, when it differs from the `device` given to the constructor. */
+    device?: DeviceDescriptor
+}
+
+/** What the body reports about itself. Fields the body does not report are absent, never guessed. */
 export interface CameraInfo {
     manufacturer: string
     model: string
     firmware: string
+    /** The body's serial number, when it reports one. */
+    serialNumber?: string
+    /** Not reported over PTP by any body Slate drives today, so absent rather than inferred from the model. */
     lensMount?: string
     connection: 'usb' | 'wifi' | 'ip'
 }
 
+/** One attached camera found by `Camera.discover()`, without opening a session. */
+export interface DiscoveredCamera {
+    vendorId: number
+    productId: number
+    serialNumber?: string
+    /** The USB manufacturer and product strings, as the device reports them. */
+    manufacturer?: string
+    model?: string
+}
+
 export interface ConnectionCapability {
+    /** Opens the session on the already selected transport and prepares what the vendor needs. */
+    openSession(device: DeviceDescriptor | undefined, options: { observeOnly: boolean }): Promise<void>
+    /** Reads GetDeviceInfo now. */
     getInfo(): Promise<CameraInfo>
 }

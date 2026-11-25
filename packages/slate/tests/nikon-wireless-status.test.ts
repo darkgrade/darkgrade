@@ -19,7 +19,7 @@ function fixture({manufacturer='Nikon Corporation',model='Z6_3',advertised=true,
         if(!malformed)new DataView(bytes.buffer).setUint16(0,200,true)
         return {code:0x2001,data:bytes}
     })
-    return {send,getInstance:()=>({registry:createNikonRegistry(true)})}
+    return {send,get driver(){return ({registry:createNikonRegistry(true)})}}
 }
 
 describe('Nikon wireless prerequisite diagnostics',()=>{

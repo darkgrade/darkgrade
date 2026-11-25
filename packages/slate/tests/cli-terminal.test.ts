@@ -4,7 +4,7 @@ import { attachedCameras, runCamerasCommand } from '@cli/cameras'
 import { closestMatch } from '@cli/commands'
 import { doctorChecks } from '@cli/doctor'
 import { colorEnabled, createTerminal, type TerminalStreams } from '@cli/terminal'
-import type { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import type { runBenchmark } from '@workflows/telemetry-benchmark'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -145,7 +145,7 @@ function benchmarkHarness(devices: DiscoveredCamera[], extra: Partial<BenchmarkC
             ]
             checks.forEach(options.onProgress)
             return { passed: false, checks, profile: { id: 'id', status: 'partial' } }
-        }) as unknown as typeof runCameraBenchmark,
+        }) as unknown as typeof runBenchmark,
         saveProfile: () => '/profiles/id.json',
         flush: async () => 'sent',
         print: line => printed.push(line),

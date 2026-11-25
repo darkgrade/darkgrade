@@ -1,3 +1,4 @@
+import { protocolSession } from '@camera/operations/protocol'
 export interface CameraMovieAudio {status:'present'|'absent'|'unverified';detail:string}
 function atom(bytes:Uint8Array,offset:number,end:number){
     if(offset+8>end)throw new Error('Incomplete movie atom header')
@@ -36,7 +37,7 @@ export async function readCameraMovieAudio(camera:any,file:{handle:number;filena
         if(!/\.(mp4|mov)$/i.test(file.filename))throw new Error('Audio inspection is available for MP4 and MOV originals')
         const length=file.objectCompressedSize
         if(!Number.isSafeInteger(length)||length<8||length>0xffffffff)throw new Error('Movie size exceeds the bounded audio inspection range')
-        const operation=camera.getInstance().registry.operations.GetPartialObject
+        const operation=protocolSession(camera).driver.registry.operations.GetPartialObject
         const read=async(offset:number,count:number)=>{
             const reply=await camera.send(operation,{ObjectHandle:file.handle,Offset:offset,MaxBytes:count},undefined,count+12)
             if(reply.code!==0x2001||!(reply.data instanceof Uint8Array)||reply.data.length!==count)throw new Error('Camera did not return complete movie metadata')

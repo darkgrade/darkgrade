@@ -24,7 +24,8 @@
 //   swift-live-view  The same transport, and live view fetched by a Swift thread between Slate's transactions. With the
 //                    Metal decoder on, frames are decoded there and reach JavaScript as surfaces. Sony bodies only;
 //                    other bodies get the transport alone.
-import { Camera, parseSonyFocalFrameInfo, TransportType, VendorIDs, type SonyFocalFrame } from '@darkgrade/slate'
+import { Camera, TransportType, VendorIDs } from '@darkgrade/slate'
+import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@darkgrade/slate/protocol'
 import { preferences } from '@main/preferences'
 import { IPC_EVENTS, type UsbTransportChoice } from '@shared/ipc'
 import { app } from 'electron'

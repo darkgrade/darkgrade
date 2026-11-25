@@ -89,9 +89,16 @@ try {
     const consumer = `
         import { Camera, configureSlateTelemetry, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
-            type CameraRecordingState, SonyWifiCamera, SonyCamera, type ShutterSpeed, type TypedSettingMethods,
-            CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
-            TransportFactory, TransportType } from '@darkgrade/slate'
+            type CameraRecordingState, type ShutterSpeed, type TypedSettingMethods,
+            CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError, type CameraInfo, type DiscoveredCamera,
+            runBenchmark, TransportFactory, TransportType } from '@darkgrade/slate'
+        import { protocolSession, SonyWifiCamera, SonyCamera, type ProtocolSession } from '@darkgrade/slate/protocol'
+        // @ts-expect-error Vendor drivers left the main entry; they are in @darkgrade/slate/protocol.
+        import { SonyCamera as RootSonyCamera } from '@darkgrade/slate'
+        // @ts-expect-error Wireless pairing is in @darkgrade/slate/protocol as a written exception.
+        import { SonyWifiCamera as RootSonyWifiCamera } from '@darkgrade/slate'
+        // @ts-expect-error Raw protocol access goes through protocolSession(camera) from /protocol.
+        import { protocolSession as rootProtocolSession } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
         const camera = new Camera()
         configureSlateTelemetry(undefined)
@@ -112,9 +119,37 @@ try {
         // @ts-expect-error Exposure time is a search alias; shutterSpeed is the sole control id.
         camera.setControl('exposureTime', '1/60')
         // @ts-expect-error Internal transport preparation is not a shipped consumer API.
-        camera.getInstance().connectTransport()
+        protocolSession(camera).driver.connectTransport()
         // @ts-expect-error Discarded-driver telemetry disposal is an internal lifecycle operation.
-        camera.getInstance().detachTransportObserver()
+        protocolSession(camera).driver.detachTransportObserver()
+        // Connection: discover without opening, connect read-only, identity, disconnect.
+        const discovered: Promise<DiscoveredCamera[]> = Camera.discover()
+        const opened: Promise<void> = camera.connect({ observeOnly: true })
+        camera.connect({ device: { usb: { filters: [{ vendorId: 0x054c }] } } })
+        camera.connect()
+        const information: Promise<CameraInfo> = camera.getInfo()
+        const closed: Promise<void> = camera.disconnect()
+        // @ts-expect-error A device descriptor is passed as { device }, never as the options themselves.
+        camera.connect({ usb: { filters: [{ vendorId: 0x054c }] } })
+        // @ts-expect-error observeOnly is a boolean.
+        camera.connect({ observeOnly: 'yes' })
+        // @ts-expect-error The connection kinds are usb, wifi and ip.
+        const bluetooth: CameraInfo['connection'] = 'bluetooth'
+        // @ts-expect-error CameraInfo never guesses a lens mount as a number.
+        const mount: CameraInfo['lensMount'] = 1
+        const benchmark = runBenchmark(camera, { photo: true, liveView: false })
+        // @ts-expect-error runBenchmark takes photo and liveView, not the old capture and live flags.
+        runBenchmark(camera, { capture: true })
+        // Raw protocol access is a session of the same Camera, typed by the registries' codecs.
+        const session: ProtocolSession = protocolSession(camera)
+        const rawIdentity: Promise<{code: number; data: DeviceInfo}> = session.send(genericOperationRegistry.GetDeviceInfo, {})
+        session.set(genericPropertyRegistry.WhiteBalance, 2)
+        // @ts-expect-error A raw property write still takes its codec's value type.
+        session.set(genericPropertyRegistry.WhiteBalance, 'daylight')
+        // @ts-expect-error Known read-only definitions cannot be written through a protocol session.
+        session.set(genericPropertyRegistry.BatteryLevel, 40)
+        // @ts-expect-error Raw sessions are only for a Camera or a session shaped like one.
+        protocolSession('camera')
         const factory = new TransportFactory()
         factory.createIPTransport({ address: '127.0.0.1', timeout: 1000, telemetryEvidence: 'synthetic' })
         factory.createUSBTransport({ maxBulkReadBytes: 16384 })
@@ -178,7 +213,8 @@ try {
         const noPlainStringSetters: [PlainStringSetters] extends [never] ? true : PlainStringSetters = true
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
-            confirmedShutter, currentShutter, noPlainStringSetters, errors]
+            confirmedShutter, currentShutter, noPlainStringSetters, errors, discovered, opened, information, closed,
+            bluetooth, mount, benchmark, rawIdentity, RootSonyCamera, RootSonyWifiCamera, rootProtocolSession]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)
@@ -292,7 +328,12 @@ try {
 // under Bun/Vitest, which can accept a mislabeled CommonJS file.
 for(const format of ['esm','commonjs']){
     const load=format==='esm'?"const api=await import('@darkgrade/slate')":"const api=require('@darkgrade/slate')"
-    const check=load+"; for(const name of ['Camera','configureSlateTelemetry','VideoTake','optimiseShot','readCameraPower','readNikonRecordingStatus'])if(typeof api[name]!=='function')throw new Error(name+' is missing');console.log('Built '+"+JSON.stringify(format)+"+' exports passed')"
+    const loadProtocol=format==='esm'?"const protocol=await import('@darkgrade/slate/protocol')":"const protocol=require('@darkgrade/slate/protocol')"
+    const check=load+";"+loadProtocol+"; for(const name of ['Camera','configureSlateTelemetry','VideoTake','optimiseShot','readCameraPower','runBenchmark'])if(typeof api[name]!=='function')throw new Error(name+' is missing');"+
+        "for(const name of ['protocolSession','GenericCamera','SonyCamera','CanonCamera','NikonCamera','SonyWifiCamera','readNikonRecordingStatus','compareSonyModels','NikonBluetoothRemote','sonyPropertyRegistry'])if(!protocol[name])throw new Error('/protocol '+name+' is missing');"+
+        "const vendorNamed=Object.keys(api).filter(name=>/sony|canon|nikon|fujifilm|panasonic|olympus|leica|sigma/i.test(name)||['GenericCamera','VendorExtensionCamera','protocolSession'].includes(name));if(vendorNamed.length)throw new Error('Main entry exports protocol names: '+vendorNamed.join(', '));"+
+        "const camera=new api.Camera();if(protocol.protocolSession(camera)!==protocol.protocolSession(camera)||!(protocol.protocolSession(camera).driver instanceof protocol.GenericCamera))throw new Error('protocolSession must share the Camera driver');"+
+        "console.log('Built '+"+JSON.stringify(format)+"+' exports passed')"
     execFileSync('node',[...(format==='esm'?['--input-type=module']:[]),'-e',check],{stdio:'inherit'})
 }
 

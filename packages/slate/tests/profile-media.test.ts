@@ -7,7 +7,7 @@ it.each([false, true])('recorded Nikon card photo transfers only the new object;
     let released = false, shutters = 0
     const downloaded: number[] = []
     const camera = {
-        getInstance: () => ({vendorId: 0x04b0, registry: createNikonRegistry(true)}),
+        get driver(){return ({vendorId: 0x04b0, registry: createNikonRegistry(true)})},
         captureImage: async (options: unknown) => {
             expect(options).toMatchObject({includeInfo: false, includeData: false, autofocus: false, destination: 'card'})
             released = true; shutters++
@@ -32,7 +32,7 @@ it.each([false, true])('Sony recorder claims host dial priority and restores it 
     let priority = 'CAMERA_PRIORITY'
     const writes: string[] = []
     const camera = {
-        getInstance: () => ({vendorId: 0x054c, registry: createSonyRegistry(true)}),
+        get driver(){return ({vendorId: 0x054c, registry: createSonyRegistry(true)})},
         get: async () => priority,
         set: async (_: unknown, value: string) => {writes.push(value); priority = value},
         getSonyPropertyStates: async () => [],

@@ -1,3 +1,4 @@
+import { protocolSession } from '@camera/operations/protocol'
 import type {Camera} from '@camera/index'
 import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import {ConnectionPath} from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
@@ -9,9 +10,9 @@ async function readConnectionPath(camera:Camera,information:{model:string;device
     const advertised=information.devicePropertiesSupported?.includes(ConnectionPath.code)===true
     const result:{advertised:boolean;queried:boolean;response?:number;value?:number;path:'usb'|'wifi'|'ethernet'|'unknown'}={advertised,queried:true,path:'unknown'}
     const operation=advertisedOperations.has(GetDevicePropDescEx.code)||verifiedModel
-        ?GetDevicePropDescEx:camera.getInstance().registry.operations.GetDevicePropDesc
+        ?GetDevicePropDescEx:protocolSession(camera).driver.registry.operations.GetDevicePropDesc
     try{
-        const reply=await camera.send(operation,{DevicePropCode:ConnectionPath.code})
+        const reply=await protocolSession(camera).send(operation,{DevicePropCode:ConnectionPath.code})
         result.response=reply.code
         const descriptor=reply.data,value=descriptor?.currentValueRaw
         if(reply.code!==0x2001||descriptor?.devicePropertyCode!==ConnectionPath.code||typeof value!=='number'||!Number.isInteger(value)||value<0||value>255)return result
@@ -26,7 +27,7 @@ type WirelessQueryResult={advertised:boolean;queried?:boolean;response?:number;v
 
 /** Malformed replies throw; the caller decides whether that is fatal for an unadvertised read. */
 async function readWirelessQuery(camera:Camera,query:WirelessQuery,advertised:boolean):Promise<WirelessQueryResult>{
-    const reply=await camera.send({...query,description:'Read-only Nikon WTU wireless capability query',dataDirection:'out',operationParameters:[],responseParameters:[]} as const,{})
+    const reply=await protocolSession(camera).send({...query,description:'Read-only Nikon WTU wireless capability query',dataDirection:'out',operationParameters:[],responseParameters:[]} as const,{})
     const result:WirelessQueryResult={advertised,queried:true,response:reply.code}
     if(reply.code!==0x2001 || !reply.data)return result
     const view=new DataView(reply.data.buffer,reply.data.byteOffset,reply.data.byteLength)
@@ -44,8 +45,8 @@ async function readWirelessQuery(camera:Camera,query:WirelessQuery,advertised:bo
 
 /** Read-only Nikon WTU capabilities; a USB profile bank is not proof of an active Wi-Fi connection. */
 export async function readNikonWirelessStatus(camera:Camera) {
-    const instance=camera.getInstance()
-    const information=await camera.send(instance.registry.operations.GetDeviceInfo,{})
+    const instance=protocolSession(camera).driver
+    const information=await protocolSession(camera).send(instance.registry.operations.GetDeviceInfo,{})
     if(information.code!==0x2001 || !information.data || !/nikon/i.test(information.data.manufacturer))
         throw new Error('Nikon wireless diagnostics require a responding Nikon camera')
     const advertised=new Set(information.data.operationsSupportedRaw)

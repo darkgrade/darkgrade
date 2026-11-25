@@ -12,6 +12,9 @@ conversions require the actual frame rate. The browser-safe
 `@darkgrade/slate/controls` export shares aliases and conversion types with UI hosts.
 See [camera controls](docs/camera-controls.md) for the contract and
 [pre-release audit](docs/pre-release-audit.md) for measured growth, fixes and limits.
+Vendor drivers, registries, raw send/get/set and vendor diagnostics (Sony buttons and menu
+session, Canon network state and magnify/pan, property dumps, wireless pairing) are in the
+unsupported `@darkgrade/slate/protocol` export, through `protocolSession(camera)`.
 The main camera export requires Node.js; importing `Camera` no longer replaces
 the embedding application's console or process exception handlers by default.
 Generic `setControl()` writes return the confirmed camera observation. Recording

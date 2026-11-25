@@ -6,7 +6,7 @@ import {
     type DiscoveredCamera,
 } from '@cli/benchmark'
 import type { Camera } from '@camera/index'
-import type { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import type { runBenchmark } from '@workflows/telemetry-benchmark'
 import { describe, expect, it } from 'vitest'
 
 const sony: DiscoveredCamera = { vendorId: 0x054c, productId: 0x0e78, model: 'ILCE-7M5' }
@@ -80,7 +80,7 @@ function harness(devices: DiscoveredCamera[], passed = true) {
             options.push(benchmarkOptions)
             await (benchmarkOptions as { flushEvidence: () => Promise<unknown> }).flushEvidence()
             return result
-        }) as unknown as typeof runCameraBenchmark,
+        }) as unknown as typeof runBenchmark,
         saveProfile: () => '/home/me/.darkgrade/profiles/id.json',
         flush: async () => (printed.length ? 'empty' : 'sent'),
         print: line => printed.push(line),
@@ -94,7 +94,7 @@ describe('benchmark command', () => {
         const run = harness([fujifilm])
         expect(await runBenchmarkCommand([], run.dependencies)).toBe(0)
         expect(run.created).toEqual([fujifilm])
-        expect(run.options[0]).toMatchObject({ capture: true, live: true })
+        expect(run.options[0]).toMatchObject({ photo: true, liveView: true })
         expect(run.printed[0]).toContain('FUJIFILM X100VI, firmware 1.10')
         expect(run.printed[0]).toContain('Properties read: 1/2')
         expect(run.printed[0]).toContain('Photo capture:   ok')
@@ -116,7 +116,7 @@ describe('benchmark command', () => {
         const run = harness([sony, fujifilm], false)
         expect(await runBenchmarkCommand(['--camera', '04cb:0305', '--no-capture', '--json'], run.dependencies)).toBe(1)
         expect(run.created).toEqual([{ vendorId: 0x04cb, productId: 0x0305 }])
-        expect(run.options[0]).toMatchObject({ capture: false, live: true })
+        expect(run.options[0]).toMatchObject({ photo: false, liveView: true })
         expect(JSON.parse(run.printed[0])).toMatchObject({ passed: false, profilePath: '/home/me/.darkgrade/profiles/id.json' })
     })
 })

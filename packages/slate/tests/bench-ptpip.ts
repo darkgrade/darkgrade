@@ -266,7 +266,7 @@ const watchdog = setTimeout(() => {
 
 let result: Record<string, unknown>
 try {
-    await camera.connect({ ip: { host, port, protocol: 'ptp/ip', localAddress } })
+    await camera.connect({ device: { ip: { host, port, protocol: 'ptp/ip', localAddress } } })
     const instance = camera.getInstance()
     const deviceInfo = await camera.send(instance.registry.operations.GetDeviceInfo, {})
     if (deviceInfo.code !== OK.code || !deviceInfo.data) {

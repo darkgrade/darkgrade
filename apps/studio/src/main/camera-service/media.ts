@@ -1,4 +1,5 @@
-import { VendorIDs, type GenericCamera } from '@darkgrade/slate'
+import { VendorIDs } from '@darkgrade/slate'
+import type { GenericCamera } from '@darkgrade/slate/protocol'
 import type { CameraService } from '@main/camera-service'
 import {
     DOWNLOAD_PROGRESS_INTERVAL_MS,
