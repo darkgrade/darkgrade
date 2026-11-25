@@ -534,7 +534,7 @@ describe('photo / video', () => {
         expect(control).toMatchObject({ value: 'photo', allowedValues: ['photo', 'video'], writable: true })
         expect(await camera.setPhotoVideoMode('video')).toBe('video')
         expect(writesTo(body, sonyCodes.exposureProgram)).toEqual([{ code: sonyCodes.exposureProgram, value: 0x00078053 }])
-        expect((await camera.getCapabilities()).controls.exposureProgram?.value).toBe('Movie Manual')
+        expect((await camera.getCapabilities()).controls.photoVideoMode?.value).toBe('video')
         expect(await camera.setPhotoVideoMode('photo')).toBe('photo')
         expect(body.properties.get(sonyCodes.exposureProgram)!.current).toBe(0x00000001)
     })

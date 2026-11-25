@@ -14,22 +14,13 @@ export const exposureControlDefinitions = {
     aperture: { label: 'Aperture', aliases: ['f number', 'f-stop', 'iris', 'T-stop'] },
     exposureMode: {
         label: 'Exposure mode',
-        // Until the transitional exposureProgram id below is deleted (with Sony photo-mode, Studio's
-        // RecordingPanel, CameraPill, counterpartMode and the assistant moved to photoVideoMode),
-        // 'exposure program' resolves to that id by its own name; it joins these aliases then.
-        aliases: ['exposure mode', 'PASM', 'mode dial', 'exposureProgramMode'],
+        aliases: ['exposure mode', 'exposure program', 'shooting mode', 'PASM', 'mode dial', 'exposureProgramMode'],
     },
     exposureCompensation: {
         label: 'Exposure compensation',
         aliases: ['exposure compensation', 'EV', 'exposure comp', 'exposure bias'],
     },
     meteringMode: { label: 'Metering', aliases: ['metering mode', 'metering'] },
-    /**
-     * Transitional: the camera's own shooting-mode word (Sony `Movie Manual`, a Canon AE code),
-     * read and written verbatim. Recording preparation and Studio's photo/movie toggle still use it
-     * until photoVideoMode lands; exposure mode itself is `exposureMode`. No typed accessor.
-     */
-    exposureProgram: { label: 'Shooting mode', aliases: ['shooting mode'] },
 } as const
 
 /** An aperture in Slate's one spelling: `f/` and the f-number without trailing zeros (`f/4`, `f/2.8`). */

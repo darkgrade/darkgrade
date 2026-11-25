@@ -3,7 +3,6 @@ import type { Camera } from '@camera/index'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { CanonCamera } from '@vendors/canon/canon-camera'
-import { withCanonPhotoMode } from '@vendors/canon/photo-mode'
 import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
 import { SonyCamera } from '@vendors/sony/sony-camera'
@@ -41,6 +40,6 @@ export async function captureDriverImage(
         throw new Error('Capture without autofocus is only implemented for Canon EOS, Nikon and Sony cameras')
     const capture = () => driver.captureImage({ includeInfo: true, includeData: true, ...params })
     if (driver instanceof SonyCamera) return withSonyPhotoMode(sonyPhotoModeDriver(driver), capture)
-    if (driver instanceof CanonCamera) return withCanonPhotoMode(driver, capture)
+    if (driver instanceof CanonCamera) return driver.withPhotoMode(capture)
     return capture()
 }

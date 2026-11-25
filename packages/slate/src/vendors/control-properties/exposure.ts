@@ -24,7 +24,6 @@ const standardProperties = {
     exposureMode: [standard.ExposureProgramMode],
     exposureCompensation: [standard.ExposureBiasCompensation],
     meteringMode: [standard.ExposureMeteringMode],
-    exposureProgram: [standard.ExposureProgramMode],
 } as const
 
 /**
@@ -40,7 +39,6 @@ export const exposureControlProperties = {
         exposureMode: [standard.ExposureProgramMode],
         exposureCompensation: [sony.ExposureBiasCompensation, sony.ExposureCompensation],
         meteringMode: [sony.ExposureMeteringMode],
-        exposureProgram: [standard.ExposureProgramMode],
     },
     canon: {
         shutterSpeed: [canon.CanonShutterSpeed],
@@ -49,7 +47,6 @@ export const exposureControlProperties = {
         exposureMode: [canon.CanonAutoExposureMode],
         exposureCompensation: [canon.CanonExpCompensation],
         meteringMode: [canon.CanonMeteringMode],
-        exposureProgram: [canon.CanonAutoExposureMode],
     },
     standard: standardProperties,
     nikonPhoto: {

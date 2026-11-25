@@ -87,7 +87,7 @@ try {
     symlinkSync(realpathSync(require.resolve('usb/package.json')).replace(/\/package\.json$/, ''),
         join(isolated, 'node_modules/usb'), 'dir')
     const consumer = `
-        import { Camera, configureSlateTelemetry, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
+        import { Camera, configureSlateTelemetry, type DeviceInfo,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, type ShutterSpeed, type TypedSettingMethods,
             type Aperture, type Iso, type ExposureMode, type ExposureCompensation, type MeteringMode,
@@ -98,8 +98,11 @@ try {
             type CardPhoto, type ComputerPhoto, type PhotoFormat, type RawCompression,
             type CardStatus, type MediaItem, type Battery, type CameraInfo,
             type DigitalZoom, type LiveViewQuality, type LiveViewFrame, type FocusFrame, type CameraLens,
-            runBenchmark, TransportFactory, TransportType } from '@darkgrade/slate'
-        import { protocolSession, SonyWifiCamera, SonyCamera, type ProtocolSession } from '@darkgrade/slate/protocol'
+            runBenchmark } from '@darkgrade/slate'
+        import { protocolSession, SonyWifiCamera, SonyCamera, type ProtocolSession, genericOperationRegistry, genericPropertyRegistry,
+            genericEventRegistry, TransportFactory, TransportType } from '@darkgrade/slate/protocol'
+        // @ts-expect-error Transports and registries are protocol-level; they are in @darkgrade/slate/protocol.
+        import { TransportFactory as RootTransportFactory } from '@darkgrade/slate'
         // @ts-expect-error Vendor drivers left the main entry; they are in @darkgrade/slate/protocol.
         import { SonyCamera as RootSonyCamera } from '@darkgrade/slate'
         // @ts-expect-error Wireless pairing is in @darkgrade/slate/protocol as a written exception.
@@ -110,6 +113,9 @@ try {
         import { CameraClipNotFoundError, type AudioRecording, type Clip, type FrameRate, type VideoFormat } from '@darkgrade/slate'
         const camera = new Camera()
         configureSlateTelemetry(undefined)
+        // @ts-expect-error Raw PTP events are subscribed through protocolSession(camera).on.
+        camera.on(genericEventRegistry.ObjectAdded, () => {})
+        protocolSession(camera).on(genericEventRegistry.ObjectAdded, params => void params.ObjectHandle)
         const device: Promise<{code: number; data: DeviceInfo}> = protocolSession(camera).send(genericOperationRegistry.GetDeviceInfo, {})
         const capabilities: Promise<CameraCapabilities> = camera.getCapabilities()
         const exposure: Promise<ExposureTime | undefined> = capabilities.then(found => found.controls.shutterSpeed?.exposureTime)
@@ -531,7 +537,7 @@ try {
             `if(api.parseExposureTime('180°').kind!=='angle')throw Error('Packed exposure API is missing');`],
             { cwd: isolated, stdio: 'inherit' })
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
-            `const api=${load};(async()=>{const log=console.log;const factory=new api.TransportFactory();` +
+            `const api=${load.replace("slate'", "slate/protocol'")};(async()=>{const log=console.log;const factory=new api.TransportFactory();` +
             `await factory.createUSBTransport();await factory.createIPTransport({address:'127.0.0.1'});` +
             `if((await factory.create(api.TransportType.USB)).getType()!=='usb')throw Error('Wrong USB dispatch');` +
             `if((await factory.create(api.TransportType.IP,{address:'127.0.0.1'})).getType()!=='ip')throw Error('Wrong IP dispatch');` +

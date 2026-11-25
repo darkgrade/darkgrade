@@ -1,7 +1,6 @@
 import { protocolAccess } from '@camera/protocol-session'
 import { CameraClipNotFoundError } from '@camera/errors'
 import { readCameraObjectHandles, readCameraStorages } from '@vendors/generic/storage'
-import { readNikonObjectSize } from '@vendors/nikon/object-size'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import type { TakeMedia } from '@workflows/video-take'
 
@@ -98,7 +97,7 @@ export class UsbVideoRecording {
                     const reported = Number(info?.objectCompressedSize)
                     const bytes =
                         result.code === 0x2001 && this.vendor === 'nikon'
-                            ? await readNikonObjectSize(this.camera, handle, reported)
+                            ? await protocolAccess(this.camera).driver.fullObjectSize(handle, reported)
                             : reported
                     if (
                         result.code === 0x2001 &&
@@ -136,7 +135,7 @@ export class UsbVideoRecording {
         if (fresh.code !== 0x2001 || fresh.data?.filename !== file.filename)
             throw new Error('Camera file changed; transfer refused')
         const reported = Number(fresh.data?.objectCompressedSize)
-        const freshSize = this.vendor === 'nikon' ? await readNikonObjectSize(this.camera, handle, reported) : reported
+        const freshSize = this.vendor === 'nikon' ? await protocolAccess(this.camera).driver.fullObjectSize(handle, reported) : reported
         if (freshSize !== file.bytes) throw new Error('Camera file changed; transfer refused')
         if (!Number.isSafeInteger(file.bytes) || file.bytes <= 0) throw new Error('Invalid camera file size')
         const extended = this.vendor === 'nikon' && this.operations.GetPartialObjectEx

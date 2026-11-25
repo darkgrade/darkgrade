@@ -1,4 +1,7 @@
+import type { ConfirmedPhotoFile } from '@camera/driver'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { encodeMediaId, type MediaReference } from '@vendors/generic/media-id'
 
 const operation = 'takePhoto'
 
@@ -84,4 +87,56 @@ export function photoOutcome(error: unknown, photoConfirmed: boolean): Error {
 export function afterPossibleRelease(error: unknown, releaseSent: boolean): unknown {
     if (!releaseSent || strongestShutterOutcome(error)) return error
     return shutterOutcomeUnknown(error)
+}
+
+export type DriverCapture = { info?: ObjectInfo; data?: Uint8Array; objectHandle?: number }
+
+/** The driver's answer for one release, checked: a file Slate cannot name is not a confirmed photo. */
+export function describedFile(capture: DriverCapture, wantsData: boolean): { info: ObjectInfo; data?: Uint8Array } {
+    const info = capture.info
+    if (!info?.filename || !Number.isSafeInteger(info.objectCompressedSize) || info.objectCompressedSize <= 0)
+        throw new CameraOutcomeUnknownError(
+            'takePhoto',
+            'The shutter was released, but the camera described no new photo file'
+        )
+    if (wantsData && capture.data?.length !== info.objectCompressedSize)
+        throw new CameraOutcomeUnknownError(
+            'takePhoto',
+            'The photo was taken, but its transfer did not match the size the camera reported'
+        )
+    return { info, ...(wantsData && capture.data ? { data: capture.data } : {}) }
+}
+
+/** A card object found through standard PTP handles, named with the id `listMedia()` gives it. */
+export function cardObjectFile(capture: DriverCapture, wantsData: boolean): ConfirmedPhotoFile {
+    const { info, data } = describedFile(capture, wantsData)
+    if (capture.objectHandle === undefined)
+        throw new CameraOutcomeUnknownError(
+            'takePhoto',
+            `The photo ${info.filename} was taken, but the camera did not name its card object`
+        )
+    const sizeBytes = info.objectCompressedSize
+    const reference: MediaReference = {
+        source: 'object',
+        storageId: info.storageID,
+        objectHandle: capture.objectHandle,
+        name: info.filename,
+        sizeBytes,
+    }
+    return { mediaId: encodeMediaId(reference), name: info.filename, sizeBytes, ...(data && { data }) }
+}
+
+/**
+ * Runs one capture and reports a failure as one of the three outcomes. `confirmed` is called once
+ * the driver has confirmed the photo, so a mode restoration that fails after it is never a refusal.
+ */
+export async function classified(
+    capture: (confirmed: () => void) => Promise<ConfirmedPhotoFile>
+): Promise<ConfirmedPhotoFile> {
+    let photoConfirmed = false
+    try {
+        return await capture(() => (photoConfirmed = true))
+    } catch (error) {
+        throw photoOutcome(error, photoConfirmed)
+    }
 }

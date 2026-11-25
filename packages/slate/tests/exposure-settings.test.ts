@@ -399,7 +399,7 @@ describe('exposure vocabulary', () => {
         const { camera, writes } = sonyCamera(body)
         const mode = (await camera.getCapabilities()).controls.exposureMode
         expect(mode).toMatchObject({ value: 'Manual', allowedValues: ['Manual', 'Aperture priority'] })
-        expect((await camera.getCapabilities()).controls.exposureProgram?.value).toBe('Movie Manual')
+        expect((await camera.getCapabilities()).controls.photoVideoMode?.value).toBe('video')
         expect(await camera.setExposureMode('A')).toBe('Aperture priority')
         expect(writes).toEqual([{ code: 0x500e, raw: 0x00078051 }])
     })

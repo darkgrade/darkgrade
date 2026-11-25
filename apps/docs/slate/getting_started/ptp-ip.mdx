@@ -6,7 +6,8 @@ description: "Connect over the standard PTP/IP command and event channels instea
 Slate can use the standard PTP/IP command and event channels instead of USB. Bind the socket to a secondary adapter so joining a camera access point cannot move the controller's normal route:
 
 ```typescript
-import { Camera, IPTransport, VendorIDs } from '@darkgrade/slate'
+import { Camera } from '@darkgrade/slate'
+import { IPTransport, VendorIDs } from '@darkgrade/slate/protocol'
 
 const host = '192.168.1.1' // camera address after Wi-Fi pairing
 const localAddress = '192.168.1.2' // address assigned to the isolated adapter

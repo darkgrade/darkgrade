@@ -109,7 +109,7 @@ Validate the built ESM and CommonJS package entries with `bun run test:package` 
 
 ## Collecting replay evidence over USB
 
-Construct `USBTransport(logger, { maxBulkReadBytes: 16384 })`, or pass the same option
+Construct `USBTransport(logger, { maxBulkReadBytes: 16384 })` from `@darkgrade/slate/protocol`, or pass the same option
 to `TransportFactory.createUSBTransport()`, while recording Linux usbmon traffic.
 The transport reassembles complete PTP containers across these smaller reads;
 ordinary connections retain their existing transfer sizes. The bounded

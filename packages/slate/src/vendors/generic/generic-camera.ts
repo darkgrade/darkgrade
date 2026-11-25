@@ -18,9 +18,10 @@ import type {
     MediaPreviewSize,
     PhotoDestination,
 } from '@camera/driver'
+import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { ExposureContext } from '@camera/exposure-time'
 import type { Camera } from '@camera/index'
-import type { CameraOperationName } from '@camera/operation-table/index'
+import type { CameraOperationName } from '@camera/driver'
 import { validateProtocol, type ProtocolEvidence, type StatePhase } from '@contribute/protocol'
 import { Logger } from '@core/logger'
 import {
@@ -48,8 +49,18 @@ import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
-import type { BodyCapability, ConnectionCapability, MediaCapability } from '@vendors/generic/capability-groups'
-import { afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
+import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import { SonyRemoteSdkTransport } from '@transport/sony-remote/sony-remote-sdk-transport'
+import type { MediaCapability } from '@vendors/generic/capability-groups'
+import { OBJECT_SIZE_UNREPORTED, reportingRefusals } from '@vendors/generic/ptp-object-index'
+import {
+    afterShutterRelease,
+    cardObjectFile,
+    classified,
+    shutterOutcomeUnknown,
+    shutterRefused,
+} from '@vendors/generic/shutter-outcome'
+import { setStandardClock, standardClockUnavailable } from '@vendors/generic/standard-clock'
 import {
     propertyWriteEvidence,
     protocolEvidence,
@@ -1178,7 +1189,7 @@ export class GenericCamera {
 
     async get<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
         if (!property.access.includes('Get')) {
-            throw new Error(`Property ${property.name} is not readable`)
+            throw new CameraUnsupportedError(property.name, `Property ${property.name} is not readable`)
         }
 
         const response = await this.send(this.registry.operations.GetDevicePropDesc, {
@@ -1186,7 +1197,7 @@ export class GenericCamera {
         })
 
         if (!('data' in response) || !response.data) {
-            throw new Error('No data received from GetDevicePropDesc')
+            throw new PTPDecodeError(`GetDevicePropDesc returned no descriptor for ${property.name}`)
         }
 
         // DevicePropDesc uses the registered property codec for the decoded current value.
@@ -1196,7 +1207,7 @@ export class GenericCamera {
     /** Read a standalone value with its registered codec, without requesting a property descriptor. */
     async readValue<P extends PropertyDefinition>(property: P): Promise<CodecType<P['codec']>> {
         if (!property.access.includes('Get')) {
-            throw new Error(`Property ${property.name} is not readable`)
+            throw new CameraUnsupportedError(property.name, `Property ${property.name} is not readable`)
         }
         const operation = this.registry.operations.GetDevicePropValue
         const response = await this.send(operation, { DevicePropCode: property.code })
@@ -1222,7 +1233,7 @@ export class GenericCamera {
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {
         if (!property.access.includes('Set')) {
-            throw new Error(`Property ${property.name} is not writable`)
+            throw new CameraUnsupportedError(property.name, `Property ${property.name} is not writable`)
         }
 
         const codec = this.resolveCodec(property.codec)
@@ -1233,7 +1244,8 @@ export class GenericCamera {
             { DevicePropCode: property.code },
             encodedValue
         )
-        if (response.code !== OK.code) throw new Error(`SetDevicePropValue returned 0x${response.code.toString(16)}`)
+        if (response.code !== OK.code)
+            throw new PTPResponseError(response.code, undefined, { operation: 'SetDevicePropValue' })
     }
 
     async getStandardPropertyStates(propertyNameOrCode?: string | number): Promise<StandardPropertyState[]> {
@@ -1299,17 +1311,20 @@ export class GenericCamera {
                 ? candidate.code === propertyNameOrCode
                 : candidate.name.toLowerCase() === requestedName || candidate.codeHex.toLowerCase() === requestedName
         )
-        if (!state) throw new Error(`The attached camera does not advertise ${propertyNameOrCode}`)
-        if (!state.writable) throw new Error(`${state.name} is read-only on the attached camera`)
+        if (!state)
+            throw new CameraUnsupportedError(String(propertyNameOrCode), `The attached camera does not advertise ${propertyNameOrCode}`)
+        if (!state.writable) throw new CameraUnsupportedError(state.name, `${state.name} is read-only on the attached camera`)
 
         const property = Object.values(this.registry.properties).find(candidate => candidate.code === state.code)
-        if (!property) throw new Error(`${state.codeHex} has no standard PTP property definition`)
+        if (!property)
+            throw new CameraUnsupportedError(state.name, `${state.codeHex} has no standard PTP property definition`)
 
         let value: number | bigint | string = requestedValue
         if (state.allowedValues?.length) {
             const matched = state.allowedValues.find(candidate => String(candidate) === String(requestedValue))
             if (matched === undefined) {
-                throw new Error(
+                throw new CameraRefusedError(
+                    state.name,
                     `${requestedValue} is not advertised for ${state.name}; choose ${state.allowedValues.map(String).join(', ')}`
                 )
             }
@@ -1443,15 +1458,15 @@ export class GenericCamera {
         info?: ObjectInfo
         data?: Uint8Array
     }> {
-        throw new Error('Live view capture not supported on generic PTP cameras')
+        throw new CameraUnsupportedError('getLiveViewFrame', 'Live view capture not supported on generic PTP cameras')
     }
 
     async sendStartRecording(): Promise<void> {
-        throw new Error('Video recording not supported on generic PTP cameras')
+        throw new CameraUnsupportedError('startRecording', 'Video recording not supported on generic PTP cameras')
     }
 
     async sendStopRecording(): Promise<void> {
-        throw new Error('Video recording not supported on generic PTP cameras')
+        throw new CameraUnsupportedError('stopRecording', 'Video recording not supported on generic PTP cameras')
     }
 
     /*
@@ -1470,7 +1485,7 @@ export class GenericCamera {
         if (storageIdsResponse.code !== 0x2001)
             throw new PTPResponseError(storageIdsResponse.code, undefined, { operation: 'GetStorageIDs' })
         const storageIds = storageIdsResponse.data
-        if (!Array.isArray(storageIds)) throw new Error('GetStorageIDs returned no storage dataset')
+        if (!Array.isArray(storageIds)) throw new PTPDecodeError('GetStorageIDs returned no storage dataset')
 
         for (const storageId of storageIds) {
             if ((storageId & 0xffff) === 0) continue
@@ -1481,7 +1496,7 @@ export class GenericCamera {
             if (storageInfoResponse.code !== 0x2001)
                 throw new PTPResponseError(storageInfoResponse.code, undefined, { operation: 'GetStorageInfo' })
             const storageInfo = storageInfoResponse.data
-            if (!storageInfo) throw new Error('GetStorageInfo returned no card dataset')
+            if (!storageInfo) throw new PTPDecodeError('GetStorageInfo returned no card dataset')
 
             // Prepare container for objects in this storage
             const storageObjects: { [objectHandle: number]: ObjectInfo } = {}
@@ -1493,7 +1508,7 @@ export class GenericCamera {
             if (objectIdsResponse.code !== 0x2001)
                 throw new PTPResponseError(objectIdsResponse.code, undefined, { operation: 'GetObjectHandles' })
             const objectHandles = objectIdsResponse.data
-            if (!Array.isArray(objectHandles)) throw new Error('GetObjectHandles returned no object dataset')
+            if (!Array.isArray(objectHandles)) throw new PTPDecodeError('GetObjectHandles returned no object dataset')
 
             // Get detailed info for each object handle
             for (const objectHandle of objectHandles) {
@@ -1502,7 +1517,7 @@ export class GenericCamera {
                 })
                 if (objectInfoResponse.code !== 0x2001)
                     throw new PTPResponseError(objectInfoResponse.code, undefined, { operation: 'GetObjectInfo' })
-                if (!objectInfoResponse.data) throw new Error('GetObjectInfo returned no object metadata')
+                if (!objectInfoResponse.data) throw new PTPDecodeError('GetObjectInfo returned no object metadata')
                 storageObjects[objectHandle] = objectInfoResponse.data
             }
 
@@ -1792,17 +1807,11 @@ export class GenericCamera {
         return this.owner
     }
 
-    // Driver contract (`@camera/driver`): the standard PTP operations every driver inherits.
-    // TRANSITIONAL: the bodies call the capability-group code in `@vendors/generic/generic-operations`,
-    // loaded on first use so this module never imports a brand driver; fold it in here.
-    #standardOperations?: Promise<typeof import('@vendors/generic/generic-operations')>
-    #connectionGroup?: ConnectionCapability
-    #bodyGroup?: BodyCapability
+    // Driver contract (`@camera/driver`): the standard PTP operations every driver inherits. Modules
+    // that import a brand driver are loaded on first use, so this module never imports one.
     #mediaGroup?: MediaCapability
-
-    protected standardOperations() {
-        return (this.#standardOperations ??= import('@vendors/generic/generic-operations'))
-    }
+    #info?: { sessionId: number | null; info: CameraInfo }
+    #clockCheck?: { sessionId: number | null; reason: string | undefined }
 
     /** The card-media group; Sony overrides it with its own card index. */
     protected async mediaGroup(): Promise<MediaCapability> {
@@ -1810,22 +1819,41 @@ export class GenericCamera {
         return (this.#mediaGroup ??= ptpMediaCapability(this, this.requireOwner()))
     }
 
-    private async connectionGroup(): Promise<ConnectionCapability> {
-        const { connectionCapability } = await this.standardOperations()
-        return (this.#connectionGroup ??= connectionCapability(this, this.requireOwner()))
-    }
-
-    private async bodyGroup(): Promise<BodyCapability> {
-        const { bodyCapability } = await this.standardOperations()
-        return (this.#bodyGroup ??= bodyCapability(this, this.requireOwner()))
-    }
-
+    /** Sony's remote session overrides this to say whether it may write its two host preferences. */
     async openSession(device: DeviceDescriptor | undefined, _options: { observeOnly: boolean }): Promise<void> {
         await this.connect(device)
     }
 
+    /** Make, model and firmware from GetDeviceInfo, read once per session. */
     async getInfo(): Promise<CameraInfo> {
-        return (await this.connectionGroup()).getInfo()
+        return reportingRefusals('getInfo', async () => {
+            if (this.#info && this.#info.sessionId === this.sessionId) return { ...this.#info.info }
+            const response = await this.send(this.registry.operations.GetDeviceInfo, {})
+            if (response.code !== OK.code)
+                throw new CameraRefusedError(
+                    'getInfo',
+                    `The camera refused GetDeviceInfo (0x${response.code.toString(16).padStart(4, '0')})`
+                )
+            if (!response.data) throw new PTPDecodeError('GetDeviceInfo returned no device dataset')
+            const { manufacturer, model, deviceVersion, serialNumber } = response.data
+            const lensMount = lensMountForModel(this.vendorId, model)
+            const info: CameraInfo = {
+                manufacturer: (this.vendorId !== null && MAKES[this.vendorId]) || manufacturer.trim(),
+                model: model.trim(),
+                firmware: deviceVersion.trim(),
+                ...(serialNumber && { serialNumber }),
+                ...(lensMount && { lensMount }),
+                connection: this.connectionKind(),
+            }
+            this.#info = { sessionId: this.sessionId, info }
+            return { ...info }
+        })
+    }
+
+    /** Sony's authenticated SDK channel is carried over Wi-Fi IP, but it is not PTP/IP. */
+    private connectionKind(): CameraInfo['connection'] {
+        if (this.transport instanceof SonyRemoteSdkTransport) return 'wifi'
+        return this.transport.getType() === TransportType.USB ? 'usb' : 'ip'
     }
 
     async getCapabilities(requested?: CameraControlId): Promise<CameraCapabilities> {
@@ -1842,9 +1870,25 @@ export class GenericCamera {
         return writeCameraControl(this.requireOwner(), this, id, value, context)
     }
 
-    async takePhoto(options: { autofocus: boolean; destination: PhotoDestination }): Promise<ConfirmedPhotoFile> {
-        const { standardPhotoCapability } = await this.standardOperations()
-        return standardPhotoCapability(this).takePhoto(options)
+    /** A card object's full size when ObjectInfo reports 0xffffffff; a vendor with a 64-bit query overrides this. */
+    async fullObjectSize(_objectHandle: number, reportedBytes: number, operation = 'downloadMedia'): Promise<number> {
+        if (reportedBytes !== OBJECT_SIZE_UNREPORTED) return reportedBytes
+        throw new CameraUnsupportedError(operation, 'This camera does not report the full size of files larger than 4 GiB')
+    }
+
+    /** Standard PTP: InitiateCapture confirmed by ObjectAdded. These bodies save to their card first. */
+    async takePhoto({ autofocus, destination }: { autofocus: boolean; destination: PhotoDestination }): Promise<ConfirmedPhotoFile> {
+        return classified(async confirmed => {
+            if (!autofocus)
+                throw new CameraUnsupportedError(
+                    'takePhoto',
+                    'This camera has no documented release without autofocus over standard PTP; nothing was sent'
+                )
+            const wantsData = destination === 'computer'
+            const capture = await this.captureImage({ includeInfo: true, includeData: wantsData })
+            confirmed()
+            return cardObjectFile(capture, wantsData)
+        })
     }
 
     async getCardStatus(): Promise<CardStatus[]> {
@@ -1863,12 +1907,16 @@ export class GenericCamera {
         return (await this.mediaGroup()).downloadMedia(id, options)
     }
 
+    /** Sony's property snapshot, Canon's EOS level after the standard BatteryLevel, the standard BatteryLevel elsewhere. */
     async getBattery(): Promise<Battery> {
-        return (await this.bodyGroup()).getBattery()
+        const { batteryFromPower, readCameraPower } = await import('@vendors/camera-power')
+        const vendor = this.vendorId === VendorIDs.SONY ? 'sony' : this.vendorId === VendorIDs.CANON ? 'canon' : 'standard'
+        return reportingRefusals('getBattery', async () => batteryFromPower(await readCameraPower(this.requireOwner(), vendor)))
     }
 
+    /** The standard DateTime property; Sony overrides this with its Date/Time Setting. */
     async setClock(moment: Date): Promise<void> {
-        return (await this.bodyGroup()).setClock(moment)
+        return reportingRefusals('setClock', () => setStandardClock(this, moment))
     }
 
     subscribe(event: CameraEventName, handler: CameraEventHandler): () => void {
@@ -1886,10 +1934,46 @@ export class GenericCamera {
             operation === 'downloadMedia'
         )
             return (await (await this.mediaGroup()).availability?.())?.[operation]
-        if (operation === 'getBattery' || operation === 'setClock')
-            return (await (await this.bodyGroup()).availability?.())?.[operation]
-        return undefined
+        if (operation !== 'setClock') return undefined
+        if (this.#clockCheck?.sessionId !== this.sessionId)
+            this.#clockCheck = {
+                sessionId: this.sessionId,
+                reason: await reportingRefusals('setClock', () => standardClockUnavailable(this)),
+            }
+        return this.#clockCheck.reason ? { supported: false, reason: this.#clockCheck.reason } : undefined
     }
+}
+
+/** The make people use for each USB vendor; another vendor keeps the name its DeviceInfo gives. */
+export const MAKES: Record<number, string> = {
+    [VendorIDs.SONY]: 'Sony',
+    [VendorIDs.CANON]: 'Canon',
+    [VendorIDs.NIKON]: 'Nikon',
+    [VendorIDs.FUJIFILM]: 'Fujifilm',
+    [VendorIDs.PANASONIC]: 'Panasonic',
+    [VendorIDs.OLYMPUS]: 'Olympus',
+    [VendorIDs.OM_DIGITAL]: 'OM System',
+    [VendorIDs.LEICA]: 'Leica',
+    [VendorIDs.SIGMA]: 'Sigma',
+}
+
+/**
+ * The lens mount for model families whose mount follows from the name: Sony ILCE/ILME bodies are
+ * E-mount and ILCA bodies A-mount, Nikon Z bodies Z-mount and Nikon D bodies F-mount, Canon EOS R
+ * bodies RF-mount. Any other model reports no mount rather than a guess.
+ */
+export function lensMountForModel(vendorId: number | null, model: string): string | undefined {
+    const name = model.trim()
+    if (vendorId === VendorIDs.SONY) {
+        if (/^IL(CE|ME)-/i.test(name)) return 'E'
+        if (/^ILCA-/i.test(name)) return 'A'
+    }
+    if (vendorId === VendorIDs.NIKON) {
+        if (/^Z\s?[0-9fc]/i.test(name)) return 'Z'
+        if (/^D\d/i.test(name)) return 'F'
+    }
+    if (vendorId === VendorIDs.CANON && /\bEOS R(\d|P\b|\b)/i.test(name)) return 'RF'
+    return undefined
 }
 
 /** Event names, across the standard and vendor registries, that mean each public event. */

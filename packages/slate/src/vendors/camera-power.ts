@@ -1,4 +1,6 @@
 import type { Camera } from '@camera/index'
+import type { Battery } from '@camera/driver'
+import { CameraUnsupportedError } from '@camera/errors'
 import { isCamera } from '@camera/camera-context'
 import { protocolAccess, protocolSession, type ProtocolSession } from '@camera/protocol-session'
 import {GetDevicePropDesc} from '@ptp/definitions/operation-definitions'
@@ -76,4 +78,18 @@ export async function readCameraPower(target:Camera|PowerSession,vendor:'sony'|'
     if(standard?.percent!==undefined||vendor==='standard')return standard
     if(vendor==='canon')return normalizeCameraPower('canon',[...await camera.getCanonPropertyStates?.()||[],...await camera.getCanonUnknownPropertyStates?.()||[]])
     return undefined
+}
+
+/** The public battery reading; telemetry provenance (`source`, `raw`) stays in CameraPower. */
+export function batteryFromPower(power: CameraPower | undefined): Battery {
+    const battery: Battery = {
+        powerSource: power?.powerSource ?? 'unknown',
+        ...(power?.percent !== undefined && { percent: power.percent }),
+        ...(power?.level !== undefined && { level: power.level }),
+        ...(power?.remainingMinutes !== undefined && { minutesRemaining: power.remainingMinutes }),
+        ...(power?.batteryPresent !== undefined && { batteryPresent: power.batteryPresent }),
+    }
+    if (Object.keys(battery).length === 1 && battery.powerSource === 'unknown')
+        throw new CameraUnsupportedError('getBattery', 'This camera does not report its battery')
+    return battery
 }

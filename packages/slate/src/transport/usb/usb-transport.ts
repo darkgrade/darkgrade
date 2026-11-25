@@ -1,11 +1,12 @@
 import { identifyCamera } from '@camera/identification/camera-identification'
 import { Logger } from '@core/logger'
+import { PTPDisconnectedError } from '@core/ptp-errors'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import type { USBTransportOptions } from '@transport/transport-factory'
 import { InEndpoint, Interface, usb } from 'usb'
-import { USBContainerBuilder, USBContainerType } from './usb-container'
+import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
 
 export enum EndpointType {
     BULK_IN = 'bulk_in',
@@ -289,6 +290,23 @@ export class USBTransport implements TransportInterface {
         if (failures.length > 1) throw new AggregateError(failures, 'USB disconnect cleanup failed')
     }
 
+    /** The opened device, or PTPDisconnectedError once it is closed or unplugged. */
+    private requireDevice(): USBDevice {
+        if (!this.connected || !this.endpoints || !this.device)
+            throw new PTPDisconnectedError(this.deviceLost ? 'the USB camera was unplugged' : 'the USB camera is not connected')
+        return this.device
+    }
+
+    /** Runs one USB transfer; a device that disappeared under it ends the connection as PTPDisconnectedError. */
+    private async whileAttached<Result>(transfer: () => Promise<Result>): Promise<Result> {
+        try {
+            return await transfer()
+        } catch (error) {
+            if (!this.handleDeviceLoss(error)) throw error
+            throw new PTPDisconnectedError('the USB camera was unplugged', { cause: error })
+        }
+    }
+
     private findPTPInterface(configuration: USBConfiguration): USBInterface | undefined {
         return configuration.interfaces.find(iface => {
             const alternate = iface.alternates[0] || iface.alternate
@@ -305,12 +323,11 @@ export class USBTransport implements TransportInterface {
     }
 
     async send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void> {
-        if (!this.connected || !this.endpoints || !this.device) throw new Error('Not connected')
-
-        const endpoint = this.endpoints.bulkOut.endpointNumber
+        const device = this.requireDevice()
+        const endpoint = this.endpoints!.bulkOut.endpointNumber
         const container = USBContainerBuilder.parseContainer(data)
 
-        let result = await this.device.transferOut(endpoint, Uint8Array.from(data))
+        const result = await this.whileAttached(() => device.transferOut(endpoint, Uint8Array.from(data)))
 
         this.logger.addLog({
             type: 'usb_transfer',
@@ -336,9 +353,8 @@ export class USBTransport implements TransportInterface {
     }
 
     async receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array> {
-        if (!this.connected || !this.endpoints || !this.device) throw new Error('Not connected')
-
-        const endpoint = this.endpoints.bulkIn.endpointNumber
+        this.requireDevice()
+        const endpoint = this.endpoints!.bulkIn.endpointNumber
         const requested = Math.min(maxLength, this.maxBulkReadBytes)
         let received = await this.readBulkIn(endpoint, requested)
         // An exactly packet-aligned data phase can leave its terminating ZLP for the next read.
@@ -390,7 +406,8 @@ export class USBTransport implements TransportInterface {
         maxLength: number
     ): Promise<{ result: USBInTransferResult; length: number }> {
         if (!this.bulkInTransfer) {
-            const result = this.device!.transferIn(endpoint, maxLength)
+            const device = this.requireDevice()
+            const result = this.whileAttached(() => device.transferIn(endpoint, maxLength))
             result.catch(() => undefined)
             this.bulkInTransfer = { result, length: maxLength }
         }
@@ -406,7 +423,10 @@ export class USBTransport implements TransportInterface {
             return { result, length: transfer.length }
         } catch (error) {
             // A failed transfer is consumed; a released reader leaves the transfer for the next one.
-            if (error === RELEASED) throw new Error('Bulk IN read released by a Device Reset Request or disconnect')
+            if (error === RELEASED)
+                throw this.deviceLost
+                    ? new PTPDisconnectedError('the USB camera was unplugged during the read')
+                    : new Error('Bulk IN read released by a Device Reset Request or disconnect')
             if (this.bulkInTransfer === transfer) this.bulkInTransfer = null
             throw error
         } finally {
@@ -568,18 +588,28 @@ export class USBTransport implements TransportInterface {
         endpoint.removeAllListeners('error')
     }
 
+    /**
+     * A removed device ends the connection once: event polling stops (it is never re-armed), and
+     * waiting bulk readers are released, so nothing keeps submitting transfers to a freed handle.
+     */
     private handleDeviceLoss(error: unknown): boolean {
         if (!isUsbDeviceGone(error)) return false
+        if (this.deviceLost) return true
         this.deviceLost = true
         this.connected = false
+        this.bulkInTransfer = null
+        for (const release of [...this.bulkInReaders]) release(RELEASED)
+        void this.stopInterruptListener().catch(() => undefined)
         this.logger.addLog({ type: 'console', level: 'info', consoleLevel: 'info', args: ['USB device disconnected'] })
         return true
     }
 
     private async listenForInterrupt(): Promise<void> {
+        let failures = 0
         while (this.connected && this.device && this.endpoints) {
             try {
                 const result = await this.device.transferIn(this.endpoints.interrupt.endpointNumber, 64)
+                failures = 0
 
                 if (result.data) {
                     const data = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength)
@@ -593,6 +623,9 @@ export class USBTransport implements TransportInterface {
                 if (error instanceof Error && error.message === 'Cancelled') continue
 
                 console.error('Error listening for interrupt: ', error)
+                // A failing endpoint is retried a few times, spaced out; it never spins.
+                if (++failures > 3) return
+                await new Promise(resolve => setTimeout(resolve, 100 * failures))
             }
         }
     }

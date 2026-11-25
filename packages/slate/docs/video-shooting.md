@@ -6,7 +6,7 @@
 
 A single clip needs only `camera.startRecording()` and `camera.stopRecording()`, which prepare
 and restore the camera themselves. The workflows below coordinate several cameras or bench
-evidence. `SonyVideoRecording`, `openCanonRecordingMode` and `sonyMovieCard` are vendor-named and
+evidence. `UsbVideoRecording`, `SonyVideoRecording`, `openCanonRecordingMode` and `sonyMovieCard` are vendor-named and
 so are exported from the unsupported `@darkgrade/slate/protocol` entry, not the main one.
 
 | API | Responsibility |

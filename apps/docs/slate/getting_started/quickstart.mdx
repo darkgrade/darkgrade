@@ -190,8 +190,8 @@ use the existing typed definitions through `protocolSession(camera)`, without ma
 application vendor map:
 
 ```typescript
-import { Camera, genericOperationRegistry } from '@darkgrade/slate'
-import { protocolSession } from '@darkgrade/slate/protocol'
+import { Camera } from '@darkgrade/slate'
+import { genericOperationRegistry, protocolSession } from '@darkgrade/slate/protocol'
 
 const camera = new Camera()
 await camera.connect()
@@ -208,7 +208,8 @@ try {
 Specify device filters and logging options:
 
 ```typescript
-import { Camera, VendorIDs } from '@darkgrade/slate'
+import { Camera } from '@darkgrade/slate'
+import { VendorIDs } from '@darkgrade/slate/protocol'
 
 const camera = new Camera({
     device: {

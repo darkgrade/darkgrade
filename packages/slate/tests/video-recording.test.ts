@@ -1,8 +1,9 @@
 import {describe,it,expect} from 'vitest'
 import {UsbVideoRecording} from '@camera/video-recording'
+import {NikonCamera} from '@vendors/nikon/nikon-camera'
 function fixture(){
  const calls:{operation:string;args:any}[]=[],operations=Object.fromEntries(['GetStorageIDs','GetStorageInfo','GetObjectHandles','GetObjectInfo','GetPartialObjectEx'].map(name=>[name,name]));let recorded=false
- const camera={get driver(){return ({vendorId:0x04b0,registry:{operations,properties:{MovieRecProhibitionCondition:'flags'}}})},get:async()=> 'notInApplicationMode',send:async(operation:string,args:any)=>{
+ const camera:any={get driver(){const driver={vendorId:0x04b0,registry:{operations,properties:{MovieRecProhibitionCondition:'flags'}},send:(operation:any,args:any)=>camera.send(operation,args)};return {...driver,fullObjectSize:(handle:number,reported:number)=>NikonCamera.prototype.fullObjectSize.call(driver as any,handle,reported)}},get:async()=> 'notInApplicationMode',send:async(operation:string,args:any)=>{
   calls.push({operation,args})
   if(operation==='GetStorageIDs')return {code:0x2001,data:[0x10000,0x20001]}
   if(operation==='GetStorageInfo')return {code:0x2001,data:{accessCapability:2,maxCapacity:1000n,freeSpaceInBytes:500n}}
@@ -58,7 +59,7 @@ it('resolves Nikon 4 GiB sentinel sizes and transfers across the 32-bit offset b
 it('refuses a Nikon sentinel when the full size cannot be verified',async()=>{
  const f=fixture(),send=f.camera.send
  f.camera.send=async(operation:any,args:any)=>operation==='GetObjectInfo'?{code:0x2001,data:{filename:'CLIP.MOV',objectCompressedSize:0xffffffff}} as any:send(operation,args)
- await expect(f.recording.transfer({id:'2',filename:'CLIP.MOV',bytes:0xffffffff,verified:true},async()=>{},()=>{})).rejects.toThrow('large-file size')
+ await expect(f.recording.transfer({id:'2',filename:'CLIP.MOV',bytes:0xffffffff,verified:true},async()=>{},()=>{})).rejects.toThrow('64-bit')
  Object.assign(f.camera.driver.registry.operations,{GetObjectSize:'GetObjectSize'})
  for(const invalid of [0n,BigInt(Number.MAX_SAFE_INTEGER)+1n,'4294967296',undefined]){
   f.camera.send=async(operation:any,args:any)=>operation==='GetObjectSize'?{code:0x2001,data:invalid} as any:operation==='GetObjectInfo'?{code:0x2001,data:{filename:'CLIP.MOV',objectCompressedSize:0xffffffff}} as any:send(operation,args)

@@ -8,9 +8,10 @@ import { SonyCamera, type SonyCameraButton, type SonyPropertyState } from '@vend
 import type { CanonExtendedDeviceInfo } from '@vendors/canon/datasets/canon-extended-device-info-dataset'
 import type { CanonLiveViewFrame } from '@vendors/canon/datasets/canon-live-view-dataset'
 import type { CodecType } from '@ptp/types/codec'
+import type { EventDefinition } from '@ptp/types/event'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { PropertyDefinition } from '@ptp/types/property'
-import type { OperationParams, OperationResponse } from '@ptp/types/type-helpers'
+import type { EventParams, OperationParams, OperationResponse } from '@ptp/types/type-helpers'
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 
 export type CanonLiveViewMagnification = 1 | 5 | 6 | 10 | 15
@@ -45,6 +46,13 @@ export interface ProtocolSession {
         property: P & (P['access'] extends 'Get' ? never : unknown),
         value: CodecType<P['codec']>
     ): Promise<void>
+    /**
+     * Delivers one raw PTP event's decoded parameters. Kept across the driver swap connect() makes;
+     * an explicit disconnect() drops it. Camera's own `on` takes the named events.
+     */
+    on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void
+    /** Stops `handler`, or every handler of the raw event when none is given. */
+    off<E extends EventDefinition>(event: E, handler?: (params: EventParams<E>) => void): void
     getStandardPropertyStates(): Promise<StandardPropertyState[]>
     setStandardProperty(propertyNameOrCode: string | number, value: string | number): Promise<void>
     getNikonVendorPropertyCodes(): Promise<number[]>
@@ -136,6 +144,17 @@ function createProtocolSession(camera: Camera): ProtocolSession {
         get: property => driver().get(property),
         readValue: property => driver().readValue(property),
         set: (property, value) => driver().set(property, value),
+        on(event, handler) {
+            cameraContext(camera).subscriptions.add({ event, handler })
+            driver().on(event, handler)
+        },
+        off(event, handler) {
+            const { subscriptions } = cameraContext(camera)
+            for (const subscription of subscriptions)
+                if (subscription.event.name === event.name && (!handler || subscription.handler === handler))
+                    subscriptions.delete(subscription)
+            driver().off(event, handler)
+        },
         getStandardPropertyStates: () => driver().getStandardPropertyStates(),
         setStandardProperty: (propertyNameOrCode, value) => driver().setStandardProperty(propertyNameOrCode, value),
         async getNikonVendorPropertyCodes() {

@@ -489,13 +489,13 @@ export async function writeCameraControl<Id extends CameraControlId>(
                       ? 'PHOTO'
                       : undefined
             if (expectedMode && (await driver.get(driver.registry.properties.LiveViewSelector)) !== expectedMode)
-                throw new Error('Nikon photo/movie mode changed before the control write')
+                throw new CameraRefusedError(id, 'Nikon photo/movie mode changed before the control write')
             if (state.source.name === 'MovieShutterAngle') {
                 if ((await driver.get(driver.registry.properties.MovieShutterMode)) !== 'SHUTTER_ANGLE')
-                    throw new Error('Nikon shutter mode changed before the control write')
-                const status = await readNikonRecordingStatus(owner)
+                    throw new CameraRefusedError(id, 'Nikon shutter mode changed before the control write')
+                const status = await readNikonRecordingStatus(driver)
                 if (!status || status.recording || status.bufferedImages)
-                    throw new Error('Nikon must confirm idle before changing shutter angle')
+                    throw new CameraRefusedError(id, 'Nikon must confirm idle before changing shutter angle')
             }
             const movieActions = {
                 iso: 'set-iso',
@@ -514,7 +514,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
             const property = Object.values(driver.registry.properties).find(
                 property => property.code === state.source.code
             )
-            if (!property) throw new Error('Camera control property disappeared')
+            if (!property) throw new CameraUnsupportedError(id, 'Camera control property disappeared')
             const descriptor = await driver.propertyDescriptor(property)
             const index =
                 descriptor.supportedValuesDecoded?.findIndex(
@@ -558,16 +558,16 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 }
             }
             if (descriptor.getSet !== 'GET_SET' || target === undefined)
-                throw new Error('Nikon control is no longer writable or advertised')
+                throw new CameraRefusedError(id, 'Nikon control is no longer writable or advertised')
             const definition = getDatatypeByCode(descriptor.dataType)?.codec
-            if (!definition) throw new Error('Nikon control datatype is unknown')
+            if (!definition) throw new CameraUnsupportedError(id, 'Nikon control datatype is unknown')
             const wireCodec = typeof definition === 'function' ? definition(driver.registry) : definition
             const valueCodec: CodecInstance<unknown> =
                 typeof property.codec === 'function' ? property.codec(driver.registry) : property.codec
             const encoded = valueCodec.encode(decoded)
             const expected = wireCodec.encode(target)
             if (encoded.length !== expected.length || encoded.some((byte, index) => byte !== expected[index]))
-                throw new Error('Nikon control cannot be encoded without truncation')
+                throw new CameraRefusedError(id, 'Nikon control cannot be encoded without truncation')
             // Confirmed below by the shared polled readback of this descriptor, like every other write.
             await driver.set(property, decoded as never)
             return
@@ -577,11 +577,11 @@ export async function writeCameraControl<Id extends CameraControlId>(
             return
         }
         const property = Object.values(driver.registry.properties).find(property => property.code === state.source.code)
-        if (!property) throw new Error('Camera control property disappeared')
+        if (!property) throw new CameraUnsupportedError(id, 'Camera control property disappeared')
         if (driver instanceof CanonCamera && id === 'videoFormat') {
             const choices = driver.getPropertyAllowedValues(driver.registry.properties.CanonMovieFormat)
             const choice = choices?.find(format => format.label === requested)
-            if (!choice) throw new Error('Canon movie format is no longer advertised')
+            if (!choice) throw new CameraRefusedError(id, 'Canon movie format is no longer advertised')
             await driver.setMovieFormat(choice.key)
             return
         }
@@ -593,7 +593,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 value => value && typeof value === 'object' && 'label' in value && value.label === requested
             )
             if (!choice || typeof choice !== 'object' || !('packed' in choice) || typeof choice.packed !== 'number')
-                throw new Error('Canon photo format is no longer advertised')
+                throw new CameraRefusedError(id, 'Canon photo format is no longer advertised')
             await driver.setImageFormat(choice.packed)
             return
         }

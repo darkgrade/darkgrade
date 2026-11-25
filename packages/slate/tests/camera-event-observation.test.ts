@@ -49,7 +49,7 @@ describe('public Camera USB connection lifecycle', () => {
             } as never)
             const received: number[] = []
             const event = genericEventRegistry.ObjectAdded
-            const subscribe = () => camera.on(event, params => received.push(params.ObjectHandle))
+            const subscribe = () => protocolSession(camera).on(event, params => received.push(params.ObjectHandle))
             const emit = (handle: number) => listener?.({ code: event.code, transactionId: 1, parameters: [handle] })
             try {
                 await camera.connect()

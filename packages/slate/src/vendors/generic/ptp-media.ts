@@ -2,20 +2,16 @@ import type { CardStatus, MediaDownloadOptions, MediaItem, MediaPreviewSize } fr
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { Camera } from '@camera/index'
-import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { CameraDriverInstance } from '@camera/camera-context'
 import { readCameraStorages } from '@vendors/generic/storage'
-import { PTPError } from '@core/ptp-errors'
 import { GetThumb } from '@ptp/definitions/operation-definitions'
 import { OK } from '@ptp/definitions/response-definitions'
 import { decodeMediaId, newestFirst, type ObjectMediaReference } from '@vendors/generic/media-id'
 import {
-    OBJECT_SIZE_UNREPORTED,
     PtpObjectIndex,
     reportingRefusals,
     type IndexedObject,
 } from '@vendors/generic/ptp-object-index'
-import { readNikonObjectSize } from '@vendors/nikon/object-size'
 
 const NO_IMAGE_COUNT = 0xffffffff
 
@@ -38,23 +34,18 @@ export async function readStorageCardStatus(owner: Camera): Promise<CardStatus[]
     }))
 }
 
-/** The full size of an object, using the vendor's 64-bit query when ObjectInfo cannot hold it. */
-async function objectSize(owner: Camera, driver: CameraDriverInstance, indexed: IndexedObject): Promise<number> {
+/** The full size of an object, using the driver's 64-bit query when ObjectInfo cannot hold it. */
+async function objectSize(driver: CameraDriverInstance, indexed: IndexedObject): Promise<number> {
     const reported = indexed.info.objectCompressedSize
-    if (reported !== OBJECT_SIZE_UNREPORTED) return reported
-    if (driver instanceof NikonCamera) {
-        try {
-            return await readNikonObjectSize(owner, indexed.objectHandle, reported)
-        } catch (error) {
-            // Transport, timeout and response errors pass through; the size check's own refusal is the camera's.
-            if (error instanceof PTPError || !(error instanceof Error)) throw error
-            throw new CameraRefusedError('downloadMedia', error.message)
-        }
+    try {
+        return await driver.fullObjectSize(indexed.objectHandle, reported)
+    } catch (error) {
+        if (!(error instanceof CameraUnsupportedError)) throw error
+        throw new CameraUnsupportedError(
+            'downloadMedia',
+            `${indexed.item.name} is larger than 4 GiB and this camera does not report its full size; copy it from the card`
+        )
     }
-    throw new CameraUnsupportedError(
-        'downloadMedia',
-        `${indexed.item.name} is larger than 4 GiB and this camera does not report its full size; copy it from the card`
-    )
 }
 
 /**
@@ -97,7 +88,7 @@ export function ptpMediaCapability(driver: CameraDriverInstance, owner: Camera):
             const reference = objectReference('downloadMedia', id)
             return reportingRefusals('downloadMedia', async () => {
                 const indexed = await index.resolve('downloadMedia', reference)
-                const size = await objectSize(owner, driver, indexed)
+                const size = await objectSize(driver, indexed)
                 return driver.getObject(indexed.objectHandle, size, options.onProgress, options.signal)
             })
         },

@@ -1,6 +1,7 @@
+import { CameraClipNotFoundError } from '@camera/errors'
 import { protocolAccess } from '@camera/protocol-session'
 import {nikonCanRecordToStorage} from '@vendors/nikon/card-storage'
-import {PTPResponseError} from '@core/ptp-errors'
+import {PTPDecodeError, PTPResponseError} from '@core/ptp-errors'
 import {sonyStorageRecordingCapability} from '@vendors/sony/card-storage'
 
 /** Read current card capacity and camera recording capability, independently of host upload access. */
@@ -8,12 +9,12 @@ export async function readCameraStorages(camera: any) {
     await protocolAccess(camera).driver.prepareStorageRead?.()
     const operations = protocolAccess(camera).driver.registry.operations
     const response = await protocolAccess(camera).send(operations.GetStorageIDs, {})
-    if (response.code !== 0x2001) throw new Error('Camera storage could not be read (GetStorageIDs: 0x' + response.code.toString(16) + ')')
+    if (response.code !== 0x2001) throw new PTPResponseError(response.code, 'Camera storage could not be read (GetStorageIDs: 0x' + response.code.toString(16) + ')')
     const summaries = []
     for (const storageId of response.data || []) {
         if ((Number(storageId) & 0xffff) === 0) continue
         const storage = await protocolAccess(camera).send(operations.GetStorageInfo, {StorageID: storageId})
-        if (storage.code !== 0x2001) throw new Error('Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
+        if (storage.code !== 0x2001) throw new PTPResponseError(storage.code, 'Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
         const info = storage.data || {}
         const access = Number(info.accessCapability ?? info.AccessCapability ?? -1)
         const vendor = protocolAccess(camera).driver.vendorId
@@ -41,13 +42,13 @@ export async function readCameraObjectHandles(camera: any): Promise<Set<number>>
     const operations = protocolAccess(camera).driver.registry.operations
     const storage = await protocolAccess(camera).send(operations.GetStorageIDs, {})
     if (storage.code !== 0x2001) throw new PTPResponseError(storage.code, 'Camera storage could not be read (GetStorageIDs: 0x' + storage.code.toString(16) + ')')
-    if (!Array.isArray(storage.data)) throw new Error('GetStorageIDs returned no storage dataset')
+    if (!Array.isArray(storage.data)) throw new PTPDecodeError('GetStorageIDs returned no storage dataset')
     const handles = new Set<number>()
     for (const storageId of storage.data) {
         if ((Number(storageId) & 0xffff) === 0) continue
         const result = await protocolAccess(camera).send(operations.GetObjectHandles, {StorageID: storageId})
         if (result.code !== 0x2001) throw new PTPResponseError(result.code, 'Camera files could not be listed: 0x' + result.code.toString(16))
-        if (!Array.isArray(result.data)) throw new Error('GetObjectHandles returned no object dataset')
+        if (!Array.isArray(result.data)) throw new PTPDecodeError('GetObjectHandles returned no object dataset')
         for (const handle of result.data) handles.add(Number(handle))
     }
     return handles
@@ -73,6 +74,6 @@ export async function waitForNewCameraMovie(camera: any, baseline: Set<number>, 
         const remaining = deadline - Date.now()
         if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(250, remaining)))
     } while (Date.now() < deadline)
-    throw new Error('Recording stopped, but a new movie was not finalized on the card within ' + timeoutMilliseconds / 1000 + ' seconds'
+    throw new CameraClipNotFoundError('stopRecording', 'Recording stopped, but a new movie was not finalized on the card within ' + timeoutMilliseconds / 1000 + ' seconds'
         + (lastError ? ': ' + String(lastError) : ''))
 }

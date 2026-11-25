@@ -58,7 +58,6 @@ export type { TransportInterface } from '@transport/interfaces/transport.interfa
 export type { OperationParams, OperationResponse, EventParams } from '@ptp/types/type-helpers'
 export { inspectMovieTrackHandlers, readCameraMovieAudio } from '@camera/movie-audio'
 export type { CameraMovieAudio } from '@camera/movie-audio'
-export { isMovableFocusArea } from '@vendors/sony/sony-camera'
 export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@ptp/transaction-channel'
 export {
     PTPDecodeError,
@@ -70,14 +69,6 @@ export {
     PTPTimeoutError,
     type PTPProtocolViolation,
 } from '@core/ptp-errors'
-// Transport implementations
-export { TransportType } from '@transport/interfaces/transport-types'
-export { IPTransport, PTPIPTransactionCancelledError } from '@transport/ip/ip-transport'
-export type { IPTransportOptions } from '@transport/ip/ip-transport'
-export { TransportFactory } from '@transport/transport-factory'
-export { USBTransport } from '@transport/usb/usb-transport'
-export { recordFullTransport } from '@transport/recording-transport'
-export type { TransportRecordingEntry, TransportRecordingOptions } from '@transport/recording-transport'
 
 // Logger configuration
 export { defaultLoggerConfig } from '@core/logger-config'
@@ -92,30 +83,19 @@ export * from '@ptp/types/parameter'
 export * from '@ptp/types/property'
 export * from '@ptp/types/response'
 
-// Definition registries (single source of truth)
-export { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
-export { genericEventRegistry } from '@ptp/definitions/event-definitions'
-export { formatRegistry } from '@ptp/definitions/format-definitions'
-export { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
-export { genericPropertyRegistry } from '@ptp/definitions/property-definitions'
-export { responseRegistry } from '@ptp/definitions/response-definitions'
-export { VendorIDs } from '@ptp/definitions/vendor-ids'
 
 // Data sets (PTP datasets with codecs)
 export * from '@ptp/datasets/device-info-dataset'
 export * from '@ptp/datasets/object-info-dataset'
 export * from '@ptp/datasets/storage-info-dataset'
 
-// Vendor-named drivers, registries and diagnostics are in @darkgrade/slate/protocol (src/protocol.ts).
+// Vendor-named drivers, registries, transports and diagnostics are in @darkgrade/slate/protocol (src/protocol.ts).
 export {VideoTake} from '@workflows/video-take'
 export type {VideoTakeState,TakeCamera,TakeCameraState,TakeMedia} from '@workflows/video-take'
-export {UsbVideoRecording} from '@camera/video-recording'
-export { restrictToRecordingChoices } from '@vendors/canon/recording-mode'
 export {analyseShot,measureShot,describeShot,subjectFocusVerified,chooseIso,chooseShutterSpeed,exifIso} from '@workflows/shot-analysis'
 export type {ShotAnalysis,ShotMetrics} from '@workflows/shot-analysis'
 export {optimiseShot} from '@workflows/shot-setup'
 export type {ShotSetupReport,ShotProperty} from '@workflows/shot-setup'
-export {normaliseShotControls} from '@workflows/shot-controls'
 
 export {assessCameraPower} from '@workflows/camera-power'
 export type {CameraPower, CameraPowerAssessment} from '@workflows/camera-power'

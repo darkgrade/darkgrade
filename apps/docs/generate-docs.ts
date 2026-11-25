@@ -3,6 +3,8 @@ import { join } from 'path'
 import ts from 'typescript'
 
 const PTP_SOURCE_DIR = join(__dirname, '../../packages/slate/src/ptp')
+/** Each brand's definitions and datasets live beside its driver, in vendors/<brand>/{definitions,datasets}. */
+const VENDOR_SOURCE_DIR = join(__dirname, '../../packages/slate/src/vendors')
 const DOCS_OUTPUT_DIR = join(__dirname, 'slate/ptp-reference')
 
 interface ParameterEnumValue {
@@ -1327,6 +1329,21 @@ async function walkDirectoryForDatasets(dir: string, baseDir: string): Promise<s
     return files
 }
 
+/** vendors/<brand>/<kind>/<file>, named `vendors/<brand>/<file>` as the output paths expect. */
+async function vendorFiles(
+    kind: 'definitions' | 'datasets',
+    walk: (dir: string, baseDir: string) => Promise<string[]>
+): Promise<{ fullPath: string; relPath: string }[]> {
+    const found: { fullPath: string; relPath: string }[] = []
+    for (const brand of await readdir(VENDOR_SOURCE_DIR, { withFileTypes: true })) {
+        if (!brand.isDirectory()) continue
+        const directory = join(VENDOR_SOURCE_DIR, brand.name, kind)
+        const files = await walk(directory, directory).catch(() => [])
+        for (const file of files) found.push({ fullPath: join(directory, file), relPath: `vendors/${brand.name}/${file}` })
+    }
+    return found
+}
+
 async function main() {
     console.log('Generating PTP documentation...')
     console.log(`Source: ${PTP_SOURCE_DIR}`)
@@ -1342,6 +1359,9 @@ async function main() {
 
     for (const relPath of definitionFiles) {
         const fullPath = join(definitionsDir, relPath)
+        await processDefinitionFile(fullPath, relPath, DOCS_OUTPUT_DIR)
+    }
+    for (const { fullPath, relPath } of await vendorFiles('definitions', walkDirectory)) {
         await processDefinitionFile(fullPath, relPath, DOCS_OUTPUT_DIR)
     }
 
@@ -1372,6 +1392,9 @@ async function main() {
 
     for (const relPath of datasetFiles) {
         const fullPath = join(datasetsDir, relPath)
+        await processDatasetFile(fullPath, relPath, DOCS_OUTPUT_DIR)
+    }
+    for (const { fullPath, relPath } of await vendorFiles('datasets', walkDirectoryForDatasets)) {
         await processDatasetFile(fullPath, relPath, DOCS_OUTPUT_DIR)
     }
 
