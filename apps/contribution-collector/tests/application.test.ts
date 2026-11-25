@@ -58,8 +58,13 @@ test('busy camera sessions flush bounded batches early without dropping healthy 
                     ),
                 0
             ),
-            2700
+            // The commands, after the attach marker: the transport was already open when observed.
+            2701
         )
+        const kinds = batches.flatMap(row =>
+            JSON.parse(row.data.payload).contributions.flatMap((contribution: any) => contribution.entries.map((entry: any) => entry.kind))
+        )
+        assert.equal(kinds.filter(kind => kind === 'attach').length, 1)
         assert.equal(client.status().droppedEntries, 0)
     } finally {
         client.close()
@@ -346,7 +351,8 @@ test('transient failures retry an immutable batch, bounded queues drop overflow,
         for (let index = 0; index < 2100; index++) await observed.transport.send(bytes, 1, index)
         assert.ok(client.status().queuedEntries <= 2000, 'at most one immutable retry batch and one bounded queue')
         assert.ok(client.status().droppedEntries > 0)
-        assert.equal(client.status().queuedEntries + client.status().droppedEntries, 2101)
+        // The attach marker, the reset and the commands.
+        assert.equal(client.status().queuedEntries + client.status().droppedEntries, 2102)
         assert.equal(resets, 1)
         assert.equal(await client.flush(), 'retry')
         assert.equal(await client.flush(), 'retry')

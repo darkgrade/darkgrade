@@ -40,8 +40,13 @@ test('the Matrix export passes only the evidence types, fields and entry kinds M
  const entry=payload.contributions[0].entries[0],benchmarkId=randomUUID(),callId=randomUUID()
  const write={type:'property-write',vendorId:0x04a9,property:0xd11c,dataType:6,requested:2,transactionId:1,outcome:'response',response:0x2001}
  payload.contributions[0].entries=[
-  {...entry,kind:'response',direction:'in',code:0x2001},
-  {...entry,protocol:write},
+  {...entry,kind:'attach',direction:'lifecycle',code:undefined},
+  {...entry,kind:'response',direction:'in',code:0x2001,commandCode:0x9110},
+  {...entry,protocol:{...write,prior:1,priorAgeMilliseconds:40}},
+  {...entry,protocol:{type:'focus-point',vendorId:0x04b0,x:320,y:240,transactionId:2,outcome:'response',response:0x2001}},
+  {...entry,protocol:{type:'object-info',vendorId:0x04b0,format:0x3801,size:0xffffffff,captureDate:'20261125T101500',transactionId:3}},
+  {...entry,protocol:{type:'transfer',vendorId:0x04b0,offset:0,requestedBytes:1048576,receivedBytes:4096,transactionId:4,outcome:'response',response:0x2002}},
+  {...entry,protocol:{type:'warning-status',vendorId:0x04b0,property:0xd102,value:1,flags:['card-full'],operation:0x9207,transactionId:5}},
   {...entry,protocol:{type:'benchmark',benchmarkId,vendorId:0x04a9,status:'complete',checks:2,failures:0,purpose:'first-contact'}},
   {...entry,protocol:{type:'unrecognized-value',vendorId:0x04a9,property:0xd11c,dataType:6,raw:7,choice:true}},
   {...entry,kind:'call',direction:'lifecycle',callId,code:undefined,call:{operation:'getBattery',tool:'camera_get_battery',
@@ -51,7 +56,8 @@ test('the Matrix export passes only the evidence types, fields and entry kinds M
  const row=(await exportMatrixPage(database)).records.find(r=>r.sourceRecord===user.installId+'_'+payload.id)!
  const pattern=row.patterns[0]
  assert.deepEqual(pattern.protocol,[write,{type:'benchmark',benchmarkId,vendorId:0x04a9,status:'complete',checks:2,failures:0}],
-  'unrecognized-value and benchmark purpose are Telemetry-only')
- assert.deepEqual(pattern.observed.map((o:{kind:string})=>o.kind),['response'],'no call entries; evidence entries are not observed rows')
+  'a write\'s prior value, benchmark purpose and the newer evidence types are Telemetry-only')
+ assert.deepEqual(pattern.observed.map((o:{kind:string})=>o.kind),['response'],'no call or attach entries; evidence entries are not observed rows')
+ assert.doesNotMatch(JSON.stringify(row),/commandCode|prior|focus-point|object-info|warning-status|"transfer"|unrecognized|attach/)
  assert.equal((await handle(request('/v2/installation','DELETE',user.installKey))).status,200)
 })

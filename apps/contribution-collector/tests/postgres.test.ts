@@ -904,7 +904,6 @@ test('busy replies are warnings with their own signals, issues name the command 
         payload.contributions[0].entries=entries.map(fields=>({...entry,kind:'response',direction:'in',failed:false,occurredAt:occurred,...fields})) as any
         const sent=await handle(request('/v2/batches','POST',user.installKey,payload))
         assert.equal(sent.status,202,await sent.text())
-        return `diagnostics/${user.installId}_${payload.id}`
     }
     const summaries=async()=>(await pool.query(`SELECT session_id,events::int,errors::int,signals::int FROM telemetry_sessions
         WHERE installation_id=$1 ORDER BY session_id`,[user.installId])).rows
@@ -913,22 +912,11 @@ test('busy replies are warnings with their own signals, issues name the command 
     try{
         await upload({manufacturer:'Canon.Inc',model:'Canon EOS R6 Mark III'},[
             {sessionId:canon,code:0x2019},{sessionId:canon,code:0xa102},{sessionId:canon,code:0x2002}])
-        const nikonBatch=await upload({manufacturer:'Nikon',model:'Z 6_3'},[{sessionId:nikon,code:0x2001}])
-        // Until Slate's schema carries them, the new fields (a response's commandCode, the attach entry)
-        // are written the way the collector stores an uploaded entry: in `properties`, through the triggers.
-        const stored=(await pool.query('SELECT * FROM telemetry_events WHERE batch_path=$1',[nikonBatch])).rows[0]
-        const add=(sequence:number,kind:string,code:number|null,properties:Record<string,unknown>)=>pool.query(`INSERT INTO telemetry_events
-            (batch_path,sequence,installation_id,session_id,occurred_at,received_at,manufacturer,model,firmware,revision,transport,
-             evidence,kind,code,failed,properties,hardware_fingerprint,backend,connection_normalized)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,false,$15,$16,$17,true)`,
-            [nikonBatch,sequence,stored.installation_id,stored.session_id,occurred,stored.received_at,stored.manufacturer,stored.model,
-                stored.firmware,stored.revision,stored.transport,stored.evidence,kind,code,
-                JSON.stringify({...stored.properties,kind,code:code??undefined,direction:kind==='attach'?'lifecycle':'in',...properties}),
-                stored.hardware_fingerprint,stored.backend])
-        await add(10,'attach',null,{})
-        await add(11,'response',0x2019,{commandCode:0x90c8})
-        await add(12,'response',0x2002,{commandCode:0x9207})
-        await add(13,'response',0xa102,{commandCode:0x9207})
+        // A response carries the opcode it answers; attach says observation began on an open connection.
+        await upload({manufacturer:'Nikon',model:'Z 6_3'},[{sessionId:nikon,code:0x2001},
+            {sessionId:nikon,kind:'attach',direction:'lifecycle',code:undefined},
+            {sessionId:nikon,code:0x2019,commandCode:0x90c8},{sessionId:nikon,code:0x2002,commandCode:0x9207},
+            {sessionId:nikon,code:0xa102,commandCode:0x9207}])
 
         const before=await summaries()
         assert.deepEqual(before.find(row=>row.session_id===canon),{session_id:canon,events:3,errors:1,signals:3},
