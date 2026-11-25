@@ -10,26 +10,17 @@ import type { CanonicalValueNames } from '@vendors/control-properties/vendor-con
  * codecs; the readers that need the codecs' value names are in `@camera/settings/video-readers`.
  */
 export const videoControlDefinitions = {
-    videoFormat: {
-        label: 'Video format',
-        aliases: ['codec', 'movie format', 'movieFormat', 'recording format'],
-    },
+    videoFormat: { label: 'Video format', aliases: ['codec', 'movie format', 'movieFormat', 'recording format'] },
     videoQuality: {
         label: 'Video quality',
         aliases: ['resolution', 'bit rate', 'bitrate', 'record setting', 'movie setting', 'movieSetting', 'movie quality'],
     },
     frameRate: { label: 'Frame rate', aliases: ['fps', 'movie frame rate', 'movieFrameRate'] },
     audioRecording: { label: 'Audio recording', aliases: ['sound', 'movie audio', 'movie sound', 'sound recording'] },
-    digitalZoom: {
-        label: 'Digital zoom',
-        aliases: ['zoom setting', 'zoomSetting', 'zoom mode', 'zoomMode', 'zoom range'],
-    },
+    digitalZoom: { label: 'Digital zoom', aliases: ['zoom setting', 'zoomSetting', 'zoom mode', 'zoomMode', 'zoom range'] },
 } as const
 
-/**
- * Canonical names for this group's codec values, keyed by vendor property name. Type-only codec
- * imports keep this vocabulary browser-safe; the compiler still checks every codec value has a name.
- */
+/** Canonical names for this group's codec values by vendor property; type-only imports keep it browser-safe. */
 export const videoValueNames = {
     ZoomSetting: { 'Optical Zoom Only': 'Off', 'Clear Image Zoom': 'Clear Image Zoom', 'Digital Zoom': 'Digital Zoom' },
 } as const satisfies { ZoomSetting: CanonicalValueNames<typeof sony.ZoomSetting> }
@@ -55,10 +46,7 @@ export type FrameRate = CodecValue<'frameRate'>
 /** Movie sound, Canon only for now: `On`, `Off` or `On (manual level)`. */
 export type AudioRecording = Exclude<CodecValue<'audioRecording'>, 'camera-specific-0'>
 
-/**
- * Value types of this group's typed settings: each id listed here gets `get<Id>()` and
- * `set<Id>(value)` on Camera. Follow `exposure.ts` (shutterSpeed is the worked example).
- */
+/** Value types of this group's typed settings: each id gets `get<Id>()` and `set<Id>(value)` on Camera. */
 export interface VideoSettingTypes {
     videoFormat: SettingTypes<VideoFormat>
     videoQuality: SettingTypes<VideoQuality>

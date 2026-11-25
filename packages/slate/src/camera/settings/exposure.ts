@@ -1,7 +1,5 @@
-import type { CameraControlState } from '@camera/controls'
-import { CameraUnsupportedError } from '@camera/errors'
 import type { ExposureContext, ExposureTime } from '@camera/exposure-time'
-import type { SettingReaders, SettingTypes } from '@camera/settings/setting-types'
+import { enumeratedSettingReader, settingReader, type SettingReaders, type SettingTypes } from '@camera/settings/setting-types'
 import { formatShutterSpeed, type ShutterSpeed } from '@camera/settings/shutter-speed'
 
 /** Exposure settings: canonical ids, labels and search aliases. */
@@ -39,15 +37,7 @@ export type Iso =
     | 'Auto'
 
 /** The exposure modes, as words. Each vendor's own spelling (Sony `Movie Manual`, Canon `Tv`) maps here. */
-export const exposureModes = [
-    'Manual',
-    'Aperture priority',
-    'Shutter priority',
-    'Program',
-    'Auto',
-    'Flexible priority',
-    'Bulb',
-] as const
+export const exposureModes = ['Manual', 'Aperture priority', 'Shutter priority', 'Program', 'Auto', 'Flexible priority', 'Bulb'] as const
 export type ExposureMode = (typeof exposureModes)[number]
 
 /** Short forms accepted as input: the mode-dial letters and Canon's Av/Tv/Fv. */
@@ -67,15 +57,7 @@ export type ExposureModeAlias = keyof typeof exposureModeAliases
 export type ExposureCompensation = `+${number}` | `-${number}` | '0.0'
 
 /** The metering modes, as words. Canon Evaluative and Nikon Matrix are `Multi`. */
-export const meteringModes = [
-    'Multi',
-    'Center-weighted',
-    'Spot',
-    'Large spot',
-    'Partial',
-    'Average',
-    'Highlight',
-] as const
+export const meteringModes = ['Multi', 'Center-weighted', 'Spot', 'Large spot', 'Partial', 'Average', 'Highlight'] as const
 export type MeteringMode = (typeof meteringModes)[number]
 
 /**
@@ -97,30 +79,17 @@ const isAperture = (value: string): value is Aperture => value === 'Auto' || new
 const isIso = (value: string): value is Iso =>
     value === 'Auto' || new RegExp(`^(?:ISO|Multi Frame NR ISO|Multi Frame NR High ISO) \\d+$`).test(value) ||
     /^ISO \d+ \(extended\)$/.test(value)
-const isExposureMode = (value: string): value is ExposureMode => exposureModes.some(mode => mode === value)
 const isExposureCompensation = (value: string): value is ExposureCompensation =>
     value === '0.0' || new RegExp(`^[+-]${number}$`).test(value)
-const isMeteringMode = (value: string): value is MeteringMode => meteringModes.some(mode => mode === value)
-
-function canonicalReader<Value extends string>(
-    id: string,
-    label: string,
-    accepts: (value: string) => value is Value
-): (state: CameraControlState) => Value {
-    return state => {
-        if (accepts(state.value)) return state.value
-        throw new CameraUnsupportedError(id, `${label}: the camera reports a value Slate cannot read (${state.value})`)
-    }
-}
 
 /** Converts a confirmed observation into each typed setting's canonical value. */
 export const exposureSettingReaders: SettingReaders<ExposureSettingTypes> = {
     shutterSpeed: state => formatShutterSpeed(state.exposureTime, state.value),
-    aperture: canonicalReader('aperture', 'Aperture', isAperture),
-    iso: canonicalReader('iso', 'ISO', isIso),
-    exposureMode: canonicalReader('exposureMode', 'Exposure mode', isExposureMode),
-    exposureCompensation: canonicalReader('exposureCompensation', 'Exposure compensation', isExposureCompensation),
-    meteringMode: canonicalReader('meteringMode', 'Metering', isMeteringMode),
+    aperture: settingReader(isAperture),
+    iso: settingReader(isIso),
+    exposureMode: enumeratedSettingReader(exposureModes),
+    exposureCompensation: settingReader(isExposureCompensation),
+    meteringMode: enumeratedSettingReader(meteringModes),
 }
 
 /**

@@ -88,11 +88,8 @@ const sessions = new WeakMap<object, ProtocolSession>()
 export function protocolSession(camera: Camera): ProtocolSession {
     if (typeof camera !== 'object' || camera === null || !isCamera(camera))
         throw new TypeError('protocolSession must be called on a Camera instance')
-    let session = sessions.get(camera)
-    if (!session) {
-        session = createProtocolSession(camera)
-        sessions.set(camera, session)
-    }
+    const session = sessions.get(camera) ?? createProtocolSession(camera)
+    sessions.set(camera, session)
     return session
 }
 
@@ -109,37 +106,26 @@ export function protocolAccess(target: object): object {
     return isCamera(target) ? protocolSession(target) : target
 }
 
-function vendorDriver<Driver extends GenericCamera>(
-    camera: Camera,
-    kind: abstract new (...parameters: never[]) => Driver,
-    operation: string,
-    unavailable: string
-): Driver {
-    const { driver } = cameraContext(camera)
-    if (!(driver instanceof kind)) throw new CameraUnsupportedError(operation, unavailable)
-    return driver
-}
+const vendorDriver =
+    <Driver extends GenericCamera>(kind: () => abstract new (...parameters: never[]) => Driver, bodies: string) =>
+    (camera: Camera, operation: string): Driver => {
+        const { driver } = cameraContext(camera)
+        if (!(driver instanceof kind())) throw new CameraUnsupportedError(operation, `${operation} is only available for ${bodies}`)
+        return driver
+    }
 
-const sony = (camera: Camera, operation: string, unavailable: string) => vendorDriver(camera, SonyCamera, operation, unavailable)
-const nikon = (camera: Camera, operation: string, unavailable: string) => vendorDriver(camera, NikonCamera, operation, unavailable)
-const canon = (camera: Camera, operation: string, unavailable = 'This control is only available for Canon EOS cameras') =>
-    vendorDriver(camera, CanonCamera, operation, unavailable)
+// Classes are looked up at call time: the vendor driver modules import this one.
+const sony = vendorDriver(() => SonyCamera, 'Sony cameras')
+const nikon = vendorDriver(() => NikonCamera, 'Nikon cameras')
+const canon = vendorDriver(() => CanonCamera, 'Canon EOS cameras')
 
 function createProtocolSession(camera: Camera): ProtocolSession {
     const driver = () => cameraContext(camera).driver
     return {
-        get driver() {
-            return driver()
-        },
-        get registry() {
-            return driver().registry
-        },
-        get vendorId() {
-            return driver().vendorId
-        },
-        get sessionId() {
-            return driver().sessionId
-        },
+        get driver() { return driver() },
+        get registry() { return driver().registry },
+        get vendorId() { return driver().vendorId },
+        get sessionId() { return driver().sessionId },
         send: (operation, params, data, maxDataLength) => driver().send(operation, params, data, maxDataLength),
         get: property => driver().get(property),
         readValue: property => driver().readValue(property),
@@ -157,61 +143,30 @@ function createProtocolSession(camera: Camera): ProtocolSession {
         },
         getStandardPropertyStates: () => driver().getStandardPropertyStates(),
         setStandardProperty: (propertyNameOrCode, value) => driver().setStandardProperty(propertyNameOrCode, value),
-        async getNikonVendorPropertyCodes() {
-            return nikon(camera, 'getNikonVendorPropertyCodes', 'Nikon vendor properties require a Nikon camera').getVendorPropertyCodes()
-        },
+        getNikonVendorPropertyCodes: async () => nikon(camera, 'getNikonVendorPropertyCodes').getVendorPropertyCodes(),
         async getSonyPropertyStates() {
-            const body = sony(camera, 'getSonyPropertyStates', 'Sony property state is only available for Sony cameras')
+            const body = sony(camera, 'getSonyPropertyStates')
             await body.refreshPropertyStates()
             return body.listPropertyStates()
         },
-        async sonyPressButton(button, options) {
-            return sony(camera, 'sonyPressButton', 'Sony camera buttons are only available for Sony cameras').pressButton(button, options)
-        },
+        sonyPressButton: async (button, options) => sony(camera, 'sonyPressButton').pressButton(button, options),
         async connectSonyMenuSession(device) {
-            const body = sony(camera, 'connectSonyMenuSession', 'Sony menu sessions require a Sony camera')
+            const body = sony(camera, 'connectSonyMenuSession')
             await body.connect(device || cameraContext(camera).deviceDescriptor, { mode: 'menus' })
         },
-        async getCanonPropertyStates() {
-            return canon(camera, 'getCanonPropertyStates', 'Canon property state is only available for Canon EOS cameras').listPropertyStates()
-        },
-        async getCanonUnknownPropertyStates() {
-            return canon(
-                camera,
-                'getCanonUnknownPropertyStates',
-                'Canon raw property state is only available for Canon EOS cameras'
-            ).listUnknownPropertyStates()
-        },
-        async getCanonExtendedDeviceInfo() {
-            return canon(camera, 'getCanonExtendedDeviceInfo').getExtendedDeviceInfo()
-        },
-        getCanonNetworkState() {
-            return canon(camera, 'getCanonNetworkState', 'Canon network state is only available for Canon EOS cameras').getNetworkState()
-        },
-        async setCanonNetworkCommunicationMode(value, allowUnadvertised = false) {
-            return canon(
-                camera,
-                'setCanonNetworkCommunicationMode',
-                'Canon network communication mode is only available for Canon EOS cameras'
-            ).setNetworkCommunicationMode(value, allowUnadvertised)
-        },
+        getCanonPropertyStates: async () => canon(camera, 'getCanonPropertyStates').listPropertyStates(),
+        getCanonUnknownPropertyStates: async () => canon(camera, 'getCanonUnknownPropertyStates').listUnknownPropertyStates(),
+        getCanonExtendedDeviceInfo: async () => canon(camera, 'getCanonExtendedDeviceInfo').getExtendedDeviceInfo(),
+        getCanonNetworkState: () => canon(camera, 'getCanonNetworkState').getNetworkState(),
+        setCanonNetworkCommunicationMode: async (value, allowUnadvertised = false) =>
+            canon(camera, 'setCanonNetworkCommunicationMode').setNetworkCommunicationMode(value, allowUnadvertised),
         async setCanonLiveViewZoom(magnification) {
             await canon(camera, 'setCanonLiveViewZoom').setLiveViewZoom(magnification)
         },
-        async getCanonLiveViewPosition() {
-            return canon(camera, 'getCanonLiveViewPosition').getLiveViewPosition()
-        },
-        async setCanonLiveViewPosition(x, y) {
-            return canon(camera, 'setCanonLiveViewPosition').setLiveViewPosition(x, y)
-        },
-        async panCanonLiveView(direction, step = 200) {
-            return canon(camera, 'panCanonLiveView').panLiveView(direction, step)
-        },
-        async captureCanonViewfinderFrame() {
-            return canon(camera, 'captureCanonViewfinderFrame').captureViewfinderFrame()
-        },
-        async keepDeviceOn() {
-            return canon(camera, 'keepDeviceOn', 'KeepDeviceOn is only available for Canon EOS cameras').keepDeviceOn()
-        },
+        getCanonLiveViewPosition: async () => canon(camera, 'getCanonLiveViewPosition').getLiveViewPosition(),
+        setCanonLiveViewPosition: async (x, y) => canon(camera, 'setCanonLiveViewPosition').setLiveViewPosition(x, y),
+        panCanonLiveView: async (direction, step = 200) => canon(camera, 'panCanonLiveView').panLiveView(direction, step),
+        captureCanonViewfinderFrame: async () => canon(camera, 'captureCanonViewfinderFrame').captureViewfinderFrame(),
+        keepDeviceOn: async () => canon(camera, 'keepDeviceOn').keepDeviceOn(),
     }
 }

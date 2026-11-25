@@ -26,9 +26,7 @@ export class HttpCameraClient implements CameraClient {
                 redirect: 'error',
             })
         } catch (error) {
-            const message = error instanceof Error && error.name === 'TimeoutError'
-                ? 'Runtime request timed out'
-                : 'Runtime connection failed'
+            const message = error instanceof Error && error.name === 'TimeoutError' ? 'Runtime request timed out' : 'Runtime connection failed'
             throw new Error(
                 `${message}; the camera operation may still be running or have completed. Inspect the host before retrying.`,
                 { cause: error }
@@ -38,15 +36,12 @@ export class HttpCameraClient implements CameraClient {
         try {
             result = await response.json()
         } catch {
-            const message = response.ok
-                ? 'Camera runtime returned invalid JSON'
-                : `Camera request failed (${response.status})`
+            const message = response.ok ? 'Camera runtime returned invalid JSON' : `Camera request failed (${response.status})`
             throw new Error(`${message}; the camera operation may still be running. Inspect the host before retrying.`)
         }
         const failure = result && typeof result === 'object' ? result as { error?: unknown; code?: unknown } : {}
         const message = typeof failure.error === 'string' ? failure.error : undefined
-        if (response.status === 409 && failure.code === 'HARDWARE_BUSY')
-            throw new HardwareBusyError(message || 'Camera is busy')
+        if (response.status === 409 && failure.code === 'HARDWARE_BUSY') throw new HardwareBusyError(message || 'Camera is busy')
         if (!response.ok) throw new Error(message || `Camera request failed (${response.status})`)
         return result
     }

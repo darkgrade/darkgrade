@@ -27,32 +27,16 @@ export interface DarkgradeCliHost {
 
 /** The arguments were not understood. Reported with the command's usage line and a pointer to its help. */
 class UsageError extends Error {
-    constructor(
-        message: string,
-        readonly path: readonly CommandDefinition[]
-    ) {
+    constructor(message: string, readonly path: readonly CommandDefinition[]) {
         super(message)
     }
 }
 
 /** Global flags are taken from anywhere before `--`; everything else is left in order for the command. */
 function separateGlobalFlags(argumentsList: readonly string[]): { flags: GlobalFlags; words: string[] } {
-    const flags: GlobalFlags = {
-        help: false,
-        version: false,
-        noColor: false,
-        noInput: false,
-        noProgress: false,
-        quiet: false,
-    }
-    const keys: Record<string, keyof GlobalFlags> = {
-        help: 'help',
-        version: 'version',
-        quiet: 'quiet',
-        'no-color': 'noColor',
-        'no-input': 'noInput',
-        'no-progress': 'noProgress',
-    }
+    const flags: GlobalFlags = { help: false, version: false, noColor: false, noInput: false, noProgress: false, quiet: false }
+    const keys: Record<string, keyof GlobalFlags> = { help: 'help', version: 'version', quiet: 'quiet', 'no-color': 'noColor' }
+    Object.assign(keys, { 'no-input': 'noInput', 'no-progress': 'noProgress' } satisfies typeof keys)
     const words: string[] = []
     const terminator = argumentsList.indexOf('--')
     const before = terminator < 0 ? argumentsList : argumentsList.slice(0, terminator)
@@ -65,10 +49,7 @@ function separateGlobalFlags(argumentsList: readonly string[]): { flags: GlobalF
 }
 
 /** Checks a leaf command's words against its definition: known flags, their values, and one optional argument. */
-function parseCommandArguments(
-    path: readonly CommandDefinition[],
-    words: readonly string[]
-): { flags: Map<string, string | true>; argument?: string; positionals: string[] } {
+function parseCommandArguments(path: readonly CommandDefinition[], words: readonly string[]) {
     const command = path[path.length - 1]
     const flags = new Map<string, string | true>()
     const positionals: string[] = []
@@ -78,14 +59,9 @@ function parseCommandArguments(
             positionals.push(word)
             continue
         }
-        const flag = (command.flags ?? []).find(
-            candidate => word === `--${candidate.name}` || word === `-${candidate.short}`
-        )
+        const flag = (command.flags ?? []).find(candidate => word === `--${candidate.name}` || word === `-${candidate.short}`)
         if (!flag) {
-            const suggestion = closestMatch(
-                word,
-                visibleFlags(command).map(candidate => `--${candidate.name}`)
-            )
+            const suggestion = closestMatch(word, visibleFlags(command).map(candidate => `--${candidate.name}`))
             throw new UsageError(
                 `Unknown option "${word}" for ${commandLine(path)}.${suggestion ? ` Did you mean "${suggestion}"?` : ''}`,
                 path
@@ -113,10 +89,7 @@ function parseCommandArguments(
 
 function unknownCommand(path: readonly CommandDefinition[], word: string): UsageError {
     const parent = path[path.length - 1]
-    const suggestion = closestMatch(
-        word,
-        (parent.commands ?? []).map(command => command.name)
-    )
+    const suggestion = closestMatch(word, (parent.commands ?? []).map(command => command.name))
     return new UsageError(
         `Unknown command "${word}".${suggestion ? ` Did you mean "${[...path.slice(1).map(command => command.name), suggestion].join(' ')}"?` : ''}`,
         path
@@ -125,11 +98,7 @@ function unknownCommand(path: readonly CommandDefinition[], word: string): Usage
 
 const validEmail = (value: string) => value.length <= 254 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value)
 
-async function runTelemetryCommand(
-    path: readonly CommandDefinition[],
-    words: readonly string[],
-    terminal: Terminal
-): Promise<number> {
+async function runTelemetryCommand(path: readonly CommandDefinition[], words: readonly string[], terminal: Terminal): Promise<number> {
     const action = path[path.length - 1].name
     if (action === 'benchmark') {
         parseCommandArguments(path, words)
@@ -150,44 +119,29 @@ async function runTelemetryCommand(
     const progress = terminal.progress()
     const during = async <Result>(text: string, work: () => Promise<Result>) => {
         if (terminal.animated) progress.update(text)
-        try {
-            return await work()
-        } finally {
-            progress.stop()
-        }
+        return work().finally(() => progress.stop())
     }
     if (action === 'whoami') terminal.print(String(installationId))
     else if (action === 'status') {
         const status = {
             installationId,
             sharing: saved.enabled,
-            effectiveSharing:
-                saved.enabled &&
-                !saved.withdrawalPending &&
-                process.env.DARKGRADE_CONTRIBUTIONS !== '0' &&
-                process.env.DO_NOT_TRACK !== '1',
+            effectiveSharing: saved.enabled && !saved.withdrawalPending &&
+                process.env.DARKGRADE_CONTRIBUTIONS !== '0' && process.env.DO_NOT_TRACK !== '1',
             configured: true,
             deletionPending: saved.withdrawalPending,
             settings: settingsDirectory(),
             ...(flags.has('email') && {
-                contact: await during('Reading the linked email…', async () =>
-                    (await nodeDiagnostics()).contactStatus()
-                ),
+                contact: await during('Reading the linked email…', async () => (await nodeDiagnostics()).contactStatus()),
             }),
         }
-        // A person reads the table; a pipe or --json gets the same JSON as before.
         if (flags.has('json') || !terminal.readable) terminal.print(JSON.stringify(status))
         else terminal.print(describeStatus(status, terminal))
     } else if (action === 'opt-out' || action === 'opt-in') {
         if (action === 'opt-in' && saved.withdrawalPending)
             throw new Error('Finish pending deletion before enabling sharing')
-        await store.write({
-            ...saved,
-            enabled: action === 'opt-in',
-            ...(action === 'opt-in' && !saved.installKey && !saved.enrollmentKey
-                ? { installationId: randomUUID() }
-                : {}),
-        })
+        const freshIdentity = action === 'opt-in' && !saved.installKey && !saved.enrollmentKey
+        await store.write({ ...saved, enabled: action === 'opt-in', ...(freshIdentity && { installationId: randomUUID() }) })
         terminal.print(action === 'opt-out' ? 'Sharing disabled.' : 'Sharing enabled.')
     } else if (action === 'login') {
         await during('Requesting a confirmation email…', async () => (await nodeDiagnostics()).requestContact(email!))
@@ -199,20 +153,13 @@ async function runTelemetryCommand(
             await during('Removing the linked email…', async () => (await nodeDiagnostics()).removeContact())
         terminal.print('Email association removed. Your sharing preference is unchanged.')
     } else if (action === 'delete') {
-        if (
-            terminal.interactive &&
-            !flags.has('yes') &&
-            !(await terminal.confirm('Turn sharing off and delete the diagnostics this installation has shared?'))
-        ) {
+        const question = 'Turn sharing off and delete the diagnostics this installation has shared?'
+        if (terminal.interactive && !flags.has('yes') && !(await terminal.confirm(question))) {
             terminal.report('Cancelled. Nothing was changed.')
             return 1
         }
         // Disable locally before touching network, including when the service is not configured.
-        await store.write({
-            ...saved,
-            enabled: false,
-            withdrawalPending: !!saved.installKey || !!saved.registrationPending,
-        })
+        await store.write({ ...saved, enabled: false, withdrawalPending: !!saved.installKey || !!saved.registrationPending })
         if (saved.installKey || saved.registrationPending) {
             const pending = await during('Deleting cloud data…', async () => {
                 const client = await nodeDiagnostics()
@@ -237,15 +184,8 @@ function describeStatus(
     terminal: Terminal
 ): string {
     const { out } = terminal
-    const sharing = !status.sharing
-        ? out.yellow('off')
-        : status.effectiveSharing
-          ? out.green('on')
-          : out.yellow(
-                status.deletionPending
-                    ? 'on, paused until deletion finishes'
-                    : 'on, but stopped by DO_NOT_TRACK or DARKGRADE_CONTRIBUTIONS'
-            )
+    const paused = status.deletionPending ? 'on, paused until deletion finishes' : 'on, but stopped by DO_NOT_TRACK or DARKGRADE_CONTRIBUTIONS'
+    const sharing = !status.sharing ? out.yellow('off') : status.effectiveSharing ? out.green('on') : out.yellow(paused)
     const contact = status.contact
     const rows = [
         ['Sharing', sharing],
@@ -300,11 +240,7 @@ async function openManual(version: string | undefined, terminal: Terminal): Prom
 }
 
 /** `darkgrade camera <operation>`: the camera operations, loaded only when one runs. */
-async function runCameraCommand(
-    path: readonly CommandDefinition[],
-    words: readonly string[],
-    terminal: Terminal
-): Promise<number> {
+async function runCameraCommand(path: readonly CommandDefinition[], words: readonly string[], terminal: Terminal): Promise<number> {
     const command = path[path.length - 1]
     const operation = cameraCommandOperations.get(command.name)
     if (!operation && command.name !== 'watch') throw unknownCommand(path.slice(0, -1), command.name)
@@ -330,11 +266,7 @@ async function runCameraCommand(
         return runWatchCommand({ camera, durationMilliseconds, json: flags.has('json') }, terminal)
     }
     if (operation.name === 'startRecording')
-        return recording.runStartRecordingCommand({
-            camera,
-            durationMilliseconds,
-            json: flags.has('json'),
-        })
+        return recording.runStartRecordingCommand({ camera, durationMilliseconds, json: flags.has('json') })
     // Required inputs are positional, in the library's order; the rest are flags.
     const input: Record<string, string | boolean> = {}
     const required = operation.parameters.filter(parameter => parameter.required)
@@ -365,12 +297,7 @@ async function runCameraCommand(
     }
 }
 
-async function runCommand(
-    words: readonly string[],
-    flags: GlobalFlags,
-    host: DarkgradeCliHost,
-    terminal: Terminal
-): Promise<number> {
+async function runCommand(words: readonly string[], flags: GlobalFlags, host: DarkgradeCliHost, terminal: Terminal): Promise<number> {
     const help = (path: readonly CommandDefinition[]) => {
         terminal.print(renderHelp(path, terminal.out, { version: host.version, columns: terminal.columns }))
         return 0
@@ -398,15 +325,9 @@ async function runCommand(
     const { flags: commandFlags, argument } = parseCommandArguments(path, remaining)
     const json = commandFlags.has('json')
     if (command.name === 'version') {
+        const { node } = process.versions
         terminal.print(
-            json
-                ? JSON.stringify({
-                      version: host.version ?? null,
-                      node: process.versions.node,
-                      platform: process.platform,
-                      architecture: process.arch,
-                  })
-                : versionLine
+            json ? JSON.stringify({ version: host.version ?? null, node, platform: process.platform, architecture: process.arch }) : versionLine
         )
         return 0
     }

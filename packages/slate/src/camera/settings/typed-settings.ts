@@ -115,32 +115,26 @@ function readSetting(id: TypedSettingId, state: CameraControlState | undefined) 
 }
 
 /**
- * The typed accessors as methods for a prototype. Camera and the Sony Wi-Fi session both install
- * these, so every CameraControlSession has the same typed settings.
+ * Installs one getter and one setter per typed setting on a class whose instances implement the
+ * generic control API. Camera and the Sony Wi-Fi session both install them, so every
+ * CameraControlSession has the same typed settings.
  */
-export function typedSettingAccessors(): Record<string, (this: TypedSettingHost, ...parameters: never[]) => unknown> {
-    const accessors: Record<string, (this: TypedSettingHost, ...parameters: never[]) => unknown> = {}
-    for (const id of typedSettingIds) {
-        accessors[settingGetterName(id)] = async function (this: TypedSettingHost) {
-            return readSetting(id, (await this.getCapabilities()).controls[id])
-        }
-        accessors[settingSetterName(id)] = async function (
-            this: TypedSettingHost,
-            value: CameraControlInputs[TypedSettingId],
-            context?: ExposureContext
-        ) {
-            return readSetting(id, await this.setControl(id, value, context))
-        }
-    }
-    return accessors
-}
-
-/** Installs the typed accessors on a class whose instances implement the generic control API. */
 export function installTypedSettings(prototype: TypedSettingHost): void {
-    for (const [name, method] of Object.entries(typedSettingAccessors())) {
+    const define = (name: string, method: (this: TypedSettingHost, ...parameters: never[]) => unknown) => {
         if (Object.prototype.hasOwnProperty.call(prototype, name))
             throw new Error(`${name} is already defined; remove it so the typed setting is the only one`)
         Object.defineProperty(prototype, name, { value: method, writable: true, configurable: true, enumerable: false })
+    }
+    for (const id of typedSettingIds) {
+        define(settingGetterName(id), async function (this: TypedSettingHost) {
+            return readSetting(id, (await this.getCapabilities()).controls[id])
+        })
+        define(
+            settingSetterName(id),
+            async function (this: TypedSettingHost, value: CameraControlInputs[TypedSettingId], context?: ExposureContext) {
+                return readSetting(id, await this.setControl(id, value, context))
+            }
+        )
     }
 }
 

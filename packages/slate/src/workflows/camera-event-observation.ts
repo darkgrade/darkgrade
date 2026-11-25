@@ -9,15 +9,13 @@ interface EventCamera {
 /** Count decoded event delivery during an owned operation; never retain event payloads. */
 export function observeCameraEvents(camera: EventCamera) {
     const delivered = new Map<number, { code: number; name: string; count: number }>()
-    const listeners = [...new Map(Object.values(camera.registry.events).map(event => [event.code, event])).values()]
-        .map(event => {
-            const listener = () => {
-                const previous = delivered.get(event.code)
-                delivered.set(event.code, { code: event.code, name: event.name, count: (previous?.count || 0) + 1 })
-            }
-            camera.on(event, listener)
-            return { event, listener }
-        })
+    const events = [...new Map(Object.values(camera.registry.events).map(event => [event.code, event])).values()]
+    const listeners = events.map(event => {
+        const listener = () =>
+            delivered.set(event.code, { code: event.code, name: event.name, count: (delivered.get(event.code)?.count || 0) + 1 })
+        camera.on(event, listener)
+        return { event, listener }
+    })
     return {
         async finish() {
             let error: string | undefined

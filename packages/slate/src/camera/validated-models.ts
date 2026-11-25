@@ -3,14 +3,7 @@
  * keyed by the exact DeviceInfo model string. Other bodies are not refused: features are tried
  * and fall back cleanly, and their results are marked `verified: false`.
  */
-export const validatedCameraModels = [
-    'ILCE-6700',
-    'ILME-FX2',
-    'Z6_3',
-    'Z5_2',
-    'Canon EOS R6 Mark III',
-    'Canon EOS R8 Mark II',
-] as const
+export const validatedCameraModels = ['ILCE-6700', 'ILME-FX2', 'Z6_3', 'Z5_2', 'Canon EOS R6 Mark III', 'Canon EOS R8 Mark II'] as const
 
 /** Vendor features physically confirmed on specific bodies; anywhere else they are attempted, unverified. */
 export const verifiedFeatureModels = {

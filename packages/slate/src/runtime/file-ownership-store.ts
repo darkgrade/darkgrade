@@ -60,13 +60,8 @@ export class FileOwnershipStore implements OwnershipStore {
             if (existing && existing.owner !== owner) return false
             const now = Date.now()
             state.claims[resource] = {
-                resource,
-                owner,
-                purpose,
-                host: hostname(),
-                processId: process.pid,
-                childProcessIds: existing?.childProcessIds ?? [],
-                claimedAt: existing?.claimedAt ?? now,
+                resource, owner, purpose, host: hostname(), processId: process.pid,
+                childProcessIds: existing?.childProcessIds ?? [], claimedAt: existing?.claimedAt ?? now,
                 expiresAt: now + lifetimeMilliseconds,
             }
             return true
@@ -131,9 +126,8 @@ export class FileOwnershipStore implements OwnershipStore {
             return { claims: parsed.claims && typeof parsed.claims === 'object' ? parsed.claims : {} }
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { claims: {} }
-            throw new Error(`Unreadable camera lease file ${this.statePath}; inspect it before removing it`, {
-                cause: error,
-            })
+            const message = `Unreadable camera lease file ${this.statePath}; inspect it before removing it`
+            throw new Error(message, { cause: error })
         }
     }
 

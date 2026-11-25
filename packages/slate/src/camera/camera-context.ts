@@ -1,3 +1,4 @@
+import type { CameraEventHandler, CameraEventName } from '@camera/driver'
 import type { Camera, CameraOptions } from '@camera/index'
 import type { Logger } from '@core/logger'
 import type { CameraOperationQueue } from '@core/operation-queue'
@@ -24,15 +25,15 @@ export interface CameraContext {
     readonly logger: Logger
     readonly transport: TransportInterface
     readonly subscriptions: Set<{ event: EventDefinition; handler: (params: never) => void }>
+    /** The `settingsChanged`/`mediaAdded` listeners, attached to the current driver. */
+    readonly namedSubscriptions: { event: CameraEventName; handler: CameraEventHandler; stop: () => void }[]
     /** Serializes control writes and recording transitions on this camera. */
     readonly controlsQueue: CameraOperationQueue
 }
 
 const contexts = new WeakMap<object, CameraContext>()
 
-export function bindCameraContext(camera: object, context: CameraContext): void {
-    contexts.set(camera, context)
-}
+export const bindCameraContext = (camera: object, context: CameraContext): void => void contexts.set(camera, context)
 
 /** True for a constructed Camera (it has a context), false for anything shaped like one. */
 export function isCamera(candidate: object): candidate is Camera {

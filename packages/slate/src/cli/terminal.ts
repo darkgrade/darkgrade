@@ -83,11 +83,7 @@ export interface Terminal {
 const set = (value: string | undefined) => value !== undefined && value !== ''
 
 /** `--no-color`, then NO_COLOR, then FORCE_COLOR, then TERM=dumb, then whether the stream is a terminal. */
-export function colorEnabled(
-    stream: { isTTY?: boolean },
-    environment: Record<string, string | undefined>,
-    noColorFlag: boolean
-): boolean {
+export function colorEnabled(stream: { isTTY?: boolean }, environment: Record<string, string | undefined>, noColorFlag: boolean): boolean {
     if (noColorFlag || set(environment.NO_COLOR)) return false
     if (set(environment.FORCE_COLOR)) return environment.FORCE_COLOR !== '0' && environment.FORCE_COLOR !== 'false'
     if (environment.TERM === 'dumb') return false
@@ -95,8 +91,7 @@ export function colorEnabled(
 }
 
 function paint(enabled: boolean, trueColor: boolean): Paint {
-    const wrap = (open: string, close: string) => (text: string) =>
-        enabled ? `\u001b[${open}m${text}\u001b[${close}m` : text
+    const wrap = (open: string, close: string) => (text: string) => (enabled ? `\u001b[${open}m${text}\u001b[${close}m` : text)
     return {
         bold: wrap('1', '22'),
         dim: wrap('2', '22'),
@@ -129,8 +124,7 @@ export function createTerminal(
     const trueColor = /^(truecolor|24bit)$/.test(environment.COLORTERM ?? '')
     const err = paint(colorEnabled(error, environment, flags.noColor), trueColor)
     const interactive = !!input.isTTY && !!error.isTTY && !flags.noInput && !automated
-    const animated =
-        !!error.isTTY && !automated && !flags.noProgress && !flags.quiet && !set(environment.DARKGRADE_NO_SPINNER)
+    const animated = !!error.isTTY && !automated && !flags.noProgress && !flags.quiet && !set(environment.DARKGRADE_NO_SPINNER)
     const columns = Number(environment.COLUMNS) || output.columns || 80
 
     const animatedProgress = (): Progress => {
@@ -152,10 +146,7 @@ export function createTerminal(
                 text = next
                 if (!timer) {
                     error.write(hideCursor)
-                    timer = setInterval(() => {
-                        frame++
-                        draw()
-                    }, spinnerIntervalMilliseconds)
+                    timer = setInterval(() => { frame++; draw() }, spinnerIntervalMilliseconds)
                 }
                 draw()
             },
@@ -175,18 +166,13 @@ export function createTerminal(
                 previous = next
                 error.write(next + '\n')
             },
-            note(line) {
-                error.write(line + '\n')
-            },
+            note: line => void error.write(line + '\n'),
             stop() {},
         }
     }
 
     const question = async (prompt: string) => {
-        const readline = createInterface({
-            input: input as unknown as NodeJS.ReadableStream,
-            output: error as unknown as NodeJS.WritableStream,
-        })
+        const readline = createInterface({ input: input as unknown as NodeJS.ReadableStream, output: error as unknown as NodeJS.WritableStream })
         try {
             return (await readline.question(prompt)).trim()
         } finally {
@@ -208,10 +194,7 @@ export function createTerminal(
                     `${err.accent('?')} ${err.bold(title)} ${err.dim('↑/↓ or a number, Enter to choose, Esc to cancel')}`,
                     ...rows,
                 ]
-                error.write(
-                    (drawn ? `\u001b[${lines.length}A` : hideCursor) +
-                        lines.map(line => clearLine + line + '\n').join('')
-                )
+                error.write((drawn ? `\u001b[${lines.length}A` : hideCursor) + lines.map(line => clearLine + line + '\n').join(''))
                 drawn = true
             }
             const finish = (value: Value | undefined) => {
@@ -224,8 +207,7 @@ export function createTerminal(
             const onKeypress = (character: string | undefined, key: { name?: string; ctrl?: boolean } = {}) => {
                 const digit = Number(character)
                 if (key.name === 'return') return finish(choices[selected].value)
-                if (key.name === 'escape' || character === 'q' || (key.ctrl && key.name === 'c'))
-                    return finish(undefined)
+                if (key.name === 'escape' || character === 'q' || (key.ctrl && key.name === 'c')) return finish(undefined)
                 if (digit >= 1 && digit <= choices.length) return finish(choices[digit - 1].value)
                 if (key.name === 'up' || character === 'k') selected = (selected + choices.length - 1) % choices.length
                 else if (key.name === 'down' || character === 'j') selected = (selected + 1) % choices.length
@@ -250,8 +232,7 @@ export function createTerminal(
         quiet: flags.quiet,
         columns,
         progress: animated ? animatedProgress : plainProgress,
-        confirm: async prompt =>
-            /^y(es)?$/i.test(await question(`${err.accent('?')} ${err.bold(prompt)} ${err.dim('[y/N]')} `)),
+        confirm: async prompt => /^y(es)?$/i.test(await question(`${err.accent('?')} ${err.bold(prompt)} ${err.dim('[y/N]')} `)),
         ask: prompt => question(`${err.accent('?')} ${err.bold(prompt)} `),
         select,
     }

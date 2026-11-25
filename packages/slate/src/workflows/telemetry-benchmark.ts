@@ -37,6 +37,10 @@ export interface DescriptorShape {
     choices?: number
 }
 
+/** Whether a transport reports real hardware (`hardware`) or a simulation, as its telemetry records it. */
+export const transportEvidence = (transport: object): string | undefined =>
+    (transport as { telemetryEvidence?: string }).telemetryEvidence
+
 /** The options `runCameraBenchmark` took before `photo` and `liveView`. */
 export interface LegacyBenchmarkOptions extends Omit<BenchmarkOptions, 'photo' | 'liveView'> {
     capture?: boolean
@@ -55,26 +59,19 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
     const firstContact = options.purpose === 'first-contact'
     const timeout = options.timeoutMilliseconds ?? 180_000
     const maximum = options.maximumProperties ?? 128
-    if (
-        !Number.isSafeInteger(timeout) ||
-        timeout < 1 ||
-        timeout > 300_000 ||
-        !Number.isSafeInteger(maximum) ||
-        maximum < 1 ||
-        maximum > 512
-    )
-        throw new Error('Invalid benchmark bounds')
-    const id = crypto.randomUUID(),
-        started = Date.now(),
-        deadline = started + timeout
-    const session = protocolAccess(camera),
-        instance = session.driver,
-        vendorId = instance.vendorId ?? 0
+    const within = (value: number, largest: number) => Number.isSafeInteger(value) && value >= 1 && value <= largest
+    if (!within(timeout, 300_000) || !within(maximum, 512)) throw new Error('Invalid benchmark bounds')
+    const id = crypto.randomUUID(), started = Date.now(), deadline = started + timeout
+    const session = protocolAccess(camera), instance = session.driver, vendorId = instance.vendorId ?? 0
+    type BenchmarkStatus = 'started' | 'cancelled' | 'complete' | 'partial'
+    const benchmarkEvidence = (status: BenchmarkStatus, checkCount: number, failures: number): ProtocolEvidence => ({
+        type: 'benchmark', vendorId, benchmarkId: id, status, checks: checkCount, failures,
+        ...(firstContact && { purpose: 'first-contact' as const }),
+    })
     const checks: BenchmarkCheck[] = []
     const datasets: ProtocolEvidence[] = []
     const descriptorShapes: DescriptorShape[] = []
-    let retainedBytes = 0,
-        truncated = false
+    let retainedBytes = 0, truncated = false
     const detach = instance.observeProfile(id, item => {
         const bytes = JSON.stringify(item).length
         if (datasets.length >= 8192 || retainedBytes + bytes > 2 * 1024 * 1024) {
@@ -88,8 +85,7 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
     await flush()
     const stopped = () => (options.signal?.aborted ? 'cancelled' : Date.now() >= deadline ? 'deadline' : undefined)
     const check = async <Result>(name: string, work: () => Promise<Result>): Promise<Result | undefined> => {
-        const beginning = performance.now(),
-            stop = stopped()
+        const beginning = performance.now(), stop = stopped()
         let value: Result | undefined
         const result: BenchmarkCheck = { name, passed: false, durationMilliseconds: 0 }
         try {
@@ -103,11 +99,7 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
         }
         result.durationMilliseconds = Math.round(performance.now() - beginning)
         checks.push(result)
-        try {
-            options.onProgress?.(result)
-        } catch {
-            /* Reporting does not change camera cleanup. */
-        }
+        try { options.onProgress?.(result) } catch { /* Reporting does not change camera cleanup. */ }
         if (!name.startsWith('property-')) await flush()
         return value
     }
@@ -118,37 +110,26 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
             if (result.code !== 0x2001 || !result.data?.model) throw new Error('Missing camera identity')
             return result.data
         })
-        // Use the benchmark's existing identity read before emitting model-scoped evidence.
-        // Sony/Nikon connection caches can predate identity discovery. Snapshotting before
-        // this read stranded the initial mode/settings under "Unknown" in model filters.
-        // GetDeviceInfo does not prepare settings; their original observation ages remain.
-        instance.recordProtocol(
-            {
-                type: 'benchmark', vendorId, benchmarkId: id, status: 'started', checks: 0, failures: 0,
-                ...(firstContact && { purpose: 'first-contact' as const }),
-            },
-            0x1001
-        )
+        // Model-scoped evidence follows the identity read; snapshotting earlier left it under "Unknown".
+        instance.recordProtocol(benchmarkEvidence('started', 0, 0), 0x1001)
         instance.recordStateSnapshot('benchmark', 'before-prepare')
         if (response) {
             identity = { manufacturer: response.manufacturer, model: response.model, firmware: response.deviceVersion }
             const supported = new Set(response.operationsSupportedRaw)
             const safe = capturePropertyCodes(vendorId)
+            const known = new Set(Object.values(instance.registry.properties).map(item => item.code))
             let properties = response.devicePropertiesSupported.filter(code => safe.has(code))
             const vendorInventory = instance instanceof SonyCamera || instance instanceof CanonCamera || vendorId === 0x04b0
             if (!vendorInventory) {
                 // Without a vendor inventory (e.g. Fujifilm), read every advertised code Slate does not
                 // know, including 0xDxxx vendor codes. Known private properties stay excluded; only
                 // allowlisted numeric values leave the camera session.
-                const known = new Set(Object.values(instance.registry.properties).map(item => item.code))
                 properties = [...new Set(response.devicePropertiesSupported)].filter(code => safe.has(code) || !known.has(code))
             }
             if (instance instanceof SonyCamera) {
                 // One authoritative inventory; legacy per-property probes can wedge newer Sonys.
                 if (supported.has(0x9209))
-                    await check('sony-property-inventory', () =>
-                        instance.refreshPropertyStates({ preserveTransferMode: true })
-                    )
+                    await check('sony-property-inventory', () => instance.refreshPropertyStates({ preserveTransferMode: true }))
                 properties = []
             } else if (instance instanceof CanonCamera) {
                 if (supported.has(0x9108))
@@ -164,20 +145,12 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
                     const bytes = result.data
                     if (result.code !== 0x2001 || !(bytes instanceof Uint8Array) || bytes.length < 4)
                         throw new Error('No vendor inventory')
-                    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
-                        count = view.getUint32(0, true)
+                    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), count = view.getUint32(0, true)
                     if (count > 4096 || bytes.length !== 4 + count * 4) throw new Error('Invalid vendor inventory')
-                    const codes = [
-                        ...new Set(Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, true))),
-                    ]
+                    const codes = [...new Set(Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, true)))]
                     instance.recordProtocol({ type: 'inventory', vendorId, category: 'property', codes }, 0x9439)
-                    const known = new Set(Object.values(instance.registry.properties).map(item => item.code))
-                    for (const code of codes)
-                        if (!known.has(code))
-                            instance.recordProtocol(
-                                { type: 'unknown', vendorId, category: 'property', code, advertised: true },
-                                0x9439
-                            )
+                    for (const code of codes.filter(code => !known.has(code)))
+                        instance.recordProtocol({ type: 'unknown', vendorId, category: 'property', code, advertised: true }, 0x9439)
                     properties = [...new Set([...properties, ...codes.filter(code => safe.has(code))])]
                 })
             }
@@ -187,10 +160,8 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
                     break
                 }
                 await check(`property-0x${property.toString(16)}`, async () => {
-                    const operation =
-                        vendorId === 0x04b0 && supported.has(0x943a)
-                            ? createNikonRegistry(true).operations.GetDevicePropDescEx
-                            : instance.registry.operations.GetDevicePropDesc
+                    const nikonExtended = vendorId === 0x04b0 && supported.has(0x943a)
+                    const operation = nikonExtended ? createNikonRegistry(true).operations.GetDevicePropDescEx : instance.registry.operations.GetDevicePropDesc
                     const result = await session.send(operation, { DevicePropCode: property })
                     if (result.code !== 0x2001 || !result.data) throw new Error('Missing property descriptor')
                     const descriptor = result.data
@@ -217,13 +188,11 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
             })
             if (options.photo && !firstContact)
                 await check('photo-transfer', async () => {
-                    const photo = await camera.takePhoto({ autofocus: false, destination: 'computer' })
-                    if (!photo.data.length) throw new Error('No image transferred')
+                    if (!(await camera.takePhoto({ autofocus: false, destination: 'computer' })).data.length) throw new Error('No image transferred')
                 })
             if (options.liveView && !firstContact)
                 await check('live-transfer', async () => {
-                    const frame = await camera.getLiveViewFrame()
-                    if (!frame.jpeg.length) throw new Error('No frame transferred')
+                    if (!(await camera.getLiveViewFrame()).jpeg.length) throw new Error('No frame transferred')
                 })
         }
     } finally {
@@ -232,15 +201,7 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
     const stop = stopped()
     const complete = !stop && !truncated && checks.every(item => item.passed)
     const status = stop === 'cancelled' ? 'cancelled' : complete ? 'complete' : 'partial'
-    const summary: ProtocolEvidence = {
-        type: 'benchmark',
-        vendorId,
-        benchmarkId: id,
-        status,
-        checks: checks.length,
-        failures: checks.filter(item => !item.passed).length,
-        ...(firstContact && { purpose: 'first-contact' as const }),
-    }
+    const summary = benchmarkEvidence(status, checks.length, checks.filter(item => !item.passed).length)
     instance.recordProtocol(summary, 0x1001)
     datasets.push(summary)
     return {
@@ -255,16 +216,10 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
             vendorId,
             identity,
             transport: instance.transport.getType(),
-            evidence:
-                (instance.transport as typeof instance.transport & { telemetryEvidence?: string }).telemetryEvidence ===
-                'hardware'
-                    ? 'hardware'
-                    : 'synthetic',
+            evidence: transportEvidence(instance.transport) === 'hardware' ? 'hardware' : 'synthetic',
             status,
             purpose: firstContact ? 'first-contact' : 'benchmark',
-            scope: firstContact
-                ? 'first-contact-read-only-inventory'
-                : 'advertised-inventory-and-allowlisted-numeric-descriptors',
+            scope: firstContact ? 'first-contact-read-only-inventory' : 'advertised-inventory-and-allowlisted-numeric-descriptors',
             descriptorShapes,
             hardwarePass: false,
             omitted: ['media', 'authentication', 'identity-strings', 'unknown-property-values', 'non-numeric-values'],

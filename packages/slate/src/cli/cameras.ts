@@ -23,10 +23,7 @@ export async function attachedCameras(discovery: CameraDiscovery): Promise<Attac
     const ready = await discovery.discover()
     const known = new Set(ready.map(usbId))
     const elsewhere = (await discovery.camerasInOtherModes()).filter(device => !known.has(usbId(device)))
-    return [
-        ...ready.map(device => attached(device, 'ready')),
-        ...elsewhere.map(device => attached(device, 'other-mode')),
-    ]
+    return [...ready.map(device => attached(device, 'ready')), ...elsewhere.map(device => attached(device, 'other-mode'))]
 }
 
 /** Discovery can return the transport's whole device record; only these fields are reported. */
@@ -55,15 +52,8 @@ export async function runCamerasCommand(
         progress.stop()
     }
     if (options.json) {
-        terminal.print(
-            JSON.stringify({
-                cameras: cameras.map(device => ({
-                    usbId: usbId(device),
-                    vendor: getVendorName(device.vendorId),
-                    ...device,
-                })),
-            })
-        )
+        const listed = cameras.map(device => ({ usbId: usbId(device), vendor: getVendorName(device.vendorId), ...device }))
+        terminal.print(JSON.stringify({ cameras: listed }))
         return 0
     }
     if (!cameras.length) {
@@ -72,8 +62,7 @@ export async function runCamerasCommand(
     }
     const nameWidth = Math.max(...cameras.map(device => cameraName(device).length))
     for (const device of cameras) {
-        const state =
-            device.state === 'ready' ? terminal.out.green('ready') : terminal.out.yellow('attached, not in PTP mode')
+        const state = device.state === 'ready' ? terminal.out.green('ready') : terminal.out.yellow('attached, not in PTP mode')
         // Tab-separated when piped, so `cut` and `awk` need no column arithmetic.
         terminal.print(
             terminal.readable

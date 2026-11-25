@@ -1,6 +1,7 @@
 import type { Clip } from '@camera/driver'
 import type { Camera } from '@camera/index'
-import { describeDevice, selectBenchmarkCamera, type DiscoveredCamera } from '@cli/benchmark'
+import { cameraCommandDependencies, chooseCameraDevice, describeDevice, type DiscoveredCamera } from '@cli/benchmark'
+export { parseCameraId } from '@cli/benchmark'
 
 export interface StartRecordingOptions {
     camera?: { vendorId: number; productId: number }
@@ -32,42 +33,8 @@ export function parseRecordingDuration(text: string): number {
     return Math.round(milliseconds)
 }
 
-export function parseCameraId(text: string): { vendorId: number; productId: number } {
-    if (!/^[a-f0-9]{4}:[a-f0-9]{4}$/i.test(text)) throw new Error(`"${text}" is not a USB id such as 054c:0e78`)
-    const [vendorId, productId] = text.split(':').map(part => parseInt(part, 16))
-    return { vendorId: vendorId!, productId: productId! }
-}
-
 async function defaultDependencies(): Promise<StartRecordingDependencies> {
-    const { Camera } = await import('@camera/index')
-    return {
-        discover: () => Camera.discover(),
-        createCamera: async device =>
-            new Camera({
-                device: {
-                    usb: {
-                        filters: [
-                            {
-                                vendorId: device.vendorId,
-                                productId: device.productId,
-                                ...(device.serialNumber && { serialNumber: device.serialNumber }),
-                            },
-                        ],
-                    },
-                },
-                logger: { renderInTerminal: false, captureConsole: false },
-            }),
-        print: line => console.log(line),
-        progress: line => console.error(line),
-        onStopRequest(request) {
-            process.on('SIGINT', request)
-            process.on('SIGTERM', request)
-            return () => {
-                process.removeListener('SIGINT', request)
-                process.removeListener('SIGTERM', request)
-            }
-        },
-    }
+    return { ...(await cameraCommandDependencies()), print: line => console.log(line), progress: line => console.error(line) }
 }
 
 function describeClip(clip: Clip): string {
@@ -80,21 +47,11 @@ function describeClip(clip: Clip): string {
  * and stops on Ctrl-C or after the duration. Stop is always sent once the camera may be recording;
  * when it cannot be confirmed, the session is left open rather than closed under a running take.
  */
-export async function runStartRecordingCommand(
-    options: StartRecordingOptions,
-    injected?: StartRecordingDependencies
-): Promise<number> {
+export async function runStartRecordingCommand(options: StartRecordingOptions, injected?: StartRecordingDependencies): Promise<number> {
     const dependencies = injected ?? (await defaultDependencies())
-    let device: DiscoveredCamera
-    if (options.camera) device = options.camera
-    else {
-        const selection = selectBenchmarkCamera(await dependencies.discover())
-        if (!('device' in selection)) {
-            dependencies.progress(selection.message.replaceAll('darkgrade telemetry benchmark', 'darkgrade camera start-recording'))
-            return 1
-        }
-        device = selection.device
-    }
+    const command = 'darkgrade camera start-recording'
+    const device = await chooseCameraDevice(options.camera, () => dependencies.discover(), command, text => dependencies.progress(text))
+    if (!device) return 1
     const camera = await dependencies.createCamera(device)
     let requestStop: () => void = () => {}
     let stopAsked = false
@@ -134,24 +91,17 @@ export async function runStartRecordingCommand(
                 dependencies.print(options.json ? JSON.stringify({ stopped: true, clip }) : describeClip(clip))
                 return 0
             }
-            dependencies.print(
-                options.json
-                    ? JSON.stringify({ stopped: true, clip, startConfirmed: false, error: unconfirmedStart })
-                    : `${describeClip(clip)} Record was not confirmed: ${unconfirmedStart}`
-            )
+            const unconfirmed = { stopped: true, clip, startConfirmed: false, error: unconfirmedStart }
+            dependencies.print(options.json ? JSON.stringify(unconfirmed) : `${describeClip(clip)} Record was not confirmed: ${unconfirmedStart}`)
             return 1
         } catch (error) {
             const state = await camera.getRecordingState().catch(() => 'unknown' as const)
             keepSession = state !== 'idle'
             const message = error instanceof Error ? error.message : String(error)
             const startNote = unconfirmedStart === undefined ? {} : { startConfirmed: false, startError: unconfirmedStart }
-            dependencies.print(
-                options.json
-                    ? JSON.stringify({ stopped: state === 'idle', state, error: message, ...startNote })
-                    : state === 'idle'
-                      ? `Stopped, but: ${message}`
-                      : `Stop was not confirmed (${message}). The camera reports ${state}; check it before unplugging.`
-            )
+            const text = state === 'idle' ? `Stopped, but: ${message}`
+                : `Stop was not confirmed (${message}). The camera reports ${state}; check it before unplugging.`
+            dependencies.print(options.json ? JSON.stringify({ stopped: state === 'idle', state, error: message, ...startNote }) : text)
             return 1
         }
     } finally {

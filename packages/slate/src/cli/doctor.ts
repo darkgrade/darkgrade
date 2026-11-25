@@ -48,11 +48,8 @@ export async function doctorChecks(environment: DoctorEnvironment = defaultEnvir
     try {
         const saved = await sharedSettings().read()
         if (!saved) throw new Error('the settings file could not be read')
-        checks.push({
-            name: 'settings',
-            outcome: 'passed',
-            detail: `Settings in ${withoutHome(settingsDirectory())}; sharing is ${saved.enabled ? 'on' : 'off'}`,
-        })
+        const detail = `Settings in ${withoutHome(settingsDirectory())}; sharing is ${saved.enabled ? 'on' : 'off'}`
+        checks.push({ name: 'settings', outcome: 'passed', detail })
     } catch (error) {
         checks.push({
             name: 'settings',
@@ -127,13 +124,10 @@ export async function runDoctorCommand(
         terminal.print(`${mark[check.outcome]} ${check.detail}`)
         if (check.remedy) terminal.print(out.dim(check.remedy.replace(/^/gm, '    ')))
     }
-    terminal.print(
-        '\n' +
-            (failed
-                ? out.red(`${failed} ${failed === 1 ? 'problem' : 'problems'} found.`)
-                : !checks.some(check => check.name === 'camera' && check.outcome === 'passed')
-                  ? 'Nothing is broken, but no camera is ready. Connect one and run this again.'
-                  : out.green('Everything is in place.') + ' Next: darkgrade telemetry benchmark')
-    )
+    const cameraReady = checks.some(check => check.name === 'camera' && check.outcome === 'passed')
+    const verdict = failed ? out.red(`${failed} ${failed === 1 ? 'problem' : 'problems'} found.`)
+        : !cameraReady ? 'Nothing is broken, but no camera is ready. Connect one and run this again.'
+        : out.green('Everything is in place.') + ' Next: darkgrade telemetry benchmark'
+    terminal.print('\n' + verdict)
     return failed ? 1 : 0
 }

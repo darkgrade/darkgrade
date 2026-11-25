@@ -1,13 +1,7 @@
 import type { DiscoveredCamera } from '@camera/driver'
 import type { Camera } from '@camera/index'
 import { CameraOperationQueue } from '@core/operation-queue'
-import {
-    readOperationInput,
-    runOperation,
-    surfaceOperation,
-    type OperationFile,
-    type OperationInput,
-} from '@runtime/operations'
+import { readOperationInput, runOperation, surfaceOperation, type OperationFile, type OperationInput } from '@runtime/operations'
 
 /** An operation's result as it crosses a process: JSON, with any bytes the host saved by path. */
 export interface OperationReply {
@@ -78,15 +72,15 @@ export class CameraRuntime implements CameraClient {
         })
     }
 
-    private run<T>(camera: string, operation: () => Promise<T>): Promise<T> {
+    /** Queued behind this camera's other work, unless `immediate` (stopping never waits). */
+    private run<T>(camera: string, operation: () => Promise<T>, immediate = false): Promise<T> {
         if (typeof camera !== 'string' || !camera.trim()) return Promise.reject(new Error('A valid camera identity is required'))
-        return this.operations.run(camera, operation)
+        return immediate ? operation() : this.operations.run(camera, operation)
     }
 
     async operation(camera: string, name: string, input: OperationInput = {}): Promise<OperationReply> {
         const operation = surfaceOperation(name)
-        if (!operation || operation.static)
-            throw new Error(`Unknown camera operation ${name}`)
+        if (!operation || operation.static) throw new Error(`Unknown camera operation ${name}`)
         // Inputs are read when the call is made, so a queued call keeps what it was given.
         const accepted = readOperationInput(operation, input)
         const execute = async () => {
@@ -96,11 +90,7 @@ export class CameraRuntime implements CameraClient {
             const outcome = await runOperation(target, name, accepted)
             return this.reply(camera, outcome.result, outcome.files)
         }
-        if (operation.immediate) {
-            if (typeof camera !== 'string' || !camera.trim()) throw new Error('A valid camera identity is required')
-            return execute()
-        }
-        return this.run(camera, execute)
+        return this.run(camera, execute, operation.immediate)
     }
 
     private async reply(camera: string, result: unknown, files: OperationFile[]): Promise<OperationReply> {
@@ -108,7 +98,8 @@ export class CameraRuntime implements CameraClient {
         const images: NonNullable<OperationReply['images']> = []
         for (const file of files) {
             const path = this.provider.saveFile ? await this.provider.saveFile(camera, file) : undefined
-            described.push({ role: file.role, name: file.name, mimeType: file.mimeType, bytes: file.data.byteLength, ...(path && { path }) })
+            const { role, name, mimeType } = file
+            described.push({ role, name, mimeType, bytes: file.data.byteLength, ...(path && { path }) })
             if (inlineImages.has(file.role)) images.push({ mimeType: file.mimeType, base64: base64(file.data) })
         }
         return { result, files: described, ...(images.length && { images }) }

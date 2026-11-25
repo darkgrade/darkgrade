@@ -1,5 +1,5 @@
 import type { Camera } from '@camera/index'
-import { describeDevice, selectBenchmarkCamera, type DiscoveredCamera } from '@cli/benchmark'
+import { cameraCommandDependencies, chooseCameraDevice, describeDevice, type DiscoveredCamera } from '@cli/benchmark'
 import type { Terminal } from '@cli/terminal'
 import { readOperationInput, runOperation, type OperationFile, type SurfaceOperation } from '@runtime/operations'
 
@@ -27,35 +27,8 @@ export interface CameraOperationDependencies {
 const withoutConnect = new Set(['recover'])
 
 async function defaultDependencies(): Promise<CameraOperationDependencies> {
-    const { Camera } = await import('@camera/index')
     const { writeFile } = await import('node:fs/promises')
-    return {
-        discover: () => Camera.discover(),
-        createCamera: async device =>
-            new Camera({
-                device: {
-                    usb: {
-                        filters: [
-                            {
-                                vendorId: device.vendorId,
-                                productId: device.productId,
-                                ...(device.serialNumber && { serialNumber: device.serialNumber }),
-                            },
-                        ],
-                    },
-                },
-                logger: { renderInTerminal: false, captureConsole: false },
-            }),
-        writeFile: (path, data) => writeFile(path, data),
-        onStopRequest(request) {
-            process.on('SIGINT', request)
-            process.on('SIGTERM', request)
-            return () => {
-                process.removeListener('SIGINT', request)
-                process.removeListener('SIGTERM', request)
-            }
-        },
-    }
+    return { ...(await cameraCommandDependencies()), writeFile: (path, data) => writeFile(path, data) }
 }
 
 /** Resolves on Ctrl-C, a termination signal or after the duration. */
@@ -70,19 +43,6 @@ async function untilStopRequested(dependencies: CameraOperationDependencies, dur
     if (timer) clearTimeout(timer)
 }
 
-async function selectDevice(
-    camera: CameraOperationOptions['camera'],
-    command: string,
-    terminal: Terminal,
-    dependencies: CameraOperationDependencies
-): Promise<DiscoveredCamera | undefined> {
-    if (camera) return camera
-    const selection = selectBenchmarkCamera(await dependencies.discover())
-    if ('device' in selection) return selection.device
-    terminal.report(selection.message.replaceAll('darkgrade telemetry benchmark', command))
-    return undefined
-}
-
 /**
  * `darkgrade camera watch`: opens the camera and prints one line per camera event, the library's
  * `settingsChanged` and `mediaAdded`, until Ctrl-C or the duration. Reads only.
@@ -93,7 +53,7 @@ export async function runWatchCommand(
     injected?: CameraOperationDependencies
 ): Promise<number> {
     const dependencies = injected ?? (await defaultDependencies())
-    const device = await selectDevice(options.camera, 'darkgrade camera watch', terminal, dependencies)
+    const device = await chooseCameraDevice(options.camera, () => dependencies.discover(), 'darkgrade camera watch', text => terminal.report(text))
     if (!device) return 1
     const camera = await dependencies.createCamera(device)
     try {
@@ -121,14 +81,10 @@ function filePath(file: OperationFile, index: number, outputPath: string | undef
  * the same call the library and the MCP tools make, writes any file it returns, prints the result
  * and closes the camera. The command is sent once; an unconfirmed result is reported, not resent.
  */
-export async function runCameraOperationCommand(
-    options: CameraOperationOptions,
-    terminal: Terminal,
-    injected?: CameraOperationDependencies
-): Promise<number> {
+export async function runCameraOperationCommand(options: CameraOperationOptions, terminal: Terminal, injected?: CameraOperationDependencies): Promise<number> {
     const input = readOperationInput(options.operation, options.input)
     const dependencies = injected ?? (await defaultDependencies())
-    const device = await selectDevice(options.camera, options.operation.cliCommand, terminal, dependencies)
+    const device = await chooseCameraDevice(options.camera, () => dependencies.discover(), options.operation.cliCommand, text => terminal.report(text))
     if (!device) return 1
     const camera = await dependencies.createCamera(device)
     let keepSession = false

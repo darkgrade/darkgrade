@@ -32,6 +32,10 @@ export class UsbVideoRecording {
     private handles() {
         return readCameraObjectHandles(this.camera)
     }
+    /** Nikon reports sizes over 4 GiB through its own object-size property. */
+    private size(handle: number, reported: number) {
+        return this.vendor === 'nikon' ? protocolAccess(this.camera).driver.fullObjectSize(handle, reported) : reported
+    }
     async prepare() {
         const storages = await readCameraStorages(this.camera)
         if (!storages.some(card => card.writable && card.freeBytes > 0))
@@ -43,17 +47,14 @@ export class UsbVideoRecording {
     async start() {
         this.attempted = true
         await this.camera.startRecording()
-        const confirmed =
-            this.vendor === 'nikon'
-                ? (await readNikonRecordingStatus(this.camera))?.recording === true
-                : (await this.camera.getRecordingState()) === 'recording'
+        const nikon = this.vendor === 'nikon'
+        const confirmed = nikon
+            ? (await readNikonRecordingStatus(this.camera))?.recording === true
+            : (await this.camera.getRecordingState()) === 'recording'
+        const reported = nikon ? 'Nikon reports active movie recording' : 'Camera reports card recording'
         return {
             recordingConfirmed: confirmed,
-            evidence: confirmed
-                ? this.vendor === 'nikon'
-                    ? 'Nikon reports active movie recording'
-                    : 'Camera reports card recording'
-                : 'Movie-start command acknowledged; recording-state telemetry unavailable',
+            evidence: confirmed ? reported : 'Movie-start command acknowledged; recording-state telemetry unavailable',
         }
     }
     getRecoveryState() {
@@ -95,10 +96,7 @@ export class UsbVideoRecording {
                     const result = await protocolAccess(this.camera).send(this.operations.GetObjectInfo, { ObjectHandle: handle }),
                         info = result.data
                     const reported = Number(info?.objectCompressedSize)
-                    const bytes =
-                        result.code === 0x2001 && this.vendor === 'nikon'
-                            ? await protocolAccess(this.camera).driver.fullObjectSize(handle, reported)
-                            : reported
+                    const bytes = result.code === 0x2001 ? await this.size(handle, reported) : reported
                     if (
                         result.code === 0x2001 &&
                         Number.isSafeInteger(bytes) &&
@@ -113,17 +111,8 @@ export class UsbVideoRecording {
             }
             await sleep(300)
         } while (Date.now() < deadline)
-        return {
-            stopped: true,
-            media,
-            ...(!media.length
-                ? {
-                      warning:
-                          'Recording stopped, but a new card movie is not yet available. Originals remain on the card.' +
-                          (lastIndexError ? ' ' + lastIndexError : ''),
-                  }
-                : {}),
-        }
+        const warning = 'Recording stopped, but a new card movie is not yet available. Originals remain on the card.'
+        return { stopped: true, media, ...(!media.length && { warning: warning + (lastIndexError ? ' ' + lastIndexError : '') }) }
     }
     async transfer(
         file: TakeMedia,
@@ -132,40 +121,29 @@ export class UsbVideoRecording {
     ) {
         const handle = Number(file.id),
             fresh = await protocolAccess(this.camera).send(this.operations.GetObjectInfo, { ObjectHandle: handle })
-        if (fresh.code !== 0x2001 || fresh.data?.filename !== file.filename)
+        if (
+            fresh.code !== 0x2001 ||
+            fresh.data?.filename !== file.filename ||
+            (await this.size(handle, Number(fresh.data?.objectCompressedSize))) !== file.bytes
+        )
             throw new Error('Camera file changed; transfer refused')
-        const reported = Number(fresh.data?.objectCompressedSize)
-        const freshSize = this.vendor === 'nikon' ? await protocolAccess(this.camera).driver.fullObjectSize(handle, reported) : reported
-        if (freshSize !== file.bytes) throw new Error('Camera file changed; transfer refused')
         if (!Number.isSafeInteger(file.bytes) || file.bytes <= 0) throw new Error('Invalid camera file size')
         const extended = this.vendor === 'nikon' && this.operations.GetPartialObjectEx
         if (!extended && file.bytes > 0xffffffff)
-            throw new Error(
-                'This camera transfer path cannot safely address files over 4 GiB; copy this original from its card'
-            )
+            throw new Error('This camera transfer path cannot safely address files over 4 GiB; copy this original from its card')
         let offset = 0
         while (offset < file.bytes) {
             const count = Math.min(2 * 1024 * 1024, file.bytes - offset)
             const response = await protocolAccess(this.camera).send(
                 extended || this.operations.GetPartialObject,
                 extended
-                    ? {
-                          ObjectHandle: handle,
-                          OffsetLower: offset >>> 0,
-                          OffsetUpper: Math.floor(offset / 0x100000000),
-                          MaxSizeLower: count,
-                          MaxSizeUpper: 0,
-                      }
+                    ? { ObjectHandle: handle, OffsetLower: offset >>> 0, OffsetUpper: Math.floor(offset / 0x100000000), MaxSizeLower: count, MaxSizeUpper: 0 }
                     : { ObjectHandle: handle, Offset: offset, MaxBytes: count },
                 undefined,
                 count + 12
             )
-            if (
-                response.code !== 0x2001 ||
-                !(response.data instanceof Uint8Array) ||
-                !response.data.length ||
-                response.data.length > count
-            )
+            const chunk = response.data
+            if (response.code !== 0x2001 || !(chunk instanceof Uint8Array) || !chunk.length || chunk.length > count)
                 throw new Error('Camera returned an incomplete video chunk')
             await write(response.data)
             offset += response.data.length

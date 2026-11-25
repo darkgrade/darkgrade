@@ -1,7 +1,9 @@
-import type { Camera } from '@camera/index'
+import type { DiscoveredCamera } from '@camera/driver'
+import type { Camera, CameraOptions } from '@camera/index'
 import type { Terminal } from '@cli/terminal'
 import { getVendorName, isSupportedVendor, VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { BenchmarkCheck, runBenchmark } from '@workflows/telemetry-benchmark'
+export type { DiscoveredCamera }
 
 export const benchmarkUsage = 'benchmark [--camera VID:PID] [--no-capture] [--no-live] [--json]'
 
@@ -15,27 +17,44 @@ export interface BenchmarkArguments {
 /** No flags runs everything. `--capture`/`--live` are accepted for older scripts and change nothing. */
 export function parseBenchmarkArguments(args: readonly string[]): BenchmarkArguments {
     const flags = ['--capture', '--live', '--no-capture', '--no-live', '--json']
-    const parsed: BenchmarkArguments = { capture: true, live: true, json: false }
+    const parsed: Pick<BenchmarkArguments, 'camera'> = {}
     for (let index = 0; index < args.length; index++) {
         const value = args[index]
+        const usage = new Error(`Usage: darkgrade telemetry ${benchmarkUsage}`)
         if (value === '--camera') {
-            const camera = args[++index]
-            if (!/^[a-f0-9]{4}:[a-f0-9]{4}$/i.test(camera ?? '') || parsed.camera) throw new Error(`Usage: darkgrade telemetry ${benchmarkUsage}`)
-            const [vendorId, productId] = camera.split(':').map(part => parseInt(part, 16))
-            parsed.camera = { vendorId, productId }
-        } else if (!flags.includes(value)) throw new Error(`Usage: darkgrade telemetry ${benchmarkUsage}`)
+            if (parsed.camera) throw usage
+            try {
+                parsed.camera = parseCameraId(args[++index] ?? '')
+            } catch {
+                throw usage
+            }
+        } else if (!flags.includes(value)) throw usage
     }
-    if (args.includes('--no-capture')) parsed.capture = false
-    if (args.includes('--no-live')) parsed.live = false
-    parsed.json = args.includes('--json')
-    return parsed
+    return { ...parsed, capture: !args.includes('--no-capture'), live: !args.includes('--no-live'), json: args.includes('--json') }
 }
 
-export interface DiscoveredCamera {
-    vendorId: number
-    productId: number
-    serialNumber?: string
-    model?: string
+export function parseCameraId(text: string): { vendorId: number; productId: number } {
+    if (!/^[a-f0-9]{4}:[a-f0-9]{4}$/i.test(text)) throw new Error(`"${text}" is not a USB id such as 054c:0e78`)
+    const [vendorId, productId] = text.split(':').map(part => parseInt(part, 16))
+    return { vendorId: vendorId!, productId: productId! }
+}
+
+/** A Camera for one discovered USB device, logging nothing to the terminal. */
+export async function cameraForDevice(device: DiscoveredCamera, options: CameraOptions = {}): Promise<Camera> {
+    const { Camera } = await import('@camera/index')
+    const { vendorId, productId, serialNumber } = device
+    return new Camera({
+        device: { usb: { filters: [{ vendorId, productId, ...(serialNumber && { serialNumber }) }] } },
+        logger: { renderInTerminal: false, captureConsole: false },
+        ...options,
+    })
+}
+
+/** Calls `request` on Ctrl-C or a termination signal; the returned function stops listening. */
+export function onProcessStopRequest(request: () => void): () => void {
+    process.on('SIGINT', request)
+    process.on('SIGTERM', request)
+    return () => void process.removeListener('SIGINT', request).removeListener('SIGTERM', request)
 }
 
 export const usbId = (device: { vendorId: number; productId: number }) =>
@@ -55,7 +74,8 @@ export const connectionHelp = [
 /** One device is used; several are narrowed to the sole camera-maker device, otherwise the user picks. */
 export function selectBenchmarkCamera(
     devices: readonly DiscoveredCamera[],
-    otherModes: readonly DiscoveredCamera[] = []
+    otherModes: readonly DiscoveredCamera[] = [],
+    command = 'darkgrade telemetry benchmark'
 ): { device: DiscoveredCamera } | { message: string } {
     if (devices.length === 1) return { device: devices[0] }
     if (!devices.length) {
@@ -67,8 +87,32 @@ export function selectBenchmarkCamera(
     return {
         message: [
             'Several cameras are attached. Choose one with --camera VID:PID:',
-            ...devices.map(device => `  darkgrade telemetry benchmark --camera ${usbId(device)}   # ${describeDevice(device)}`),
+            ...devices.map(device => `  ${command} --camera ${usbId(device)}   # ${describeDevice(device)}`),
         ].join('\n'),
+    }
+}
+
+/** The requested device, else the one `selectBenchmarkCamera` picks; otherwise its message is reported. */
+export async function chooseCameraDevice(
+    requested: DiscoveredCamera | undefined,
+    discover: () => Promise<DiscoveredCamera[]>,
+    command: string,
+    report: (message: string) => void
+): Promise<DiscoveredCamera | undefined> {
+    if (requested) return requested
+    const selection = selectBenchmarkCamera(await discover(), [], command)
+    if ('device' in selection) return selection.device
+    report(selection.message)
+    return undefined
+}
+
+/** What the one-camera commands open the attached camera with. */
+export async function cameraCommandDependencies() {
+    const { Camera } = await import('@camera/index')
+    return {
+        discover: () => Camera.discover(),
+        createCamera: (device: DiscoveredCamera) => cameraForDevice(device),
+        onStopRequest: onProcessStopRequest,
     }
 }
 
@@ -78,9 +122,7 @@ export async function camerasInOtherModes(): Promise<DiscoveredCamera[]> {
         const { Logger } = await import('@core/logger')
         const { USBTransport } = await import('@transport/usb/usb-transport')
         const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
-        const devices = await transport.discover({
-            usb: { filters: Object.values(VendorIDs).map(vendorId => ({ vendorId })) },
-        })
+        const devices = await transport.discover({ usb: { filters: Object.values(VendorIDs).map(vendorId => ({ vendorId })) } })
         return devices.filter(device => device.classCode !== 0x06)
     } catch {
         return []
@@ -104,13 +146,10 @@ export function benchmarkSummary(
         return !check ? 'not run' : check.passed ? 'ok' : `failed (${check.error})`
     }
     const failed = result.checks.filter(check => !check.passed && !check.name.startsWith('property-'))
-    const uploaded = uploads.includes('sent')
-        ? 'uploaded'
-        : uploads.includes('disabled')
-          ? 'not uploaded (sharing is off)'
-          : uploads.includes('retry') || uploads.includes('timeout')
-            ? 'queued; will retry'
-            : 'not uploaded'
+    const queued = uploads.includes('retry') || uploads.includes('timeout')
+    const uploaded = uploads.includes('sent') ? 'uploaded'
+        : uploads.includes('disabled') ? 'not uploaded (sharing is off)'
+        : queued ? 'queued; will retry' : 'not uploaded'
     const identity = result.profile.identity
     return [
         `${result.passed ? 'Benchmark complete' : `Benchmark ${result.profile.status}`}: ${
@@ -144,34 +183,23 @@ export interface BenchmarkCommandDependencies {
 /** `--camera` wins; DARKGRADE_CAMERA names the device for scripts and shells that always use one body. */
 function cameraFromEnvironment(value: string | undefined): BenchmarkArguments['camera'] {
     if (!value) return undefined
-    if (!/^[a-f0-9]{4}:[a-f0-9]{4}$/i.test(value)) throw new Error('DARKGRADE_CAMERA must be a USB id such as 054c:0e78')
-    const [vendorId, productId] = value.split(':').map(part => parseInt(part, 16))
-    return { vendorId, productId }
+    try {
+        return parseCameraId(value)
+    } catch {
+        throw new Error('DARKGRADE_CAMERA must be a USB id such as 054c:0e78')
+    }
 }
 
 async function defaultDependencies(terminal?: Terminal): Promise<BenchmarkCommandDependencies> {
     const progress = terminal?.progress()
-    // Importing the CLI's preference commands never loads USB or opens a camera.
     const { Camera } = await import('@camera/index')
     const { runBenchmark } = await import('@workflows/telemetry-benchmark')
     const { nodeDiagnostics, saveDiagnosticProfile } = await import('@contribute/settings')
     return {
         discover: () => Camera.discover(),
         camerasInOtherModes,
-        createCamera: async device =>
-            new Camera({
-                device: {
-                    usb: {
-                        filters: [
-                            {
-                                vendorId: device.vendorId,
-                                productId: device.productId,
-                                ...(device.serialNumber && { serialNumber: device.serialNumber }),
-                            },
-                        ],
-                    },
-                },
-                logger: { renderInTerminal: false, captureConsole: false },
+        createCamera: device =>
+            cameraForDevice(device, {
                 transactionPolicy: { timeoutMilliseconds: 10_000, deviceBusyRetries: 1 },
                 // This command runs the full inventory itself.
                 firstContact: false,
@@ -186,11 +214,7 @@ async function defaultDependencies(terminal?: Terminal): Promise<BenchmarkComman
             choose: devices =>
                 terminal.select(
                     'Several cameras are attached. Which one?',
-                    devices.map(device => ({
-                        label: device.model ?? getVendorName(device.vendorId),
-                        hint: usbId(device),
-                        value: device,
-                    }))
+                    devices.map(device => ({ label: device.model ?? getVendorName(device.vendorId), hint: usbId(device), value: device }))
                 ),
         }),
     }
@@ -210,10 +234,7 @@ export async function runBenchmarkCommand(
     else {
         dependencies.status?.('Looking for a camera…')
         const devices = await dependencies.discover()
-        const selection = selectBenchmarkCamera(
-            devices,
-            devices.length ? [] : await dependencies.camerasInOtherModes()
-        )
+        const selection = selectBenchmarkCamera(devices, devices.length ? [] : await dependencies.camerasInOtherModes())
         dependencies.clearStatus?.()
         if ('device' in selection) device = selection.device
         else if (devices.length > 1 && dependencies.choose) {
@@ -243,8 +264,7 @@ export async function runBenchmarkCommand(
     const camera = await dependencies.createCamera(device)
     const cancellation = new AbortController()
     const cancel = () => cancellation.abort()
-    process.once('SIGINT', cancel)
-    process.once('SIGTERM', cancel)
+    const stopListening = onProcessStopRequest(cancel)
     const deadline = setTimeout(cancel, 200_000)
     const uploads: UploadResult[] = []
     const flush = async () => {
@@ -267,9 +287,7 @@ export async function runBenchmarkCommand(
         const upload = await flush()
         dependencies.clearStatus?.()
         dependencies.print(
-            options.json
-                ? JSON.stringify({ ...result, profilePath, upload })
-                : benchmarkSummary(device, result, profilePath, uploads)
+            options.json ? JSON.stringify({ ...result, profilePath, upload }) : benchmarkSummary(device, result, profilePath, uploads)
         )
         return result.passed ? 0 : 1
     } finally {
@@ -278,8 +296,7 @@ export async function runBenchmarkCommand(
             await camera.disconnect()
         } finally {
             clearTimeout(deadline)
-            process.removeListener('SIGINT', cancel)
-            process.removeListener('SIGTERM', cancel)
+            stopListening()
         }
     }
 }

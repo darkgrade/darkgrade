@@ -1,4 +1,4 @@
-import { kebabCase, surfaceOperations, type SurfaceOperation } from '@runtime/operations'
+import { fileRoles, kebabCase, surfaceOperations, type SurfaceOperation } from '@runtime/operations'
 
 /** The one description of the command tree. Help, the manual page, shell completions,
  * argument checks and typo suggestions are all drawn from it. */
@@ -47,11 +47,7 @@ export const globalFlags: readonly FlagDefinition[] = [
 ]
 
 const json: FlagDefinition = { name: 'json', summary: 'Print the result as one JSON document' }
-const camera: FlagDefinition = {
-    name: 'camera',
-    value: 'VID:PID',
-    summary: 'Use this USB device; DARKGRADE_CAMERA does the same',
-}
+const camera: FlagDefinition = { name: 'camera', value: 'VID:PID', summary: 'Use this USB device; DARKGRADE_CAMERA does the same' }
 
 const telemetry: CommandDefinition = {
     name: 'telemetry',
@@ -91,10 +87,7 @@ const telemetry: CommandDefinition = {
             description:
                 'Reads the saved preference without contacting the service. Prints JSON when piped or with --json.',
             section: 'Sharing',
-            flags: [
-                { name: 'email', summary: 'Also read the linked email from the service (a network request)' },
-                json,
-            ],
+            flags: [{ name: 'email', summary: 'Also read the linked email from the service (a network request)' }, json],
             examples: ['darkgrade telemetry status', 'darkgrade telemetry status --email --json'],
         },
         {
@@ -144,20 +137,9 @@ const telemetry: CommandDefinition = {
     ],
 }
 
-const output: FlagDefinition = {
-    name: 'output',
-    value: 'path',
-    summary: 'Write the file it returns here (default: its own name in this folder)',
-}
+const output: FlagDefinition = { name: 'output', value: 'path', summary: 'Write the file it returns here (default: its own name in this folder)' }
 
-/** Operations whose result includes a file, so their command takes --output. */
-const fileOperations = new Set(['takePhoto', 'getLiveViewFrame', 'getMediaPreview', 'downloadMedia'])
-
-const duration: FlagDefinition = {
-    name: 'duration',
-    value: 'duration',
-    summary: 'Stop after this long, for example 10s; otherwise stops on Ctrl-C',
-}
+const duration: FlagDefinition = { name: 'duration', value: 'duration', summary: 'Stop after this long, for example 10s; otherwise stops on Ctrl-C' }
 
 /** Operations held in the foreground until Ctrl-C or --duration, then stopped by their counterpart. */
 export const heldOperations: Readonly<Record<string, string>> = { startRecording: 'stopRecording', startZoom: 'stopZoom' }
@@ -191,20 +173,13 @@ const commandHelp: Partial<Record<string, Pick<CommandDefinition, 'description' 
 function cameraOperationCommand(operation: SurfaceOperation, line: string): CommandDefinition {
     const required = operation.parameters.filter(parameter => parameter.required)
     const optional = operation.parameters.filter(parameter => !parameter.required)
-    const parameterFlags: FlagDefinition[] = optional.flatMap(parameter =>
-        parameter.type === 'switch'
-            ? [
-                  { name: kebabCase(parameter.name), summary: parameter.description },
-                  { name: `no-${kebabCase(parameter.name)}`, summary: `the opposite of --${kebabCase(parameter.name)}` },
-              ]
-            : [
-                  {
-                      name: kebabCase(parameter.name),
-                      value: parameter.choices?.join('|') ?? (parameter.type === 'time' ? 'ISO 8601' : parameter.type),
-                      summary: parameter.description,
-                  },
-              ]
-    )
+    const parameterFlags: FlagDefinition[] = optional.flatMap(parameter => {
+        const name = kebabCase(parameter.name)
+        if (parameter.type === 'switch')
+            return [{ name, summary: parameter.description }, { name: `no-${name}`, summary: `the opposite of --${name}` }]
+        const value = parameter.choices?.join('|') ?? (parameter.type === 'time' ? 'ISO 8601' : parameter.type)
+        return [{ name, value, summary: parameter.description }]
+    })
     return {
         name: line.slice('darkgrade camera '.length),
         summary: operation.summary,
@@ -216,7 +191,7 @@ function cameraOperationCommand(operation: SurfaceOperation, line: string): Comm
         flags: [
             ...parameterFlags,
             ...(operation.name in heldOperations ? [duration] : []),
-            ...(fileOperations.has(operation.name) ? [output] : []),
+            ...(operation.name in fileRoles ? [output] : []),
             camera,
             json,
         ],
@@ -337,10 +312,7 @@ export const argumentUsage = (argument: ArgumentDefinition) => {
 }
 
 /** Follows the words down the tree and stops at the first one that names no command. */
-export function resolveCommand(words: readonly string[]): {
-    path: CommandDefinition[]
-    remaining: string[]
-} {
+export function resolveCommand(words: readonly string[]): { path: CommandDefinition[]; remaining: string[] } {
     const path = [rootCommand]
     let index = 0
     for (; index < words.length; index++) {
@@ -358,11 +330,7 @@ function editDistance(left: string, right: string): number {
     for (let row = 1; row <= left.length; row++) {
         const current = [row]
         for (let column = 1; column <= right.length; column++)
-            current[column] = Math.min(
-                previous[column] + 1,
-                current[column - 1] + 1,
-                previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1)
-            )
+            current[column] = Math.min(previous[column] + 1, current[column - 1] + 1, previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1))
         previous = current
     }
     return previous[right.length]

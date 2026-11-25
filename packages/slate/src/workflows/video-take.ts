@@ -75,11 +75,12 @@ export class VideoTake {
         }finally{this.busy=false}
     }
     private async stopAttempted(){
-        await Promise.all(this.state.cameras.filter(state=>this.attempted.has(state.camera)).map(async state=>{
-            try{state.stopRequestedAt??=new Date().toISOString();this.changed();const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(state.camera)}
-            catch(error){state.state='uncertain';state.error=message(error)}this.changed()
-        }))
+        await Promise.all(this.state.cameras.filter(state=>this.attempted.has(state.camera)).map(async state=>{await this.stopOne(state);this.changed()}))
         this.state.stoppedAt=new Date().toISOString()
+    }
+    private async stopOne(state:TakeCameraState){
+        try{state.stopRequestedAt??=new Date().toISOString();this.changed();const result=await this.devices.get(state.camera)!.stop();if(!result.stopped)throw new Error('Camera did not confirm recording stopped');state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(state.camera)}
+        catch(error){state.state='uncertain';state.error=message(error)}
     }
     /** Stop one camera while the remaining cameras continue their take. */
     async stopCamera(camera:string){
@@ -92,12 +93,7 @@ export class VideoTake {
         if(this.attempted.size===1)this.state.stage='stopping'
         this.changed()
         try{
-            try{
-                state.stopRequestedAt??=new Date().toISOString();this.changed()
-                const result=await this.devices.get(camera)!.stop()
-                if(!result.stopped)throw new Error('Camera did not confirm recording stopped')
-                state.state='stopped';state.media=structuredClone(result.media);state.warning=result.warning;state.stoppedAt=new Date().toISOString();delete state.error;this.attempted.delete(camera)
-            }catch(error){state.state='uncertain';state.error=message(error)}
+            await this.stopOne(state)
             if(this.stopRequested)await this.stopAttempted()
             await this.closeIdle()
             this.state.stage=this.state.cameras.some(camera=>camera.state==='recording')?'recording':this.attempted.size?'attention':'review'

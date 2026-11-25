@@ -1,7 +1,7 @@
 import type { Camera } from '@camera/index'
 import { protocolAccess } from '@camera/protocol-session'
 import { isValidatedModel } from '@camera/validated-models'
-import { runBenchmark } from '@workflows/telemetry-benchmark'
+import { runBenchmark, transportEvidence } from '@workflows/telemetry-benchmark'
 
 export interface FirstContactDependencies {
     /** Effective sharing (opt-out, DO_NOT_TRACK and pending deletion all disable it). */
@@ -35,15 +35,10 @@ async function nodeDependencies(): Promise<FirstContactDependencies | undefined>
  * property descriptor, storage IDs) recorded as a `first-contact` profile. Never writes, captures or
  * throws; returns whether an inventory ran.
  */
-export async function recordFirstContact(
-    camera: Camera,
-    dependencies?: FirstContactDependencies
-): Promise<boolean> {
+export async function recordFirstContact(camera: Camera, dependencies?: FirstContactDependencies): Promise<boolean> {
     try {
-        const instance = protocolAccess(camera).driver
-        const evidence = (instance.transport as typeof instance.transport & { telemetryEvidence?: string })
-            .telemetryEvidence
-        const resolved = dependencies ?? (evidence === 'hardware' ? await nodeDependencies() : undefined)
+        const hardware = transportEvidence(protocolAccess(camera).driver.transport) === 'hardware'
+        const resolved = dependencies ?? (hardware ? await nodeDependencies() : undefined)
         if (!resolved || !(await resolved.sharingEnabled())) return false
         const information = await camera.getInfo()
         if (!information.model || isValidatedModel(information.model)) return false

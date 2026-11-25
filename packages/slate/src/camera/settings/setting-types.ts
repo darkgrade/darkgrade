@@ -23,31 +23,18 @@ export type SettingReaders<Types> = {
 }
 
 /**
- * The reader for an enumerated setting whose canonical names are its codec names: the observed
- * value is returned as is, and a raw value the codecs have no name for is reported, never guessed.
+ * A setting's reader: the observed value when `accepts` takes it, else CameraUnsupportedError (the
+ * camera reports a value Slate has no name for). A raw value the codecs could not name is never guessed.
  */
-export function namedSettingReader<Value extends string>(label: string): SettingReader<Value> {
+export function settingReader<Value extends string>(
+    accepts: (value: string) => value is Value = (_value: string): _value is Value => true
+): SettingReader<Value> {
     return state => {
-        if (state.unrecognized?.value !== undefined)
-            throw new CameraUnsupportedError(
-                state.id,
-                `${label}: the camera reports a value Slate has no name for (${state.value})`
-            )
-        return state.value as Value
+        if (state.unrecognized?.value === undefined && accepts(state.value)) return state.value
+        throw new CameraUnsupportedError(state.id, `${state.label}: the camera reports a value Slate has no name for (${state.value})`)
     }
 }
 
-/**
- * The reader for an enumerated setting: the observation's value when it is one of the canonical
- * names, else CameraUnsupportedError (the camera reports a value Slate has no name for).
- */
-export function enumeratedSettingReader<Value extends string>(
-    id: string,
-    values: readonly Value[]
-): SettingReader<Value> {
-    const isCanonical = (value: string): value is Value => (values as readonly string[]).includes(value)
-    return state => {
-        if (isCanonical(state.value)) return state.value
-        throw new CameraUnsupportedError(id, `${state.label} reads ${state.value}, which has no canonical name`)
-    }
-}
+/** The reader for an enumerated setting whose canonical names are `values`. */
+export const enumeratedSettingReader = <Value extends string>(values: readonly Value[]) =>
+    settingReader((value): value is Value => (values as readonly string[]).includes(value))

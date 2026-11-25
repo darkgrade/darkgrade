@@ -1,5 +1,4 @@
 {
-    "src/vendors/canon/canon-camera.ts": {"any":1,"asNever":0,"asUnknownAs":0},
     "src/vendors/generic/generic-camera.ts": {"any":5,"asNever":0,"asUnknownAs":1},
     "src/camera/identification/camera-identification.ts": {"any":0,"asNever":0,"asUnknownAs":1},
     "src/camera/movie-audio.ts": {"any":1,"asNever":0,"asUnknownAs":0},
@@ -29,7 +28,6 @@
     "src/vendors/protocol-evidence.ts": {"any":0,"asNever":0,"asUnknownAs":1},
     "src/vendors/sony/card-storage.ts": {"any":2,"asNever":0,"asUnknownAs":0},
     "src/vendors/sony/ptp-video-recording.ts": {"any":1,"asNever":0,"asUnknownAs":0},
-    "src/vendors/sony/sdk-camera.ts": {"any":0,"asNever":0,"asUnknownAs":2},
     "src/vendors/sony/sdk-controls.ts": {"any":1,"asNever":0,"asUnknownAs":0},
     "src/vendors/sony/video-recording.ts": {"any":10,"asNever":0,"asUnknownAs":0},
     "src/workflows/shot-analysis.ts": {"any":1,"asNever":0,"asUnknownAs":0},

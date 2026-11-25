@@ -1,11 +1,4 @@
-import {
-    globalFlags,
-    programName,
-    rootCommand,
-    visibleFlags,
-    type CommandDefinition,
-    type CompletionShell,
-} from '@cli/commands'
+import { globalFlags, programName, rootCommand, visibleFlags, type CommandDefinition, type CompletionShell } from '@cli/commands'
 
 interface CompletionNode {
     /** The command words typed so far, without the program name. */
@@ -16,19 +9,12 @@ interface CompletionNode {
 }
 
 function completionNodes(command: CommandDefinition = rootCommand, words: string[] = []): CompletionNode[] {
-    const flags = [...visibleFlags(command), ...globalFlags].map(flag => ({
-        word: `--${flag.name}`,
-        summary: flag.summary,
-        takesValue: !!flag.value,
-    }))
+    const flags = [...visibleFlags(command), ...globalFlags].map(flag => ({ word: `--${flag.name}`, summary: flag.summary, takesValue: !!flag.value }))
     const children = (command.commands ?? []).map(child => ({ word: child.name, summary: child.summary }))
     const first = command.arguments?.[0]
     const choices = (first?.choices ?? []).map(choice => ({ word: choice, summary: first!.name }))
-    // `darkgrade help <command>` completes the same names as the root.
-    const helpTopics =
-        command.name === 'help'
-            ? (rootCommand.commands ?? []).map(child => ({ word: child.name, summary: child.summary }))
-            : []
+    const rootChildren = (rootCommand.commands ?? []).map(child => ({ word: child.name, summary: child.summary }))
+    const helpTopics = command.name === 'help' ? rootChildren : []
     return [
         { words, subcommands: children.map(child => child.word), candidates: [...children, ...choices, ...helpTopics, ...flags] },
         ...(command.commands ?? []).flatMap(child => completionNodes(child, [...words, child.name])),
@@ -99,12 +85,8 @@ function fishScript(): string {
             const flag = `-l ${candidate.word.slice(2)}${candidate.takesValue ? ' -r' : ''}`
             const target = candidate.word.startsWith('--') ? flag : `-a ${candidate.word}`
             // Global flags are offered at every depth by the root's own entries.
-            if (
-                candidate.word.startsWith('--') &&
-                node.words.length &&
-                globalFlags.some(flag => `--${flag.name}` === candidate.word)
-            )
-                continue
+            const global = globalFlags.some(flag => `--${flag.name}` === candidate.word)
+            if (candidate.word.startsWith('--') && node.words.length && global) continue
             const when = candidate.word.startsWith('--') && !node.words.length ? '' : ` -n ${singleQuoted(condition)}`
             lines.push(`complete -c ${programName}${when} ${target} -d ${singleQuoted(candidate.summary)}`)
         }

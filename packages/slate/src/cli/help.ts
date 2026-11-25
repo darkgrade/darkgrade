@@ -1,13 +1,5 @@
-import {
-    argumentUsage,
-    commandLine,
-    documentationUrl,
-    globalFlags,
-    issuesUrl,
-    visibleFlags,
-    type CommandDefinition,
-    type FlagDefinition,
-} from '@cli/commands'
+import { argumentUsage, commandLine, documentationUrl, globalFlags, issuesUrl, visibleFlags } from '@cli/commands'
+import type { CommandDefinition, FlagDefinition } from '@cli/commands'
 import type { Paint } from '@cli/terminal'
 
 export const flagLabel = (flag: FlagDefinition) =>
@@ -51,74 +43,38 @@ function listedCommands(command: CommandDefinition, prefix = ''): { label: strin
     return (command.commands ?? []).flatMap(child =>
         child.commands && !prefix
             ? listedCommands(child, `${child.name} `)
-            : [
-                  {
-                      label: [prefix + child.name, ...(child.arguments ?? []).map(argumentUsage)].join(' '),
-                      command: child,
-                  },
-              ]
+            : [{ label: [prefix + child.name, ...(child.arguments ?? []).map(argumentUsage)].join(' '), command: child }]
     )
 }
 
-export function renderHelp(
-    path: readonly CommandDefinition[],
-    paint: Paint,
-    options: { version?: string; columns?: number } = {}
-): string {
+export function renderHelp(path: readonly CommandDefinition[], paint: Paint, options: { version?: string; columns?: number } = {}): string {
     const command = path[path.length - 1]
     const columns = Math.min(options.columns ?? 80, 100)
     const heading = (text: string) => paint.bold(text)
     const isRoot = path.length === 1
+    const title = `${paint.bold(command.name)}${options.version ? ` ${paint.dim(options.version)}` : ''}  ${command.summary}`
     const sections: string[][] = [
-        [
-            isRoot
-                ? `${paint.bold(command.name)}${options.version ? ` ${paint.dim(options.version)}` : ''}  ${command.summary}`
-                : command.summary,
-        ],
+        [isRoot ? title : command.summary],
         ...(command.description ? [wrap(command.description, columns)] : []),
         [heading('Usage'), `  ${usageLine(path)}`],
     ]
     if (command.examples?.length)
         sections.push([heading('Examples'), ...command.examples.map(example => `  ${paint.dim('$')} ${example}`)])
     const listed = listedCommands(command)
-    for (const section of new Set(listed.map(entry => entry.command.section ?? 'Commands')))
-        sections.push([
-            heading(listed.every(entry => !entry.command.section) ? 'Commands' : section),
-            ...rows(
-                listed
-                    .filter(entry => (entry.command.section ?? 'Commands') === section)
-                    .map(entry => [entry.label, entry.command.summary] as const),
-                paint,
-                columns
-            ),
-        ])
-    const flags = visibleFlags(command)
-    if (flags.length)
-        sections.push([
-            heading('Options'),
-            ...rows(
-                flags.map(flag => [flagLabel(flag), flag.summary] as const),
-                paint,
-                columns
-            ),
-        ])
-    sections.push([
-        heading('Global options'),
-        ...rows(
-            globalFlags.map(flag => [flagLabel(flag), flag.summary] as const),
-            paint,
-            columns
-        ),
-    ])
-    sections.push(
-        isRoot
-            ? [
-                  heading('Learn more'),
-                  `  ${paint.dim('Help for a command')}  darkgrade help <command>`,
-                  `  ${paint.dim('Documentation')}       ${documentationUrl}`,
-                  `  ${paint.dim('Report a problem')}    ${issuesUrl}`,
-              ]
-            : [paint.dim(`Documentation: ${documentationUrl}`)]
-    )
+    for (const section of new Set(listed.map(entry => entry.command.section ?? 'Commands'))) {
+        const entries = listed.filter(entry => (entry.command.section ?? 'Commands') === section)
+        const commandRows = rows(entries.map(entry => [entry.label, entry.command.summary] as const), paint, columns)
+        sections.push([heading(listed.every(entry => !entry.command.section) ? 'Commands' : section), ...commandRows])
+    }
+    const flagRows = (flags: readonly FlagDefinition[]) => rows(flags.map(flag => [flagLabel(flag), flag.summary] as const), paint, columns)
+    if (visibleFlags(command).length) sections.push([heading('Options'), ...flagRows(visibleFlags(command))])
+    sections.push([heading('Global options'), ...flagRows(globalFlags)])
+    const learnMore = [
+        heading('Learn more'),
+        `  ${paint.dim('Help for a command')}  darkgrade help <command>`,
+        `  ${paint.dim('Documentation')}       ${documentationUrl}`,
+        `  ${paint.dim('Report a problem')}    ${issuesUrl}`,
+    ]
+    sections.push(isRoot ? learnMore : [paint.dim(`Documentation: ${documentationUrl}`)])
     return sections.map(section => section.join('\n')).join('\n\n')
 }

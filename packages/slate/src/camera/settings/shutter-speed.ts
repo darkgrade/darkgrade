@@ -6,14 +6,7 @@ import type { ExposureTime } from '@camera/exposure-time'
  * `'0.3"'`, `'180°'`, `'Bulb'`. Each vendor codec's label (Sony `BULB`, Canon `30`, a standard
  * ExposureTime tick count) is read through `parseExposureTime` and written back in this form.
  */
-export type ShutterSpeed =
-    | `${number}/${number}`
-    | `${number}"`
-    | `${number}°`
-    | 'Bulb'
-    | 'Time'
-    | 'Flash sync'
-    | 'Auto'
+export type ShutterSpeed = `${number}/${number}` | `${number}"` | `${number}°` | 'Bulb' | 'Time' | 'Flash sync' | 'Auto'
 
 const relativeTolerance = 1e-9
 
@@ -35,17 +28,13 @@ function formatDuration(seconds: number, observedLabel?: string): ShutterSpeed {
 /** The canonical spelling of an observed exposure; the camera's label is used only to keep a ratio. */
 export function formatShutterSpeed(exposure: ExposureTime | undefined, observedLabel?: string): ShutterSpeed {
     // Only the parsed observation counts: a label Slate could not read is never given units here.
-    const parsed = exposure
-    if (!parsed)
-        throw new CameraUnsupportedError(
-            'shutterSpeed',
-            `Shutter speed: the camera reports a value Slate cannot read${observedLabel ? ` (${observedLabel})` : ''}`
-        )
-    switch (parsed.kind) {
+    const label = observedLabel ? ` (${observedLabel})` : ''
+    if (!exposure) throw new CameraUnsupportedError('shutterSpeed', `Shutter speed: the camera reports a value Slate cannot read${label}`)
+    switch (exposure.kind) {
         case 'duration':
-            return formatDuration(parsed.seconds, observedLabel)
+            return formatDuration(exposure.seconds, observedLabel)
         case 'angle':
-            return `${parsed.degrees}°`
+            return `${exposure.degrees}°`
         case 'bulb':
             return 'Bulb'
         case 'time':

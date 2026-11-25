@@ -11,27 +11,21 @@ function protect<T extends Record<string, unknown>>(callback: (argumentsValue: T
         try {
             const result = await callback(argumentsValue)
             const reply = isReply(result) ? result : undefined
-            const content: ToolContent[] = [
-                {
-                    type: 'text',
-                    text: typeof result === 'string' ? result : JSON.stringify(reply ? { result: reply.result, files: reply.files } : result, null, 2),
-                },
-                ...(reply?.images ?? []).map(image => ({ type: 'image' as const, data: image.base64, mimeType: image.mimeType })),
-            ]
+            const text = typeof result === 'string' ? result : JSON.stringify(reply ? { result: reply.result, files: reply.files } : result, null, 2)
+            const images = (reply?.images ?? []).map(image => ({ type: 'image' as const, data: image.base64, mimeType: image.mimeType }))
+            const content: ToolContent[] = [{ type: 'text', text }, ...images]
             return { content }
         } catch (error) {
             return {
                 isError: true,
-                ...(error instanceof HardwareBusyError
-                    ? {
-                          structuredContent: {
-                              error: error.message,
-                              code: error.code,
-                              busy: true,
-                              retryAfterMilliseconds: error.retryAfterMilliseconds,
-                          },
-                      }
-                    : {}),
+                ...(error instanceof HardwareBusyError && {
+                    structuredContent: {
+                        error: error.message,
+                        code: error.code,
+                        busy: true,
+                        retryAfterMilliseconds: error.retryAfterMilliseconds,
+                    },
+                }),
                 content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
             }
         }
@@ -59,15 +53,14 @@ function parameterSchema(parameter: OperationParameter): z.ZodType {
 }
 
 function toolDescription(operation: SurfaceOperation): string {
-    const notes = [
+    return [
         operation.summary + '.',
         operation.readOnly ? 'Reads only.' : 'Sent once and confirmed by the camera; an unconfirmed command is reported and never resent.',
         ...(operation.immediate ? ['Always allowed: it does not wait behind other camera work.'] : []),
         ...(/^set(?!Clock|FocusPoint)[A-Z]/.test(operation.name)
             ? ['Read camera_get_capabilities first: only values in its allowedValues are accepted.']
             : []),
-    ]
-    return notes.join(' ')
+    ].join(' ')
 }
 
 /** One generated camera tool: its MCP name, schema and annotations, and the operation it runs. */
@@ -87,10 +80,8 @@ export interface CameraToolDefinition {
  */
 export function cameraToolDefinitions(options: { cameraArgument?: boolean } = {}): CameraToolDefinition[] {
     return surfaceOperations().map(operation => {
-        const shape: Record<string, z.ZodType> =
-            options.cameraArgument === false || operation.static
-                ? {}
-                : { camera: z.string().min(1).describe('the camera identity the host names') }
+        const named = options.cameraArgument !== false && !operation.static
+        const shape: Record<string, z.ZodType> = named ? { camera: z.string().min(1).describe('the camera identity the host names') } : {}
         for (const parameter of operation.parameters) shape[parameter.name] = parameterSchema(parameter)
         return {
             name: operation.mcpTool,
@@ -112,13 +103,9 @@ export function cameraToolDefinitions(options: { cameraArgument?: boolean } = {}
 export function registerCameraTools(server: McpServer, client: CameraClient) {
     for (const tool of cameraToolDefinitions()) {
         const { name, operation, ...config } = tool
-        server.registerTool(
-            name,
-            config,
-            protect(async ({ camera, ...input }: Record<string, unknown>) =>
-                operation.static ? client.discover() : client.operation(String(camera), operation.name, input)
-            )
-        )
+        const run = async ({ camera, ...input }: Record<string, unknown>) =>
+            operation.static ? client.discover() : client.operation(String(camera), operation.name, input)
+        server.registerTool(name, config, protect(run))
     }
     if (client.benchmark)
         server.registerTool(
@@ -138,8 +125,7 @@ export function createCameraMcpServer(client: CameraClient) {
     const server = new McpServer(
         { name: 'darkgrade', version: '0.2.0' },
         {
-            instructions:
-                'One tool per public Camera operation, with the library names and results. Read camera_get_capabilities before writing: it lists every setting, its allowed values, and which operations the camera can do now. Commands share the owning runtime session and are never resent: an unconfirmed result is reported, so inspect the camera before retrying. A busy camera is not a reason to switch USB or power. camera_stop_recording and camera_stop_zoom are always allowed.',
+            instructions: 'One tool per public Camera operation, with the library names and results. Read camera_get_capabilities before writing: it lists every setting, its allowed values, and which operations the camera can do now. Commands share the owning runtime session and are never resent: an unconfirmed result is reported, so inspect the camera before retrying. A busy camera is not a reason to switch USB or power. camera_stop_recording and camera_stop_zoom are always allowed.',
             capabilities: { tools: {} },
         }
     )

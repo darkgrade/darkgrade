@@ -10,10 +10,7 @@ export const liveViewControlDefinitions = {
     },
 } as const
 
-/**
- * Canonical names for this group's codec values, keyed by vendor property name. Type-only codec
- * imports keep this vocabulary browser-safe; the compiler still checks every codec value has a name.
- */
+/** Canonical names for this group's codec values by vendor property; type-only imports keep it browser-safe. */
 export const liveViewValueNames = {
     LiveViewImageQuality: { LOW: 'Low', HIGH: 'High' },
 } as const satisfies { LiveViewImageQuality: CanonicalValueNames<typeof sony.LiveViewImageQuality> }
@@ -24,15 +21,12 @@ export type LiveViewQuality =
 
 const liveViewQualityValues: readonly LiveViewQuality[] = Object.values(liveViewValueNames.LiveViewImageQuality)
 
-/**
- * Value types of this group's typed settings: each id listed here gets `get<Id>()` and
- * `set<Id>(value)` on Camera. Follow `exposure.ts` (shutterSpeed is the worked example).
- */
+/** Value types of this group's typed settings: each id gets `get<Id>()` and `set<Id>(value)` on Camera. */
 export interface LiveViewSettingTypes {
     liveViewQuality: SettingTypes<LiveViewQuality>
 }
 
 /** Converts a confirmed observation into each typed setting's canonical value. */
 export const liveViewSettingReaders: SettingReaders<LiveViewSettingTypes> = {
-    liveViewQuality: enumeratedSettingReader('liveViewQuality', liveViewQualityValues),
+    liveViewQuality: enumeratedSettingReader(liveViewQualityValues),
 }

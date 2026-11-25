@@ -1,6 +1,4 @@
-import type { CameraControlId, CameraControlState } from '@camera/controls'
-import { CameraUnsupportedError } from '@camera/errors'
-import type { SettingReader, SettingReaders, SettingTypes } from '@camera/settings/setting-types'
+import { settingReader, type SettingReaders, type SettingTypes } from '@camera/settings/setting-types'
 import type { CanonImageFormat, CanonImageFormatLabel } from '@vendors/canon/datasets/canon-image-format-dataset'
 import type { SonyImageSize } from '@vendors/sony/definitions/sony-property-definitions'
 import type { CodecType } from '@ptp/types/codec'
@@ -40,10 +38,7 @@ export type JpegQuality = CodecValue<'jpegQuality'>
 export type RawCompression = CodecValue<'rawCompression'>
 export type FlashMode = CodecValue<'flashMode'>
 
-/**
- * Value types of this group's typed settings: each id listed here gets `get<Id>()` and
- * `set<Id>(value)` on Camera. Follow `exposure.ts` (shutterSpeed is the worked example).
- */
+/** Value types of this group's typed settings: each id gets `get<Id>()` and `set<Id>(value)` on Camera. */
 export interface PhotoSettingTypes {
     photoFormat: SettingTypes<PhotoFormat>
     photoSize: SettingTypes<PhotoSize>
@@ -53,27 +48,12 @@ export interface PhotoSettingTypes {
     flashMode: SettingTypes<FlashMode>
 }
 
-/**
- * An enumerated setting's observed value. Its value is a codec name, which is the canonical
- * spelling; a wire value the codec does not know is unreadable rather than given a name.
- */
-function observedChoice<Value extends string>(id: CameraControlId): SettingReader<Value> {
-    return (state: CameraControlState) => {
-        if (state.unrecognized?.value !== undefined)
-            throw new CameraUnsupportedError(
-                id,
-                `${state.label}: the camera reports a value Slate cannot read (${state.unrecognized.value})`
-            )
-        return state.value as Value
-    }
-}
-
 /** Converts a confirmed observation into each typed setting's canonical value. */
 export const photoSettingReaders: SettingReaders<PhotoSettingTypes> = {
-    photoFormat: observedChoice<PhotoFormat>('photoFormat'),
-    photoSize: observedChoice<PhotoSize>('photoSize'),
-    aspectRatio: observedChoice<AspectRatio>('aspectRatio'),
-    jpegQuality: observedChoice<JpegQuality>('jpegQuality'),
-    rawCompression: observedChoice<RawCompression>('rawCompression'),
-    flashMode: observedChoice<FlashMode>('flashMode'),
+    photoFormat: settingReader<PhotoFormat>(),
+    photoSize: settingReader<PhotoSize>(),
+    aspectRatio: settingReader<AspectRatio>(),
+    jpegQuality: settingReader<JpegQuality>(),
+    rawCompression: settingReader<RawCompression>(),
+    flashMode: settingReader<FlashMode>(),
 }

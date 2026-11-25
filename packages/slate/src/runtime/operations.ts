@@ -118,10 +118,8 @@ export function readOperationInput(operation: CameraOperationDescription, input:
 }
 
 function readParameter(operation: string, parameter: OperationParameter, value: unknown): unknown {
-    const refuse = () =>
-        new OperationInputError(
-            `${operation}: ${parameter.name} must be ${parameter.choices ? `one of ${parameter.choices.join(', ')}` : parameter.description}`
-        )
+    const expected = parameter.choices ? `one of ${parameter.choices.join(', ')}` : parameter.description
+    const refuse = () => new OperationInputError(`${operation}: ${parameter.name} must be ${expected}`)
     switch (parameter.type) {
         case 'switch':
             if (typeof value === 'boolean') return value
@@ -165,21 +163,14 @@ function argumentsFor(operation: CameraOperationDescription, input: Record<strin
     return values
 }
 
-const fileRoles: Readonly<Record<string, OperationFile['role']>> = {
-    takePhoto: 'photo',
-    getLiveViewFrame: 'frame',
-    getMediaPreview: 'preview',
-    downloadMedia: 'download',
+/** The operations whose result includes a file, and the role of that file. */
+export const fileRoles: Readonly<Record<string, OperationFile['role']>> = {
+    takePhoto: 'photo', getLiveViewFrame: 'frame', getMediaPreview: 'preview', downloadMedia: 'download',
 }
 
 const mimeTypes: Readonly<Record<string, string>> = {
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    heif: 'image/heif',
-    heic: 'image/heic',
-    png: 'image/png',
-    mp4: 'video/mp4',
-    mov: 'video/quicktime',
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', heif: 'image/heif', heic: 'image/heic', png: 'image/png',
+    mp4: 'video/mp4', mov: 'video/quicktime',
 }
 
 /** By the file name the camera gave it, else by the bytes' own signature. */

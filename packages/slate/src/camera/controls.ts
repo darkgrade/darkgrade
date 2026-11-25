@@ -25,11 +25,7 @@ export const cameraControlDefinitions = {
 
 export type CameraControlId = keyof typeof cameraControlDefinitions
 export type CameraControlInputs = {
-    [Id in CameraControlId]: Id extends 'shutterSpeed'
-        ? ExposureTimeInput
-        : Id extends 'colorTemperature'
-          ? number
-          : string
+    [Id in CameraControlId]: Id extends 'shutterSpeed' ? ExposureTimeInput : Id extends 'colorTemperature' ? number : string
 }
 
 /** Raw wire values the camera reported that Slate has no name for, spelled by `unrecognizedValueLabel`. */
@@ -109,9 +105,7 @@ const normalized = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '')
 
 export function resolveCameraControl(name: string): CameraControlId | undefined {
     const requested = normalized(name)
-    return (Object.keys(cameraControlDefinitions) as CameraControlId[]).find(
-        id =>
-            normalized(id) === requested ||
-            cameraControlDefinitions[id].aliases.some(alias => normalized(alias) === requested)
-    )
+    const matches = (id: CameraControlId) =>
+        normalized(id) === requested || cameraControlDefinitions[id].aliases.some(alias => normalized(alias) === requested)
+    return (Object.keys(cameraControlDefinitions) as CameraControlId[]).find(matches)
 }

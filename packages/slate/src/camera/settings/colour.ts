@@ -1,4 +1,4 @@
-import { namedSettingReader, type SettingReaders, type SettingTypes } from '@camera/settings/setting-types'
+import { settingReader, type SettingReaders, type SettingTypes } from '@camera/settings/setting-types'
 import { CameraUnsupportedError } from '@camera/errors'
 import type { CodecValue } from '@vendors/control-properties'
 
@@ -24,6 +24,15 @@ export type WhiteBalance = CodecValue<'whiteBalance'>
 export type ColorTemperature = number
 
 /**
+ * A requested colour temperature as kelvin: a finite number, or the whole-number spelling the
+ * capabilities list it in (`'2500'`), so every advertised choice can be written back. Otherwise undefined.
+ */
+export function kelvinInput(value: unknown): number | undefined {
+    const kelvin = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value) : NaN
+    return Number.isFinite(kelvin) ? kelvin : undefined
+}
+
+/**
  * A look in Slate's one spelling: Canon Picture Style, Nikon Picture Control and Sony Creative
  * Look or Creative Style (`'Standard'`, `'Portrait'`, `'Monochrome'`, ...).
  */
@@ -32,10 +41,7 @@ export type PictureStyle = CodecValue<'pictureStyle'>
 /** A Sony Picture Profile (`'Off'`, `'PP1'` to `'PP11'`, `'PP LUT 1'` to `'PP LUT 4'`). */
 export type PictureProfile = CodecValue<'pictureProfile'>
 
-/**
- * Value types of this group's typed settings: each id listed here gets `get<Id>()` and
- * `set<Id>(value)` on Camera. Follow `exposure.ts` (shutterSpeed is the worked example).
- */
+/** Value types of this group's typed settings: each id gets `get<Id>()` and `set<Id>(value)` on Camera. */
 export interface ColourSettingTypes {
     whiteBalance: SettingTypes<WhiteBalance>
     colorTemperature: SettingTypes<ColorTemperature>
@@ -45,16 +51,14 @@ export interface ColourSettingTypes {
 
 /** Converts a confirmed observation into each typed setting's canonical value. */
 export const colourSettingReaders: SettingReaders<ColourSettingTypes> = {
-    whiteBalance: namedSettingReader<WhiteBalance>('White balance'),
+    whiteBalance: settingReader<WhiteBalance>(),
     colorTemperature: state => {
         const kelvin = Number(state.value)
+        const unreadable = `Colour temperature: the camera reports a value Slate cannot read (${state.value})`
         if (state.unrecognized?.value !== undefined || !Number.isFinite(kelvin) || kelvin <= 0)
-            throw new CameraUnsupportedError(
-                'colorTemperature',
-                `Colour temperature: the camera reports a value Slate cannot read (${state.value})`
-            )
+            throw new CameraUnsupportedError('colorTemperature', unreadable)
         return kelvin
     },
-    pictureStyle: namedSettingReader<PictureStyle>('Look'),
-    pictureProfile: namedSettingReader<PictureProfile>('Picture profile'),
+    pictureStyle: settingReader<PictureStyle>(),
+    pictureProfile: settingReader<PictureProfile>(),
 }

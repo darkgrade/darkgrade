@@ -90,6 +90,7 @@ export class Camera {
             ...partial,
             deviceDescriptor: options.device,
             subscriptions: new Set(),
+            namedSubscriptions: [],
             controlsQueue: new CameraOperationQueue(),
             driver: createCameraDriver(partial, options.vendorId ?? descriptorVendor(options.device), this),
         }
@@ -104,9 +105,7 @@ export class Camera {
      */
     async connect(options: ConnectOptions = {}): Promise<void> {
         if (typeof options !== 'object' || options === null || 'usb' in options || 'ip' in options)
-            throw new TypeError(
-                'Camera.connect takes { observeOnly?, device? }; pass a device descriptor as { device }'
-            )
+            throw new TypeError('Camera.connect takes { observeOnly?, device? }; pass a device descriptor as { device }')
         return withPublicErrors('connect', () => openCamera(this, options))
     }
 
@@ -133,7 +132,7 @@ export class Camera {
         } finally {
             if (context.driver.sessionId === null) {
                 context.subscriptions.clear()
-                for (const subscription of namedSubscriptionsOf(this).splice(0)) subscription.stop()
+                for (const subscription of cameraContext(this).namedSubscriptions.splice(0)) subscription.stop()
             }
         }
     }
@@ -231,7 +230,6 @@ export class Camera {
 
     /** Stops zooming. Always allowed: it never waits behind another operation, and resolves on a camera without zoom. */
     async stopZoom(): Promise<void> {
-        // Nothing can be zooming on a camera without zoom, so stopping succeeds there.
         const driver: CameraDriver = cameraContext(this).driver
         await driver.stopZoom?.()
     }
@@ -317,10 +315,7 @@ export class Camera {
      */
     async getMediaPreview(id: string, size: MediaPreviewSize = 'thumbnail'): Promise<Uint8Array> {
         if (size !== 'thumbnail' && size !== 'preview')
-            throw new CameraRefusedError(
-                'getMediaPreview',
-                `Preview size must be thumbnail or preview, not ${String(size)}`
-            )
+            throw new CameraRefusedError('getMediaPreview', `Preview size must be thumbnail or preview, not ${String(size)}`)
         return supported(this, 'getMediaPreview').getMediaPreview(id, size)
     }
 
@@ -357,12 +352,12 @@ export class Camera {
         if (typeof event !== 'string')
             throw new TypeError('Raw PTP events are subscribed through protocolSession(camera).on')
         const stop = supported(this, 'subscribe', 'on').subscribe(event, handler)
-        namedSubscriptionsOf(this).push({ event, handler, stop })
+        cameraContext(this).namedSubscriptions.push({ event, handler, stop })
     }
 
     /** Stops `handler`, or every handler of the event when none is given. */
     off(event: CameraEventName, handler?: CameraEventHandler): void {
-        const subscriptions = namedSubscriptionsOf(this)
+        const subscriptions = cameraContext(this).namedSubscriptions
         for (const subscription of [...subscriptions])
             if (subscription.event === event && (!handler || subscription.handler === handler)) {
                 subscription.stop()
@@ -376,19 +371,11 @@ installTypedSettings(Camera.prototype)
 
 type DriverWith<Name extends DriverOperationName> = CameraDriver & Pick<DriverOperations, Name>
 
-function implementsOperation<Name extends DriverOperationName>(
-    driver: CameraDriver,
-    name: Name
-): driver is DriverWith<Name> {
-    return typeof driver[name] === 'function'
-}
+const implementsOperation = <Name extends DriverOperationName>(driver: CameraDriver, name: Name): driver is DriverWith<Name> =>
+    typeof driver[name] === 'function'
 
 /** The current driver, if it implements `name`; otherwise CameraUnsupportedError naming `operation`. */
-function supported<Name extends DriverOperationName>(
-    camera: Camera,
-    name: Name,
-    operation: string = name
-): DriverWith<Name> {
+function supported<Name extends DriverOperationName>(camera: Camera, name: Name, operation: string = name): DriverWith<Name> {
     const driver: CameraDriver = cameraContext(camera).driver
     if (!implementsOperation(driver, name))
         throw new CameraUnsupportedError(operation, `${operation} is not supported by this camera`)
@@ -402,28 +389,9 @@ function onCameraQueue<T>(camera: Camera, operation: () => Promise<T>): Promise<
 
 /** The operations getCapabilities reports, in the order it lists them: everything but settings and events. */
 const reportedOperations = [
-    'connect',
-    'getInfo',
-    'recover',
-    'disconnect',
-    'autofocus',
-    'setFocusPoint',
-    'resetFocusPoint',
-    'nudgeFocus',
-    'zoomTo',
-    'startZoom',
-    'stopZoom',
-    'takePhoto',
-    'getLiveViewFrame',
-    'getRecordingState',
-    'startRecording',
-    'stopRecording',
-    'getCardStatus',
-    'listMedia',
-    'getMediaPreview',
-    'downloadMedia',
-    'getBattery',
-    'setClock',
+    ...['connect', 'getInfo', 'recover', 'disconnect', 'autofocus', 'setFocusPoint', 'resetFocusPoint', 'nudgeFocus'],
+    ...['zoomTo', 'startZoom', 'stopZoom', 'takePhoto', 'getLiveViewFrame', 'getRecordingState', 'startRecording'],
+    ...['stopRecording', 'getCardStatus', 'listMedia', 'getMediaPreview', 'downloadMedia', 'getBattery', 'setClock'],
 ] as const satisfies readonly CameraOperationName[]
 /** Operations every driver has through its protocol core. */
 const coreOperations = new Set<string>(['connect', 'disconnect', 'recover'])
@@ -450,9 +418,7 @@ async function readOperationAvailability(
         }
         try {
             availability[name] = (await driver.availability?.(name, capabilities)) ?? { supported: true }
-        } catch {
-            // An operation whose check failed stays unreported.
-        }
+        } catch {}
     }
     return availability
 }
@@ -469,12 +435,8 @@ async function withPublicErrors<Result>(operation: string, action: () => Promise
     try {
         return await action()
     } catch (error) {
-        if (
-            error instanceof CameraUnsupportedError ||
-            error instanceof CameraRefusedError ||
-            error instanceof CameraOutcomeUnknownError
-        )
-            throw error
+        const publicError = [CameraUnsupportedError, CameraRefusedError, CameraOutcomeUnknownError].some(kind => error instanceof kind)
+        if (publicError) throw error
         if (error instanceof PTPResponseError) throw new CameraRefusedError(operation, error.message, { cause: error })
         if (error instanceof PTPError || error instanceof AggregateError)
             throw new CameraOutcomeUnknownError(operation, error.message, { cause: error })
@@ -493,10 +455,7 @@ async function openCamera(camera: Camera, options: ConnectOptions): Promise<void
         if (identity) {
             if (context.options.vendorId !== undefined && context.options.vendorId !== identity.vendorId) {
                 await context.transport.disconnect()
-                throw new CameraRefusedError(
-                    'connect',
-                    'Selected USB camera differs from the explicitly requested vendor'
-                )
+                throw new CameraRefusedError('connect', 'Selected USB camera differs from the explicitly requested vendor')
             }
             vendorId = identity.vendorId
         }
@@ -504,16 +463,13 @@ async function openCamera(camera: Camera, options: ConnectOptions): Promise<void
     if (context.driver.sessionId === null && vendorId !== undefined && !driverServesVendor(context.driver, vendorId)) {
         context.driver.detachTransportObserver()
         context.driver = createCameraDriver(context, vendorId, camera)
-        for (const subscription of context.subscriptions)
-            context.driver.on(subscription.event, subscription.handler as never)
+        for (const subscription of context.subscriptions) context.driver.on(subscription.event, subscription.handler as never)
         reattachNamedEvents(camera)
     }
     context.deviceDescriptor = descriptor
     // Preserve the caller-owned partial session for standard protocol diagnostics when
     // vendor initialization is refused. The caller closes it with disconnect() in finally.
-    await supported(camera, 'openSession', 'connect').openSession(descriptor, {
-        observeOnly: options.observeOnly === true,
-    })
+    await supported(camera, 'openSession', 'connect').openSession(descriptor, { observeOnly: options.observeOnly === true })
     if (context.options.firstContact !== false) {
         const { recordFirstContact } = await import('@workflows/first-contact')
         await recordFirstContact(camera)
@@ -521,17 +477,10 @@ async function openCamera(camera: Camera, options: ConnectOptions): Promise<void
 }
 
 function photoFrom(file: ConfirmedPhotoFile, destination: 'card' | 'computer'): Photo {
-    const described = {
-        ...(file.mediaId !== undefined && { mediaId: file.mediaId }),
-        name: file.name,
-        sizeBytes: file.sizeBytes,
-    }
+    const described = { ...(file.mediaId !== undefined && { mediaId: file.mediaId }), name: file.name, sizeBytes: file.sizeBytes }
     if (destination === 'card') return { destination, ...described }
     if (!file.data)
-        throw new CameraOutcomeUnknownError(
-            'takePhoto',
-            'The photo was taken, but its bytes did not reach the computer'
-        )
+        throw new CameraOutcomeUnknownError('takePhoto', 'The photo was taken, but its bytes did not reach the computer')
     return { destination, ...described, data: file.data }
 }
 
@@ -543,34 +492,14 @@ function photoFrom(file: ConfirmedPhotoFile, destination: 'card' | 'computer'): 
  */
 async function refuseWhileRecording(camera: Camera): Promise<void> {
     const state = await camera.getRecordingState().catch(() => 'unknown' as const)
-    if (state === 'recording' || state === 'starting' || state === 'stopping')
-        throw new CameraRefusedError(
-            'takePhoto',
-            `The camera is ${state === 'recording' ? 'recording' : `${state} a recording`}; stop it before taking a photo`
-        )
-}
-
-interface NamedSubscription {
-    event: CameraEventName
-    handler: CameraEventHandler
-    stop: () => void
-}
-
-/** Each Camera's `settingsChanged`/`mediaAdded` listeners, attached to its current driver. */
-const namedSubscriptions = new WeakMap<Camera, NamedSubscription[]>()
-
-function namedSubscriptionsOf(camera: Camera): NamedSubscription[] {
-    let subscriptions = namedSubscriptions.get(camera)
-    if (!subscriptions) {
-        subscriptions = []
-        namedSubscriptions.set(camera, subscriptions)
-    }
-    return subscriptions
+    if (state !== 'recording' && state !== 'starting' && state !== 'stopping') return
+    const activity = state === 'recording' ? 'recording' : `${state} a recording`
+    throw new CameraRefusedError('takePhoto', `The camera is ${activity}; stop it before taking a photo`)
 }
 
 /** Moves every named listener to the driver chosen on connect, as raw protocol listeners move. */
 function reattachNamedEvents(camera: Camera): void {
-    const subscriptions = namedSubscriptionsOf(camera)
+    const subscriptions = cameraContext(camera).namedSubscriptions
     if (!subscriptions.length) return
     const driver = supported(camera, 'subscribe', 'on')
     for (const subscription of subscriptions) {

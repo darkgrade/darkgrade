@@ -1,22 +1,9 @@
-import {
-    commandLine,
-    documentationUrl,
-    globalFlags,
-    issuesUrl,
-    programName,
-    rootCommand,
-    visibleFlags,
-    type CommandDefinition,
-    type FlagDefinition,
-} from '@cli/commands'
+import { commandLine, documentationUrl, globalFlags, issuesUrl, programName, rootCommand, visibleFlags } from '@cli/commands'
+import type { CommandDefinition, FlagDefinition } from '@cli/commands'
 import { usageLine } from '@cli/help'
 
 /** roff reads a leading period or apostrophe as a request and a backslash as an escape. */
-const roff = (text: string) =>
-    text
-        .replaceAll('\\', '\\e')
-        .replaceAll('-', '\\-')
-        .replace(/^([.'])/gm, '\\&$1')
+const roff = (text: string) => text.replaceAll('\\', '\\e').replaceAll('-', '\\-').replace(/^([.'])/gm, '\\&$1')
 
 const flagEntry = (flag: FlagDefinition) => [
     '.TP',
@@ -61,10 +48,7 @@ export function manualPage(version = 'development'): string {
             ['DARKGRADE_NO_SPINNER', 'Any value replaces the spinner with one plain line for each step.'],
             ['DARKGRADE_CAMERA', 'The USB device to use, as VID:PID, when several cameras are attached.'],
             ['DARKGRADE_HOME', 'The settings folder. The default is ~/.darkgrade, shared with Darkgrade Studio.'],
-            [
-                'DARKGRADE_CONTRIBUTIONS, DO_NOT_TRACK',
-                'DARKGRADE_CONTRIBUTIONS=0 or DO_NOT_TRACK=1 stops sharing whatever the saved preference.',
-            ],
+            ['DARKGRADE_CONTRIBUTIONS, DO_NOT_TRACK', 'DARKGRADE_CONTRIBUTIONS=0 or DO_NOT_TRACK=1 stops sharing whatever the saved preference.'],
             ['DARKGRADE_TELEMETRY_URL', 'The collector origin, for a private deployment.'],
         ].flatMap(([name, text]) => ['.TP', `\\fB${roff(name)}\\fR`, roff(text)]),
         '.SH EXIT STATUS',
