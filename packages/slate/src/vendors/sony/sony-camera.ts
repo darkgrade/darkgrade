@@ -98,8 +98,18 @@ const ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES = 0.5
 const ZOOM_POLL_MILLISECONDS = 60
 /** No focal-length change for this long means the lens reached the end of its range. */
 const ZOOM_STALL_MILLISECONDS = 800
-/** After stopping, the reading must hold still for two reads, within this long. */
-const ZOOM_SETTLE_MILLISECONDS = 1500
+/**
+ * How long a correction waits for the lens to start moving: reversing, it first takes up its gear
+ * backlash. A correction taken for a stall after 800 ms is the likeliest reading of the bench a6700
+ * landing at 21 mm for 23 after zooming out from 35 (no trace confirms it).
+ */
+const ZOOM_REVERSAL_MILLISECONDS = 2500
+/** After stopping, the reading must hold still for this long (several reads: one repeated report can be stale)... */
+const ZOOM_STILL_MILLISECONDS = 300
+/** ...within this long. */
+const ZOOM_SETTLE_MILLISECONDS = 2000
+/** Slow passes after the first, each towards the target from where the last one landed. */
+const ZOOM_CORRECTION_PASSES = 3
 /** Beyond this distance the first pass runs at medium speed; closer, slow. */
 const ZOOM_MEDIUM_SPEED_DISTANCE_MILLIMETRES = 10
 const zoomUnavailableReason = 'The camera reports remote zoom unavailable with this lens and mode'
@@ -201,6 +211,14 @@ const SONY_LIVE_VIEW_INTERVAL_SAMPLES = 9
 const SONY_LIVE_VIEW_INTERVAL_MIN_MS = 15
 const SONY_LIVE_VIEW_INTERVAL_MAX_MS = 70
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
+/** How long an exposure mode waits for the settings it hands over (see awaitExposureHandover). */
+const SONY_EXPOSURE_HANDOVER_MS = 1_500
+/** The settings each exposure mode leaves to the photographer. */
+const EXPOSURE_HANDOVER: Partial<Record<string, readonly ('shutterSpeed' | 'aperture')[]>> = {
+    Manual: ['shutterSpeed', 'aperture'],
+    'Aperture priority': ['aperture'],
+    'Shutter priority': ['shutterSpeed'],
+}
 const SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS = 20
 /** The α6700 can acknowledge but ignore a movie-button transition sooner than this after the last. */
 const SONY_MOVIE_BUTTON_INTERVAL_MS = 1_500
@@ -1474,7 +1492,8 @@ export class SonyCamera extends GenericCamera {
 
     /**
      * Refuses up front what a Sony body would only half-apply: a tracking focus area while focus is
-     * AF-S (Lock-on AF needs continuous focus). Everything else is the shared write.
+     * AF-S (Lock-on AF needs continuous focus). Everything else is the shared write; an exposure mode
+     * resolves once the settings it hands to the photographer are theirs (`awaitExposureHandover`).
      */
     override async setControl<Id extends CameraControlId>(
         id: Id,
@@ -1489,7 +1508,44 @@ export class SonyCamera extends GenericCamera {
                     `${String(value)} tracks a subject, which needs AF-C; the camera is in AF-S`
                 )
         }
-        return super.setControl(id, value, context)
+        const written = await super.setControl(id, value, context)
+        if (id === 'exposureMode' && typeof written.value === 'string') await this.awaitExposureHandover(written.value)
+        return written
+    }
+
+    /**
+     * Right after an exposure-mode change a Sony body can still show the old mode's shutter speed and
+     * aperture, read-only (a bench a6700 23 ms after Auto to Manual: 1/10 and f/4 chosen by Auto, where
+     * a later read showed the photographer's 1/125 and f/8, writable). So a mode that hands shutter speed
+     * or aperture to the photographer resolves once each the camera reports is writable, read again at
+     * each property-changed event (every 100 ms without one), for at most SONY_EXPOSURE_HANDOVER_MS.
+     * After that it resolves anyway: the mode itself is confirmed, and a lens without an aperture
+     * control never hands one over.
+     */
+    private async awaitExposureHandover(mode: string): Promise<void> {
+        const handed = EXPOSURE_HANDOVER[mode] ?? []
+        if (!handed.length) return
+        const deadline = Date.now() + SONY_EXPOSURE_HANDOVER_MS
+        while (true) {
+            const { controls } = await this.getCapabilities()
+            const pending = handed.filter(id => controls[id] && !(controls[id].enabled && controls[id].writable))
+            if (!pending.length || Date.now() >= deadline) return
+            await this.nextPropertyChange(Math.min(100, deadline - Date.now()))
+        }
+    }
+
+    /** Resolves at the camera's next SDIE_DevicePropChanged, or after `milliseconds` without one. */
+    private nextPropertyChange(milliseconds: number): Promise<void> {
+        const event = this.registry.events.SDIE_DevicePropChanged
+        return new Promise(resolve => {
+            const changed = () => {
+                clearTimeout(timer)
+                this.off(event, changed)
+                resolve()
+            }
+            const timer = setTimeout(changed, milliseconds)
+            this.on(event, changed)
+        })
     }
 
     override subscribe(event: CameraEventName, handler: CameraEventHandler): () => void {
@@ -1866,8 +1922,11 @@ export class SonyCamera extends GenericCamera {
 
     /**
      * Zooms towards a focal length and resolves to where the lens landed, read back once it settles:
-     * the camera, not the request, decides. One pass, then at most one slow correction after an
-     * overshoot; each is a new movement, never a resent command.
+     * the camera, not the request, decides. One pass, then up to three slow corrections while the
+     * lens lands on the far side of the target or short of it (a lens coasts further zooming out than
+     * in); each is a new movement, never a resent command. Stopping short on the first pass is the
+     * end of the lens's range, and resolves there. A lens that cannot be brought within half a
+     * millimetre of a target inside its range fails with CameraOutcomeUnknownError naming where it is.
      */
     async zoomTo(focalLengthMillimetres: number): Promise<number> {
         const stopsAtStart = this.#zoomStops
@@ -1882,18 +1941,22 @@ export class SonyCamera extends GenericCamera {
 
         const scaleBefore = zoomScale(states)
         const speed = Math.abs(focalLengthMillimetres - start) > ZOOM_MEDIUM_SPEED_DISTANCE_MILLIMETRES ? 'medium' : 'slow'
-        const first = await this.zoomPass(start, focalLengthMillimetres, speed, states, stopsAtStart)
-        if (first.sent && first.landed === start) this.reportUnmovedLens(start, scaleBefore)
-        const overshot = Math.sign(first.landed - focalLengthMillimetres) !== Math.sign(start - focalLengthMillimetres)
-        if (first.interrupted || !overshot || arrived(first.landed)) return first.landed
-        const correction = await this.zoomPass(
-            first.landed,
-            focalLengthMillimetres,
-            'slow',
-            this.listPropertyStates(),
-            stopsAtStart
+        let pass = await this.zoomPass(start, focalLengthMillimetres, speed, states, stopsAtStart)
+        if (pass.sent && pass.landed === start) this.reportUnmovedLens(start, scaleBefore)
+        const overshot = (from: number, landed: number) =>
+            Math.sign(landed - focalLengthMillimetres) !== Math.sign(from - focalLengthMillimetres)
+        if (pass.interrupted || arrived(pass.landed) || !overshot(start, pass.landed)) return pass.landed
+        for (let correction = 1; correction <= ZOOM_CORRECTION_PASSES; correction++) {
+            const from = pass.landed
+            pass = await this.zoomPass(from, focalLengthMillimetres, 'slow', this.listPropertyStates(), stopsAtStart, ZOOM_REVERSAL_MILLISECONDS)
+            if (pass.interrupted || arrived(pass.landed)) return pass.landed
+            if (pass.landed === from) break
+        }
+        const off = Math.round(Math.abs(pass.landed - focalLengthMillimetres) * 10) / 10
+        throw new CameraOutcomeUnknownError(
+            'zoomTo',
+            `The lens landed at ${pass.landed} mm, ${off} mm from the requested ${focalLengthMillimetres} mm, and slow corrections did not bring it closer`
         )
-        return correction.landed
     }
 
     /**
@@ -1915,13 +1978,17 @@ export class SonyCamera extends GenericCamera {
         )
     }
 
-    /** Drives towards the target until it is reached or crossed, the lens stalls, or stopZoom is called. */
+    /**
+     * Drives towards the target until it is reached or crossed, the lens stalls, or stopZoom is
+     * called. Before the lens first moves, it may take `startMilliseconds` to start.
+     */
     private async zoomPass(
         from: number,
         target: number,
         speed: ZoomSpeed,
         states: readonly SonyPropertyState[],
-        stopsAtStart: number
+        stopsAtStart: number,
+        startMilliseconds = ZOOM_STALL_MILLISECONDS
     ): Promise<{ landed: number; interrupted: boolean; sent: boolean }> {
         const direction: ZoomDirection = target > from ? 'in' : 'out'
         const sent = await this.driveZoom('zoomTo', direction, speed, states, stopsAtStart)
@@ -1940,7 +2007,7 @@ export class SonyCamera extends GenericCamera {
                 if (current !== last) {
                     last = current
                     lastChangeMs = Date.now()
-                } else if (Date.now() - lastChangeMs > ZOOM_STALL_MILLISECONDS) break
+                } else if (Date.now() - lastChangeMs > (last === from ? startMilliseconds : ZOOM_STALL_MILLISECONDS)) break
             }
         } catch (error) {
             await this.haltZoom()
@@ -1951,15 +2018,21 @@ export class SonyCamera extends GenericCamera {
         return { landed: await this.settledFocalLength(last), interrupted, sent }
     }
 
-    /** Reads until two consecutive focal lengths agree; the camera's value, never the requested one. */
+    /**
+     * Reads until the focal length has held still for ZOOM_STILL_MILLISECONDS; the camera's value,
+     * never the requested one. Two equal reads are not enough: a lens still coasting can report the
+     * same focal length twice.
+     */
     private async settledFocalLength(fallback: number): Promise<number> {
         const deadline = Date.now() + ZOOM_SETTLE_MILLISECONDS
         let previous: number | null = null
+        let stillSinceMs = Date.now()
         while (Date.now() < deadline) {
             const current = sonyFocalLengthMillimetres(await this.refreshPropertyStates())
             if (current === null)
                 throw new CameraOutcomeUnknownError('zoomTo', 'The lens stopped reporting its focal length after zooming')
-            if (current === previous) return current
+            if (current !== previous) stillSinceMs = Date.now()
+            else if (Date.now() - stillSinceMs >= ZOOM_STILL_MILLISECONDS) return current
             previous = current
             await this.waitMs(ZOOM_POLL_MILLISECONDS)
         }

@@ -125,6 +125,14 @@ with GeneralError, so a Nikon with 0x9207 focuses through it (OutOfFocus is a re
 are numbered in GetStorageIDs order (Canon's SD is 0x0002 on a one-slot R8 Mark II). EOS setClock
 writes UTCTime 0xD17C as libgphoto2 does; it has not run on hardware yet, so safe-probe it on the
 bench before claiming Canon clock support.
+The darkgrade01 acceptance run the same day (Test Bench 31bbe67): a Z5 II in AF-A uses auto-area with no
+AF-area setting, so getCapabilities judges setFocusPoint from a running live view's afModeState, as the call
+does, and leaves it unreported while live view is off rather than starting it. An a6700 zooming 35 to 23 mm
+landed at 21 after one slow correction (zooming in, 21 to 23, landed exactly): zoomTo now makes up to three
+slow corrections, gives a reversing lens 2.5 s to start, holds a reading 300 ms before calling it settled,
+and fails with CameraOutcomeUnknownError when it cannot land within 0.5 mm. 23 ms after Auto to Manual the
+a6700 still showed Auto's shutter and aperture read-only: a Sony exposure mode resolves once the settings it
+hands over are writable (at most 1.5 s, re-read on SDIE_DevicePropChanged).
 darkgrade02 the same day (FX2 1.01, R6 Mark III 3-1.0.1, Z6 III V2.00): Camera.discover lists PTP
 interfaces from USB descriptors without opening them, so a body already open in the process (or
 claimed elsewhere) is still listed, without its strings. The FX2 pads its live-view JPEG with 0xFF

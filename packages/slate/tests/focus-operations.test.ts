@@ -556,6 +556,23 @@ describe('focus on a simulated Nikon body', () => {
         for (const { calls } of [fixed, z5])
             expect(calls.filter(call => ['ChangeAfArea', 'AfDrive', 'SetDevicePropValueEx'].includes(call.name))).toEqual([])
     })
+
+    it('judges a point in getCapabilities from live view as the call does, and never starts live view to find out', async () => {
+        // The bench Z5 II in AF-A: no FocusMeteringMode, and its live view reports auto-area AF.
+        const z5 = nikonCamera({ afModeState: 2 })
+        expect((await z5.camera.getCapabilities()).operations).not.toHaveProperty('setFocusPoint')
+        expect(z5.calls.map(call => call.name)).not.toContain('StartLiveView')
+        await z5.camera.getLiveViewFrame()
+        expect((await z5.camera.getCapabilities()).operations?.setFocusPoint).toEqual({
+            supported: false,
+            reason: expect.stringContaining('auto-area AF'),
+        })
+        await expect(z5.camera.setFocusPoint(0.5, 0.5)).rejects.toBeInstanceOf(CameraUnsupportedError)
+        // Another AF-area mode on the camera: both say yes.
+        z5.frame.afModeState = 0
+        expect((await z5.camera.getCapabilities()).operations?.setFocusPoint).toEqual({ supported: true })
+        await z5.camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+    })
 })
 
 // ------------------------------------------------------------------------------------------ Canon

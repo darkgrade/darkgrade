@@ -20,6 +20,7 @@ import {
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { LiveViewSelector } from '@vendors/nikon/definitions/nikon-property-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'
+import type { PTPEvent } from '@transport/interfaces/transport.interface'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
@@ -43,6 +44,8 @@ interface SimulatedProperty {
     current: number
     choices: number[]
     available: boolean
+    /** Sony's availability flag, when not `available`'s 1 or 2: 0 shows a value the camera chose, read-only. */
+    sonyEnabled?: number
     /** A range form (minimum, maximum, step) instead of an enumeration; descriptor bodies only. */
     range?: [number, number, number]
 }
@@ -74,11 +77,19 @@ interface Simulation {
     writes: { code: number; raw: number }[]
 }
 
+/** What a simulated Sony body does at each inventory read after a write, and the events it can send. */
+interface SonyReactions {
+    /** Runs before each inventory read is answered. */
+    beforeRead?: () => void
+    onWrite?: (code: number, raw: number) => void
+}
+
 const wireCodec = (camera: Camera, datatype: number) => integerCodec(protocolSession(camera).driver.registry, datatype)
 
 /** Simulated Sony body: SDIO inventory and SetExtDevicePropValue with each property's own width. */
-function sonyCamera(body: Body): Simulation {
-    const camera = new Camera({ vendorId: 0x054c, transport: transport() })
+function sonyCamera(body: Body, reactions: SonyReactions = {}): Simulation & { emit: (event: PTPEvent) => void } {
+    let deliver: ((event: PTPEvent) => void) | undefined
+    const camera = new Camera({ vendorId: 0x054c, transport: transport({ on: (handler: typeof deliver) => (deliver = handler) }) })
     const driver = protocolSession(camera).driver as SonyCamera
     const writes: Simulation['writes'] = []
     const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
@@ -89,18 +100,20 @@ function sonyCamera(body: Body): Simulation {
             const raw = Number(wireCodec(camera, target.datatype).decode(data!).value)
             writes.push({ code: parameters.DevicePropCode, raw })
             target.current = raw
+            reactions.onWrite?.(parameters.DevicePropCode, raw)
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('SDIO_GetAllExtDevicePropInfo')
+        reactions.beforeRead?.()
         const records = Object.entries(body).map(([code, simulated]) => ({
             ...simulated,
             code: Number(code),
-            enabled: simulated.available ? 1 : 2,
+            enabled: simulated.sonyEnabled ?? (simulated.available ? 1 : 2),
         }))
         return { code: 0x2001, data: sonyPropertyInventory(driver.registry, records) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    return { camera, body, writes }
+    return { camera, body, writes, emit: event => deliver?.(event) }
 }
 
 /** Simulated Canon body: CanonGetEventData value and allowed-value records, CanonSetPropValue. */
@@ -288,6 +301,33 @@ describe('exposure vocabulary', () => {
         expect((await camera.getCapabilities()).controls.photoVideoMode?.value).toBe('video')
         expect(await camera.setExposureMode('A')).toBe('Aperture priority')
         expect(writes).toEqual([{ code: 0x500e, raw: 0x00078051 }])
+    })
+
+    it('resolves a Sony mode change once the shutter speed and aperture it hands over are writable', async () => {
+        // In Auto the body shows its own 1/10 and f/4, read-only; the photographer's Manual is 1/125 and f/8.
+        const [manual, auto] = [0x00000001, 0x00048000]
+        const [manualShutter, autoShutter] = [(1 << 16) | 125, (1 << 16) | 10]
+        const body: Body = {
+            0x500e: property(6, auto, [manual, auto]),
+            0xd20d: { ...property(6, autoShutter, [autoShutter, manualShutter]), sonyEnabled: 0 },
+            0x5007: { ...property(4, 400, [400, 800]), sonyEnabled: 0 },
+        }
+        // It shows Manual at once but hands the settings over six inventory reads later, and says so.
+        let readsUntilHandover: number | undefined
+        const { camera, emit } = sonyCamera(body, {
+            onWrite: (code, raw) => void (code === 0x500e && raw === manual && (readsUntilHandover = 6)),
+            beforeRead: () => {
+                if (readsUntilHandover === undefined || --readsUntilHandover > 0) return
+                readsUntilHandover = undefined
+                body[0xd20d] = { ...body[0xd20d]!, current: manualShutter, sonyEnabled: 1 }
+                body[0x5007] = { ...body[0x5007]!, current: 800, sonyEnabled: 1 }
+                queueMicrotask(() => emit({ code: 0xc203, parameters: [0], transactionId: 0 }))
+            },
+        })
+        expect(await camera.setExposureMode('Manual')).toBe('Manual')
+        const { controls } = await camera.getCapabilities()
+        expect(controls.shutterSpeed).toMatchObject({ value: '1/125', writable: true })
+        expect(controls.aperture).toMatchObject({ value: 'f/8', writable: true })
     })
 
     it('accepts the mode-dial letters and Canon Av/Tv as exact spellings', () => {

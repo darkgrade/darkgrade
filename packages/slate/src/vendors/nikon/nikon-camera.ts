@@ -1105,8 +1105,27 @@ export class NikonCamera extends GenericCamera {
             return
         }
         await this.requireFocusOperations(this.focusOperations('focusPoint'))
-        if ((await this.freshFocusMetadata()).afModeState === NIKON_AUTO_AREA_STATE)
-            throw new CameraUnsupportedError('setFocusPoint', nikonAutoAreaReason)
+        if (await this.liveViewInAutoArea()) throw new CameraUnsupportedError('setFocusPoint', nikonLiveViewAutoAreaReason)
+    }
+
+    /**
+     * A body without FocusMeteringMode (the bench Z5 II, which also uses auto-area in AF-A) shows its
+     * AF-area mode only in live view: LiveViewObject afModeState 2 is auto-area AF.
+     */
+    private async liveViewInAutoArea(): Promise<boolean> {
+        return (await this.freshFocusMetadata()).afModeState === NIKON_AUTO_AREA_STATE
+    }
+
+    /**
+     * Whether live view is running, read from LiveViewStatus when this session has not seen it. A
+     * body without that property is not known to be in live view.
+     */
+    private async liveViewRunning(): Promise<boolean> {
+        if (this.liveViewStatus === 'UNKNOWN') {
+            const status = await this.get(this.registry.properties.LiveViewStatus).catch(() => undefined)
+            if (status === 'ON' || status === 'OFF') this.liveViewStatus = status
+        }
+        return this.liveViewStatus === 'ON'
     }
 
     /** The AF-area mode a focus point replaced, put back where the body still shows the one it chose. */
@@ -1257,13 +1276,8 @@ export class NikonCamera extends GenericCamera {
         switch (operation) {
             case 'autofocus':
                 return operationsAdvertised(capabilities, this.focusOperations('autofocus'))
-            case 'setFocusPoint': {
-                const area = capabilities.controls.focusArea
-                const switchable =
-                    area?.writable && NIKON_FOCUS_POINT_CHOICES.some(choice => area.allowedValues?.includes(choice))
-                if (area?.value === NIKON_AUTO_AREA_CHOICE && !switchable) return unsupported(nikonAutoAreaReason)
-                return operationsAdvertised(capabilities, this.focusOperations('focusPoint'))
-            }
+            case 'setFocusPoint':
+                return this.focusPointAvailability(capabilities)
             case 'resetFocusPoint':
                 return operationsAdvertised(capabilities, this.focusOperations('focusPoint'))
             case 'nudgeFocus':
@@ -1273,6 +1287,24 @@ export class NikonCamera extends GenericCamera {
             default:
                 return super.availability(operation, capabilities)
         }
+    }
+
+    /**
+     * The decision setFocusPoint makes, without changing anything: an advertised AF-area mode is judged
+     * from its reading; otherwise from a live view that is already running. A body whose AF-area mode
+     * shows only in live view, with live view off, is left unreported rather than called supported:
+     * live view is not started to find out.
+     */
+    private async focusPointAvailability(capabilities: CameraCapabilities): Promise<OperationAvailability> {
+        const advertised = operationsAdvertised(capabilities, this.focusOperations('focusPoint'))
+        if (!advertised.supported) return advertised
+        const area = capabilities.controls.focusArea
+        if (area) {
+            const switchable = area.writable && NIKON_FOCUS_POINT_CHOICES.some(choice => area.allowedValues?.includes(choice))
+            return area.value === NIKON_AUTO_AREA_CHOICE && !switchable ? unsupported(nikonAutoAreaReason) : advertised
+        }
+        if (!(await this.liveViewRunning())) throw new Error('This Nikon shows its AF-area mode only in live view, which is off')
+        return (await this.liveViewInAutoArea()) ? unsupported(nikonLiveViewAutoAreaReason) : advertised
     }
 }
 
@@ -1293,6 +1325,8 @@ const NIKON_FOCUS_POINT_CHOICES = ['Single Point', 'Pinpoint']
 const NIKON_AUTO_AREA_STATE = 2
 const nikonAutoAreaReason =
     'The camera is in auto-area AF, which picks its own focus point, and offers no single-point AF-area mode Slate can switch to; choose another AF-area mode on the camera'
+const nikonLiveViewAutoAreaReason =
+    'The camera is in auto-area AF, which picks its own focus point (AF-A uses it too), and does not let Slate change its AF-area mode; choose another AF-area mode or focus mode on the camera'
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
 

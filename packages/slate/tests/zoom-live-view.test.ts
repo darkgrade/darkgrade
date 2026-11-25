@@ -87,7 +87,10 @@ function sonyOsdDataset(): Uint8Array {
 
 /**
  * Simulated Sony body with a power-zoom lens: while a zoom operation is active, every inventory
- * read moves ZoomDistance by `stepMillimetres` towards the zoom direction, within the lens range.
+ * read moves the lens by `millimetresPerLevel` for each level of zoom speed (slow is one, medium
+ * four), within the lens range. After a stop it keeps going `coastReads` reads in that direction;
+ * started the other way, it stands still for `backlashReads` reads first; and the inventory shows a
+ * new ZoomDistance only every `reportEvery` reads.
  */
 function sonyBody(
     options: {
@@ -143,8 +146,16 @@ function sonyBody(
     add({ code: OSD_IMAGE_MODE, datatype: UINT8, writable: true, enabled: 1, value: 0, choices: [0, 1] })
     const body = {
         properties,
-        zoomDirection: 0,
-        stepMillimetres: 2,
+        zoomSpeed: 0,
+        millimetresPerLevel: 0.5,
+        coastReads: { in: 0, out: 0 },
+        coasting: 0,
+        zooming: false,
+        backlashReads: 0,
+        backlash: 0,
+        reportEvery: 1,
+        reads: 0,
+        position: 18,
         lensRange: { minimum: 18, maximum: 105 },
         zoomReply: OK,
         stopReply: OK,
@@ -161,14 +172,18 @@ function sonyBody(
     const writes: { code: number; raw: number }[] = []
     const inventory = () => {
         const focal = properties.get(ZOOM_DISTANCE)!
-        if (body.zoomDirection !== 0 && options.powerZoom !== false) {
-            const next = Number(focal.value) / 1000 + body.zoomDirection * body.stepMillimetres
-            focal.value = Math.round(Math.min(body.lensRange.maximum, Math.max(body.lensRange.minimum, next)) * 1000)
+        const moving = body.zoomSpeed !== 0 && (body.zooming || body.coasting > 0)
+        if (moving && body.backlash > 0) body.backlash -= 1
+        else if (moving && options.powerZoom !== false) {
+            const next = body.position + body.zoomSpeed * body.millimetresPerLevel
+            body.position = Math.min(body.lensRange.maximum, Math.max(body.lensRange.minimum, next))
         }
+        if (!body.zooming && body.coasting > 0) body.coasting -= 1
+        if (++body.reads % body.reportEvery === 0) focal.value = Math.round(body.position * 1000)
         const scale = properties.get(ZOOM_SCALE)
         const digitalZoomOn = properties.get(ZOOM_SETTING)!.value !== 1
-        if (scale && body.zoomDirection !== 0 && options.powerZoom === false && digitalZoomOn)
-            scale.value = Math.max(1000, Number(scale.value) + body.zoomDirection * 100)
+        if (scale && body.zooming && options.powerZoom === false && digitalZoomOn)
+            scale.value = Math.max(1000, Number(scale.value) + Math.sign(body.zoomSpeed) * 100)
         const records = [...properties.values()].map(property => ({
             ...property,
             current: property.value,
@@ -200,7 +215,15 @@ function sonyBody(
                 zoomCommands.push(speed)
                 if (speed !== 0 && body.zoomStartThrows) throw body.zoomStartThrows
                 const reply = speed === 0 ? body.stopReply : body.zoomReply
-                if (reply === OK) body.zoomDirection = Math.sign(speed)
+                if (reply !== OK) return { code: reply }
+                if (speed !== 0) {
+                    if (body.zoomSpeed !== 0 && Math.sign(speed) !== Math.sign(body.zoomSpeed)) body.backlash = body.backlashReads
+                    ;[body.zoomSpeed, body.zooming] = [speed, true]
+                }
+                else if (body.zooming) {
+                    body.zooming = false
+                    body.coasting = body.zoomSpeed > 0 ? body.coastReads.in : body.coastReads.out
+                }
                 return { code: reply }
             }
             case 'GetObject':
@@ -397,6 +420,23 @@ describe('digitalZoom and liveViewQuality typed settings', () => {
     })
 })
 
+/**
+ * Runs a zoomTo on fake timers, advancing the clock one poll at a time until it settles, so the
+ * simulated lens moves at the driver's own pace without the test waiting for it.
+ */
+async function zoomTo(camera: Camera, focalLengthMillimetres: number): Promise<number> {
+    vi.useFakeTimers()
+    let settled = false
+    const zooming = camera.zoomTo(focalLengthMillimetres).finally(() => (settled = true))
+    zooming.catch(() => undefined)
+    try {
+        while (!settled) await vi.advanceTimersByTimeAsync(20)
+        return await zooming
+    } finally {
+        vi.useRealTimers()
+    }
+}
+
 describe('Sony zoom', () => {
     it('reports zoom support from the inventory, with the camera reason when unavailable', async () => {
         expect((await sonyBody().camera.getCapabilities()).operations).toMatchObject({
@@ -476,7 +516,7 @@ describe('Sony zoom', () => {
 
     it('zooms to a focal length and resolves to where the lens landed, read back', async () => {
         const { camera, body, zoomCommands } = sonyBody()
-        const landed = await camera.zoomTo(35)
+        const landed = await zoomTo(camera, 35)
         expect(Math.abs(landed - 35)).toBeLessThanOrEqual(2)
         expect(Number(body.properties.get(ZOOM_DISTANCE)!.value) / 1000).toBe(landed)
         expect(zoomCommands[0]).toBeGreaterThan(0)
@@ -485,35 +525,66 @@ describe('Sony zoom', () => {
         expect((await camera.getCapabilities()).lens?.focalLengthMillimetres).toBe(landed)
     })
 
+    it('corrects a zoom-out that coasts past the target until it lands there (the a6700 went 35 to 21 for 23)', async () => {
+        const { camera, body, zoomCommands } = sonyBody()
+        // Zooming out it coasts on after the stop; zooming back in it first takes up its backlash.
+        Object.assign(body, { position: 35, lensRange: { minimum: 16, maximum: 50 }, coastReads: { in: 0, out: 1 }, backlashReads: 16 })
+        body.properties.get(ZOOM_DISTANCE)!.value = 35_000
+        const landed = await zoomTo(camera, 23)
+        expect(Math.abs(landed - 23)).toBeLessThanOrEqual(0.5)
+        expect(body.position).toBe(landed)
+        expect(zoomCommands.filter(speed => speed > 0)).not.toHaveLength(0)
+        expect(zoomCommands.at(-1)).toBe(0)
+    })
+
+    it('returns where the lens is, not a repeated report from while it was still coasting', async () => {
+        const { camera, body } = sonyBody()
+        Object.assign(body, { position: 35, lensRange: { minimum: 16, maximum: 50 }, coastReads: { in: 1, out: 1 }, reportEvery: 3 })
+        body.properties.get(ZOOM_DISTANCE)!.value = 35_000
+        expect(await zoomTo(camera, 23)).toBe(body.position)
+    })
+
+    it('reports an unknown outcome naming where the lens is when slow corrections cannot land it', async () => {
+        const { camera, body, zoomCommands } = sonyBody()
+        // Every slow movement carries the lens 2 mm: it can never stop within half a millimetre of 24.
+        Object.assign(body, { position: 30, coastReads: { in: 3, out: 3 } })
+        body.properties.get(ZOOM_DISTANCE)!.value = 30_000
+        const missed = await zoomTo(camera, 24).catch(error => error)
+        expect(missed).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(missed.message).toContain(`landed at ${body.position} mm`)
+        expect(zoomCommands.filter(speed => speed !== 0).length).toBeLessThanOrEqual(4)
+        expect(zoomCommands.at(-1)).toBe(0)
+    })
+
     it('stops at the end of the lens range and returns the range end, not the request', async () => {
         const { camera, zoomCommands } = sonyBody()
-        expect(await camera.zoomTo(200)).toBe(105)
+        expect(await zoomTo(camera, 200)).toBe(105)
         expect(zoomCommands.at(-1)).toBe(0)
     })
 
     it('stops and reports refused when the focal length never moves with optical zoom only', async () => {
         const { camera, zoomCommands } = sonyBody({ powerZoom: false })
-        expect(await camera.zoomTo(35).catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        expect(await zoomTo(camera, 35).catch(error => error)).toBeInstanceOf(CameraRefusedError)
         expect(zoomCommands.at(-1)).toBe(0)
     })
 
     it('reports refused when Clear Image Zoom is on but Zoom Scale shows nothing moved', async () => {
         const { camera, zoomCommands } = sonyBody({ powerZoom: false, zoomSetting: 3, zoomScaleReported: true })
         // Zooming out at 1.0× digital: Zoom Scale stays at 1000, so nothing changed.
-        const error = await camera.zoomTo(10).catch(failure => failure)
+        const error = await zoomTo(camera, 10).catch(failure => failure)
         expect(error).toBeInstanceOf(CameraRefusedError)
         expect(zoomCommands.at(-1)).toBe(0)
     })
 
     it('reports an unknown outcome, with the read-back focal length, when digital zoom may have moved instead', async () => {
         const withoutScale = sonyBody({ powerZoom: false, zoomSetting: 3 })
-        const unknown = await withoutScale.camera.zoomTo(35).catch(failure => failure)
+        const unknown = await zoomTo(withoutScale.camera, 35).catch(failure => failure)
         expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
         expect(unknown.message).toMatch(/18 mm/)
         expect(withoutScale.zoomCommands.at(-1)).toBe(0)
 
         const withScale = sonyBody({ powerZoom: false, zoomSetting: 4, zoomScaleReported: true })
-        expect(await withScale.camera.zoomTo(35).catch(failure => failure)).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(await zoomTo(withScale.camera, 35).catch(failure => failure)).toBeInstanceOf(CameraOutcomeUnknownError)
         expect(Number(withScale.body.properties.get(ZOOM_SCALE)!.value)).toBeGreaterThan(1000)
         expect(withScale.zoomCommands.at(-1)).toBe(0)
     })
