@@ -33,11 +33,24 @@ export type Disposition =
     /** In the target API, not on Camera yet. Move the entry to the area's `current` table when it lands. */
     | { kind: 'add' }
 
-export interface CommandLineArgument {
+/**
+ * One input of an operation, the same on every surface: a named MCP argument, and on the CLI a
+ * positional argument when required, otherwise a flag (`--no-<name>` for a switch that is on by
+ * default, `--<name>` for one that is off, `--<name> <value>` for the rest).
+ */
+export interface OperationParameter {
+    /** The library's own name for it (`focalLengthMillimetres`); kebab-case on the CLI. */
     name: string
+    /** `time` is ISO 8601 text, given to the library as a Date. */
+    type: 'text' | 'number' | 'switch' | 'choice' | 'time'
+    choices?: readonly string[]
+    required?: boolean
+    /** A switch's value when it is not given. */
+    default?: boolean
     description: string
 }
 
+/** A CLI-only flag, for behaviour the command adds around the operation (`--duration`). */
 export interface CommandLineFlag {
     name: `--${string}`
     value?: string
@@ -56,7 +69,6 @@ export interface OperationSurfaces {
         | {
               command?: string
               topLevelCommand?: string
-              arguments?: readonly CommandLineArgument[]
               flags?: readonly CommandLineFlag[]
           }
         | { omitted: string }
@@ -67,6 +79,8 @@ export interface OperationEntry {
     disposition: Disposition
     /** What it does, in the plan's words. Required for operations that stay or become public. */
     summary?: string
+    /** The operation's inputs, in the library's argument order. */
+    parameters?: readonly OperationParameter[]
     surfaces?: OperationSurfaces
 }
 

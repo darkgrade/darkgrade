@@ -1,20 +1,25 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
+import type { OperationParameter } from '@camera/operations/table'
 import { HardwareBusyError } from '@runtime/errors'
-import type { CameraClient } from '@runtime/runtime'
+import { surfaceOperations, type SurfaceOperation } from '@runtime/operations'
+import type { CameraClient, OperationReply } from '@runtime/runtime'
+
+type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 
 function protect<T extends Record<string, unknown>>(callback: (argumentsValue: T) => Promise<unknown>) {
     return async (argumentsValue: T) => {
         try {
             const result = await callback(argumentsValue)
-            return {
-                content: [
-                    {
-                        type: 'text' as const,
-                        text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-                    },
-                ],
-            }
+            const reply = isReply(result) ? result : undefined
+            const content: ToolContent[] = [
+                {
+                    type: 'text',
+                    text: typeof result === 'string' ? result : JSON.stringify(reply ? { result: reply.result, files: reply.files } : result, null, 2),
+                },
+                ...(reply?.images ?? []).map(image => ({ type: 'image' as const, data: image.base64, mimeType: image.mimeType })),
+            ]
+            return { content }
         } catch (error) {
             return {
                 isError: true,
@@ -33,208 +38,97 @@ function protect<T extends Record<string, unknown>>(callback: (argumentsValue: T
         }
     }
 }
-/** Register identical camera tools in a standalone Darkgrade server or a compatibility host. */
+
+function isReply(value: unknown): value is OperationReply {
+    return typeof value === 'object' && value !== null && 'result' in value && 'files' in value
+}
+
+function parameterSchema(parameter: OperationParameter): z.ZodType {
+    const schema =
+        parameter.type === 'number'
+            ? z.number()
+            : parameter.type === 'switch'
+              ? z.boolean()
+              : parameter.type === 'choice' && parameter.choices?.length
+                ? z.enum(parameter.choices as [string, ...string[]])
+                : parameter.name === 'value'
+                  ? z.union([z.string().min(1), z.number()])
+                  : z.string().min(1)
+    const described = schema.describe(parameter.description)
+    return parameter.required ? described : described.optional()
+}
+
+function toolDescription(operation: SurfaceOperation): string {
+    const notes = [
+        operation.summary + '.',
+        operation.readOnly ? 'Reads only.' : 'Sent once and confirmed by the camera; an unconfirmed command is reported and never resent.',
+        ...(operation.immediate ? ['Always allowed: it does not wait behind other camera work.'] : []),
+        ...(operation.name.startsWith('set') && operation.name !== 'setClock'
+            ? ['Read camera_get_capabilities first: only values in its allowedValues are accepted.']
+            : []),
+    ]
+    return notes.join(' ')
+}
+
+/**
+ * Registers one tool per public Camera operation, named and described by the operation table:
+ * `camera_` + the method in snake_case, one `camera_set_<setting>` tool per typed setting
+ * (`camera_get_capabilities` reads them all), plus `camera_discover` and `camera_run_benchmark`.
+ */
 export function registerCameraTools(server: McpServer, client: CameraClient) {
-    if (client.benchmark) server.registerTool('camera_benchmark', {
-        title: 'Benchmark and export a camera profile',
-        description: 'Explicit deep benchmark of an idle camera: read advertised operations, events and bounded safe numeric control descriptors, save a sanitized profile and upload evidence according to telemetry preferences. Uses host camera ownership; no photos, recording, arbitrary writes or competing sessions. May take three minutes. Partial results are not unsupported features or physical passes.',
-        inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    }, protect(async ({camera}) => client.benchmark!(camera as string)))
-    server.registerTool(
-        'camera_take_photo',
-        {
-            title: 'Take a photo through Darkgrade',
-            description:
-                'Capture one photo using the active USB or Wi-Fi transport and shared camera session. Autofocus is enabled unless explicitly disabled; a focus-lock failure does not imply a failed shutter. Memory delivery is available on Nikon and Sony. Nikon lossless RAW temporarily changes compression and restores the original value. Camera writes block power/USB recovery. Capture and transfer evidence are separate from independent image decoding.',
-            inputSchema: z.object({
-                camera: z.string().min(1),
-                autofocus: z
-                    .boolean()
-                    .optional()
-                    .describe(
-                        'False requests capture without requiring autofocus lock. Does not certify focus quality.'
-                    ),
-                destination: z
-                    .enum(['card', 'memory'])
-                    .optional()
-                    .describe(
-                        'Memory requests Nikon SDRAM or Sony host delivery. Original save settings are restored.'
-                    ),
-                rawCompression: z
-                    .literal('lossless')
-                    .optional()
-                    .describe('Nikon NEF only: temporarily select lossless RAW and restore the original compression.'),
-            }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-        },
-        protect(async ({ camera, autofocus, destination, rawCompression }) =>
-            client.media(camera as string, 'take-photo', {
-                ...(autofocus === undefined ? {} : { autofocus: autofocus as boolean }),
-                ...(destination === undefined ? {} : { destination: destination as 'card' | 'memory' }),
-                ...(rawCompression === undefined ? {} : { rawCompression: rawCompression as 'lossless' }),
-            })
-        )
-    )
-
-    server.registerTool(
-        'camera_storage',
-        {
-            title: 'Read camera card capacity',
-            description:
-                'Read populated card slots, capacity and recording access over native USB or Nikon Wi-Fi. For Sony SDK Wi-Fi, use camera_sony_wifi_capabilities with query MediaSLOT to inspect current card telemetry. Does not take a photo or delete media.',
-            inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        },
-        protect(async ({ camera }) => client.media(camera as string, 'storage'))
-    )
-
-    server.registerTool(
-        'camera_nikon_memory_status',
-        {
-            title: 'Inspect pending Nikon memory photos',
-            description:
-                'Peek at retained Nikon SDRAM image events and read their object metadata over the active USB or Wi-Fi link. Does not drain the event queue, release the shutter, download images, delete media or change connection.',
-            inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        },
-        protect(async ({ camera }) => client.media(camera as string, 'memory-status'))
-    )
-
-    server.registerTool(
-        'camera_download_latest_photo',
-        {
-            title: 'Download the latest camera photo',
-            description:
-                'Follow the camera’s active USB or Wi-Fi transport, locate its newest image through Darkgrade, and download it to the bounded bench media cache. Sony Wi-Fi uses SDK RemoteTransfer and verifies the received file size against the camera. Returns filename, byte count, object handle, and local path.',
-            inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        },
-        protect(async ({ camera }) => client.media(camera as string, 'latest-photo'))
-    )
-
-    server.registerTool(
-        'camera_live_view_frame',
-        {
-            title: 'Read one live-view frame',
-            description:
-                'Follow the active USB or Wi-Fi transport and request one live-view JPEG through Darkgrade. Vendor support varies; unsupported cameras return a clear error. The frame is saved in the bounded bench media cache.',
-            inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        },
-        protect(async ({ camera }) => client.media(camera as string, 'live-view'))
-    )
-
-    server.registerTool(
-        'camera_controls',
-        {
-            title: 'Read attached camera controls',
-            description:
-                'Open a bounded Darkgrade session and return camera-advertised values, choices, and live availability. Supports Canon EOS, Sony, and capability-driven standard PTP controls on Nikon and Olympus bodies. A standard control is returned only when the attached body and current transport advertise it.',
-            inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        },
-        protect(async ({ camera }) => client.control(camera as string, 'status'))
-    )
-
-    server.registerTool(
-        'camera_autofocus',
-        {
-            title: 'Autofocus a camera',
-            description:
-                'Drive Canon EOS, Sony or Nikon autofocus without taking a picture. Nikon returns fresh camera-reported focus status separately from command acceptance. Darkgrade always bounds the focus hold and releases the remote half-press.',
-            inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        },
-        protect(async ({ camera }) => client.control(camera as string, 'autofocus'))
-    )
-
-    server.registerTool(
-        'camera_set_focus_mode',
-        {
-            title: 'Set camera focus mode',
-            description:
-                'Set a focus mode advertised by the attached Canon, Sony, Nikon, or Olympus camera and return the resulting control state.',
-            inputSchema: z.object({
-                camera: z.string().min(1),
-                mode: z.string().min(1),
-            }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        },
-        protect(async ({ camera, mode }) => client.control(camera as string, 'set-focus-mode', mode as string))
-    )
-
-    server.registerTool(
-        'camera_set_white_balance',
-        {
-            title: 'Set camera white balance',
-            description:
-                'Set a white-balance value advertised and currently enabled by the attached Canon, Sony, Nikon, or Olympus camera.',
-            inputSchema: z.object({
-                camera: z.string().min(1),
-                whiteBalance: z.string().min(1),
-            }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        },
-        protect(async ({ camera, whiteBalance }) =>
-            client.control(camera as string, 'set-white-balance', whiteBalance as string)
-        )
-    )
-
-    server.registerTool(
-        'camera_set_manual_exposure',
-        {
-            title: 'Enable camera Manual exposure',
-            description:
-                'Switch a Canon EOS, Sony or Nikon camera to an advertised Manual exposure mode, verify readback and refresh exposure controls. Retains the mode for subsequent commands.',
-            inputSchema: z.object({ camera: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        },
-        protect(({ camera }) => client.control(camera as string, 'set-exposure-mode', 'manual'))
-    )
-
-    for (const [name, title, action] of [
-        ['camera_set_aperture', 'Set camera aperture', 'set-aperture'],
-        ['camera_set_shutter_speed', 'Set camera shutter speed', 'set-shutter-speed'],
-        ['camera_set_iso', 'Set camera ISO', 'set-iso'],
-    ] as const) {
+    for (const operation of surfaceOperations()) {
+        if (!operation.mcpTool) continue
+        if (operation.name === 'discover') {
+            server.registerTool(
+                operation.mcpTool,
+                {
+                    title: 'List attached cameras',
+                    description: toolDescription(operation),
+                    inputSchema: z.object({}).strict(),
+                    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+                },
+                protect(async () => client.discover())
+            )
+            continue
+        }
+        const shape: Record<string, z.ZodType> = { camera: z.string().min(1).describe('the camera identity the host names') }
+        for (const parameter of operation.parameters) shape[parameter.name] = parameterSchema(parameter)
         server.registerTool(
-            name,
+            operation.mcpTool,
             {
-                title,
-                description: `Set a value currently advertised and enabled by the attached camera over its active USB or supported Wi-Fi connection. Read camera_controls first; mode-dependent display-only values are rejected clearly.`,
-                inputSchema: z.object({ camera: z.string().min(1), value: z.string().min(1) }).strict(),
+                title: operation.summary,
+                description: toolDescription(operation),
+                inputSchema: z.object(shape).strict(),
                 annotations: {
-                    readOnlyHint: false,
-                    destructiveHint: false,
-                    idempotentHint: true,
+                    readOnlyHint: operation.readOnly,
+                    destructiveHint: operation.name === 'takePhoto' || operation.name === 'startRecording',
+                    idempotentHint: operation.readOnly,
                     openWorldHint: false,
                 },
             },
-            protect(async ({ camera, value }) => client.control(camera as string, action, value as string))
+            protect(async ({ camera, ...input }: Record<string, unknown>) => client.operation(String(camera), operation.name, input))
         )
     }
-
-    server.registerTool(
-        'camera_set_movie_format',
-        {
-            title: 'Set camera movie recording format',
-            description:
-                'Set a complete Canon record key or Sony movie codec/container name returned by camera_controls. The body must advertise the value in the current mode.',
-            inputSchema: z.object({ camera: z.string().min(1), formatKey: z.string().min(1) }).strict(),
-            annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        },
-        protect(async ({ camera, formatKey }) =>
-            client.control(camera as string, 'set-movie-format', formatKey as string)
+    if (client.benchmark)
+        server.registerTool(
+            'camera_run_benchmark',
+            {
+                title: 'Benchmark and export a camera profile',
+                description:
+                    'runBenchmark: explicit deep benchmark of an idle camera. Reads advertised operations, events and bounded safe numeric control descriptors, saves a sanitized profile and uploads evidence according to telemetry preferences. Uses host camera ownership; no photos, recording, arbitrary writes or competing sessions. May take three minutes. Partial results are not unsupported features or physical passes.',
+                inputSchema: z.object({ camera: z.string().min(1) }).strict(),
+                annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+            },
+            protect(async ({ camera }: Record<string, unknown>) => client.benchmark!(String(camera)))
         )
-    )
 }
+
 export function createCameraMcpServer(client: CameraClient) {
     const server = new McpServer(
-        { name: 'darkgrade', version: '0.1.2' },
+        { name: 'darkgrade', version: '0.2.0' },
         {
             instructions:
-                'Camera controls and media follow the active transport. Read camera_controls before writing. Commands share the owning runtime session. A busy camera is not a reason to switch USB or power. A timed-out write may still be running; inspect the host before retrying.',
+                'One tool per public Camera operation, with the library names. Read camera_get_capabilities before writing: it lists every setting, its allowed values, and which operations the camera can do now. Commands share the owning runtime session and are never resent: an unconfirmed result is reported, so inspect the camera before retrying. A busy camera is not a reason to switch USB or power. camera_stop_recording and camera_stop_zoom are always allowed.',
             capabilities: { tools: {} },
         }
     )

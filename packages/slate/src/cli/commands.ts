@@ -1,4 +1,5 @@
-import { cameraOperationTable, cliCommand, type OperationEntry } from '@camera/operations/table'
+import { cameraOperationTable, kebabCase, type OperationEntry } from '@camera/operations/table'
+import { surfaceOperations, type SurfaceOperation } from '@runtime/operations'
 
 /** The one description of the command tree. Help, the manual page, shell completions,
  * argument checks and typo suggestions are all drawn from it. */
@@ -24,7 +25,8 @@ export interface CommandDefinition {
     description?: string
     /** Heading the command is listed under in its parent's help. */
     section?: string
-    argument?: ArgumentDefinition
+    /** Positional arguments, in order. */
+    arguments?: readonly ArgumentDefinition[]
     flags?: readonly FlagDefinition[]
     examples?: readonly string[]
     commands?: readonly CommandDefinition[]
@@ -131,7 +133,7 @@ const telemetry: CommandDefinition = {
                 'Requests a confirmation link. Open it within 2 hours; it works once. ' +
                 'On a terminal the address is asked for when left out.',
             section: 'Identity',
-            argument: { name: 'email', required: true },
+            arguments: [{ name: 'email', required: true }],
             examples: ['darkgrade telemetry login you@example.com'],
         },
         {
@@ -143,45 +145,95 @@ const telemetry: CommandDefinition = {
     ],
 }
 
-/** A camera operation's command, named and described by its operation-table entry. */
-function cameraOperationCommand(operation: string, extra: Omit<CommandDefinition, 'name' | 'summary'> = {}): CommandDefinition {
+const output: FlagDefinition = {
+    name: 'output',
+    value: 'path',
+    summary: 'Write the file it returns here (default: its own name in this folder)',
+}
+
+const kebab = (name: string) => kebabCase(name)
+
+/** Operations whose result includes a file, so their command takes --output. */
+const fileOperations = new Set(['takePhoto', 'getLiveViewFrame', 'getMediaPreview', 'downloadMedia'])
+
+/** What each `darkgrade camera` command adds to its table entry: longer help and examples. */
+const commandHelp: Partial<Record<string, Pick<CommandDefinition, 'description' | 'examples'>>> = {
+    startRecording: {
+        description:
+            'Gets the camera ready (video mode, card, audio), starts recording and stays in the foreground ' +
+            'holding the session. Stops on Ctrl-C or after --duration, waits for the finished clip on the card, ' +
+            'puts the camera back and prints the clip. Nothing on the card is deleted or overwritten.',
+        examples: ['darkgrade camera start-recording', 'darkgrade camera start-recording --duration 10s --json'],
+    },
+    getCapabilities: { examples: ['darkgrade camera get-capabilities --json'] },
+    setShutterSpeed: { examples: ['darkgrade camera set-shutter-speed 1/250'] },
+    setControl: { examples: ['darkgrade camera set-control iso "ISO 800"'] },
+    setFocusPoint: { examples: ['darkgrade camera set-focus-point 0.5 0.4'] },
+    nudgeFocus: { examples: ['darkgrade camera nudge-focus near small'] },
+    zoomTo: { examples: ['darkgrade camera zoom-to 35'] },
+    takePhoto: { examples: ['darkgrade camera take-photo', 'darkgrade camera take-photo --destination computer --output photo.jpg'] },
+    downloadMedia: { examples: ['darkgrade camera list-media --json', 'darkgrade camera download-media <id> --output clip.mp4'] },
+}
+
+/** One public operation's `darkgrade camera <kebab>` command, named, described and given its inputs by the table. */
+function cameraOperationCommand(operation: SurfaceOperation, line: string): CommandDefinition {
+    const required = operation.parameters.filter(parameter => parameter.required)
+    const optional = operation.parameters.filter(parameter => !parameter.required)
+    const parameterFlags: FlagDefinition[] = optional.map(parameter =>
+        parameter.type === 'switch'
+            ? { name: parameter.default ? `no-${kebab(parameter.name)}` : kebab(parameter.name), summary: parameter.description }
+            : {
+                  name: kebab(parameter.name),
+                  value: parameter.choices?.join('|') ?? (parameter.type === 'time' ? 'ISO 8601' : parameter.type),
+                  summary: parameter.description,
+              }
+    )
     const table: Readonly<Record<string, OperationEntry>> = cameraOperationTable
-    const entry = table[operation]
-    const line = entry && cliCommand(operation, entry)
-    if (!entry || !line?.startsWith('darkgrade camera ') || !entry.summary)
-        throw new Error(`${operation} has no darkgrade camera command in the operation table`)
-    const surface = entry.surfaces?.cli
-    const tableFlags = surface && 'flags' in surface ? (surface.flags ?? []) : []
+    const surface = table[operation.name]?.surfaces?.cli
+    const extraFlags = surface && 'flags' in surface ? (surface.flags ?? []) : []
     return {
         name: line.slice('darkgrade camera '.length),
-        summary: entry.summary,
+        summary: operation.summary,
         section: 'Camera',
-        ...extra,
+        ...commandHelp[operation.name],
+        ...(required.length && {
+            arguments: required.map(parameter => ({ name: kebab(parameter.name), required: true, choices: parameter.choices })),
+        }),
         flags: [
-            ...tableFlags.map(flag => ({ name: flag.name.slice(2), value: flag.value, summary: flag.description })),
-            ...(extra.flags ?? []),
+            ...parameterFlags,
+            ...extraFlags.map(flag => ({ name: flag.name.slice(2), value: flag.value, summary: flag.description })),
+            ...(fileOperations.has(operation.name) ? [output] : []),
+            camera,
+            json,
         ],
     }
 }
+
+/** The library operation behind each `darkgrade camera` command, from the operation table. */
+export const cameraCommandOperations: ReadonlyMap<string, SurfaceOperation> = new Map(
+    surfaceOperations().flatMap(operation =>
+        operation.cliCommand?.startsWith('darkgrade camera ')
+            ? [[operation.cliCommand.slice('darkgrade camera '.length), operation] as const]
+            : []
+    )
+)
 
 const cameraCommands: CommandDefinition = {
     name: 'camera',
     summary: 'Operate the attached camera',
     description:
-        'Each command opens the attached camera, does one thing through the same operations as the library, ' +
-        'and closes it again.',
+        'Each command opens the attached camera, does one thing through the same operations as the library ' +
+        'and the MCP tools, and closes it again. Commands are sent once: an unconfirmed result is reported, never resent.',
     section: 'Camera',
-    examples: ['darkgrade camera start-recording --duration 10s'],
-    commands: [
-        cameraOperationCommand('startRecording', {
-            description:
-                'Gets the camera ready (video mode, card, audio), starts recording and stays in the foreground ' +
-                'holding the session. Stops on Ctrl-C or after --duration, waits for the finished clip on the card, ' +
-                'puts the camera back and prints the clip. Nothing on the card is deleted or overwritten.',
-            flags: [camera, json],
-            examples: ['darkgrade camera start-recording', 'darkgrade camera start-recording --duration 10s --json'],
-        }),
+    examples: [
+        'darkgrade camera get-capabilities',
+        'darkgrade camera set-iso "ISO 800"',
+        'darkgrade camera take-photo',
+        'darkgrade camera start-recording --duration 10s',
     ],
+    commands: [...cameraCommandOperations].map(([line, operation]) =>
+        cameraOperationCommand(operation, `darkgrade camera ${line}`)
+    ),
 }
 
 export const rootCommand: CommandDefinition = {
@@ -219,7 +271,7 @@ export const rootCommand: CommandDefinition = {
             summary: 'Print a shell completion script',
             description: 'Prints a script that completes commands and flags when you press Tab.',
             section: 'Shell',
-            argument: { name: 'shell', required: true, choices: completionShells },
+            arguments: [{ name: 'shell', required: true, choices: completionShells }],
             examples: [
                 'darkgrade completions zsh > ~/.zfunc/_darkgrade',
                 'darkgrade completions bash > ~/.local/share/bash-completion/completions/darkgrade',
@@ -237,7 +289,7 @@ export const rootCommand: CommandDefinition = {
             name: 'help',
             summary: 'Show help for a command',
             section: 'Shell',
-            argument: { name: 'command', required: false },
+            arguments: [{ name: 'command', required: false }],
             examples: ['darkgrade help telemetry benchmark'],
         },
         {

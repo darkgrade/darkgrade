@@ -1,5 +1,7 @@
+import type { DiscoveredCamera } from '@camera/driver/connection'
 import { HardwareBusyError } from '@runtime/errors'
-import { validateMediaOptions, type CameraClient, type MediaOptions } from '@runtime/runtime'
+import { readOperationInput, surfaceOperation, type OperationInput } from '@runtime/operations'
+import type { CameraClient, OperationReply } from '@runtime/runtime'
 
 /** Connect to the existing owning host. Does not create a local hardware session. */
 export class HttpCameraClient implements CameraClient {
@@ -12,10 +14,8 @@ export class HttpCameraClient implements CameraClient {
         if (!['http:', 'https:'].includes(this.base.protocol) || this.base.username || this.base.password)
             throw new Error('Use an HTTP(S) runtime URL without embedded credentials')
     }
-    private async call(camera: string, endpoint: string, body: unknown): Promise<unknown> {
-        if (typeof camera !== 'string' || !camera.trim() || camera === '.' || camera === '..')
-            throw new Error('A valid camera identity is required')
-        const url = new URL(`/api/cameras/${encodeURIComponent(camera)}/${endpoint}`, this.base)
+    private async call(path: string, body: unknown): Promise<unknown> {
+        const url = new URL(path, this.base)
         let response: Response
         try {
             response = await this.request(url, {
@@ -50,10 +50,27 @@ export class HttpCameraClient implements CameraClient {
         if (!response.ok) throw new Error(message || `Camera request failed (${response.status})`)
         return result
     }
-    control(camera: string, action: string, value?: string | number, property?: string) {
-        return this.call(camera, 'controls', { action, value, property })
+    private cameraPath(camera: string, endpoint: string): string {
+        if (typeof camera !== 'string' || !camera.trim() || camera === '.' || camera === '..')
+            throw new Error('A valid camera identity is required')
+        return `/api/cameras/${encodeURIComponent(camera)}/${endpoint}`
     }
-    async media(camera: string, action: string, options: MediaOptions = {}) {
-        return this.call(camera, 'media-action', { ...validateMediaOptions(options, action), action })
+    async discover(): Promise<DiscoveredCamera[]> {
+        const reply = await this.call('/api/cameras/discover', {})
+        if (!Array.isArray(reply)) throw new Error('Camera runtime returned no camera list')
+        return reply
+    }
+    /** Inputs are checked here too, so a malformed call never reaches the host. */
+    async operation(camera: string, name: string, input: OperationInput = {}): Promise<OperationReply> {
+        const operation = surfaceOperation(name)
+        if (!operation || operation.name === 'discover') throw new Error(`Unknown camera operation ${name}`)
+        readOperationInput(operation, input)
+        const reply = await this.call(this.cameraPath(camera, `operations/${encodeURIComponent(name)}`), input)
+        if (!reply || typeof reply !== 'object' || !('result' in reply) || !('files' in reply) || !Array.isArray(reply.files))
+            throw new Error('Camera runtime returned no operation result')
+        return { result: reply.result, files: reply.files, ...('images' in reply && Array.isArray(reply.images) && { images: reply.images }) }
+    }
+    async benchmark(camera: string): Promise<unknown> {
+        return this.call(this.cameraPath(camera, 'benchmark'), {})
     }
 }

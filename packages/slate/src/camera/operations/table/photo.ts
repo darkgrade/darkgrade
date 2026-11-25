@@ -11,15 +11,15 @@ export const photoOperationTable = {
             area: 'photo',
             disposition: { kind: 'keep' },
             summary: 'Takes a photo and returns only once a new file is confirmed. Returns its media id, name, size and, for computer, the bytes',
-            surfaces: {
-                cli: {
-                    flags: [{ name: '--no-autofocus', description: 'release without focusing' }, {
-                        name: '--destination',
-                        value: 'card|computer',
-                        description: 'where the photo is saved',
-                    }],
+            parameters: [
+                { name: 'autofocus', type: 'switch', default: true, description: 'focus before the release; off releases without focusing' },
+                {
+                    name: 'destination',
+                    type: 'choice',
+                    choices: ['card', 'computer'],
+                    description: 'card (the default) keeps the photo on the card; computer also returns its bytes',
                 },
-            },
+            ],
         },
     },
     planned: {},

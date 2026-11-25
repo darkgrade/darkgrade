@@ -21,22 +21,16 @@ export const mediaOperationTable = {
             area: 'media',
             disposition: { kind: 'keep' },
             summary: 'A small JPEG of a photo or clip',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'id', description: 'a media id from list-media' }],
-                    flags: [{ name: '--size', value: 'thumbnail|preview', description: 'preview size' }],
-                },
-            },
+            parameters: [
+                { name: 'id', type: 'text', required: true, description: 'a media id from list-media' },
+                { name: 'size', type: 'choice', choices: ['thumbnail', 'preview'], description: 'thumbnail (the default) or preview' },
+            ],
         },
         downloadMedia: {
             area: 'media',
             disposition: { kind: 'keep' },
             summary: 'Copies a file off the card, with progress and cancel',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'id', description: 'a media id from list-media' }],
-                },
-            },
+            parameters: [{ name: 'id', type: 'text', required: true, description: 'a media id from list-media' }],
         },
     },
     planned: {},

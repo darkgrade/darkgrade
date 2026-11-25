@@ -11,6 +11,7 @@ export const connectionOperationTable = {
             area: 'connection',
             disposition: { kind: 'keep' },
             summary: 'Opens the camera. observeOnly reads without changing any setting',
+            parameters: [{ name: 'observeOnly', type: 'switch', default: false, description: 'read without changing any setting' }],
             surfaces: {
                 cli: { omitted: 'every command connects itself' },
             },

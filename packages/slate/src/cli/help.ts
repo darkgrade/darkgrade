@@ -18,7 +18,7 @@ export function usageLine(path: readonly CommandDefinition[]): string {
     return [
         commandLine(path),
         ...(command.commands ? ['<command>'] : []),
-        ...(command.argument ? [argumentUsage(command.argument)] : []),
+        ...(command.arguments ?? []).map(argumentUsage),
         ...(command.commands || visibleFlags(command).length ? ['[options]'] : []),
     ].join(' ')
 }
@@ -53,7 +53,7 @@ function listedCommands(command: CommandDefinition, prefix = ''): { label: strin
             ? listedCommands(child, `${child.name} `)
             : [
                   {
-                      label: prefix + child.name + (child.argument ? ` ${argumentUsage(child.argument)}` : ''),
+                      label: [prefix + child.name, ...(child.arguments ?? []).map(argumentUsage)].join(' '),
                       command: child,
                   },
               ]

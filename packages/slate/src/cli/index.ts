@@ -1,4 +1,7 @@
+import { kebabCase } from '@camera/operations/table'
+import { OperationInputError } from '@runtime/operations'
 import {
+    cameraCommandOperations,
     closestMatch,
     commandLine,
     completionShells,
@@ -65,7 +68,7 @@ function separateGlobalFlags(argumentsList: readonly string[]): { flags: GlobalF
 function parseCommandArguments(
     path: readonly CommandDefinition[],
     words: readonly string[]
-): { flags: Map<string, string | true>; argument?: string } {
+): { flags: Map<string, string | true>; argument?: string; positionals: string[] } {
     const command = path[path.length - 1]
     const flags = new Map<string, string | true>()
     const positionals: string[] = []
@@ -92,17 +95,20 @@ function parseCommandArguments(
         else if (index + 1 < words.length) flags.set(flag.name, words[++index])
         else throw new UsageError(`--${flag.name} needs a value: --${flag.name} <${flag.value}>.`, path)
     }
-    if (positionals.length > (command.argument ? 1 : 0))
-        throw new UsageError(`Unexpected "${positionals[command.argument ? 1 : 0]}".`, path)
-    const choices = command.argument?.choices
-    if (choices && positionals.length && !choices.includes(positionals[0])) {
-        const suggestion = closestMatch(positionals[0], choices)
-        throw new UsageError(
-            `"${positionals[0]}" is not one of ${choices.join(', ')}.${suggestion ? ` Did you mean "${suggestion}"?` : ''}`,
-            path
-        )
-    }
-    return { flags, argument: positionals[0] }
+    const expected = command.arguments ?? []
+    if (positionals.length > expected.length) throw new UsageError(`Unexpected "${positionals[expected.length]}".`, path)
+    expected.forEach((argument, index) => {
+        const value = positionals[index]
+        const choices = argument.choices
+        if (choices && value !== undefined && !choices.includes(value)) {
+            const suggestion = closestMatch(value, choices)
+            throw new UsageError(
+                `"${value}" is not one of ${choices.join(', ')}.${suggestion ? ` Did you mean "${suggestion}"?` : ''}`,
+                path
+            )
+        }
+    })
+    return { flags, argument: positionals[0], positionals }
 }
 
 function unknownCommand(path: readonly CommandDefinition[], word: string): UsageError {
@@ -294,8 +300,15 @@ async function openManual(version: string | undefined, terminal: Terminal): Prom
 }
 
 /** `darkgrade camera <operation>`: the camera operations, loaded only when one runs. */
-async function runCameraCommand(path: readonly CommandDefinition[], words: readonly string[]): Promise<number> {
-    const { flags } = parseCommandArguments(path, words)
+async function runCameraCommand(
+    path: readonly CommandDefinition[],
+    words: readonly string[],
+    terminal: Terminal
+): Promise<number> {
+    const command = path[path.length - 1]
+    const operation = cameraCommandOperations.get(command.name)
+    if (!operation) throw unknownCommand(path.slice(0, -1), command.name)
+    const { flags, positionals } = parseCommandArguments(path, words)
     const recording = await import('@cli/recording')
     const text = (name: string) => {
         const value = flags.get(name)
@@ -310,11 +323,36 @@ async function runCameraCommand(path: readonly CommandDefinition[], words: reado
             throw new UsageError(`--${name}: ${error instanceof Error ? error.message : String(error)}`, path)
         }
     }
-    return recording.runStartRecordingCommand({
-        camera: parse('camera', recording.parseCameraId),
-        durationMilliseconds: parse('duration', recording.parseRecordingDuration),
-        json: flags.has('json'),
+    const camera = parse('camera', recording.parseCameraId)
+    if (operation.name === 'startRecording')
+        return recording.runStartRecordingCommand({
+            camera,
+            durationMilliseconds: parse('duration', recording.parseRecordingDuration),
+            json: flags.has('json'),
+        })
+    // Required inputs are positional, in the library's order; the rest are flags.
+    const input: Record<string, string | boolean> = {}
+    const required = operation.parameters.filter(parameter => parameter.required)
+    required.forEach((parameter, index) => {
+        const value = positionals[index]
+        if (value === undefined)
+            throw new UsageError(`${command.name} needs <${kebabCase(parameter.name)}>: ${parameter.description}.`, path)
+        input[parameter.name] = value
     })
+    for (const parameter of operation.parameters.filter(candidate => !candidate.required)) {
+        const flag = kebabCase(parameter.name)
+        if (parameter.type === 'switch') {
+            if (parameter.default && flags.has(`no-${flag}`)) input[parameter.name] = false
+            else if (!parameter.default && flags.has(flag)) input[parameter.name] = true
+        } else if (text(flag) !== undefined) input[parameter.name] = text(flag)!
+    }
+    const { runCameraOperationCommand } = await import('@cli/camera-operation')
+    try {
+        return await runCameraOperationCommand({ operation, input, camera, outputPath: text('output'), json: flags.has('json') }, terminal)
+    } catch (error) {
+        if (error instanceof OperationInputError) throw new UsageError(error.message, path)
+        throw error
+    }
 }
 
 async function runCommand(
@@ -346,7 +384,7 @@ async function runCommand(
     }
     if (flags.help) return help(path)
     if (path[1].name === 'telemetry') return runTelemetryCommand(path, remaining, terminal)
-    if (path[1].name === 'camera') return runCameraCommand(path, remaining)
+    if (path[1].name === 'camera') return runCameraCommand(path, remaining, terminal)
     const { flags: commandFlags, argument } = parseCommandArguments(path, remaining)
     const json = commandFlags.has('json')
     if (command.name === 'version') {

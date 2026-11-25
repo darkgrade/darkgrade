@@ -258,7 +258,7 @@ function settingValue(property: SonySdkProperty, key: string, value: string | nu
     )
     if (choice !== undefined) return BigInt(choice)
     if (/^-?\d+$/.test(text)) return BigInt(text)
-    throw new Error('Choose a value advertised by camera_controls for this setting')
+    throw new Error('Choose a value advertised by camera_get_capabilities for this setting')
 }
 /** The same named camera controls used by USB, translated to documented SDK values. */
 export async function performSonySdkControl(camera: SonyWifiCamera, action: string, value?: string | number) {

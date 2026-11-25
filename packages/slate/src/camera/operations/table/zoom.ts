@@ -11,16 +11,16 @@ export const zoomOperationTable = {
             area: 'zoom',
             disposition: { kind: 'keep' },
             summary: 'Zooms to a focal length ("go to 35") and returns where the lens landed',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'focalLength', description: 'millimetres, for example 35' }],
-                },
-            },
+            parameters: [{ name: 'focalLengthMillimetres', type: 'number', required: true, description: 'millimetres, for example 35' }],
         },
         startZoom: {
             area: 'zoom',
             disposition: { kind: 'keep' },
             summary: 'Zooms until stopZoom, like holding a zoom rocker. Slate stops it by itself after 10 s',
+            parameters: [
+                { name: 'direction', type: 'choice', choices: ['in', 'out'], required: true, description: 'in or out' },
+                { name: 'speed', type: 'choice', choices: ['slow', 'medium', 'fast'], required: true, description: 'slow, medium or fast' },
+            ],
             surfaces: {
                 cli: { omitted: 'use zoom-to' },
             },

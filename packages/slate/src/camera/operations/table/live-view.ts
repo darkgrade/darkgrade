@@ -11,11 +11,7 @@ export const liveViewOperationTable = {
             area: 'live-view',
             disposition: { kind: 'keep' },
             summary: 'The current picture as JPEG, with focus frames and, with overlay, the camera\'s on-screen info',
-            surfaces: {
-                cli: {
-                    flags: [{ name: '--overlay', description: 'include the camera\'s on-screen info' }],
-                },
-            },
+            parameters: [{ name: 'overlay', type: 'switch', default: false, description: 'include the camera\'s on-screen info' }],
         },
     },
     planned: {},

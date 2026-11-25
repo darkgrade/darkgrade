@@ -1,104 +1,76 @@
+import type { DiscoveredCamera } from '@camera/driver/connection'
+import type { Camera } from '@camera/index'
 import { CameraOperationQueue } from '@core/operation-queue'
+import {
+    readOperationInput,
+    runOperation,
+    surfaceOperation,
+    type OperationFile,
+    type OperationInput,
+} from '@runtime/operations'
 
-export const controlActions = [
-    'status',
-    'autofocus',
-    'focus-near',
-    'focus-far',
-    'live-view-status',
-    'set-focus-mode',
-    'set-aperture',
-    'set-shutter-speed',
-    'set-iso',
-    'set-white-balance',
-    'set-color-temperature',
-    'set-live-view-autofocus-mode',
-    'set-image-format',
-    'set-movie-format',
-    'set-continuous-autofocus',
-    'set-movie-servo-autofocus',
-    'probe-movie-mode',
-    'set-exposure-mode',
-    'set-jpeg-quality',
-    'set-image-size',
-    'set-aspect-ratio',
-    'set-movie-setting',
-    'set-zoom-setting',
-    'power-zoom-wide',
-    'power-zoom-tele',
-    'touch-focus',
-    'set-property',
-    'sync-clock',
-] as const
-export type ControlAction = (typeof controlActions)[number]
-export const mediaActions = ['take-photo', 'latest-photo', 'live-view', 'storage', 'memory-status'] as const
-export type MediaAction = (typeof mediaActions)[number]
-export interface MediaOptions {
-    autofocus?: boolean
-    destination?: 'card' | 'memory'
-    rawCompression?: 'lossless'
+/** An operation's result as it crosses a process: JSON, with any bytes the host saved by path. */
+export interface OperationReply {
+    result: unknown
+    /** The files the operation returned, without their bytes; `path` where the host saved one. */
+    files: { role: OperationFile['role']; name: string; mimeType: string; bytes: number; path?: string }[]
+    /** Image files inline (live-view frames and previews), for clients that show pictures. */
+    images?: { mimeType: string; base64: string }[]
 }
-/** Snapshot the public photo contract before queueing or sending it to a host. */
-export function validateMediaOptions(options: MediaOptions, action: string = 'take-photo'): MediaOptions {
-    if (!mediaActions.includes(action as MediaAction))
-        throw new Error(`Unsupported media action ${action}`)
-    if (!options || typeof options !== 'object' || Array.isArray(options))
-        throw new Error('Invalid photo options')
-    const accepted = { ...options }
-    if (Object.keys(accepted).some(key => !['autofocus', 'destination', 'rawCompression'].includes(key)))
-        throw new Error('Unknown photo option')
-    if (action !== 'take-photo' && Object.keys(accepted).length)
-        throw new Error('Invalid media options: photo options apply only to take-photo')
-    if (accepted.autofocus !== undefined && typeof accepted.autofocus !== 'boolean')
-        throw new Error('Invalid autofocus option')
-    if (accepted.destination !== undefined && !['card', 'memory'].includes(accepted.destination))
-        throw new Error('Invalid photo destination')
-    if (accepted.rawCompression !== undefined && accepted.rawCompression !== 'lossless')
-        throw new Error('Invalid RAW compression')
-    return accepted
-}
+
+/** What MCP and other remote frontends call: the public operations, by their library name. */
 export interface CameraClient {
+    /** `Camera.discover()`: the attached cameras, without opening one. */
+    discover(): Promise<DiscoveredCamera[]>
+    /** Runs one public Camera operation on the host's camera with this identity. */
+    operation(camera: string, name: string, input?: OperationInput): Promise<OperationReply>
+    /** The deep benchmark workflow, `runBenchmark`, where the host offers it. */
     benchmark?(camera: string): Promise<unknown>
-    control(camera: string, action: string, value?: string | number, property?: string): Promise<unknown>
-    media(camera: string, action: string, options?: MediaOptions): Promise<unknown>
 }
-export interface ControlSession {
-    supports(action: ControlAction): boolean
-    control(action: ControlAction, value?: string | number, property?: string): Promise<unknown>
-}
-/** Platform hosts supply connections and physical services, never a second MCP-owned session. */
-export interface CameraProvider {
-    benchmark?(camera: string): Promise<unknown>
-    session(camera: string): ControlSession | undefined
-    assertControlAllowed(camera: string, action: ControlAction): void | Promise<void>
-    control(camera: string, action: ControlAction, value?: string | number, property?: string): Promise<unknown>
-    observeControls(camera: string, state: unknown): Promise<unknown>
-    invalidate(camera: string, affectsImage: boolean): void
-    media(camera: string, action: MediaAction, options: MediaOptions): Promise<unknown>
-}
-const imageActions = new Set([
-    'set-iso',
-    'set-aperture',
-    'set-shutter-speed',
-    'set-white-balance',
-    'set-focus-mode',
-    'autofocus',
-    'touch-focus',
-])
-const readActions = new Set<ControlAction>(['status', 'live-view-status'])
 
 /**
- * One runtime per session-owning host. All frontends share its camera queue.
- * A rejected/abandoned client does not release ownership while a camera write runs.
+ * Platform hosts supply the connected Camera and physical services, never a second MCP-owned
+ * session. The runtime runs every operation through Camera itself, so hosts keep no vendor tables.
+ */
+export interface CameraProvider {
+    discover(): Promise<DiscoveredCamera[]>
+    /** The Camera the host holds for this identity, already connected or ready for `connect`. */
+    camera(camera: string): Camera | Promise<Camera>
+    /** Throws (for example HardwareBusyError) when this operation may not run now. */
+    assertAllowed(camera: string, operation: string): void | Promise<void>
+    /** Keeps a returned file where the client can read it; the path is returned in the reply. */
+    saveFile?(camera: string, file: OperationFile): Promise<string>
+    benchmark?(camera: string): Promise<unknown>
+}
+
+const inlineImages = new Set<OperationFile['role']>(['frame', 'overlay', 'preview'])
+
+function base64(data: Uint8Array): string {
+    let binary = ''
+    for (let index = 0; index < data.length; index += 0x8000)
+        binary += String.fromCharCode(...data.subarray(index, index + 0x8000))
+    return btoa(binary)
+}
+
+/**
+ * One runtime per session-owning host. All frontends share its per-camera queue, so their
+ * operations take turns; stopZoom and stopRecording never wait behind other work. Commands are
+ * sent once: a failed or unconfirmed one is reported, never repeated by the runtime.
  * Physical cross-process leases remain in the provider's shared ownership store.
  */
 export class CameraRuntime implements CameraClient {
     private readonly operations = new CameraOperationQueue()
     constructor(private readonly provider: CameraProvider) {}
+
     /** Owning hosts use the same queue for connection lifecycle and recording operations. */
     runExclusive<T>(camera: string, operation: () => Promise<T>): Promise<T> {
         return this.run(camera, operation)
     }
+
+    discover(): Promise<DiscoveredCamera[]> {
+        return this.provider.discover()
+    }
+
     benchmark(camera: string): Promise<unknown> {
         return this.run(camera, async () => {
             if (!this.provider.benchmark) throw new Error('This host does not expose profile benchmarks')
@@ -107,37 +79,38 @@ export class CameraRuntime implements CameraClient {
     }
 
     private run<T>(camera: string, operation: () => Promise<T>): Promise<T> {
+        if (typeof camera !== 'string' || !camera.trim()) return Promise.reject(new Error('A valid camera identity is required'))
         return this.operations.run(camera, operation)
     }
 
-    control(camera: string, action: string, value?: string | number, property?: string): Promise<unknown> {
-        if (!controlActions.includes(action as ControlAction))
-            return Promise.reject(new Error(`Unknown camera control action ${action}`))
-        const command = action as ControlAction
-        return this.run(camera, async () => {
-            await this.provider.assertControlAllowed(camera, command)
-            // Resolve after queuing: the active transport/session may have changed.
-            const session = this.provider.session(camera)
-            if (session && !session.supports(command))
-                throw new Error(`The active session cannot run ${command}; close its Console before retrying`)
-            if (!readActions.has(command)) this.provider.invalidate(camera, imageActions.has(command))
-            const result = session
-                ? await session.control(command, value, property)
-                : await this.provider.control(camera, command, value, property)
-            try {
-                return await this.provider.observeControls(camera, result)
-            } catch (error) {
-                if (readActions.has(command)) throw error
-                throw new Error(
-                    `Camera command ${command} completed, but refreshing camera controls failed. Read the current state before issuing another write; do not repeat this command just to refresh it.`,
-                    { cause: error }
-                )
-            }
-        })
+    async operation(camera: string, name: string, input: OperationInput = {}): Promise<OperationReply> {
+        const operation = surfaceOperation(name)
+        if (!operation || operation.name === 'discover' || (!operation.mcpTool && !operation.cliCommand))
+            throw new Error(`Unknown camera operation ${name}`)
+        // Inputs are read when the call is made, so a queued call keeps what it was given.
+        const accepted = readOperationInput(operation, input)
+        const execute = async () => {
+            await this.provider.assertAllowed(camera, name)
+            // Resolved after queuing: the host may have replaced its camera meanwhile.
+            const target = await this.provider.camera(camera)
+            const outcome = await runOperation(target, name, accepted)
+            return this.reply(camera, outcome.result, outcome.files)
+        }
+        if (operation.immediate) {
+            if (typeof camera !== 'string' || !camera.trim()) throw new Error('A valid camera identity is required')
+            return execute()
+        }
+        return this.run(camera, execute)
     }
 
-    async media(camera: string, action: string, options: MediaOptions = {}): Promise<unknown> {
-        const accepted = validateMediaOptions(options, action)
-        return this.run(camera, () => this.provider.media(camera, action as MediaAction, accepted))
+    private async reply(camera: string, result: unknown, files: OperationFile[]): Promise<OperationReply> {
+        const described: OperationReply['files'] = []
+        const images: NonNullable<OperationReply['images']> = []
+        for (const file of files) {
+            const path = this.provider.saveFile ? await this.provider.saveFile(camera, file) : undefined
+            described.push({ role: file.role, name: file.name, mimeType: file.mimeType, bytes: file.data.byteLength, ...(path && { path }) })
+            if (inlineImages.has(file.role)) images.push({ mimeType: file.mimeType, base64: base64(file.data) })
+        }
+        return { result, files: described, ...(images.length && { images }) }
     }
 }

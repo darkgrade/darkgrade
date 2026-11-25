@@ -16,11 +16,7 @@ export const bodyOperationTable = {
             area: 'body',
             disposition: { kind: 'keep' },
             summary: 'Sets the camera\'s date and time',
-            surfaces: {
-                cli: {
-                    flags: [{ name: '--time', value: 'ISO 8601', description: 'the time to set (default: now)' }],
-                },
-            },
+            parameters: [{ name: 'moment', type: 'time', description: 'the time to set, ISO 8601 (default: now)' }],
         },
     },
     planned: {},

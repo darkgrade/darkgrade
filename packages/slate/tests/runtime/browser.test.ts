@@ -40,17 +40,21 @@ for (const entry of ['@darkgrade/slate/runtime', '@darkgrade/slate/runtime/brows
 test('the browser entry runs queued camera work', async () => {
     const { CameraRuntime } = await import('@runtime/browser')
     const calls: string[] = []
-    const runtime = new CameraRuntime({
-        session: () => undefined,
-        assertControlAllowed: () => undefined,
-        control: async (_camera, action) => calls.push(action),
-        observeControls: async (_camera, state) => state,
-        invalidate: () => undefined,
-        media: async () => {
-            calls.push('take-photo')
-            return 'photo'
+    const camera = {
+        setControl: async (id: string) => {
+            calls.push(`setControl ${id}`)
+            return { id }
         },
+        takePhoto: async () => {
+            calls.push('takePhoto')
+            return { destination: 'card', name: 'A.JPG', sizeBytes: 1 }
+        },
+    }
+    const runtime = new CameraRuntime({
+        discover: async () => [],
+        camera: () => camera as unknown as import('@camera/index').Camera,
+        assertAllowed: () => undefined,
     })
-    await Promise.all([runtime.control('cam', 'set-iso', 800), runtime.media('cam', 'take-photo')])
-    expect(calls).toEqual(['set-iso', 'take-photo'])
+    await Promise.all([runtime.operation('cam', 'setIso', { value: 'ISO 800' }), runtime.operation('cam', 'takePhoto')])
+    expect(calls).toEqual(['setControl iso', 'takePhoto'])
 })

@@ -75,7 +75,7 @@ Telemetry benchmark now exports a deep sanitized camera profile through Slate's 
 camera session. Keep inventories and allowlisted numeric descriptors separate from media,
 opaque payloads and private settings. Partial/cancelled exports retain evidence without
 claiming unsupported features. The CLI saves profiles even with sharing off; Test Bench
-supplies leases and exposes the Darkgrade `camera_benchmark` tool. Collector research
+supplies leases and exposes the Darkgrade `camera_run_benchmark` tool. Collector research
 findings require exact source, model, firmware, revision, transport and evidence scope,
 plus attributed references; they expire/withdraw with the source and never certify hardware.
 Shared admission quotas must remain consistent across collector instances.

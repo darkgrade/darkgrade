@@ -20,7 +20,8 @@ function completionNodes(command: CommandDefinition = rootCommand, words: string
         takesValue: !!flag.value,
     }))
     const children = (command.commands ?? []).map(child => ({ word: child.name, summary: child.summary }))
-    const choices = (command.argument?.choices ?? []).map(choice => ({ word: choice, summary: command.argument!.name }))
+    const first = command.arguments?.[0]
+    const choices = (first?.choices ?? []).map(choice => ({ word: choice, summary: first!.name }))
     // `darkgrade help <command>` completes the same names as the root.
     const helpTopics =
         command.name === 'help'
