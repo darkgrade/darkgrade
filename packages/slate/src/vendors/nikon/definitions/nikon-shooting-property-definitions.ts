@@ -1,5 +1,5 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
-import { createEnumCodec, type EnumValue } from '@ptp/types/codec'
+import { createEnumCodec, createOpenEnumCodec, type EnumValue } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 
 /**
@@ -51,18 +51,28 @@ export const NikonMovieISO = scalarProperty(
     'NikonMovieISO', 0xd1aa, 'uint32', 'Movie ISO sensitivity in manual exposure mode; raw camera value'
 )
 export const NikonPhotoAutoISO = scalarProperty('NikonPhotoAutoISO', 0xd054, 'uint8', 'Photo Auto ISO: 0 off, 1 on')
-/** NEF compression, from the same specification; other wire values stay unrecognized and read-only. */
-export const NikonRawCompression = enumProperty(
-    'NikonRawCompression',
-    0xd016,
-    'uint8',
-    'NEF compression: 0 lossless, 3 high efficiency star, 4 high efficiency',
-    [
-        { value: 0, name: 'Lossless', description: 'Lossless compressed' },
-        { value: 3, name: 'High efficiency★', description: 'High efficiency star' },
-        { value: 4, name: 'High efficiency', description: 'High efficiency' },
-    ]
-)
+/**
+ * NEF compression, from the same specification. Other bodies use the code differently (a Z 6
+ * reports a range 0–2 with value 2), so a value without a name here reads as its raw number and
+ * is never written.
+ */
+export const NikonRawCompression = {
+    name: 'NikonRawCompression',
+    code: 0xd016,
+    description: 'NEF compression: 0 lossless, 3 high efficiency star, 4 high efficiency',
+    datatype: getDatatypeByName('UINT8')!.code,
+    access: 'GetSet',
+    codec: registry =>
+        createOpenEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'Lossless', description: 'Lossless compressed' },
+                { value: 3, name: 'High efficiency★', description: 'High efficiency star' },
+                { value: 4, name: 'High efficiency', description: 'High efficiency' },
+            ],
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
 export const NikonMovieAutoISO = scalarProperty(
     'NikonMovieAutoISO', 0xd0ad, 'uint8', 'Movie Auto ISO in manual exposure mode: 0 off, 1 on'
 )

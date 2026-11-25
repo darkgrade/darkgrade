@@ -2,7 +2,7 @@ import type { UnrecognizedValues } from '@camera/controls'
 import { SequentialReader } from '@ptp/datasets/codecs/byte-sequence'
 import { VariableValueCodec, type VariableValue } from '@ptp/datasets/codecs/variable-value-codec'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
-import { CustomCodec, type CodecDefinition, type CodecInstance, type PTPRegistry } from '@ptp/types/codec'
+import { CustomCodec, OpenEnumCodec, type CodecDefinition, type CodecInstance, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
 
 type DescriptorValue = number | bigint | string
@@ -46,7 +46,10 @@ export interface DevicePropDesc {
  */
 function tryDecode(codec: CodecInstance<DescriptorValue>, bytes: Uint8Array): DescriptorValue | undefined {
     try {
-        return codec.decode(bytes, 0).value
+        const value = codec.decode(bytes, 0).value
+        // An open enumeration reads an unnamed value as its raw number; a descriptor still marks it.
+        if (codec instanceof OpenEnumCodec && typeof value !== 'string' && codec.nameOf(value) === undefined) return undefined
+        return value
     } catch {
         return undefined
     }

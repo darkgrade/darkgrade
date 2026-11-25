@@ -107,6 +107,50 @@ export function createEnumCodec<T, const Values extends readonly EnumValue<T>[]>
     return new EnumCodec<T, Values[number]['name']>(registry, values, baseCodec)
 }
 
+/**
+ * An enumeration whose wire values differ between bodies (a property one specification names and
+ * another body uses differently): a value with no name decodes as that raw value instead of
+ * failing, so a read keeps what the camera said. Writes take only the names; a typed setting
+ * excludes the raw type (`Exclude<…, number>`).
+ */
+export class OpenEnumCodec<T, Names extends string = string> extends CustomCodec<Names | T> {
+    private readonly named: EnumCodec<T, Names>
+
+    constructor(
+        registry: PTPRegistry,
+        values: readonly EnumValue<T>[],
+        private readonly baseCodec: CodecInstance<T>
+    ) {
+        super(registry)
+        this.named = new EnumCodec<T, Names>(registry, values, baseCodec)
+    }
+
+    encode(value: Names | T): Uint8Array {
+        if (typeof value === 'string') return this.named.encode(value as Names)
+        if (!this.named.getEnumValue(value)) throw new Error(`Invalid enum value: ${String(value)}`)
+        return this.baseCodec.encode(value)
+    }
+
+    decode(buffer: Uint8Array, offset = 0): { value: Names | T; bytesRead: number } {
+        const result = this.baseCodec.decode(buffer, offset)
+        return { value: this.nameOf(result.value) ?? result.value, bytesRead: result.bytesRead }
+    }
+
+    /** The name of a raw value, or undefined when this enumeration has none for it. */
+    nameOf(value: T): Names | undefined {
+        return this.named.getEnumValue(value)?.name as Names | undefined
+    }
+}
+
+/** An OpenEnumCodec whose names are inferred from its values. */
+export function createOpenEnumCodec<T, const Values extends readonly EnumValue<T>[]>(
+    registry: PTPRegistry,
+    values: Values,
+    baseCodec: CodecInstance<T>
+): OpenEnumCodec<T, Values[number]['name']> {
+    return new OpenEnumCodec<T, Values[number]['name']>(registry, values, baseCodec)
+}
+
 export interface RangeSpec<T> {
     minimum: T
     maximum: T

@@ -1,10 +1,14 @@
 import { GenericCamera } from '@vendors/generic/generic-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
+import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { Logger } from '@core/logger'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { describe, expect, it } from 'vitest'
 import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
 
 const container = (type: number, code: number, payload?: Uint8Array) => ptpContainer(type, code, 1, payload)
+
+const logger = () => new Logger({ captureConsole: false, renderInTerminal: false })
 
 function parameterBytes(parameters: number[]): Uint8Array {
     const bytes = new Uint8Array(parameters.length * 4)
@@ -20,7 +24,7 @@ function cameraWithResponses(responses: Uint8Array[]) {
         if (!response) throw new Error('Unexpected receive after the supplied response containers')
         return response
     }
-    return { camera: new GenericCamera(transport, new Logger({ captureConsole: false, renderInTerminal: false })), sent }
+    return { camera: new GenericCamera(transport, logger()), sent, transport }
 }
 
 const sendDataOperation = {
@@ -97,5 +101,42 @@ describe('GenericCamera response container parameters', () => {
         await expect(camera.send(camera.registry.operations.GetObject, { ObjectHandle: 1 })).rejects.toMatchObject({
             name: 'PTPProtocolError',
         })
+    })
+})
+
+describe('GenericCamera property values', () => {
+    // A Nikon Z6 reports NEF compression 2, a value the Z6 III specification Slate names does not list.
+    const nikon = (reply: Uint8Array) => {
+        const { transport } = cameraWithResponses([container(2, 0x1015, reply), container(3, 0x2001)])
+        return new NikonCamera(transport, logger())
+    }
+
+    it.each([
+        ['a value its codec names by that name', 4, 'High efficiency'],
+        ['a value its codec has no name for as the raw number', 2, 2],
+    ])('reads %s', async (_case, raw, expected) => {
+        const camera = nikon(Uint8Array.of(raw))
+        await expect(camera.readValue(camera.registry.properties.NikonRawCompression)).resolves.toBe(expected)
+    })
+
+    it('keeps a GetDevicePropValue reply whose value has no name', async () => {
+        const camera = nikon(Uint8Array.of(2))
+        const response = await camera.send(camera.registry.operations.GetDevicePropValue, {
+            DevicePropCode: camera.registry.properties.NikonRawCompression.code,
+        })
+        expect(response.code).toBe(0x2001)
+        expect(response.data).toEqual(Uint8Array.of(2))
+    })
+
+    it('still marks the unnamed value unrecognized in a descriptor, and never writes it', () => {
+        const camera = nikon(new Uint8Array())
+        const property = camera.registry.properties.NikonRawCompression
+        // GetDevicePropDesc: code, UINT8, GetSet, default 0, current 2, range 0..2 step 1.
+        const bytes = Uint8Array.of(0x16, 0xd0, 0x02, 0x00, 0x01, 0, 2, 0x01, 0, 2, 1)
+        const descriptor = new DevicePropDescCodec(camera.registry).decode(bytes).value
+        expect(descriptor).toMatchObject({ currentValueDecoded: 2, currentValueUnrecognized: true })
+        const codec = property.codec(camera.registry)
+        expect(() => codec.encode(2)).toThrow('Invalid enum value: 2')
+        expect(codec.encode('Lossless')).toEqual(Uint8Array.of(0))
     })
 })

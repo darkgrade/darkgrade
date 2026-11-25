@@ -225,7 +225,8 @@ export type PhotoSize =
 
 export type AspectRatio = CodecValue<'aspectRatio'>
 export type JpegQuality = CodecValue<'jpegQuality'>
-export type RawCompression = CodecValue<'rawCompression'>
+/** A NEF compression the body names; a raw number it reports without a name is not a value to write. */
+export type RawCompression = Exclude<CodecValue<'rawCompression'>, number>
 export type FlashMode = CodecValue<'flashMode'>
 
 /**

@@ -39,6 +39,7 @@ import { slateTelemetry } from '@core/telemetry'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
+import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { DeviceBusy, IncompleteTransfer, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
 import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
@@ -740,10 +741,19 @@ export class GenericCamera {
         if (!operation.name.includes('GetDevicePropValue') || propCode === undefined) return undefined
         const property = this.propertyByCode(propCode)
         if (!property) return undefined
-        return {
-            propertyName: property.name,
-            propertyCode: propCode,
-            value: this.decodeWith(property.codec, receivedData, decodeContext(property.name)),
+        const described = { propertyName: property.name, propertyCode: propCode }
+        try {
+            return { ...described, value: this.decodeWith(property.codec, receivedData, decodeContext(property.name)) }
+        } catch (error) {
+            // A value the property's codec has no name for (newer firmware, another body's choices) is
+            // still a well-formed value: keep the raw number, as a descriptor does, instead of failing the read.
+            const datatype = getDatatypeByCode(property.datatype)?.codec
+            if (!datatype) throw error
+            try {
+                return { ...described, value: this.decodeWith(datatype, receivedData, decodeContext(property.name)), unrecognized: true }
+            } catch {
+                throw error
+            }
         }
     }
 
