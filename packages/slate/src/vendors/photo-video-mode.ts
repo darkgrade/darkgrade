@@ -12,7 +12,8 @@ import { NikonCamera } from '@camera/nikon-camera'
 import type { PhotoVideoMode } from '@camera/settings/mode'
 import { SonyCamera, type SonyPropertyState } from '@camera/sony-camera'
 import { readCameraRecordingState } from '@camera/video-recording'
-import { PTPResponseError } from '@core/ptp-errors'
+import { sendControlWrite } from '@vendors/control-write'
+import { sonyCounterpartExposureProgram, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import type { GenericCamera } from '@camera/generic-camera'
 
 /**
@@ -23,44 +24,19 @@ import type { GenericCamera } from '@camera/generic-camera'
  *   eosmovieswitch, EDSDK FixedMovie). A body whose lever is at Movie keeps FixedMovie at 1.
  * - Sony: a composite view of the exposure program. Movie and S&Q programs are video; the rest are
  *   photo. A switch selects the same program in the other half (Manual ↔ Movie Manual) and only
- *   when the camera advertises it; there is no implicit fallback to another program.
+ *   when the camera advertises it; there is no implicit fallback to another program. The halves
+ *   and counterparts are `@vendors/sony/exposure-program`'s, which recording preparation shares.
  */
 
 const exposureProgramCode = 0x500e
 const fixedMovieCode = 0xd1c2
 
-/**
- * Sony exposure programs by their low 16 bits, which identify a program on both the UINT16 and
- * the UINT32 descriptor (native PTP values; libgphoto2 config.c, see `@vendors/sony/exposure-program`).
- */
-const sonyPhotoPrograms = new Set([0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007, 0x8000, 0x8001, 0x8089])
-const sonyVideoPrograms = new Set([
-    0x8050, 0x8051, 0x8052, 0x8053, 0x8054, 0x8088, 0x808a, 0x8090, 0x8059, 0x805a, 0x805b, 0x805c, 0x805d, 0x8091,
-    0x8092, 0x8093, 0x8094, 0x8095, 0x8096, 0x8097,
-])
-/** The same program in the photo and video halves: Manual, Program Auto, Aperture and Shutter Priority, Still/Movie. */
-const sonyCounterparts: readonly (readonly [photo: number, video: number])[] = [
-    [0x0001, 0x8053],
-    [0x0002, 0x8050],
-    [0x0003, 0x8051],
-    [0x0004, 0x8052],
-    [0x8089, 0x8088],
-]
-
 const otherMode = (mode: PhotoVideoMode): PhotoVideoMode => (mode === 'photo' ? 'video' : 'photo')
 
-function sonyProgramMode(raw: number): PhotoVideoMode | undefined {
-    const program = raw & 0xffff
-    return sonyPhotoPrograms.has(program) ? 'photo' : sonyVideoPrograms.has(program) ? 'video' : undefined
-}
-
-function sonyCounterpartIndex(program: SonyPropertyState): number {
-    if (typeof program.rawValue !== 'number') return -1
-    const current = program.rawValue & 0xffff
-    const pair = sonyCounterparts.find(([photo, video]) => photo === current || video === current)
-    if (!pair) return -1
-    const target = pair[0] === current ? pair[1] : pair[0]
-    return program.allowedRawValues?.findIndex(raw => typeof raw === 'number' && (raw & 0xffff) === target) ?? -1
+/** The other half's program when this body advertises it now; undefined otherwise. */
+function sonyAdvertisedCounterpart(program: SonyPropertyState): string | undefined {
+    const counterpart = sonyCounterpartExposureProgram(program.value)
+    return counterpart !== undefined && program.allowedValues?.includes(counterpart) ? counterpart : undefined
 }
 
 function controlState(
@@ -91,8 +67,10 @@ function controlState(
 export function sonyPhotoVideoModeState(states: readonly SonyPropertyState[]): CameraControlState | undefined {
     const program = states.find(state => state.code === exposureProgramCode)
     if (!program || typeof program.rawValue !== 'number') return undefined
-    const current = sonyProgramMode(program.rawValue)
-    const choices: PhotoVideoMode[] = current ? [current, ...(sonyCounterpartIndex(program) >= 0 ? [otherMode(current)] : [])] : []
+    const current = program.unrecognized?.value === undefined ? sonyExposureProgramKind(program.value) : undefined
+    const choices: PhotoVideoMode[] = current
+        ? [current, ...(sonyAdvertisedCounterpart(program) !== undefined ? [otherMode(current)] : [])]
+        : []
     return controlState(program, current, program.rawValue, choices, program.writable, program.enabled)
 }
 
@@ -116,9 +94,8 @@ async function sendPhotoVideoMode(driver: GenericCamera, state: CameraControlSta
     if (!(driver instanceof SonyCamera)) throw new CameraUnsupportedError('photoVideoMode', 'Photo / video is not supported by this camera')
     // The admission read just refreshed this inventory.
     const program = driver.listPropertyStates().find(candidate => candidate.code === state.source.code)
-    const index = program ? sonyCounterpartIndex(program) : -1
-    const target = index >= 0 ? program?.allowedValues?.[index] : undefined
-    if (!program || typeof target !== 'string' || sonyProgramMode(Number(program.allowedRawValues?.[index])) !== requested)
+    const target = program && sonyAdvertisedCounterpart(program)
+    if (!program || target === undefined || sonyExposureProgramKind(target) !== requested)
         throw new CameraRefusedError(
             'photoVideoMode',
             `The camera advertises no ${requested} counterpart of its current exposure program (${String(program?.value)})`
@@ -149,13 +126,7 @@ export async function writePhotoVideoMode(
     const recording = await readCameraRecordingState(owner)
     if (recording !== 'idle')
         throw new CameraUnsupportedError('photoVideoMode', `Photo / video cannot change while recording is ${recording}`)
-    try {
-        await sendPhotoVideoMode(driver, state, requested)
-    } catch (error) {
-        if (error instanceof PTPResponseError)
-            throw new CameraRefusedError('photoVideoMode', `The camera refused the ${requested} switch: ${error.message}`)
-        throw error
-    }
+    await sendControlWrite(driver, 'photoVideoMode', () => sendPhotoVideoMode(driver, state, requested))
     let observed: CameraControlState | undefined
     await confirmCameraValue(
         'photoVideoMode',

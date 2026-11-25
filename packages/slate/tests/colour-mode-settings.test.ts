@@ -18,6 +18,7 @@ import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyWifiCamera, type SonySdkBridge, type SonySdkProperty } from '@vendors/sony/sdk-camera'
+import { sonyCounterpartExposureProgram, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 afterEach(() => {
@@ -27,6 +28,14 @@ afterEach(() => {
 
 const transport = () =>
     ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined }) as unknown as TransportInterface
+
+/**
+ * Answer each transaction below `send`, so the driver's own `send` (and the response observation a
+ * setting write uses to tell a refusal from an acknowledged change) runs as it does on a body.
+ */
+function answerTransactions(driver: object, answer: (...request: never[]) => Promise<unknown>) {
+    vi.spyOn(driver as { sendTransaction: typeof answer }, 'sendTransaction').mockImplementation(answer)
+}
 
 const widths: Record<number, 1 | 2 | 4> = { 2: 1, 4: 2, 6: 4 }
 
@@ -168,7 +177,7 @@ function sonyCamera() {
         expect(operation.name).toBe('SDIO_GetAllExtDevicePropInfo')
         return { code: 0x2001, data: inventory() }
     }
-    vi.spyOn(driver, 'send').mockImplementation(send as never)
+    answerTransactions(driver, send as never)
     return { camera, body }
 }
 
@@ -236,7 +245,7 @@ function canonCamera() {
         records.push(word(8), word(0))
         return { code: 0x2001, data: new CanonEventDataCodec(driver.registry).decode(concatenate(records)).value }
     }
-    vi.spyOn(driver, 'send').mockImplementation(send as never)
+    answerTransactions(driver, send as never)
     return { camera, body }
 }
 
@@ -251,6 +260,7 @@ const nikonCodes = {
     moviePictureControl: 0xd237,
     driveMode: 0x5013,
     recordingProhibition: 0xd0a4,
+    liveViewStatus: 0xd1b8,
 }
 
 /** Simulated Nikon Z body: GetDevicePropDescEx descriptors, SetDevicePropValueEx and DeviceReady. */
@@ -267,6 +277,13 @@ function nikonCamera(mode: 'photo' | 'video' = 'photo') {
         [nikonCodes.moviePictureControl]: { datatype: 4, current: 100, choices: [1, 100] },
         [nikonCodes.driveMode]: { datatype: 4, current: 0x0001, choices: [0x0001, 0x0002, 0x8011] },
         [nikonCodes.recordingProhibition]: { datatype: 6, current: 0, writable: false },
+        [nikonCodes.liveViewStatus]: { datatype: 2, current: 0, choices: [0, 1], writable: false },
+    })
+    const session = Object.assign(body, {
+        /** Camera-mode and live-view commands, in order. */
+        commands: [] as string[],
+        /** A response code for the first DeviceReady after a selector write, instead of OK. */
+        deviceReadyAfterSelector: undefined as number | undefined,
     })
     const standardCodes = [nikonCodes.whiteBalance, nikonCodes.driveMode, nikonCodes.selector]
     const vendorCodes = [...body.properties.keys()].filter(code => !standardCodes.includes(code))
@@ -296,14 +313,30 @@ function nikonCamera(mode: 'photo' | 'video' = 'photo') {
             const codecs = driver.registry.codecs
             return { code: 0x2001, data: concatenate([codecs.uint32.encode(vendorCodes.length), ...vendorCodes.map(code => codecs.uint32.encode(code))]) }
         }
-        if (operation.name === 'DeviceReady') return { code: 0x2001 }
+        if (operation.name === 'DeviceReady') {
+            const failure = session.deviceReadyAfterSelector
+            if (failure !== undefined && writesTo(body, nikonCodes.selector).length > 0) {
+                session.deviceReadyAfterSelector = undefined
+                return { code: failure }
+            }
+            return { code: 0x2001 }
+        }
+        if (operation.name === 'ChangeCameraMode') {
+            session.commands.push(`ChangeCameraMode ${String(parameters.Mode)}`)
+            return { code: 0x2001 }
+        }
+        if (operation.name === 'EndLiveView' || operation.name === 'StartLiveView') {
+            session.commands.push(operation.name)
+            body.properties.get(nikonCodes.liveViewStatus)!.current = operation.name === 'StartLiveView' ? 1 : 0
+            return { code: 0x2001 }
+        }
         if (operation.name === 'SetDevicePropValueEx') return { code: record(body, parameters.DevicePropCode!, decodeUnsigned(data!)) }
         const code = parameters.DevicePropCode!
         if (body.properties.has(code)) return { code: 0x2001, data: descriptor(code) }
         return { code: 0x200a }
     }
-    vi.spyOn(driver, 'send').mockImplementation(send as never)
-    return { camera, body }
+    answerTransactions(driver, send as never)
+    return { camera, body: session }
 }
 
 // ---------------------------------------------------------------- Standard PTP
@@ -335,7 +368,7 @@ function standardCamera() {
         ])
         return { code: 0x2001, data: new DevicePropDescCodec(driver.registry).decode(wire).value }
     }
-    vi.spyOn(driver, 'send').mockImplementation(send as never)
+    answerTransactions(driver, send as never)
     return { camera, body }
 }
 
@@ -372,12 +405,12 @@ describe('white balance in canonical names on every vendor', () => {
         expect(writesTo(body, nikonCodes.whiteBalance)).toEqual([{ code: nikonCodes.whiteBalance, value: 0x8013 }])
     })
 
-    it('Nikon video: movie white balance reads its own property, including Same as Photo', async () => {
+    it('Nikon video: movie white balance reads its own property, including Same as photo', async () => {
         const { camera } = nikonCamera('video')
         const control = (await camera.getCapabilities()).controls.whiteBalance
         expect(control?.source.name).toBe('NikonMovieWhiteBalance')
-        expect(control?.value).toBe('Same as Photo')
-        expect(control?.allowedValues).toEqual(['Auto', 'Daylight', 'Same as Photo'])
+        expect(control?.value).toBe('Same as photo')
+        expect(control?.allowedValues).toEqual(['Auto', 'Daylight', 'Same as photo'])
     })
 
     it('standard PTP: ISO 15740 values are named, vendor values are unrecognized', async () => {
@@ -472,6 +505,27 @@ describe('drive mode', () => {
     })
 })
 
+describe('look, picture profile and drive mode outcomes', () => {
+    it.each([
+        ['Sony look', sonyCamera, (camera: Camera) => camera.setPictureStyle('Monochrome'), sonyCodes.creativeLook],
+        ['Sony picture profile', sonyCamera, (camera: Camera) => camera.setPictureProfile('PP8'), sonyCodes.pictureProfile],
+        ['Sony drive mode', sonyCamera, (camera: Camera) => camera.setDriveMode('Self-timer 10 s'), sonyCodes.driveMode],
+        ['Canon look', canonCamera, (camera: Camera) => camera.setPictureStyle('Portrait'), canonCodes.pictureStyle],
+        ['Canon drive mode', canonCamera, (camera: Camera) => camera.setDriveMode('Self-timer 10 s'), canonCodes.driveMode],
+        ['Nikon look', () => nikonCamera(), (camera: Camera) => camera.setPictureStyle('Dream'), nikonCodes.pictureControl],
+        ['Nikon drive mode', () => nikonCamera(), (camera: Camera) => camera.setDriveMode('Self-timer'), nikonCodes.driveMode],
+    ] as const)('%s: a refusal is CameraRefusedError and an unshown write is an unknown outcome, sent once', async (_name, simulate, write, code) => {
+        const { camera, body } = simulate()
+        body.refuseWith = 0x200f
+        expect(await write(camera).catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        body.refuseWith = undefined
+        body.applies = false
+        body.writes.length = 0
+        expect(await write(camera).catch(error => error)).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(writesTo(body, code)).toHaveLength(1)
+    }, 20000)
+})
+
 describe('photo / video', () => {
     it('Sony: a composite of the exposure program that keeps the exposure type', async () => {
         const { camera, body } = sonyCamera()
@@ -493,6 +547,33 @@ describe('photo / video', () => {
         expect(body.writes).toHaveLength(0)
     })
 
+    it('Sony: an acknowledged program the camera never shows is an unknown outcome, sent once', async () => {
+        const { camera, body } = sonyCamera()
+        body.applies = false
+        const unknown = await camera.setPhotoVideoMode('video').catch(error => error)
+        expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(unknown).toMatchObject({ operation: 'photoVideoMode' })
+        expect(writesTo(body, sonyCodes.exposureProgram)).toEqual([{ code: sonyCodes.exposureProgram, value: 0x00078053 }])
+    }, 20000)
+
+    it('Sony: Still and Movie are counterparts, the same pair recording preparation selects', async () => {
+        const { camera, body } = sonyCamera()
+        const program = body.properties.get(sonyCodes.exposureProgram)!
+        program.current = 0x000a8089
+        program.choices = [0x000a8089, 0x000a8088]
+        expect((await camera.getCapabilities()).controls.photoVideoMode).toMatchObject({
+            value: 'photo',
+            allowedValues: ['photo', 'video'],
+        })
+        expect(await camera.setPhotoVideoMode('video')).toBe('video')
+        expect(writesTo(body, sonyCodes.exposureProgram)).toEqual([{ code: sonyCodes.exposureProgram, value: 0x000a8088 }])
+        expect(sonyCounterpartExposureProgram('Still')).toBe('Movie')
+        expect(sonyCounterpartExposureProgram('Movie Manual')).toBe('Manual')
+        expect(sonyCounterpartExposureProgram('Auto')).toBeUndefined()
+        expect(sonyExposureProgramKind('S&Q Manual')).toBe('video')
+        expect(sonyExposureProgramKind('Mode 0x1234')).toBeUndefined()
+    })
+
     it('Sony: unavailable while the camera reports recording or an unreadable recorder', async () => {
         const { camera, body } = sonyCamera()
         body.properties.get(sonyCodes.movieRecordingState)!.current = 1
@@ -508,6 +589,16 @@ describe('photo / video', () => {
         expect(await camera.setPhotoVideoMode('video')).toBe('video')
         expect(await camera.setPhotoVideoMode('photo')).toBe('photo')
         expect(body.switches).toEqual(['video', 'photo'])
+    })
+
+    it('Canon: a refused movie select switch is CameraRefusedError, sent once', async () => {
+        const { camera, body } = canonCamera()
+        body.refuseWith = 0x200f
+        const refused = await camera.setPhotoVideoMode('video').catch(error => error)
+        expect(refused).toBeInstanceOf(CameraRefusedError)
+        expect(refused).toMatchObject({ operation: 'photoVideoMode' })
+        expect(body.switches).toEqual(['video'])
+        expect(await camera.getPhotoVideoMode()).toBe('photo')
     })
 
     it('Canon: a lever held at Movie leaves the outcome unknown, and the switch is sent once', async () => {
@@ -532,20 +623,83 @@ describe('photo / video', () => {
         expect(silent.body.switches).toEqual([])
     })
 
-    it('Nikon: LiveViewSelector, confirmed by readback, and a refused selector is CameraRefusedError', async () => {
+    it('Nikon: LiveViewSelector in REMOTE mode, confirmed by readback, with PC-camera mode restored', async () => {
         const { camera, body } = nikonCamera()
         expect(await camera.getPhotoVideoMode()).toBe('photo')
         expect(await camera.setPhotoVideoMode('video')).toBe('video')
         expect(writesTo(body, nikonCodes.selector)).toEqual([{ code: nikonCodes.selector, value: 1 }])
-        body.refuseWith = 0x200f
-        expect(await camera.setPhotoVideoMode('photo').catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        expect(body.commands).toEqual(['ChangeCameraMode REMOTE', 'ChangeCameraMode PC_CAMERA'])
     })
+
+    it('Nikon: a refused selector is CameraRefusedError, and live view and camera mode are restored', async () => {
+        const { camera, body } = nikonCamera()
+        body.properties.get(nikonCodes.liveViewStatus)!.current = 1
+        body.refuseWith = 0x200f
+        const refused = await camera.setPhotoVideoMode('video').catch(error => error)
+        expect(refused).toBeInstanceOf(CameraRefusedError)
+        expect(refused).toMatchObject({ operation: 'photoVideoMode' })
+        expect(writesTo(body, nikonCodes.selector)).toHaveLength(1)
+        expect(body.commands).toEqual([
+            'ChangeCameraMode REMOTE',
+            'EndLiveView',
+            'StartLiveView',
+            'ChangeCameraMode PC_CAMERA',
+        ])
+        expect(body.properties.get(nikonCodes.selector)!.current).toBe(0)
+    })
+
+    it('Nikon: an acknowledged selector whose DeviceReady then fails is an unknown outcome, never refused or resent', async () => {
+        const { camera, body } = nikonCamera()
+        body.deviceReadyAfterSelector = 0x2002
+        const unknown = await camera.setPhotoVideoMode('video').catch(error => error)
+        expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(unknown).not.toBeInstanceOf(CameraRefusedError)
+        expect(unknown).toMatchObject({ operation: 'photoVideoMode' })
+        expect(writesTo(body, nikonCodes.selector)).toEqual([{ code: nikonCodes.selector, value: 1 }])
+    })
+
+    it('Nikon: an acknowledged selector the camera never shows is an unknown outcome, sent once', async () => {
+        const { camera, body } = nikonCamera()
+        body.applies = false
+        expect(await camera.setPhotoVideoMode('video').catch(error => error)).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(writesTo(body, nikonCodes.selector)).toHaveLength(1)
+    }, 10000)
 
     it('standard PTP: no photo/video switch is reported', async () => {
         const { camera } = standardCamera()
         expect((await camera.getCapabilities()).controls.photoVideoMode).toBeUndefined()
         expect(await camera.setPhotoVideoMode('video').catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
     })
+})
+
+/** A Sony Wi-Fi session over a simulated SDK bridge: `properties` and `set` as the bridge answers them. */
+function sonyWifiCamera(properties: Record<string, unknown>[], options: { applies?: boolean } = {}) {
+    const sets: { code: string; value: string }[] = []
+    const bridge: SonySdkBridge = {
+        request: async command => {
+            if (command.cmd === 'set') {
+                sets.push({ code: String(command.code), value: String(command.value) })
+                const property = properties.find(candidate => String(candidate.code) === String(command.code))
+                if (property && options.applies !== false) property.value = String(command.value)
+                return {}
+            }
+            expect(command.cmd).toBe('properties')
+            return { properties: structuredClone(properties) }
+        },
+        close: async () => undefined,
+    }
+    const camera = new SonyWifiCamera(bridge)
+    Reflect.set(camera, 'connected', true)
+    return { camera, sets }
+}
+
+const sdkEnum = (code: number, value: string, allowedValues: string[]) => ({
+    code,
+    type: 3,
+    value,
+    writable: true,
+    valueForm: 'enum',
+    allowedValues,
 })
 
 describe('Sony Wi-Fi session', () => {
@@ -569,6 +723,46 @@ describe('Sony Wi-Fi session', () => {
         expect(await camera.getPictureProfile()).toBe('PP8')
         expect(await camera.getDriveMode()).toBe('Self-timer 10 s')
     })
+
+    it('writes a typed setting through the SDK and resolves to the readback', async () => {
+        const { camera, sets } = sonyWifiCamera([sdkEnum(264, '0', ['0', '17', '18']), sdkEnum(270, '1', ['1', '196611'])])
+        expect(await camera.setWhiteBalance('Shade')).toBe('Shade')
+        expect(await camera.setDriveMode('Self-timer 10 s')).toBe('Self-timer 10 s')
+        expect(sets).toEqual([
+            { code: '264', value: '18' },
+            { code: '270', value: '196611' },
+        ])
+        expect(await camera.setWhiteBalance('Flash').catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        expect(sets).toHaveLength(2)
+    })
+
+    it('reports an SDK value with no documented name as unrecognized, never as a typed value or a choice', async () => {
+        const { camera, sets } = sonyWifiCamera([sdkEnum(270, '73730', ['1', '73730']), sdkEnum(264, '0', ['0', '17', '9999'])])
+        const controls = (await camera.getCapabilities()).controls
+        expect(controls.driveMode).toMatchObject({
+            value: 'Unrecognized (0x12002)',
+            allowedValues: ['Single'],
+            writable: false,
+            unrecognized: { value: '0x12002', choices: ['0x12002'] },
+        })
+        expect(await camera.getDriveMode().catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
+        expect(await camera.setDriveMode('Single').catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
+        expect(controls.whiteBalance).toMatchObject({
+            value: 'Auto',
+            allowedValues: ['Auto', 'Daylight'],
+            writable: true,
+            unrecognized: { choices: ['0x270f'] },
+        })
+        expect(sets).toEqual([])
+    })
+
+    it('an acknowledged SDK write the camera never shows is an unknown outcome, sent once', async () => {
+        const { camera, sets } = sonyWifiCamera([sdkEnum(453, '1', ['1', '9'])], { applies: false })
+        const unknown = await camera.setPictureStyle('Monochrome').catch(error => error)
+        expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(unknown).toMatchObject({ operation: 'pictureStyle' })
+        expect(sets).toEqual([{ code: '453', value: '9' }])
+    }, 10000)
 })
 
 describe('typed colour and mode settings', () => {

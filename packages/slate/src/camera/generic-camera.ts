@@ -105,6 +105,7 @@ export class GenericCamera {
     private readonly channel: TransactionChannel
     private readonly telemetry: ReturnType<typeof slateTelemetry>
     private profileObserver?: { id: string; observe: (evidence: ProtocolEvidence) => void }
+    private readonly responseObservers = new Set<(operationName: string, responseCode: number) => void>()
     private protocolSeen = new Map<string, string>()
     private diagnosticSettings = new Map<number, CachedDiagnosticSetting>()
     /** Synchronous, bounded and entirely cache-based. Diagnostic failures cannot change a camera workflow. */
@@ -118,6 +119,22 @@ export class GenericCamera {
         if (this.profileObserver) throw new Error('A profile benchmark already owns this camera')
         this.profileObserver = { id, observe }
         return () => { if (this.profileObserver?.id === id) this.profileObserver = undefined }
+    }
+    /**
+     * @internal Reports the operation name and response code of every transaction this session
+     * completes while `work` runs, so a caller can tell a refused write from one the camera
+     * acknowledged before a later step failed.
+     */
+    async observeResponses<T>(
+        observe: (operationName: string, responseCode: number) => void,
+        work: () => Promise<T>
+    ): Promise<T> {
+        this.responseObservers.add(observe)
+        try {
+            return await work()
+        } finally {
+            this.responseObservers.delete(observe)
+        }
     }
     /** Validated, deduplicated and never thrown into the camera workflow that observed it. */
     recordProtocol(evidence: ProtocolEvidence, operation?: number) {
@@ -489,6 +506,7 @@ export class GenericCamera {
         )
 
         const response = await result
+        for (const observe of this.responseObservers) observe(operation.name, response.code)
         if (operation.code === 0x1001 && response.code === OK.code && 'data' in response && response.data) {
             await this.telemetry.identify(
                 response.data as unknown as {

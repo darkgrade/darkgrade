@@ -561,7 +561,7 @@ export class CanonCamera extends GenericCamera {
         if (await this.get(property) !== 3) throw new Error('Canon did not confirm Manual exposure mode')
     }
 
-    /** Whether this session's DeviceInfo advertised an operation; unknown before connect. */
+    /** @internal Whether this session's DeviceInfo advertised an operation; unknown before connect. */
     advertisesOperation(code: number): boolean {
         return this.supportedOperations?.has(code) === true
     }

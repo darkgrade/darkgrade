@@ -185,6 +185,13 @@ try {
         camera.setWhiteBalance('Sunny')
         // @ts-expect-error Canon's kebab-case codes are not canonical names.
         camera.setWhiteBalance('daylight')
+        // One name per concept: ISO 15740's Manual white balance and every vendor preset are Custom.
+        camera.setWhiteBalance('Custom')
+        // @ts-expect-error Preset white balance is spelled Custom, not Manual.
+        camera.setWhiteBalance('Manual')
+        camera.setPictureStyle('Same as photo')
+        // @ts-expect-error Same as photo is written in sentence case for white balance and look alike.
+        camera.setWhiteBalance('Same as Photo')
         // @ts-expect-error A typed setter never takes a plain string.
         camera.setWhiteBalance(anyString)
         // @ts-expect-error Kelvin is a number.

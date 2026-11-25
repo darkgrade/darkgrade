@@ -11,7 +11,7 @@ import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
 import { isSonyModelName } from '@vendors/sony/model-name'
 import { isVerifiedFeature } from '@camera/validated-models'
-import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
@@ -217,7 +217,14 @@ export class SonyWifiCamera {
             ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context) : String(value)
         if (!requested || !control.allowedValues?.includes(requested)) throw new CameraRefusedError(id, 'Requested SDK control value is not advertised')
         const wire = sonySdkControlWireValue(properties, id, requested)
-        await this.setSonySetting(wire.code, wire.value)
+        try {
+            await this.setSonySetting(wire.code, wire.value)
+        } catch (error) {
+            if (!(error instanceof CameraOutcomeUnknownError)) throw error
+            const unknown = new CameraOutcomeUnknownError(id, error.message)
+            unknown.cause = error
+            throw unknown
+        }
         const observed = (await this.getCapabilities()).controls[id]
         if (!observed || observed.source.code !== control.source.code || observed.value !== requested)
             throw new CameraConfirmationError(id, requested, observed?.value ?? null)
@@ -462,8 +469,12 @@ export class SonyWifiCamera {
             await new Promise(resolve => setTimeout(resolve, 200))
             after = await this.getSonyProperty(before.code)
         } while (after.value !== String(value) && Date.now() < deadline)
+        // Sent and acknowledged by the bridge but never shown: unconfirmed, never resent.
         if (after.value !== String(value))
-            throw new Error(`Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`)
+            throw new CameraOutcomeUnknownError(
+                before.name,
+                `Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`
+            )
         return { before, after, verified: true }
     }
 

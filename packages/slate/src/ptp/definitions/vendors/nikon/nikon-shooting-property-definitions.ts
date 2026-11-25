@@ -95,7 +95,7 @@ export const nikonWhiteBalanceValues = [
     { value: 0x8011, name: 'Shade', description: 'Shade' },
     { value: 0x8012, name: 'Color Temperature', description: 'Choose color temperature' },
     { value: 0x8013, name: 'Custom', description: 'Preset manual' },
-    { value: 0x8015, name: 'Same as Photo', description: 'Movie only: same as photo settings' },
+    { value: 0x8015, name: 'Same as photo', description: 'Movie only: same as photo settings' },
     { value: 0x8016, name: 'Natural Light Auto', description: 'Natural light auto' },
 ] as const
 

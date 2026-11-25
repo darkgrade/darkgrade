@@ -1,7 +1,7 @@
 import { ToggleGroup, ToggleGroupItem } from '@kevinschaich/components'
 import { ControlRow } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
-import type { CameraControlName, CameraState } from '@shared/ipc'
+import type { CameraControl, CameraControlName, CameraState } from '@shared/ipc'
 import { useEffect, useState } from 'react'
 
 interface RecordingPanelProps {
@@ -23,6 +23,17 @@ type ShootingMode = 'photo' | 'video'
 /** Slate's photoVideoMode: 'photo' or 'video', with only the modes the camera can switch to as options. */
 function shootingModeOf(value: string | null | undefined): ShootingMode | null {
     return value === 'photo' || value === 'video' ? value : null
+}
+
+/**
+ * Why a segment is off: Slate offers only the same program in the other half (Manual and Movie
+ * Manual), never a guess, so from Auto, a scene, S&Q or interval the camera's dial decides.
+ */
+function unavailableModeTip(control: CameraControl | null | undefined, target: ShootingMode): string | undefined {
+    if (!control || control.value === target || control.options.includes(target)) return undefined
+    return target === 'video'
+        ? 'The camera offers no switch to video from this mode. Choose M, A, S or P on the camera, or switch there.'
+        : 'The camera offers no switch to photo from this mode. Choose movie M, A, S or P on the camera, or switch there.'
 }
 
 const SEGMENT_CLASS =
@@ -88,6 +99,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                                 value="photo"
                                 className={SEGMENT_CLASS}
                                 disabled={!controls.photoVideoMode?.options.includes('photo')}
+                                title={unavailableModeTip(controls.photoVideoMode, 'photo')}
                             >
                                 Photo
                             </ToggleGroupItem>
@@ -95,6 +107,7 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                                 value="video"
                                 className={SEGMENT_CLASS}
                                 disabled={!controls.photoVideoMode?.options.includes('video')}
+                                title={unavailableModeTip(controls.photoVideoMode, 'video')}
                             >
                                 Movie
                             </ToggleGroupItem>

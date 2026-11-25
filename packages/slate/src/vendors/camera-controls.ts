@@ -39,6 +39,7 @@ import { MovieShutterAngle } from '@vendors/nikon/video-properties'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import { NikonShotControls } from '@vendors/nikon/shot-controls'
 import { canonPhotoVideoModeState, sonyPhotoVideoModeState, writePhotoVideoMode } from '@vendors/photo-video-mode'
+import { sendControlWrite } from '@vendors/control-write'
 
 interface PropertyState {
     code: number
@@ -462,13 +463,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
         if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(requested)
         else await driver.set(property, (id === 'colorTemperature' ? Number(requested) : requested) as never)
     }
-    try {
-        await write()
-    } catch (error) {
-        // A PTP response other than OK is the camera saying no; nothing changed.
-        if (error instanceof PTPResponseError) throw new CameraRefusedError(id, `The camera refused ${id}: ${error.message}`)
-        throw error
-    }
+    await sendControlWrite(driver, id, write)
     let observed: CameraControlState | undefined
     await confirmCameraValue(
         id,

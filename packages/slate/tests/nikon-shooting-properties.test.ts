@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 // Numeric observations from Z6 III camera_controls, 2026-10-29. Movie white balance (0xd23a) is
 // an enumeration: its observed 32789 (0x8015) decodes to the Nikon name "Same as photo settings".
-const decodedNames: Record<number, string> = { 0xd23a: 'Same as Photo' }
+const decodedNames: Record<number, string> = { 0xd23a: 'Same as photo' }
 // Wire types independently checked against the model command specification Rev.2.00.
 // These are descriptor fixtures; this test does not communicate with hardware.
 const observed = [

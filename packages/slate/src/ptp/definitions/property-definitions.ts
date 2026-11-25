@@ -68,7 +68,7 @@ export const WhiteBalance = {
         createEnumCodec(
             registry,
             [
-                { value: 0x0001, name: 'Manual', description: 'Manual white balance' },
+                { value: 0x0001, name: 'Custom', description: 'Manual (preset) white balance' },
                 { value: 0x0002, name: 'Auto', description: 'Automatic white balance' },
                 { value: 0x0003, name: 'One-push Auto', description: 'One-push automatic white balance' },
                 { value: 0x0004, name: 'Daylight', description: 'Daylight' },
