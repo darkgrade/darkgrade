@@ -35,15 +35,14 @@ export interface LiveViewOperations {
     /** EXPERIMENT(usb-transport): true once the Swift live-view loop has run and ended; false when it isn't chosen. */
     runSwiftLiveViewIfChosen(): Promise<boolean>
     stopLiveView(): Promise<CameraState>
-    /**
-     * Sony storage access (listObjects/getObject) switches the body into
-     * "content transfer" mode — a playback-like state — while live view
-     * requires shooting mode. Interleaving them makes the camera flip modes
-     * per frame and the live view stream shows recorded card images instead
-     * of the sensor feed. So: pause live view, do storage work, resume.
-     */
-    /** Sony can be left showing playback after card access or a shot; re-arm remote shooting. */
+    /** Sony can be left showing playback (AccessDenied on live view); re-arm remote shooting. */
     resumeShooting(): Promise<void>
+    /**
+     * Sony card downloads switch the body into "content transfer" mode — a playback-like state —
+     * while live view requires shooting mode. Interleaving them makes the camera flip modes per
+     * frame and the live view stream shows recorded card images instead of the sensor feed. So:
+     * pause live view, do the card work, resume; Slate returns the body to shooting on the next frame.
+     */
     withLiveViewPaused<T>(operation: () => Promise<T>): Promise<T>
 }
 
@@ -233,24 +232,12 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
         return this.getState()
     },
 
-    /**
-     * Sony storage access (listObjects/getObject) switches the body into
-     * "content transfer" mode — a playback-like state — while live view
-     * requires shooting mode. Interleaving them makes the camera flip modes
-     * per frame and the live view stream shows recorded card images instead
-     * of the sensor feed. So: pause live view, do storage work, resume.
-     */
-    /** Sony can be left showing playback after card access or a shot; re-arm remote shooting. */
+    /** Sony can be left showing playback (AccessDenied on live view); re-arm remote shooting. */
     async resumeShooting(): Promise<void> {
         const camera = this.camera
         if (!camera || !this.connected) return
         try {
-            const reopened = await this.enqueue(async () => (this.recording ? false : camera.resumeSonyShooting()))
-            // A new session may number the card's objects differently.
-            if (reopened) {
-                this.knownObjects.clear()
-                this.previewCache.clear()
-            }
+            await this.enqueue(async () => (this.recording ? false : camera.resumeSonyShooting()))
         } catch (error) {
             this.log('system', `Couldn't return the camera to shooting: ${errorMessage(error)}`, 'error')
         }
@@ -263,7 +250,7 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
         try {
             return await operation()
         } finally {
-            await this.resumeShooting()
+            // Slate returns a Sony body to shooting by itself on the next live-view frame.
             this.storageSessionActive = false
             if (this.settingsRefreshDeferred) {
                 this.settingsRefreshDeferred = false

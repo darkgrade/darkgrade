@@ -5,8 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 const thumbnailUrls = new Map<string, string>()
 
 function thumbnailKey(entry: FileEntry): string | null {
-    const content = entry.sonyContent
-    return content ? `${content.slot}:${content.contentId}:${content.fileId}` : null
+    return entry.previews.includes('thumbnail') ? entry.id : null
 }
 
 /** The camera's own small JPEG of a card file, fetched once it scrolls into view. Falls back to an icon. */

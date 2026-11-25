@@ -544,12 +544,12 @@ export const STUDIO_TOOLS: StudioTool[] = [
         changesSomething: false,
         run: async input => {
             requireConnected()
-            const files = await cameraService.listFiles()
-            const newest = [...files].reverse().slice(0, Number(input.limit ?? 50))
+            // Slate lists the card newest first.
+            const newest = (await cameraService.listFiles()).slice(0, Number(input.limit ?? 50))
             return {
                 data: newest.map(file => ({
                     filename: file.filename,
-                    kind: /\.(mp4|mov|mxf|avi|m4v)$/i.test(file.filename) ? 'video' : 'photo',
+                    kind: file.kind === 'clip' ? 'video' : file.kind,
                     captureDate: file.captureDate,
                     sizeBytes: file.sizeBytes,
                 })),
