@@ -1,3 +1,4 @@
+import type { CameraRecoveryReport } from '@camera/generic-camera'
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 
 /**
@@ -40,6 +41,12 @@ export interface DiscoveredCamera {
     manufacturer?: string
     model?: string
 }
+
+/**
+ * What `Camera.recover()` did: each software step, whether the camera answered GetDeviceInfo
+ * afterwards, and whether only power or hub cycling is left. `CameraRecoveryReport` is the same type.
+ */
+export type RecoveryReport = CameraRecoveryReport
 
 export interface ConnectionCapability {
     /** Opens the session on the already selected transport and prepares what the vendor needs. */

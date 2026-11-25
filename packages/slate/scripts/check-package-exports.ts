@@ -91,6 +91,7 @@ try {
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, type ShutterSpeed, type TypedSettingMethods,
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError, type CameraInfo, type DiscoveredCamera,
+            type RecoveryReport,
             runBenchmark, TransportFactory, TransportType } from '@darkgrade/slate'
         import { protocolSession, SonyWifiCamera, SonyCamera, type ProtocolSession } from '@darkgrade/slate/protocol'
         // @ts-expect-error Vendor drivers left the main entry; they are in @darkgrade/slate/protocol.
@@ -129,6 +130,11 @@ try {
         camera.connect()
         const information: Promise<CameraInfo> = camera.getInfo()
         const closed: Promise<void> = camera.disconnect()
+        const recovery: Promise<RecoveryReport> = camera.recover({ allowPortReset: false })
+        // @ts-expect-error Recovery steps are software only; power cycling is never a step.
+        const power: RecoveryReport['steps'][number]['step'] = 'power-cycle'
+        // Connection failures are the three public types, with the PTP error kept as their cause.
+        const refusedCause: unknown = new CameraRefusedError('connect', 'OpenSession failed', { cause: new Error('0x2019') }).cause
         // @ts-expect-error A device descriptor is passed as { device }, never as the options themselves.
         camera.connect({ usb: { filters: [{ vendorId: 0x054c }] } })
         // @ts-expect-error observeOnly is a boolean.
@@ -148,8 +154,10 @@ try {
         session.set(genericPropertyRegistry.WhiteBalance, 'daylight')
         // @ts-expect-error Known read-only definitions cannot be written through a protocol session.
         session.set(genericPropertyRegistry.BatteryLevel, 40)
-        // @ts-expect-error Raw sessions are only for a Camera or a session shaped like one.
+        // @ts-expect-error Raw sessions are only for a Camera.
         protocolSession('camera')
+        // @ts-expect-error An object shaped like a session is not a Camera; it throws rather than passing through.
+        protocolSession({ send: async () => ({ code: 0x2001 }) })
         const factory = new TransportFactory()
         factory.createIPTransport({ address: '127.0.0.1', timeout: 1000, telemetryEvidence: 'synthetic' })
         factory.createUSBTransport({ maxBulkReadBytes: 16384 })
@@ -333,6 +341,7 @@ for(const format of ['esm','commonjs']){
         "for(const name of ['protocolSession','GenericCamera','SonyCamera','CanonCamera','NikonCamera','SonyWifiCamera','readNikonRecordingStatus','compareSonyModels','NikonBluetoothRemote','sonyPropertyRegistry'])if(!protocol[name])throw new Error('/protocol '+name+' is missing');"+
         "const vendorNamed=Object.keys(api).filter(name=>/sony|canon|nikon|fujifilm|panasonic|olympus|leica|sigma/i.test(name)||['GenericCamera','VendorExtensionCamera','protocolSession'].includes(name));if(vendorNamed.length)throw new Error('Main entry exports protocol names: '+vendorNamed.join(', '));"+
         "const camera=new api.Camera();if(protocol.protocolSession(camera)!==protocol.protocolSession(camera)||!(protocol.protocolSession(camera).driver instanceof protocol.GenericCamera))throw new Error('protocolSession must share the Camera driver');"+
+        "let refused=false;try{protocol.protocolSession({})}catch(error){refused=error instanceof TypeError}if(!refused||'protocolAccess' in protocol)throw new Error('protocolSession must refuse anything but a Camera');"+
         "console.log('Built '+"+JSON.stringify(format)+"+' exports passed')"
     execFileSync('node',[...(format==='esm'?['--input-type=module']:[]),'-e',check],{stdio:'inherit'})
 }

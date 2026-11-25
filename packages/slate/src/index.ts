@@ -23,7 +23,7 @@ export type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraCo
 export { parseExposureTime, exposureSeconds, matchExposureTime } from '@camera/exposure-time'
 export type { ExposureTime, ExposureTimeInput, ExposureContext } from '@camera/exposure-time'
 export type { CameraOptions } from '@camera/index'
-export type { CameraInfo, ConnectOptions, DiscoveredCamera } from '@camera/driver/connection'
+export type { CameraInfo, ConnectOptions, DiscoveredCamera, RecoveryReport } from '@camera/driver/connection'
 export type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 export type { TransportInterface } from '@transport/interfaces/transport.interface'
 export type { OperationParams, OperationResponse, EventParams } from '@ptp/types/type-helpers'

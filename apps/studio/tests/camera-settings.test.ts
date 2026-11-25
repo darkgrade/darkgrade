@@ -1,6 +1,7 @@
 import type { Camera, CameraCapabilities } from '@darkgrade/slate'
-import { PTPDisconnectedError, CameraConfirmationError, VendorIDs } from '@darkgrade/slate'
+import { PTPDisconnectedError, CameraConfirmationError, CameraOutcomeUnknownError, PTPRecoveryRequiredError, VendorIDs } from '@darkgrade/slate'
 import { CameraService } from '@main/camera-service'
+import { requiresReconnect } from '@main/camera-service/shared'
 import { CAMERA_CONTROL_NAMES } from '@shared/ipc'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
@@ -95,6 +96,18 @@ describe('camera settings refresh failures', () => {
         await expect(service.refreshSettings()).rejects.toBe(failure)
         expect(service.getState().controls?.focusMode?.enabled).toBe(false)
         expect(recover).toHaveBeenCalledWith(failure)
+    })
+})
+
+describe('reconnect classification', () => {
+    it('reads a lost transport or pending recovery through the cause of a Camera operation error', () => {
+        const lost = new PTPDisconnectedError('Camera unplugged')
+        expect(requiresReconnect(lost)).toBe(true)
+        expect(requiresReconnect(new CameraOutcomeUnknownError('disconnect', lost.message, { cause: lost }))).toBe(true)
+        const pending = new PTPRecoveryRequiredError('Transport recovery is still running')
+        expect(requiresReconnect(new CameraOutcomeUnknownError('connect', pending.message, { cause: pending }))).toBe(true)
+        expect(requiresReconnect(new CameraOutcomeUnknownError('connect', 'no response phase'))).toBe(false)
+        expect(requiresReconnect(new Error('Device busy'))).toBe(false)
     })
 })
 

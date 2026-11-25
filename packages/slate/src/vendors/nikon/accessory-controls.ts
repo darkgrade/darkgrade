@@ -1,5 +1,5 @@
 import type {Camera} from '@camera/index'
-import {protocolSession,type ProtocolSession} from '@camera/operations/protocol'
+import {protocolAccess,type ProtocolSession} from '@camera/operations/protocol'
 import type {OperationDefinition} from '@ptp/types/operation'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 import {NikonMenuController} from '@vendors/nikon/menu-controls'
@@ -61,7 +61,7 @@ export class NikonAccessoryController {
 
     private readonly camera:AccessorySession
 
-    constructor(camera:Camera|AccessorySession){this.camera=protocolSession(camera)}
+    constructor(camera:Camera|AccessorySession){this.camera=protocolAccess(camera)}
 
     get state():NikonAccessoryState{
         if(this.ownedInstance&&(this.camera.driver!==this.ownedInstance||this.ownedInstance.sessionId!==this.ownedSession||this.ownedSession===null))this.invalidate()

@@ -1,6 +1,7 @@
 import { CanonCamera } from '@camera/canon-camera'
-import type { CameraInfo, ConnectOptions, DiscoveredCamera } from '@camera/driver/connection'
-import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@camera/generic-camera'
+import type { CameraInfo, ConnectOptions, DiscoveredCamera, RecoveryReport } from '@camera/driver/connection'
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { GenericCamera, type CameraRecoveryOptions } from '@camera/generic-camera'
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
 import {
@@ -13,6 +14,7 @@ import { protocolSession } from '@camera/operations/protocol'
 import { SonyCamera } from '@camera/sony-camera'
 import { VendorExtensionCamera } from '@camera/vendor-extension-camera'
 import { Logger } from '@core/logger'
+import { PTPError, PTPResponseError } from '@core/ptp-errors'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import {
     createFujifilmRegistry,
@@ -42,7 +44,7 @@ export interface ConnectionOperations {
      * Device Reset, then a USB port reset, each proven by GetDeviceInfo. The transport is closed
      * afterwards; call connect() to use the camera. See GenericCamera.recover.
      */
-    recover(options?: CameraRecoveryOptions): Promise<CameraRecoveryReport>
+    recover(options?: CameraRecoveryOptions): Promise<RecoveryReport>
     disconnect(): Promise<void>
 }
 
@@ -62,6 +64,29 @@ export async function discoverCameras(): Promise<DiscoveredCamera[]> {
 export function descriptorVendor(device?: DeviceDescriptor): number | undefined {
     const vendors = new Set(device?.usb?.filters.map(filter => filter.vendorId))
     return vendors.size === 1 ? [...vendors][0] : undefined
+}
+
+/** Vendors with a driver of their own; every other vendor is served by GenericCamera. */
+const dedicatedDriverVendors = new Set<number>([
+    VendorIDs.SONY,
+    VendorIDs.NIKON,
+    VendorIDs.CANON,
+    VendorIDs.FUJIFILM,
+    VendorIDs.PANASONIC,
+    VendorIDs.OLYMPUS,
+    VendorIDs.OM_DIGITAL,
+    VendorIDs.LEICA,
+    VendorIDs.SIGMA,
+])
+
+/**
+ * True when createCameraDriver would build the same kind of driver for this vendor. GenericCamera
+ * reports no vendor, so without this a generic body's driver, with its policy and counters, would
+ * be discarded and rebuilt on every connect.
+ */
+function driverServesVendor(driver: CameraDriverInstance, vendorId: number): boolean {
+    if (driver.vendorId === vendorId) return true
+    return Object.getPrototypeOf(driver) === GenericCamera.prototype && !dedicatedDriverVendors.has(vendorId)
 }
 
 export function createCameraDriver(
@@ -122,41 +147,11 @@ function assertConnectOptions(options: ConnectOptions): void {
 export const connectionOperations: ConnectionOperations & ThisType<Camera> = {
     async connect(options: ConnectOptions = {}): Promise<void> {
         assertConnectOptions(options)
-        const context = cameraContext(this)
-        const descriptor = options.device ?? context.deviceDescriptor
-        let vendorId = context.options.vendorId ?? descriptorVendor(descriptor)
-        if (context.transport instanceof USBTransport) {
-            // Select exactly one body first, then its driver. A broad USB filter is not a vendor identity.
-            await context.driver.connectTransport(descriptor)
-            const identity = context.transport.getDeviceIdentity()
-            if (identity) {
-                if (context.options.vendorId !== undefined && context.options.vendorId !== identity.vendorId) {
-                    await context.transport.disconnect()
-                    throw new Error('Selected USB camera differs from the explicitly requested vendor')
-                }
-                vendorId = identity.vendorId
-            }
-        }
-        if (context.driver.sessionId === null && vendorId !== undefined && context.driver.vendorId !== vendorId) {
-            context.driver.detachTransportObserver()
-            context.driver = createCameraDriver(context, vendorId)
-            for (const subscription of context.subscriptions)
-                context.driver.on(subscription.event, subscription.handler as never)
-        }
-        context.deviceDescriptor = descriptor
-        // Preserve the caller-owned partial session for standard protocol diagnostics when
-        // vendor initialization is refused. The caller closes it with disconnect() in finally.
-        await requireCapability(this, 'connection', 'connect').openSession(descriptor, {
-            observeOnly: options.observeOnly === true,
-        })
-        if (context.options.firstContact !== false) {
-            const { recordFirstContact } = await import('@workflows/first-contact')
-            await recordFirstContact(this)
-        }
+        return withPublicErrors('connect', () => openCamera(this, options))
     },
 
     async getInfo(): Promise<CameraInfo> {
-        return requireCapability(this, 'connection', 'getInfo').getInfo()
+        return withPublicErrors('getInfo', () => requireCapability(this, 'connection', 'getInfo').getInfo())
     },
 
     async connectSonyMenuSession(device?: DeviceDescriptor): Promise<void> {
@@ -164,22 +159,85 @@ export const connectionOperations: ConnectionOperations & ThisType<Camera> = {
     },
 
     async connectSonyObservationSession(device?: DeviceDescriptor): Promise<void> {
-        const context = cameraContext(this)
-        if (!(context.driver instanceof SonyCamera)) throw new Error('Sony observation sessions require a Sony camera')
-        await context.driver.connect(device || context.deviceDescriptor, { configure: false })
+        if (!(cameraContext(this).driver instanceof SonyCamera))
+            throw new CameraUnsupportedError('connectSonyObservationSession', 'Sony observation sessions require a Sony camera')
+        return this.connect({ device, observeOnly: true })
     },
 
-    async recover(options?: CameraRecoveryOptions): Promise<CameraRecoveryReport> {
+    async recover(options?: CameraRecoveryOptions): Promise<RecoveryReport> {
         const context = cameraContext(this)
-        return context.driver.recover(context.deviceDescriptor, options)
+        return withPublicErrors('recover', () => context.driver.recover(context.deviceDescriptor, options))
     },
 
     async disconnect(): Promise<void> {
         const context = cameraContext(this)
         try {
-            await context.driver.disconnect()
+            await withPublicErrors('disconnect', () => context.driver.disconnect())
         } finally {
             if (context.driver.sessionId === null) context.subscriptions.clear()
         }
     },
+}
+
+/**
+ * Runs a connection operation and reports its failure as one of the three public error types,
+ * keeping the driver's error as `cause`: a PTP response the camera refused becomes
+ * CameraRefusedError; a timeout, lost transport, unreadable reply, pending recovery or failed
+ * cleanup becomes CameraOutcomeUnknownError, since the session's state was not confirmed. Device
+ * selection failures before any command (no matching USB device, several matches) and invalid
+ * arguments are not camera outcomes and are rethrown unchanged.
+ */
+async function withPublicErrors<Result>(operation: string, action: () => Promise<Result>): Promise<Result> {
+    try {
+        return await action()
+    } catch (error) {
+        throw publicConnectionError(operation, error)
+    }
+}
+
+function publicConnectionError(operation: string, error: unknown): unknown {
+    if (
+        error instanceof CameraUnsupportedError ||
+        error instanceof CameraRefusedError ||
+        error instanceof CameraOutcomeUnknownError
+    )
+        return error
+    if (error instanceof PTPResponseError) return new CameraRefusedError(operation, error.message, { cause: error })
+    if (error instanceof PTPError || error instanceof AggregateError)
+        return new CameraOutcomeUnknownError(operation, error.message, { cause: error })
+    return error
+}
+
+async function openCamera(camera: Camera, options: ConnectOptions): Promise<void> {
+    const context = cameraContext(camera)
+    const descriptor = options.device ?? context.deviceDescriptor
+    let vendorId = context.options.vendorId ?? descriptorVendor(descriptor)
+    if (context.transport instanceof USBTransport) {
+        // Select exactly one body first, then its driver. A broad USB filter is not a vendor identity.
+        await context.driver.connectTransport(descriptor)
+        const identity = context.transport.getDeviceIdentity()
+        if (identity) {
+            if (context.options.vendorId !== undefined && context.options.vendorId !== identity.vendorId) {
+                await context.transport.disconnect()
+                throw new CameraRefusedError('connect', 'Selected USB camera differs from the explicitly requested vendor')
+            }
+            vendorId = identity.vendorId
+        }
+    }
+    if (context.driver.sessionId === null && vendorId !== undefined && !driverServesVendor(context.driver, vendorId)) {
+        context.driver.detachTransportObserver()
+        context.driver = createCameraDriver(context, vendorId)
+        for (const subscription of context.subscriptions)
+            context.driver.on(subscription.event, subscription.handler as never)
+    }
+    context.deviceDescriptor = descriptor
+    // Preserve the caller-owned partial session for standard protocol diagnostics when
+    // vendor initialization is refused. The caller closes it with disconnect() in finally.
+    await requireCapability(camera, 'connection', 'connect').openSession(descriptor, {
+        observeOnly: options.observeOnly === true,
+    })
+    if (context.options.firstContact !== false) {
+        const { recordFirstContact } = await import('@workflows/first-contact')
+        await recordFirstContact(camera)
+    }
 }

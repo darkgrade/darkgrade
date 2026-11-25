@@ -1,10 +1,12 @@
 import type { Camera } from '@camera/index'
-import { canonDriver, cameraContext } from '@camera/operations/context'
+import { cameraContext } from '@camera/operations/context'
+import { protocolSession } from '@camera/operations/protocol'
 import { SonyCamera } from '@camera/sony-camera'
 
 export interface BodyOperations {
     /** Sony: set the camera clock from the host (default: now). Returns the string the camera accepted. */
     setSonyDateTime(moment?: Date): Promise<string>
+    /** @deprecated Use `protocolSession(camera).keepDeviceOn()` from `@darkgrade/slate/protocol`. */
     keepDeviceOn(): Promise<void>
 }
 
@@ -16,6 +18,6 @@ export const bodyOperations: BodyOperations & ThisType<Camera> = {
     },
 
     async keepDeviceOn(): Promise<void> {
-        return canonDriver(this, 'KeepDeviceOn is only available for Canon EOS cameras').keepDeviceOn()
+        return protocolSession(this).keepDeviceOn()
     },
 }

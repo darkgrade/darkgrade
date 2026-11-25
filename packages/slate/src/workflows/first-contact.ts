@@ -1,5 +1,5 @@
 import type { Camera } from '@camera/index'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/operations/protocol'
 import { isValidatedModel } from '@camera/validated-models'
 import { runBenchmark } from '@workflows/telemetry-benchmark'
 
@@ -40,7 +40,7 @@ export async function recordFirstContact(
     dependencies?: FirstContactDependencies
 ): Promise<boolean> {
     try {
-        const instance = protocolSession(camera).driver
+        const instance = protocolAccess(camera).driver
         const evidence = (instance.transport as typeof instance.transport & { telemetryEvidence?: string })
             .telemetryEvidence
         const resolved = dependencies ?? (evidence === 'hardware' ? await nodeDependencies() : undefined)

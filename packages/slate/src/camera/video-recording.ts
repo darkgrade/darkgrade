@@ -1,4 +1,4 @@
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/operations/protocol'
 import { CanonCamera } from '@camera/canon-camera'
 import type { CameraRecordingState } from '@camera/controls'
 import type { Camera } from '@camera/index'
@@ -11,10 +11,10 @@ import type { TakeMedia } from '@workflows/video-take'
 
 /** Reuse native movie observations; missing values never prove that recording stopped. */
 export async function readCameraRecordingState(camera: Camera): Promise<CameraRecordingState> {
-    const driver = protocolSession(camera).driver
+    const driver = protocolAccess(camera).driver
     const vendor = driver.vendorId
     if (vendor === 0x054c) {
-        const state = await readSonyPtpRecordingState(protocolSession(camera))
+        const state = await readSonyPtpRecordingState(protocolAccess(camera))
         // Native 2 is recording failure and 3 is interval-recording waiting.
         // Neither proves idle or a start/stop transition.
         return state === 0 ? 'idle' : state === 1 ? 'recording' : 'unknown'
@@ -41,7 +41,7 @@ export class UsbVideoRecording {
         private readonly vendor: 'canon' | 'nikon'
     ) {}
     private get operations() {
-        return protocolSession(this.camera).driver.registry.operations
+        return protocolAccess(this.camera).driver.registry.operations
     }
     private handles() {
         return readCameraObjectHandles(this.camera)
@@ -51,7 +51,7 @@ export class UsbVideoRecording {
         if (!storages.some(card => card.writable && card.freeBytes > 0))
             throw new Error('Insert a writable memory card with free space before recording')
         if (this.vendor === 'canon') {
-            const states = await protocolSession(this.camera).getCanonPropertyStates()
+            const states = await protocolAccess(this.camera).getCanonPropertyStates()
             if (states.some((state: any) => state.name === 'CanonRecordingDestination' && state.value === 'CARD'))
                 throw new Error('This camera is already recording')
         }
@@ -61,7 +61,7 @@ export class UsbVideoRecording {
         if (this.vendor === 'canon') this.movieMode = await openCanonRecordingMode(this.camera)
         this.attempted = true
         await this.camera.startRecording()
-        const states = this.vendor === 'canon' ? await protocolSession(this.camera).getCanonPropertyStates() : []
+        const states = this.vendor === 'canon' ? await protocolAccess(this.camera).getCanonPropertyStates() : []
         const confirmed =
             this.vendor === 'nikon'
                 ? (await readNikonRecordingStatus(this.camera))?.recording === true

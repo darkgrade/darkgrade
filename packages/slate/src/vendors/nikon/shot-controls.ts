@@ -1,5 +1,5 @@
 import type {Camera} from '@camera/index'
-import {protocolSession,type ProtocolSession} from '@camera/operations/protocol'
+import {protocolAccess,type ProtocolSession} from '@camera/operations/protocol'
 import {getDatatypeByCode} from '@ptp/definitions/datatype-definitions'
 import {GetDevicePropDescEx,SetDevicePropValueEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import {LiveViewSelector} from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
@@ -25,7 +25,7 @@ export class NikonShotControls {
     private busy=false
 
     private readonly camera:OwnedSession
-    constructor(camera:Camera|OwnedSession){this.camera=protocolSession(camera);this.instance=this.camera.driver;this.session=this.instance.sessionId}
+    constructor(camera:Camera|OwnedSession){this.camera=protocolAccess(camera);this.instance=this.camera.driver;this.session=this.instance.sessionId}
 
     async prepare(){
         return this.exclusive(async()=>{

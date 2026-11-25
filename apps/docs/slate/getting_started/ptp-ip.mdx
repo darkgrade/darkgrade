@@ -20,9 +20,10 @@ const camera = new Camera({ transport, vendorId: VendorIDs.CANON })
 await camera.connect({ device: { ip: { host, port: 15740, protocol: 'ptp/ip', localAddress } } })
 const { manufacturer, model, firmware, connection } = await camera.getInfo() // connection is 'ip'
 await camera.autofocus()
-await camera.keepDeviceOn()
 await camera.disconnect()
 ```
+
+Canon sessions keep the body awake by themselves: an open session sends the advertised KeepDeviceOn every ten seconds (`new Camera({ keepAlive: false })` turns this off). A one-off KeepDeviceOn for bench work is `protocolSession(camera).keepDeviceOn()` from the unsupported `@darkgrade/slate/protocol` entry.
 
 The transport pairs separate command and event TCP connections, uses a stable client identity, supports camera-to-host and host-to-camera data phases, responds to PTP/IP ping packets, and handles fragmented or coalesced TCP frames. It is Node.js-only because it uses `node:net`. The camera must first expose its PTP/IP service and may require approval on its body; on the EOS 80D that means **Wi-Fi function → Remote control (EOS Utility) → Easy connection** after physically disconnecting USB.
 

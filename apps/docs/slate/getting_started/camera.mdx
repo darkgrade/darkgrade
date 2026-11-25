@@ -320,16 +320,17 @@ async getObject(
 
 ## Exports
 
-The module also exports the vendor-specific camera implementations:
+The vendor driver classes are not part of the main entry. For bench work they are exported, with
+the registries and raw PTP access, from the unsupported `@darkgrade/slate/protocol` entry:
 
 - `CanonCamera`
 - `GenericCamera`
 - `NikonCamera`
 - `SonyCamera`
 
-These can be imported directly if you need vendor-specific functionality:
-
 ```typescript
-import { SonyCamera } from '@packages/slate/src/camera'
-import { GenericCamera } from '@packages/slate/src/camera'
+import { protocolSession, SonyCamera } from '@darkgrade/slate/protocol'
+
+const driver = protocolSession(camera).driver
+if (driver instanceof SonyCamera) console.log(driver.registry.properties.PositionKeySetting.name)
 ```

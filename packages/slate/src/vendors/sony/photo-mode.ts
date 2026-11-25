@@ -1,4 +1,4 @@
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/operations/protocol'
 import type { Camera } from '@camera/index'
 import { isSonyMovieExposureProgram } from '@vendors/sony/exposure-program'
 import { readSonyMovieCard } from '@vendors/sony/card-storage'
@@ -18,7 +18,7 @@ export async function openSonyRecordingMode(camera: Camera) {
         const before = (await camera.getCapabilities()).controls.exposureProgram?.value
         try { await camera.setControl('exposureProgram', requested) }
         catch (error) {
-            protocolSession(camera).driver.recordStateSnapshot('recording', 'failure')
+            protocolAccess(camera).driver.recordStateSnapshot('recording', 'failure')
             // Sony's shipped sample reconciles acknowledged, unapplied mode selections.
             // Generic writes stay single-attempt; only an unchanged, writable, idle mode
             // admits one extra idempotent selection. I/O errors and unknown outcomes stop.
@@ -73,11 +73,11 @@ export async function openSonyRecordingMode(camera: Camera) {
 
 /** Hold an advertised still mode across capture/transfer and restore the original movie mode. */
 export async function withSonyPhotoMode<T>(camera: Camera, capture: () => Promise<T>): Promise<T> {
-    const mode = (await protocolSession(camera).getSonyPropertyStates()).find(property => property.code === 0x500e)
+    const mode = (await protocolAccess(camera).getSonyPropertyStates()).find(property => property.code === 0x500e)
     if (!mode || !/movie|s&q/i.test(String(mode.value))) return capture()
     const target = mode.allowedValues?.find(value => ['Manual', 'Program Auto', 'Still'].includes(String(value)))
     if (target === undefined) return capture()
-    const property = protocolSession(camera).driver.registry.properties.ExposureProgramMode
+    const property = protocolAccess(camera).driver.registry.properties.ExposureProgramMode
     let failure: unknown
     try {
         await camera.set(property, String(target))

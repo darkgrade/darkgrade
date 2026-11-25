@@ -1,5 +1,4 @@
 import { Camera, runBenchmark, VendorIDs, type CameraRecordingState } from '@darkgrade/slate'
-import { protocolSession } from '@darkgrade/slate/protocol'
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'
@@ -106,7 +105,8 @@ export class CameraService {
 
     vendorName(): string | null {
         if (!this.connected) return null
-        const vendorId = this.detectedVendorId ?? (this.camera && protocolSession(this.camera).vendorId)
+        // Set on every connect: from discovery, or from the driver connect selected for the opened body.
+        const vendorId = this.detectedVendorId
         if (vendorId && VENDOR_NAMES[vendorId]) return VENDOR_NAMES[vendorId]
         return this.detectedName ?? 'Generic PTP'
     }

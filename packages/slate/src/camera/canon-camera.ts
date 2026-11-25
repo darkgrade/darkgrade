@@ -3,7 +3,7 @@ import { Logger } from '@core/logger'
 import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
 import { captureCanonCardImage } from '@vendors/canon/card-capture'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
-import { CameraOutcomeUnknownError } from '@camera/errors'
+import { CameraOutcomeUnknownError, CameraUnsupportedError } from '@camera/errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 import {
@@ -222,7 +222,7 @@ export class CanonCamera extends GenericCamera {
 
     override async recover(device?: DeviceDescriptor, options: CameraRecoveryOptions = {}): Promise<CameraRecoveryReport> {
         if (this.propertyCache.get(this.registry.properties.CanonRecordingDestination)?.current === 'CARD')
-            throw new Error('Stop the Canon recording before recovering its session')
+            throw new CameraUnsupportedError('recover', 'Stop the Canon recording before recovering its session')
         await this.stopPolling()
         // Release the owned EOS mode before opening a replacement PTP session.
         // An unresponsive connection still reaches the bounded recovery steps.

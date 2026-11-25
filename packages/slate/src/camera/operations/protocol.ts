@@ -74,22 +74,31 @@ export interface ProtocolSession {
 const sessions = new WeakMap<object, ProtocolSession>()
 
 /**
- * The protocol session of a Camera, the same object on every call. Given something that is not a
- * Camera (a session already obtained, or a test double shaped like one), returns it unchanged, so
- * helpers can accept either.
+ * The protocol session of a Camera, the same object on every call. Anything else, including a
+ * Camera constructed by another copy of Slate, throws rather than returning a wrong value.
  */
-export function protocolSession(camera: Camera): ProtocolSession
-export function protocolSession<Session extends Partial<ProtocolSession>>(
-    target: Camera | Session
-): ProtocolSession | Exclude<Session, Camera>
-export function protocolSession(target: object): object {
-    if (!isCamera(target)) return target
-    let session = sessions.get(target)
+export function protocolSession(camera: Camera): ProtocolSession {
+    if (typeof camera !== 'object' || camera === null || !isCamera(camera))
+        throw new TypeError('protocolSession must be called on a Camera instance')
+    let session = sessions.get(camera)
     if (!session) {
-        session = createProtocolSession(target)
-        sessions.set(target, session)
+        session = createProtocolSession(camera)
+        sessions.set(camera, session)
     }
     return session
+}
+
+/**
+ * @internal For Slate's own helpers, which accept a Camera or a value already shaped like its
+ * protocol session (a session obtained earlier, or a test double). Not exported from
+ * `@darkgrade/slate/protocol`.
+ */
+export function protocolAccess(camera: Camera): ProtocolSession
+export function protocolAccess<Session extends Partial<ProtocolSession>>(
+    target: Camera | Session
+): ProtocolSession | Exclude<Session, Camera>
+export function protocolAccess(target: object): object {
+    return isCamera(target) ? protocolSession(target) : target
 }
 
 function vendorDriver<Driver extends GenericCamera>(

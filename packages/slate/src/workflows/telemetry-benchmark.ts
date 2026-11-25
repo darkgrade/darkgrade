@@ -1,6 +1,6 @@
 import { CanonCamera } from '@camera/canon-camera'
 import type { Camera } from '@camera/index'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/operations/protocol'
 import { SonyCamera } from '@camera/sony-camera'
 import { slateBuildMetadata } from '@core/telemetry'
 import { type ProtocolEvidence } from '@contribute/protocol'
@@ -67,7 +67,7 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
     const id = crypto.randomUUID(),
         started = Date.now(),
         deadline = started + timeout
-    const session = protocolSession(camera),
+    const session = protocolAccess(camera),
         instance = session.driver,
         vendorId = instance.vendorId ?? 0
     const checks: BenchmarkCheck[] = []

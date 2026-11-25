@@ -1,5 +1,5 @@
 import type { Camera } from '@camera/index'
-import { protocolSession, type ProtocolSession } from '@camera/operations/protocol'
+import { protocolAccess, type ProtocolSession } from '@camera/operations/protocol'
 import { GetDeviceInfo } from '@ptp/definitions/operation-definitions'
 import { ChangeCameraMode } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import { baseCodecs } from '@ptp/types/codec'
@@ -47,7 +47,7 @@ export class NikonMenuController {
     private readonly camera: MenuSession
 
     constructor(camera: Camera | MenuSession) {
-        this.camera = protocolSession(camera)
+        this.camera = protocolAccess(camera)
     }
 
     async run<Result>(

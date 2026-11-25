@@ -107,9 +107,17 @@ export function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-/** The session is unusable until a fresh disconnect/connect. */
+/**
+ * The session is unusable until a fresh disconnect/connect. Camera operations report a lost
+ * transport or pending recovery as CameraOutcomeUnknownError with the PTP error as its `cause`.
+ */
 export function requiresReconnect(error: unknown): boolean {
-    return error instanceof PTPDisconnectedError || error instanceof PTPRecoveryRequiredError
+    let failure = error
+    for (let depth = 0; depth < 4 && failure !== undefined; depth++) {
+        if (failure instanceof PTPDisconnectedError || failure instanceof PTPRecoveryRequiredError) return true
+        failure = failure instanceof Error ? failure.cause : undefined
+    }
+    return false
 }
 
 /** Sony's colour-temperature range in its own 100 K steps, for bodies that report a range, not a list. */
@@ -167,6 +175,8 @@ export interface DiscoveredCamera {
  * Slate also selects the actual USB vendor itself when Camera.connect() is used alone.
  */
 export async function discoverCamera(): Promise<DiscoveredCamera | null> {
+    // Camera.discover lists PTP still-image interfaces only: a known vendor's body in a non-PTP USB
+    // mode (mass storage, webcam) is not listed, so connect takes the generic path and reports why.
     const devices = await Camera.discover().catch(() => [])
     // A known vendor's body first; any other still-image-class device after it.
     const device = devices.find(candidate => KNOWN_CAMERA_VENDOR_IDS.has(candidate.vendorId)) ?? devices[0]
