@@ -38,11 +38,11 @@ export function bodyCapability(driver: CameraDriverInstance, owner: Camera): Bod
                 if (driver instanceof SonyCamera) await driver.setDateTime(moment)
                 else await setStandardClock(driver, moment)
             }),
-        async unavailableOperations() {
+        async availability() {
             if (driver instanceof SonyCamera) return {}
             if (clockCheck?.sessionId !== driver.sessionId)
                 clockCheck = { sessionId: driver.sessionId, reason: await reportingRefusals('setClock', () => standardClockUnavailable(driver)) }
-            return clockCheck.reason ? { setClock: clockCheck.reason } : {}
+            return clockCheck.reason ? { setClock: { supported: false, reason: clockCheck.reason } } : {}
         },
     }
 }

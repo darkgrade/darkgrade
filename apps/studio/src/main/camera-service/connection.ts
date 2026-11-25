@@ -205,6 +205,7 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         this.focusPointAvailable = false
         this.focusFramesKey = '[]'
         this.osdOverlay = false
+        this.overlaySupported = false
         this.settings = { iso: null, shutterSpeed: null, aperture: null }
         this.log('system', 'Disconnected')
         this.broadcastState()

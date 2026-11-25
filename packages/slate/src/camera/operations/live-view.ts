@@ -1,12 +1,19 @@
+import type { LiveViewFrame, LiveViewFrameOptions } from '@camera/driver/live-view'
 import type { Camera } from '@camera/index'
 import type { NikonLiveViewMetadata } from '@camera/nikon-camera'
-import { canonDriver, cameraContext } from '@camera/operations/context'
+import { canonDriver, cameraContext, requireCapability } from '@camera/operations/context'
 import { SonyCamera, type SonyOsdImage } from '@camera/sony-camera'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
 import type { SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 
 export interface LiveViewOperations {
+    /**
+     * The current picture as a JPEG, with the camera's focus frames (0–1 from the top-left) and,
+     * with `overlay`, the camera's on-screen info as a PNG to lay over it. Waits for the camera's
+     * next frame first, so calling it in a loop never asks faster than the camera makes frames.
+     */
+    getLiveViewFrame(options?: LiveViewFrameOptions): Promise<LiveViewFrame>
     captureLiveView(params?: { includeInfo?: boolean; includeData?: boolean }): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
@@ -35,6 +42,12 @@ function sonyOsdDriver(camera: Camera): SonyCamera {
 const canonHdmiUnavailable = 'Canon HDMI live-view mode is only available for Canon EOS cameras'
 
 export const liveViewOperations: LiveViewOperations & ThisType<Camera> = {
+    async getLiveViewFrame(options: LiveViewFrameOptions = {}): Promise<LiveViewFrame> {
+        return requireCapability(this, 'liveView', 'getLiveViewFrame').getLiveViewFrame({
+            overlay: options.overlay === true,
+        })
+    },
+
     async captureLiveView(params?: { includeInfo?: boolean; includeData?: boolean }) {
         return cameraContext(this).driver.captureLiveView({ includeInfo: true, includeData: true, ...params })
     },

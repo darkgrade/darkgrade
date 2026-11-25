@@ -1,6 +1,8 @@
 import type { SettingTypes } from '@camera/settings/setting-types'
 import type { CanonMovieFormat } from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
+import type * as sony from '@ptp/definitions/vendors/sony/sony-property-definitions'
 import type { CodecValue } from '@vendors/control-properties'
+import type { CanonicalValueNames } from '@vendors/control-properties/vendor-control-properties'
 
 /**
  * Video settings. Canonical ids, labels and search aliases (a vendor's own word is only an alias).
@@ -18,8 +20,25 @@ export const videoControlDefinitions = {
     },
     frameRate: { label: 'Frame rate', aliases: ['fps', 'movie frame rate', 'movieFrameRate'] },
     audioRecording: { label: 'Audio recording', aliases: ['sound', 'movie audio', 'movie sound', 'sound recording'] },
-    zoomMode: { label: 'Zoom mode', aliases: ['zoom mode', 'zoomSetting'] },
+    digitalZoom: {
+        label: 'Digital zoom',
+        aliases: ['zoom setting', 'zoomSetting', 'zoom mode', 'zoomMode', 'zoom range'],
+    },
 } as const
+
+/**
+ * Canonical names for this group's codec values, keyed by vendor property name. Type-only codec
+ * imports keep this vocabulary browser-safe; the compiler still checks every codec value has a name.
+ */
+export const videoValueNames = {
+    ZoomSetting: { 'Optical Zoom Only': 'Off', 'Clear Image Zoom': 'Clear Image Zoom', 'Digital Zoom': 'Digital Zoom' },
+} as const satisfies { ZoomSetting: CanonicalValueNames<typeof sony.ZoomSetting> }
+
+/** How far zoom reaches past the optics: Off is optical only. From the codecs. */
+export type DigitalZoom = (typeof videoValueNames.ZoomSetting)[keyof typeof videoValueNames.ZoomSetting]
+
+/** Every digital zoom name, for its reader. */
+export const digitalZoomValues: readonly DigitalZoom[] = Object.values(videoValueNames.ZoomSetting)
 
 /**
  * Canon's movie record names resolution, frame rate, container and compression in one value,
@@ -45,4 +64,5 @@ export interface VideoSettingTypes {
     videoQuality: SettingTypes<VideoQuality>
     frameRate: SettingTypes<FrameRate>
     audioRecording: SettingTypes<AudioRecording>
+    digitalZoom: SettingTypes<DigitalZoom>
 }

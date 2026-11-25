@@ -1,4 +1,4 @@
-import { Camera, PTPResponseError, PTPTimeoutError, VendorIDs, type SonyFocalFrame } from '@darkgrade/slate'
+import { Camera, CameraUnsupportedError, PTPResponseError, PTPTimeoutError, type LiveViewFrame } from '@darkgrade/slate'
 import type { CameraService } from '@main/camera-service'
 import {
     LIVE_VIEW_ERROR_DELAY_MS,
@@ -18,11 +18,15 @@ import { IPC_EVENTS } from '@shared/ipc'
 
 /** The camera service's live view, focus frames and the camera overlay. Installed on CameraService in camera-service.ts. */
 export interface LiveViewOperations {
-    /** Turns the camera's on-screen display over live view on or off (Sony). */
+    /** Draws the camera's on-screen display over live view, or stops; Slate switches the camera's output. */
     setOsdOverlay(enabled: boolean): Promise<CameraState>
-    /** Between live-view frames, a fresh on-screen display a few times a second while the overlay is on. */
+    /** True when the next frame should carry a fresh on-screen display: a few times a second while it is on. */
+    overlayDue(): boolean
+    /** Sends a frame's overlay to the window, if it has one and the overlay is still on. */
+    broadcastOverlay(frame: LiveViewFrame): void
+    /** For the Swift loop, which reads its own frames: a fresh on-screen display while the overlay is on. */
     refreshOsdFrame(camera: Camera): Promise<void>
-    broadcastFocusFrames(frames: SonyFocalFrame[]): void
+    broadcastFocusFrames(frames: FocusFrame[]): void
     // -------------------------------------------------------------- live view
 
     startLiveView(): Promise<CameraState>
@@ -47,30 +51,36 @@ export interface LiveViewOperations {
 }
 
 export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = {
-    /** Turns the camera's on-screen display over live view on or off (Sony). */
+    /** Draws the camera's on-screen display over live view, or stops; Slate switches the camera's output. */
     async setOsdOverlay(enabled: boolean): Promise<CameraState> {
-        const camera = this.requireCameraForControl()
-        if (this.detectedVendorId !== VendorIDs.SONY) throw new Error('Only Sony cameras send their on-screen display')
+        this.requireCameraForControl()
+        if (!this.overlaySupported) throw new Error('This camera doesn’t send its on-screen display')
         this.osdOverlay = enabled
-        if (!enabled) await this.enqueue(() => camera.setSonyOsdImageMode(false))
         this.log('system', `Camera display overlay ${enabled ? 'on' : 'off'}`)
         this.broadcastState()
         return this.getState()
     },
 
-    /** Between live-view frames, a fresh on-screen display a few times a second while the overlay is on. */
-    async refreshOsdFrame(camera: Camera): Promise<void> {
-        if (!this.osdOverlay || Date.now() - this.lastOsdFrameMs < OSD_FRAME_INTERVAL_MS) return
+    overlayDue(): boolean {
+        if (!this.osdOverlay || Date.now() - this.lastOsdFrameMs < OSD_FRAME_INTERVAL_MS) return false
         this.lastOsdFrameMs = Date.now()
+        return true
+    },
+
+    broadcastOverlay(frame: LiveViewFrame): void {
+        if (frame.overlay && this.osdOverlay) this.broadcast(IPC_EVENTS.OsdFrame, frame.overlay.png)
+    },
+
+    async refreshOsdFrame(camera: Camera): Promise<void> {
+        if (!this.overlayDue()) return
         try {
-            const { image } = await this.enqueue(() => camera.captureSonyOsdImage())
-            if (this.osdOverlay) this.broadcast(IPC_EVENTS.OsdFrame, image)
+            this.broadcastOverlay(await this.enqueue(() => camera.getLiveViewFrame({ overlay: true })))
         } catch (error) {
             if (requiresReconnect(error)) throw error
         }
     },
 
-    broadcastFocusFrames(frames: SonyFocalFrame[]): void {
+    broadcastFocusFrames(frames: FocusFrame[]): void {
         const focusFrames: FocusFrame[] = frames.map(({ kind, focused, centerX, centerY, width, height }) => ({
             kind,
             focused,
@@ -102,35 +112,33 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
             let consecutiveErrors = 0
             let statisticsStartedMs = performance.now()
             let captureMs = 0
+            let frames = 0
             while (!this.liveViewStopRequested && this.connected && this.camera) {
                 const camera = this.camera
+                const overlay = this.overlayDue()
                 try {
-                    // Wait for the next frame outside the command queue, so clicks never wait behind it.
-                    const untilNextFrameMs = camera.millisecondsUntilNextLiveViewFrame()
-                    if (untilNextFrameMs > 0) await delay(untilNextFrameMs)
+                    // Slate waits for the camera's next frame itself; the queue keeps every other command apart.
+                    // That wait holds the queue for at most one frame interval, accepted so pacing stays private
+                    // to Slate; Stop never waits behind it (zoomStop skips the queue and cancels a waiting press).
                     const captureStartedMs = performance.now()
-                    const { data, sonyFocalFrames } = await this.enqueue(() =>
-                        camera.captureLiveView({ includeInfo: false })
-                    )
+                    const frame = await this.enqueue(() => camera.getLiveViewFrame({ overlay }))
                     captureMs += performance.now() - captureStartedMs
+                    frames++
                     if (performance.now() - statisticsStartedMs > LIVE_VIEW_STATISTICS_INTERVAL_MS) {
-                        const statistics = camera.takeLiveViewStatistics()
                         const seconds = (performance.now() - statisticsStartedMs) / 1000
-                        if (statistics?.frames) {
-                            console.log(
-                                `[live view] ${(statistics.frames / seconds).toFixed(1)} fps, ` +
-                                    `${(statistics.requests / statistics.frames).toFixed(2)} requests per frame, ` +
-                                    `${(captureMs / statistics.frames).toFixed(1)} ms per capture`
-                            )
-                        }
+                        console.log(
+                            `[live view] ${(frames / seconds).toFixed(1)} fps, ` +
+                                `${(captureMs / frames).toFixed(1)} ms per frame (pacing included)`
+                        )
                         statisticsStartedMs = performance.now()
                         captureMs = 0
+                        frames = 0
                     }
-                    if (data && !this.liveViewStopRequested) {
-                        this.latestNodeFrame = data
-                        this.broadcast(IPC_EVENTS.LiveViewFrame, data)
-                        this.broadcastFocusFrames(sonyFocalFrames ?? [])
-                        await this.refreshOsdFrame(camera)
+                    if (!this.liveViewStopRequested) {
+                        this.latestNodeFrame = frame.jpeg
+                        this.broadcast(IPC_EVENTS.LiveViewFrame, frame.jpeg)
+                        this.broadcastFocusFrames(frame.focusFrames)
+                        this.broadcastOverlay(frame)
                     }
                     consecutiveErrors = 0
                 } catch (error) {
@@ -147,7 +155,12 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
                         await delay(LIVE_VIEW_ERROR_DELAY_MS)
                         continue
                     }
-                    if (/not supported/i.test(message)) {
+                    // An overlay the camera can't send right now never stops the picture.
+                    if (overlay && !requiresReconnect(error) && consecutiveErrors < LIVE_VIEW_MAX_CONSECUTIVE_ERRORS) {
+                        this.log('system', `Camera display overlay skipped a frame: ${message}`)
+                        continue
+                    }
+                    if (error instanceof CameraUnsupportedError || /not supported/i.test(message)) {
                         this.log('system', `Live view unavailable: ${message}`, 'error')
                         break
                     }

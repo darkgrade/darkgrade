@@ -5,6 +5,7 @@ import {
     cameraControlDefinitions,
     type CameraCapabilities,
     type CameraControlId,
+    type CameraLens,
     type CameraControlInputs,
     type CameraControlState,
     type UnrecognizedValues,
@@ -39,12 +40,14 @@ import {
     type ControlValueInventory,
 } from '@vendors/control-properties'
 import { canonFocusModeStates } from '@vendors/control-properties/focus'
+import { standardLens } from '@vendors/lens-information'
 import { nikonControlLabel } from '@vendors/nikon/control-values'
 import { MovieShutterAngle } from '@vendors/nikon/video-properties'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import { NikonShotControls } from '@vendors/nikon/shot-controls'
 import { canonPhotoVideoModeState, sonyPhotoVideoModeState, writePhotoVideoMode } from '@vendors/photo-video-mode'
 import { sendControlWrite } from '@vendors/control-write'
+import { sonyLens } from '@vendors/sony/lens'
 
 interface PropertyState {
     code: number
@@ -245,9 +248,13 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
     let inventory: ControlValueInventory = 'standard'
     // Controls composed from more than one observation (see `@vendors/photo-video-mode`).
     let composed: CameraCapabilities['controls'] = {}
+    // The lens comes from the same observation as the controls: Sony's inventory, or the standard
+    // FocalLength property on a full read of a Nikon or standard body. Canon reports none Slate decodes.
+    let lens: CameraLens | undefined
     if (camera instanceof SonyCamera) {
         inventory = 'sony'
         const observed = await camera.refreshPropertyStates()
+        lens = sonyLens(observed)
         const iso = camera.isoControlState(observed)
         states = observed.map(state => (state.name === 'Iso' && iso ? iso : state))
         mappings = sonyControlProperties
@@ -283,6 +290,7 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
             deviceInfo!.operationsSupportedRaw,
             requested
         ))
+        if (requested === undefined) lens = await standardLens(camera, deviceInfo!.devicePropertiesSupported)
     } else {
         const standardMappings: ControlPropertyMap<CameraControlId> = standardControlProperties
         states = (await camera.getStandardPropertyStates(requested ? standardMappings[requested]?.[0]?.name : undefined)).map(
@@ -292,6 +300,7 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
             }
         )
         mappings = standardControlProperties
+        if (deviceInfo) lens = await standardLens(camera, deviceInfo.devicePropertiesSupported)
     }
     const controls: CameraCapabilities['controls'] = {}
     const vendorChoices: ControlObservations['vendorChoices'] = {}
@@ -382,6 +391,7 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
             observedAt: Date.now(),
             controls,
             advertisedOperations: deviceInfo ? [...deviceInfo.operationsSupportedRaw] : null,
+            ...(lens ? { lens } : {}),
         },
         vendorChoices,
         inventory,

@@ -96,6 +96,7 @@ try {
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
             type CardPhoto, type ComputerPhoto, type PhotoFormat, type RawCompression,
             type CardStatus, type MediaItem, type Battery, type CameraInfo,
+            type DigitalZoom, type LiveViewQuality, type LiveViewFrame, type FocusFrame, type CameraLens,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
         import { CameraClipNotFoundError, type AudioRecording, type Clip, type FrameRate, type VideoFormat } from '@darkgrade/slate'
@@ -352,12 +353,48 @@ try {
         // @ts-expect-error The old Sony/Canon names are search aliases, not control ids.
         camera.setControl('movieFormat', 'XAVC S 4K')
         const clipErrors = [CameraClipNotFoundError]
+        // Zoom and live view: millimetres, named directions and speeds, canonical setting values.
+        const landed: Promise<number> = camera.zoomTo(35)
+        camera.startZoom('in', {speed: 'slow'})
+        camera.startZoom('out', {speed: 'fast'})
+        const stopped: Promise<void> = camera.stopZoom()
+        // @ts-expect-error A focal length is a number of millimetres, not text.
+        camera.zoomTo('35mm')
+        // @ts-expect-error Zoom directions are in and out, not a vendor's wide and tele.
+        camera.startZoom('tele', {speed: 'fast'})
+        // @ts-expect-error Zoom speeds are named, never motor steps.
+        camera.startZoom('in', {speed: 3})
+        // @ts-expect-error startZoom always names its speed.
+        camera.startZoom('in')
+        const frame: Promise<LiveViewFrame> = camera.getLiveViewFrame({overlay: true})
+        camera.getLiveViewFrame().then(({jpeg, focusFrames, overlay}) => {
+            const picture: Uint8Array = jpeg
+            const frames: FocusFrame[] = focusFrames
+            const display: Uint8Array | undefined = overlay?.png
+            void [picture, frames, display]
+        })
+        // @ts-expect-error The overlay option is a boolean.
+        camera.getLiveViewFrame({overlay: 'on'})
+        // @ts-expect-error Vendor live-view fields are not part of the frame.
+        camera.getLiveViewFrame().then(frame => frame.sonyFocalFrames)
+        capabilities.then(({lens}) => { const reported: CameraLens | undefined = lens; void reported })
+        const zoomSetting: Promise<DigitalZoom> = camera.setDigitalZoom('Clear Image Zoom')
+        const quality: Promise<LiveViewQuality> = camera.getLiveViewQuality()
+        camera.setLiveViewQuality('Low')
+        sdk.setDigitalZoom('Off')
+        // @ts-expect-error Sony's codec word maps to the canonical 'Off'.
+        camera.setDigitalZoom('Optical Zoom Only')
+        // @ts-expect-error Live-view quality is High or Low, not Sony's HIGH.
+        camera.setLiveViewQuality('HIGH')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setLiveViewQuality(anyString)
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [started, clip, stopAcknowledged, inventedState, frameRate, videoFormat, audio, clipErrors]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
             confirmedShutter, currentShutter, noPlainStringSetters, errors, confirmedAperture, currentIso, confirmedMode,
             confirmedCompensation, confirmedMetering, confirmedWhiteBalance, currentKelvin, look, profile, mode, drive,
-            focused, focusMode, focusArea, focusedFlag, cardPhoto, computerPhoto, photoFormat, rawCompression]
+            focused, focusMode, focusArea, focusedFlag, cardPhoto, computerPhoto, photoFormat, rawCompression,
+            landed, stopped, frame, zoomSetting, quality]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

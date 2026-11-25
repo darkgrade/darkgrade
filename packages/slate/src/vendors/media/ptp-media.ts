@@ -92,9 +92,11 @@ export function ptpMediaCapability(driver: CameraDriverInstance, owner: Camera):
             })
         },
 
-        async unavailableOperations() {
+        async availability() {
             const thumbnails = await reportingRefusals('getMediaPreview', () => index.thumbnailsSupported('getMediaPreview'))
-            return thumbnails ? {} : { getMediaPreview: 'This camera does not offer thumbnails of its card files' }
+            return thumbnails
+                ? {}
+                : { getMediaPreview: { supported: false, reason: 'This camera does not offer thumbnails of its card files' } }
         },
     }
 }

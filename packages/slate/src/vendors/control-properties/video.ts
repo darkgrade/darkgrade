@@ -24,7 +24,7 @@ export const videoControlProperties = {
         videoFormat: [sony.MovieFileFormat],
         videoQuality: [sony.MovieRecordingSetting],
         frameRate: [sony.MovieRecordingFrameRate],
-        zoomMode: [sony.ZoomSetting],
+        digitalZoom: [sony.ZoomSetting],
     },
     canon: {
         videoFormat: [canon.CanonMovieFormat],

@@ -43,6 +43,8 @@ export class CameraService {
     controls: CameraControls | null = null
     card: CameraCard | null = null
     lens: CameraLens | null = null
+    /** Advanced by every zoom release, so a zoom press still waiting in the queue never starts after it. */
+    zoomReleases = 0
     clock: CameraClock | null = null
     clockTimer: ReturnType<typeof setInterval> | null = null
     /** Which Sony property each setting was read from on this body. */
@@ -81,7 +83,7 @@ export class CameraService {
             lens: this.connected ? this.lens : null,
             clock: this.connected ? this.clock : null,
             controls: this.controls,
-            osdOverlay: this.connected && this.detectedVendorId === VendorIDs.SONY ? this.osdOverlay : null,
+            osdOverlay: this.connected && this.overlaySupported ? this.osdOverlay : null,
             clickToFocus: this.connected && this.focusPointAvailable,
             liveView: this.liveViewRunning,
             recording: this.recording,
@@ -213,8 +215,6 @@ export class CameraService {
     settingsRefreshTimer: ReturnType<typeof setTimeout> | null = null
     settingsRefreshDeferred = false
 
-    zoomSafetyTimer: ReturnType<typeof setTimeout> | null = null
-
     // ------------------------------------------------------------------ focus
 
     /** What click-to-focus changed since the last Focus, as read back after the click; focus() undoes only that. */
@@ -222,8 +222,10 @@ export class CameraService {
     /** Slate's last report of whether a focus point can be placed (getCapabilities().operations). */
     focusPointAvailable = false
 
-    /** Whether the camera's on-screen display is drawn over live view (Sony). */
+    /** Whether the camera's on-screen display is drawn over live view. */
     osdOverlay = false
+    /** Whether the camera can send its on-screen display, from its latest capabilities. */
+    overlaySupported = false
     lastOsdFrameMs = 0
 
     /** The camera's focus frames as last sent, so only changes go to the window. */

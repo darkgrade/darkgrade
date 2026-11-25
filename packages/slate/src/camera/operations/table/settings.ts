@@ -579,16 +579,14 @@ export const settingsOperationTable = {
                 },
             },
         },
-    },
-    planned: {
         getDigitalZoom: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current digital zoom, in canonical spelling',
         },
         setDigitalZoom: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the digital zoom and returns the value read back',
             surfaces: {
                 cli: {
@@ -598,12 +596,12 @@ export const settingsOperationTable = {
         },
         getLiveViewQuality: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current live-view quality, in canonical spelling',
         },
         setLiveViewQuality: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the live-view quality and returns the value read back',
             surfaces: {
                 cli: {
@@ -612,4 +610,5 @@ export const settingsOperationTable = {
             },
         },
     },
+    planned: {},
 } as const satisfies AreaOperationTable

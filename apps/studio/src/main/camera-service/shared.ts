@@ -68,9 +68,6 @@ export const OSD_FRAME_INTERVAL_MS = 250
 
 export const CLOCK_SYNC_INTERVAL_MS = 60 * 60 * 1000
 
-/** The longest a held zoom keeps driving before Studio stops it on its own. */
-export const ZOOM_SAFETY_STOP_MS = 10_000
-
 export const KELVIN_MIN = 2500
 
 export const KELVIN_MAX = 9900

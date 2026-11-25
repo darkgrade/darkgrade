@@ -37,6 +37,9 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             this.controlProperties.clear()
             this.controls = await this.readControls(camera, capabilities)
             this.focusPointAvailable = capabilities.operations?.setFocusPoint?.supported === true
+            this.updateLensFromCapabilities(capabilities)
+            this.overlaySupported =
+                capabilities.operations?.getLiveViewFrame?.options?.overlay?.supported === true
             this.settings = {
                 iso: capabilities.controls.iso?.value ?? null,
                 shutterSpeed: capabilities.controls.shutterSpeed?.value ?? null,
@@ -74,11 +77,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             return this.observedControl(name, state)
         }
         const controls = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => [name, pick(name)])) as CameraControls
-        if (this.detectedVendorId === VendorIDs.SONY) {
-            const states = await camera.getSonyPropertyStates()
-            await this.readCardStatus(camera)
-            this.updateLensFromStates(states)
-        }
+        if (capabilities.operations?.getCardStatus?.supported) await this.readCardStatus(camera)
         return controls
     },
 

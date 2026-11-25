@@ -36,3 +36,18 @@ export function namedSettingReader<Value extends string>(label: string): Setting
         return state.value as Value
     }
 }
+
+/**
+ * The reader for an enumerated setting: the observation's value when it is one of the canonical
+ * names, else CameraUnsupportedError (the camera reports a value Slate has no name for).
+ */
+export function enumeratedSettingReader<Value extends string>(
+    id: string,
+    values: readonly Value[]
+): SettingReader<Value> {
+    const isCanonical = (value: string): value is Value => (values as readonly string[]).includes(value)
+    return state => {
+        if (isCanonical(state.value)) return state.value
+        throw new CameraUnsupportedError(id, `${state.label} reads ${state.value}, which has no canonical name`)
+    }
+}

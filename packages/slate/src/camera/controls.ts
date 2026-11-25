@@ -66,6 +66,8 @@ export interface CameraCapabilities {
     controls: Partial<Record<CameraControlId, CameraControlState>>
     /** Raw standard DeviceInfo inventory, or null where unavailable; never workflow qualification. */
     advertisedOperations: number[] | null
+    /** The attached lens, from the same observation as `controls`; absent when the camera reports neither field. */
+    lens?: CameraLens
     /**
      * Whether each public operation is possible right now, with the reason when it is not. Camera
      * fills this from its driver's capability groups; an operation absent here has no availability
@@ -74,8 +76,22 @@ export interface CameraCapabilities {
     operations?: Partial<Record<string, OperationAvailability>>
 }
 
-/** One operation's availability now: an unsupported one says why, in words a user can act on. */
-export type OperationAvailability = { supported: true } | { supported: false; reason: string }
+/** The attached lens as the camera reports it. Each field is null when the camera does not report it. */
+export interface CameraLens {
+    name: string | null
+    /** The current focal length, in millimetres. */
+    focalLengthMillimetres: number | null
+}
+
+/**
+ * One operation's availability now: an unsupported one says why, in words a user can act on.
+ * `options` covers optional parts of an operation, such as a live-view overlay.
+ */
+export interface OperationAvailability {
+    supported: boolean
+    reason?: string
+    options?: Partial<Record<string, OperationAvailability>>
+}
 
 /**
  * The same control contract on an already-connected native PTP or licensed SDK session, including

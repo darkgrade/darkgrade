@@ -7,9 +7,23 @@ import type { AreaOperationTable } from '@camera/operations/table/operation-entr
  */
 export const liveViewOperationTable = {
     current: {
+        getLiveViewFrame: {
+            area: 'live-view',
+            disposition: { kind: 'keep' },
+            summary: 'The current picture as JPEG, with focus frames and, with overlay, the camera\'s on-screen info',
+            surfaces: {
+                cli: {
+                    flags: [{ name: '--overlay', description: 'include the camera\'s on-screen info' }],
+                },
+            },
+        },
         captureLiveView: {
             area: 'live-view',
-            disposition: { kind: 'rename-to', target: 'getLiveViewFrame' },
+            disposition: {
+                kind: 'replaced-by',
+                target: 'getLiveViewFrame',
+                note: 'returns { jpeg, focusFrames, overlay? } instead of vendor fields',
+            },
         },
         millisecondsUntilNextLiveViewFrame: {
             area: 'live-view',
@@ -51,16 +65,5 @@ export const liveViewOperationTable = {
             disposition: { kind: 'private', handledBy: 'getLiveViewFrame (Canon live-view output)' },
         },
     },
-    planned: {
-        getLiveViewFrame: {
-            area: 'live-view',
-            disposition: { kind: 'add' },
-            summary: 'The current picture as JPEG, with focus frames and, with overlay, the camera\'s on-screen info',
-            surfaces: {
-                cli: {
-                    flags: [{ name: '--overlay', description: 'include the camera\'s on-screen info' }],
-                },
-            },
-        },
-    },
+    planned: {},
 } as const satisfies AreaOperationTable

@@ -24,7 +24,7 @@
 //   swift-live-view  The same transport, and live view fetched by a Swift thread between Slate's transactions. With the
 //                    Metal decoder on, frames are decoded there and reach JavaScript as surfaces. Sony bodies only;
 //                    other bodies get the transport alone.
-import { Camera, parseSonyFocalFrameInfo, TransportType, VendorIDs, type SonyFocalFrame } from '@darkgrade/slate'
+import { Camera, parseSonyFocalFrameInfo, TransportType, VendorIDs, type FocusFrame } from '@darkgrade/slate'
 import { preferences } from '@main/preferences'
 import { IPC_EVENTS, type UsbTransportChoice } from '@shared/ipc'
 import { app } from 'electron'
@@ -225,7 +225,7 @@ export interface SwiftLiveViewHost {
     camera: Camera
     enqueue<T>(operation: () => Promise<T>): Promise<T>
     broadcast(channel: string, payload: unknown): void
-    broadcastFocusFrames(frames: SonyFocalFrame[]): void
+    broadcastFocusFrames(frames: FocusFrame[]): void
     refreshOsdFrame(): Promise<void>
     stopRequested(): boolean
     stillConnected(): boolean
@@ -244,7 +244,7 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
     if (!transport) return false
     const { addon } = transport
     // Slate readies the body for live view with one frame of its own.
-    await host.enqueue(() => host.camera.captureLiveView({ includeInfo: false }))
+    await host.enqueue(() => host.camera.getLiveViewFrame())
     let last = addon.liveStatistics()
     let lastAtMs = performance.now()
     await new Promise<void>(resolve => {

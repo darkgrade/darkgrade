@@ -3,6 +3,8 @@ import type { CodecType } from '@ptp/types/codec'
 import { colourControlProperties } from '@vendors/control-properties/colour'
 import { exposureControlProperties, exposureControlValues } from '@vendors/control-properties/exposure'
 import { focusControlProperties, focusControlValueNames } from '@vendors/control-properties/focus'
+import { liveViewValueNames } from '@camera/settings/live-view'
+import { videoValueNames } from '@camera/settings/video'
 import { liveViewControlProperties } from '@vendors/control-properties/live-view'
 import { modeControlProperties } from '@vendors/control-properties/mode'
 import { photoControlProperties } from '@vendors/control-properties/photo'
@@ -80,8 +82,14 @@ export type ControlInventory = keyof VendorControlProperties<CameraControlId>
 
 const inventories: readonly ControlInventory[] = ['sony', 'canon', 'standard', 'nikonPhoto', 'nikonMovie']
 
-/** Each settings group's canonical value names (see `focusControlValueNames`); groups append theirs. */
-const valueNameGroups: readonly ControlValueNames<CameraControlId>[] = [focusControlValueNames]
+/**
+ * Each settings group's canonical value names (see `focusControlValueNames`); groups append theirs.
+ * The video and live-view tables live with their browser-safe vocabularies and are Sony's.
+ */
+const valueNameGroups: readonly ControlValueNames<CameraControlId>[] = [
+    focusControlValueNames,
+    { sony: { digitalZoom: videoValueNames, liveViewQuality: liveViewValueNames } },
+]
 
 /** The canonical names of one setting's values on one inventory, per property; undefined when the labels are canonical. */
 export function controlValueNames(inventory: ControlInventory, id: CameraControlId): ControlPropertyValueNames | undefined {

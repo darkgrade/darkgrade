@@ -1,3 +1,4 @@
+import type { OperationAvailability } from '@camera/controls'
 /**
  * The media capability group of the driver contract (see `@camera/driver/contract`): card status,
  * the card's photos and clips, their previews and their bytes. A driver that can do this provides
@@ -51,7 +52,7 @@ export interface MediaCapability {
     getMediaPreview(id: string, size: MediaPreviewSize): Promise<Uint8Array>
     downloadMedia(id: string, options: MediaDownloadOptions): Promise<Uint8Array>
     /** Operations this driver has but cannot do right now, with the reason. */
-    unavailableOperations?(): Promise<Partial<Record<MediaOperationName, string>>>
+    availability?(): Promise<Partial<Record<MediaOperationName, OperationAvailability>>>
 }
 
 export type MediaOperationName = 'getCardStatus' | 'listMedia' | 'getMediaPreview' | 'downloadMedia'

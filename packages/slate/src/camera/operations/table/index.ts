@@ -74,10 +74,11 @@ export type OperationName =
 
 /** Every entry, current, static and planned, by method name. */
 export function allOperations(): [string, OperationEntry][] {
+    const planned: Record<string, OperationEntry> = plannedOperationTable
     return [
         ...Object.entries(cameraOperationTable),
         ...Object.entries(cameraStaticOperationTable),
-        ...Object.entries(plannedOperationTable),
+        ...Object.entries(planned),
     ]
 }
 

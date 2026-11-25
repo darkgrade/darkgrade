@@ -1,7 +1,15 @@
 import type { CameraControlState } from '@camera/controls'
 import { CameraUnsupportedError } from '@camera/errors'
-import type { SettingReaders } from '@camera/settings/setting-types'
-import type { AudioRecording, CanonMovieRecord, FrameRate, VideoFormat, VideoQuality, VideoSettingTypes } from '@camera/settings/video'
+import { enumeratedSettingReader, type SettingReaders } from '@camera/settings/setting-types'
+import {
+    digitalZoomValues,
+    type AudioRecording,
+    type CanonMovieRecord,
+    type FrameRate,
+    type VideoFormat,
+    type VideoQuality,
+    type VideoSettingTypes,
+} from '@camera/settings/video'
 import { videoCodecValueNames } from '@vendors/control-properties/video'
 
 const canonMovieRecordPattern = /^.+ fps · (MOV|MP4|unknown) · (ALL-I|IPB \(Standard\)|IPB \(Light\)|unknown)$/
@@ -43,4 +51,5 @@ export const videoSettingReaders: SettingReaders<VideoSettingTypes> = {
     videoQuality: namedValue(isVideoQuality),
     frameRate: namedValue(isFrameRate),
     audioRecording: namedValue(isAudioRecording),
+    digitalZoom: enumeratedSettingReader('digitalZoom', digitalZoomValues),
 }

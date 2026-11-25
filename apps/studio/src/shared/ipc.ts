@@ -128,7 +128,7 @@ export const CAMERA_CONTROL_NAMES = [
     'videoQuality',
     'frameRate',
     'audioRecording',
-    'zoomMode',
+    'digitalZoom',
     'liveViewQuality',
     'exposureProgram',
     'aperture',
@@ -153,6 +153,8 @@ export interface CameraLens {
     name: string | null
     /** Current focal length in millimetres, as the camera reports it. */
     focalLengthMillimetres: number | null
+    /** Whether the zoom buttons can drive the zoom now, with the camera's reason when not. */
+    zoom: { supported: boolean; reason: string | null }
 }
 
 /** The camera clock is always set from this computer; this records the last attempt. */

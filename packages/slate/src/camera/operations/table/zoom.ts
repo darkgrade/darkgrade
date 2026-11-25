@@ -7,6 +7,32 @@ import type { AreaOperationTable } from '@camera/operations/table/operation-entr
  */
 export const zoomOperationTable = {
     current: {
+        zoomTo: {
+            area: 'zoom',
+            disposition: { kind: 'keep' },
+            summary: 'Zooms to a focal length ("go to 35") and returns where the lens landed',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'focalLength', description: 'millimetres, for example 35' }],
+                },
+            },
+        },
+        startZoom: {
+            area: 'zoom',
+            disposition: { kind: 'keep' },
+            summary: 'Zooms until stopZoom, like holding a zoom rocker. Slate stops it by itself after 10 s',
+            surfaces: {
+                cli: { omitted: 'use zoom-to' },
+            },
+        },
+        stopZoom: {
+            area: 'zoom',
+            disposition: { kind: 'keep' },
+            summary: 'Stops zooming. Always allowed',
+            surfaces: {
+                cli: { omitted: 'use zoom-to' },
+            },
+        },
         getSonyZoomPosition: {
             area: 'zoom',
             disposition: {
@@ -28,32 +54,5 @@ export const zoomOperationTable = {
             disposition: { kind: 'replaced-by', target: 'zoomTo' },
         },
     },
-    planned: {
-        zoomTo: {
-            area: 'zoom',
-            disposition: { kind: 'add' },
-            summary: 'Zooms to a focal length ("go to 35") and returns where the lens landed',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'focalLength', description: 'millimetres, for example 35' }],
-                },
-            },
-        },
-        startZoom: {
-            area: 'zoom',
-            disposition: { kind: 'add' },
-            summary: 'Zooms until stopZoom, like holding a zoom rocker. Slate stops it by itself after 10 s',
-            surfaces: {
-                cli: { omitted: 'use zoom-to' },
-            },
-        },
-        stopZoom: {
-            area: 'zoom',
-            disposition: { kind: 'add' },
-            summary: 'Stops zooming. Always allowed',
-            surfaces: {
-                cli: { omitted: 'use zoom-to' },
-            },
-        },
-    },
+    planned: {},
 } as const satisfies AreaOperationTable
