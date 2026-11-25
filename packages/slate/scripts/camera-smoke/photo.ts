@@ -36,24 +36,22 @@ async function mediaIdNamesTheCardFile(camera: Camera, report: SmokeReport, phot
  * back. The smoke selects an advertised movie mode as setup and restores the original mode.
  */
 async function photoFromMovieMode(camera: Camera, report: SmokeReport) {
-    const mode = (await camera.getCapabilities()).controls.exposureProgram
-    const movie = mode?.allowedValues?.find(value => /^movie/i.test(value))
-    if (!mode?.writable || !movie)
+    const mode = (await camera.getCapabilities()).controls.photoVideoMode
+    if (!mode?.writable || !mode.allowedValues?.includes('video'))
         return report.skipped('takePhoto from a movie mode', 'no writable movie mode is advertised')
-    await camera.setControl('exposureProgram', movie)
-    report.confirmed(`setup: setControl('exposureProgram', ${JSON.stringify(movie)})`, movie)
+    report.confirmed("setup: setControl('photoVideoMode', 'video')", (await camera.setControl('photoVideoMode', 'video')).value)
     try {
         const photo = await camera.takePhoto({ autofocus: false })
-        const after = (await camera.getCapabilities()).controls.exposureProgram?.value
+        const after = (await camera.getCapabilities()).controls.photoVideoMode?.value
         report.confirmed('takePhoto({ autofocus: false }) from a movie mode', {
             name: photo.name,
             sizeBytes: photo.sizeBytes,
             modeAfter: after,
         })
-        if (after !== movie) throw new Error(`takePhoto left the camera in ${after}, not ${movie}`)
+        if (after !== 'video') throw new Error(`takePhoto left the camera in ${after}, not video`)
     } finally {
-        const restored = await camera.setControl('exposureProgram', mode.value)
-        report.confirmed(`restore: setControl('exposureProgram', ${JSON.stringify(mode.value)})`, restored.value)
+        const restored = await camera.setControl('photoVideoMode', mode.value)
+        report.confirmed(`restore: setControl('photoVideoMode', ${JSON.stringify(mode.value)})`, restored.value)
     }
 }
 

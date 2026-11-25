@@ -1,0 +1,10 @@
+{
+    "extends": "@darkgrade/slate/tsconfig.base.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "types": ["node"],
+        "lib": ["ES2023", "DOM"],
+        "paths": { "@shared/*": ["../src/shared/*"] }
+    },
+    "include": ["./**/*.ts"]
+}

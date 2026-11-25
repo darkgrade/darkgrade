@@ -13,7 +13,7 @@ const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolv
 /** The settings recording may change on its way in; each must read the same after the take. */
 async function recordingSetup(camera: Camera) {
     const controls = (await camera.getCapabilities()).controls
-    return { exposureProgram: controls.exposureProgram?.value, audioRecording: controls.audioRecording?.value }
+    return { exposureMode: controls.exposureMode?.value, photoVideoMode: controls.photoVideoMode?.value, audioRecording: controls.audioRecording?.value }
 }
 
 /** One short take through the public API: Record, a few seconds, Stop, the clip, the setup put back. */
@@ -28,8 +28,8 @@ async function take(camera: Camera, report: SmokeReport, label: string): Promise
     const state = await camera.getRecordingState()
     if (state !== 'idle') throw new Error(`After stopRecording the camera reports ${state}, not idle`)
     const after = await recordingSetup(camera)
-    if (after.exposureProgram !== before.exposureProgram)
-        throw new Error(`Exposure program ${String(after.exposureProgram)} was not put back to ${String(before.exposureProgram)}`)
+    if (after.exposureMode !== before.exposureMode || after.photoVideoMode !== before.photoVideoMode)
+        throw new Error(`Shooting mode ${JSON.stringify(after)} was not put back to ${JSON.stringify(before)}`)
     report.confirmed(`${label}: setup put back`, after)
     return clip
 }
@@ -94,14 +94,13 @@ async function audioTakes(camera: Camera, report: SmokeReport) {
  * operation, may select the advertised movie mode itself and put the original back afterwards.
  */
 async function enterMovieModeForAudio(camera: Camera, report: SmokeReport) {
-    const mode = (await camera.getCapabilities()).controls.exposureProgram
-    const movie = mode && !/^Movie /.test(mode.value) ? `Movie ${mode.value}` : undefined
-    if (!mode?.writable || !movie || !mode.allowedValues?.includes(movie)) return { restore: async () => {} }
-    report.confirmed(`setup: setControl('exposureProgram', ${JSON.stringify(movie)})`, (await camera.setControl('exposureProgram', movie)).value)
+    const mode = (await camera.getCapabilities()).controls.photoVideoMode
+    if (!mode?.writable || mode.value === 'video' || !mode.allowedValues?.includes('video')) return { restore: async () => {} }
+    report.confirmed("setup: setControl('photoVideoMode', 'video')", (await camera.setControl('photoVideoMode', 'video')).value)
     await sleep(500)
     return {
         restore: async () => {
-            report.confirmed(`restore: setControl('exposureProgram', ${JSON.stringify(mode.value)})`, (await camera.setControl('exposureProgram', mode.value)).value)
+            report.confirmed(`restore: setControl('photoVideoMode', ${JSON.stringify(mode.value)})`, (await camera.setControl('photoVideoMode', mode.value)).value)
         },
     }
 }

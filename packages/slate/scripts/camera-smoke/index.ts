@@ -4,6 +4,7 @@
 // smoke steps, printing each confirmed result. One file per area in this directory; the slice
 // that owns an area extends only its own file. Refuses to run outside `camera:lease`.
 import { Camera } from '@camera/index'
+import { cameraDevice, isEntryPoint, parseCameraSelector } from '@scripts/camera-lease'
 import { bodySmoke } from '@scripts/camera-smoke/body'
 import { connectionSmoke } from '@scripts/camera-smoke/connection'
 import { eventsSmoke } from '@scripts/camera-smoke/events'
@@ -17,7 +18,7 @@ import { videoSmoke } from '@scripts/camera-smoke/video'
 import { zoomSmoke } from '@scripts/camera-smoke/zoom'
 import { hardwareTestEnvironmentVariable, hardwareTestsEnabled } from '@tests/setup/hardware'
 
-const areas: readonly SmokeArea[] = [
+export const smokeAreas: readonly SmokeArea[] = [
     connectionSmoke,
     settingsSmoke,
     focusSmoke,
@@ -30,14 +31,14 @@ const areas: readonly SmokeArea[] = [
     eventsSmoke,
 ]
 
-const usage = `Usage: bun run camera:lease -- bun run camera:smoke -- --area <${areas.map(area => area.name).join('|')}|all> [--area ...]`
+const usage = `Usage: bun run camera:lease -- bun run camera:smoke -- --area <${smokeAreas.map(area => area.name).join('|')}|all> [--area ...]`
 
 function requestedAreas(argumentList: string[]): SmokeArea[] {
     const names = argumentList.flatMap((argument, index) => (argument === '--area' ? [argumentList[index + 1] ?? ''] : []))
     if (!names.length) throw new Error(usage)
-    if (names.includes('all')) return [...areas]
+    if (names.includes('all')) return [...smokeAreas]
     return names.map(name => {
-        const area = areas.find(candidate => candidate.name === name)
+        const area = smokeAreas.find(candidate => candidate.name === name)
         if (!area) throw new Error(`Unknown area ${name || '(empty)'}\n${usage}`)
         return area
     })
@@ -63,7 +64,9 @@ async function main() {
     const selected = requestedAreas(process.argv.slice(2))
     if (!hardwareTestsEnabled)
         throw new Error(`camera:smoke opens the attached camera; run it under camera:lease (${hardwareTestEnvironmentVariable}=1)`)
-    const camera = new Camera({ firstContact: false })
+    // Under `camera:lease --camera`, open exactly the leased body.
+    const leased = process.env.DARKGRADE_LEASED_CAMERAS?.split(',').filter(Boolean) ?? []
+    const camera = new Camera({ firstContact: false, ...(leased.length === 1 ? { device: cameraDevice(parseCameraSelector(leased[0]!)) } : {}) })
     await camera.connect()
     let failed = false
     try {
@@ -83,7 +86,8 @@ async function main() {
     process.exit(failed ? 1 : 0)
 }
 
-main().catch(error => {
-    console.error(`camera:smoke: ${error instanceof Error ? error.message : String(error)}`)
-    process.exit(1)
-})
+if (isEntryPoint(import.meta.url))
+    main().catch(error => {
+        console.error(`camera:smoke: ${error instanceof Error ? error.message : String(error)}`)
+        process.exit(1)
+    })

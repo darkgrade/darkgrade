@@ -20,6 +20,6 @@ export async function modeSettingsSmoke(camera: Camera, report: SmokeReport) {
         set: value => camera.setPhotoVideoMode(value),
         parse: choice => (choice === 'video' ? 'video' : 'photo'),
     })
-    const program = (await camera.getCapabilities()).controls.exposureProgram?.value
-    if (program !== undefined) report.confirmed('exposure program after photo/video restore', program)
+    const exposureMode = (await camera.getCapabilities()).controls.exposureMode?.value
+    if (exposureMode !== undefined) report.confirmed('exposure mode after photo/video restore', exposureMode)
 }

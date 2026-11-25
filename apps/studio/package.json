@@ -16,6 +16,9 @@
         "build": "bun run ensure:llama-server && bun run build:slate && bun run build:native && electron-vite build",
         "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
         "test": "vitest run",
+        "e2e": "bun e2e/run-each-camera.ts",
+        "e2e:dry-run": "DARKGRADE_E2E_FAKE=1 playwright test -c e2e/playwright.config.ts",
+        "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
         "lint": "eslint . --ext .ts,.tsx",
         "format": "prettier --write .",
         "package": "bun run build && electron-builder --mac"
@@ -34,6 +37,7 @@
         "zod": "^4.2.0"
     },
     "devDependencies": {
+        "@playwright/test": "^1.65.1",
         "@tailwindcss/vite": "^4.3.5",
         "@types/node": "^22",
         "@types/react": "^19",
