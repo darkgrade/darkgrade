@@ -954,6 +954,15 @@ export class NikonCamera extends GenericCamera {
         throw new Error('Nikon DeviceReady timed out')
     }
 
+    /**
+     * Switch photo/video (LiveViewSelector) for the generic photoVideoMode setting: ends an active
+     * live view first, as a selector change requires, and waits for DeviceReady. The caller confirms
+     * the readback; this sends the selector once.
+     */
+    async selectPhotoVideoMode(mode: 'PHOTO' | 'VIDEO'): Promise<void> {
+        await this.selectLiveViewMode(mode, true)
+    }
+
     /** A failed activation may still have changed the selector; forced restoration sends the original value despite stale caches. */
     private async selectLiveViewMode(mode: 'PHOTO' | 'VIDEO', force = false): Promise<void> {
         if (!force && this.liveViewMode === mode) return

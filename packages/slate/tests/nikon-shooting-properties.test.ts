@@ -3,7 +3,9 @@ import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
 
-// Numeric observations from Z6 III camera_controls, 2026-10-29.
+// Numeric observations from Z6 III camera_controls, 2026-10-29. Movie white balance (0xd23a) is
+// an enumeration: its observed 32789 (0x8015) decodes to the Nikon name "Same as photo settings".
+const decodedNames: Record<number, string> = { 0xd23a: 'Same as Photo' }
 // Wire types independently checked against the model command specification Rev.2.00.
 // These are descriptor fixtures; this test does not communicate with hardware.
 const observed = [
@@ -77,9 +79,10 @@ describe('Nikon captured shooting properties', () => {
             const property = matching[0]!
             expect(property.datatype).toBe(datatype)
             const decoded = codec.decode(descriptor(code, datatype, value)).value
-            expect(decoded.currentValueDecoded).toBe(value)
+            expect(decoded.currentValueRaw).toBe(value)
+            expect(decoded.currentValueDecoded).toBe(decodedNames[code] ?? value)
             send.mockResolvedValueOnce({ code: 0x2001, data: decoded } as any)
-            await expect(camera.get(property)).resolves.toBe(value)
+            await expect(camera.get(property)).resolves.toBe(decodedNames[code] ?? value)
             expect(send.mock.lastCall?.[1]).toEqual({ DevicePropCode: code })
         }
     })

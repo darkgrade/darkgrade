@@ -249,6 +249,81 @@ export const settingsOperationTable = {
                 },
             },
         },
+        getPhotoVideoMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current photo/video mode, in canonical spelling',
+        },
+        setPhotoVideoMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the photo/video mode and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example video' }],
+                },
+            },
+        },
+        getDriveMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current drive mode, in canonical spelling',
+        },
+        setDriveMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the drive mode and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Single' }],
+                },
+            },
+        },
+        getColorTemperature: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current colour temperature, in kelvin',
+        },
+        setColorTemperature: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the colour temperature and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example 5600' }],
+                },
+            },
+        },
+        getPictureStyle: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current look (picture style), in canonical spelling',
+        },
+        setPictureStyle: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the look (picture style) and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Standard' }],
+                },
+            },
+        },
+        getPictureProfile: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current picture profile, in canonical spelling',
+        },
+        setPictureProfile: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the picture profile and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example PP8' }],
+                },
+            },
+        },
     },
     planned: {
         getExposureMode: {
@@ -293,81 +368,6 @@ export const settingsOperationTable = {
             surfaces: {
                 cli: {
                     arguments: [{ name: 'value', description: 'for example Spot' }],
-                },
-            },
-        },
-        getPhotoVideoMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current photo/video mode, in canonical spelling',
-        },
-        setPhotoVideoMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the photo/video mode and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example video' }],
-                },
-            },
-        },
-        getDriveMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current drive mode, in canonical spelling',
-        },
-        setDriveMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the drive mode and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Single' }],
-                },
-            },
-        },
-        getColorTemperature: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current colour temperature, in canonical spelling',
-        },
-        setColorTemperature: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the colour temperature and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example 5600' }],
-                },
-            },
-        },
-        getPictureStyle: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current look (picture style), in canonical spelling',
-        },
-        setPictureStyle: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the look (picture style) and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Standard' }],
-                },
-            },
-        },
-        getPictureProfile: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current picture profile, in canonical spelling',
-        },
-        setPictureProfile: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the picture profile and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example PP8' }],
                 },
             },
         },

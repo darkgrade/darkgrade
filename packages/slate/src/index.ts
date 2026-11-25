@@ -19,6 +19,8 @@ export { cameraControlDefinitions, resolveCameraControl } from '@camera/controls
 export { CameraConfirmationError } from '@camera/confirmation'
 export { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 export type { ShutterSpeed } from '@camera/settings/shutter-speed'
+export type { ColorTemperature, PictureProfile, PictureStyle, WhiteBalance } from '@camera/settings/colour'
+export type { DriveMode, PhotoVideoMode } from '@camera/settings/mode'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'
 export type { CameraRecordingState } from '@camera/controls'
 export type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState, CameraControlSession, UnrecognizedValues } from '@camera/controls'

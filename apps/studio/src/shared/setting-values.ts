@@ -31,6 +31,8 @@ const VALUE_SYNONYMS: [RegExp, RegExp][] = [
     [/^(kelvin|colou?r temp(erature)?)$/i, /temp|kelvin|K$/i],
     [/^(tungsten|incandescent)$/i, /tungsten|incandescent/i],
     [/^(daylight|sun(ny)?)$/i, /daylight|sun/i],
+    [/^(movie|video|film|motion)( mode)?$/i, /^video$/],
+    [/^(photo|still|stills|picture)( mode)?$/i, /^photo$/],
 ]
 
 /** Finds the camera's own spelling of a requested value: "f/8" → "F8.0", "800" → "ISO 800", "manual" → "MF". */

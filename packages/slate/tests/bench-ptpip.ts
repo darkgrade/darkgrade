@@ -296,7 +296,7 @@ try {
     } else if (action === 'set-white-balance') {
         if (!rawValue) throw new Error('set-white-balance requires --value')
         ensureAdvertised(controls, 'CanonWhiteBalance', rawValue)
-        await camera.setWhiteBalance(rawValue)
+        await camera.setControl('whiteBalance', rawValue)
         detail = `White balance changed to ${rawValue} over PTP/IP`
     } else if (action === 'set-image-format') {
         const packed = Number(rawValue)

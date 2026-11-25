@@ -18,20 +18,11 @@ function formatElapsed(totalSeconds: number): string {
     return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
 }
 
-type ShootingMode = 'photo' | 'movie'
+type ShootingMode = 'photo' | 'video'
 
-/** Sony names movie exposure modes "Movie …"; everything else without S&Q or Interval is a photo mode. */
-function shootingModeOf(exposureProgram: string): ShootingMode | null {
-    if (/^(S&Q|Interval)/i.test(exposureProgram)) return null
-    return /^Movie /i.test(exposureProgram) ? 'movie' : 'photo'
-}
-
-/** The same exposure mode in the other shooting mode: Manual ↔ Movie Manual, else that mode's first option. */
-function exposureProgramFor(target: ShootingMode, current: string, options: string[]): string | null {
-    const base = current.replace(/^Movie /i, '')
-    const wanted = target === 'movie' ? `Movie ${base}` : base
-    if (options.includes(wanted)) return wanted
-    return options.find(option => shootingModeOf(option) === target) ?? null
+/** Slate's photoVideoMode: 'photo' or 'video', with only the modes the camera can switch to as options. */
+function shootingModeOf(value: string | null | undefined): ShootingMode | null {
+    return value === 'photo' || value === 'video' ? value : null
 }
 
 const SEGMENT_CLASS =
@@ -78,26 +69,33 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
         >
             {controls ? (
                 <div className="flex flex-col gap-6">
-                    {controls.exposureProgram?.value && shootingModeOf(controls.exposureProgram.value) && (
+                    {shootingModeOf(controls.photoVideoMode?.value) && (
                         <ToggleGroup
                             className="w-full rounded-lg bg-foreground/6 p-0.5"
                             spacing={0}
                             size="sm"
-                            value={[shootingModeOf(controls.exposureProgram.value) as ShootingMode]}
+                            value={[shootingModeOf(controls.photoVideoMode?.value) as ShootingMode]}
                             onValueChange={values => {
                                 const target = values[0] as ShootingMode | undefined
-                                const program = controls.exposureProgram
-                                if (!target || !program?.value) return
-                                const next = exposureProgramFor(target, program.value, program.options)
-                                if (next && next !== program.value) onChange('exposureProgram', next)
+                                const mode = controls.photoVideoMode
+                                if (!target || !mode?.value || target === mode.value) return
+                                if (mode.options.includes(target)) onChange('photoVideoMode', target)
                             }}
-                            disabled={disabled || !controls.exposureProgram.enabled}
-                            aria-label="Photo or movie"
+                            disabled={disabled || !controls.photoVideoMode?.enabled}
+                            aria-label="Photo or video"
                         >
-                            <ToggleGroupItem value="photo" className={SEGMENT_CLASS}>
+                            <ToggleGroupItem
+                                value="photo"
+                                className={SEGMENT_CLASS}
+                                disabled={!controls.photoVideoMode?.options.includes('photo')}
+                            >
                                 Photo
                             </ToggleGroupItem>
-                            <ToggleGroupItem value="movie" className={SEGMENT_CLASS}>
+                            <ToggleGroupItem
+                                value="video"
+                                className={SEGMENT_CLASS}
+                                disabled={!controls.photoVideoMode?.options.includes('video')}
+                            >
                                 Movie
                             </ToggleGroupItem>
                         </ToggleGroup>

@@ -170,7 +170,7 @@ const TEMPLATE_MARKER = '\u0000USER\u0000'
 function cameraSummary(): string {
     const state = cameraService.getState()
     if (!state.connected) return 'not connected'
-    const mode = /movie|s&q/i.test(state.controls?.exposureProgram?.value ?? '') ? 'movie mode' : 'photo mode'
+    const mode = state.controls?.photoVideoMode?.value === 'video' ? 'movie mode' : 'photo mode'
     const controls = state.controls
     const values = (
         [

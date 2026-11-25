@@ -117,9 +117,9 @@ describe('Canon camera controls', () => {
             'ai-servo'
         )
         expect(registry.properties.CanonWhiteBalance.codec(registry).decode(registry.codecs.uint32.encode(23)).value).toBe(
-            'auto-white'
+            'Auto White Priority'
         )
-        expect(registry.properties.CanonWhiteBalance.codec(registry).encode('daylight')).toEqual(Uint8Array.of(1))
+        expect(registry.properties.CanonWhiteBalance.codec(registry).encode('Daylight')).toEqual(Uint8Array.of(1))
     })
 
     it('round-trips and sends Canon exposure values used by USB and PTP/IP', async () => {

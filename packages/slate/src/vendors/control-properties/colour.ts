@@ -18,19 +18,24 @@ export const colourControlProperties = {
     sony: {
         whiteBalance: [sony.WhiteBalance],
         colorTemperature: [sony.ColorTemperature],
+        // Bodies from 2020 on have Creative Look; older ones Creative Style.
+        pictureStyle: [sony.CreativeLook, sony.CreativeStyle],
+        pictureProfile: [sony.PictureProfile],
     },
     canon: {
         whiteBalance: [canon.CanonWhiteBalance],
         colorTemperature: [canon.CanonColorTemperature],
+        pictureStyle: [canon.CanonPictureStyle],
     },
     standard: standardProperties,
     nikonPhoto: {
-        ...standardProperties,
+        whiteBalance: [nikon.NikonWhiteBalance],
         colorTemperature: [nikon.NikonWhiteBalanceKelvin],
+        pictureStyle: [nikon.NikonPictureControl],
     },
     nikonMovie: {
-        ...standardProperties,
         whiteBalance: [nikon.NikonMovieWhiteBalance],
         colorTemperature: [nikon.NikonMovieWhiteBalanceKelvin],
+        pictureStyle: [nikon.NikonMoviePictureControl],
     },
 } as const satisfies VendorControlProperties<keyof typeof colourControlDefinitions>

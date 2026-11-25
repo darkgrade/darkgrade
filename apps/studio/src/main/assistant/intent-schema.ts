@@ -34,9 +34,9 @@ DONE SO FAR lists what was actually done, most recent last: a follow-up continue
 
 EARLIER CONTEXT shows the last thing said before. Use it to understand references and follow-ups; never return requests that are only in EARLIER CONTEXT. Saying something again is ALWAYS a new request, even word for word ("take a still" again → photo again; "still too bright" → darker again): it means the last attempt didn't happen or wasn't enough.
 
-Answer on ONE line: the single word none, or the NUMBER of requests (1, 2 or 3) followed by the requests separated by "; ". "Roll camera" → 1 record on. "Back to photo mode and turn off the zebras" → 2 set exposureProgram photo; view zebras-off. Never add requests that weren't asked for.
+Answer on ONE line: the single word none, or the NUMBER of requests (1, 2 or 3) followed by the requests separated by "; ". "Roll camera" → 1 record on. "Back to photo mode and turn off the zebras" → 2 set photoVideoMode photo; view zebras-off. Never add requests that weren't asked for.
 Requests:
-- set <setting> <value> — an exact value or mode; the value is ONE word (use - for spaces: movie-manual). Settings: ${CAMERA_CONTROL_NAMES.join(', ')}. "ISO to 1000" → set iso 1000; "aperture f4" → set aperture f4; "manual focus" → set focusMode MF; "keep it on continuous" after a focus change → set focusMode AF-C; "focus area wide" → set focusArea wide; "movie mode" or "switch over to video" → set exposureProgram movie; "back to photo mode" → set exposureProgram photo
+- set <setting> <value> — an exact value or mode; the value is ONE word (use - for spaces: movie-manual). Settings: ${CAMERA_CONTROL_NAMES.join(', ')}. "ISO to 1000" → set iso 1000; "aperture f4" → set aperture f4; "manual focus" → set focusMode MF; "keep it on continuous" after a focus change → set focusMode AF-C; "focus area wide" → set focusArea wide; "movie mode" or "switch over to video" → set photoVideoMode video; "back to photo mode" → set photoVideoMode photo
 - exposure <signed stops> [shutter|aperture|iso] — brighter is +; add the setting ONLY when they named it to change ("keep the shutter where it is" → exposure -0.33 iso) ("bump it to 6400 and darken it with the shutter" → 2 set iso 6400; exposure -1 shutter): "a little dark" → exposure +0.33; "way too bright" → exposure -1; a counted amount is that many stops: "a stop brighter" → exposure +1, "two stops darker" → exposure -2. A follow-up repeats or reverses the PREVIOUS request in EARLIER CONTEXT: "little more" after brightening → exposure +0.33; "too far, back a touch" after brightening → exposure -0.33
 - warmth <signed kelvin> — warmer is +: "a touch warmer" → warmth +250; "a bit blue" → warmth +300; "cooler" → warmth -300
 - record on | record off — start/roll or stop/cut
@@ -48,7 +48,7 @@ Requests:
 
 Counting:
 - Two ways of saying the same change are ONE request ("make it a touch warmer, it's looking a bit blue" → warmth +250).
-- Independent changes in one breath are separate requests ("back to photo mode and turn off the zebras" → set exposureProgram photo; view zebras-off).
+- Independent changes in one breath are separate requests ("back to photo mode and turn off the zebras" → set photoVideoMode photo; view zebras-off).
 
 Answer none when there are no requests.`
 
