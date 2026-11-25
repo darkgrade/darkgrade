@@ -98,15 +98,41 @@ export function ptpDateToIso(value: string | undefined): string | undefined {
 }
 
 /**
- * Newest first by the camera's own numbering (object handle, Sony content id), which grows with each
- * new file whatever the camera's clock says: a Z5 II whose clock reset to 2025-01-01 dated its new
- * photos before older ones (darkgrade01, 2026-11-25). Capture time only breaks a tie.
+ * Newest first by the camera's own numbering (a DCF file number, a Sony content id), which grows with
+ * each new file whatever the camera's clock says: a Z5 II whose clock reset to 2025-01-01 dated its
+ * new photos before older ones (darkgrade01, 2026-11-25). Capture time only breaks a tie.
  */
 export function newestFirst<Item extends { capturedAt?: string }>(items: Item[], order: (item: Item) => number): Item[] {
     return [...items].sort((left, right) => {
         const byNumber = order(right) - order(left)
         return byNumber !== 0 ? byNumber : (right.capturedAt ?? '').localeCompare(left.capturedAt ?? '')
     })
+}
+
+/**
+ * A file's place in the camera's DCF numbering (folder 100–999, then file 0001–9999 within it), which
+ * each new file advances, or undefined for a name outside it (a Canon custom clip name). An object
+ * handle is no count: a Nikon handle carries the file's type in its top byte (Z5 II: JPG 0x29…, MOV
+ * 0x59…, the file number in its low 16 bits), so a new NEF listed below older files (Z6 III V2.00,
+ * darkgrade02, 2026-11-25), and a Canon handle carries its folder.
+ */
+export function dcfNumber(name: string, folderName: string | undefined): number | undefined {
+    const file = /^[A-Z0-9_]{4}(\d{4})\.[A-Z0-9]{3}$/i.exec(name)
+    if (!file || Number(file[1]) === 0) return undefined
+    const folder = /^(\d{3})[A-Z0-9_]{5}$/i.exec(folderName ?? '')
+    return (folder ? Number(folder[1]) : 0) * 10_000 + Number(file[1])
+}
+
+/** Two newest-first lists in different numberings as one, taking whichever head was captured later (the first list's on a tie). */
+export function mergeNewestFirst<Item extends { capturedAt?: string }>(first: Item[], second: Item[]): Item[] {
+    const merged: Item[] = []
+    let firstIndex = 0
+    let secondIndex = 0
+    while (firstIndex < first.length && secondIndex < second.length) {
+        const later = (second[secondIndex]!.capturedAt ?? '') > (first[firstIndex]!.capturedAt ?? '')
+        merged.push(later ? second[secondIndex++]! : first[firstIndex++]!)
+    }
+    return [...merged, ...first.slice(firstIndex), ...second.slice(secondIndex)]
 }
 
 /**

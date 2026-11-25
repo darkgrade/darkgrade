@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { canonEvents, canonValue } from '@tests/fixtures/canon-events'
-import { concatenate, deviceInfo, fakeTransport, propertyDescriptor, sonyPropertyInventory } from '@tests/fixtures/camera-fixtures'
+import { concatenate, deviceInfo, fakeTransport, propertyDescriptor, sonyPropertyInventory, syntheticJpeg } from '@tests/fixtures/camera-fixtures'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -604,7 +604,7 @@ describe('getLiveViewFrame', () => {
 
     it('returns a Sony picture without the 0xFF fill after its end marker, as the FX2 pads its image size', async () => {
         // FX2 fw 1.01 (darkgrade02, 2026-11-25): size 22,016 = 43 x 512, FF D9 at 21,992, then 0xFF.
-        const picture = concatenate([Uint8Array.of(0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43), new Uint8Array(21_986).fill(0x11), Uint8Array.of(0xff, 0xd9)])
+        const picture = syntheticJpeg(21_994)
         const padded = concatenate([picture, new Uint8Array(22_016 - picture.length).fill(0xff)])
         const { camera, body } = sonyBody()
         body.liveViewImages.push(padded)

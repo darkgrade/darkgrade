@@ -9,7 +9,7 @@ import { GetThumb } from '@ptp/definitions/operation-definitions'
 import { completePreview } from '@vendors/generic/jpeg-end'
 import { OK } from '@ptp/definitions/response-definitions'
 import { operationsAdvertised } from '@vendors/generic/generic-operations'
-import { decodeMediaId, newestFirst, type ObjectMediaReference } from '@vendors/generic/media-id'
+import { dcfNumber, decodeMediaId, mergeNewestFirst, newestFirst, type ObjectMediaReference } from '@vendors/generic/media-id'
 import { PtpObjectIndex, reportingRefusals, type IndexedObject } from '@vendors/generic/ptp-object-index'
 
 const NO_IMAGE_COUNT = 0xffffffff
@@ -58,8 +58,14 @@ export function ptpMediaCapability(driver: CameraDriverInstance, owner: Camera):
 
         async listMedia(): Promise<MediaItem[]> {
             const objects = await reportingRefusals('listMedia', () => index.list('listMedia'))
-            const order = new Map(objects.map(indexed => [indexed.item.id, indexed.objectHandle]))
-            return newestFirst(objects.map(indexed => indexed.item), item => order.get(item.id) ?? 0)
+            const numbers = new Map(objects.map(indexed => [indexed.item.id, dcfNumber(indexed.item.name, index.folderName(indexed))]))
+            const handles = new Map(objects.map(indexed => [indexed.item.id, indexed.objectHandle]))
+            const items = objects.map(indexed => indexed.item)
+            // Each numbering orders its own files; the two are merged by capture time.
+            return mergeNewestFirst(
+                newestFirst(items.filter(item => numbers.get(item.id) !== undefined), item => numbers.get(item.id) ?? 0),
+                newestFirst(items.filter(item => numbers.get(item.id) === undefined), item => handles.get(item.id) ?? 0)
+            )
         },
 
         async getMediaPreview(id: string, size: MediaPreviewSize): Promise<Uint8Array> {

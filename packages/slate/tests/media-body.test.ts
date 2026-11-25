@@ -27,7 +27,7 @@ import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
-import { concatenate, encodedDeviceInfo, encodedObjectInfo } from '@tests/fixtures/camera-fixtures'
+import { concatenate, encodedDeviceInfo, encodedObjectInfo, syntheticJpeg } from '@tests/fixtures/camera-fixtures'
 import { sonyContentList } from '@tests/fixtures/sony-content-list'
 
 afterEach(() => {
@@ -75,6 +75,8 @@ interface CardFile {
     /** What ObjectInfo reports, when it differs from the real length (0xffffffff over 4 GiB). */
     reportedSize?: number
     folder?: boolean
+    /** The handle of the folder it is in. */
+    parent?: number
 }
 
 function objectInfo(registry: Registry, file: CardFile): ObjectInfo {
@@ -82,6 +84,7 @@ function objectInfo(registry: Registry, file: CardFile): ObjectInfo {
         storageID: file.storageId,
         objectFormat: file.folder ? 0x3001 : 0x3801,
         objectCompressedSize: file.reportedSize ?? file.bytes.length,
+        parentObject: file.parent ?? 0,
         thumbFormat: file.thumbnail ? 0x3801 : 0,
         thumbCompressedSize: file.thumbnail?.length ?? 0,
         thumbPixWidth: file.thumbnail ? 160 : 0,
@@ -136,10 +139,12 @@ function standardCard(
 ) {
     const files: CardFile[] = [
         { handle: 0x01, storageId: 0x00010001, name: 'DCIM', bytes: new Uint8Array(), captureDate: '', folder: true },
-        { handle: 0x11, storageId: 0x00010001, name: 'IMG_0001.JPG', bytes: jpeg(1), captureDate: '20261124T091500', thumbnail: jpeg(0x51) },
-        // The newest file, dated by a clock that reset (as the bench Z5 II's did): the handle still says it is newest.
-        { handle: 0x20, storageId: 0x00010001, name: 'IMG_0002.CR3', bytes: Uint8Array.of(1, 2, 3, 4, 5, 6, 7), captureDate: '20250101T000000' },
-        { handle: 0x13, storageId: 0x00010001, name: 'MVI_0003.MP4', bytes: Uint8Array.of(9, 9, 9), captureDate: '20261124T091505' },
+        { handle: 0x02, storageId: 0x00010001, name: '100CANON', bytes: new Uint8Array(), captureDate: '', folder: true, parent: 0x01 },
+        { handle: 0x11, storageId: 0x00010001, name: 'IMG_0001.JPG', bytes: jpeg(1), captureDate: '20261124T091500', thumbnail: jpeg(0x51), parent: 0x02 },
+        // The newest file, dated by a clock that reset (as the bench Z5 II's did), and with a handle below an older
+        // clip's (a Nikon handle carries the file type in its top byte): its file number still says it is newest.
+        { handle: 0x12, storageId: 0x00010001, name: 'IMG_0004.CR3', bytes: Uint8Array.of(1, 2, 3, 4, 5, 6, 7), captureDate: '20250101T000000', parent: 0x02 },
+        { handle: 0x13, storageId: 0x00010001, name: 'MVI_0003.MP4', bytes: Uint8Array.of(9, 9, 9), captureDate: '20261124T091505', parent: 0x02 },
     ]
     const state = {
         // The second entry is an empty slot's placeholder.
@@ -444,7 +449,7 @@ describe('card and media on a simulated generic PTP body', () => {
         const { camera, driver } = genericCamera()
         const items = await camera.listMedia()
         expect(items.map(item => [item.name, item.kind, item.capturedAt])).toEqual([
-            ['IMG_0002.CR3', 'photo', '2025-01-01T00:00:00'],
+            ['IMG_0004.CR3', 'photo', '2025-01-01T00:00:00'],
             ['MVI_0003.MP4', 'clip', '2026-11-24T09:15:05'],
             ['IMG_0001.JPG', 'photo', '2026-11-24T09:15:00'],
         ])
@@ -457,6 +462,27 @@ describe('card and media on a simulated generic PTP body', () => {
         expect(await camera.getMediaPreview(items[2]!.id, 'thumbnail')).toEqual(jpeg(0x51))
     })
 
+    it('lists a new folder first, and merges names outside the DCF numbering by capture time', async () => {
+        const { camera, driver, files } = genericCamera()
+        // A new session: the CR3 is now dated by a set clock.
+        driver.sessionId = 10
+        files.find(file => file.name === 'IMG_0004.CR3')!.captureDate = '20261124T091510'
+        files.push(
+            // A Canon custom clip name, numbered apart from the photos.
+            { handle: 0x90, storageId: 0x00010001, name: 'A_0002C045A261124_091502AB_CANON.MP4', bytes: Uint8Array.of(7), captureDate: '20261124T091502', parent: 0x02 },
+            // After file 9999 the camera starts a new folder at 0001.
+            { handle: 0x03, storageId: 0x00010001, name: '101CANON', bytes: new Uint8Array(), captureDate: '', folder: true, parent: 0x01 },
+            { handle: 0x04, storageId: 0x00010001, name: 'IMG_0001.HIF', bytes: Uint8Array.of(8), captureDate: '20261124T091520', parent: 0x03 }
+        )
+        expect((await camera.listMedia()).map(item => item.name)).toEqual([
+            'IMG_0001.HIF',
+            'IMG_0004.CR3',
+            'MVI_0003.MP4',
+            'A_0002C045A261124_091502AB_CANON.MP4',
+            'IMG_0001.JPG',
+        ])
+    })
+
     it('downloads with progress, and finds a file again after a new session renumbers it', async () => {
         const { camera, driver, files, state } = genericCamera()
         const [raw] = await camera.listMedia()
@@ -467,7 +493,7 @@ describe('card and media on a simulated generic PTP body', () => {
         expect(progress.at(-1)).toBe(7)
         // A reconnect numbers the same file differently.
         driver.sessionId = 10
-        files.find(file => file.name === 'IMG_0002.CR3')!.handle = 0x42
+        files.find(file => file.name === 'IMG_0004.CR3')!.handle = 0x42
         expect(await camera.downloadMedia(raw!.id)).toEqual(Uint8Array.of(1, 2, 3, 4, 5, 6, 7))
         expect(state.downloads.at(-1)).toBe(0x42)
     })
@@ -482,8 +508,8 @@ describe('card and media on a simulated generic PTP body', () => {
             supported: false,
             reason: 'This camera does not offer thumbnails of its card files',
         })
-        files.splice(files.findIndex(file => file.name === 'IMG_0002.CR3'), 1)
-        await expect(camera.downloadMedia(raw!.id)).rejects.toThrow('IMG_0002.CR3 is no longer on the card')
+        files.splice(files.findIndex(file => file.name === 'IMG_0004.CR3'), 1)
+        await expect(camera.downloadMedia(raw!.id)).rejects.toThrow('IMG_0004.CR3 is no longer on the card')
         expect(state.downloads).toEqual([])
     })
 
@@ -932,9 +958,14 @@ describe.each([
         const { camera, driver, files } = simulate()
         const jpegItem = (await camera.listMedia()).find(item => item.name === 'IMG_0001.JPG')!
         const file = files.find(candidate => candidate.handle === 0x11)!
-        file.thumbnail = concatenate([jpeg(0x51), new Uint8Array(27)])
-        expect(await camera.getMediaPreview(jpegItem.id, 'thumbnail')).toEqual(jpeg(0x51))
-        file.thumbnail = jpeg(0x51).slice(0, 4)
+        // R6 Mark III fw 3-1.0.1 (darkgrade02, 2026-11-25): 10,752 bytes, FF D9 at 10,265, 473 zeros, a 12-byte trailer.
+        const thumbnail = syntheticJpeg(10_267)
+        const trailer = Uint8Array.of(0xa1, 0x4f, 0xa0, 0x20, 0x30, 0x8c, 0x44, 0x15, 0x8c, 0x6e, 0xeb, 0x38)
+        file.thumbnail = concatenate([thumbnail, new Uint8Array(473), trailer])
+        expect(file.thumbnail).toHaveLength(10_752)
+        expect(await camera.getMediaPreview(jpegItem.id, 'thumbnail')).toEqual(thumbnail)
+        // Cut inside its scan, then filled the same way: no end marker.
+        file.thumbnail = concatenate([thumbnail.slice(0, 9_000), new Uint8Array(1_739), trailer])
         const outcome = await camera.getMediaPreview(jpegItem.id, 'thumbnail').catch(error => error)
         expect(outcome).toBeInstanceOf(CameraOutcomeUnknownError)
         expect(outcome.message).toContain('without a JPEG end marker')

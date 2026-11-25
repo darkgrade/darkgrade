@@ -117,7 +117,9 @@ choices are named in Slate's spelling on every vendor; a write sends the camera'
 atoms of size 0 and 1 are legal (R8 Mark II MP4s). A name table's missing word is unrecognized, not a choice.
 The full sweep the same day: the Sony card index answers oldest first, at most 1000 contents a
 query, so it is paged (2 s overlap, merged by content id); newest-first follows the camera's own
-numbering (handle, content id), never its clock (a Z5 II's had reset to 2025); a Sony computer photo
+numbering (DCF folder and file number, Sony content id), never its clock (a Z5 II's had reset to
+2025) nor the object handle (a Nikon handle's top byte is the file type: JPG 0x29…, MOV 0x59…, so a
+Z6 III's new NEF listed below older files; names outside DCF are merged in by capture time); a Sony computer photo
 is the card file, not the reduced 0xFFFFC001 host copy; a Z5 II answers the standard InitiateCapture
 with GeneralError, so a Nikon with 0x9207 focuses through it (OutOfFocus is a refusal); card slots
 are numbered in GetStorageIDs order (Canon's SD is 0x0002 on a one-slot R8 Mark II). EOS setClock
@@ -126,7 +128,8 @@ bench before claiming Canon clock support.
 darkgrade02 the same day (FX2 1.01, R6 Mark III 3-1.0.1, Z6 III V2.00): Camera.discover lists PTP
 interfaces from USB descriptors without opening them, so a body already open in the process (or
 claimed elsewhere) is still listed, without its strings. The FX2 pads its live-view JPEG with 0xFF
-to a multiple of 512 bytes: a picture (live view or preview) is returned through its end marker, and
+to a multiple of 512 bytes, and the R6 Mark III its GetThumb with zeros and a 12-byte trailer: a
+picture (live view or preview) is returned through the end marker its segments and scan lead to, and
 one without it is read once more (live view) or reported, never returned. After a download a Sony
 body stays in content-transfer mode and answers card-index reads (list, preview) with
 CameraStatusError 0xA106: they leave it first. The FX2's card index is ordered by its clock, which

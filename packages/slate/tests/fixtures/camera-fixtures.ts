@@ -22,6 +22,25 @@ export function concatenate(parts: Uint8Array[]): Uint8Array {
     return wire
 }
 
+/**
+ * A JPEG of `size` bytes whose markers walk as a camera's do, with no decodable picture: SOI, an APP1
+ * holding an embedded thumbnail (its own FF D9), a quantization table, a scan whose data has stuffed
+ * zeros (FF 00) and a restart marker (FF D0), then EOI.
+ */
+export function syntheticJpeg(size: number): Uint8Array {
+    const segments = [
+        Uint8Array.of(0xff, 0xd8),
+        Uint8Array.of(0xff, 0xe1, 0x00, 0x08, 0xff, 0xd8, 0x01, 0x02, 0xff, 0xd9),
+        concatenate([Uint8Array.of(0xff, 0xdb, 0x00, 0x43), new Uint8Array(0x41).fill(0x01)]),
+        Uint8Array.of(0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00),
+    ]
+    const header = concatenate(segments)
+    const scan = new Uint8Array(size - header.length - 2).fill(0x11)
+    scan.set([0xff, 0x00], 4)
+    scan.set([0xff, 0xd0], scan.length >> 1)
+    return concatenate([header, scan, Uint8Array.of(0xff, 0xd9)])
+}
+
 /** A DeviceInfo as the real codec of the camera's (or registry's) protocol decodes it from the wire. */
 export function encodedDeviceInfo(source: Camera | PTPRegistry, fields: Partial<DeviceInfo> = {}): DeviceInfo {
     const codec = new DeviceInfoCodec(source instanceof Camera ? protocolSession(source).driver.registry : source)

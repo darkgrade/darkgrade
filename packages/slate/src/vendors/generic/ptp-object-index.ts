@@ -47,6 +47,8 @@ export async function reportingRefusals<Result>(operation: string, work: () => P
 export class PtpObjectIndex {
     private sessionId: number | null = null
     private objects = new Map<number, IndexedObject | null>()
+    /** Each folder's name by its handle, as listed this session. */
+    private folders = new Map<number, string>()
     /** Each storage's card slot, from the last GetStorageIDs. */
     private slots = new Map<number, number>()
     private thumbnailsAdvertised?: boolean
@@ -57,6 +59,7 @@ export class PtpObjectIndex {
         if (this.driver.sessionId === this.sessionId) return
         this.sessionId = this.driver.sessionId
         this.objects.clear()
+        this.folders.clear()
         this.thumbnailsAdvertised = undefined
     }
 
@@ -102,6 +105,11 @@ export class PtpObjectIndex {
         return listed
     }
 
+    /** The name of the folder an object is in, when the listing showed it (`100NZ6_3`). */
+    folderName(indexed: IndexedObject): string | undefined {
+        return this.folders.get(indexed.info.parentObject)
+    }
+
     /**
      * The object a media id names in this session: its handle when a fresh read shows it still holds the same file,
      * otherwise the file of that name and size found by listing the card again.
@@ -135,7 +143,10 @@ export class PtpObjectIndex {
         }
         const info = response.data
         if (response.code !== OK.code || !info) return null
-        if (info.associationType !== 0 || info.objectFormat === ASSOCIATION_FORMAT) return null
+        if (info.associationType !== 0 || info.objectFormat === ASSOCIATION_FORMAT) {
+            this.folders.set(objectHandle, info.filename)
+            return null
+        }
         const name = info.filename || `object-${objectHandle}`
         const reportedSize = info.objectCompressedSize
         const sizeBytes = reportedSize === OBJECT_SIZE_UNREPORTED ? undefined : reportedSize
