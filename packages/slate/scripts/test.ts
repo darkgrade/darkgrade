@@ -11,6 +11,7 @@ const run = (command: string, args: string[]) => {
 }
 const filters = process.argv.slice(2)
 if (!filters.length) run('bun', ['run', 'build'])
+if (!filters.length) run('bun', ['run', 'scripts/check-guards.ts'])
 run('vitest', ['run', ...filters])
 if (!filters.length) {
     run('bun', ['test', './tests/runtime'])
