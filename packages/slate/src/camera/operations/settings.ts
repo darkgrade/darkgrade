@@ -9,7 +9,9 @@ import { readCameraCapabilities, writeCameraControl } from '@vendors/camera-cont
 
 /**
  * Settings: the generic control API, plus the vendor-named accessors that the typed settings
- * replace one group at a time (see `@camera/settings` and the operation table).
+ * replace one group at a time (see `@camera/settings` and the operation table). The typed
+ * accessors themselves (`getShutterSpeed`, `setShutterSpeed`, ...) come from
+ * `@camera/settings/typed-settings`, installed on Camera in index.ts.
  */
 export interface SettingsOperations {
     getCapabilities(): Promise<CameraCapabilities>
@@ -29,8 +31,6 @@ export interface SettingsOperations {
     // Exposure
     getAperture(): Promise<string>
     setAperture(value: string): Promise<void>
-    getShutterSpeed(): Promise<string>
-    setShutterSpeed(value: string): Promise<void>
     getIso(): Promise<string>
     setIso(value: string): Promise<void>
     setCanonManualExposureMode(): Promise<void>
@@ -124,14 +124,6 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
 
     async setAperture(value: string): Promise<void> {
         return cameraContext(this).driver.setAperture(value)
-    },
-
-    async getShutterSpeed(): Promise<string> {
-        return cameraContext(this).driver.getShutterSpeed()
-    },
-
-    async setShutterSpeed(value: string): Promise<void> {
-        return cameraContext(this).driver.setShutterSpeed(value)
     },
 
     async getIso(): Promise<string> {

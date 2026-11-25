@@ -21,7 +21,8 @@
             "@vendors/*": ["src/vendors/*"],
             "@runtime/*": ["src/runtime/*"],
             "@cli/*": ["src/cli/*"],
-            "@tests/*": ["tests/*"]
+            "@tests/*": ["tests/*"],
+            "@scripts/*": ["scripts/*"]
         }
     },
     "include": ["src", "tests", "scripts/recover-camera.ts", "scripts/camera-lease.ts", "scripts/camera-smoke", "scripts/check-guards.ts", "*.config.ts"],

@@ -89,7 +89,8 @@ try {
     const consumer = `
         import { Camera, configureSlateTelemetry, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
-            type CameraRecordingState, SonyWifiCamera, SonyCamera,
+            type CameraRecordingState, SonyWifiCamera, SonyCamera, type ShutterSpeed, type TypedSettingMethods,
+            CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
         const camera = new Camera()
@@ -159,7 +160,25 @@ try {
         camera.setControl('vendorMagic', 'on')
         // @ts-expect-error Angle values need a degrees field.
         camera.setExposureTime({kind: 'angle', seconds: 0.02})
-        void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk]
+        // Typed settings: one getter/setter per setting, canonical values, the value read back.
+        const confirmedShutter: Promise<ShutterSpeed> = camera.setShutterSpeed('1/250')
+        const currentShutter: Promise<ShutterSpeed> = camera.getShutterSpeed()
+        camera.setShutterSpeed('180°', {framesPerSecond: 24000 / 1001})
+        camera.setShutterSpeed({kind: 'duration', seconds: 1 / 60})
+        sdk.setShutterSpeed('30"')
+        const anyString: string = '1/250'
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setShutterSpeed(anyString)
+        // @ts-expect-error A vendor's own word is not a canonical shutter speed.
+        camera.setShutterSpeed('fast')
+        type PlainStringSetters = { [Name in keyof TypedSettingMethods]: Name extends \`set\${string}\`
+            ? TypedSettingMethods[Name] extends (value: infer Value, ...options: never[]) => unknown
+                ? string extends Value ? Name : never : never
+            : never }[keyof TypedSettingMethods]
+        const noPlainStringSetters: [PlainStringSetters] extends [never] ? true : PlainStringSetters = true
+        const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
+        void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
+            confirmedShutter, currentShutter, noPlainStringSetters, errors]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

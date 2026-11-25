@@ -24,6 +24,7 @@ import { protocolOperations, type ProtocolOperations } from '@camera/operations/
 import { settingsOperations, type SettingsOperations } from '@camera/operations/settings'
 import { videoOperations, type VideoOperations } from '@camera/operations/video'
 import { zoomOperations, type ZoomOperations } from '@camera/operations/zoom'
+import { installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 
 export interface CameraOptions {
     logger?: Partial<LoggerConfig>
@@ -83,7 +84,8 @@ export interface Camera
         VideoOperations,
         MediaOperations,
         BodyOperations,
-        EventOperations {}
+        EventOperations,
+        TypedSettingMethods {}
 
 for (const operations of [
     connectionOperations,
@@ -99,6 +101,7 @@ for (const operations of [
     eventOperations,
 ])
     installCameraOperations(Camera.prototype, operations)
+installTypedSettings(Camera.prototype)
 
 export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@camera/transaction-channel'
 export { CanonCamera } from '@camera/canon-camera'

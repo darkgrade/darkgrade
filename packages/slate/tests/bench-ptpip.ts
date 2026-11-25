@@ -330,7 +330,7 @@ try {
     } else if (action === 'set-shutter-speed') {
         if (!rawValue) throw new Error('set-shutter-speed requires --value')
         ensureAdvertised(controls, 'CanonShutterSpeed', rawValue)
-        await camera.setShutterSpeed(rawValue)
+        await camera.getInstance().setShutterSpeed(rawValue)
         detail = `Shutter speed changed to ${rawValue} over PTP/IP`
     } else if (action === 'probe-movie-mode' || action === 'set-movie-format') {
         try {

@@ -1,5 +1,6 @@
 import { CanonCamera } from '@camera/canon-camera'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
+import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import {
     cameraControlDefinitions,
     type CameraCapabilities,
@@ -292,7 +293,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
     // Nikon descriptors are separate transactions: refresh this control and its live guards,
     // rather than reading every unrelated descriptor before each write. No cached admission.
     const state = (await readCameraCapabilities(driver, id)).controls[id]
-    if (!state?.enabled || !state.writable) throw new Error(`${id} is not writable in the current camera mode`)
+    if (!state?.enabled || !state.writable)
+        throw new CameraUnsupportedError(id, `${id} is not writable in the current camera mode`)
     let requested: string
     if (id === 'shutterSpeed') {
         const choices = state.allowedValues ?? []
@@ -315,17 +317,17 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 numeric > maximum ||
                 (step > 0 && Math.abs((numeric - minimum) / step - Math.round((numeric - minimum) / step)) > 1e-8)
             )
-                throw new Error('Requested exposure time is outside the camera range')
+                throw new CameraRefusedError(id, 'Requested exposure time is outside the camera range')
             requested = String(numeric) + (state.source.name === 'MovieShutterAngle' ? '°' : '')
-        } else throw new Error('Requested exposure time is not advertised by the camera')
+        } else throw new CameraRefusedError(id, 'Requested exposure time is not advertised by the camera')
     } else {
         if (
             id === 'colorTemperature' ? typeof value !== 'number' || !Number.isFinite(value) : typeof value !== 'string'
         )
-            throw new Error(`Invalid ${id} value`)
+            throw new CameraRefusedError(id, `Invalid ${id} value`)
         requested = String(value)
         if (state.allowedValues && !state.allowedValues.includes(requested))
-            throw new Error(`Requested ${id} value is not advertised by the camera`)
+            throw new CameraRefusedError(id, `Requested ${id} value is not advertised by the camera`)
         if (state.range) {
             const numeric = Number(requested),
                 { minimum, maximum, step } = state.range
@@ -335,7 +337,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 numeric > maximum ||
                 (step > 0 && Math.abs((numeric - minimum) / step - Math.round((numeric - minimum) / step)) > 1e-8)
             )
-                throw new Error(`Requested ${id} value is outside the camera range`)
+                throw new CameraRefusedError(id, `Requested ${id} value is outside the camera range`)
         }
     }
     const write = async (): Promise<void> => {

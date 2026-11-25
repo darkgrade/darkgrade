@@ -1,4 +1,5 @@
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
+import type { TypedSettingMethods } from '@camera/settings/typed-settings'
 import { colourControlDefinitions } from '@camera/settings/colour'
 import { exposureControlDefinitions } from '@camera/settings/exposure'
 import { focusControlDefinitions } from '@camera/settings/focus'
@@ -67,8 +68,11 @@ export interface CameraCapabilities {
     advertisedOperations: number[] | null
 }
 
-/** The same control contract on an already-connected native PTP or licensed SDK session. */
-export interface CameraControlSession {
+/**
+ * The same control contract on an already-connected native PTP or licensed SDK session, including
+ * one typed getter and setter per typed setting (`getShutterSpeed`, `setShutterSpeed`, ...).
+ */
+export interface CameraControlSession extends TypedSettingMethods {
     getCapabilities(): Promise<CameraCapabilities>
     getExposureTime(): Promise<ExposureTime>
     setExposureTime(value: ExposureTimeInput, context?: ExposureContext): Promise<void>

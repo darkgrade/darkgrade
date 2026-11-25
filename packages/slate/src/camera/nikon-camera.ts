@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { CameraOutcomeUnknownError } from '@camera/errors'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
@@ -195,7 +196,8 @@ export class NikonCamera extends GenericCamera {
             throw new Error('Nikon photo/video mode changed before shutter write')
         await this.set(property, target)
         const observed = await this.propertyDescriptor(property)
-        if (observed.currentValueRaw !== target) throw new Error('Nikon shutter readback differs from the requested value')
+        if (observed.currentValueRaw !== target)
+            throw new CameraOutcomeUnknownError('shutterSpeed', 'Nikon shutter readback differs from the requested value')
     }
 
     async set<P extends PropertyDefinition>(property: P, value: CodecType<P['codec']>): Promise<void> {

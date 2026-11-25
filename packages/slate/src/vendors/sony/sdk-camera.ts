@@ -11,6 +11,8 @@ import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
 import { isSonyModelName } from '@vendors/sony/model-name'
 import { isVerifiedFeature } from '@camera/validated-models'
+import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
 export interface SonySdkBridge {
@@ -208,12 +210,12 @@ export class SonyWifiCamera {
         return this.controlsQueue.run('camera', async () => {
         const properties = await this.getSonyPropertyStates()
         const control = sonySdkCapabilities(properties).controls[id]
-        if (!control?.writable) throw new Error(`${id} is not writable in the current SDK camera mode`)
+        if (!control?.writable) throw new CameraUnsupportedError(id, `${id} is not writable in the current SDK camera mode`)
         if (id !== 'shutterSpeed' && (id === 'colorTemperature' ? typeof value !== 'number' : typeof value !== 'string'))
-            throw new Error(`Invalid ${id} value`)
+            throw new CameraRefusedError(id, `Invalid ${id} value`)
         const requested = id === 'shutterSpeed'
             ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context) : String(value)
-        if (!requested || !control.allowedValues?.includes(requested)) throw new Error('Requested SDK control value is not advertised')
+        if (!requested || !control.allowedValues?.includes(requested)) throw new CameraRefusedError(id, 'Requested SDK control value is not advertised')
         const wire = sonySdkControlWireValue(properties, id, requested)
         await this.setSonySetting(wire.code, wire.value)
         const observed = (await this.getCapabilities()).controls[id]
@@ -837,3 +839,7 @@ export class SonyWifiCamera {
         }
     }
 }
+
+/** The Wi-Fi session has the same typed settings as Camera, filled by the same shared helper. */
+export interface SonyWifiCamera extends TypedSettingMethods {}
+installTypedSettings(SonyWifiCamera.prototype)

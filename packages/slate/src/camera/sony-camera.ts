@@ -27,6 +27,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { CameraConfirmationError } from '@camera/confirmation'
+import { CameraOutcomeUnknownError } from '@camera/errors'
 import type { UnrecognizedValues } from '@camera/controls'
 import { GenericCamera } from './generic-camera'
 
@@ -1357,7 +1358,9 @@ export class SonyCamera extends GenericCamera {
             const observed = this.propertyCache.get(propertyCode)?.currentValueDecoded
             throw new CameraConfirmationError('exposureProgram', requestedMode, observed === undefined ? null : String(observed))
         }
-        throw new Error(
+        // The write was acknowledged but never observed: report it unconfirmed, never resend it.
+        throw new CameraOutcomeUnknownError(
+            `0x${propertyCode.toString(16)}`,
             `Sony property 0x${propertyCode.toString(16)} did not report target ${String(target)} within ${SONY_CONTROL_SETTLE_TIMEOUT_MS} ms`
         )
     }

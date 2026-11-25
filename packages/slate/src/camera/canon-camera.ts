@@ -3,6 +3,7 @@ import { Logger } from '@core/logger'
 import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
 import { captureCanonCardImage } from '@vendors/canon/card-capture'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
+import { CameraOutcomeUnknownError } from '@camera/errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 import {
@@ -359,7 +360,11 @@ export class CanonCamera extends GenericCamera {
                 if (!verifyReadback && !response.data?.length) return
                 await new Promise(resolve => setTimeout(resolve, 50))
             } while (Date.now() < deadline)
-            throw new Error(`Canon ${property.name} did not publish the requested value within 2 seconds`)
+            // Acknowledged but never observed: report it unconfirmed, never resend it.
+            throw new CameraOutcomeUnknownError(
+                property.name,
+                `Canon ${property.name} did not publish the requested value within 2 seconds`
+            )
         })
     }
 
