@@ -27,7 +27,8 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { CameraConfirmationError } from '@camera/confirmation'
-import { CameraOutcomeUnknownError } from '@camera/errors'
+import { CameraOutcomeUnknownError, CameraRefusedError } from '@camera/errors'
+import type { FocusResult } from '@camera/driver/focus'
 import type { UnrecognizedValues } from '@camera/controls'
 import { GenericCamera } from './generic-camera'
 
@@ -595,26 +596,38 @@ export class SonyCamera extends GenericCamera {
         return this.get(this.registry.properties.ZoomTypeStatus)
     }
 
-    async autofocus(durationMilliseconds = 800): Promise<void> {
+    /**
+     * Half-presses for at most `durationMilliseconds` and reports what the body said: acquired,
+     * not-acquired (it reported it could not focus), or unknown (no focus status, as in movie mode).
+     */
+    async autofocus(durationMilliseconds = 800): Promise<FocusResult> {
         if (!Number.isFinite(durationMilliseconds) || durationMilliseconds < 100 || durationMilliseconds > 5_000) {
             throw new Error('Sony autofocus duration must be between 100 and 5000 milliseconds')
         }
         await this.startLiveView()
-        await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
         try {
-            // A half-press is still useful when a scene cannot lock focus. Treat the
-            // camera's bounded acknowledgement as success here; full capture keeps
-            // requiring positive focus confirmation before it presses the shutter.
-            await this.waitForFocus(durationMilliseconds, false)
+            await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
+        } catch (error) {
+            if (error instanceof PTPResponseError)
+                throw new CameraRefusedError('autofocus', `Sony refused the half-press: ${errorText(error)}`)
+            throw error
+        }
+        let result: FocusResult
+        try {
+            // A half-press is still useful when a scene cannot lock focus. Report what the camera
+            // said rather than failing; full capture keeps requiring positive focus confirmation.
+            result = await this.waitForFocus(durationMilliseconds, false)
         } finally {
             await this.set(this.registry.properties.ShutterHalfReleaseButton, 'UP')
         }
         const controlsReady = await this.waitForPropertyEnabled(this.registry.properties.FocusMode.code)
         if (!controlsReady) {
-            throw new Error(
+            throw new CameraOutcomeUnknownError(
+                'autofocus',
                 `Sony released autofocus but remote controls did not become writable within ${SONY_CONTROL_SETTLE_TIMEOUT_MS} ms`
             )
         }
+        return result
     }
 
     /**
@@ -636,7 +649,8 @@ export class SonyCamera extends GenericCamera {
             { sdiControlCode: SONY_AF_AREA_POSITION_CODE, flagOfDevicePropertyOption: 'ENABLE' },
             this.registry.codecs.uint32.encode(packed)
         )
-        this.assertOk(response.code, 'Sony AF-area position')
+        if (response.code !== OK.code)
+            throw new CameraRefusedError('setFocusPoint', `Sony refused the AF-area position (0x${response.code.toString(16)})`)
     }
 
     /**
@@ -1178,7 +1192,7 @@ export class SonyCamera extends GenericCamera {
         }
     }
 
-    private async waitForFocus(timeoutMilliseconds = 3_000, requireConfirmation = true): Promise<boolean> {
+    private async waitForFocus(timeoutMilliseconds = 3_000, requireConfirmation = true): Promise<FocusResult> {
         let isFocused = false
         let lastStatus: string | undefined
         const handler = (event: { Status?: string }) => {
@@ -1204,7 +1218,8 @@ export class SonyCamera extends GenericCamera {
                     : lastStatus ? `the camera last reported ${lastStatus}` : 'the camera reported no focus status'
                 throw new Error(`Sony autofocus did not report focus within ${timeoutMilliseconds} ms; ${reported}`)
             }
-            return isFocused
+            if (isFocused) return 'acquired'
+            return lastStatus === 'AF_C_NOT_FOCUSED' || lastStatus === 'AF_S_NOT_FOCUSED' ? 'not-acquired' : 'unknown'
         } finally {
             this.off(this.registry.events.SDIE_AFStatus, handler)
         }
@@ -1575,6 +1590,11 @@ function isTransportFailure(error: unknown): boolean {
 }
 
 /** Focus areas that take an AF area position: every Flexible Spot (sizes, Expand, Free Size), plain or Lock on AF. Zone ignores it. */
+/** A focus area whose position can be moved: any spot, in Sony's words (Flexible Spot) or Slate's (Spot). */
 export function isMovableFocusArea(area: string): boolean {
-    return /flexible spot/i.test(area)
+    return /spot/i.test(area)
+}
+
+function errorText(error: unknown): string {
+    return error instanceof Error ? error.message : String(error)
 }

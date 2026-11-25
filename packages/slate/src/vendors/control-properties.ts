@@ -2,21 +2,25 @@ import type { CameraControlId, UnrecognizedValues } from '@camera/controls'
 import type { CodecType } from '@ptp/types/codec'
 import { colourControlProperties } from '@vendors/control-properties/colour'
 import { exposureControlProperties, exposureControlValues } from '@vendors/control-properties/exposure'
-import { focusControlProperties } from '@vendors/control-properties/focus'
+import { focusControlProperties, focusControlValueNames } from '@vendors/control-properties/focus'
 import { liveViewControlProperties } from '@vendors/control-properties/live-view'
 import { modeControlProperties } from '@vendors/control-properties/mode'
 import { photoControlProperties } from '@vendors/control-properties/photo'
 import { videoControlProperties } from '@vendors/control-properties/video'
 import type {
     ControlPropertyMap,
+    ControlPropertyValueNames,
     ControlValueInventory,
+    ControlValueNames,
     ControlValueVocabulary,
+    VendorControlProperties,
     VendorControlValues,
 } from '@vendors/control-properties/vendor-control-properties'
 
 export type {
     ControlPropertyList,
     ControlPropertyMap,
+    ControlPropertyValueNames,
     ControlValueInventory,
 } from '@vendors/control-properties/vendor-control-properties'
 
@@ -71,8 +75,69 @@ export type CodecValue<Id extends CameraControlId> = PropertyFor<Id> extends inf
         : never
     : never
 
-/** Every settings group's value vocabularies; a group without one keeps the vendor's words. */
-const valueGroups: readonly VendorControlValues<CameraControlId>[] = [exposureControlValues]
+/** The property inventories Slate reads: one per vendor adapter and, for Nikon, per photo/movie mode. */
+export type ControlInventory = keyof VendorControlProperties<CameraControlId>
+
+const inventories: readonly ControlInventory[] = ['sony', 'canon', 'standard', 'nikonPhoto', 'nikonMovie']
+
+/** Each settings group's canonical value names (see `focusControlValueNames`); groups append theirs. */
+const valueNameGroups: readonly ControlValueNames<CameraControlId>[] = [focusControlValueNames]
+
+/** The canonical names of one setting's values on one inventory, per property; undefined when the labels are canonical. */
+export function controlValueNames(inventory: ControlInventory, id: CameraControlId): ControlPropertyValueNames | undefined {
+    const tables = valueNameGroups.flatMap(group => {
+        const names = group[inventory]?.[id]
+        return names ? [names] : []
+    })
+    return tables.length ? Object.assign({}, ...tables) : undefined
+}
+
+/** Every canonical value a name table gives a setting, on any vendor. */
+export function namedControlValues(id: CameraControlId): ReadonlySet<string> {
+    return new Set(
+        inventories.flatMap(inventory =>
+            Object.values(controlValueNames(inventory, id) ?? {}).flatMap(names => Object.values(names))
+        )
+    )
+}
+
+/**
+ * A per-property name table as a vocabulary. A word missing from the table keeps the camera's own
+ * label, as the table's group documents; the typed getters refuse to name it.
+ */
+function nameTableVocabulary(names: ControlPropertyValueNames): ControlValueVocabulary {
+    return {
+        canonical: (label, property) => names[property]?.[label] ?? label,
+        vendorWords: (canonical, property) =>
+            Object.entries(names[property] ?? {})
+                .filter(([, name]) => name === canonical)
+                .map(([label]) => label),
+    }
+}
+
+function nameTableValues(group: ControlValueNames<CameraControlId>): VendorControlValues<CameraControlId> {
+    const vocabularies = (inventory: ControlInventory) =>
+        Object.fromEntries(
+            Object.entries(group[inventory] ?? {}).flatMap(([id, names]) => (names ? [[id, nameTableVocabulary(names)]] : []))
+        )
+    return {
+        sony: vocabularies('sony'),
+        canon: vocabularies('canon'),
+        standard: vocabularies('standard'),
+        nikonPhoto: vocabularies('nikonPhoto'),
+        nikonMovie: vocabularies('nikonMovie'),
+        sonySdk: {},
+    }
+}
+
+/**
+ * Every settings group's value vocabularies; a group without one keeps the vendor's words. Name
+ * tables and vocabulary functions are one mechanism: each observation and write goes through it.
+ */
+const valueGroups: readonly VendorControlValues<CameraControlId>[] = [
+    exposureControlValues,
+    ...valueNameGroups.map(nameTableValues),
+]
 
 function controlValueVocabulary(inventory: ControlValueInventory, id: CameraControlId): ControlValueVocabulary | undefined {
     return valueGroups.map(group => group[inventory][id]).find(Boolean)
@@ -103,18 +168,19 @@ export function canonicalControlValues(
     inventory: ControlValueInventory,
     id: CameraControlId,
     value: string,
-    allowedValues?: readonly string[]
+    allowedValues?: readonly string[],
+    property = ''
 ): CanonicalControlValues | undefined {
     const vocabulary = controlValueVocabulary(inventory, id)
     if (!vocabulary) return undefined
-    const current = vocabulary.canonical(value)
+    const current = vocabulary.canonical(value, property)
     const family = vocabulary.family?.(value)
     const vendorIndex = new Map<string, number>()
     const offered: string[] = []
     const unnamed: string[] = []
     allowedValues?.forEach((choice, index) => {
         if (family !== undefined && vocabulary.family?.(choice) !== family) return
-        const canonical = vocabulary.canonical(choice)
+        const canonical = vocabulary.canonical(choice, property)
         if (canonical === undefined) {
             unnamed.push(choice)
             return
@@ -133,4 +199,19 @@ export function canonicalControlValues(
         vendorIndex,
         ...(Object.keys(unrecognized).length ? { unrecognized } : {}),
     }
+}
+
+/**
+ * The single vendor word behind a canonical name on one property, for a write with no advertised
+ * choice behind it; undefined when the vocabulary cannot say. Several words are ambiguous: refused.
+ */
+export function vendorControlWord(
+    inventory: ControlValueInventory,
+    id: CameraControlId,
+    property: string,
+    canonical: string
+): { word: string } | { ambiguous: string[] } | undefined {
+    const words = controlValueVocabulary(inventory, id)?.vendorWords?.(canonical, property) ?? []
+    if (words.length > 1) return { ambiguous: words }
+    return words.length === 1 ? { word: words[0]! } : undefined
 }

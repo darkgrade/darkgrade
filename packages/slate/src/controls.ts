@@ -15,6 +15,7 @@ export {
 } from '@camera/settings/exposure'
 export type { ColorTemperature, PictureProfile, PictureStyle, WhiteBalance } from '@camera/settings/colour'
 export type { DriveMode, PhotoVideoMode } from '@camera/settings/mode'
+export type { DetectionSubject, EyeSelection, FocusArea, FocusMode, SubjectDetection } from '@camera/settings/focus'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'
 export type {
     CameraCapabilities,
@@ -23,6 +24,7 @@ export type {
     CameraControlSession,
     CameraControlState,
     CameraRecordingState,
+    OperationAvailability,
     UnrecognizedValues,
 } from '@camera/controls'
 export { exposureSeconds, matchExposureTime, parseExposureTime } from '@camera/exposure-time'

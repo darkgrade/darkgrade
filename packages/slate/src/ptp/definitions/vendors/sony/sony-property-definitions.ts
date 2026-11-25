@@ -203,7 +203,7 @@ export const FocusMode = {
 
 // Sony autofocus area (PTP 0xd22c), as listed in Sony's Camera Control PTP 3 reference. Unknown
 // areas still decode to "Area 0x…" so a newer body reports rather than fails.
-const SONY_FOCUS_AREA_NAMES: Record<number, string> = {
+export const SONY_FOCUS_AREA_NAMES = {
     0x0001: 'Wide',
     0x0002: 'Zone',
     0x0003: 'Center',
@@ -235,17 +235,19 @@ const SONY_FOCUS_AREA_NAMES: Record<number, string> = {
     0x0302: 'Tracking Flexible Spot M',
     0x0303: 'Tracking Flexible Spot L',
     0x0304: 'Tracking Expand Flexible Spot',
-}
+} as const satisfies Record<number, string>
+export type SonyFocusAreaName = (typeof SONY_FOCUS_AREA_NAMES)[keyof typeof SONY_FOCUS_AREA_NAMES]
+const sonyFocusAreaNames: Readonly<Record<number, string>> = SONY_FOCUS_AREA_NAMES
 class SonyFocusAreaCodec extends CustomCodec<string> {
     encode(value: string): Uint8Array {
-        const entry = Object.entries(SONY_FOCUS_AREA_NAMES).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
+        const entry = Object.entries(sonyFocusAreaNames).find(([, name]) => name.toLowerCase() === String(value).toLowerCase())
         const raw = entry ? Number(entry[0]) : Number.parseInt(String(value).replace(/^.*0x/i, ''), 16)
         if (!Number.isFinite(raw)) throw new Error(`Unknown focus area: ${value}`)
         return this.baseCodecs.uint16.encode(raw)
     }
     decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
         const result = this.baseCodecs.uint16.decode(buffer, offset)
-        return { value: SONY_FOCUS_AREA_NAMES[result.value] ?? `Area 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
+        return { value: sonyFocusAreaNames[result.value] ?? `Area 0x${result.value.toString(16)}`, bytesRead: result.bytesRead }
     }
 }
 export const FocusArea = {

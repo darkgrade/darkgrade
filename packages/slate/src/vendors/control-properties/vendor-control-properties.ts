@@ -22,7 +22,13 @@ export interface VendorControlProperties<Ids extends string> {
  * word Slate has no name for; such a choice is never offered or written.
  */
 export interface ControlValueVocabulary {
-    canonical(label: string): string | undefined
+    /** `property` is the observed property's name, for vocabularies whose words differ per property. */
+    canonical(label: string, property: string): string | undefined
+    /**
+     * The vendor words behind a canonical name on one property, for a write with no advertised
+     * choice behind it. More than one word is ambiguous and refused.
+     */
+    vendorWords?(canonical: string, property: string): string[]
     /**
      * Groups choices that belong together (Sony's movie exposure modes are a family apart from its
      * photo modes); only the current value's family is offered.
@@ -42,4 +48,15 @@ export type ControlValueInventory = keyof VendorControlProperties<string> | 'son
 /** One settings group's value vocabularies for each inventory. */
 export type VendorControlValues<Ids extends string> = {
     [Inventory in ControlValueInventory]: { readonly [Id in Ids]?: ControlValueVocabulary }
+}
+
+/** For one setting: per property name, each vendor label and its canonical name. */
+export type ControlPropertyValueNames = { readonly [PropertyName: string]: Readonly<Record<string, string>> }
+
+/**
+ * One settings group's canonical value names for each property inventory. A group lists only the
+ * settings whose vendor labels differ from the canonical spelling; others keep the codec's label.
+ */
+export type ControlValueNames<Ids extends string> = {
+    readonly [Inventory in keyof VendorControlProperties<Ids>]?: { readonly [Id in Ids]?: ControlPropertyValueNames }
 }

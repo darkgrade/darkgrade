@@ -36,11 +36,9 @@ export const focusOperationTable = {
             area: 'focus',
             disposition: { kind: 'replaced-by', target: 'setFocusPoint' },
         },
-    },
-    planned: {
         setFocusPoint: {
             area: 'focus',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Focuses on a point in the picture; 0–1 from the top-left',
             surfaces: {
                 cli: {
@@ -54,12 +52,12 @@ export const focusOperationTable = {
         },
         resetFocusPoint: {
             area: 'focus',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Back to the centre and the previous focus area',
         },
         nudgeFocus: {
             area: 'focus',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Moves manual focus a little, like the < << <<< buttons in vendor remote apps',
             surfaces: {
                 cli: {
@@ -68,4 +66,5 @@ export const focusOperationTable = {
             },
         },
     },
+    planned: {},
 } as const satisfies AreaOperationTable

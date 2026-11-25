@@ -37,8 +37,6 @@ export const DISCOVERY_RETRY_DELAY_MS = 700
 
 export const HOTPLUG_CONNECT_DELAY_MS = 1500
 
-export const FOCUS_DURATION_MS = 800
-
 export const BATTERY_POLL_INTERVAL_MS = 60_000
 
 export const RECOVERY_RECONNECT_DELAY_MS = 1200
@@ -63,9 +61,9 @@ export const DOWNLOAD_PROGRESS_INTERVAL_MS = 100
 /** Settings that change what the camera focuses on: changing one refocuses. */
 export const REFOCUS_CONTROLS = new Set<CameraControlName>([
     'focusArea',
-    'subjectRecognition',
-    'recognitionTarget',
-    'eyeSelect',
+    'subjectDetection',
+    'detectionSubject',
+    'eyeSelection',
 ])
 
 /** How often the camera's on-screen display is refreshed while it is overlaid. */
@@ -83,11 +81,6 @@ export const KELVIN_MAX = 9900
 export const KELVIN_STEP = 100
 
 /** Sony property names per setting, newest first: bodies report one or the other. */
-/** Sony's touch-focus coordinates are on a fixed 640×480 grid regardless of the picture size. */
-export const SONY_AF_GRID_WIDTH = 640
-
-export const SONY_AF_GRID_HEIGHT = 480
-
 export const PTP_ACCESS_DENIED = 0x200f
 
 export const FILES_REFRESH_DELAY_MS = 1500

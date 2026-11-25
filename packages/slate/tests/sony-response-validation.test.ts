@@ -147,7 +147,7 @@ describe('Sony session response validation', () => {
         await expect((camera as any).waitForFocus(120)).rejects.toThrow(expected)
         await expect((camera as any).waitForFocus(120)).rejects.toThrow(/did not report focus within 120 ms/)
         camera.get = (async () => 'AF_C_FOCUSED') as typeof camera.get
-        await expect((camera as any).waitForFocus(120)).resolves.toBe(true)
+        await expect((camera as any).waitForFocus(120)).resolves.toBe('acquired')
     })
 
     it('stops before authentication or configuration if the camera refuses the session', async () => {

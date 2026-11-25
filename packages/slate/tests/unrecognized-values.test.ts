@@ -72,7 +72,7 @@ describe('Canon values outside the codec tables', () => {
         const focus = (await camera.getCapabilities()).controls.focusMode!
         expect(focus).toMatchObject({
             value: 'Unrecognized (0x3e7)',
-            allowedValues: ['one-shot', 'manual'],
+            allowedValues: ['AF-S', 'MF'],
             writable: false,
             unrecognized: { value: '0x3e7' },
         })
@@ -80,7 +80,7 @@ describe('Canon values outside the codec tables', () => {
         expect(state.value).toBeUndefined()
         expect(state.unrecognized).toEqual({ value: '0x3e7' })
         expect(driver.listUnknownPropertyStates().find(item => item.code === 0xd108)?.rawValue).toBe(999)
-        await expect(camera.setControl('focusMode', 'manual')).rejects.toThrow('not writable')
+        await expect(camera.setControl('focusMode', 'MF')).rejects.toThrow('not writable')
         expect(unrecognized(evidence)).toEqual([
             { type: 'unrecognized-value', vendorId: 0x04a9, property: 0xd108, dataType: 6, raw: 999, choice: false },
         ])
@@ -90,8 +90,8 @@ describe('Canon values outside the codec tables', () => {
         const { camera, driver, evidence } = canon(3, [0, 0x77, 3])
         const focus = (await camera.getCapabilities()).controls.focusMode!
         expect(focus).toMatchObject({
-            value: 'manual',
-            allowedValues: ['one-shot', 'manual'],
+            value: 'MF',
+            allowedValues: ['AF-S', 'MF'],
             writable: true,
             unrecognized: { choices: ['0x77'] },
         })

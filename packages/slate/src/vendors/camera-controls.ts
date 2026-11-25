@@ -30,6 +30,7 @@ import { canonicalControlInput } from '@camera/settings/typed-settings'
 import {
     canonControlProperties,
     canonicalControlValues,
+    vendorControlWord,
     nikonMovieControlProperties,
     nikonPhotoControlProperties,
     sonyControlProperties,
@@ -37,6 +38,7 @@ import {
     type ControlPropertyMap,
     type ControlValueInventory,
 } from '@vendors/control-properties'
+import { canonFocusModeStates } from '@vendors/control-properties/focus'
 import { nikonControlLabel } from '@vendors/nikon/control-values'
 import { MovieShutterAngle } from '@vendors/nikon/video-properties'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
@@ -216,6 +218,8 @@ interface ControlObservations {
     capabilities: CameraCapabilities
     /** For settings with canonical names, the vendor choice behind each offered name. */
     vendorChoices: Partial<Record<CameraControlId, Map<string, VendorChoice>>>
+    /** Which vocabulary the observation was named with. */
+    inventory: ControlValueInventory
 }
 
 /** Adapt existing observed inventories; a static registry entry alone never becomes a capability. */
@@ -266,6 +270,10 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
                 writable: state.access === 'GetSet' && Boolean(state.allowedValues?.length),
                 ...(state.unrecognized && { unrecognized: state.unrecognized }),
             }))
+        const videoMode = camera
+            .listUnknownPropertyStates()
+            .some(state => state.name === 'FixedMovie' && state.rawValue === 1)
+        states = canonFocusModeStates(states, videoMode)
         mappings = canonControlProperties
         inventory = 'canon'
     } else if (camera instanceof NikonCamera) {
@@ -295,7 +303,9 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
         const definition = cameraControlDefinitions[id]
         const vendorValue = label(state.value),
             vendorAllowedValues = state.allowedValues?.map(label)
-        const canonical = canonicalControlValues(inventory, id, vendorValue, vendorAllowedValues)
+        // Two vendor values can share a canonical name (Sony's Lock-on AF and older Tracking spots are
+        // both "Tracking Spot M"), so a write sends the choice this body offered behind the name.
+        const canonical = canonicalControlValues(inventory, id, vendorValue, vendorAllowedValues, state.name)
         if (canonical)
             vendorChoices[id] = new Map(
                 [...canonical.vendorIndex].map(([name, index]) => [
@@ -374,6 +384,7 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
             advertisedOperations: deviceInfo ? [...deviceInfo.operationsSupportedRaw] : null,
         },
         vendorChoices,
+        inventory,
     }
 }
 
@@ -458,7 +469,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
     }
     // A canonical name is written as the camera's own choice behind it; confirmation reads it back canonically.
     const vendorChoice = observation.vendorChoices[id]?.get(requested)
-    const vendorLabel = vendorChoice?.label ?? requested
+    const vendorLabel = vendorChoice?.label ?? inverseVendorWord(observation.inventory, state, requested)
     const write = async (): Promise<void> => {
         if (driver instanceof NikonCamera) {
             const expectedMode =
@@ -576,7 +587,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
             await driver.setImageFormat(choice.packed)
             return
         }
-        const written = vendorChoice ? vendorChoice.raw : id === 'colorTemperature' ? Number(requested) : requested
+        const written = vendorChoice ? vendorChoice.raw : id === 'colorTemperature' ? Number(requested) : vendorLabel
         if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(vendorLabel)
         else await driver.set(property, written as never)
     }
@@ -618,4 +629,19 @@ function sameExposureTicks(driver: GenericCamera, code: number): (observed: stri
             return false
         }
     }
+}
+
+/**
+ * The camera's own word for a canonical value with no advertised choice behind it, from the inverse
+ * of the setting's vocabulary. A name that stands for more than one vendor word is refused before
+ * anything is sent; a vocabulary without inverse words writes the canonical name itself.
+ */
+function inverseVendorWord(inventory: ControlValueInventory, state: CameraControlState, canonical: string): string {
+    const found = vendorControlWord(inventory, state.id, state.source.name, canonical)
+    if (!found) return canonical
+    if ('word' in found) return found.word
+    throw new CameraRefusedError(
+        state.id,
+        `${canonical} stands for more than one ${state.source.name} value (${found.ambiguous.join(', ')}); the camera's choice is ambiguous`
+    )
 }

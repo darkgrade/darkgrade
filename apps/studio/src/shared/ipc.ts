@@ -117,9 +117,9 @@ export const CAMERA_CONTROL_NAMES = [
     'colorTemperature',
     'focusMode',
     'focusArea',
-    'subjectRecognition',
-    'recognitionTarget',
-    'eyeSelect',
+    'subjectDetection',
+    'detectionSubject',
+    'eyeSelection',
     'stillFormat',
     'imageSize',
     'aspectRatio',
@@ -197,6 +197,8 @@ export interface CameraState {
     controls: CameraControls | null
     /** The camera's on-screen display drawn over live view; null when the camera can't send it. */
     osdOverlay: boolean | null
+    /** Slate reports that the camera can place a focus point now (click-to-focus in live view). */
+    clickToFocus: boolean
     liveView: boolean
     recording: boolean
     recordingState: CameraRecordingState

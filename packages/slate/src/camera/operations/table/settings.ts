@@ -55,7 +55,7 @@ export const settingsOperationTable = {
             disposition: {
                 kind: 'replaced-by',
                 target: 'getFocusMode',
-                note: 'Movie Servo AF is a focus-mode value',
+                note: 'In video mode Movie Servo AF on reads AF-C and off reads AF-S',
             },
         },
         setMovieServoAutofocus: {
@@ -63,23 +63,23 @@ export const settingsOperationTable = {
             disposition: {
                 kind: 'replaced-by',
                 target: 'setFocusMode',
-                note: 'Movie Servo AF is a focus-mode value',
+                note: 'In video mode Movie Servo AF on reads AF-C and off reads AF-S',
             },
         },
         getContinuousAutofocus: {
             area: 'settings',
             disposition: {
                 kind: 'replaced-by',
-                target: 'getFocusMode',
-                note: 'AI Servo / AF-C is a focus-mode value',
+                target: 'getCapabilities',
+                note: 'Canon Continuous AF pre-focuses in One-Shot and is not AF-C; it is the control continuousAutofocus',
             },
         },
         setContinuousAutofocus: {
             area: 'settings',
             disposition: {
                 kind: 'replaced-by',
-                target: 'setFocusMode',
-                note: 'AI Servo / AF-C is a focus-mode value',
+                target: 'setControl',
+                note: 'Canon Continuous AF pre-focuses in One-Shot and is not AF-C; it is the control continuousAutofocus',
             },
         },
         getCanonLiveViewAutofocusMode: {
@@ -369,16 +369,14 @@ export const settingsOperationTable = {
                 },
             },
         },
-    },
-    planned: {
         getFocusArea: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current focus area, in canonical spelling',
         },
         setFocusArea: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the focus area and returns the value read back',
             surfaces: {
                 cli: {
@@ -388,12 +386,12 @@ export const settingsOperationTable = {
         },
         getSubjectDetection: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current subject detection, in canonical spelling',
         },
         setSubjectDetection: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the subject detection and returns the value read back',
             surfaces: {
                 cli: {
@@ -403,12 +401,12 @@ export const settingsOperationTable = {
         },
         getDetectionSubject: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current detection subject, in canonical spelling',
         },
         setDetectionSubject: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the detection subject and returns the value read back',
             surfaces: {
                 cli: {
@@ -418,12 +416,12 @@ export const settingsOperationTable = {
         },
         getEyeSelection: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current eye selection, in canonical spelling',
         },
         setEyeSelection: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the eye selection and returns the value read back',
             surfaces: {
                 cli: {
@@ -431,6 +429,8 @@ export const settingsOperationTable = {
                 },
             },
         },
+    },
+    planned: {
         getPhotoFormat: {
             area: 'settings',
             disposition: { kind: 'add' },

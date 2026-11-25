@@ -1,15 +1,8 @@
-import {
-    Camera,
-    isMovableFocusArea,
-    VendorIDs,
-    type CameraCapabilities,
-    type CameraControlState,
-} from '@darkgrade/slate'
+import { Camera, VendorIDs, type CameraCapabilities, type CameraControlState } from '@darkgrade/slate'
 import { resolveCameraControl } from '@darkgrade/slate/controls'
 import type { CameraService } from '@main/camera-service'
 import {
     errorMessage,
-    FOCUS_DURATION_MS,
     kelvinSteps,
     REFOCUS_CONTROLS,
     requiresReconnect,
@@ -43,6 +36,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             const capabilities = await camera.getCapabilities()
             this.controlProperties.clear()
             this.controls = await this.readControls(camera, capabilities)
+            this.focusPointAvailable = capabilities.operations?.setFocusPoint?.supported === true
             this.settings = {
                 iso: capabilities.controls.iso?.value ?? null,
                 shutterSpeed: capabilities.controls.shutterSpeed?.value ?? null,
@@ -84,10 +78,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             const states = await camera.getSonyPropertyStates()
             this.updateCardFromStates(states)
             this.updateLensFromStates(states)
-            await this.showSonyFaceFrames(camera, states, controls.subjectRecognition?.value === 'On')
         }
-        const area = controls.focusArea?.value ?? ''
-        if (isMovableFocusArea(area)) this.lastFlexibleSpot = area.replace(/^lock on af /i, '')
         return controls
     },
 
@@ -126,9 +117,8 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture')
                 this.settings = { ...this.settings, [name]: observed.value }
             this.broadcastState()
-            // Choosing an area by hand replaces any switch click-to-focus made.
-            if (name === 'focusArea') this.focusAreaBeforeTouch = null
-            if (name === 'subjectRecognition') this.subjectRecognitionBeforeTouch = null
+            // Choosing an area or subject detection by hand keeps it: Focus no longer undoes a click's changes.
+            if (name === 'focusArea' || name === 'subjectDetection') this.focusPointChanges = null
             this.log('system', `${CAMERA_CONTROL_LABELS[name]} → ${observed.value}`)
             // A mode change reshapes what the other settings allow, so those still read back before returning.
             if (name === 'exposureProgram' || name === 'exposureMode' || name === 'photoVideoMode' || name === 'whiteBalance' || name === 'focusMode') {
@@ -141,7 +131,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
                 REFOCUS_CONTROLS.has(name) &&
                 !/^(MF|DMF)/i.test(this.controls?.focusMode?.value ?? '')
             ) {
-                await camera.autofocus(FOCUS_DURATION_MS)
+                await camera.autofocus()
                 this.log('system', 'Refocused')
             }
             return this.controls

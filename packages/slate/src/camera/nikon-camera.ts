@@ -1,5 +1,5 @@
 import { Logger } from '@core/logger'
-import { CameraOutcomeUnknownError } from '@camera/errors'
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
@@ -488,7 +488,7 @@ export class NikonCamera extends GenericCamera {
             throw new Error('Nikon operation capabilities could not be read')
         for (const operation of operations) {
             if (!supported.includes(operation.code))
-                throw new Error(`The Nikon does not advertise ${operation.name}`)
+                throw new CameraUnsupportedError(operation.name, `The Nikon does not advertise ${operation.name}`)
         }
     }
 
@@ -525,15 +525,15 @@ export class NikonCamera extends GenericCamera {
         await this.enableLiveView()
         const response = await this.send(operations.AfDrive, {})
         if (response.code !== OK.code && response.code !== OutOfFocus.code)
-            throw new Error(`Nikon AfDrive failed with response 0x${response.code.toString(16)}`)
+            throw new CameraRefusedError('autofocus', `Nikon AfDrive failed with response 0x${response.code.toString(16)}`)
         let completion: number = response.code
         try {
             if (completion === OK.code) completion = await this.pollDeviceReady(timeoutMilliseconds, [OutOfFocus.code])
         } catch (error) {
             const cancel = await this.send(operations.AfDriveCancel, {}).catch(() => undefined)
             if (!cancel || cancel.code !== OK.code)
-                throw new Error('Nikon autofocus did not complete and cancellation was not confirmed', { cause: error })
-            throw error
+                throw new CameraOutcomeUnknownError('autofocus', 'Nikon autofocus did not complete and cancellation was not confirmed')
+            throw new CameraOutcomeUnknownError('autofocus', `Nikon autofocus did not complete and was cancelled: ${error instanceof Error ? error.message : String(error)}`)
         }
         const metadata = await this.freshFocusMetadata()
         return { commandSent: true, focusAcquired: completion === OK.code && metadata.focusingJudgementResult === 2
@@ -557,7 +557,7 @@ export class NikonCamera extends GenericCamera {
         const deviceX = Math.round(x * (width - 1)), deviceY = Math.round(y * (height - 1))
         const response = await this.send(operations.ChangeAfArea, { X: deviceX, Y: deviceY })
         if (response.code !== OK.code)
-            throw new Error(`Nikon ChangeAfArea failed with response 0x${response.code.toString(16)}`)
+            throw new CameraRefusedError('setFocusPoint', `Nikon ChangeAfArea failed with response 0x${response.code.toString(16)}`)
         await this.waitForDeviceReady()
         const focus = options.focus === false ? undefined : await this.autofocus()
         const metadata = focus?.metadata ?? await this.freshFocusMetadata()
@@ -582,11 +582,11 @@ export class NikonCamera extends GenericCamera {
         await this.enableLiveView()
         const response = await this.send(operations.MfDrive, { Direction: direction === 'near' ? 1 : 2, Steps: steps })
         if (response.code !== OK.code)
-            throw new Error(`Nikon MfDrive failed: ${this.responseDescription(response.code)}. Use AF-S focus mode for manual drive.`)
+            throw new CameraRefusedError('nudgeFocus', `Nikon MfDrive failed: ${this.responseDescription(response.code)}. Use AF-S focus mode for manual drive.`)
         try {
             await this.waitForDeviceReady()
         } catch (error) {
-            throw new Error(`Nikon MfDrive completion failed: ${error instanceof Error ? error.message : String(error)}. Use AF-S focus mode for manual drive.`, { cause: error })
+            throw new CameraOutcomeUnknownError('nudgeFocus', `Nikon MfDrive completion failed: ${error instanceof Error ? error.message : String(error)}. Use AF-S focus mode for manual drive.`)
         }
         return { commandSent: true, completed: true, metadata: await this.freshFocusMetadata() }
     }

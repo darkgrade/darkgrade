@@ -2,7 +2,7 @@ import { Camera, runCameraBenchmark, VendorIDs, type CameraRecordingState } from
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'
-import { focusOperations, type FocusOperations } from '@main/camera-service/focus'
+import { focusOperations, type FocusOperations, type FocusPointChanges } from '@main/camera-service/focus'
 import { liveViewOperations, type LiveViewOperations } from '@main/camera-service/live-view'
 import { mediaOperations, type MediaOperations } from '@main/camera-service/media'
 import { photoOperations, type PhotoOperations } from '@main/camera-service/photo'
@@ -85,6 +85,7 @@ export class CameraService {
             clock: this.connected ? this.clock : null,
             controls: this.controls,
             osdOverlay: this.connected && this.detectedVendorId === VendorIDs.SONY ? this.osdOverlay : null,
+            clickToFocus: this.connected && this.focusPointAvailable,
             liveView: this.liveViewRunning,
             recording: this.recording,
             recordingState: this.recordingState,
@@ -217,16 +218,10 @@ export class CameraService {
 
     // ------------------------------------------------------------------ focus
 
-    /** One autofocus cycle via Slate (Sony S1 half-press, Canon/Nikon AF drive). */
-    /** The camera's own focus area from before the first click-to-focus, restored by focus(). */
-    focusAreaBeforeTouch: string | null = null
-    /**
-     * Click-to-focus turns Sony's eye tracking (Subject Recognition in AF) off, or the camera pulls
-     * focus straight back to a face; focus() turns it back on.
-     */
-    subjectRecognitionBeforeTouch: string | null = null
-    /** The Flexible Spot size last active on the camera, without its Lock on AF prefix. */
-    lastFlexibleSpot = 'Flexible Spot M'
+    /** What click-to-focus changed since the last Focus, as read back after the click; focus() undoes only that. */
+    focusPointChanges: FocusPointChanges | null = null
+    /** Slate's last report of whether a focus point can be placed (getCapabilities().operations). */
+    focusPointAvailable = false
 
     /** Whether the camera's on-screen display is drawn over live view (Sony). */
     osdOverlay = false
