@@ -53,6 +53,21 @@ promise rejections; verify this in isolated Node consumers, not by swallowing a 
 Keep the requested task on one branch and one PR. Historical PR numbers in technical
 notes are evidence, not instructions to append new work to an old branch or to merge.
 
+# The privacy policy is the source of truth
+
+What Darkgrade collects, why, which services receive it and the controls people have are stated
+in one place: the privacy policy in `apps/darkgrade.com/app/components/privacy/privacy.tsx`,
+published at darkgrade.com/privacy. Nothing else makes privacy claims. Do not say what is or is
+not collected, kept, shared or deleted in a README, a docs page, help text, an interface string,
+an email or a notice; link to the policy instead. Instructions (which command
+opts out or deletes) and internal mechanics (schemas, limits, expiry jobs) are fine, and so are
+the rules for code in these `AGENTS.md` files. The marketing site keeps its own copy.
+
+A change to what is collected, where it goes, why, or a control changes the policy in the same
+pull request, with its Effective date. If the code and the policy disagree, one of them has a
+bug: say so and fix it, rather than describing the difference somewhere else. Only an explicit
+user request changes the policy's wording; propose the words and wait.
+
 # Subsystem notes
 
 Rules that apply to one part of the repository live beside it. Read the one for the area

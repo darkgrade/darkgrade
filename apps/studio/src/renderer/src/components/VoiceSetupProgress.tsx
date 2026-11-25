@@ -59,7 +59,7 @@ export function VoiceSetupProgress({ summary }: { summary: SetupSummary }): Reac
         <div className="w-80 space-y-3" role="status" aria-live="polite">
             <div className="space-y-1 text-center">
                 <p className="text-sm font-medium">Setting up voice</p>
-                <p className="text-xs text-muted-foreground">One time only. Everything stays on this Mac.</p>
+                <p className="text-xs text-muted-foreground">One time only.</p>
             </div>
             <div className="space-y-1.5">
                 <Progress value={summary.fraction * 100} aria-label="Voice setup progress" />

@@ -38,26 +38,40 @@ export function SheetPage({ name, title, document, children }: SheetPageProps) {
 }
 
 interface SheetHeadlineProps {
-    /** The headline's two lines; `lit` is the end of the second, set in the lamp's gold. */
+    /** The headline's two lines; `lit` is the end of the second, set in the lamp's gold. A plain title gives only `first`. */
     first: string
-    second: string
-    lit: string
+    second?: string
+    lit?: string
     lede: string
 }
 
 /** The head of a sheet: a headline on two lines with its last words lit, and a paragraph beside it. */
 export function SheetHeadline({ first, second, lit, lede }: SheetHeadlineProps) {
+    // A one-line title is shorter than its paragraph, so the two stack; a two-line headline stands beside it.
+    const stacked = !second && !lit
     return (
-        <section className="grid grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] items-end gap-x-[clamp(32px,6vw,110px)] gap-y-8 pt-[clamp(64px,13vh,150px)] max-[900px]:grid-cols-1">
+        <section
+            className={`grid pt-[clamp(64px,13vh,150px)] max-[900px]:grid-cols-1 ${
+                stacked
+                    ? 'grid-cols-1 gap-y-[clamp(20px,3.2vh,32px)]'
+                    : 'grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] items-end gap-x-[clamp(32px,6vw,110px)] gap-y-8'
+            }`}
+        >
             <h1
                 className={`${HEADING} ml-[-.04em] text-[clamp(2.25rem,5.5vw,6.25rem)] leading-[.96] tracking-[-.05em] whitespace-nowrap`}
             >
                 <span className="block">{first}</span>
-                <span className="block">
-                    {second} <span className="glow-hot italic">{lit}</span>
-                </span>
+                {(second || lit) && (
+                    <span className="block">
+                        {second} <span className="glow-hot italic">{lit}</span>
+                    </span>
+                )}
             </h1>
-            <p className="max-w-[46ch] pb-[.6em] text-[clamp(1rem,1.15vw,1.1875rem)] leading-[1.6] text-ink-66">
+            <p
+                className={`text-[clamp(1rem,1.15vw,1.1875rem)] leading-[1.6] text-ink-66 ${
+                    stacked ? 'max-w-[64ch]' : 'max-w-[46ch] pb-[.6em]'
+                }`}
+            >
                 {lede}
             </p>
         </section>
@@ -101,7 +115,7 @@ export function FactStrip({ facts }: { facts: readonly Fact[] }) {
 }
 
 /** A section of a sheet under its own slate line: what it is in gold, and a few words more. */
-export function SheetSection({ name, title, children }: { name: string; title: string; children: React.ReactNode }) {
+export function SheetSection({ name, title, children }: { name: string; title?: string; children: React.ReactNode }) {
     return (
         <section className="pt-[clamp(72px,14vh,160px)]">
             <h2 className={`${SLATE} border-t border-hair pt-[10px] text-ink-66`}>

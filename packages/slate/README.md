@@ -53,8 +53,9 @@ Terminal command behavior is exported separately as `runDarkgradeCli` from
 `@darkgrade/slate/cli`. It accepts command arguments and returns an exit code; importing
 it does not open a camera or initialize settings. `packages/cli` supplies the thin
 `darkgrade` executable and bundles this runner for npm.
-See [diagnostics and privacy](docs/contribute.md) for enrollment, opt-out,
-withdrawal, local logging and integration details.
+See [diagnostics](docs/contribute.md) for enrollment, opt-out,
+withdrawal, local logging and integration details, and the [privacy policy](https://darkgrade.com/privacy)
+for what is collected and why.
 
 ## Canon EOS R6 Mark III
 

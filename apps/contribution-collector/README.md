@@ -5,6 +5,9 @@ metadata, serves a private investigation timeline, and performs its own cleanup.
 Firestore, GCS recording store, email provider, separate cleanup worker or scheduler is
 required. This replaces the undeployed project 18 infrastructure.
 
+What Darkgrade collects, why, which services receive it and the controls people have are
+stated only in the [privacy policy](https://darkgrade.com/privacy). This document covers how the service works.
+
 ## Local development
 
 Build `packages/slate` and this app, then run a local Postgres 17 database. Set
@@ -23,7 +26,7 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
 - `telemetry_events` is the flat investigation table: installation/session IDs, client/server
   timestamps, model, firmware, Slate revision, transport, operation code and flexible JSONB
   properties, and optional versioned camera-body fingerprints. Fingerprints hash manufacturer, model
-  and reliable serial identity; raw serials, images, command parameters and free-form errors are excluded.
+  and reliable serial identity.
 - `telemetry_state` holds installation credential hashes, immutable original batches, quotas,
   review records and deletion state. Original batch hashes retain provenance for Matrix.
 - Serializability keeps uploads, revocation and review consistent. Retrying an identical
@@ -64,10 +67,7 @@ must use certificate-verified TLS. Do not expose a plaintext Postgres port publi
   `logout` removes the association without changing sharing, including after opting out.
   It stays unavailable until `TELEMETRY_EMAIL_API_KEY` (Resend) and a verified
   `TELEMETRY_EMAIL_FROM` are configured. Anonymous `whoami` works without email.
-  These addresses identify telemetry contributors only: no Resend contact, segment,
-  product-update subscription or public contributor credit is created. Addresses remain
-  separate from camera events, diagnostic batches and Matrix exports. The private operator
-  `/internal/api/contributors` support lookup exposes current/pending identities and joins
+  The private operator `/internal/api/contributors` support lookup exposes current/pending identities and joins
   the installation's retained summaries, including history before enrollment; it never exposes credentials.
   Confirmation links expire after 2 hours, are single-use, and are invalidated by a
   replacement request, logout or withdrawal. Requests are limited to five per installation

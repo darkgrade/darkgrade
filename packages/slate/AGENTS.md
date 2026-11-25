@@ -1,5 +1,7 @@
 # Slate
 
+Read the root `AGENTS.md` first; this file only adds to it.
+
 Notes for work inside `packages/slate`. The repository-wide rules are in the root `AGENTS.md`;
 telemetry and collector rules are in `apps/contribution-collector/AGENTS.md`.
 

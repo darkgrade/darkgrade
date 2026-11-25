@@ -528,7 +528,7 @@ export function resendContactSender(apiKey: string, from: string, request: typeo
                     from: from.trim(),
                     to: [email],
                     subject: 'Confirm your Darkgrade diagnostics email',
-                    text: `Confirm this email for your Darkgrade installation:\n${confirmationUrl}\n\nThis link expires in 2 hours. Your submitted address is associated with this installation's retained camera sessions as unverified until confirmed, so the team can investigate reported problems. If you did not request it, ignore this message. This only identifies your telemetry contributions; it does not subscribe you to product updates. Camera diagnostic events never contain your email.`,
+                    text: `Confirm this email for your Darkgrade installation:\n${confirmationUrl}\n\nThis link expires in 2 hours. Your submitted address is associated with this installation's retained camera sessions as unverified until confirmed, so the team can investigate reported problems. If you did not request it, ignore this message.`,
                 }),
                 signal: AbortSignal.timeout(10_000),
                 redirect: 'error',

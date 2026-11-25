@@ -45,13 +45,12 @@ Open the row for camera fingerprints, source revisions, first/last seen and sess
 **Sessions** opens that installation's last 90 days; each replay also shows its current
 email identity. A newly submitted address joins to the installation's retained history,
 including sessions uploaded before enrollment. A verified replacement changes that lookup
-for all retained sessions automatically; events themselves never contain an email.
+for all retained sessions automatically.
 
 Unverified addresses are user-submitted claims and do not establish ownership. An email
 lookup may return multiple independent installations; a shared camera fingerprint does
 not merge their users. Deleted/expired data and diagnostics never uploaded while opted
-out cannot be recovered. Raw addresses stay in the private Telemetry support tools and
-are excluded from Matrix exports/public attribution.
+out cannot be recovered.
 
 Warnings are yellow, explicit errors are red, and clear observations remain white/grey.
 A busy response or retry is a warning; it does not establish a failed final workflow.

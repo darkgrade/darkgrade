@@ -29,6 +29,6 @@ Each adapter provides `prepare`, `start`, `stop`, `collect` and `close`. USB med
 
 Use the actual recording frame rate when selecting a shutter. A composition guide is not a request to change capture resolution or crop originals. Autofocus acknowledgement and background edge detail are not proof of subject focus. Fixed Nikon movie ISO only applies in M; other exposure modes can retain automatic gain despite accepting a stored M value.
 
-Starts are dispatched together, **not frame synchronized**. File discovery and transfer depend on the body, card and selected transport. No cloud upload or social publishing is performed by these APIs. Originals remain on camera cards.
+Starts are dispatched together, **not frame synchronized**. File discovery and transfer depend on the body, card and selected transport. Originals remain on camera cards.
 
 The image analyser uses the host's ffmpeg and optionally an already-running local vision model. It never cold-loads a model in the critical setup path. Physical lighting controls require a separate light-device adapter.

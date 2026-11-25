@@ -123,7 +123,7 @@ export function DiagnosticsSettings() {
                         ? (status.error ?? 'Sharing is off until a collector is configured.')
                         : status.withdrawalPending
                           ? "Deleting what this Mac shared. Sharing can be turned back on once that's done."
-                          : 'Camera capabilities and numeric settings, to improve Slate and Matrix. No images or raw serial numbers.'
+                          : 'To improve our products and make them work with more cameras.'
                 }
                 control={
                     <Switch
@@ -228,7 +228,7 @@ export function DiagnosticsSettings() {
             {status.installationId && (
                 <SettingRow
                     title="Delete shared data"
-                    description="Removes everything this Mac has shared from Darkgrade's servers."
+                    description="Deletes the diagnostics and email this installation has shared."
                     control={
                         status.withdrawalPending ? (
                             <Button
@@ -259,8 +259,8 @@ export function DiagnosticsSettings() {
                                     <AlertDialogHeader>
                                         <AlertDialogTitle>Delete this Mac's camera diagnostics?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                            Everything this installation has shared is removed from Darkgrade's servers.
-                                            This can't be undone.
+                                            The diagnostics and email this installation has shared are deleted. This
+                                            can't be undone.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>

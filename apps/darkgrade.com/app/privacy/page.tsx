@@ -4,8 +4,7 @@ import { Privacy } from '@/app/components/privacy/privacy'
 
 export const metadata: Metadata = {
     title: 'Privacy · Darkgrade',
-    description:
-        'Darkgrade’s privacy policy is being written and will be published here. Questions: ask us in Discord.',
+    description: 'Data we collect, why we collect it, which services we use, and the controls you have.',
     alternates: { canonical: '/privacy' },
 }
 

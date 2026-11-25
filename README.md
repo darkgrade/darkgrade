@@ -5,7 +5,7 @@ Local-first AI for creative professionals.
 **[darkgrade.com →](https://darkgrade.com)**
 
 **Shoot more. Edit less.** Darkgrade dials in your camera, captures the shot, and, soon, returns a first
-cut, on your own machine. You stay the director. You’re in charge of what leaves your machine.
+cut, on your own machine. You stay the director.
 
 ## How it works
 
@@ -44,8 +44,8 @@ try {
 }
 ```
 
-Camera control, speech recognition and text models run on your machine by default. We don’t train on
-your footage. See [which cameras we’ve tested](https://darkgrade.com/docs/slate/getting_started/feature-compatibility)
+Camera control, speech recognition and text models run on your machine by default.
+See [which cameras we’ve tested](https://darkgrade.com/docs/slate/getting_started/feature-compatibility)
 and [the docs](https://darkgrade.com/docs/slate).
 
 ## Run locally

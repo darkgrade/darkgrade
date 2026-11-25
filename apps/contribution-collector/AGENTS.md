@@ -1,5 +1,7 @@
 # Telemetry and the collector
 
+Read the root `AGENTS.md` first; this file only adds to it.
+
 Notes for work on telemetry: the collector in `apps/contribution-collector`, the diagnostics
 client in `packages/slate/src/contribute`, and the Matrix export. The repository-wide rules
 are in the root `AGENTS.md`.
@@ -9,7 +11,6 @@ are in the root `AGENTS.md`.
 Email linking reuses `requestContact`, `contactStatus`, `removeContact` and the collector's
 existing single-use challenges. Keep Resend credentials in server Secret Manager configuration;
 never put them in Slate, CLI, Studio, diagnostic events, Matrix exports or client preferences.
-Confirmed addresses identify contributors only, without mailing-list signup or provider contacts.
 Private support lookup belongs in Telemetry, never Matrix exports. Join current/pending
 addresses to retained sessions by installation ID; shared camera fingerprints never merge
 people. Pending submissions are claims. Keep the old verified identity until the latest

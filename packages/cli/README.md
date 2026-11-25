@@ -12,12 +12,12 @@ preserving standalone `npx darkgrade` installation.
 - `whoami`: print the persistent random diagnostic ID, never its secret.
 - `status`: show the sharing preference and endpoint configuration without contacting the service.
 - `login EMAIL`: request a Resend confirmation link to identify your telemetry contributions.
-  Open the link within 2 hours; it can be used once. No mailing-list signup is included.
+  Open the link within 2 hours; it can be used once.
 - `status --email`: read the confirmed email association from the collector, or `contact: null`
   while no email is submitted. Submitted addresses show `verified: false`; a pending replacement
   is returned as `pendingEmail` while the previous verified address stays current. This is an explicit network request.
 - `logout`: remove the email association without changing the sharing preference.
-- `opt-out`: stop future cloud uploads; retain bounded sanitized local diagnostics.
+- `opt-out`: stop future cloud uploads; local diagnostics are still written.
 - `opt-in`: enable sharing again. After deletion this starts a new cloud identity.
 - `delete`: disable sharing and delete cloud data; failed deletion remains retryable.
 - `benchmark`: find the attached camera and run the full benchmark: identity, storage, every
@@ -35,7 +35,7 @@ Benchmarks use Slate's existing drivers and bounded transaction deadlines, repor
 selected check separately, and always attempt disconnect. A returned media payload proves
 a transfer, not independent image decoding or complete model qualification. The initial
 benchmark does not test every vendor setting or automatically change exposure settings.
-It respects opt-out and never uploads previously retained local logs. On managed test
+It respects opt-out. On managed test
 benches, use the bench/runtime ownership mechanism before opening a camera; do not run a
 second direct session over an existing owner.
 

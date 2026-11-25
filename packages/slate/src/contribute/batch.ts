@@ -1,12 +1,12 @@
 import { validateContribution, type Contribution } from '@contribute/schema'
 
 export const BATCH_SCHEMA = 'darkgrade.diagnostic-batch/v2'
-// Versions the sharing policy, not its product label. The Link-to-Slate rename
-// changes no collected data, purpose, retention, sharing defaults or withdrawal.
-// Changes to those terms require a new notice version.
+// Versions the sharing terms, not their wording. The terms themselves (what is collected, why,
+// where it goes and the controls) are stated only in the privacy policy, which this notice points to.
+// A change to those terms requires a new notice version; the collector rejects versions it does not know.
 export const NOTICE_VERSION = 'camera-diagnostics-90d/v1'
 export const DIAGNOSTICS_NOTICE =
-    'Share camera command codes, outcomes, timing, model, firmware and driver revision to improve Darkgrade Slate and train Matrix. Diagnostics are kept for 90 days; reviewed patterns may be retained longer with withdrawal linkage. Images, serial numbers and command parameters are excluded. Sharing starts on and can be turned off; withdrawal requests deletion. Email and public credit are optional.'
+    'Darkgrade shares camera diagnostics to improve its products. Sharing starts on and can be turned off. What is collected, why and your controls: https://darkgrade.com/privacy'
 export const MAXIMUM_BATCH_CAMERAS = 16
 
 export interface DiagnosticBatch {

@@ -34,7 +34,6 @@ test('Resend sends one private transactional confirmation with a bounded, idempo
     assert.deepEqual(body.to, [message.email])
     assert.ok(body.text.includes(message.confirmationUrl))
     assert.match(body.text,/expires in 2 hours/)
-    assert.match(body.text, /does not subscribe you to product updates/)
     assert.equal(body.tags, undefined)
     assert.doesNotMatch(JSON.stringify(body), /server-only-test-key/)
 })

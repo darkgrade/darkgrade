@@ -1,5 +1,7 @@
 # Thin executable
 
+Read the root `AGENTS.md` first; this file only adds to it.
+
 All command behavior belongs in `packages/slate/src/cli`, exported by `@darkgrade/slate/cli`.
 This package contains only the `darkgrade` entry point, npm packaging, documentation and
 executable smoke checks. Do not add command parsing, camera workflows or preference

@@ -4,18 +4,20 @@ The shared diagnostics queue behind Darkgrade Slate, CLI and native Studio. On f
 sharing defaults on. There is no required first-run notice or prompt. Imports and npm
 installation do not open cameras, write settings or contact a collector.
 
+What Darkgrade collects, why, which services receive it and the controls people have are
+stated only in the [privacy policy](https://darkgrade.com/privacy). This document covers how the module works.
+
 On Node, `nodeDiagnostics()` from `@darkgrade/slate/contribute/settings` owns one queue across
 cameras. Slate's ordinary USB/PTP-IP camera path attaches it to the existing connection
 before connection, then replaces Unknown model/firmware with the GetDeviceInfo result. It does not create a
 second camera session. Custom transports need explicit configuration; loopback PTP/IP
-is treated as simulated. Sony's Node SDK bridge records named SDK calls separately, without arguments or payloads.
+is treated as simulated. Sony's Node SDK bridge records named SDK calls separately.
 Its selected Wi-Fi model comes from the successful SDK connection profile; USB model and
 firmware remain Unknown unless an authoritative identity is available. Custom/native
 backends outside these Slate paths need explicit instrumentation.
 
 The random installation ID and secret are generated once in `~/.darkgrade/settings.json`
-(mode 0600), shared by CLI and Studio. Installation identity is random; camera identity
-uses a separate one-way fingerprint of reliable device serials, never the raw serial. `DARKGRADE_HOME`
+(mode 0600), shared by CLI and Studio. `DARKGRADE_HOME`
 changes this directory. File updates are atomic and serialized; stale enrollment writes
 cannot overwrite another process's opt-out. Corrupt state fails closed. A lock left by a
 crashed process must be investigated before removing it; initialization never steals a lock.
@@ -31,15 +33,10 @@ context)` retains the same connection. `configureSlateTelemetry(client)` install
 client for Slate's camera path without importing Node settings in the browser.
 
 Batches flush every 30 seconds, with a bounded queue, deadlines, backoff and idempotent
-retry. An active process checks shared preferences before upload. Metadata includes command
-codes, responses, durations, byte counts, timestamps and an anonymous connection/session
-ID. It excludes serials, image contents, command arguments and free-form errors. A wire
-transaction counter only correlates messages within a session; it is not a user identity.
+retry. An active process checks shared preferences before upload.
 
-Decoded evidence additionally includes advertised numeric operation/event/property codes
-and allowlisted numeric setting descriptors. Unknown codes are retained, but their values,
-opaque payloads, strings, network settings and authentication data are excluded. Numeric
-values must fit the declared PTP type. Named SDK calls still omit their arguments.
+Decoded protocol evidence is validated by `@darkgrade/slate/contribute/protocol`; numeric
+values must fit the declared PTP type.
 
 `darkgrade telemetry benchmark` finds the attached USB PTP camera and reads a deep camera
 profile through the existing Slate camera implementation. With several cameras attached it
@@ -48,10 +45,9 @@ uses the only camera-maker device or lists them for `--camera VVVV:PPPP`. It exp
 prints a short summary (`--json` prints the full result). Progress is printed to stderr;
 Ctrl-C requests cancellation between bounded operations. The profile reports complete,
 partial or cancelled and retains the exact revision, transport and evidence type. Photo
-capture and a live-view frame run by default (`--no-capture`/`--no-live` skip them); image
-bytes are never uploaded here. Bodies without a vendor inventory (e.g. Fujifilm) have every
-advertised property descriptor read, vendor codes included; only allowlisted numeric values
-are exported. A completed inventory is not proof that every advertised feature works.
+capture and a live-view frame run by default (`--no-capture`/`--no-live` skip them).
+Bodies without a vendor inventory (e.g. Fujifilm) have every
+advertised property descriptor read, vendor codes included. A completed inventory is not proof that every advertised feature works.
 
 First contact: on Node, when a body outside `validatedCameraModels`
 (`src/camera/validated-models.ts`) connects, `Camera.connect()` runs the same inventory once per
@@ -60,7 +56,7 @@ no capture, live view or Sony transfer-mode switch). Its benchmark evidence carr
 `purpose: 'first-contact'`. It never runs with sharing off, under `NODE_ENV=test`, or on
 simulated transports; `new Camera({ firstContact: false })` disables it.
 
-`setConsent(false)` stops cloud uploads and clears the upload queue. Sanitized diagnostics
+`setConsent(false)` stops cloud uploads and clears the upload queue. Diagnostics
 continue locally in `~/.darkgrade/diagnostics` for debugging. Each process rotates at 2 MiB,
 keeps one previous file, and prunes old inactive process files on startup. Set
 `DARKGRADE_LOCAL_DIAGNOSTICS=0` to disable local logging. Local files are not automatically
@@ -69,7 +65,7 @@ and deletes cloud data; interrupted deletion stays pending and can be retried. A
 explicit opt-in after deletion creates a new cloud identity.
 
 Only IDs/status are exposed to Studio's renderer. The local secret authorizes this
-installation's upload/deletion; the service stores only its hash. Email linking is optional:
+installation's upload/deletion. Email linking is optional:
 
 ```sh
 darkgrade telemetry login you@example.com
@@ -80,9 +76,7 @@ darkgrade telemetry logout
 
 Resend sends the confirmation from the collector's configured verified sender. The key stays
 on the server. Links expire after 2 hours and can be used once. `status --email` explicitly
-reads the current submitted/verified association and any pending replacement; ordinary `status` remains offline. Email identifies telemetry
-contributors only, without subscribing them to product updates or publishing contributor credit.
-Addresses stay outside camera events, diagnostic batches, client settings and Matrix exports.
+reads the current submitted/verified association and any pending replacement; ordinary `status` remains offline.
 Login requires sharing to be enabled; logout remains available after opting out and does not
 change that preference. Installation withdrawal also removes the association. Hosts can use
 the existing `requestContact`, `contactStatus` and `removeContact` methods for the same flow.
