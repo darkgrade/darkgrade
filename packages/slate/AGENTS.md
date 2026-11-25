@@ -43,8 +43,9 @@ Matrix worker or a copied engine. Inspect the existing Matrix, Fleet and Test Be
 paths before changing a gate. Preserve current-head checks, first-attempt failures,
 native camera leases, cleanup receipts and the existing `matrix/*` check names.
 An infrastructure error is not a camera regression, and a skipped camera is not a pass.
-Retain isolated install/build logs with the run receipt before removing dependency
-caches. A successful build outside the bench service does not validate its service environment.
+Hardware qualification loads the pinned source entries; distribution and type checks stay in
+GitHub CI. Retain staging logs with the receipt and reinstall discarded dependencies when
+resuming partial qualification.
 
 To check the public API on real cameras, run `bun run --cwd packages/slate camera:api-check`
 (every attached Sony, Canon and Nikon, in parallel, once) and follow `docs/camera-api-check.md`.
