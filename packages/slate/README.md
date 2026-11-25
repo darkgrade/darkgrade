@@ -50,7 +50,7 @@ browser/custom hosts use `@darkgrade/slate/contribute/application`. Schemas and 
 validation are available from `/contribute/schema`, `/contribute/batch`, and
 `/contribute/protocol` without importing camera transports or Node settings.
 Terminal command behavior is exported separately as `runDarkgradeCli` from
-`@darkgrade/slate/cli`. It accepts command arguments and returns an exit code; importing
+`@darkgrade/slate/cli`. It accepts command arguments, and optionally the host's version and streams, and returns an exit code; importing
 it does not open a camera or initialize settings. `packages/cli` supplies the thin
 `darkgrade` executable and bundles this runner for npm.
 See [diagnostics](docs/contribute.md) for enrollment, opt-out,

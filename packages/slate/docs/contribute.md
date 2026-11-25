@@ -40,9 +40,10 @@ values must fit the declared PTP type.
 
 `darkgrade telemetry benchmark` finds the attached USB PTP camera and reads a deep camera
 profile through the existing Slate camera implementation. With several cameras attached it
-uses the only camera-maker device or lists them for `--camera VVVV:PPPP`. It exports
+uses the only camera-maker device, asks on a terminal, or lists them for `--camera VVVV:PPPP`
+(`DARKGRADE_CAMERA` does the same). It exports
 `~/.darkgrade/profiles/<uuid>.json` with restrictive permissions even when sharing is off and
-prints a short summary (`--json` prints the full result). Progress is printed to stderr;
+prints a short summary (`--json` prints the full result). Progress goes to stderr: a spinner on a terminal, one line per check elsewhere;
 Ctrl-C requests cancellation between bounded operations. The profile reports complete,
 partial or cancelled and retains the exact revision, transport and evidence type. Photo
 capture and a live-view frame run by default (`--no-capture`/`--no-live` skip them).

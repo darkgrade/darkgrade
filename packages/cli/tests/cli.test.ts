@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -34,9 +34,14 @@ test('the executable delegates to Slate and preserves terminal output and exit c
             promisify(execFile)(process.execPath, ['dist/main.js', 'invalid'], { env }),
             (error: unknown) => {
                 const result = error as { code: number; stderr: string }
-                return result.code === 1 && result.stderr.includes('darkgrade telemetry')
+                return result.code === 1 && result.stderr.includes('Unknown command "invalid"')
             }
         )
+        const run = (...args: string[]) => promisify(execFile)(process.execPath, ['dist/main.js', ...args], { env })
+        const { version } = JSON.parse(await readFile('package.json', 'utf8'))
+        assert.equal((await run('--version')).stdout, `darkgrade ${version}\n`)
+        assert.match((await run()).stdout, /Usage\n {2}darkgrade <command> \[options\]/)
+        assert.match(await readFile('dist/darkgrade.1', 'utf8'), /^\.TH DARKGRADE 1 /)
     } finally {
         await rm(directory, { recursive: true, force: true })
     }
