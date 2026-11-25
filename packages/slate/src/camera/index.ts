@@ -24,6 +24,7 @@ import type {
     DriverOperationName,
     DriverOperations,
     FocusDirection,
+    FocusNudge,
     FocusResult,
     FocusStepSize,
     LiveViewFrame,
@@ -206,8 +207,11 @@ export class Camera {
         return onCameraQueue(this, () => driver.resetFocusPoint())
     }
 
-    /** Moves manual focus a small, medium or large step nearer or farther. */
-    async nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<void> {
+    /**
+     * Moves manual focus a small, medium or large step nearer or farther. Resolves with `atLimit`
+     * true when the lens reached the end of its travel that way (a completed nudge, not an error).
+     */
+    async nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<FocusNudge> {
         const driver = supported(this, 'nudgeFocus')
         return onCameraQueue(this, () => driver.nudgeFocus(direction, size))
     }

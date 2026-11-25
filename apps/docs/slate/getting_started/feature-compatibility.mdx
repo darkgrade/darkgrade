@@ -177,7 +177,7 @@ access and event polling fall back to legacy operations only on `OperationNotSup
 
 10. Sony bodies in movie mode stayed at UNLOCK on a half-press in bench tests, so `autofocus()` there answers `'unknown'` rather than `'acquired'`. A Sony focus timeout includes the last focus status; a Canon refusal names the SDK reason.
 
-11. On Nikon (validated over USB on Z6 III firmware V2.00) `setFocusPoint` needs ChangeAfArea and live view, and the point is read back from live view. A nudge drives small lens steps in **AF-S**; AF-F can remain busy and MF rejects the drive. The small, medium and large steps are not yet bench-calibrated. Accepted commands and AF-point placement do not establish focus lock: only `'acquired'` does.
+11. On Nikon (validated over USB on Z6 III firmware V2.00) `setFocusPoint` needs ChangeAfArea and live view, and the point is read back from live view. A nudge drives small lens steps in **AF-S** (and AF-A on a Z5 II); AF-F can remain busy and MF rejects the drive. A nudge that reaches the lens's end stop resolves with `atLimit: true`. The small, medium and large steps are not yet bench-calibrated. Accepted commands and AF-point placement do not establish focus lock: only `'acquired'` does.
 
 12. Sony photo/video is the half the exposure program is in: Movie and S&Q programs are video. A switch selects the same program in the other half (Manual ↔ Movie Manual), and only when the camera advertises it.
 

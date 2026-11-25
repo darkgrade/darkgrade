@@ -7,6 +7,7 @@ import type {
     ConfirmedPhotoFile,
     FocusDirection,
     FocusFrame,
+    FocusNudge,
     FocusPointOptions,
     FocusResult,
     FocusStepSize,
@@ -51,7 +52,7 @@ import { afterPossibleRelease, afterShutterRelease, shutterOutcomeUnknown, shutt
 import type { NikonLiveViewDataset } from '@vendors/nikon/datasets/nikon-live-view-dataset'
 import { ISOAutoControl } from '@vendors/nikon/definitions/nikon-operation-definitions'
 import { NIKON_AF_AREA_VALUES } from '@vendors/nikon/definitions/nikon-property-definitions'
-import { HardwareError, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@vendors/nikon/definitions/nikon-response-definitions'
+import { HardwareError, InvalidStatus, MfDriveStepEnd, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@vendors/nikon/definitions/nikon-response-definitions'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { prepareNikonManualExposure } from '@vendors/nikon/manual-exposure'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
@@ -694,23 +695,34 @@ export class NikonCamera extends GenericCamera {
         }
     }
 
+    /**
+     * One MfDrive, confirmed by DeviceReady. MfDriveStepEnd, at the start (the lens is already at
+     * that end, nothing moved) or on completion (it moved until its end stop), is a completed drive
+     * at the lens travel limit, not a failure.
+     */
     async driveFocus(
         direction: 'near' | 'far',
         steps = 1
-    ): Promise<{ commandSent: true; completed: true; metadata: NikonLiveViewMetadata }> {
+    ): Promise<{ commandSent: true; completed: true; atLimit: boolean; metadata: NikonLiveViewMetadata }> {
         if (!['near', 'far'].includes(direction) || !Number.isInteger(steps) || steps < 1 || steps > 32767)
             throw new Error('Nikon manual focus requires near/far and 1–32767 lens steps')
         const operations = this.registry.operations
         await this.requireFocusOperations(this.focusOperations('nudge'))
         await this.enableLiveView()
         const response = await this.send(operations.MfDrive, { Direction: direction === 'near' ? 1 : 2, Steps: steps })
-        const advice = 'Use AF-S focus mode for manual drive.'
-        if (response.code !== OK.code)
-            throw new CameraRefusedError('nudgeFocus', `Nikon MfDrive failed: ${this.responseDescription(response.code)}. ${advice}`)
-        await this.pollDeviceReady().catch(error => {
-            throw new CameraOutcomeUnknownError('nudgeFocus', `Nikon MfDrive completion failed: ${errorMessage(error)}. ${advice}`)
-        })
-        return { commandSent: true, completed: true, metadata: await this.freshFocusMetadata() }
+        // Only InvalidStatus says the body's state forbids a drive; the bench Z6 III refuses one in MF.
+        const advice = (code: number) => (code === InvalidStatus.code ? '. Manual focus drive needs an autofocus mode such as AF-S, not MF' : '')
+        let atLimit = response.code === MfDriveStepEnd.code
+        if (response.code !== OK.code && !atLimit)
+            throw new CameraRefusedError('nudgeFocus', `Nikon MfDrive failed: ${this.responseDescription(response.code)}${advice(response.code)}`)
+        if (!atLimit) {
+            const completion = await this.pollDeviceReady(5000, [MfDriveStepEnd.code]).catch(error => {
+                const code = error instanceof PTPResponseError ? error.code : undefined
+                throw new CameraOutcomeUnknownError('nudgeFocus', `Nikon MfDrive completion failed: ${errorMessage(error)}${code === undefined ? '' : advice(code)}`)
+            })
+            atLimit = completion === MfDriveStepEnd.code
+        }
+        return { commandSent: true, completed: true, atLimit, metadata: await this.freshFocusMetadata() }
     }
 
     /** Retain remote Manual exposure across this session's movie-start renewal.
@@ -1151,9 +1163,10 @@ export class NikonCamera extends GenericCamera {
         if (id === 'focusArea') this.focusChanges.forget(this.registry.properties.FocusMeteringMode.name)
     }
 
-    async nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<void> {
+    async nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<FocusNudge> {
         requireNudge(direction, size)
-        await publicOutcome('nudgeFocus', () => this.driveFocus(direction, NIKON_FOCUS_STEPS[size]))
+        const { atLimit } = await publicOutcome('nudgeFocus', () => this.driveFocus(direction, NIKON_FOCUS_STEPS[size]))
+        return { atLimit }
     }
 
     /**

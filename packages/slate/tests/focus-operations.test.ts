@@ -19,6 +19,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { canonAllowedValues, canonEvents, canonValue } from '@tests/fixtures/canon-events'
 import { concatenate, deviceInfo, encodedDeviceInfo, fakeTransport, propertyDescriptor } from '@tests/fixtures/camera-fixtures'
+import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
+import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -494,13 +496,43 @@ describe('focus on a simulated Nikon body', () => {
         ])
     })
 
-    it('refuses with the camera’s reason when the lens is at its end, and never resends', async () => {
+    it('completes a nudge at the lens end stop from the wire: MfDrive accepted, DeviceReady answers MfDriveStepEnd', async () => {
+        const { registry } = protocolSession(new Camera({ vendorId: 0x04b0, transport: transport() })).driver as NikonCamera
+        const { MfDrive, DeviceReady, GetDeviceInfo, GetLiveViewImageEx, StartLiveView } = registry.operations
+        const advertised = [GetDeviceInfo, MfDrive, DeviceReady, StartLiveView, GetLiveViewImageEx].map(operation => operation.code)
+        const info = new DeviceInfoCodec(registry).encode(encodedDeviceInfo(registry, { operationsSupportedRaw: advertised }))
+        const live = nikonLiveView({ centerX: 3024, centerY: 1700, judgement: 0, driving: 0, afModeState: 0 })
+        let driven = false
+        const { transport: wire, sent } = answeringTransport(({ code, transactionId }) => {
+            const answer = (response: number, data?: Uint8Array) =>
+                [...(data ? [ptpContainer(2, code, transactionId, data)] : []), ptpContainer(3, response, transactionId)]
+            if (code === GetDeviceInfo.code) return answer(0x2001, info)
+            if (code === GetLiveViewImageEx.code) return answer(0x2001, live)
+            if (code === MfDrive.code) return (driven = true), answer(0x2001)
+            if (code === DeviceReady.code) return answer(driven ? 0xa00c : 0x2001)
+            if (code === StartLiveView.code) return answer(0x2001)
+            return answer(0x200a)
+        })
+        const camera = new Camera({ vendorId: 0x04b0, transport: wire })
+        protocolSession(camera).driver.sessionId = 1
+        expect(await camera.nudgeFocus('far', 'small')).toEqual({ atLimit: true })
+        expect(sent.filter(container => container.code === MfDrive.code).map(container => container.parameters)).toEqual([[2, 10]])
+    })
+
+    it('reports a lens already at its end as a nudge at the limit, sent once, and a moved one as not', async () => {
         const { camera, body, calls } = nikonCamera()
+        expect(await camera.nudgeFocus('near', 'small')).toEqual({ atLimit: false })
         body.responses.set('MfDrive', 0xa00c)
+        expect(await camera.nudgeFocus('near', 'small')).toEqual({ atLimit: true })
+        expect(calls.filter(call => call.name === 'MfDrive')).toHaveLength(2)
+        body.responses.set('MfDrive', 0xa004)
         const refused = await camera.nudgeFocus('near', 'small').catch(error => error)
         expect(refused).toBeInstanceOf(CameraRefusedError)
-        expect(refused.message).toContain('MfDriveStepEnd')
-        expect(calls.filter(call => call.name === 'MfDrive')).toHaveLength(1)
+        expect(refused.message).toContain('InvalidStatus')
+        expect(refused.message).toContain('AF-S')
+        body.responses.set('MfDrive', 0x2019)
+        expect((await camera.nudgeFocus('near', 'small').catch(error => error)).message).not.toContain('AF-S')
+        expect(calls.filter(call => call.name === 'MfDrive')).toHaveLength(4)
         body.responses.set('AfDrive', 0x2019)
         await expect(camera.autofocus()).rejects.toBeInstanceOf(CameraRefusedError)
     })

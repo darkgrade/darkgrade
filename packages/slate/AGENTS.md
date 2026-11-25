@@ -214,3 +214,6 @@ including truncated views into larger buffers, invalid offsets and string length
 These synthetic parser checks neither contact hardware nor certify model support. Matrix keeps
 independent copies of the wire seeds in its fixed candidate harness so driver changes cannot
 silently weaken their own regression gate.
+A Z5 II nudge in AF-A (acceptance, 2026-11-25) drove the lens to its end stop: MfDrive answered OK and
+DeviceReady then MfDriveStepEnd (0xA00C). That is a completed nudge, `{ atLimit: true }`, as is 0xA00C
+straight from MfDrive (already at that end); the AF-S hint goes only with InvalidStatus (0xA004).

@@ -54,7 +54,7 @@ export type {
     VideoQuality,
     WhiteBalance,
 } from '@camera/settings/values'
-export type { FocusDirection, FocusResult, FocusStepSize } from '@camera/driver'
+export type { FocusDirection, FocusNudge, FocusResult, FocusStepSize } from '@camera/driver'
 export type { CardPhoto, ComputerPhoto, Photo, PhotoDestination, TakePhotoOptions } from '@camera/driver'
 export type { Clip } from '@camera/driver'
 export type { FocusFrame, LiveViewFrame, LiveViewFrameOptions, LiveViewOverlay } from '@camera/driver'

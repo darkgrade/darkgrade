@@ -144,22 +144,15 @@ describe('Nikon capability-gated focus', () => {
         expect(calls.some(call => call.name === 'StartMovieRecord')).toBe(false)
     })
 
-    it.each([[0x2019, 'DeviceBusy'], [0xa004, 'InvalidStatus'], [0xa00c, 'MfDriveStepEnd'], [0xa00e, 'MfDriveStepInsufficiency']])(
-        'names manual-focus response %i as %s and suggests AF-S', async (code, name) => {
+    it.each([[0x2019, 'DeviceBusy', false], [0xa004, 'InvalidStatus', true], [0xa00e, 'MfDriveStepInsufficiency', false]])(
+        'names manual-focus response %i as %s, suggesting AF-S only for a status refusal', async (code, name, advice) => {
             const { camera, responses } = fixture()
             responses.set('MfDrive', code as number)
-            const operation = camera.driveFocus('near')
-            await expect(operation).rejects.toThrow(name as string)
-            await expect(operation).rejects.toThrow('AF-S')
+            const error = await camera.driveFocus('near').catch(failure => failure)
+            expect(error.message).toContain(name as string)
+            expect(error.message.includes('AF-S')).toBe(advice)
         }
     )
-
-    it('names manual-focus endpoint errors returned during completion polling', async () => {
-        const { camera, responses } = fixture()
-        await camera.captureLiveView()
-        responses.set('DeviceReady', 0xa00c)
-        await expect(camera.driveFocus('far')).rejects.toThrow('MfDriveStepEnd (0xa00c)')
-    })
 
     it('cleans up owned movie setup modes and restores the photo selector after a prohibition', async () => {
         const { camera, calls } = fixture()

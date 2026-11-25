@@ -68,6 +68,15 @@ export type FocusDirection = 'near' | 'far'
 /** A small, medium or large manual-focus step, like the < << <<< buttons in vendor remote apps. */
 export type FocusStepSize = 'small' | 'medium' | 'large'
 
+/** What a focus nudge did. */
+export interface FocusNudge {
+    /**
+     * The lens stopped at the end of its focus travel that way: it moved less than the step, or
+     * not at all when it was already there. Another nudge the same way will not move it.
+     */
+    atLimit: boolean
+}
+
 export interface FocusPointOptions {
     /** Focus once at the point after moving it (default true). */
     autofocus: boolean
@@ -249,7 +258,7 @@ export interface DriverOperations {
     autofocus(): Promise<FocusResult>
     setFocusPoint(x: number, y: number, options: FocusPointOptions): Promise<void>
     resetFocusPoint(): Promise<void>
-    nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<void>
+    nudgeFocus(direction: FocusDirection, size: FocusStepSize): Promise<FocusNudge>
     /** Resolves to the focal length, in millimetres, where the lens landed (read back, never assumed). */
     zoomTo(focalLengthMillimetres: number): Promise<number>
     /** Starts zooming and returns; the driver stops by itself after ZOOM_SAFETY_STOP_MILLISECONDS. */

@@ -171,14 +171,15 @@ offers only its movie modes.
 async autofocus(): Promise&lt;'acquired' | 'not-acquired' | 'unknown'&gt;
 async setFocusPoint(x: number, y: number, options?: { autofocus?: boolean }): Promise&lt;void&gt;
 async resetFocusPoint(): Promise&lt;void&gt;
-async nudgeFocus(direction: 'near' | 'far', size: 'small' | 'medium' | 'large'): Promise&lt;void&gt;
+async nudgeFocus(direction: 'near' | 'far', size: 'small' | 'medium' | 'large'): Promise&lt;{ atLimit: boolean }&gt;
 ```
 
 `autofocus` focuses once and says whether the camera confirmed focus; only `'acquired'` means it
 did. `setFocusPoint` takes 0–1 from the top-left of the picture and focuses there unless
 `autofocus: false`; switching to a movable focus area happens inside and `resetFocusPoint` puts
 back the centre and the previous focus area. `nudgeFocus` moves manual focus a little, like the
-`<` `<<` `<<<` buttons in vendor remote apps.
+`<` `<<` `<<<` buttons in vendor remote apps; `atLimit` says the lens reached the end of its focus
+travel that way (it moved less than the step, or not at all), which is a completed nudge, not an error.
 
 ## Zoom
 

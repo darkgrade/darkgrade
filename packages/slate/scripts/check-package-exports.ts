@@ -322,7 +322,7 @@ try {
         camera.setFocusPoint(0.5, 0.4)
         camera.setFocusPoint(0.5, 0.4, { autofocus: false })
         camera.resetFocusPoint()
-        camera.nudgeFocus('near', 'small')
+        const nudged: Promise<{ atLimit: boolean }> = camera.nudgeFocus('near', 'small')
         const focusMode: Promise<FocusMode> = camera.setFocusMode('AF-C')
         const focusArea: Promise<FocusArea> = camera.getFocusArea()
         camera.setFocusArea('Wide')
@@ -450,7 +450,7 @@ try {
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
             confirmedShutter, currentShutter, noPlainStringSetters, errors, confirmedAperture, currentIso, confirmedMode,
             confirmedCompensation, confirmedMetering, confirmedWhiteBalance, currentKelvin, look, profile, mode, drive,
-            focused, focusMode, focusArea, focusedFlag, cardPhoto, computerPhoto, photoFormat, rawCompression,
+            focused, nudged, focusMode, focusArea, focusedFlag, cardPhoto, computerPhoto, photoFormat, rawCompression,
             landed, stopped, frame, zoomSetting, quality,
             discovered, opened, information, closed, bluetooth, mount, benchmark, rawIdentity, RootSonyCamera,
             RootSonyWifiCamera, rootProtocolSession]
