@@ -1,8 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import type { OperationParameter } from '@camera/operation-table/index'
 import { HardwareBusyError } from '@runtime/errors'
-import { surfaceOperations, type SurfaceOperation } from '@runtime/operations'
+import { surfaceOperations, type OperationParameter, type SurfaceOperation } from '@runtime/operations'
 import type { CameraClient, OperationReply } from '@runtime/runtime'
 
 type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
@@ -44,14 +43,15 @@ function isReply(value: unknown): value is OperationReply {
 }
 
 function parameterSchema(parameter: OperationParameter): z.ZodType {
+    const [first, ...rest] = parameter.choices ?? []
     const schema =
         parameter.type === 'number'
             ? z.number()
             : parameter.type === 'switch'
               ? z.boolean()
-              : parameter.type === 'choice' && parameter.choices?.length
-                ? z.enum(parameter.choices as [string, ...string[]])
-                : parameter.name === 'value'
+              : parameter.type === 'choice' && first !== undefined
+                ? z.enum([first, ...rest])
+                : parameter.type === 'text'
                   ? z.union([z.string().min(1), z.number()])
                   : z.string().min(1)
     const described = schema.describe(parameter.description)
@@ -63,50 +63,61 @@ function toolDescription(operation: SurfaceOperation): string {
         operation.summary + '.',
         operation.readOnly ? 'Reads only.' : 'Sent once and confirmed by the camera; an unconfirmed command is reported and never resent.',
         ...(operation.immediate ? ['Always allowed: it does not wait behind other camera work.'] : []),
-        ...(operation.name.startsWith('set') && operation.name !== 'setClock'
+        ...(/^set(?!Clock|FocusPoint)[A-Z]/.test(operation.name)
             ? ['Read camera_get_capabilities first: only values in its allowedValues are accepted.']
             : []),
     ]
     return notes.join(' ')
 }
 
+/** One generated camera tool: its MCP name, schema and annotations, and the operation it runs. */
+export interface CameraToolDefinition {
+    name: string
+    title: string
+    description: string
+    inputSchema: z.ZodObject
+    annotations: { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: false }
+    operation: SurfaceOperation
+}
+
 /**
- * Registers one tool per public Camera operation, named and described by the operation table:
- * `camera_` + the method in snake_case, one `camera_set_<setting>` tool per typed setting
- * (`camera_get_capabilities` reads them all), plus `camera_discover` and `camera_run_benchmark`.
+ * One tool per public Camera operation, named and described from Camera itself: `camera_` + the
+ * method in snake_case, with the method's inputs. Hosts that hold one camera (Studio) pass
+ * `cameraArgument: false`; the runtime's tools take the camera identity the host names.
  */
-export function registerCameraTools(server: McpServer, client: CameraClient) {
-    for (const operation of surfaceOperations()) {
-        if (!operation.mcpTool) continue
-        if (operation.name === 'discover') {
-            server.registerTool(
-                operation.mcpTool,
-                {
-                    title: 'List attached cameras',
-                    description: toolDescription(operation),
-                    inputSchema: z.object({}).strict(),
-                    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-                },
-                protect(async () => client.discover())
-            )
-            continue
-        }
-        const shape: Record<string, z.ZodType> = { camera: z.string().min(1).describe('the camera identity the host names') }
+export function cameraToolDefinitions(options: { cameraArgument?: boolean } = {}): CameraToolDefinition[] {
+    return surfaceOperations().map(operation => {
+        const shape: Record<string, z.ZodType> =
+            options.cameraArgument === false || operation.static
+                ? {}
+                : { camera: z.string().min(1).describe('the camera identity the host names') }
         for (const parameter of operation.parameters) shape[parameter.name] = parameterSchema(parameter)
-        server.registerTool(
-            operation.mcpTool,
-            {
-                title: operation.summary,
-                description: toolDescription(operation),
-                inputSchema: z.object(shape).strict(),
-                annotations: {
-                    readOnlyHint: operation.readOnly,
-                    destructiveHint: operation.name === 'takePhoto' || operation.name === 'startRecording',
-                    idempotentHint: operation.readOnly,
-                    openWorldHint: false,
-                },
+        return {
+            name: operation.mcpTool,
+            title: operation.summary,
+            description: toolDescription(operation),
+            inputSchema: z.object(shape).strict(),
+            annotations: {
+                readOnlyHint: operation.readOnly,
+                destructiveHint: operation.name === 'takePhoto' || operation.name === 'startRecording',
+                idempotentHint: operation.readOnly,
+                openWorldHint: false,
             },
-            protect(async ({ camera, ...input }: Record<string, unknown>) => client.operation(String(camera), operation.name, input))
+            operation,
+        }
+    })
+}
+
+/** Registers the generated camera tools, plus `camera_run_benchmark` where the host offers it. */
+export function registerCameraTools(server: McpServer, client: CameraClient) {
+    for (const tool of cameraToolDefinitions()) {
+        const { name, operation, ...config } = tool
+        server.registerTool(
+            name,
+            config,
+            protect(async ({ camera, ...input }: Record<string, unknown>) =>
+                operation.static ? client.discover() : client.operation(String(camera), operation.name, input)
+            )
         )
     }
     if (client.benchmark)
@@ -128,7 +139,7 @@ export function createCameraMcpServer(client: CameraClient) {
         { name: 'darkgrade', version: '0.2.0' },
         {
             instructions:
-                'One tool per public Camera operation, with the library names. Read camera_get_capabilities before writing: it lists every setting, its allowed values, and which operations the camera can do now. Commands share the owning runtime session and are never resent: an unconfirmed result is reported, so inspect the camera before retrying. A busy camera is not a reason to switch USB or power. camera_stop_recording and camera_stop_zoom are always allowed.',
+                'One tool per public Camera operation, with the library names and results. Read camera_get_capabilities before writing: it lists every setting, its allowed values, and which operations the camera can do now. Commands share the owning runtime session and are never resent: an unconfirmed result is reported, so inspect the camera before retrying. A busy camera is not a reason to switch USB or power. camera_stop_recording and camera_stop_zoom are always allowed.',
             capabilities: { tools: {} },
         }
     )

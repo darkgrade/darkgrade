@@ -6,10 +6,10 @@
 //   2. The escape budget: `any`, `as never` and `as unknown as` per file in src/. A file may never
 //      exceed its budget, and a budget above the current count fails too, so the count only goes
 //      down: `--update` lowers budgets to the current counts (never raises them).
-//   3. Operation-table parity: every Camera method has a current table entry whose disposition is
-//      keep, every entry is on Camera, and nothing is planned that Camera already has.
+//   3. Surface parity: the generated operation list (scripts/generate-camera-operations.ts) has
+//      every Camera method but the events, each with a summary from its doc comment.
 import { Camera } from '@camera/index'
-import { cameraOperationTable, cameraStaticOperationTable, plannedOperationTable } from '@camera/operation-table/index'
+import { writeCameraOperations } from '@scripts/generate-camera-operations'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
@@ -127,26 +127,23 @@ function checkEscapeBudget() {
     }
 }
 
-function checkOperationTable() {
-    const methods = Object.getOwnPropertyNames(Camera.prototype).filter(name => name !== 'constructor')
-    const missing = methods.filter(name => !(name in cameraOperationTable))
-    const extra = Object.keys(cameraOperationTable).filter(name => !methods.includes(name))
-    const planned = Object.keys(plannedOperationTable).filter(name => methods.includes(name))
-    if (missing.length) failures.push(`Camera methods missing from the operation table: ${missing.join(', ')}`)
-    if (extra.length) failures.push(`Operation table entries not on Camera: ${extra.join(', ')}`)
-    if (planned.length) failures.push(`Planned operations now on Camera; move them to current: ${planned.join(', ')}`)
-    const leaving = Object.entries(cameraOperationTable)
-        .filter(([, entry]) => entry.disposition.kind !== 'keep')
-        .map(([name, entry]) => `${name} (${entry.disposition.kind})`)
-    if (leaving.length)
-        failures.push(`Camera methods whose disposition takes them off Camera are still on it: ${leaving.join(', ')}`)
-    if (!('discover' in cameraStaticOperationTable) || typeof Camera.discover !== 'function')
-        failures.push('Camera.discover and its table entry differ')
+async function checkSurfaces() {
+    writeCameraOperations()
+    // Loaded after writing, since the operations module imports the generated list.
+    const { surfaceOperations } = await import('@runtime/operations')
+    const generated = new Map(surfaceOperations().map(operation => [operation.name, operation]))
+    const methods = [...Object.getOwnPropertyNames(Camera.prototype), 'discover'].filter(
+        name => !['constructor', 'on', 'off'].includes(name)
+    )
+    const missing = methods.filter(name => !generated.has(name))
+    if (missing.length) failures.push(`Camera methods missing from the generated MCP and CLI operations: ${missing.join(', ')}`)
+    const undocumented = [...generated.values()].filter(operation => operation.summary === operation.name).map(operation => operation.name)
+    if (undocumented.length) failures.push(`Camera methods without a doc comment for their MCP tool and command: ${undocumented.join(', ')}`)
 }
 
 checkVendorNames()
 checkEscapeBudget()
-checkOperationTable()
+await checkSurfaces()
 for (const note of notes) console.log(note)
 if (failures.length) {
     for (const failure of failures) console.error(`✗ ${failure}`)

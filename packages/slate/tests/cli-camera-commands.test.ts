@@ -1,10 +1,9 @@
 import type { Camera } from '@camera/index'
-import { cliCommand, publicOperations } from '@camera/operation-table/index'
 import { runCameraOperationCommand } from '@cli/camera-operation'
 import { cameraCommandOperations, resolveCommand } from '@cli/commands'
 import { runDarkgradeCli } from '@cli/index'
 import { createTerminal, type TerminalStreams } from '@cli/terminal'
-import { surfaceOperation } from '@runtime/operations'
+import { surfaceOperation, surfaceOperations } from '@runtime/operations'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 
@@ -42,20 +41,19 @@ function fakeCamera(methods: Record<string, (...parameters: unknown[]) => Promis
 }
 
 describe('darkgrade camera commands', () => {
-    it('are the operation table: one kebab-case command per public operation that has a CLI surface', () => {
-        const expected = publicOperations()
-            .filter(operation => operation.implemented)
-            .flatMap(operation => {
-                const line = cliCommand(operation.name, operation.entry)
-                return line?.startsWith('darkgrade camera ') ? [line.slice('darkgrade camera '.length)] : []
-            })
+    it('are one kebab-case command per public operation, generated from Camera', () => {
+        const expected = surfaceOperations()
+            .filter(operation => !operation.static)
+            .map(operation => operation.cliCommand.slice('darkgrade camera '.length))
         expect([...cameraCommandOperations.keys()].sort()).toEqual(expected.sort())
-        for (const name of ['get-capabilities', 'set-control', 'set-iso', 'get-iso', 'set-shutter-speed', 'take-photo',
-            'start-recording', 'stop-recording', 'zoom-to', 'nudge-focus', 'download-media', 'get-battery', 'set-clock', 'recover'])
+        for (const name of ['get-capabilities', 'set-control', 'set-iso', 'get-iso', 'set-shutter-speed', 'take-photo', 'connect',
+            'start-recording', 'stop-recording', 'start-zoom', 'stop-zoom', 'zoom-to', 'nudge-focus', 'download-media', 'get-battery',
+            'set-clock', 'recover'])
             expect(cameraCommandOperations.has(name)).toBe(true)
-        // Library-only and CLI-omitted operations; discover stays the top-level `darkgrade cameras`.
-        for (const name of ['on', 'off', 'connect', 'disconnect', 'start-zoom', 'stop-zoom', 'discover', 'get-instance'])
-            expect(cameraCommandOperations.has(name)).toBe(false)
+        // Library-only events (the CLI streams them with `watch`); discover stays the top-level `darkgrade cameras`.
+        for (const name of ['on', 'off', 'discover', 'get-instance']) expect(cameraCommandOperations.has(name)).toBe(false)
+        expect(resolveCommand(['camera', 'watch']).path.at(-1)?.name).toBe('watch')
+        expect(resolveCommand(['camera', 'start-zoom']).path.at(-1)?.flags?.map(flag => flag.name)).toContain('duration')
         expect(resolveCommand(['cameras']).path.at(-1)?.name).toBe('cameras')
         expect([...cameraCommandOperations.keys()].some(name => /sony|canon|nikon/.test(name))).toBe(false)
     })
@@ -99,12 +97,13 @@ describe('darkgrade camera commands', () => {
                 discover: async () => [],
                 createCamera: async () => camera,
                 writeFile: async (path, data) => void files.push([path, data.byteLength]),
+                onStopRequest: () => () => undefined,
             }
         )
         expect(status).toBe(0)
         expect(calls).toEqual([['connect'], ['takePhoto', { autofocus: false, destination: 'computer' }], ['disconnect']])
         expect(files).toEqual([['photo.jpg', 3]])
-        expect(JSON.parse(written.output)).toMatchObject({ result: { name: 'DSC00003.JPG', bytes: 3 }, files: [{ path: 'photo.jpg' }] })
+        expect(JSON.parse(written.output)).toMatchObject({ result: { name: 'DSC00003.JPG', sizeBytes: 3, data: { file: 'DSC00003.JPG', bytes: 3 } }, files: [{ path: 'photo.jpg' }] })
     })
 
     it('keep the session open when a stop cannot be confirmed, and recover without connecting first', async () => {
@@ -118,6 +117,7 @@ describe('darkgrade camera commands', () => {
             discover: async () => [],
             createCamera: async () => camera,
             writeFile: async () => undefined,
+            onStopRequest: () => () => undefined,
         })
         const options = (name: string) => ({
             operation: surfaceOperation(name)!,
@@ -130,5 +130,33 @@ describe('darkgrade camera commands', () => {
         const stopped = fakeCamera({ recover: async () => ({ recovered: true, steps: [] }) })
         expect(await runCameraOperationCommand(options('recover'), createTerminal(flags, streams().value), dependencies(stopped.camera))).toBe(0)
         expect(stopped.calls.map(call => call[0])).toEqual(['recover'])
+    })
+
+    it('hold start-zoom until the stop request, then stop once', async () => {
+        const { camera, calls } = fakeCamera({ startZoom: async () => undefined, stopZoom: async () => undefined })
+        let requestStop = () => {}
+        const { value, written } = streams()
+        const running = runCameraOperationCommand(
+            {
+                operation: surfaceOperation('startZoom')!,
+                input: { direction: 'in', speed: 'slow' },
+                camera: { vendorId: 0x054c, productId: 0x0f56 },
+                json: true,
+                hold: { stop: surfaceOperation('stopZoom')! },
+            },
+            createTerminal(flags, value),
+            {
+                discover: async () => [],
+                createCamera: async () => camera,
+                writeFile: async () => undefined,
+                onStopRequest: request => ((requestStop = request), () => undefined),
+            }
+        )
+        await new Promise(resolve => setTimeout(resolve, 10))
+        expect(calls.map(call => call[0])).toEqual(['connect', 'startZoom'])
+        requestStop()
+        expect(await running).toBe(0)
+        expect(calls).toEqual([['connect'], ['startZoom', 'in', { speed: 'slow' }], ['stopZoom'], ['disconnect']])
+        expect(JSON.parse(written.output)).toBeNull()
     })
 })

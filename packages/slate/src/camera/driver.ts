@@ -7,7 +7,7 @@ import type {
     OperationAvailability,
 } from '@camera/controls'
 import type { ExposureContext } from '@camera/exposure-time'
-import type { CameraOperationName } from '@camera/operation-table/index'
+import type { Camera } from '@camera/index'
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import type { CameraRecoveryReport, GenericCamera } from '@vendors/generic/generic-camera'
 
@@ -161,7 +161,7 @@ export interface LiveViewFrameOptions {
 
 /** A finished movie file the camera wrote to its card during one recording. */
 export interface Clip {
-    /** The card object's id on this connection (its PTP object handle, in decimal). */
+    /** The clip's media id: the one `listMedia()` gives it, or its PTP object handle in decimal on a camera that names card files only by handle. */
     mediaId: string
     /** The file name on the card, such as `C0001.MP4`. */
     name: string
@@ -294,6 +294,9 @@ export interface DriverOperations {
 }
 
 export type DriverOperationName = keyof DriverOperations
+
+/** A public Camera method, by name. */
+export type CameraOperationName = Extract<keyof Camera, string>
 
 /** The protocol core every driver has: session lifecycle, transactions, properties and events. */
 export type DriverCore = Pick<

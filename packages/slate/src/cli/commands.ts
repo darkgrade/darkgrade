@@ -1,5 +1,4 @@
-import { cameraOperationTable, kebabCase, type OperationEntry } from '@camera/operation-table/index'
-import { surfaceOperations, type SurfaceOperation } from '@runtime/operations'
+import { kebabCase, surfaceOperations, type SurfaceOperation } from '@runtime/operations'
 
 /** The one description of the command tree. Help, the manual page, shell completions,
  * argument checks and typo suggestions are all drawn from it. */
@@ -151,13 +150,26 @@ const output: FlagDefinition = {
     summary: 'Write the file it returns here (default: its own name in this folder)',
 }
 
-const kebab = (name: string) => kebabCase(name)
-
 /** Operations whose result includes a file, so their command takes --output. */
 const fileOperations = new Set(['takePhoto', 'getLiveViewFrame', 'getMediaPreview', 'downloadMedia'])
 
-/** What each `darkgrade camera` command adds to its table entry: longer help and examples. */
+const duration: FlagDefinition = {
+    name: 'duration',
+    value: 'duration',
+    summary: 'Stop after this long, for example 10s; otherwise stops on Ctrl-C',
+}
+
+/** Operations held in the foreground until Ctrl-C or --duration, then stopped by their counterpart. */
+export const heldOperations: Readonly<Record<string, string>> = { startRecording: 'stopRecording', startZoom: 'stopZoom' }
+
+/** What each `darkgrade camera` command adds to its generated description: longer help and examples. */
 const commandHelp: Partial<Record<string, Pick<CommandDefinition, 'description' | 'examples'>>> = {
+    startZoom: {
+        description:
+            'Zooms like holding the zoom rocker and stays in the foreground until Ctrl-C or --duration, then stops ' +
+            'the zoom. The camera stops by itself after 10 seconds.',
+        examples: ['darkgrade camera start-zoom in --speed slow --duration 2s'],
+    },
     startRecording: {
         description:
             'Gets the camera ready (video mode, card, audio), starts recording and stays in the foreground ' +
@@ -175,33 +187,35 @@ const commandHelp: Partial<Record<string, Pick<CommandDefinition, 'description' 
     downloadMedia: { examples: ['darkgrade camera list-media --json', 'darkgrade camera download-media <id> --output clip.mp4'] },
 }
 
-/** One public operation's `darkgrade camera <kebab>` command, named, described and given its inputs by the table. */
+/** One public operation's `darkgrade camera <kebab>` command, named, described and given its inputs from Camera. */
 function cameraOperationCommand(operation: SurfaceOperation, line: string): CommandDefinition {
     const required = operation.parameters.filter(parameter => parameter.required)
     const optional = operation.parameters.filter(parameter => !parameter.required)
-    const parameterFlags: FlagDefinition[] = optional.map(parameter =>
+    const parameterFlags: FlagDefinition[] = optional.flatMap(parameter =>
         parameter.type === 'switch'
-            ? { name: parameter.default ? `no-${kebab(parameter.name)}` : kebab(parameter.name), summary: parameter.description }
-            : {
-                  name: kebab(parameter.name),
-                  value: parameter.choices?.join('|') ?? (parameter.type === 'time' ? 'ISO 8601' : parameter.type),
-                  summary: parameter.description,
-              }
+            ? [
+                  { name: kebabCase(parameter.name), summary: parameter.description },
+                  { name: `no-${kebabCase(parameter.name)}`, summary: `the opposite of --${kebabCase(parameter.name)}` },
+              ]
+            : [
+                  {
+                      name: kebabCase(parameter.name),
+                      value: parameter.choices?.join('|') ?? (parameter.type === 'time' ? 'ISO 8601' : parameter.type),
+                      summary: parameter.description,
+                  },
+              ]
     )
-    const table: Readonly<Record<string, OperationEntry>> = cameraOperationTable
-    const surface = table[operation.name]?.surfaces?.cli
-    const extraFlags = surface && 'flags' in surface ? (surface.flags ?? []) : []
     return {
         name: line.slice('darkgrade camera '.length),
         summary: operation.summary,
         section: 'Camera',
         ...commandHelp[operation.name],
         ...(required.length && {
-            arguments: required.map(parameter => ({ name: kebab(parameter.name), required: true, choices: parameter.choices })),
+            arguments: required.map(parameter => ({ name: kebabCase(parameter.name), required: true, choices: parameter.choices })),
         }),
         flags: [
             ...parameterFlags,
-            ...extraFlags.map(flag => ({ name: flag.name.slice(2), value: flag.value, summary: flag.description })),
+            ...(operation.name in heldOperations ? [duration] : []),
             ...(fileOperations.has(operation.name) ? [output] : []),
             camera,
             json,
@@ -230,10 +244,21 @@ const cameraCommands: CommandDefinition = {
         'darkgrade camera set-iso "ISO 800"',
         'darkgrade camera take-photo',
         'darkgrade camera start-recording --duration 10s',
+        'darkgrade camera watch',
     ],
-    commands: [...cameraCommandOperations].map(([line, operation]) =>
-        cameraOperationCommand(operation, `darkgrade camera ${line}`)
-    ),
+    commands: [
+        ...[...cameraCommandOperations].map(([line, operation]) => cameraOperationCommand(operation, `darkgrade camera ${line}`)),
+        {
+            name: 'watch',
+            summary: 'Prints a line each time a setting changes on the camera or a new photo or clip lands',
+            description:
+                "Opens the camera and streams its events (the library's on('settingsChanged') and on('mediaAdded')) " +
+                'until Ctrl-C or --duration. Reads only.',
+            section: 'Camera',
+            flags: [duration, camera, json],
+            examples: ['darkgrade camera watch', 'darkgrade camera watch --duration 30s --json'],
+        },
+    ],
 }
 
 export const rootCommand: CommandDefinition = {
@@ -304,8 +329,10 @@ export const rootCommand: CommandDefinition = {
 
 export const visibleFlags = (command: CommandDefinition) => (command.flags ?? []).filter(flag => !flag.hidden)
 
+/** A short choice list is spelled out; a long one (every drive mode a brand names) keeps the argument's name. */
 export const argumentUsage = (argument: ArgumentDefinition) => {
-    const name = argument.choices ? argument.choices.join('|') : argument.name
+    const choices = argument.choices?.join('|')
+    const name = choices && choices.length <= 40 ? choices : argument.name
     return argument.required ? `<${name}>` : `[${name}]`
 }
 

@@ -1,3 +1,5 @@
+import { readOperationInput, runOperation } from '@darkgrade/slate/runtime'
+import { cameraToolDefinitions } from '@darkgrade/slate/runtime/mcp'
 import { cameraService } from '@main/camera-service'
 import { studioView } from '@main/studio-view'
 import {
@@ -41,7 +43,6 @@ export interface StudioTool {
 const ANALYSIS_WIDTH = 320
 /** Width of the frame handed to a model that can see. */
 const VISION_WIDTH = 768
-const ZOOM_MAXIMUM_MS = 5000
 
 type SettingName = CameraControlName
 
@@ -106,7 +107,7 @@ function recordChange(change: Omit<SettingChange, 'group'>): void {
  * the exposure type itself (Manual ↔ Movie Manual on Sony).
  */
 function photoVideoRequest(name: SettingName, requested: string): SettingName {
-    return name === 'exposureProgram' && /^(movie|video|film|photo|still|stills|picture)( mode)?$/i.test(requested.trim())
+    return name === 'exposureMode' && /^(movie|video|film|photo|still|stills|picture)( mode)?$/i.test(requested.trim())
         ? 'photoVideoMode'
         : name
 }
@@ -319,36 +320,8 @@ export function cameraStatus(): unknown {
     }
 }
 
-const SETTING_NAMES = z.enum(CAMERA_CONTROL_NAMES)
-
-/** Every tool Studio offers, to MCP clients and to its own assistant. All of them are camera-agnostic. */
-export const STUDIO_TOOLS: StudioTool[] = [
-    {
-        name: 'get_camera_status',
-        title: 'Camera status',
-        description:
-            'The connected camera and everything it reports right now: model, lens, battery, card space, whether live view and recording are on, photo or movie mode, and every setting with its current value, the values it currently accepts, and whether it can be changed in the current mode. Read this before changing settings.',
-        inputSchema: z.object({}),
-        changesSomething: false,
-        run: async () => ({ data: cameraStatus() }),
-    },
-    {
-        name: 'set_setting',
-        title: 'Change a setting',
-        description: `Set one camera setting to a value it accepts (see get_camera_status for choices). Values are matched loosely: "f/8", "1/50", "800" and "auto" all work. Settings: ${CAMERA_CONTROL_NAMES.map(name => `${name} (${CAMERA_CONTROL_LABELS[name]})`).join(', ')}.`,
-        inputSchema: z.object({
-            setting: SETTING_NAMES,
-            value: z.string().describe('The new value, e.g. "F8.0", "1/50", "ISO 800", "5600"'),
-        }),
-        changesSomething: true,
-        run: async input => {
-            requireConnected()
-            const setting = input.setting as SettingName
-            const before = availableSettings()[setting]?.value ?? null
-            const applied = await applySetting(setting, String(input.value))
-            return { data: { setting, from: before, to: applied } }
-        },
-    },
+/** Studio's own tools: its view, undo, relative exposure, frame analysis and shooting guidance. */
+const STUDIO_ONLY_TOOLS: StudioTool[] = [
     {
         name: 'adjust_exposure',
         title: 'Brighter or darker',
@@ -424,53 +397,6 @@ export const STUDIO_TOOLS: StudioTool[] = [
         },
     },
     {
-        name: 'autofocus',
-        title: 'Autofocus',
-        description: 'Run autofocus once with the current focus area and settings.',
-        inputSchema: z.object({}),
-        changesSomething: true,
-        run: async () => {
-            requireConnected()
-            return { data: { result: await cameraService.focus() } }
-        },
-    },
-    {
-        name: 'focus_at',
-        title: 'Focus on a point',
-        description:
-            'Move the focus point to a spot in the picture and focus there. x and y are fractions of the frame from the top left (0.5, 0.5 is the centre; 0.1 is near the left or top edge, 0.9 near the right or bottom). To focus on a named thing, call get_frame first and take its position from the picture; never guess the centre.',
-        inputSchema: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
-        changesSomething: true,
-        run: async input => {
-            requireConnected()
-            return { data: { result: await cameraService.focusAt(Number(input.x), Number(input.y)) } }
-        },
-    },
-    {
-        name: 'take_photo',
-        title: 'Take a photo',
-        description: 'Take a photo and save it to the download folder. Only when the user asks for a photo.',
-        inputSchema: z.object({ autofocus: z.boolean().default(true).describe('Focus before taking it') }),
-        changesSomething: true,
-        run: async input => {
-            requireConnected()
-            const result = await cameraService.capture({ autofocus: input.autofocus !== false })
-            return { data: { filename: result.filename, savedPath: result.savedPath, sizeBytes: result.sizeBytes } }
-        },
-    },
-    {
-        name: 'set_recording',
-        title: 'Start or stop recording',
-        description: 'Start or stop video recording. Only when the user asks.',
-        inputSchema: z.object({ recording: z.boolean() }),
-        changesSomething: true,
-        run: async input => {
-            requireConnected()
-            const state = input.recording ? await cameraService.startRecording() : await cameraService.stopRecording()
-            return { data: { recording: state.recording } }
-        },
-    },
-    {
         name: 'set_live_view',
         title: 'Live view on or off',
         description: 'Turn the live-view preview on or off.',
@@ -480,23 +406,6 @@ export const STUDIO_TOOLS: StudioTool[] = [
             requireConnected()
             const state = input.on ? await cameraService.startLiveView() : await cameraService.stopLiveView()
             return { data: { liveView: state.liveView } }
-        },
-    },
-    {
-        name: 'zoom',
-        title: 'Zoom',
-        description: "Zoom the lens (power zoom or the camera's digital zoom) wider or tighter for a moment.",
-        inputSchema: z.object({
-            direction: z.enum(['wide', 'tele']).describe('wide zooms out, tele zooms in'),
-            milliseconds: z.number().min(50).max(ZOOM_MAXIMUM_MS).default(500),
-        }),
-        changesSomething: true,
-        run: async input => {
-            requireConnected()
-            await cameraService.zoomStart(input.direction as 'wide' | 'tele')
-            await new Promise(resolve => setTimeout(resolve, Number(input.milliseconds ?? 500)))
-            await cameraService.zoomStop()
-            return { data: { lens: cameraService.getState().lens } }
         },
     },
     {
@@ -533,46 +442,6 @@ export const STUDIO_TOOLS: StudioTool[] = [
         run: async input => ({ data: { overlay: (await cameraService.setOsdOverlay(Boolean(input.on))).osdOverlay } }),
     },
     {
-        name: 'list_card_files',
-        title: 'Files on the card',
-        description: 'List photos and videos on the camera card, newest first.',
-        inputSchema: z.object({ limit: z.number().int().min(1).max(500).default(50) }),
-        changesSomething: false,
-        run: async input => {
-            requireConnected()
-            // Slate lists the card newest first.
-            const newest = (await cameraService.listFiles()).slice(0, Number(input.limit ?? 50))
-            return {
-                data: newest.map(file => ({
-                    filename: file.filename,
-                    kind: file.kind === 'clip' ? 'video' : file.kind,
-                    captureDate: file.captureDate,
-                    sizeBytes: file.sizeBytes,
-                })),
-            }
-        },
-    },
-    {
-        name: 'download_files',
-        title: 'Download files',
-        description:
-            'Copy files from the card to the download folder: by filename, or all of them. Only when the user asks.',
-        inputSchema: z.object({ filenames: z.array(z.string()).optional(), all: z.boolean().default(false) }),
-        changesSomething: true,
-        run: async input => {
-            requireConnected()
-            if (input.all) return { data: { saved: await cameraService.downloadAll() } }
-            const wanted = new Set((input.filenames as string[] | undefined) ?? [])
-            if (wanted.size === 0) throw new Error('Name the files to download, or set all')
-            const files = (await cameraService.listFiles()).filter(file => wanted.has(file.filename))
-            const saved: string[] = []
-            for (const file of files) saved.push(await cameraService.downloadFile(file))
-            return {
-                data: { saved, notFound: [...wanted].filter(name => !files.some(file => file.filename === name)) },
-            }
-        },
-    },
-    {
         name: 'get_shooting_guidance',
         title: 'Shooting guidance',
         description:
@@ -582,6 +451,62 @@ export const STUDIO_TOOLS: StudioTool[] = [
         run: async () => ({ data: SHOOTING_GUIDANCE }),
     },
 ]
+
+/** Studio owns the connection; its camera tools act on the camera it holds. */
+const STUDIO_OWNED_OPERATIONS = new Set(['discover', 'connect', 'disconnect', 'recover'])
+
+/** A setting id the operation writes (`setIso` → iso, `setControl` → its id input), for loose values and undo. */
+function writtenSetting(operation: string, input: Record<string, unknown>): SettingName | undefined {
+    const id = operation === 'setControl' ? String(input.id) : operation.replace(/^set(.)/, (_, letter: string) => letter.toLowerCase())
+    return operation.startsWith('set') && (CAMERA_CONTROL_NAMES as readonly string[]).includes(id)
+        ? CAMERA_CONTROL_NAMES.find(name => name === id)
+        : undefined
+}
+
+/**
+ * Slate's generated camera tools (`camera_take_photo`, `camera_set_iso`, …), run on the Camera
+ * Studio holds through its operation queue. A setting value is matched loosely against the
+ * choices the camera reports ("f8", "800"), and a changed setting can be undone.
+ */
+const CAMERA_TOOLS: StudioTool[] = cameraToolDefinitions({ cameraArgument: false })
+    .filter(tool => !STUDIO_OWNED_OPERATIONS.has(tool.operation.name))
+    .map(tool => ({
+        name: tool.name,
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        changesSomething: !tool.operation.readOnly,
+        run: async input => {
+            requireConnected()
+            const operation = tool.operation
+            const setting = writtenSetting(operation.name, input)
+            const control = setting && availableSettings()[setting]
+            const requested = typeof input.value === 'string' ? input.value : undefined
+            const value =
+                setting && control?.options.length && requested ? (matchOption(setting, requested, control.options) ?? requested) : input.value
+            const accepted = readOperationInput(operation, value === undefined ? input : { ...input, value })
+            const camera = operation.readOnly ? cameraService.requireCamera() : cameraService.requireCameraForControl()
+            const call = () => runOperation(camera, operation.name, accepted)
+            // Stop never waits behind other camera work.
+            const outcome = operation.immediate ? await call() : await cameraService.enqueue(call)
+            if (setting && control && typeof accepted.value === 'string' && accepted.value !== control.value)
+                recordChange({ setting, from: control.value, to: accepted.value })
+            if (!operation.readOnly) cameraService.scheduleSettingsRefresh()
+            const image = outcome.files.find(file => file.mimeType === 'image/jpeg' || file.mimeType === 'image/png')
+            return {
+                data: outcome.result,
+                ...(image && {
+                    image: {
+                        base64: Buffer.from(image.data).toString('base64'),
+                        mimeType: image.mimeType === 'image/png' ? ('image/png' as const) : ('image/jpeg' as const),
+                    },
+                }),
+            }
+        },
+    }))
+
+/** Every tool Studio offers, to MCP clients and to its own assistant. All of them are camera-agnostic. */
+export const STUDIO_TOOLS: StudioTool[] = [...STUDIO_ONLY_TOOLS, ...CAMERA_TOOLS]
 
 export function findTool(name: string): StudioTool | undefined {
     return STUDIO_TOOLS.find(tool => tool.name === name)

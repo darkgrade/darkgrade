@@ -11,12 +11,16 @@ export interface CameraOperationOptions {
     /** Where to write a returned file; a second file goes beside it. */
     outputPath?: string
     json: boolean
+    /** Holds a start operation in the foreground until Ctrl-C or the duration, then runs `stop`. */
+    hold?: { stop: SurfaceOperation; durationMilliseconds?: number }
 }
 
 export interface CameraOperationDependencies {
     discover(): Promise<DiscoveredCamera[]>
     createCamera(device: DiscoveredCamera): Promise<Camera>
     writeFile(path: string, data: Uint8Array): Promise<void>
+    /** Calls `request` on Ctrl-C or a termination signal; the returned function stops listening. */
+    onStopRequest(request: () => void): () => void
 }
 
 /** Operations that run on a camera that may not answer, so they are not preceded by connect. */
@@ -43,6 +47,64 @@ async function defaultDependencies(): Promise<CameraOperationDependencies> {
                 logger: { renderInTerminal: false, captureConsole: false },
             }),
         writeFile: (path, data) => writeFile(path, data),
+        onStopRequest(request) {
+            process.on('SIGINT', request)
+            process.on('SIGTERM', request)
+            return () => {
+                process.removeListener('SIGINT', request)
+                process.removeListener('SIGTERM', request)
+            }
+        },
+    }
+}
+
+/** Resolves on Ctrl-C, a termination signal or after the duration. */
+async function untilStopRequested(dependencies: CameraOperationDependencies, durationMilliseconds?: number): Promise<void> {
+    let stopListening = () => {}
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await new Promise<void>(resolve => {
+        stopListening = dependencies.onStopRequest(resolve)
+        if (durationMilliseconds !== undefined) timer = setTimeout(resolve, durationMilliseconds)
+    })
+    stopListening()
+    if (timer) clearTimeout(timer)
+}
+
+async function selectDevice(
+    camera: CameraOperationOptions['camera'],
+    command: string,
+    terminal: Terminal,
+    dependencies: CameraOperationDependencies
+): Promise<DiscoveredCamera | undefined> {
+    if (camera) return camera
+    const selection = selectBenchmarkCamera(await dependencies.discover())
+    if ('device' in selection) return selection.device
+    terminal.report(selection.message.replaceAll('darkgrade telemetry benchmark', command))
+    return undefined
+}
+
+/**
+ * `darkgrade camera watch`: opens the camera and prints one line per camera event, the library's
+ * `settingsChanged` and `mediaAdded`, until Ctrl-C or the duration. Reads only.
+ */
+export async function runWatchCommand(
+    options: Pick<CameraOperationOptions, 'camera' | 'json'> & { durationMilliseconds?: number },
+    terminal: Terminal,
+    injected?: CameraOperationDependencies
+): Promise<number> {
+    const dependencies = injected ?? (await defaultDependencies())
+    const device = await selectDevice(options.camera, 'darkgrade camera watch', terminal, dependencies)
+    if (!device) return 1
+    const camera = await dependencies.createCamera(device)
+    try {
+        await camera.connect({ observeOnly: true })
+        if (!terminal.quiet && !options.json) terminal.report(`Watching ${describeDevice(device)}. Press Ctrl-C to stop.`)
+        for (const event of ['settingsChanged', 'mediaAdded'] as const)
+            camera.on(event, () => terminal.print(options.json ? JSON.stringify({ event, at: new Date().toISOString() }) : event))
+        await untilStopRequested(dependencies, options.durationMilliseconds)
+        return 0
+    } finally {
+        await camera.disconnect().catch(() => undefined)
     }
 }
 
@@ -66,27 +128,26 @@ export async function runCameraOperationCommand(
 ): Promise<number> {
     const input = readOperationInput(options.operation, options.input)
     const dependencies = injected ?? (await defaultDependencies())
-    let device: DiscoveredCamera
-    if (options.camera) device = options.camera
-    else {
-        const selection = selectBenchmarkCamera(await dependencies.discover())
-        if (!('device' in selection)) {
-            terminal.report(selection.message.replaceAll('darkgrade telemetry benchmark', options.operation.cliCommand ?? 'darkgrade camera'))
-            return 1
-        }
-        device = selection.device
-    }
+    const device = await selectDevice(options.camera, options.operation.cliCommand, terminal, dependencies)
+    if (!device) return 1
     const camera = await dependencies.createCamera(device)
     let keepSession = false
     try {
         if (!withoutConnect.has(options.operation.name)) await camera.connect()
         if (!terminal.quiet && !options.json) terminal.report(`${options.operation.summary}: ${describeDevice(device)}`)
-        const outcome = await runOperation(camera, options.operation.name, input).catch(async error => {
-            // Closing the session under a take that may still be running can end it in another mode.
-            if (options.operation.name === 'stopRecording')
+        // Closing the session under a take that may still be running can end it in another mode.
+        const keepIfRecording = async (error: unknown): Promise<never> => {
+            if (options.operation.name === 'stopRecording' || options.hold?.stop.name === 'stopRecording')
                 keepSession = (await camera.getRecordingState().catch(() => 'unknown' as const)) !== 'idle'
             throw error
-        })
+        }
+        let outcome = await runOperation(camera, options.operation.name, input).catch(keepIfRecording)
+        if (options.hold) {
+            if (!terminal.quiet && !options.json) terminal.report('Press Ctrl-C to stop.')
+            await untilStopRequested(dependencies, options.hold.durationMilliseconds)
+            // Stop is sent once and never waits behind anything else.
+            outcome = await runOperation(camera, options.hold.stop.name, {}).catch(keepIfRecording)
+        }
         const written: { role: OperationFile['role']; path: string; bytes: number }[] = []
         for (const [index, file] of outcome.files.entries()) {
             const path = filePath(file, index, options.outputPath)

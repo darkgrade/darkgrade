@@ -1,7 +1,7 @@
-import { kebabCase } from '@camera/operation-table/index'
-import { OperationInputError } from '@runtime/operations'
+import { kebabCase, OperationInputError, surfaceOperation } from '@runtime/operations'
 import {
     cameraCommandOperations,
+    heldOperations,
     closestMatch,
     commandLine,
     completionShells,
@@ -307,7 +307,7 @@ async function runCameraCommand(
 ): Promise<number> {
     const command = path[path.length - 1]
     const operation = cameraCommandOperations.get(command.name)
-    if (!operation) throw unknownCommand(path.slice(0, -1), command.name)
+    if (!operation && command.name !== 'watch') throw unknownCommand(path.slice(0, -1), command.name)
     const { flags, positionals } = parseCommandArguments(path, words)
     const recording = await import('@cli/recording')
     const text = (name: string) => {
@@ -324,10 +324,15 @@ async function runCameraCommand(
         }
     }
     const camera = parse('camera', recording.parseCameraId)
+    const durationMilliseconds = parse('duration', recording.parseRecordingDuration)
+    if (!operation) {
+        const { runWatchCommand } = await import('@cli/camera-operation')
+        return runWatchCommand({ camera, durationMilliseconds, json: flags.has('json') }, terminal)
+    }
     if (operation.name === 'startRecording')
         return recording.runStartRecordingCommand({
             camera,
-            durationMilliseconds: parse('duration', recording.parseRecordingDuration),
+            durationMilliseconds,
             json: flags.has('json'),
         })
     // Required inputs are positional, in the library's order; the rest are flags.
@@ -342,13 +347,18 @@ async function runCameraCommand(
     for (const parameter of operation.parameters.filter(candidate => !candidate.required)) {
         const flag = kebabCase(parameter.name)
         if (parameter.type === 'switch') {
-            if (parameter.default && flags.has(`no-${flag}`)) input[parameter.name] = false
-            else if (!parameter.default && flags.has(flag)) input[parameter.name] = true
+            if (flags.has(`no-${flag}`)) input[parameter.name] = false
+            else if (flags.has(flag)) input[parameter.name] = true
         } else if (text(flag) !== undefined) input[parameter.name] = text(flag)!
     }
     const { runCameraOperationCommand } = await import('@cli/camera-operation')
     try {
-        return await runCameraOperationCommand({ operation, input, camera, outputPath: text('output'), json: flags.has('json') }, terminal)
+        const stop = heldOperations[operation.name]
+        const hold = stop ? { stop: surfaceOperation(stop)!, durationMilliseconds } : undefined
+        return await runCameraOperationCommand(
+            { operation, input, camera, outputPath: text('output'), json: flags.has('json'), hold },
+            terminal
+        )
     } catch (error) {
         if (error instanceof OperationInputError) throw new UsageError(error.message, path)
         throw error

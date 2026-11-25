@@ -41,9 +41,11 @@ public Camera API (`scripts/camera-smoke/<area>.ts`). `check:guards` (in `test` 
 `test:package`) is strict: it fails on any vendor-named main-entry export or Camera member (raw
 access is `protocolSession(camera)` from `@darkgrade/slate/protocol`), on a file whose
 `any`/`as never`/`as unknown as` count differs from its budget (lower it with `-- --update`), and
-on a Camera method without a `keep` operation-table entry. The MCP tools (`src/runtime/mcp.ts`)
-and `darkgrade camera <command>`s (`src/cli/commands.ts`) are generated from that table through
-`src/runtime/operations.ts`: add an operation's parameters to its table entry, never a tool by hand.
+on a Camera method missing from the generated operation list or without a doc comment. The MCP
+tools (`src/runtime/mcp.ts`) and `darkgrade camera <command>`s (`src/cli/commands.ts`) are generated
+at build time from Camera's signatures and doc comments (`scripts/generate-camera-operations.ts`,
+into `build/generated/`) through `src/runtime/operations.ts`: document a method's inputs on Camera,
+never add a tool by hand.
 
 ## Driver invariants
 

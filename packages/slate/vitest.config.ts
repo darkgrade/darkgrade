@@ -1,6 +1,10 @@
 import { resolve } from 'path'
 import { configDefaults, defineConfig } from 'vitest/config'
+import { writeCameraOperations } from './scripts/generate-camera-operations'
 import tsconfig from './tsconfig.json' with { type: 'json' }
+
+// The MCP tools and CLI commands are generated from Camera's signatures before every build and test run.
+writeCameraOperations()
 
 export default defineConfig({
     resolve: {

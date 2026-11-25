@@ -1,5 +1,5 @@
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
-import type { CameraOperationName } from '@camera/operation-table/index'
+import type { CameraOperationName } from '@camera/driver'
 import { colourControlDefinitions } from '@camera/settings/colour'
 import { exposureControlDefinitions } from '@camera/settings/exposure'
 import { focusControlDefinitions } from '@camera/settings/focus'

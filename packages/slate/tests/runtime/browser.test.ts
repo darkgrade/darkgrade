@@ -41,9 +41,9 @@ test('the browser entry runs queued camera work', async () => {
     const { CameraRuntime } = await import('@runtime/browser')
     const calls: string[] = []
     const camera = {
-        setControl: async (id: string) => {
-            calls.push(`setControl ${id}`)
-            return { id }
+        setIso: async (value: string) => {
+            calls.push(`setIso ${value}`)
+            return { id: 'iso', value }
         },
         takePhoto: async () => {
             calls.push('takePhoto')
@@ -56,5 +56,5 @@ test('the browser entry runs queued camera work', async () => {
         assertAllowed: () => undefined,
     })
     await Promise.all([runtime.operation('cam', 'setIso', { value: 'ISO 800' }), runtime.operation('cam', 'takePhoto')])
-    expect(calls).toEqual(['setControl iso', 'takePhoto'])
+    expect(calls).toEqual(['setIso ISO 800', 'takePhoto'])
 })

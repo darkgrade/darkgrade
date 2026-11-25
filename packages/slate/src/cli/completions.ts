@@ -10,6 +10,8 @@ import {
 interface CompletionNode {
     /** The command words typed so far, without the program name. */
     words: string[]
+    /** The child command names, which end this node once one is typed. */
+    subcommands: string[]
     candidates: { word: string; summary: string; takesValue?: boolean }[]
 }
 
@@ -28,7 +30,7 @@ function completionNodes(command: CommandDefinition = rootCommand, words: string
             ? (rootCommand.commands ?? []).map(child => ({ word: child.name, summary: child.summary }))
             : []
     return [
-        { words, candidates: [...children, ...choices, ...helpTopics, ...flags] },
+        { words, subcommands: children.map(child => child.word), candidates: [...children, ...choices, ...helpTopics, ...flags] },
         ...(command.commands ?? []).flatMap(child => completionNodes(child, [...words, child.name])),
     ]
 }
@@ -91,10 +93,7 @@ function fishScript(): string {
     const lines = [`# fish completion for ${programName}`, `complete -c ${programName} -f`]
     for (const node of completionNodes()) {
         const seen = node.words.map(word => `__fish_seen_subcommand_from ${word}`)
-        const children = node.candidates
-            .filter(candidate => !candidate.word.startsWith('-'))
-            .map(candidate => candidate.word)
-        const notDeeper = children.length ? [`not __fish_seen_subcommand_from ${children.join(' ')}`] : []
+        const notDeeper = node.subcommands.length ? [`not __fish_seen_subcommand_from ${node.subcommands.join(' ')}`] : []
         const condition = node.words.length ? [...seen, ...notDeeper].join('; and ') : '__fish_use_subcommand'
         for (const candidate of node.candidates) {
             const flag = `-l ${candidate.word.slice(2)}${candidate.takesValue ? ' -r' : ''}`

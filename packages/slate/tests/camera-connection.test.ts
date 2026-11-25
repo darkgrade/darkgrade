@@ -10,7 +10,6 @@ import { Camera } from '@camera/index'
 import { protocolAccess, protocolSession } from '@camera/protocol-session'
 import { PTPResponseError, PTPTimeoutError } from '@core/ptp-errors'
 import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
-import { cameraOperationTable, plannedOperationTable } from '@camera/operation-table/index'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -415,15 +414,5 @@ describe('connection failures', () => {
             expect(protocolSession(camera).driver).toBe(driver)
             await camera.disconnect()
         }
-    })
-})
-
-describe('operation table', () => {
-    it('lists getInfo as current and no replaced or protocol connection method', () => {
-        expect(cameraOperationTable.getInfo.disposition.kind).toBe('keep')
-        expect('getInfo' in plannedOperationTable).toBe(false)
-        // Replaced and protocol methods have left Camera; protocolSession(camera) serves the protocol ones.
-        for (const name of ['connectSonyObservationSession', 'connectSonyMenuSession', 'getInstance'])
-            expect(name in cameraOperationTable).toBe(false)
     })
 })

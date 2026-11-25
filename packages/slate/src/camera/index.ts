@@ -19,6 +19,7 @@ import type {
     ComputerPhoto,
     ConfirmedPhotoFile,
     ConnectOptions,
+    CameraOperationName,
     DiscoveredCamera,
     DriverOperationName,
     DriverOperations,
@@ -38,15 +39,12 @@ import type {
 } from '@camera/driver'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { ExposureContext } from '@camera/exposure-time'
-import { cameraOperationTable, publicOperations, type CameraOperationName } from '@camera/operation-table/index'
 import { installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 import { Logger } from '@core/logger'
 import { LoggerConfig } from '@core/logger-config'
 import { CameraOperationQueue } from '@core/operation-queue'
 import { PTPError, PTPResponseError } from '@core/ptp-errors'
 import type { TransactionPolicy } from '@ptp/transaction-channel'
-import type { EventDefinition } from '@ptp/types/event'
-import type { EventParams } from '@ptp/types/type-helpers'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
@@ -127,6 +125,7 @@ export class Camera {
         return withPublicErrors('recover', () => context.driver.recover(context.deviceDescriptor, options))
     }
 
+    /** Closes the camera and puts it back the way it was. */
     async disconnect(): Promise<void> {
         const context = cameraContext(this)
         try {
@@ -156,6 +155,8 @@ export class Camera {
      * Sets any setting by id, after a fresh read of what the camera offers, and resolves to the
      * value read back. Shutter speed also accepts a duration or angle; cross-unit conversion
      * requires the frame rate in `context`.
+     * @param id a setting id, as getCapabilities lists them
+     * @param value one of the setting's allowed values
      */
     async setControl<Id extends CameraControlId>(
         id: Id,
@@ -188,6 +189,8 @@ export class Camera {
      * (Sony Wide, Zone, Center), Slate switches to a spot; on Sony it also pauses subject detection so
      * eye tracking does not pull focus back to a face. `resetFocusPoint` puts both back. An area
      * chosen with a setter since the point stays. `autofocus: false` only moves the point.
+     * @param x 0 (left) to 1 (right)
+     * @param y 0 (top) to 1 (bottom)
      */
     async setFocusPoint(x: number, y: number, options: { autofocus?: boolean } = {}): Promise<void> {
         const driver = supported(this, 'setFocusPoint')
@@ -212,6 +215,7 @@ export class Camera {
     /**
      * Zooms to a focal length ("go to 35") and resolves to the focal length, in millimetres, where
      * the lens landed, read back from the camera. Needs a power-zoom lens that reports its focal length.
+     * @param focalLengthMillimetres the focal length to go to, such as 35
      */
     async zoomTo(focalLengthMillimetres: number): Promise<number> {
         return supported(this, 'zoomTo').zoomTo(focalLengthMillimetres)
@@ -307,7 +311,10 @@ export class Camera {
         return supported(this, 'listMedia').listMedia()
     }
 
-    /** A JPEG of a photo or clip; `item.previews` lists the sizes this camera offers for it. */
+    /**
+     * A JPEG of a photo or clip; `item.previews` lists the sizes this camera offers for it.
+     * @param id a media id from listMedia
+     */
     async getMediaPreview(id: string, size: MediaPreviewSize = 'thumbnail'): Promise<Uint8Array> {
         if (size !== 'thumbnail' && size !== 'preview')
             throw new CameraRefusedError(
@@ -317,7 +324,10 @@ export class Camera {
         return supported(this, 'getMediaPreview').getMediaPreview(id, size)
     }
 
-    /** Copies a file off the card, with progress and cancel. Never deletes or changes the card. */
+    /**
+     * Copies a file off the card, with progress and cancel. Never deletes or changes the card.
+     * @param id a media id from listMedia
+     */
     async downloadMedia(id: string, options: MediaDownloadOptions = {}): Promise<Uint8Array> {
         return supported(this, 'downloadMedia').downloadMedia(id, options)
     }
@@ -329,7 +339,10 @@ export class Camera {
         return supported(this, 'getBattery').getBattery()
     }
 
-    /** Sets the camera's date and time (default: now) and resolves once the camera confirms it. */
+    /**
+     * Sets the camera's date and time (default: now) and resolves once the camera confirms it.
+     * @param moment ISO 8601 date and time; now when not given
+     */
     async setClock(moment: Date = new Date()): Promise<void> {
         if (!(moment instanceof Date) || Number.isNaN(moment.getTime()))
             throw new CameraRefusedError('setClock', 'setClock needs a valid Date')
@@ -340,38 +353,21 @@ export class Camera {
     // ----------------------------------------------------------------------------------- Events
 
     /** Called when a setting changes on the camera (`settingsChanged`) or a new photo or clip lands (`mediaAdded`). */
-    on(event: CameraEventName, handler: CameraEventHandler): void
-    on<E extends EventDefinition>(event: E, handler: (params: EventParams<E>) => void): void
-    on<E extends EventDefinition>(event: CameraEventName | E, handler: (params: EventParams<E>) => void): void {
-        if (isNamedEvent(event)) {
-            if (!takesNothing(event, handler)) return
-            const stop = supported(this, 'subscribe', 'on').subscribe(event, handler)
-            namedSubscriptionsOf(this).push({ event, handler, stop })
-            return
-        }
-        const context = cameraContext(this)
-        context.subscriptions.add({ event, handler })
-        return context.driver.on(event, handler)
+    on(event: CameraEventName, handler: CameraEventHandler): void {
+        if (typeof event !== 'string')
+            throw new TypeError('Raw PTP events are subscribed through protocolSession(camera).on')
+        const stop = supported(this, 'subscribe', 'on').subscribe(event, handler)
+        namedSubscriptionsOf(this).push({ event, handler, stop })
     }
 
     /** Stops `handler`, or every handler of the event when none is given. */
-    off(event: CameraEventName, handler?: CameraEventHandler): void
-    off<E extends EventDefinition>(event: E, handler?: (params: EventParams<E>) => void): void
-    off<E extends EventDefinition>(event: CameraEventName | E, handler?: (params: EventParams<E>) => void): void {
-        if (isNamedEvent(event)) {
-            const subscriptions = namedSubscriptionsOf(this)
-            for (const subscription of [...subscriptions])
-                if (subscription.event === event && (!handler || subscription.handler === handler)) {
-                    subscription.stop()
-                    subscriptions.splice(subscriptions.indexOf(subscription), 1)
-                }
-            return
-        }
-        const context = cameraContext(this)
-        for (const subscription of context.subscriptions)
-            if (subscription.event.name === event.name && (!handler || subscription.handler === handler))
-                context.subscriptions.delete(subscription)
-        return context.driver.off(event, handler)
+    off(event: CameraEventName, handler?: CameraEventHandler): void {
+        const subscriptions = namedSubscriptionsOf(this)
+        for (const subscription of [...subscriptions])
+            if (subscription.event === event && (!handler || subscription.handler === handler)) {
+                subscription.stop()
+                subscriptions.splice(subscriptions.indexOf(subscription), 1)
+            }
     }
 }
 
@@ -404,13 +400,34 @@ function onCameraQueue<T>(camera: Camera, operation: () => Promise<T>): Promise<
     return cameraContext(camera).controlsQueue.run('camera', operation)
 }
 
-/** The operation-table areas whose operations getCapabilities reports. */
-const reportedAreas = new Set(['connection', 'focus', 'zoom', 'photo', 'live-view', 'video', 'media', 'body'])
+/** The operations getCapabilities reports, in the order it lists them: everything but settings and events. */
+const reportedOperations = [
+    'connect',
+    'getInfo',
+    'recover',
+    'disconnect',
+    'autofocus',
+    'setFocusPoint',
+    'resetFocusPoint',
+    'nudgeFocus',
+    'zoomTo',
+    'startZoom',
+    'stopZoom',
+    'takePhoto',
+    'getLiveViewFrame',
+    'getRecordingState',
+    'startRecording',
+    'stopRecording',
+    'getCardStatus',
+    'listMedia',
+    'getMediaPreview',
+    'downloadMedia',
+    'getBattery',
+    'setClock',
+] as const satisfies readonly CameraOperationName[]
 /** Operations every driver has through its protocol core. */
-const coreOperations = new Set(['connect', 'disconnect', 'recover'])
-const cameraOperationNames = new Set<string>(Object.keys(cameraOperationTable))
-const isCameraOperation = (name: string): name is CameraOperationName => cameraOperationNames.has(name)
-const isDriverOperation = (name: string): name is DriverOperationName & CameraOperationName => !coreOperations.has(name)
+const coreOperations = new Set<string>(['connect', 'disconnect', 'recover'])
+const isDriverOperation = (name: CameraOperationName): name is DriverOperationName & CameraOperationName => !coreOperations.has(name)
 
 /**
  * `getCapabilities().operations`: for each implemented public operation, whether it can run now
@@ -422,9 +439,7 @@ async function readOperationAvailability(
     capabilities: CameraCapabilities
 ): Promise<Partial<Record<CameraOperationName, OperationAvailability>>> {
     const availability: Partial<Record<CameraOperationName, OperationAvailability>> = {}
-    for (const operation of publicOperations()) {
-        const name = operation.name
-        if (!operation.implemented || !reportedAreas.has(operation.entry.area) || !isCameraOperation(name)) continue
+    for (const name of reportedOperations) {
         if (!isDriverOperation(name)) {
             availability[name] = { supported: true }
             continue
@@ -553,7 +568,7 @@ function namedSubscriptionsOf(camera: Camera): NamedSubscription[] {
     return subscriptions
 }
 
-/** Moves every named listener to the driver chosen on connect, as `on(EventDefinition)` listeners move. */
+/** Moves every named listener to the driver chosen on connect, as raw protocol listeners move. */
 function reattachNamedEvents(camera: Camera): void {
     const subscriptions = namedSubscriptionsOf(camera)
     if (!subscriptions.length) return
@@ -564,23 +579,13 @@ function reattachNamedEvents(camera: Camera): void {
     }
 }
 
-const isNamedEvent = (event: CameraEventName | EventDefinition): event is CameraEventName => typeof event === 'string'
-
-/** The overloads pair a named event with a handler that takes nothing. */
-function takesNothing<Handler extends (params: never) => void>(
-    event: CameraEventName | EventDefinition,
-    _handler: Handler | CameraEventHandler
-): _handler is CameraEventHandler {
-    return isNamedEvent(event)
-}
-
 export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@ptp/transaction-channel'
 export { CanonCamera } from '@vendors/canon/canon-camera'
 export { GenericCamera } from '@vendors/generic/generic-camera'
 export { VendorExtensionCamera } from '@vendors/generic/vendor-extension-camera'
 export { NikonCamera } from '@vendors/nikon/nikon-camera'
 export { SONY_CAMERA_BUTTONS, SonyCamera } from '@vendors/sony/sony-camera'
-export type { SonyCameraButton, SonyOsdImage, SonyPropertyState, SonyZoomResult } from '@vendors/sony/sony-camera'
+export type { SonyCameraButton, SonyOsdImage, SonyPropertyState } from '@vendors/sony/sony-camera'
 
 export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/wifi-keyboard'
 export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'

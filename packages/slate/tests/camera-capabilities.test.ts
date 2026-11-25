@@ -413,7 +413,7 @@ describe('library construction and vendor dispatch', () => {
         const camera = new Camera()
         const event = protocolSession(camera).driver.registry.events.ObjectAdded,
             handler = vi.fn()
-        camera.on(event, handler)
+        protocolSession(camera).on(event, handler)
         vi.spyOn(USBTransport.prototype, 'isConnected').mockReturnValue(false)
         vi.spyOn(USBTransport.prototype, 'connect').mockResolvedValue(undefined)
         vi.spyOn(USBTransport.prototype, 'getDeviceIdentity').mockReturnValue({ vendorId: 0x054c, productId: 1 })

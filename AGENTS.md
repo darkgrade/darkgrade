@@ -100,26 +100,28 @@ raw send/get/set, registries, driver classes and vendor diagnostics are on
 word an operator would say on set (a vendor's word is only a search alias), and the units people
 use: millimetres, Kelvin, named speeds and sizes, 0–1 across the picture from the top-left.
 
-**Audit before any new public operation.** Before adding one, search the operation table
-(`packages/slate/src/camera/operations/table`), the settings groups and `resolveCameraControl`
-aliases, the driver capability groups (`src/camera/driver`, `src/vendors/capabilities`), Studio's
+**Audit before any new public operation.** Before adding one, search Camera's methods
+(`packages/slate/src/camera/index.ts`), the driver contract (`src/camera/driver.ts`), the settings
+groups and `resolveCameraControl` aliases, each brand's driver (`src/vendors/<brand>`), Studio's
 callers and `protocolSession`. State in the PR which existing operation or setting could not
 cover it and why it passes the bar above. A new operation is implemented for every vendor that
-can do it through its capability group, reports `getCapabilities().operations[name]` with a reason
+can do it as a method of its driver, reports `getCapabilities().operations[name]` with a reason
 where it cannot, and fails with one of the three errors: `CameraUnsupportedError` (cannot do it
 now, nothing sent), `CameraRefusedError` (the camera said no, nothing changed) or
 `CameraOutcomeUnknownError` (sent but unconfirmed, never resent). It returns only once the
 camera shows the result; Stop is never blocked.
 
-**The operation table drives every surface.** Every public Camera method has one entry in
-`src/camera/operations/table/<area>.ts` with disposition `keep`, its summary and its parameters.
-The MCP tools (`camera_` + the method in snake_case, from `src/runtime/mcp.ts`) and the CLI
-commands (`darkgrade camera ` + the method in kebab-case, from `src/cli/commands.ts`) are
-generated from it through `src/runtime/operations.ts`; never write a tool or command by hand.
-Each typed setting has one setter tool (`camera_set_iso` …); there are no getter tools because
-`camera_get_capabilities` reads every setting, and the CLI has both `get-<setting>` and
-`set-<setting>`. `darkgrade cameras` is the one exception, for `Camera.discover`. The compiler
-and `check:guards` fail when Camera and the table differ.
+**Camera drives every surface.** The MCP tools (`camera_` + the method in snake_case, from
+`src/runtime/mcp.ts`) and the CLI commands (`darkgrade camera ` + the method in kebab-case, from
+`src/cli/commands.ts`) are generated at build time from Camera's own signatures and doc comments
+(`scripts/generate-camera-operations.ts`, written to `build/generated/`) through
+`src/runtime/operations.ts`; never write a tool, command or table entry by hand. Every public
+method needs a doc comment (its first sentence is the summary) and `@param` text for positional
+inputs; options objects describe their properties. Results are exactly what the library returns,
+with bytes moved into files. Events are library only (the CLI streams them with `darkgrade camera
+watch`); `start-recording` and `start-zoom` hold the CLI until Ctrl-C or `--duration`.
+`darkgrade cameras` is the one exception to the naming rule, for `Camera.discover`. `check:guards`
+fails when a Camera method is missing from the generated list or has no doc comment.
 
 **No type escapes.** Slate camera code adds no `any`, `as any`, `as never` or `as unknown as`.
 `check:guards` keeps a per-file budget (`packages/slate/scripts/guards/escape-budget.json`) that

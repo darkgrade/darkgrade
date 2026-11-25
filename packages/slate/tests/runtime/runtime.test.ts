@@ -34,6 +34,8 @@ function fakeCamera(overrides: Record<string, (...parameters: unknown[]) => Prom
         startRecording: record('startRecording'),
         stopRecording: record('stopRecording', { mediaId: 'c1', name: 'C0001.MP4' }),
         stopZoom: record('stopZoom'),
+        setIso: record('setIso', { id: 'iso', value: 'ISO 800' }),
+        setColorTemperature: record('setColorTemperature', { id: 'colorTemperature', value: 5600 }),
         setFocusPoint: record('setFocusPoint'),
         setClock: record('setClock'),
         ...overrides,
@@ -53,16 +55,17 @@ function fixture(camera = fakeCamera()) {
     return { provider, runtime: new CameraRuntime(provider), calls: camera.calls, allowed }
 }
 
-test('the operation table names every MCP tool: one per operation and one setter per setting', async () => {
-    const tools = surfaceOperations().flatMap(operation => (operation.mcpTool ? [operation.mcpTool] : []))
+test('Camera names every MCP tool: one per operation and a getter and setter per setting', async () => {
+    const tools = surfaceOperations().map(operation => operation.mcpTool)
     const setters = tools.filter(tool => tool.startsWith('camera_set_') && tool !== 'camera_set_control' && tool !== 'camera_set_focus_point' && tool !== 'camera_set_clock')
     expect(setters).toHaveLength(29)
     for (const name of ['camera_discover', 'camera_get_capabilities', 'camera_set_control', 'camera_set_iso', 'camera_take_photo',
         'camera_get_live_view_frame', 'camera_start_recording', 'camera_stop_recording', 'camera_stop_zoom', 'camera_nudge_focus',
-        'camera_download_media', 'camera_get_battery', 'camera_set_clock', 'camera_get_info', 'camera_recover'])
+        'camera_download_media', 'camera_get_battery', 'camera_set_clock', 'camera_get_info', 'camera_recover', 'camera_get_iso',
+        'camera_start_zoom'])
         expect(tools).toContain(name)
-    // Settings are read by camera_get_capabilities; events cannot cross a process.
-    for (const name of ['camera_get_iso', 'camera_on', 'camera_off', 'camera_get_instance', 'camera_sony_power_zoom'])
+    // Events cannot cross a process.
+    for (const name of ['camera_on', 'camera_off', 'camera_get_instance', 'camera_sony_power_zoom'])
         expect(tools).not.toContain(name)
     expect(tools.some(tool => /sony|canon|nikon/.test(tool))).toBe(false)
 })
@@ -85,13 +88,13 @@ test('MCP runs each tool as the same Camera call, after the host allows it, and 
         expect(calls).toEqual([])
         const iso = await client.callTool({ name: 'camera_set_iso', arguments: { camera: 'sony', value: 'ISO 800' } })
         expect(iso.isError).not.toBe(true)
-        expect(calls).toEqual([['setControl', 'iso', 'ISO 800']])
+        expect(calls).toEqual([['setIso', 'ISO 800']])
         await client.callTool({ name: 'camera_set_color_temperature', arguments: { camera: 'sony', value: 5600 } })
-        expect(calls.at(-1)).toEqual(['setControl', 'colorTemperature', 5600])
+        expect(calls.at(-1)).toEqual(['setColorTemperature', 5600])
         await client.callTool({ name: 'camera_set_focus_point', arguments: { camera: 'sony', x: 0.5, y: 0.4 } })
-        expect(calls.at(-1)).toEqual(['setFocusPoint', 0.5, 0.4, { autofocus: true }])
+        expect(calls.at(-1)).toEqual(['setFocusPoint', 0.5, 0.4])
         await client.callTool({ name: 'camera_take_photo', arguments: { camera: 'sony', autofocus: false } })
-        expect(calls.at(-1)).toEqual(['takePhoto', { autofocus: false, destination: 'card' }])
+        expect(calls.at(-1)).toEqual(['takePhoto', { autofocus: false }])
         expect(allowed).toEqual(['setIso', 'setColorTemperature', 'setFocusPoint', 'takePhoto'])
         const frame = await client.callTool({ name: 'camera_get_live_view_frame', arguments: { camera: 'sony' } })
         expect((frame.content as { type: string }[]).map(part => part.type)).toEqual(['text', 'image'])
@@ -144,7 +147,7 @@ test('MCP and UI share one queue per camera; other cameras and stops do not wait
     expect(calls.map(call => call[0])).toEqual(['stopRecording', 'stopZoom', 'getCapabilities'])
     held.release()
     await Promise.all([photo, queued])
-    expect(calls.at(-1)).toEqual(['setControl', 'iso', 'ISO 800'])
+    expect(calls.at(-1)).toEqual(['setIso', 'ISO 800'])
 })
 
 test('inputs are read when the call is made, so a queued call keeps them; malformed input never reaches a camera', async () => {
@@ -153,7 +156,7 @@ test('inputs are read when the call is made, so a queued call keeps them; malfor
     const photo = runtime.operation('sony', 'takePhoto', input)
     input.autofocus = true
     await photo
-    expect(calls).toEqual([['takePhoto', { autofocus: false, destination: 'card' }]])
+    expect(calls).toEqual([['takePhoto', { autofocus: false }]])
     for (const [name, bad] of [
         ['takePhoto', { destination: 'memory' }],
         ['takePhoto', { autofocus: 'yes' }],
@@ -214,7 +217,7 @@ test('returned files are saved by the host and described without their bytes', a
     const { runtime, provider } = fixture(camera)
     provider.saveFile = async (_camera, file) => `/cache/${file.name}`
     const reply = await runtime.operation('sony', 'takePhoto', { destination: 'computer' })
-    expect(reply.result).toEqual({ destination: 'computer', name: 'DSC00002.JPG', sizeBytes: 3, bytes: 3 })
+    expect(reply.result).toEqual({ destination: 'computer', name: 'DSC00002.JPG', sizeBytes: 3, data: { file: 'DSC00002.JPG', bytes: 3 } })
     expect(reply.files).toEqual([{ role: 'photo', name: 'DSC00002.JPG', mimeType: 'image/jpeg', bytes: 3, path: '/cache/DSC00002.JPG' }])
     expect(reply.images).toBeUndefined()
 })
@@ -273,7 +276,7 @@ test('a lost HTTP reply reports uncertain completion without repeating an execut
     try {
         const client = new HttpCameraClient(server.url.href)
         await expect(client.operation('sony', 'takePhoto')).rejects.toThrow('may still be running')
-        expect(calls).toEqual([['takePhoto', { autofocus: true, destination: 'card' }]])
+        expect(calls).toEqual([['takePhoto']])
     } finally {
         await server.stop(true)
     }

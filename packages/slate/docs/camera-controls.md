@@ -84,8 +84,8 @@ required for that write. Camera mode changes between discovery and writing fail.
 `getCapabilities()` returns `observedAt`, `controls`, `advertisedOperations`, the `lens`
 (name and current focal length in millimetres) and `operations`: for each public operation,
 whether the camera can do it now and, when not, the reason in words a user can act on
-(`options.overlay` covers the live-view overlay). Each driver capability group
-(`src/vendors/capabilities/<area>.ts`) supplies its operations' availability; a call the camera
+(`options.overlay` covers the live-view overlay). Each brand's driver (`src/vendors/<brand>`)
+supplies its operations' availability through `availability()`; a call the camera
 cannot make throws `CameraUnsupportedError` with the same reason.
 The `advertisedOperations` list is `null` on the licensed SDK bridge, which has no standard
 PTP DeviceInfo inventory; unknown is not an empty supported-operation list.

@@ -85,7 +85,7 @@ export class CameraRuntime implements CameraClient {
 
     async operation(camera: string, name: string, input: OperationInput = {}): Promise<OperationReply> {
         const operation = surfaceOperation(name)
-        if (!operation || operation.name === 'discover' || (!operation.mcpTool && !operation.cliCommand))
+        if (!operation || operation.static)
             throw new Error(`Unknown camera operation ${name}`)
         // Inputs are read when the call is made, so a queued call keeps what it was given.
         const accepted = readOperationInput(operation, input)

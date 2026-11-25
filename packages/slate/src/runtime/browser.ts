@@ -5,4 +5,11 @@ export { HttpCameraClient } from '@runtime/http-client'
 export { CameraRuntime } from '@runtime/runtime'
 export type { CameraClient, CameraProvider, OperationReply } from '@runtime/runtime'
 export { OperationInputError, readOperationInput, runOperation, surfaceOperation, surfaceOperations } from '@runtime/operations'
-export type { OperationFile, OperationInput, OperationOutcome, SurfaceOperation } from '@runtime/operations'
+export type {
+    CameraOperationDescription,
+    OperationFile,
+    OperationInput,
+    OperationOutcome,
+    OperationParameter,
+    SurfaceOperation,
+} from '@runtime/operations'
