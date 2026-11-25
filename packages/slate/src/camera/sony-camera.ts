@@ -27,7 +27,8 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { CameraConfirmationError } from '@camera/confirmation'
-import { CameraOutcomeUnknownError } from '@camera/errors'
+import { CameraOutcomeUnknownError, CameraRefusedError } from '@camera/errors'
+import type { EventParams } from '@ptp/types/type-helpers'
 import type { UnrecognizedValues } from '@camera/controls'
 import { GenericCamera } from './generic-camera'
 
@@ -38,6 +39,9 @@ const SONY_DATE_TIME_RESULT_TIMEOUT_MS = 5_000
 const SONY_CONTENT_LIST_LIMIT = 1000
 const SONY_CONTENT_LIST_MAX_BYTES = 64 * 1024 * 1024
 const SONY_CONTENT_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
+const SONY_CAMERA_OPERATING_MODE = 0xd0bc
+const SONY_OPERATING_MODE_PLAYBACK = 2
+const SONY_MOVIE_RECORDING_STATE = 0xd21d
 const SONY_DATE_TIME_RESULTS: Record<number, string> = {
     0: 'invalid',
     2: 'parameter error',
@@ -177,6 +181,10 @@ interface ZoomTelemetry {
 export class SonyCamera extends GenericCamera {
     private liveViewPostViewEnabled = false
     private contentTransferModeEnabled = false
+    /** Set by any card read; the next live-view frame returns the body to shooting first. */
+    private cardReadSinceShooting = false
+    private sessionDevice?: DeviceDescriptor
+    private sessionOptions: { mode?: 'remote' | 'menus'; configure?: boolean } = {}
     private osdImageModeEnabled = false
     private propertyCache = new Map<number, SonyDevicePropDesc>()
     private manualIsoChoices?: SonyPropertyState['allowedValues']
@@ -202,6 +210,9 @@ export class SonyCamera extends GenericCamera {
     async connect(device?: DeviceDescriptor, options: { mode?: 'remote' | 'menus'; configure?: boolean } = {}): Promise<void> {
         this.manualIsoChoices = undefined
         this.negotiatedProtocolVersion = undefined
+        this.sessionDevice = device
+        this.sessionOptions = options
+        this.cardReadSinceShooting = false
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
@@ -752,25 +763,31 @@ export class SonyCamera extends GenericCamera {
         await this.disableContentTransferMode()
         const value = sonyDateTimeString(moment)
         let result: number | undefined
-        const handler = (event: Record<string, unknown>) => {
-            result = Number(event['Setting Result'] ?? Object.values(event)[0])
-        }
         const event = this.registry.events.SDIE_DateTimeSettingResult
-        this.on(event, handler as never)
+        const handler = (params: EventParams<typeof event>) => {
+            result = Number(params['Setting Result'])
+        }
+        this.on(event, handler)
         try {
             const response = await this.send(
                 this.registry.operations.SDIO_SetExtDevicePropValue,
                 { DevicePropCode: this.registry.properties.DateTimeSetting.code, flagOfDevicePropertyOption: 'ENABLE' },
                 this.registry.codecs.string.encode(value)
             )
-            this.assertOk(response.code, 'Sony date/time setting')
+            if (response.code !== OK.code)
+                throw new CameraRefusedError('setClock', `The camera refused the date and time (0x${response.code.toString(16)})`)
             const deadline = Date.now() + SONY_DATE_TIME_RESULT_TIMEOUT_MS
             while (result === undefined && Date.now() < deadline) await this.waitMs(50)
         } finally {
-            this.off(event, handler as never)
+            this.off(event, handler)
         }
-        if (result === undefined) throw new Error('The camera did not confirm the new date and time')
-        if (result !== 1) throw new Error(`The camera refused the date and time: ${SONY_DATE_TIME_RESULTS[result] ?? `result ${result}`}`)
+        if (result === undefined)
+            throw new CameraOutcomeUnknownError('setClock', 'The camera did not confirm the new date and time')
+        if (result !== 1)
+            throw new CameraRefusedError(
+                'setClock',
+                `The camera refused the date and time: ${SONY_DATE_TIME_RESULTS[result] ?? `result ${result}`}`
+            )
         return value
     }
 
@@ -987,7 +1004,8 @@ export class SonyCamera extends GenericCamera {
         /** The frames the camera draws over this picture: its focus area, faces and tracked subjects. */
         sonyFocalFrames?: SonyFocalFrame[]
     }> {
-        await this.disableContentTransferMode()
+        if (this.cardReadSinceShooting) await this.returnToShooting()
+        else await this.disableContentTransferMode()
         await this.startLiveView()
 
         let info: ObjectInfo | undefined = undefined
@@ -1437,6 +1455,7 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async enableContentTransferMode(): Promise<void> {
+        this.cardReadSinceShooting = true
         if (this.contentTransferModeEnabled) return
         await this.stopLiveView()
         for (let attempt = 1; attempt <= SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS; attempt += 1) {
@@ -1466,6 +1485,37 @@ export class SonyCamera extends GenericCamera {
         this.contentTransferModeEnabled = true
         await this.disableContentTransferMode()
         this.liveViewPostViewEnabled = false
+    }
+
+    /**
+     * Returns the body to remote shooting after a card read. Reading the card switches the body's
+     * CameraOperatingMode (0xD0BC) to Playback, which is read-only over PTP and survives leaving
+     * content-transfer mode; live view then serves the playback image. When the body still reports
+     * Playback, this reopens the session (about 350 ms on an α7 V), which restores Record mode, and
+     * returns true, since object handles may change with the session. It never reopens a session
+     * while the body reports a movie recording. The next live-view frame calls this after any card
+     * read, so callers never need to.
+     */
+    async returnToShooting(): Promise<boolean> {
+        await this.resumeShooting()
+        const states = await this.refreshPropertyStates()
+        const raw = (code: number) => states.find(state => state.code === code)?.rawValue
+        if (raw(SONY_CAMERA_OPERATING_MODE) !== SONY_OPERATING_MODE_PLAYBACK) {
+            this.cardReadSinceShooting = false
+            return false
+        }
+        const recording = raw(SONY_MOVIE_RECORDING_STATE)
+        if (recording !== undefined && Number(recording) !== 0) return false
+        this.cardReadSinceShooting = false
+        await this.reopenSession(this.sessionDevice)
+        return true
+    }
+
+    /** Reopens with the same device and session mode this session was opened with. */
+    async reopenSession(device: DeviceDescriptor | undefined = this.sessionDevice): Promise<void> {
+        const options = this.sessionOptions
+        await this.closeSessionAndTransport()
+        await this.connect(device, options)
     }
 
     private async disableContentTransferMode(): Promise<void> {

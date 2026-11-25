@@ -1,6 +1,6 @@
 import { isSonyMovieExposureProgram } from '@vendors/sony/exposure-program'
 
-interface CardProperty { code: number; rawValue: unknown; value?: unknown; sonyEnabledFlag?: number }
+export interface CardProperty { code: number; rawValue: unknown; value?: unknown; sonyEnabledFlag?: number }
 interface CardCamera { getSonyPropertyStates(): Promise<CardProperty[]> }
 
 /**
@@ -13,40 +13,53 @@ interface CardCamera { getSonyPropertyStates(): Promise<CardProperty[]> }
  * libCr_Core SHA-256:
  * 8613325b6cc98e591b556e71bcabaca962fc8bc5989ec0425efb7df42e57e519.
  */
+/** Each card slot's native status codes: status, remaining photos, remaining movie seconds. */
+const SLOT_PROPERTIES = { 1: [0xd248, 0xd249, 0xd24a], 2: [0xd256, 0xd257, 0xd258] } as const
+
+function readableValue(properties: CardProperty[], code: number): number | undefined {
+    const property = properties.find(property => property.code === code)
+    // CRSDK CrPropertyEnableFlag: 0 unavailable, 1 active, 2 display-only.
+    // Display-only values are readable; an unavailable value is not evidence.
+    if (property?.sonyEnabledFlag !== 1 && property?.sonyEnabledFlag !== 2) return undefined
+    const value = property.rawValue
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+/** Whether the observed exposure mode is a recognized movie mode. */
+export function sonyPtpMovieMode(properties: CardProperty[]): boolean {
+    const exposure = properties.find(property => property.code === 0x500e)
+    return (exposure?.sonyEnabledFlag === 1 || exposure?.sonyEnabledFlag === 2) &&
+        isSonyMovieExposureProgram(exposure.value)
+}
+
+/** One card slot as the native property snapshot reports it. */
+export function sonyPtpCardSlot(properties: CardProperty[], slot: 1 | 2, options: { movieMode: boolean; recording?: boolean }) {
+    const [statusCode, photosCode, timeCode] = SLOT_PROPERTIES[slot]
+    const code = readableValue(properties, statusCode)
+    const time = readableValue(properties, timeCode)
+    const photos = readableValue(properties, photosCode)
+    return {
+        slot, code,
+        status: code === 1 ? 'ready' as const : code === 2 ? 'absent' as const
+            : code !== undefined && code >= 3 && code <= 9 ? 'error' as const : 'unknown' as const,
+        // Still mode can return zero even with a writable card. Require a
+        // recognized observed movie mode or active recording to interpret zero.
+        seconds: time !== undefined && time < 0xffffffff && (time > 0 || options.movieMode || options.recording === true) ? time : undefined,
+        photos: photos !== undefined && photos < 0xffffffff ? photos : undefined,
+    }
+}
+
 export async function sonyPtpMovieCard(camera: CardCamera, options: { singleSlot?: boolean; recording?: boolean } = {}) {
     const properties = await camera.getSonyPropertyStates()
-    const exposure = properties.find(property => property.code === 0x500e)
-    const movieMode = (exposure?.sonyEnabledFlag === 1 || exposure?.sonyEnabledFlag === 2) &&
-        isSonyMovieExposureProgram(exposure.value)
-    const raw = (code: number) => {
-        const property = properties.find(property => property.code === code)
-        // CRSDK CrPropertyEnableFlag: 0 unavailable, 1 active, 2 display-only.
-        // Display-only values are readable; an unavailable value is not evidence.
-        if (property?.sonyEnabledFlag !== 1 && property?.sonyEnabledFlag !== 2) return undefined
-        const value = property.rawValue
-        return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
-    }
-    const destination = raw(0xd160)
-    const slots: number[] = destination === 1 || destination === 2 ? [destination]
+    const movieMode = sonyPtpMovieMode(properties)
+    const destination = readableValue(properties, 0xd160)
+    const slots: (1 | 2)[] = destination === 1 || destination === 2 ? [destination]
         : destination === 0x101 ? [1, 2]
         : destination === undefined && options.singleSlot === true ? [1] : []
     const source = 'Native Sony PTP; Sony CRSDK 2.02 protocol mapping'
     if (!slots.length) return { status: 'unknown' as const, slots, source, remainingMovieSeconds: undefined,
         detail: 'The native camera did not identify its movie card destination' }
-    const cards = slots.map(slot => {
-        const code = raw(slot === 1 ? 0xd248 : 0xd256)
-        const time = raw(slot === 1 ? 0xd24a : 0xd258)
-        const photos = raw(slot === 1 ? 0xd249 : 0xd257)
-        return {
-            slot, code,
-            status: code === 1 ? 'ready' as const : code === 2 ? 'absent' as const
-                : code !== undefined && code >= 3 && code <= 9 ? 'error' as const : 'unknown' as const,
-            // Still mode can return zero even with a writable card. Require a
-            // recognized observed movie mode or active recording to interpret zero.
-            seconds: time !== undefined && time < 0xffffffff && (time > 0 || movieMode || options.recording === true) ? time : undefined,
-            photos: photos !== undefined && photos < 0xffffffff ? photos : undefined,
-        }
-    })
+    const cards = slots.map(slot => sonyPtpCardSlot(properties, slot, { movieMode, recording: options.recording }))
     const problem = cards.find(card => card.status === 'error') || cards.find(card => card.status === 'absent') || cards.find(card => card.status === 'unknown')
     return {
         slot: slots[0], slots, code: problem?.code ?? cards[0]!.code,

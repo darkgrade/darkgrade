@@ -66,6 +66,18 @@ export interface CameraCapabilities {
     controls: Partial<Record<CameraControlId, CameraControlState>>
     /** Raw standard DeviceInfo inventory, or null where unavailable; never workflow qualification. */
     advertisedOperations: number[] | null
+    /**
+     * Public Camera operations this camera can do right now, by method name, with the reason when
+     * it cannot. An operation absent here has no availability report yet; a call still answers
+     * CameraUnsupportedError when it cannot run.
+     */
+    operations?: Partial<Record<string, OperationAvailability>>
+}
+
+export interface OperationAvailability {
+    available: boolean
+    /** Why not, when `available` is false. */
+    reason?: string
 }
 
 /**

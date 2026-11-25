@@ -431,7 +431,7 @@ export class GenericCamera {
         this.recovery = undefined
     }
 
-    private async closeSessionAndTransport(): Promise<void> {
+    protected async closeSessionAndTransport(): Promise<void> {
         const failures: unknown[] = []
         try {
             // A tainted pipe gets no CloseSession; the transport is still released below.
@@ -1370,7 +1370,7 @@ export class GenericCamera {
             )
 
             if (response.code !== OK.code)
-                throw new Error(`GetPartialObject returned 0x${response.code.toString(16)}`)
+                throw new PTPResponseError(response.code, `GetPartialObject returned 0x${response.code.toString(16)}`)
             return response.data
         }, onProgress, signal)
     }

@@ -8,9 +8,6 @@ import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { withCanonPhotoMode } from '@vendors/canon/recording-mode'
 import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
 
-const SONY_CAMERA_OPERATING_MODE = 0xd0bc
-const SONY_OPERATING_MODE_PLAYBACK = 2
-
 export interface CaptureImageOptions {
     includeInfo?: boolean
     includeData?: boolean
@@ -52,14 +49,8 @@ export const photoOperations: PhotoOperations & ThisType<Camera> = {
     },
 
     async resumeSonyShooting(): Promise<boolean> {
-        const context = cameraContext(this)
-        const { driver } = context
+        const { driver } = cameraContext(this)
         if (!(driver instanceof SonyCamera)) return false
-        await driver.resumeShooting()
-        const states = await driver.refreshPropertyStates()
-        const operatingMode = states.find(state => state.code === SONY_CAMERA_OPERATING_MODE)
-        if (operatingMode?.rawValue !== SONY_OPERATING_MODE_PLAYBACK) return false
-        await driver.reopenSession(context.deviceDescriptor)
-        return true
+        return driver.returnToShooting()
     },
 }

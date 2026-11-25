@@ -2,6 +2,7 @@ import { CanonCamera } from '@camera/canon-camera'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState } from '@camera/controls'
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
 import type { Camera } from '@camera/index'
+import { readOperationAvailability } from '@camera/operations/availability'
 import { canonDriver, cameraContext, requireCapability } from '@camera/operations/context'
 import { SonyCamera } from '@camera/sony-camera'
 import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
@@ -95,7 +96,8 @@ const sonyOnly = (subject: string) => `Sony ${subject} is only available for Son
 
 export const settingsOperations: SettingsOperations & ThisType<Camera> = {
     async getCapabilities(): Promise<CameraCapabilities> {
-        return requireCapability(this, 'settings', 'getCapabilities').readCapabilities()
+        const capabilities = await requireCapability(this, 'settings', 'getCapabilities').readCapabilities()
+        return { ...capabilities, operations: await readOperationAvailability(this) }
     },
 
     async getExposureTime(): Promise<ExposureTime> {
