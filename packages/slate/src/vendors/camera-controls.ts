@@ -442,8 +442,12 @@ export async function writeCameraControl<Id extends CameraControlId>(
     const observation = await observeControls(driver, id)
     const state = observation.capabilities.controls[id]
     if (!state) throw new CameraUnsupportedError(id, `${id} is not available on this camera`)
-    if (!state.enabled || !state.writable)
-        throw new CameraUnsupportedError(id, `${id} is not writable in the current camera mode`)
+    // The same input gets the same answer whether or not the camera lets the control be written this
+    // instant (a Sony shows its exposure read-only for a moment after a photo/video switch): a value
+    // the camera does not offer is refused first; only an offered one is told the control is read-only.
+    const unwritable = !state.enabled || !state.writable
+    const notWritable = () => new CameraUnsupportedError(id, `${id} is not writable in the current camera mode`)
+    if (unwritable && !state.allowedValues?.length && !state.range) throw notWritable()
     let requested: string
     if (id === 'shutterSpeed') {
         const choices = state.allowedValues ?? []
@@ -489,6 +493,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 throw new CameraRefusedError(id, `Requested ${id} value is outside the camera range`)
         }
     }
+    if (unwritable) throw notWritable()
     // A canonical name is written as the camera's own choice behind it; confirmation reads it back canonically.
     const vendorChoice = observation.vendorChoices[id]?.get(requested)
     const vendorLabel = vendorChoice?.label ?? inverseVendorWord(observation.inventory, state, requested)

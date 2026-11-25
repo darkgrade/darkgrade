@@ -114,6 +114,16 @@ describe('Sony session response validation', () => {
         await expect((camera as any).waitForFocus(120)).resolves.toBe('acquired')
     })
 
+    it('keeps AF-C focus once reported, though a read already in flight still says tracking', async () => {
+        // The bench a6700 in AF-C: SDIE_AFStatus 0x06 (AF_C_FOCUSED) while the inventory read answers 0x05.
+        const { camera } = cameraFixture()
+        camera.get = (async () => {
+            ;(camera as any).emitter.emit(camera.registry.events.SDIE_AFStatus.name, { Status: 'AF_C_FOCUSED' })
+            return 'AF_C_TRACKING'
+        }) as typeof camera.get
+        await expect((camera as any).waitForFocus(300)).resolves.toBe('acquired')
+    })
+
     it('preserves a refusal when an existing session cannot be closed', async () => {
         const { camera, replies, sent } = cameraFixture()
         replies.push({ code: 0x201e }, { code: 0x200f })

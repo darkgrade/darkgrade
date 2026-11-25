@@ -213,6 +213,13 @@ const SONY_LIVE_VIEW_INTERVAL_MAX_MS = 70
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
 /** How long an exposure mode waits for the settings it hands over (see awaitExposureHandover). */
 const SONY_EXPOSURE_HANDOVER_MS = 1_500
+/**
+ * A photo/video switch waits longer, and for the settings to stay writable this long: the bench a6700,
+ * back from Movie Manual to Manual, showed shutter speed and aperture writable, then read-only again
+ * within about 100 ms, then writable.
+ */
+const SONY_PHOTO_VIDEO_HANDOVER_MS = 3_000
+const SONY_PHOTO_VIDEO_HOLD_MS = 400
 /** The settings each exposure mode leaves to the photographer. */
 const EXPOSURE_HANDOVER: Partial<Record<string, readonly ('shutterSpeed' | 'aperture')[]>> = {
     Manual: ['shutterSpeed', 'aperture'],
@@ -1109,9 +1116,12 @@ export class SonyCamera extends GenericCamera {
     private async waitForFocus(timeoutMilliseconds = 3_000, requireConfirmation = true): Promise<FocusResult> {
         let isFocused = false
         let lastStatus: string | undefined
+        // Focus once confirmed stays confirmed: in AF-C the body alternates AF_C_TRACKING (0x05) and
+        // AF_C_FOCUSED (0x06), and an inventory read that was already in flight when an SDIE_AFStatus
+        // reported 0x06 must not take it back (the bench a6700 reported 0x05 then 0x06 and still timed out).
         const observe = (status: string | undefined) => {
             lastStatus = status ?? lastStatus
-            isFocused = status === 'AF_C_FOCUSED' || status === 'AF_S_FOCUSED'
+            isFocused ||= status === 'AF_C_FOCUSED' || status === 'AF_S_FOCUSED'
         }
         const handler = (event: { Status?: string }) => observe(event.Status)
         this.on(this.registry.events.SDIE_AFStatus, handler)
@@ -1492,8 +1502,9 @@ export class SonyCamera extends GenericCamera {
 
     /**
      * Refuses up front what a Sony body would only half-apply: a tracking focus area while focus is
-     * AF-S (Lock-on AF needs continuous focus). Everything else is the shared write; an exposure mode
-     * resolves once the settings it hands to the photographer are theirs (`awaitExposureHandover`).
+     * AF-S (Lock-on AF needs continuous focus). Everything else is the shared write; an exposure mode,
+     * and a photo/video switch (a change of exposure program too), resolves once the settings it hands
+     * to the photographer are theirs (`awaitExposureHandover`).
      */
     override async setControl<Id extends CameraControlId>(
         id: Id,
@@ -1509,7 +1520,8 @@ export class SonyCamera extends GenericCamera {
                 )
         }
         const written = await super.setControl(id, value, context)
-        if (id === 'exposureMode' && typeof written.value === 'string') await this.awaitExposureHandover(written.value)
+        if (id === 'exposureMode') await this.awaitExposureHandover(SONY_EXPOSURE_HANDOVER_MS, 0)
+        else if (id === 'photoVideoMode') await this.awaitExposureHandover(SONY_PHOTO_VIDEO_HANDOVER_MS, SONY_PHOTO_VIDEO_HOLD_MS)
         return written
     }
 
@@ -1518,18 +1530,23 @@ export class SonyCamera extends GenericCamera {
      * aperture, read-only (a bench a6700 23 ms after Auto to Manual: 1/10 and f/4 chosen by Auto, where
      * a later read showed the photographer's 1/125 and f/8, writable). So a mode that hands shutter speed
      * or aperture to the photographer resolves once each the camera reports is writable, read again at
-     * each property-changed event (every 100 ms without one), for at most SONY_EXPOSURE_HANDOVER_MS.
-     * After that it resolves anyway: the mode itself is confirmed, and a lens without an aperture
-     * control never hands one over.
+     * each property-changed event (every 100 ms without one), for at most `withinMs`, and, when
+     * `holdMs` is set, once they have stayed writable on every read for that long (a photo/video
+     * switch). After that it resolves anyway: the mode itself is confirmed, and a lens without an
+     * aperture control never hands one over. The mode is the one the camera reports now.
      */
-    private async awaitExposureHandover(mode: string): Promise<void> {
-        const handed = EXPOSURE_HANDOVER[mode] ?? []
-        if (!handed.length) return
-        const deadline = Date.now() + SONY_EXPOSURE_HANDOVER_MS
+    private async awaitExposureHandover(withinMs: number, holdMs: number): Promise<void> {
+        const deadline = Date.now() + withinMs
+        let writableSince: number | undefined
         while (true) {
             const { controls } = await this.getCapabilities()
+            const mode = controls.exposureMode?.value
+            const handed = (mode !== undefined && EXPOSURE_HANDOVER[mode]) || []
+            if (!handed.length) return
             const pending = handed.filter(id => controls[id] && !(controls[id].enabled && controls[id].writable))
-            if (!pending.length || Date.now() >= deadline) return
+            writableSince = pending.length ? undefined : (writableSince ?? Date.now())
+            if (writableSince !== undefined && Date.now() - writableSince >= holdMs) return
+            if (Date.now() >= deadline) return
             await this.nextPropertyChange(Math.min(100, deadline - Date.now()))
         }
     }

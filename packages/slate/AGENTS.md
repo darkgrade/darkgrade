@@ -132,7 +132,14 @@ landed at 21 after one slow correction (zooming in, 21 to 23, landed exactly): z
 slow corrections, gives a reversing lens 2.5 s to start, holds a reading 300 ms before calling it settled,
 and fails with CameraOutcomeUnknownError when it cannot land within 0.5 mm. 23 ms after Auto to Manual the
 a6700 still showed Auto's shutter and aperture read-only: a Sony exposure mode resolves once the settings it
-hands over are writable (at most 1.5 s, re-read on SDIE_DevicePropChanged).
+hands over are writable (at most 1.5 s, re-read on SDIE_DevicePropChanged). Back from Movie Manual to Manual
+the a6700 showed them writable, read-only again about 100 ms later, then writable: a Sony photo/video switch
+resolves once they have stayed writable on every read for 400 ms (at most 3 s). A value the camera does not
+offer is refused (CameraRefusedError) before writability is judged, so the same input gets the same answer
+while a control is read-only for a moment; an offered value on a read-only control is CameraUnsupportedError.
+Sony focus waits latch AF_S_FOCUSED/AF_C_FOCUSED (0x02/0x06, "[AF-C] Focused State" in Sony's FocusIndication
+table): an inventory read in flight that still says AF_C_TRACKING (0x05) no longer takes back an SDIE_AFStatus
+that reported focus.
 darkgrade02 the same day (FX2 1.01, R6 Mark III 3-1.0.1, Z6 III V2.00): Camera.discover lists PTP
 interfaces from USB descriptors without opening them, so a body already open in the process (or
 claimed elsewhere) is still listed, without its strings. The FX2 pads its live-view JPEG with 0xFF

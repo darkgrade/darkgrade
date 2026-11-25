@@ -40,7 +40,7 @@ afterEach(() => {
 
 /** One simulated property: its PTP datatype, current raw value and advertised raw choices. */
 interface SimulatedProperty {
-    datatype: 3 | 4 | 6
+    datatype: 2 | 3 | 4 | 6
     current: number
     choices: number[]
     available: boolean
@@ -328,6 +328,49 @@ describe('exposure vocabulary', () => {
         const { controls } = await camera.getCapabilities()
         expect(controls.shutterSpeed).toMatchObject({ value: '1/125', writable: true })
         expect(controls.aperture).toMatchObject({ value: 'f/8', writable: true })
+    })
+
+    it('resolves a Sony switch back to photo once shutter speed and aperture stay writable', async () => {
+        // The bench a6700 back from Movie Manual to Manual: writable, read-only again for one read, writable.
+        const [manual, movieManual] = [0x00000001, 0x00078053]
+        const [slow, fast] = [(1 << 16) | 125, (1 << 16) | 250]
+        const body: Body = {
+            0x500e: property(6, movieManual, [movieManual, manual]),
+            0xd20d: property(6, slow, [slow, fast]),
+            0x5007: property(4, 400, [400, 800]),
+            0xd21d: property(2, 0, [0]),
+        }
+        let readsSinceSwitch: number | undefined
+        const { camera, writes } = sonyCamera(body, {
+            onWrite: (code, raw) => void (code === 0x500e && raw === manual && (readsSinceSwitch = 0)),
+            beforeRead: () => {
+                if (readsSinceSwitch === undefined) return
+                const flicker = ++readsSinceSwitch === 3 ? 0 : 1
+                body[0xd20d] = { ...body[0xd20d]!, sonyEnabled: flicker }
+                body[0x5007] = { ...body[0x5007]!, sonyEnabled: flicker }
+            },
+        })
+        expect(await camera.setPhotoVideoMode('photo')).toBe('photo')
+        expect(readsSinceSwitch).toBeGreaterThan(3)
+        expect(await camera.setShutterSpeed('1/250')).toBe('1/250')
+        expect(writes).toEqual([
+            { code: 0x500e, raw: manual },
+            { code: 0xd20d, raw: fast },
+        ])
+    })
+
+    it('refuses a value the camera does not offer the same way whether or not the control is writable now', async () => {
+        const body: Body = {
+            0x500e: property(6, 0x00000001, [0x00000001]),
+            0xd20d: { ...property(6, (1 << 16) | 125, [(1 << 16) | 125, (1 << 16) | 250]), sonyEnabled: 0 },
+        }
+        const { camera, writes } = sonyCamera(body)
+        expect(await camera.setControl('shutterSpeed', '1/3').catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        expect(await camera.setShutterSpeed('1/3').catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        expect(await camera.setShutterSpeed('soon' as never).catch(error => error)).toBeInstanceOf(CameraRefusedError)
+        // An offered value is told the control is read-only now.
+        expect(await camera.setShutterSpeed('1/250').catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
+        expect(writes).toEqual([])
     })
 
     it('accepts the mode-dial letters and Canon Av/Tv as exact spellings', () => {
