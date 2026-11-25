@@ -100,8 +100,6 @@ export interface OperationAvailability {
  */
 export interface CameraControlSession extends TypedSettingMethods {
     getCapabilities(): Promise<CameraCapabilities>
-    getExposureTime(): Promise<ExposureTime>
-    setExposureTime(value: ExposureTimeInput, context?: ExposureContext): Promise<void>
     setControl<Id extends CameraControlId>(
         id: Id,
         value: CameraControlInputs[Id],

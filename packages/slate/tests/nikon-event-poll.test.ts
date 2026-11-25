@@ -5,6 +5,8 @@ import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-lis
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
+import { vendorDriver } from '@tests/fixtures/vendor-driver'
 
 const fixture = () =>
     new NikonCamera(
@@ -19,7 +21,7 @@ describe('Nikon event polling', () => {
             transport: { isLittleEndian: () => true, on: () => undefined } as unknown as TransportInterface,
             logger: { captureConsole: false, renderInTerminal: false },
         })
-        const camera = wrapper.getInstance() as NikonCamera
+        const camera = protocolSession(wrapper).driver as NikonCamera
         const codec = new NikonEventDataCodec(camera.registry)
         const recorded = [
             { code: 0xc101, parameters: [0xffff0001] },
@@ -40,7 +42,7 @@ describe('Nikon event polling', () => {
         camera.on(camera.registry.events.MovieRecordComplete, complete)
         camera.on(camera.registry.events.MovieRecordInterrupted, interrupted)
         camera.on(camera.registry.events.DevicePropChanged, property)
-        expect(await wrapper.pollNikonEvents()).toEqual(recorded)
+        expect(await vendorDriver(wrapper, NikonCamera).pollEvents()).toEqual(recorded)
         expect(object).toHaveBeenCalledWith({ ObjectHandle: 0xffff0001 })
         expect(complete).toHaveBeenCalledWith({ RecordKind: 2, StopCode: 3 })
         expect(interrupted).toHaveBeenCalledWith({ ErrorCode: 2, RecordKind: 0 })

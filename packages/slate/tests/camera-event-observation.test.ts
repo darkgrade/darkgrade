@@ -1,3 +1,4 @@
+import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { CanonCamera } from '@camera/canon-camera'
 import { GenericCamera } from '@camera/generic-camera'
 import { Camera } from '@camera/index'
@@ -9,6 +10,7 @@ import type { PTPEvent, TransportInterface } from '@transport/interfaces/transpo
 import { USBTransport } from '@transport/usb/usb-transport'
 import { observeCameraEvents } from '@workflows/camera-event-observation'
 import { describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 describe('public Camera USB connection lifecycle', () => {
     it.each(['disconnect', 'recover'] as const)(
@@ -32,9 +34,9 @@ describe('public Camera USB connection lifecycle', () => {
                 listener = handler
             })
             const camera = new Camera({ vendorId: 0x054c, transport })
-            const driver = camera.getInstance()
+            const driver = protocolSession(camera).driver
             // Keep real transport/session setup; vendor authentication is covered independently.
-            vi.spyOn(driver, 'connect').mockImplementation(device =>
+            vi.spyOn(driver, 'connect').mockImplementation((device?: DeviceDescriptor) =>
                 GenericCamera.prototype.connect.call(driver, device)
             )
             const reset = vi.spyOn(

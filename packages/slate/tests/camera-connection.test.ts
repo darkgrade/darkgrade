@@ -96,15 +96,6 @@ describe('connect', () => {
         expect(writes).not.toHaveBeenCalled()
     })
 
-    it('connectSonyObservationSession and connect({ observeOnly }) open the same session', async () => {
-        const first = sonyBody()
-        await first.camera.connectSonyObservationSession()
-        const second = sonyBody()
-        await second.camera.connect({ observeOnly: true })
-        expect(second.sent).toEqual(first.sent)
-        expect(first.writes).not.toHaveBeenCalled()
-    })
-
     it('opens Canon remote and event modes unchanged under observeOnly, writing no property', async () => {
         const sessionOperations = ['OpenSession', 'GetDeviceInfo', 'CanonSetRemoteMode', 'CanonSetEventMode', 'CanonGetEventData']
         for (const observeOnly of [false, true]) {
@@ -211,7 +202,7 @@ describe('protocol session', () => {
         const camera = new Camera({ transport: transport(), logger, firstContact: false })
         const session = protocolSession(camera)
         expect(protocolSession(camera)).toBe(session)
-        expect(session.driver).toBe(camera.getInstance())
+        expect(session.driver).toBe(protocolSession(camera).driver)
         expect(session.vendorId).toBeNull()
     })
 
@@ -246,11 +237,11 @@ describe('protocol session', () => {
 
     it('runs the deprecated Camera keep-awake and viewfinder methods through the protocol session', async () => {
         const camera = new Camera({ vendorId: 0x054c, transport: transport(), logger })
-        await expect(camera.keepDeviceOn()).rejects.toThrow(CameraUnsupportedError)
-        await expect(camera.captureCanonViewfinderFrame()).rejects.toThrow(CameraUnsupportedError)
+        await expect(protocolSession(camera).keepDeviceOn()).rejects.toThrow(CameraUnsupportedError)
+        await expect(protocolSession(camera).captureCanonViewfinderFrame()).rejects.toThrow(CameraUnsupportedError)
         const canon = new Camera({ vendorId: 0x04a9, transport: transport(), logger, keepAlive: false })
         const keepDeviceOn = vi.spyOn(protocolSession(canon), 'keepDeviceOn').mockResolvedValue(undefined)
-        await canon.keepDeviceOn()
+        await protocolSession(canon).keepDeviceOn()
         expect(keepDeviceOn).toHaveBeenCalledOnce()
     })
 
@@ -260,7 +251,7 @@ describe('protocol session', () => {
         const reply = { code: 0x2001, data: deviceInfo(session.driver) }
         const send = vi.spyOn(session.driver, 'send').mockResolvedValue(reply as never)
         expect(await session.send(session.registry.operations.GetDeviceInfo, {})).toBe(reply)
-        expect(await camera.send(session.registry.operations.GetDeviceInfo, {})).toBe(reply)
+        expect(await protocolSession(camera).send(session.registry.operations.GetDeviceInfo, {})).toBe(reply)
         expect(send).toHaveBeenCalledTimes(2)
     })
 })
@@ -428,14 +419,11 @@ describe('connection failures', () => {
 })
 
 describe('operation table', () => {
-    it('lists getInfo as current and every replaced connection method with its target', () => {
+    it('lists getInfo as current and no replaced or protocol connection method', () => {
         expect(cameraOperationTable.getInfo.disposition.kind).toBe('keep')
         expect('getInfo' in plannedOperationTable).toBe(false)
-        expect(cameraOperationTable.connectSonyObservationSession.disposition).toMatchObject({
-            kind: 'replaced-by',
-            target: 'connect',
-        })
-        expect(cameraOperationTable.connectSonyMenuSession.disposition.kind).toBe('protocol')
-        expect(cameraOperationTable.getInstance.disposition.kind).toBe('protocol')
+        // Replaced and protocol methods have left Camera; protocolSession(camera) serves the protocol ones.
+        for (const name of ['connectSonyObservationSession', 'connectSonyMenuSession', 'getInstance'])
+            expect(name in cameraOperationTable).toBe(false)
     })
 })

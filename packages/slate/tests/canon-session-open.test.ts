@@ -1,12 +1,13 @@
 import { Camera } from '@camera/index'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { expect, it } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 function fixture(codes: number[]) {
     let connected = false
     const transport = { isLittleEndian: () => true, isConnected: () => connected, on: () => {},
         connect: async () => { connected = true }, disconnect: async () => { connected = false } } as unknown as TransportInterface
-    const camera = new Camera({ transport, vendorId: 0x04a9, logger: { renderInTerminal: false, captureConsole: false } }).getInstance()
+    const camera = protocolSession(new Camera({ transport, vendorId: 0x04a9, logger: { renderInTerminal: false, captureConsole: false } })).driver
     const operations: string[] = []
     camera.send = (async operation => {
         operations.push(operation.name)

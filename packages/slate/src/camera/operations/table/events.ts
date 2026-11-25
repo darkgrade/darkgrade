@@ -25,18 +25,6 @@ export const eventsOperationTable = {
                 cli: { omitted: 'callbacks can\'t cross a process' },
             },
         },
-        pollNikonEvents: {
-            area: 'events',
-            disposition: { kind: 'protocol' },
-        },
-        onCanonRawEvent: {
-            area: 'events',
-            disposition: { kind: 'protocol' },
-        },
-        offCanonRawEvent: {
-            area: 'events',
-            disposition: { kind: 'protocol' },
-        },
     },
     planned: {},
 } as const satisfies AreaOperationTable

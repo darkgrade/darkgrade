@@ -7,12 +7,12 @@ import {sonyStorageRecordingCapability} from '@vendors/sony/card-storage'
 export async function readCameraStorages(camera: any) {
     await protocolAccess(camera).driver.prepareStorageRead?.()
     const operations = protocolAccess(camera).driver.registry.operations
-    const response = await camera.send(operations.GetStorageIDs, {})
+    const response = await protocolAccess(camera).send(operations.GetStorageIDs, {})
     if (response.code !== 0x2001) throw new Error('Camera storage could not be read (GetStorageIDs: 0x' + response.code.toString(16) + ')')
     const summaries = []
     for (const storageId of response.data || []) {
         if ((Number(storageId) & 0xffff) === 0) continue
-        const storage = await camera.send(operations.GetStorageInfo, {StorageID: storageId})
+        const storage = await protocolAccess(camera).send(operations.GetStorageInfo, {StorageID: storageId})
         if (storage.code !== 0x2001) throw new Error('Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
         const info = storage.data || {}
         const access = Number(info.accessCapability ?? info.AccessCapability ?? -1)
@@ -39,13 +39,13 @@ export async function readCameraStorages(camera: any) {
 export async function readCameraObjectHandles(camera: any): Promise<Set<number>> {
     await protocolAccess(camera).driver.prepareStorageRead?.()
     const operations = protocolAccess(camera).driver.registry.operations
-    const storage = await camera.send(operations.GetStorageIDs, {})
+    const storage = await protocolAccess(camera).send(operations.GetStorageIDs, {})
     if (storage.code !== 0x2001) throw new PTPResponseError(storage.code, 'Camera storage could not be read (GetStorageIDs: 0x' + storage.code.toString(16) + ')')
     if (!Array.isArray(storage.data)) throw new Error('GetStorageIDs returned no storage dataset')
     const handles = new Set<number>()
     for (const storageId of storage.data) {
         if ((Number(storageId) & 0xffff) === 0) continue
-        const result = await camera.send(operations.GetObjectHandles, {StorageID: storageId})
+        const result = await protocolAccess(camera).send(operations.GetObjectHandles, {StorageID: storageId})
         if (result.code !== 0x2001) throw new PTPResponseError(result.code, 'Camera files could not be listed: 0x' + result.code.toString(16))
         if (!Array.isArray(result.data)) throw new Error('GetObjectHandles returned no object dataset')
         for (const handle of result.data) handles.add(Number(handle))
@@ -64,7 +64,7 @@ export async function waitForNewCameraMovie(camera: any, baseline: Set<number>, 
         try {
             for (const handle of await readCameraObjectHandles(camera)) {
                 if (baseline.has(handle)) continue
-                const response = await camera.send(operations.GetObjectInfo, {ObjectHandle: handle})
+                const response = await protocolAccess(camera).send(operations.GetObjectInfo, {ObjectHandle: handle})
                 const info = response.data, bytes = Number(info?.objectCompressedSize)
                 if (response.code === 0x2001 && Number.isSafeInteger(bytes) && bytes > 0 && info?.associationType === 0
                     && /\.(mp4|mov|mxf|mts|m2ts|avi|crm)$/i.test(info?.filename || '')) return {...info, handle}

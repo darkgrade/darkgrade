@@ -11,6 +11,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { readCameraCapabilities } from '@vendors/camera-controls'
 import { describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 const logger = () => new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
 
@@ -45,7 +46,7 @@ describe('Canon values outside the codec tables', () => {
             vendorId: 0x04a9,
             transport: { isLittleEndian: () => true, isConnected: () => true, on: () => undefined } as unknown as TransportInterface,
         })
-        const driver = camera.getInstance() as CanonCamera
+        const driver = protocolSession(camera).driver as CanonCamera
         const property = driver.registry.properties.CanonFocusMode
         const deviceInfo = new DeviceInfoCodec(driver.registry)
         const send = async (operation: OperationDefinition) => {

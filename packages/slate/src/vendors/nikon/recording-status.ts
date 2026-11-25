@@ -1,9 +1,11 @@
 import type {Camera} from '@camera/index'
+import {protocolAccess,type ProtocolSession} from '@camera/operations/protocol'
 import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import {MovieRecProhibitionCondition} from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
 
 /** Fresh read on an owned Nikon session, including bodies omitting this descriptor from DeviceInfo. */
-export async function readNikonRecordingStatus(camera:Pick<Camera,'send'>){
+export async function readNikonRecordingStatus(target:Camera|Pick<ProtocolSession,'send'>){
+    const camera=protocolAccess(target)
     try{
         const response=await camera.send(GetDevicePropDescEx,{DevicePropCode:MovieRecProhibitionCondition.code})
         const descriptor=response.data,flags=descriptor?.currentValueRaw

@@ -4,7 +4,7 @@ export async function nikonCanRecordToStorage(camera: any, accessCapability: num
     if (accessCapability !== 0 && accessCapability !== 2) return false
     const property = protocolAccess(camera).driver.registry.properties.MovieRecProhibitionCondition
     if (!property) return false
-    const condition = await camera.get(property)
+    const condition = await protocolAccess(camera).get(property)
     if (typeof condition !== 'string' || !condition) return false
     return !/noCardInserted|cardAccessError|cardNotFormatted|noFreeSpace|cardProtected/.test(condition)
 }

@@ -20,6 +20,7 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -47,7 +48,7 @@ function concatenate(parts: Uint8Array[]): Uint8Array {
 }
 
 function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -88,7 +89,7 @@ const SONY_AREAS = ['Wide', 'Zone', 'Center', 'Flexible Spot S', 'Flexible Spot 
 
 function sonyCamera(initial: { focusArea?: string; subjectDetection?: string; areas?: string[] } = {}) {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const registry = driver.registry
     const properties = registry.properties
     const codecOf = (property: PropertyDefinition): CodecInstance<unknown> =>
@@ -402,7 +403,7 @@ function nikonLiveView(frame: { centerX: number; centerY: number; judgement: num
 
 function nikonCamera(options: { advertised?: string[] } = {}) {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const operations = driver.registry.operations
     const advertised = (options.advertised ?? ['AfDrive', 'AfDriveCancel', 'ChangeAfArea', 'MfDrive', 'DeviceReady', 'StartLiveView', 'GetLiveViewImageEx'])
@@ -508,7 +509,7 @@ function words(length: number, ...values: number[]): Uint8Array {
  */
 function canonCamera(initial: { focusMode?: number; servo?: number; video?: boolean; magnification?: number } = {}) {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const properties = driver.registry.properties
     const operations = driver.registry.operations
     const body = {
@@ -649,7 +650,7 @@ describe('focus on a simulated Canon body', () => {
 describe('focus on a standard PTP body', () => {
     function genericCamera() {
         const camera = new Camera({ transport: transport() })
-        const registry = camera.getInstance().registry
+        const registry = protocolSession(camera).driver.registry
         const focusMode = registry.properties.FocusMode
         const descriptor = () => {
             const wire = concatenate([
@@ -665,7 +666,7 @@ describe('focus on a standard PTP body', () => {
             ])
             return new DevicePropDescCodec(registry).decode(wire).value
         }
-        vi.spyOn(camera.getInstance(), 'send').mockImplementation((async (operation: OperationDefinition) => {
+        vi.spyOn(protocolSession(camera).driver, 'send').mockImplementation((async (operation: OperationDefinition) => {
             if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera, [focusMode.code], [0x1001]) }
             if (operation.name === 'GetDevicePropDesc') return { code: 0x2001, data: descriptor() }
             return { code: 0x2001 }

@@ -12,6 +12,7 @@ import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@p
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 /** Records command containers and answers every transaction with OK. */
 function recordingTransport(dataReplies: Map<number, Uint8Array> = new Map()) {
@@ -65,7 +66,7 @@ function cameraFor(vendorId: number) {
         vendorId,
         logger: { renderInTerminal: false, captureConsole: false },
     })
-    return { ...recorded, camera, registry: camera.getInstance().registry }
+    return { ...recorded, camera, registry: protocolSession(camera).driver.registry }
 }
 
 describe('Canon EOS definitions', () => {
@@ -80,7 +81,7 @@ describe('Canon EOS definitions', () => {
             vendorId: VendorIDs.CANON,
             logger: { renderInTerminal: false, captureConsole: false },
         })
-        const response = await camera.send(registry.operations.CanonGetFolderRecord, { Selector: 'OBSERVED_FOLDER' })
+        const response = await protocolSession(camera).send(registry.operations.CanonGetFolderRecord, { Selector: 'OBSERVED_FOLDER' })
         expect(recorded.commands).toEqual([[0x9195, 1]])
         expect(response.code).toBe(0x2001)
         expect(response.data).toEqual(bytes)
@@ -101,8 +102,8 @@ describe('Canon EOS definitions', () => {
         const { camera, commands } = cameraFor(VendorIDs.CANON)
         const mode = remoteMode.decode(Uint8Array.of(2, 0, 0, 0)).value
         expect(mode).toBe('MODE_0x02')
-        await camera.send(registry.operations.CanonSetRemoteMode, { RemoteMode: mode })
-        await camera.send(registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
+        await protocolSession(camera).send(registry.operations.CanonSetRemoteMode, { RemoteMode: mode })
+        await protocolSession(camera).send(registry.operations.CanonSetRemoteMode, { RemoteMode: 'ENABLE' })
         expect(commands).toEqual([[0x9114, 2], [0x9114, 1]])
     })
 
@@ -115,16 +116,16 @@ describe('Canon EOS definitions', () => {
     it('sends the captured R6 Mark III requests byte for byte', async () => {
         const { camera, commands, registry: canon } = cameraFor(VendorIDs.CANON)
         const operations = canon.operations as ReturnType<typeof createCanonRegistry>['operations']
-        await camera.send(operations.CanonGetCameraSupport, {
+        await protocolSession(camera).send(operations.CanonGetCameraSupport, {
             Selector: 0x10000,
             PropertyCode: 0x80000518,
             Reserved: 0,
         })
-        await camera.send(operations.CanonSetUILock, { Reserved: 0 })
-        await camera.send(operations.CanonResetUILock, {})
-        await camera.send(operations.CanonGetRemoteErrLogMode, {})
-        await camera.send(operations.CanonGetDebugLogEx, { Selector: 0 })
-        await camera.send(operations.CanonSetRemoteMode, { RemoteMode: 'MODE_0x05' })
+        await protocolSession(camera).send(operations.CanonSetUILock, { Reserved: 0 })
+        await protocolSession(camera).send(operations.CanonResetUILock, {})
+        await protocolSession(camera).send(operations.CanonGetRemoteErrLogMode, {})
+        await protocolSession(camera).send(operations.CanonGetDebugLogEx, { Selector: 0 })
+        await protocolSession(camera).send(operations.CanonSetRemoteMode, { RemoteMode: 'MODE_0x05' })
         expect(commands).toEqual([
             [0x913f, 0x10000, 0x80000518, 0],
             [0x911b, 0],
@@ -188,11 +189,11 @@ describe('Nikon definitions', () => {
         const { camera, commands, dataPhases, registry: nikon } = cameraFor(VendorIDs.NIKON)
         const operations = nikon.operations as ReturnType<typeof createNikonRegistry>['operations']
         const authenticate = operations.WirelessAuthenticate
-        const password = camera.getInstance().resolveCodec(authenticate.dataCodec).encode('')
-        await camera.send(operations.GetWirelessHardwareType, {})
-        await camera.send(operations.GetSupportedWirelessProfileTypes, {})
-        await camera.send(authenticate, {}, password)
-        await camera.send(operations.CompleteWirelessPairing, { Status: 0x2001 })
+        const password = protocolSession(camera).driver.resolveCodec(authenticate.dataCodec).encode('')
+        await protocolSession(camera).send(operations.GetWirelessHardwareType, {})
+        await protocolSession(camera).send(operations.GetSupportedWirelessProfileTypes, {})
+        await protocolSession(camera).send(authenticate, {}, password)
+        await protocolSession(camera).send(operations.CompleteWirelessPairing, { Status: 0x2001 })
         expect(commands).toEqual([[0x935d], [0x936d], [0x90e8], [0x935a, 0x2001]])
         // Captured: empty password as the PTP string 01 00 00.
         expect([...dataPhases[0]]).toEqual([0x01, 0x00, 0x00])
@@ -209,8 +210,8 @@ describe('vendor classes selected by USB vendor ID', () => {
         [VendorIDs.SIGMA, 'SigmaSnap', 0x901b],
     ])('vendor 0x%s gets its operations on top of the standard ones', (vendorId, name, code) => {
         const { camera, registry } = cameraFor(vendorId)
-        expect(camera.getInstance()).toBeInstanceOf(VendorExtensionCamera)
-        expect(camera.getInstance().vendorId).toBe(vendorId)
+        expect(protocolSession(camera).driver).toBeInstanceOf(VendorExtensionCamera)
+        expect(protocolSession(camera).driver.vendorId).toBe(vendorId)
         expect((registry.operations as Record<string, { code: number }>)[name]?.code).toBe(code)
         expect(registry.operations.GetDeviceInfo.code).toBe(0x1001)
     })
@@ -228,7 +229,7 @@ describe('vendor classes selected by USB vendor ID', () => {
 
     it('still behaves as a GenericCamera for standard operations', async () => {
         const { camera, commands } = cameraFor(VendorIDs.PANASONIC)
-        await camera.send(camera.getInstance().registry.operations.CloseSession, {})
+        await protocolSession(camera).send(protocolSession(camera).driver.registry.operations.CloseSession, {})
         expect(commands).toEqual([[0x1003]])
         expect(
             new VendorExtensionCamera(
@@ -247,7 +248,7 @@ describe('MTP requests observed in Fujifilm recordings', () => {
         const bytes = Uint8Array.of(0, 0, 0, 0)
         const recorded = recordingTransport(new Map([[0x9805, bytes]]))
         const camera = new Camera({transport: recorded.transport, vendorId: 0x04cb, logger: {renderInTerminal: false, captureConsole: false}})
-        const response = await camera.send(camera.getInstance().registry.operations.MtpGetObjectPropList, {
+        const response = await protocolSession(camera).send(protocolSession(camera).driver.registry.operations.MtpGetObjectPropList, {
             ObjectHandle: 2, ObjectFormatCode: 0, ObjectPropertyCode: 0xffffffff, GroupCode: 0, Depth: 0,
         })
         expect(recorded.commands).toEqual([[0x9805, 2, 0, 0xffffffff, 0, 0]])
@@ -256,8 +257,8 @@ describe('MTP requests observed in Fujifilm recordings', () => {
     })
     it('can express the captured single-parameter DeleteObject and an explicit format filter', async () => {
         const {camera, registry, commands} = cameraFor(0x04cb)
-        await camera.send(registry.operations.DeleteObject, {ObjectHandle: 2})
-        await camera.send(registry.operations.DeleteObject, {ObjectHandle: 3, ObjectFormatCode: 0x3801})
+        await protocolSession(camera).send(registry.operations.DeleteObject, {ObjectHandle: 2})
+        await protocolSession(camera).send(registry.operations.DeleteObject, {ObjectHandle: 3, ObjectFormatCode: 0x3801})
         expect(commands).toEqual([[0x100b, 2], [0x100b, 3, 0x3801]])
     })
 })
@@ -267,9 +268,9 @@ it('expresses legacy Sony protocol 2.00 without a version-3 option word', async 
     // Public ILCE-7M2 recording by tmandys: libgphoto2 issue 981, comment 2189832650.
     const {camera, commands} = cameraFor(0x054c)
     const registry = createSonyRegistry(true)
-    await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '2.00'})
-    await camera.send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '3.00', flagOfDevicePropertyOption: 'ENABLE'})
-    await camera.send(registry.operations.SDIO_SetExtDevicePropValue, {DevicePropCode: 0xd25a}, Uint8Array.of(1, 0))
-    await camera.send(registry.operations.SDIO_ControlDevice, {sdiControlCode: 0xd2c2}, Uint8Array.of(2, 0))
+    await protocolSession(camera).send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '2.00'})
+    await protocolSession(camera).send(registry.operations.SDIO_GetExtDeviceInfo, {initiatorVersion: '3.00', flagOfDevicePropertyOption: 'ENABLE'})
+    await protocolSession(camera).send(registry.operations.SDIO_SetExtDevicePropValue, {DevicePropCode: 0xd25a}, Uint8Array.of(1, 0))
+    await protocolSession(camera).send(registry.operations.SDIO_ControlDevice, {sdiControlCode: 0xd2c2}, Uint8Array.of(2, 0))
     expect(commands).toEqual([[0x9202, 200], [0x9202, 300, 1], [0x9205, 0xd25a], [0x9207, 0xd2c2]])
 })

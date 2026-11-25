@@ -19,6 +19,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -39,7 +40,7 @@ function concatenate(parts: Uint8Array[]): Uint8Array {
 }
 
 function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -67,7 +68,7 @@ function deviceInfo(camera: Camera, properties: number[], operations: number[]):
 /** Simulated Sony body: SDIO inventory and SetExtDevicePropValue, raw 0xNNNNDDDD shutter values. */
 function sonyCamera() {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const codecs = driver.registry.codecs
     const shutter = driver.registry.properties.ShutterSpeed
     const body = { current: 0x00010032, choices: [0x00010032, 0x0001003c, 0x00010064], enabled: 1, applies: true }
@@ -104,7 +105,7 @@ function sonyCamera() {
 /** Simulated Canon body: CanonGetEventData property/allowed-value records and CanonSetPropValue. */
 function canonCamera() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const shutter = driver.registry.properties.CanonShutterSpeed
     // CanonShutterSpeed codes: 0x68 1/60, 0x70 1/125, 0x78 1/250.
     const body = { current: 0x0078, choices: [0x0068, 0x0070, 0x0078], applies: true }
@@ -143,7 +144,7 @@ function canonCamera() {
 /** Simulated Nikon body in photo mode: GetDevicePropDesc descriptors and SetDevicePropValueEx. */
 function nikonCamera() {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const shutterCode = 0xd100
     // Nikon raw shutter values: 0x0001003c 1/60, 0x0001007d 1/125, 0x000100fa 1/250.

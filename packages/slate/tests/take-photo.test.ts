@@ -18,6 +18,7 @@ import { sonyContentList } from '@tests/fixtures/sony-content-list'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { decodeMediaId, encodeMediaId, type MediaReference } from '@vendors/media/media-id'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -32,7 +33,7 @@ const CARD_STORAGE = 0x00010001
 
 /** An ObjectInfo reply exactly as the codec decodes it from the wire. */
 function objectInfo(camera: Camera, filename: string, size = jpeg.length, associationType = 0): ObjectInfo {
-    const codec = new ObjectInfoCodec(camera.getInstance().registry)
+    const codec = new ObjectInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             storageID: CARD_STORAGE,
@@ -62,7 +63,7 @@ function objectInfo(camera: Camera, filename: string, size = jpeg.length, associ
 
 /** A DeviceInfo reply exactly as the codec decodes it: GetObjectInfo, GetObject and GetThumb. */
 function deviceInfo(camera: Camera): DeviceInfo {
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -119,7 +120,7 @@ const objectReference = (objectHandle: number, name: string): MediaReference => 
  */
 function sonyBody() {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     driver.sessionId = 1
     const hostCopy = jpeg
     const cardFile = Uint8Array.of(0xff, 0xd8, 1, 2, 3, 0xff, 0xd9)
@@ -221,7 +222,7 @@ function sonyBody() {
 /** Canon: RemoteReleaseOn presses, confirmed by a new handle on the card (a card diff). */
 function canonBody() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     driver.sessionId = 1
     const body = { handles: [1], refuses: false, writes: true, presses: 0, focusPresses: [] as string[] }
     vi.spyOn(driver, 'listUnknownPropertyStates').mockReturnValue([])
@@ -255,7 +256,7 @@ function canonBody() {
 /** Nikon: InitiateCapture, then ObjectAdded queued for GetEventEx once the file is on the card. */
 function nikonBody() {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const body = {
         queued: [] as { code: number; parameters: number[] }[],
@@ -308,7 +309,7 @@ function nikonBody() {
 /** Standard PTP: InitiateCapture, confirmed by an ObjectAdded event on the interrupt pipe. */
 function standardBody() {
     const camera = new Camera({ transport: transport() })
-    const driver = camera.getInstance()
+    const driver = protocolSession(camera).driver
     driver.sessionId = 1
     const body = { refuses: false, writes: true, presses: 0 }
     vi.spyOn(driver, 'getObject').mockResolvedValue(jpeg)

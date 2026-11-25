@@ -1,6 +1,8 @@
 import { Camera } from '@camera/index'
 import { CanonCamera } from '@camera/canon-camera'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { captureDriverImage } from '@camera/operations/photo'
+import { protocolSession } from '@camera/operations/protocol'
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
@@ -11,12 +13,12 @@ function fixture(options: { noNewImage?: boolean; invalidBaseline?: boolean; sho
         transport: { isLittleEndian: () => true, on: () => undefined } as any,
         logger: { captureConsole: false, renderInTerminal: false },
     })
-    const instance = camera.getInstance() as CanonCamera
+    const instance = protocolSession(camera).driver as CanonCamera
     const data = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)
     const info = { filename: 'new.jpg', objectCompressedSize: data.length, associationType: 0 }
     let captured = false, indexBusy = options.busyIndex, pendingFile = options.pendingFile
     const shutters: string[] = [], downloads: number[] = []
-    vi.spyOn(camera, 'getCanonUnknownPropertyStates').mockResolvedValue([])
+    vi.spyOn(protocolSession(camera), 'getCanonUnknownPropertyStates').mockResolvedValue([])
     instance.send = (async (operation: any, parameters: any) => {
         if (operation.name === 'GetStorageIDs') return { code: 0x2001, data: [0x10000, 0x10001] }
         if (operation.name === 'GetObjectHandles') {
@@ -54,7 +56,7 @@ it.each([
     { includeInfo: true, includeData: false },
 ])('returns only requested media from a new still, preferring the indexed JPEG (%j)', async options => {
     const test = fixture({ busyIndex: true })
-    const result = test.camera.captureImage({ autofocus: false, ...options })
+    const result = captureDriverImage(test.camera, { autofocus: false, ...options })
     const assertion = expect(result).resolves.toEqual({
         ...(options.includeInfo ? { info: test.info } : {}),
         ...(options.includeData ? { data: test.data } : {}),
@@ -68,7 +70,7 @@ it.each([
 
 it('rejects an acknowledged shutter that produces no new still without downloading an old image', async () => {
     const test = fixture({ noNewImage: true })
-    const assertion = expect(test.camera.captureImage({ autofocus: false })).rejects.toThrow('no new still image')
+    const assertion = expect(captureDriverImage(test.camera, { autofocus: false })).rejects.toThrow('no new still image')
     await vi.runAllTimersAsync()
     await assertion
     expect(test.downloads).toEqual([])
@@ -77,13 +79,13 @@ it('rejects an acknowledged shutter that produces no new still without downloadi
 
 it('rejects an unreadable baseline before pressing the shutter', async () => {
     const test = fixture({ invalidBaseline: true })
-    await expect(test.camera.captureImage({ autofocus: false })).rejects.toThrow('no object dataset')
+    await expect(captureDriverImage(test.camera, { autofocus: false })).rejects.toThrow('no object dataset')
     expect(test.shutters).toEqual([])
 })
 
 it('rejects a truncated transfer without firing the shutter again', async () => {
     const test = fixture({ shortTransfer: true })
-    const assertion = expect(test.camera.captureImage({ autofocus: false })).rejects.toThrow('transfer length')
+    const assertion = expect(captureDriverImage(test.camera, { autofocus: false })).rejects.toThrow('transfer length')
     await vi.runAllTimersAsync()
     await assertion
     expect(test.shutters).toEqual(['FOCUS', 'SHUTTER'])
@@ -92,7 +94,7 @@ it('rejects a truncated transfer without firing the shutter again', async () => 
 
 it('waits for a newly indexed still to finish writing without another shutter command', async () => {
     const test = fixture({ pendingFile: true })
-    const assertion = expect(test.camera.captureImage({ autofocus: false })).resolves.toMatchObject({ data: test.data })
+    const assertion = expect(captureDriverImage(test.camera, { autofocus: false })).resolves.toMatchObject({ data: test.data })
     await vi.runAllTimersAsync()
     await assertion
     expect(test.shutters).toEqual(['FOCUS', 'SHUTTER'])
@@ -100,7 +102,7 @@ it('waits for a newly indexed still to finish writing without another shutter co
 
 it('rejects an oversized image before allocating or downloading its bytes', async () => {
     const test = fixture({ oversize: true })
-    const assertion = expect(test.camera.captureImage({ autofocus: false })).rejects.toThrow('transfer bound')
+    const assertion = expect(captureDriverImage(test.camera, { autofocus: false })).rejects.toThrow('transfer bound')
     await vi.runAllTimersAsync()
     await assertion
     expect(test.downloads).toEqual([])

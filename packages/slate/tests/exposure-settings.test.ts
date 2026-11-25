@@ -29,6 +29,7 @@ import type { TransportInterface } from '@transport/interfaces/transport.interfa
 import { canonicalControlValues } from '@vendors/control-properties'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -49,7 +50,7 @@ function concatenate(parts: Uint8Array[]): Uint8Array {
 }
 
 function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -113,14 +114,14 @@ interface Simulation {
 }
 
 function wireCodec(camera: Camera, datatype: SimulatedProperty['datatype']) {
-    const codecs = camera.getInstance().registry.codecs
+    const codecs = protocolSession(camera).driver.registry.codecs
     return datatype === 3 ? codecs.int16 : datatype === 4 ? codecs.uint16 : codecs.uint32
 }
 
 /** Simulated Sony body: SDIO inventory and SetExtDevicePropValue with each property's own width. */
 function sonyCamera(body: Body): Simulation {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const codecs = driver.registry.codecs
     const writes: Simulation['writes'] = []
     const applies = { value: true }
@@ -159,7 +160,7 @@ function sonyCamera(body: Body): Simulation {
 /** Simulated Canon body: CanonGetEventData value and allowed-value records, CanonSetPropValue. */
 function canonCamera(body: Body): Simulation {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const writes: Simulation['writes'] = []
     const applies = { value: true }
     const send = async (operation: OperationDefinition, _parameters: unknown, data?: Uint8Array) => {
@@ -206,7 +207,7 @@ function canonCamera(body: Body): Simulation {
  */
 function descriptorCamera(vendorId: number, body: Body): Simulation {
     const camera = new Camera({ vendorId, transport: transport() })
-    const driver = camera.getInstance()
+    const driver = protocolSession(camera).driver
     if (vendorId === 0x04b0) (driver as NikonCamera).sessionId = 1
     const registry = driver.registry
     const writes: Simulation['writes'] = []

@@ -17,53 +17,6 @@ export const liveViewOperationTable = {
                 },
             },
         },
-        captureLiveView: {
-            area: 'live-view',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'getLiveViewFrame',
-                note: 'returns { jpeg, focusFrames, overlay? } instead of vendor fields',
-            },
-        },
-        millisecondsUntilNextLiveViewFrame: {
-            area: 'live-view',
-            disposition: { kind: 'private', handledBy: 'getLiveViewFrame (live-view pacing)' },
-        },
-        takeLiveViewStatistics: {
-            area: 'live-view',
-            disposition: { kind: 'private', handledBy: 'getLiveViewFrame (live-view pacing)' },
-        },
-        captureCanonViewfinderFrame: {
-            area: 'live-view',
-            disposition: { kind: 'replaced-by', target: 'getLiveViewFrame' },
-        },
-        stopCanonLiveView: {
-            area: 'live-view',
-            disposition: { kind: 'private', handledBy: 'getLiveViewFrame and disconnect (live-view output)' },
-        },
-        setSonyOsdImageMode: {
-            area: 'live-view',
-            disposition: {
-                kind: 'private',
-                handledBy: 'getLiveViewFrame({ overlay }) (the camera\'s overlay output)',
-            },
-        },
-        captureSonyOsdImage: {
-            area: 'live-view',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'getLiveViewFrame',
-                note: 'getLiveViewFrame({ overlay: true })',
-            },
-        },
-        getCanonHdmiLiveViewMode: {
-            area: 'live-view',
-            disposition: { kind: 'private', handledBy: 'getLiveViewFrame (Canon live-view output)' },
-        },
-        setCanonHdmiLiveViewMode: {
-            area: 'live-view',
-            disposition: { kind: 'private', handledBy: 'getLiveViewFrame (Canon live-view output)' },
-        },
     },
     planned: {},
 } as const satisfies AreaOperationTable

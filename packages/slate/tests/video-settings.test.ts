@@ -18,6 +18,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { AudioRecording, FrameRate, VideoFormat, VideoQuality } from '@camera/settings/video'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -73,7 +74,7 @@ interface SonyRecord {
 /** The a7 V's movie properties as it reported them on 2026-11-24 (codes, datatypes and raw choices). */
 function sonyCamera() {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const registry = driver.registry
     const records = new Map<number, SonyRecord>([
         [0xd241, { type: 2, value: 14, choices: [11, 8, 9, 14, 15], enabled: 1 }], // MovieFileFormat, XAVC S-I 4K
@@ -174,7 +175,7 @@ describe('Sony typed video settings', () => {
 /** Canon movie sound as CanonGetEventData records; writes through CanonSetPropValue. */
 function canonCamera() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const sound = driver.registry.properties.CanonMovieSoundRecording.code
     const body = { value: 2, choices: [1, 2, 3], applies: true }
     const writes: number[] = []
@@ -241,7 +242,7 @@ describe('Canon typed audio recording', () => {
 describe('Nikon typed video settings', () => {
     it('are unsupported until Nikon movie format properties are decoded', async () => {
         const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-        const driver = camera.getInstance() as NikonCamera
+        const driver = protocolSession(camera).driver as NikonCamera
         driver.sessionId = 1
         const selector = driver.registry.properties.LiveViewSelector.code
         vi.spyOn(driver, 'send').mockImplementation((async (operation: OperationDefinition, parameters: Record<string, number>) => {

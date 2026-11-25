@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { configureSlateTelemetry } from '@core/telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
+import { protocolSession } from '@camera/operations/protocol'
 
 const codecs = createPTPRegistry(true).codecs
 it('retains numeric Canon write intent and rejection without inventing a readback or retaining opaque bytes', () => {
@@ -512,7 +513,7 @@ it('deep benchmark exports a sanitized profile on the owned session and preserve
 it('repeated protocol refreshes retain changed values and each new benchmark has its own inventory',async()=>{
     const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
     await camera.connect()
-    const instance=camera.getInstance(),seen:any[]=[]
+    const instance=protocolSession(camera).driver,seen:any[]=[]
     const detach=instance.observeProfile(crypto.randomUUID(),value=>seen.push(value))
     for(const current of [75,75,50,75])instance.recordProtocol({type:'descriptor',vendorId:0,property:0x5001,dataType:4,writable:false,current},0x1014)
     expect(seen.map(value=>value.current)).toEqual([75,50,75])
@@ -540,7 +541,7 @@ it('benchmark includes preexisting observations with age and never substitutes a
  const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
  await camera.connect()
  try {
-  const instance=camera.getInstance()
+  const instance=protocolSession(camera).driver
   instance.recordProtocol({type:'property-value',vendorId:0,property:0x5001,dataType:4,current:63},0x1015)
   instance.recordProtocol({type:'property-write',vendorId:0,property:0x5001,dataType:4,requested:99,transactionId:8,outcome:'response',response:0x2001},0x1016)
   const result=await runCameraBenchmark(camera)

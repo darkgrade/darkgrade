@@ -110,16 +110,22 @@ try {
         import { CameraClipNotFoundError, type AudioRecording, type Clip, type FrameRate, type VideoFormat } from '@darkgrade/slate'
         const camera = new Camera()
         configureSlateTelemetry(undefined)
-        const device: Promise<{code: number; data: DeviceInfo}> = camera.send(genericOperationRegistry.GetDeviceInfo, {})
+        const device: Promise<{code: number; data: DeviceInfo}> = protocolSession(camera).send(genericOperationRegistry.GetDeviceInfo, {})
         const capabilities: Promise<CameraCapabilities> = camera.getCapabilities()
-        const exposure: Promise<ExposureTime> = camera.getExposureTime()
+        const exposure: Promise<ExposureTime | undefined> = capabilities.then(found => found.controls.shutterSpeed?.exposureTime)
         const native: CameraControlSession = camera
         const sdk: CameraControlSession = new SonyWifiCamera({
             request: async () => ({}), close: async () => {}
         })
+        // @ts-expect-error Raw protocol access left Camera for protocolSession(camera).
         camera.send(genericOperationRegistry.OpenSession, {SessionID: 1})
-        camera.set(genericPropertyRegistry.WhiteBalance, 'Daylight')
-        camera.setExposureTime({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
+        // @ts-expect-error getInstance left Camera; the driver is protocolSession(camera).driver.
+        camera.getInstance()
+        // @ts-expect-error Vendor-named methods left Camera; Sony's image format is setPhotoFormat.
+        camera.setSonyImageFormat('RAW')
+        // @ts-expect-error Exposure time is the shutterSpeed setting, through setShutterSpeed or setControl.
+        camera.setExposureTime({kind: 'angle', degrees: 180})
+        camera.setShutterSpeed({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
         camera.setControl('colorTemperature', 5600)
         camera.setControl('iso', 'ISO 800')
         const observed: Promise<CameraControlState> = camera.setControl('shutterSpeed', {kind: 'angle', degrees: 180})
@@ -156,7 +162,7 @@ try {
         // Raw protocol access is a session of the same Camera, typed by the registries' codecs.
         const session: ProtocolSession = protocolSession(camera)
         const rawIdentity: Promise<{code: number; data: DeviceInfo}> = session.send(genericOperationRegistry.GetDeviceInfo, {})
-        session.set(genericPropertyRegistry.WhiteBalance, 2)
+        session.set(genericPropertyRegistry.WhiteBalance, 'Daylight')
         // @ts-expect-error A raw property write still takes its codec's value type.
         session.set(genericPropertyRegistry.WhiteBalance, 'daylight')
         // @ts-expect-error Known read-only definitions cannot be written through a protocol session.

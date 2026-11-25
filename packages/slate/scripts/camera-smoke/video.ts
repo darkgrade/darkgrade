@@ -4,6 +4,7 @@ import type { Camera } from '@camera/index'
 import { readCameraMovieAudio } from '@camera/movie-audio'
 import { readCameraObjectHandles } from '@camera/storage'
 import type { SmokeArea, SmokeReport } from '@scripts/camera-smoke/smoke-area'
+import { protocolSession } from '@camera/operations/protocol'
 
 const takeMilliseconds = 3000
 
@@ -40,12 +41,12 @@ async function take(camera: Camera, report: SmokeReport, label: string): Promise
  */
 async function audioEvidence(camera: Camera, clip: Clip) {
     if (clip.sizeBytes === undefined) return { status: 'unverified', detail: 'clip size over 4 GiB' }
-    const driver = camera.getInstance()
+    const driver = protocolSession(camera).driver
     const operations = driver.registry.operations
     const sonyLargeObject = 'SDIO_GetPartialLargeObject' in operations ? operations.SDIO_GetPartialLargeObject : undefined
     const reader = sonyLargeObject
         ? {
-              getInstance: () => driver,
+              driver,
               send: (_operation: unknown, parameters: { ObjectHandle: number; Offset: number; MaxBytes: number }) =>
                   driver.send(sonyLargeObject, {
                       ObjectHandle: parameters.ObjectHandle,

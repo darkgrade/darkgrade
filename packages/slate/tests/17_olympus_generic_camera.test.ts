@@ -5,6 +5,7 @@ import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { PTP_DISCOVERY_VENDORS } from '@transport/usb/usb-transport'
 import { describe, expect, it } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 describe('Olympus generic PTP support', () => {
     it('requests Olympus devices during WebUSB discovery', () => {
@@ -20,7 +21,7 @@ describe('Olympus generic PTP support', () => {
             },
         })
 
-        expect(camera.getInstance()).toBeInstanceOf(GenericCamera)
+        expect(protocolSession(camera).driver).toBeInstanceOf(GenericCamera)
     })
 
     it('returns the decoded current value from a standard property descriptor', async () => {

@@ -20,14 +20,6 @@ export const connectionOperationTable = {
             disposition: { kind: 'keep' },
             summary: 'Make, model, firmware, lens mount, connection type',
         },
-        connectSonyMenuSession: {
-            area: 'connection',
-            disposition: { kind: 'protocol' },
-        },
-        connectSonyObservationSession: {
-            area: 'connection',
-            disposition: { kind: 'replaced-by', target: 'connect', note: 'connect({ observeOnly: true })' },
-        },
         recover: {
             area: 'connection',
             disposition: { kind: 'keep' },

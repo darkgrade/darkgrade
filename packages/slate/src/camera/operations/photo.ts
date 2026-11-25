@@ -32,7 +32,6 @@ export interface PhotoOperations {
     takePhoto(options?: TakePhotoOptions & { destination?: 'card' }): Promise<CardPhoto>
     takePhoto(options: TakePhotoOptions & { destination: 'computer' }): Promise<ComputerPhoto>
     takePhoto(options?: TakePhotoOptions): Promise<Photo>
-    captureImage(params?: CaptureImageOptions): Promise<{ info?: ObjectInfo; data?: Uint8Array }>
 }
 
 function photoFrom(file: ConfirmedPhotoFile, destination: 'card' | 'computer'): Photo {
@@ -73,23 +72,31 @@ async function takePhoto(this: Camera, options: TakePhotoOptions = {}): Promise<
 
 export const photoOperations: PhotoOperations & ThisType<Camera> = {
     takePhoto,
+}
 
-    async captureImage(params?: CaptureImageOptions) {
-        const { driver } = cameraContext(this)
-        if (params?.rawCompression !== undefined && driver.vendorId !== VendorIDs.NIKON)
-            throw new Error('RAW compression selection requires a Nikon camera')
-        if (params?.destination === 'memory' && !(driver instanceof NikonCamera) && !(driver instanceof SonyCamera))
-            throw new Error('Capture to memory is only implemented for Nikon and Sony cameras')
-        if (
-            params?.autofocus === false &&
-            !(driver instanceof CanonCamera) &&
-            !(driver instanceof NikonCamera) &&
-            !(driver instanceof SonyCamera)
-        )
-            throw new Error('Capture without autofocus is only implemented for Canon EOS, Nikon and Sony cameras')
-        const capture = () => driver.captureImage({ includeInfo: true, includeData: true, ...params })
-        if (driver instanceof SonyCamera) return withSonyPhotoMode(sonyPhotoModeDriver(driver), capture)
-        if (driver instanceof CanonCamera) return withCanonPhotoMode(driver, capture)
-        return capture()
-    },
+/**
+ * The driver's own release with the vendor's still-mode preparation, for Slate's workflows that need
+ * its raw ObjectInfo or a host-memory transfer (the benchmark profile). Not a Camera method:
+ * applications use takePhoto, which confirms the new file.
+ */
+export async function captureDriverImage(
+    camera: Camera,
+    params?: CaptureImageOptions
+): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+    const { driver } = cameraContext(camera)
+    if (params?.rawCompression !== undefined && driver.vendorId !== VendorIDs.NIKON)
+        throw new Error('RAW compression selection requires a Nikon camera')
+    if (params?.destination === 'memory' && !(driver instanceof NikonCamera) && !(driver instanceof SonyCamera))
+        throw new Error('Capture to memory is only implemented for Nikon and Sony cameras')
+    if (
+        params?.autofocus === false &&
+        !(driver instanceof CanonCamera) &&
+        !(driver instanceof NikonCamera) &&
+        !(driver instanceof SonyCamera)
+    )
+        throw new Error('Capture without autofocus is only implemented for Canon EOS, Nikon and Sony cameras')
+    const capture = () => driver.captureImage({ includeInfo: true, includeData: true, ...params })
+    if (driver instanceof SonyCamera) return withSonyPhotoMode(sonyPhotoModeDriver(driver), capture)
+    if (driver instanceof CanonCamera) return withCanonPhotoMode(driver, capture)
+    return capture()
 }

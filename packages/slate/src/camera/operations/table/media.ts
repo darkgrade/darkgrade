@@ -9,17 +9,17 @@ export const mediaOperationTable = {
     current: {
         getCardStatus: {
             area: 'media',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Per card slot: free space, photos left, recording time left',
         },
         listMedia: {
             area: 'media',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Photos and clips on the card, newest first, with ids that survive a reconnect',
         },
         getMediaPreview: {
             area: 'media',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'A small JPEG of a photo or clip',
             surfaces: {
                 cli: {
@@ -30,29 +30,13 @@ export const mediaOperationTable = {
         },
         downloadMedia: {
             area: 'media',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Copies a file off the card, with progress and cancel',
             surfaces: {
                 cli: {
                     arguments: [{ name: 'id', description: 'a media id from list-media' }],
                 },
             },
-        },
-        listObjects: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'listMedia' },
-        },
-        getObject: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'downloadMedia' },
-        },
-        listSonyContents: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'listMedia' },
-        },
-        getSonyContentPreview: {
-            area: 'media',
-            disposition: { kind: 'replaced-by', target: 'getMediaPreview' },
         },
     },
     planned: {},

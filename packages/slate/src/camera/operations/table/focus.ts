@@ -12,30 +12,6 @@ export const focusOperationTable = {
             disposition: { kind: 'keep' },
             summary: 'Focuses once, and says whether the camera confirmed focus',
         },
-        nikonAutofocus: {
-            area: 'focus',
-            disposition: { kind: 'replaced-by', target: 'autofocus' },
-        },
-        nikonTouchFocus: {
-            area: 'focus',
-            disposition: { kind: 'replaced-by', target: 'setFocusPoint' },
-        },
-        nikonDriveFocus: {
-            area: 'focus',
-            disposition: { kind: 'replaced-by', target: 'nudgeFocus' },
-        },
-        sonyTouchFocus: {
-            area: 'focus',
-            disposition: { kind: 'replaced-by', target: 'setFocusPoint' },
-        },
-        setSonyAfAreaPosition: {
-            area: 'focus',
-            disposition: { kind: 'replaced-by', target: 'setFocusPoint' },
-        },
-        setCanonLiveViewFramePoint: {
-            area: 'focus',
-            disposition: { kind: 'replaced-by', target: 'setFocusPoint' },
-        },
         setFocusPoint: {
             area: 'focus',
             disposition: { kind: 'keep' },

@@ -39,7 +39,7 @@ export async function readCameraMovieAudio(camera:any,file:{handle:number;filena
         if(!Number.isSafeInteger(length)||length<8||length>0xffffffff)throw new Error('Movie size exceeds the bounded audio inspection range')
         const operation=protocolAccess(camera).driver.registry.operations.GetPartialObject
         const read=async(offset:number,count:number)=>{
-            const reply=await camera.send(operation,{ObjectHandle:file.handle,Offset:offset,MaxBytes:count},undefined,count+12)
+            const reply=await protocolAccess(camera).send(operation,{ObjectHandle:file.handle,Offset:offset,MaxBytes:count},undefined,count+12)
             if(reply.code!==0x2001||!(reply.data instanceof Uint8Array)||reply.data.length!==count)throw new Error('Camera did not return complete movie metadata')
             return reply.data
         }

@@ -4,6 +4,7 @@ import type { CameraRecordingState } from '@camera/controls'
 import { Camera } from '@camera/index'
 import { protocolSession } from '@camera/operations/protocol'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { openSonyRecordingMode } from '@vendors/sony/photo-mode'
 import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.useRealTimers())
@@ -24,10 +25,10 @@ function fixture(vendorId: number) {
         {code:0xd24a,rawValue:120,sonyEnabledFlag:2},
     ] as any)
     const read = vi.spyOn(camera, 'getRecordingState').mockImplementation(async () => state)
-    const start = vi.spyOn(camera.getInstance(), 'startRecording').mockImplementation(async () => {
+    const start = vi.spyOn(protocolSession(camera).driver, 'startRecording').mockImplementation(async () => {
         state = 'recording'
     })
-    const stop = vi.spyOn(camera.getInstance(), 'stopRecording').mockImplementation(async () => {
+    const stop = vi.spyOn(protocolSession(camera).driver, 'stopRecording').mockImplementation(async () => {
         state = 'idle'
     })
     return {
@@ -51,7 +52,7 @@ it('explicit Sony preparation uses advertised controls and restores only after c
         mode = value as string
         return {value:mode} as any
     })
-    const prepared = await f.camera.prepareRecordingMode()
+    const prepared = await openSonyRecordingMode(f.camera)
     expect(mode).toBe('Movie Manual')
     f.set('recording')
     await expect(prepared.restore()).rejects.toThrow('not confirmed stopped')
@@ -69,11 +70,11 @@ it('Sony preparation refuses unadvertised modes and preserves failed reconciliat
         controls:{exposureProgram:{value:'Manual',enabled:true,writable:false,allowedValues:['Manual','Movie Manual']}},
     } as any)
     const write = vi.spyOn(f.camera, 'setControl')
-    await expect(f.camera.prepareRecordingMode()).rejects.toThrow('no corresponding writable movie mode')
+    await expect(openSonyRecordingMode(f.camera)).rejects.toThrow('no corresponding writable movie mode')
     expect(write).not.toHaveBeenCalled()
     inventory.mockResolvedValue({controls:{exposureProgram:{value:'Manual',enabled:true,writable:true,allowedValues:['Manual','Movie Manual']}}} as any)
     write.mockRejectedValue(new CameraConfirmationError('exposureProgram','Movie Manual','Manual'))
-    await expect(f.camera.prepareRecordingMode()).rejects.toBeInstanceOf(CameraConfirmationError)
+    await expect(openSonyRecordingMode(f.camera)).rejects.toBeInstanceOf(CameraConfirmationError)
     expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Movie Manual'])
 })
 
@@ -88,7 +89,7 @@ it('Sony explicit preparation reconciles one acknowledged unchanged mode with fr
         mode = value as string
         return {value:mode} as any
     })
-    const prepared = await f.camera.prepareRecordingMode()
+    const prepared = await openSonyRecordingMode(f.camera)
     expect(mode).toBe('Movie Manual')
     expect(write.mock.calls.map(call => call[1])).toEqual(['Movie Manual','Movie Manual'])
     expect(f.start).not.toHaveBeenCalled()
@@ -108,7 +109,7 @@ it.each(['unknown','recording','disabled','transport'])('Sony reconciliation sto
         if (reason === 'transport') throw new Error('USB read failed')
         throw new CameraConfirmationError('exposureProgram','Movie Manual',reason === 'unknown' ? null : 'Manual')
     })
-    await expect(f.camera.prepareRecordingMode()).rejects.toThrow()
+    await expect(openSonyRecordingMode(f.camera)).rejects.toThrow()
     expect(write).toHaveBeenCalledOnce()
 })
 
@@ -123,7 +124,7 @@ it('Sony restoration polls temporary display-only mode after idle without repeat
         mode = value as string
         return {value:mode} as any
     })
-    const prepared = await f.camera.prepareRecordingMode()
+    const prepared = await openSonyRecordingMode(f.camera)
     writable = false
     const restored = prepared.restore()
     await vi.advanceTimersByTimeAsync(500)
@@ -157,7 +158,7 @@ it('Canon recording observation refreshes events instead of confirming a stale c
         vendorId: 0x04a9,
         transport: { isLittleEndian: () => true, on: () => {} } as unknown as TransportInterface,
     })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     let cached = 'CARD'
     const refresh = vi.spyOn(driver, 'refreshEventProperties').mockImplementation(async () => {
         cached = 'NONE'

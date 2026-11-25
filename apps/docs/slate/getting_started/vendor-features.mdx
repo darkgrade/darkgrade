@@ -1,88 +1,77 @@
 ---
 title: "Vendor features"
-description: "Sony, Canon and Nikon methods beyond the shared camera controls."
+description: "How Sony, Canon and Nikon settings map to the one Camera API, and the raw access left for bench work."
 ---
 
-Use the [shared control model](/slate/getting_started/controls) first. The methods below
-cover what it does not: vendor inventories, format and zoom settings, and vendor events.
-Each is available only on that vendor's bodies, and only when the body advertises it.
+Every setting and operation has one name on every camera. Sony's image quality, Canon's picture
+style and Nikon's Picture Control are all `setPictureStyle`; Sony's Flexible Spot is a `Spot`
+focus area. A vendor's own word is only a search alias (see the
+[shared control model](/slate/getting_started/controls)). Each setting is available only when the
+attached body advertises it now: read `getCapabilities()` before building controls.
 
-## Sony α USB controls
-
-Sony sessions expose the body’s complete SDIO property inventory and preserve Sony’s mode-aware availability flags. Read the inventory before building controls: `writable: true` means the value can be set now, while an enabled flag of `2` is display-only in the current body mode.
+## Photo, video and zoom settings
 
 ```typescript
-const properties = await camera.getSonyPropertyStates()
+const { controls, operations, lens } = await camera.getCapabilities()
+console.log(controls.photoFormat?.allowedValues, operations?.zoomTo, lens?.focalLengthMillimetres)
 
-await camera.autofocus() // bounded half-press; release is guaranteed
 await camera.setFocusMode('AF-S')
-await camera.setSonyImageFormat('RAW+JPEG')
-await camera.setSonyJpegQuality('Extra Fine')
-await camera.setSonyImageSize('Large')
-await camera.setSonyAspectRatio('3:2')
-await camera.setSonyMovieFileFormat('XAVC S 4K')
-await camera.setSonyMovieRecordingSetting('50M · 4:2:2 10-bit')
-await camera.setSonyZoomSetting('Optical Zoom Only')
+await camera.setPhotoFormat('RAW+JPEG')
+await camera.setJpegQuality('Extra Fine')
+await camera.setPhotoSize('Large')
+await camera.setAspectRatio('3:2')
+await camera.setVideoFormat('XAVC S 4K')
+await camera.setDigitalZoom('Off')
 
-const zoom = await camera.sonyPowerZoom('tele', 3)
-console.log(zoom.beforeMillimetres, zoom.afterMillimetres)
+// Zoom to a focal length on a power-zoom lens; resolves to where the lens landed.
+const landed = await camera.zoomTo(35)
+console.log(landed)
 ```
 
-All setters accept only values currently advertised by the attached camera. Aperture, shutter speed, ISO, focus mode, and white balance use the cross-vendor `get*`/`set*` methods; Sony still/movie/zoom fields use the explicit methods above. Power zoom always sends stop in cleanup and reports success only after focal-position telemetry changes.
+Every setter accepts only values the attached camera offers now, writes once and resolves to the
+value read back. A value the camera refuses is `CameraRefusedError` and nothing changed; a write
+the camera never shows is `CameraOutcomeUnknownError` and is never resent.
 
-The physical α6700 validation round-tripped and restored AF-A/AF-S, JPEG/RAW, XAVC S HD/XAVC HS 4K, and 3:2/4:3. Its current mode publishes white balance as display-only. Remote zoom is driven through the Sony zoom-operation control code (`SDIO_ControlDevice` `0xd2dd`, int8 direction) and movement is confirmed by focal length **or** Clear Image/digital zoom; on the manual-zoom test lens `sonyPowerZoom()` advances the Clear Image/digital zoom. A power-zoom lens is still required to move the optical focal length, and some bodies need **Shooting → Zoom → Remote Zoom Speed** enabled.
+The physical α6700 validation round-tripped and restored AF-A/AF-S, JPEG/RAW, XAVC S HD/XAVC HS 4K, and 3:2/4:3. Its current mode publishes white balance as display-only. Remote zoom is driven through the Sony zoom-operation control code (`SDIO_ControlDevice` `0xd2dd`, int8 direction). A power-zoom lens is required to move the optical focal length, and some bodies need **Shooting → Zoom → Remote Zoom Speed** enabled.
 
-## Canon network and HDMI state
-
-Canon USB sessions also expose the raw network properties the body publishes:
+## Focus
 
 ```typescript
-const network = camera.getCanonNetworkState()
-// { communicationMode, communicationModeChoices, serverRegion, wftStatus }
+await camera.setFocusPoint(0.5, 0.25) // 0–1 from the top-left; focuses there
+const focus = await camera.autofocus() // 'acquired', 'not-acquired' or 'unknown'
+await camera.nudgeFocus('far', 'small')
+await camera.resetFocusPoint()
+console.log(focus)
 ```
 
-`camera.setCanonNetworkCommunicationMode(value)` accepts only a mode advertised by that camera.
+On Nikon (validated over USB on Z6 III firmware V2.00) a nudge drives small lens steps in **AF-S**;
+AF-F can remain busy and MF rejects the drive. Accepted commands and AF-point placement do not
+establish focus lock: only `'acquired'` does.
 
-Canon HDMI sensor output can be selected during an open USB session:
+## Raw vendor access for bench work
+
+Vendor inventories, Canon network state and HDMI output, Nikon event polling and raw events are
+protocol access. They are unsupported, follow the vendors' own names, and are not confirmed the way
+`Camera` operations are:
 
 ```typescript
-const priorMode = await camera.getCanonHdmiLiveViewMode()
-try {
-    await camera.setCanonHdmiLiveViewMode('CAMERA_AND_HOST')
-    // Read the camera's independent HDMI/UVC capture path while this session remains open.
-} finally {
-    await camera.setCanonHdmiLiveViewMode(priorMode)
-}
+import { protocolSession } from '@darkgrade/slate/protocol'
+
+const session = protocolSession(camera)
+if (session.vendorId === 0x054c) console.log((await session.getSonyPropertyStates()).length)
+if (session.vendorId === 0x04a9) console.log(session.getCanonNetworkState().communicationMode)
 ```
 
-The tested EOS 80D resets this property when its PTP session closes. A client that needs continuous Canon HDMI preview must keep one bounded session open, serialize control requests through it or pause it around controls, and restore the prior mode in cleanup.
-
-## Nikon focus and live-view status
-
-Validated over USB on Z6 III firmware V2.00:
-
-```typescript
-const focus = await camera.nikonAutofocus()
-const point = await camera.nikonTouchFocus(0.5, 0.25) // normalized 0–1
-const frame = await camera.captureLiveView()
-console.log(point.positionVerified, focus.focusAcquired, frame.nikonMetadata)
-```
-
-`nikonDriveFocus('near' | 'far', steps)` drives small lens steps in **AF-S**. AF-F can remain busy; MF rejects drive on the tested body. Lens endpoints return named errors. Focus commands require advertised operations; accepted commands and AF-point placement do not establish focus lock.
-
-`getNikonVendorPropertyCodes()` enumerates advertised extended property IDs (355 on the tested body). Unknown properties are not automatically made writable. Fresh live-view metadata includes AF geometry/judgement, recording timers, audio indicators and temperature status. Failed recording setup restores modes it acquired; no-card capture/recording is not reported as successful. Wi-Fi/Bluetooth pairing remains unverified on this Nikon.
-
-## Vendor events
-
-`camera.onCanonRawEvent(handler)` exposes owned copies of Canon event bytes for
-capture; `camera.offCanonRawEvent(handler)` removes the listener.
-`camera.pollNikonEvents()` explicitly drains one Nikon event batch and preserves
-unknown records; opening a session does not start a competing event poller.
-Nikon property access and event polling fall back to legacy operations only on
-`OperationNotSupported` (`0x2005`); a property refusal (`0x200a`) remains a refusal.
+Sony's inventory preserves its mode-aware availability flags: an enabled flag of `2` is
+display-only in the current body mode. `setCanonNetworkCommunicationMode(value)` accepts only a
+mode advertised by that camera. `getNikonVendorPropertyCodes()` enumerates advertised extended
+property IDs (355 on the tested Z6 III); unknown properties are not made writable. Nikon property
+access and event polling fall back to legacy operations only on `OperationNotSupported`
+(`0x2005`); a property refusal (`0x200a`) remains a refusal.
 
 ## Known behaviors
 
 - **Canon keep-alive.** A Canon session sends `KeepDeviceOn` every ten seconds when the body advertises it, so the camera does not sleep mid-session. Pass `new Camera({ keepAlive: false })` to turn this off. No power setting saved on the body is changed.
+- **Canon HDMI output.** The tested EOS 80D resets its HDMI live-view mode when its PTP session closes; Slate manages live-view output itself.
 - **EOS R6 Mark III movie lever.** With the lever at Movie, the body cannot be put in still mode over PTP (firmware 1.0.1). Set the lever on the camera.
 - **Sony files over 4 GiB.** `ObjectInfo` reports the size as `0xffffffff` for these. Slate reads the real size from the object's `ObjectSize` property; a 5.1 GB FX2 original transferred and decoded in full. The α6700 splits recordings at 4 GB instead.

@@ -1,4 +1,6 @@
 import type { Camera } from '@camera/index'
+import { isCamera } from '@camera/operations/context'
+import { protocolAccess, protocolSession, type ProtocolSession } from '@camera/operations/protocol'
 import {GetDevicePropDesc} from '@ptp/definitions/operation-definitions'
 import type { CameraPower } from '@workflows/camera-power'
 
@@ -50,7 +52,8 @@ export function normalizeCameraPower(vendor: 'sony' | 'canon' | 'standard', prop
 }
 
 /** Read one standard battery descriptor on an already-owned PTP session. Never write or reconnect. */
-export async function readStandardCameraPower(camera:Pick<Camera,'send'>):Promise<CameraPower|undefined>{
+export async function readStandardCameraPower(target:Camera|Pick<ProtocolSession,'send'>):Promise<CameraPower|undefined>{
+    const camera=protocolAccess(target)
     try{
         const response=await camera.send(GetDevicePropDesc,{DevicePropCode:0x5001})
         const descriptor=response.data
@@ -59,12 +62,15 @@ export async function readStandardCameraPower(camera:Pick<Camera,'send'>):Promis
     }catch{return undefined}
 }
 
-/** Reuse an owned camera session for battery telemetry over USB or Sony SDK Wi-Fi. */
-export async function readCameraPower(camera:Pick<Camera,'send'> & {
+type PowerSession=Pick<ProtocolSession,'send'> & {
     getSonyPropertyStates?:()=>Promise<PowerProperty[]>
     getCanonPropertyStates?:()=>Promise<PowerProperty[]>
     getCanonUnknownPropertyStates?:()=>Promise<PowerProperty[]>
-},vendor:'sony'|'canon'|'standard'):Promise<CameraPower|undefined>{
+}
+
+/** Reuse an owned camera session for battery telemetry over USB or Sony SDK Wi-Fi. */
+export async function readCameraPower(target:Camera|PowerSession,vendor:'sony'|'canon'|'standard'):Promise<CameraPower|undefined>{
+    const camera:PowerSession=isCamera(target)?protocolSession(target):target
     if(vendor==='sony'&&camera.getSonyPropertyStates)return normalizeCameraPower('sony',await camera.getSonyPropertyStates())
     const standard=await readStandardCameraPower(camera)
     if(standard?.percent!==undefined||vendor==='standard')return standard

@@ -27,6 +27,7 @@ import type { PTPRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
@@ -168,7 +169,7 @@ const sonyMovieManual = 0x00078053
 
 function sonyCamera(options: { mode?: number; remainingSeconds?: number; firstContact?: boolean } = {}) {
     const camera = new Camera({ vendorId: 0x054c, transport: transport(), firstContact: options.firstContact })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const registry = driver.registry
     const card = simulatedCard(registry)
     const body = {
@@ -384,7 +385,7 @@ describe('Sony recording through the generic Camera', () => {
 
     it('does not identify a clip after the PTP session was renewed between Record and Stop', async () => {
         const sony = sonyCamera()
-        const driver = sony.camera.getInstance()
+        const driver = protocolSession(sony.camera).driver
         driver.sessionId = 7
         await settled(sony.camera.startRecording())
         driver.sessionId = 8
@@ -466,7 +467,7 @@ const canonEvent = {
 
 function canonCamera(options: { movie?: boolean; sound?: number; access?: number } = {}) {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const registry = driver.registry
     const card = simulatedCard(registry, options.access ?? 0)
     const values = new Map<number, number>([
@@ -620,7 +621,7 @@ describe('Canon recording through the generic Camera', () => {
 
 function nikonCamera(options: { firstContact?: boolean } = {}) {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport(), firstContact: options.firstContact })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const registry = driver.registry
     const card = simulatedCard(registry)

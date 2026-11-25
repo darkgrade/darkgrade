@@ -5,6 +5,7 @@ import { createFujifilmRegistry, createPTPRegistry } from '@ptp/registry'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 const registry = createFujifilmRegistry(true)
 
@@ -60,7 +61,7 @@ describe('Fujifilm properties from the X-T50 contributor captures', () => {
     ] as const)('reads captured %s bytes through Camera without a descriptor', async (name, payload, expected) => {
         const { camera, commands } = valueReadCamera(payload)
         const property = registry.properties[name]
-        expect(await camera.readValue(property)).toBe(expected)
+        expect(await protocolSession(camera).readValue(property)).toBe(expected)
         expect(commands).toHaveLength(1)
         expect(commands[0].readUInt16LE(6)).toBe(0x1015)
         expect(commands[0].readUInt32LE(12)).toBe(property.code)
@@ -69,7 +70,7 @@ describe('Fujifilm properties from the X-T50 contributor captures', () => {
     it('preserves a device refusal instead of returning a value or synthesizing a descriptor', async () => {
         // Synthetic refusal framing: the captured write refusal is covered separately below.
         const { camera, commands } = valueReadCamera(undefined, 0x200a)
-        await expect(camera.readValue(registry.properties.FujiPresetWhiteBalance)).rejects.toMatchObject({
+        await expect(protocolSession(camera).readValue(registry.properties.FujiPresetWhiteBalance)).rejects.toMatchObject({
             name: PTPResponseError.name,
             code: 0x200a,
             operation: 'GetDevicePropValue',
@@ -79,7 +80,7 @@ describe('Fujifilm properties from the X-T50 contributor captures', () => {
 
     it.each([undefined, '', '08', '088000'])('rejects absent, short or trailing value bytes (%s)', async payload => {
         const { camera } = valueReadCamera(payload)
-        await expect(camera.readValue(registry.properties.FujiPresetWhiteBalance)).rejects.toBeInstanceOf(
+        await expect(protocolSession(camera).readValue(registry.properties.FujiPresetWhiteBalance)).rejects.toBeInstanceOf(
             PTPDecodeError
         )
     })
@@ -145,11 +146,11 @@ describe('Fujifilm properties from the X-T50 contributor captures', () => {
             transport,
             logger: { renderInTerminal: false, captureConsole: false },
         })
-        await camera.set(registry.properties.FujiWhiteBalanceShiftBlue, -2)
+        await protocolSession(camera).set(registry.properties.FujiWhiteBalanceShiftBlue, -2)
         const command = Buffer.from(sent[0])
         expect(command.readUInt16LE(6)).toBe(0x1016)
         expect(command.readUInt32LE(12)).toBe(0xd00c)
         expect(Buffer.from(sent[1].slice(12)).toString('hex')).toBe('feff')
-        await expect(camera.set(registry.properties.FujiPresetColorTemperature, 0)).rejects.toThrow('0x201c')
+        await expect(protocolSession(camera).set(registry.properties.FujiPresetColorTemperature, 0)).rejects.toThrow('0x201c')
     })
 })

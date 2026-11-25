@@ -66,7 +66,7 @@ export class SonyPtpVideoRecording {
         // 02d92fea8a269eb94330a4eade204ba799433606: MTP object properties can
         // override ObjectInfo with a UINT64 size. Bind to this exact handle,
         // never infer identity from a matching filename in a content list.
-        const inventory=await this.camera.send(this.operations.GetDeviceInfo,{})
+        const inventory=await protocolAccess(this.camera).send(this.operations.GetDeviceInfo,{})
         // DeviceInfo carries the numeric codes in operationsSupportedRaw; the decoded list holds names.
         const supported=inventory.data?.operationsSupportedRaw
         const has=(code:number)=>Array.isArray(supported)&&supported.includes(code)
@@ -74,14 +74,14 @@ export class SonyPtpVideoRecording {
             throw new Error('Sony did not advertise a 64-bit original-size query; copy this original from its card')
         let size:number|undefined
         if(has(0x9802)&&has(0x9803)){
-            const descriptor=await this.camera.send(this.operations.MtpGetObjectPropDesc,{ObjectPropertyCode:0xdc04,ObjectFormatCode:Number.isInteger(format)&&format>=0&&format<=0xffff?format:0})
+            const descriptor=await protocolAccess(this.camera).send(this.operations.MtpGetObjectPropDesc,{ObjectPropertyCode:0xdc04,ObjectFormatCode:Number.isInteger(format)&&format>=0&&format<=0xffff?format:0})
             const data=descriptor.data
             if(descriptor.code===0x2001){
                 if(!(data instanceof Uint8Array)||data.length<18)throw new Error('Sony original-size descriptor is unavailable')
                 const view=new DataView(data.buffer,data.byteOffset,data.byteLength)
                 if(view.getUint16(0,true)!==0xdc04||view.getUint16(2,true)!==8)
                     throw new Error('Sony did not describe original size as UINT64')
-                const result=await this.camera.send(this.operations.MtpGetObjectPropValue,{ObjectHandle:handle,ObjectPropertyCode:0xdc04})
+                const result=await protocolAccess(this.camera).send(this.operations.MtpGetObjectPropValue,{ObjectHandle:handle,ObjectPropertyCode:0xdc04})
                 if(result.code!==0x2001||!(result.data instanceof Uint8Array)||result.data.length!==8)
                     throw new Error('Sony did not return a complete 64-bit original size')
                 size=Number(new DataView(result.data.buffer,result.data.byteOffset,8).getBigUint64(0,true))
@@ -93,7 +93,7 @@ export class SonyPtpVideoRecording {
             // MTP GetObjectPropList for one handle and one property returns the value with its
             // data type: count, then handle, property code, data type, value. The same FX2 answered
             // this with UINT64 (type 8). Require the exact handle, property and type.
-            const list=await this.camera.send(this.operations.MtpGetObjectPropList,{ObjectHandle:handle,ObjectFormatCode:0,ObjectPropertyCode:0xdc04,GroupCode:0,Depth:0})
+            const list=await protocolAccess(this.camera).send(this.operations.MtpGetObjectPropList,{ObjectHandle:handle,ObjectFormatCode:0,ObjectPropertyCode:0xdc04,GroupCode:0,Depth:0})
             const data=list.data
             if(list.code!==0x2001||!(data instanceof Uint8Array)||data.length!==20)
                 throw new Error('Sony did not return a complete 64-bit original size')
@@ -107,7 +107,7 @@ export class SonyPtpVideoRecording {
         return size
     }
     private async info(handle:number):Promise<TakeMedia|undefined>{
-        const response=await this.camera.send(this.operations.GetObjectInfo,{ObjectHandle:handle})
+        const response=await protocolAccess(this.camera).send(this.operations.GetObjectInfo,{ObjectHandle:handle})
         if(response.code!==0x2001||!response.data)throw new Error('Sony original information unavailable')
         const info=response.data
         // Card indexing may create a directory or sidecar before the new movie.
@@ -153,7 +153,7 @@ export class SonyPtpVideoRecording {
         let offset=0
         while(offset<file.bytes){
             const count=Math.min(2*1024*1024,file.bytes-offset)
-            const response=await this.camera.send(this.operations.SDIO_GetPartialLargeObject,{ObjectHandle:handle,OffsetLower:offset>>>0,OffsetUpper:Math.floor(offset/0x100000000),MaxBytes:count},undefined,count+12)
+            const response=await protocolAccess(this.camera).send(this.operations.SDIO_GetPartialLargeObject,{ObjectHandle:handle,OffsetLower:offset>>>0,OffsetUpper:Math.floor(offset/0x100000000),MaxBytes:count},undefined,count+12)
             if(response.code!==0x2001||!(response.data instanceof Uint8Array)||!response.data.length||response.data.length>count)throw new Error('Sony returned an incomplete original chunk')
             await write(response.data);offset+=response.data.length;progress(offset,file.bytes)
         }

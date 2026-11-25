@@ -3,6 +3,7 @@ import { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 const metadata = () => ({
     majorVersion: 2, minorVersion: 1,
@@ -280,17 +281,10 @@ describe('Nikon capability-gated focus', () => {
         const { camera: instance, transport } = fixture()
         const camera = new Camera({ vendorId: 0x04b0, transport: transport as any,
             logger: { captureConsole: false, renderInTerminal: false } })
-        const nikon = camera.getInstance() as NikonCamera
+        const nikon = protocolSession(camera).driver as NikonCamera
         const autofocus = vi.spyOn(nikon, 'autofocus').mockResolvedValue({ commandSent: true, focusAcquired: false, metadata: {} as any })
         await expect(camera.autofocus()).resolves.toBe('not-acquired')
-        await expect(camera.nikonAutofocus()).resolves.toMatchObject({ focusAcquired: false })
-        const point = vi.spyOn(nikon, 'touchFocus').mockResolvedValue({ positionVerified: false } as any)
-        await camera.nikonTouchFocus(0.5, 0.25, { focus: false })
-        expect(point).toHaveBeenCalledWith(0.5, 0.25, { focus: false })
-        const drive = vi.spyOn(nikon, 'driveFocus').mockResolvedValue({ completed: true } as any)
-        await camera.nikonDriveFocus('far', 3)
-        expect(drive).toHaveBeenCalledWith('far', 3)
-        expect(autofocus).toHaveBeenCalledTimes(2)
+        expect(autofocus).toHaveBeenCalledTimes(1)
         expect(instance).toBeInstanceOf(NikonCamera)
     })
 })

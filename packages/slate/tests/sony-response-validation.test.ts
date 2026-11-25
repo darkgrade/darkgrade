@@ -4,6 +4,7 @@ import { Logger } from '@core/logger'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 function cameraFixture() {
     const transport = { isLittleEndian: () => true, isConnected: () => true } as unknown as TransportInterface
@@ -76,7 +77,7 @@ describe('Sony session response validation', () => {
             transport,
             logger: { captureConsole: false, renderInTerminal: false },
         })
-        const camera = facade.getInstance() as SonyCamera
+        const camera = protocolSession(facade).driver as SonyCamera
         const sent: string[] = []
         camera.send = (async operation => {
             sent.push(operation.name)
@@ -85,7 +86,7 @@ describe('Sony session response validation', () => {
         camera.refreshPropertyStates = async () => []
         camera.set = vi.fn(async () => undefined)
         const connect = vi.spyOn(camera, 'connect')
-        await facade.connectSonyObservationSession()
+        await facade.connect({ observeOnly: true })
         expect(connect).toHaveBeenCalledWith(descriptor, { configure: false })
         expect(sent).toEqual([
             'SDIO_OpenSession',
@@ -96,12 +97,6 @@ describe('Sony session response validation', () => {
             'GetDeviceInfo',
         ])
         expect(camera.set).not.toHaveBeenCalled()
-        const other = new Camera({
-            vendorId: 0x04a9,
-            transport,
-            logger: { captureConsole: false, renderInTerminal: false },
-        })
-        await expect(other.connectSonyObservationSession()).rejects.toThrow('require a Sony camera')
     })
 
     it('allows an inventory session without changing host priority or save destination', async () => {

@@ -22,14 +22,15 @@ try {
         const observed = await camera.setControl('iso', 'ISO 800')
         console.log(observed.value)
     }
-    const { data } = await camera.captureImage()
-    if (!data) throw new Error('No image data returned')
+    // Resolves once the camera shows the new file; 'computer' also returns its bytes.
+    const photo = await camera.takePhoto({ destination: 'computer' })
+    console.log(photo.name, photo.data.byteLength)
 } finally {
     await camera.disconnect()
 }
 ```
 
-The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. The example assumes the body advertises those controls and remote capture; camera model, USB mode, and shooting mode can change the available surface.
+The `Camera` class automatically detects your camera's brand and uses the appropriate vendor-specific implementation. The example assumes the body advertises those controls and remote capture; camera model, USB mode, and shooting mode can change the available surface. `getCapabilities().operations` says which operations this camera can do right now, and why not.
 
 For application UIs, use the [shared control model](/slate/getting_started/controls):
 `getCapabilities()` exposes current choices across vendors, and `shutterSpeed`
@@ -102,12 +103,13 @@ camera.off(events.ObjectAdded)
 
 ### Live View
 
-Capture live view on supported Sony, Nikon or Canon bodies:
+Read the current picture on supported Sony, Nikon or Canon bodies. Each call waits for the
+camera's next frame, so a loop never asks faster than the camera makes frames:
 
 ```typescript
-const { data: liveViewFrame } = await camera.captureLiveView()
-if (!liveViewFrame) throw new Error('No live-view image returned')
-fs.writeFileSync('liveview.jpg', liveViewFrame)
+const { jpeg, focusFrames } = await camera.getLiveViewFrame()
+fs.writeFileSync('liveview.jpg', jpeg)
+console.log(focusFrames.length, 'focus frames, 0–1 from the top-left')
 ```
 
 ### Video Recording
@@ -117,28 +119,31 @@ Start and stop video recording on supported Sony, Nikon or Canon bodies with usa
 ```typescript
 await camera.startRecording()
 // ... record for some duration ...
-await camera.stopRecording()
+const clip = await camera.stopRecording()
+console.log(clip.name, clip.mediaId)
 ```
 
-A successful stop means the camera acknowledged the command; it does not verify the saved movie. Check the file on the card before relying on a take. If a start fails, treat the recording state as uncertain until a stop succeeds.
+`startRecording` prepares video mode and the card itself and resolves once the camera reports
+recording. `stopRecording` is always allowed: it stops, waits until a finished clip is on the card,
+puts the camera back and resolves to the clip. Neither command is ever resent; an unconfirmed one is
+`CameraOutcomeUnknownError`, so treat the recording state as uncertain until a stop succeeds.
 
 ### File Management
 
-List and download files from the camera:
+List and download files from the camera. Media ids survive a reconnect, and nothing on the card is
+ever deleted or changed:
 
 ```typescript
-const objects = await camera.listObjects()
+for (const card of await camera.getCardStatus()) console.log(`Slot ${card.slot}: ${card.freeBytes ?? '?'} bytes free`)
 
-for (const [storageId, storage] of Object.entries(objects)) {
-    console.log(`Storage ${storageId}: ${storage.info.storageDescription}`)
-    
-    for (const [handle, info] of Object.entries(storage.objects)) {
-        console.log(`  - ${info.filename} (${info.objectCompressedSize} bytes)`)
-        
-        // Download a specific object
-        const fileData = await camera.getObject(Number(handle), info.objectCompressedSize)
-        fs.writeFileSync(info.filename, fileData)
-    }
+const [newest] = await camera.listMedia()
+if (newest) {
+    const thumbnail = await camera.getMediaPreview(newest.id, 'thumbnail')
+    fs.writeFileSync(`${newest.name}.jpg`, thumbnail)
+    const original = await camera.downloadMedia(newest.id, {
+        onProgress: (receivedBytes, totalBytes) => console.log(`${receivedBytes} of ${totalBytes}`),
+    })
+    fs.writeFileSync(newest.name, original)
 }
 ```
 
@@ -165,15 +170,17 @@ await session.set(registry.properties.ExposureIndex, '3200')
 ### Typed protocol access
 
 Applications instantiate `Camera` and use its shared control model. Protocol work can
-use the existing typed definitions without maintaining an application vendor map:
+use the existing typed definitions through `protocolSession(camera)`, without maintaining an
+application vendor map:
 
 ```typescript
 import { Camera, genericOperationRegistry } from '@darkgrade/slate'
+import { protocolSession } from '@darkgrade/slate/protocol'
 
 const camera = new Camera()
 await camera.connect()
 try {
-    const reply = await camera.send(genericOperationRegistry.GetDeviceInfo, {})
+    const reply = await protocolSession(camera).send(genericOperationRegistry.GetDeviceInfo, {})
     console.log(reply.data)
 } finally {
     await camera.disconnect()

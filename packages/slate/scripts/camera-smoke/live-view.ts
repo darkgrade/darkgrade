@@ -1,6 +1,7 @@
 import { CameraUnsupportedError } from '@camera/errors'
 import { SonyCamera } from '@camera/sony-camera'
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
+import { protocolSession } from '@camera/operations/protocol'
 
 const JPEG_START = [0xff, 0xd8]
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47]
@@ -62,7 +63,7 @@ export const liveViewSmoke: SmokeArea = {
         await new Promise(resolve => setTimeout(resolve, 2_500))
         const after = await camera.getLiveViewFrame()
         report.confirmed('getLiveViewFrame() after overlays stop', { overlay: after.overlay ? 'present' : 'none' })
-        const driver = camera.getInstance()
+        const driver = protocolSession(camera).driver
         if (!(driver instanceof SonyCamera)) return
         // The output switch is private to Slate; this check reads it back from a fresh inventory.
         await camera.getCapabilities()

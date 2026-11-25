@@ -4,6 +4,8 @@ import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
+import { captureDriverImage } from '@camera/operations/photo'
+import { protocolSession } from '@camera/operations/protocol'
 
 function cameraWithResponses(responses: Array<number | {code: number; parameters?: number[]}>) {
     const transport = {
@@ -161,8 +163,8 @@ describe('Canon capture response handling', () => {
     it('forwards the explicit no-autofocus option through the public Canon Camera API', async () => {
         const transport = { isLittleEndian: () => true, on: () => undefined } as unknown as TransportInterface
         const camera = new Camera({ vendorId: 0x04a9, transport, logger: { captureConsole: false, renderInTerminal: false } })
-        const capture = vi.spyOn(camera.getInstance() as CanonCamera, 'captureImage').mockResolvedValue({})
-        await camera.captureImage({ autofocus: false, includeData: false })
+        const capture = vi.spyOn(protocolSession(camera).driver as CanonCamera, 'captureImage').mockResolvedValue({})
+        await captureDriverImage(camera, { autofocus: false, includeData: false })
         expect(capture).toHaveBeenCalledWith({ includeInfo: true, includeData: false, autofocus: false })
     })
 

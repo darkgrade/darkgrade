@@ -32,9 +32,9 @@ async function focusState(camera: Camera) {
 async function focusFrameNear(camera: Camera, x: number, y: number) {
     let nearest: { x: number; y: number; distance: number } | undefined
     for (let attempt = 0; attempt < FRAME_ATTEMPTS; attempt++) {
-        const { sonyFocalFrames } = await camera.captureLiveView()
-        if (!sonyFocalFrames) return undefined
-        for (const frame of sonyFocalFrames.filter(candidate => candidate.kind === 'focus')) {
+        const { focusFrames } = await camera.getLiveViewFrame()
+        if (!focusFrames.length) return undefined
+        for (const frame of focusFrames.filter(candidate => candidate.kind === 'focus')) {
             const distance = Math.max(Math.abs(frame.centerX - x), Math.abs(frame.centerY - y))
             if (!nearest || distance < nearest.distance) nearest = { x: frame.centerX, y: frame.centerY, distance }
         }

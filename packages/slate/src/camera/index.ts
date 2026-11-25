@@ -20,7 +20,6 @@ import { focusOperations, type FocusOperations } from '@camera/operations/focus'
 import { liveViewOperations, type LiveViewOperations } from '@camera/operations/live-view'
 import { mediaOperations, type MediaOperations } from '@camera/operations/media'
 import { photoOperations, type PhotoOperations } from '@camera/operations/photo'
-import { protocolOperations, type ProtocolOperations } from '@camera/operations/protocol'
 import { settingsOperations, type SettingsOperations } from '@camera/operations/settings'
 import { videoOperations, type VideoOperations } from '@camera/operations/video'
 import { zoomOperations, type ZoomOperations } from '@camera/operations/zoom'
@@ -75,7 +74,6 @@ export class Camera {
 
 export interface Camera
     extends ConnectionOperations,
-        ProtocolOperations,
         SettingsOperations,
         FocusOperations,
         ZoomOperations,
@@ -89,7 +87,6 @@ export interface Camera
 
 for (const operations of [
     connectionOperations,
-    protocolOperations,
     settingsOperations,
     focusOperations,
     zoomOperations,

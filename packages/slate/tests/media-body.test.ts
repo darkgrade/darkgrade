@@ -25,6 +25,7 @@ import { decodeMediaId, encodeMediaId } from '@vendors/media/media-id'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -307,7 +308,7 @@ function liveViewDataset(image: Uint8Array): Uint8Array {
 function sonyCamera() {
     const { transport, emit } = simulatedTransport()
     const camera = new Camera({ vendorId: 0x054c, transport })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     driver.sessionId = 7
     const codecs = driver.registry.codecs
     const body = {
@@ -433,7 +434,7 @@ function sonyCamera() {
 function canonCamera(options: { clock?: boolean; thumbnails?: boolean } = {}) {
     const { transport, emit } = simulatedTransport()
     const camera = new Camera({ vendorId: 0x04a9, transport, keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     driver.sessionId = 3
     const card = standardCard(driver.registry, { identity: { manufacturer: 'Canon Inc.', model: 'Canon EOS R8', firmware: '3-1.5.0' }, ...options })
     let events: Uint8Array = new Uint8Array([8, 0, 0, 0, 0, 0, 0, 0])
@@ -465,7 +466,7 @@ function canonCamera(options: { clock?: boolean; thumbnails?: boolean } = {}) {
 function nikonCamera() {
     const { transport, emit } = simulatedTransport()
     const camera = new Camera({ vendorId: 0x04b0, transport })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 5
     const card = standardCard(driver.registry, { identity: { manufacturer: 'Nikon Corporation', model: 'Z 5_2', firmware: '1.10' } })
     const queue: { code: number; parameters: number[] }[][] = []
@@ -485,7 +486,7 @@ function nikonCamera() {
 function genericCamera(options: { clock?: boolean; thumbnails?: boolean } = {}) {
     const { transport, emit } = simulatedTransport(TransportType.IP)
     const camera = new Camera({ transport })
-    const driver = camera.getInstance()
+    const driver = protocolSession(camera).driver
     driver.sessionId = 9
     const card = standardCard(driver.registry, { identity: { manufacturer: 'Example Optics', model: 'Model 1', firmware: '2.0' }, ...options })
     vi.spyOn(driver, 'send').mockImplementation(card.send as never)
@@ -736,9 +737,9 @@ describe('a simulated Sony body', () => {
         const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
         await camera.downloadMedia(photo.id)
         expect(body.operatingMode).toBe(2)
-        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
+        expect((await protocolSession(camera).driver.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
         expect(reopen).toHaveBeenCalledOnce()
-        await camera.captureLiveView({ includeInfo: false })
+        await protocolSession(camera).driver.captureLiveView({ includeInfo: false })
         expect(reopen).toHaveBeenCalledOnce()
     })
 
@@ -753,7 +754,7 @@ describe('a simulated Sony body', () => {
         const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
         await camera.downloadMedia(photo.id)
         body.recording = recording
-        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
+        await expect(protocolSession(camera).driver.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
         expect(reopen).not.toHaveBeenCalled()
     })
 
@@ -765,7 +766,7 @@ describe('a simulated Sony body', () => {
         // A recording or capture workflow reads the handles it compares against later.
         expect(await readCameraObjectHandles(camera)).toEqual(new Set([0x21, 0x22]))
         expect(body.operatingMode).toBe(2)
-        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
+        await expect(protocolSession(camera).driver.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
         expect(reopen).not.toHaveBeenCalled()
     })
 
@@ -776,7 +777,7 @@ describe('a simulated Sony body', () => {
         })
         // Left in Playback by something other than Slate's own media reads.
         body.operatingMode = 2
-        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
+        expect((await protocolSession(camera).driver.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
         expect(reopen).toHaveBeenCalledOnce()
         const { ShutterReleaseButton, ShutterHalfReleaseButton, MovieRecButton } = driver.registry.properties
         for (const control of [ShutterReleaseButton, ShutterHalfReleaseButton, MovieRecButton])
@@ -787,7 +788,7 @@ describe('a simulated Sony body', () => {
         const { camera, driver, body } = sonyCamera()
         const reopen = vi.spyOn(driver, 'reopenSession').mockResolvedValue(undefined)
         await driver.stopRecording()
-        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
+        expect((await protocolSession(camera).driver.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
         expect(body.transferModeChanges).toEqual(['DISABLE'])
         expect(reopen).not.toHaveBeenCalled()
     })
@@ -796,7 +797,7 @@ describe('a simulated Sony body', () => {
         const { camera, driver } = sonyCamera()
         const inventoryReads = () =>
             vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'SDIO_GetAllExtDevicePropInfo').length
-        await camera.getSonyPropertyStates()
+        await protocolSession(camera).getSonyPropertyStates()
         const before = inventoryReads()
         expect(await camera.getCardStatus()).toHaveLength(2)
         expect(inventoryReads()).toBe(before)

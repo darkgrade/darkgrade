@@ -25,6 +25,7 @@ import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -51,7 +52,7 @@ function concatenate(parts: Uint8Array[]): Uint8Array {
 }
 
 function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -146,7 +147,7 @@ function sonyBody(
     } = {}
 ) {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const registry = driver.registry
     const properties = new Map<number, SonyProperty>()
     const add = (property: SonyProperty) => properties.set(property.code, property)
@@ -329,7 +330,7 @@ function nikonLiveViewObject(fields: NikonFrameFields): Uint8Array {
  */
 function nikonBody(fields: Partial<NikonFrameFields> = {}) {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const registry = driver.registry
     const selector = registry.properties.LiveViewSelector.code
@@ -391,7 +392,7 @@ function canonSegment(type: number, payload: Uint8Array): Uint8Array {
  */
 function canonBody() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const registry = driver.registry
     const sent: string[] = []
     const info = deviceInfo(camera, [], [0x1001, 0x9116, 0x9153])
@@ -429,7 +430,7 @@ function canonBody() {
 /** Standard PTP body: no live view and no zoom; FocalLength is not advertised. */
 function standardBody() {
     const camera = new Camera({ transport: transport() })
-    const driver = camera.getInstance()
+    const driver = protocolSession(camera).driver
     const sent: string[] = []
     vi.spyOn(driver, 'send').mockImplementation((async (operation: OperationDefinition) => {
         sent.push(operation.name)

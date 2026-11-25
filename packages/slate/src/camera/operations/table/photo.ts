@@ -21,14 +21,6 @@ export const photoOperationTable = {
                 },
             },
         },
-        captureImage: {
-            area: 'photo',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'takePhoto',
-                note: "'computer' saves to the card and returns the bytes; host-only and SDRAM delivery ('memory') is not offered. Nikon lossless RAW is setRawCompression('Lossless') before the photo",
-            },
-        },
     },
     planned: {},
 } as const satisfies AreaOperationTable

@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { SonyCamera } from '@camera/sony-camera'
 import { Camera } from '@camera/index'
 import { protocolSession } from '@camera/operations/protocol'
+import { captureDriverImage } from '@camera/operations/photo'
 
 function fixture() {
     const facade = new Camera({ vendorId: 0x054c, transport: { isLittleEndian: () => true } as any,
         logger: { captureConsole: false, renderInTerminal: false } })
-    const camera = facade.getInstance() as SonyCamera
+    const camera = protocolSession(facade).driver as SonyCamera
     vi.spyOn(protocolSession(facade), 'getSonyPropertyStates').mockResolvedValue([])
     Object.assign(camera, { liveViewPostViewEnabled: true })
     camera.refreshPropertyStates = vi.fn(async () => {
@@ -63,7 +64,7 @@ describe('Sony shutter and host transfer sequencing', () => {
     })
     it('explicit memory capture enables host delivery and restores the original destination', async () => {
         const { facade, sent } = fixture()
-        const result = await facade.captureImage({ destination: 'memory', autofocus: false })
+        const result = await captureDriverImage(facade, { destination: 'memory', autofocus: false })
         expect(result.data).toEqual(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9))
         expect(sent[0]).toBe('StillImageSaveDestination:HOST_DEVICE')
         expect(sent.at(-1)).toBe('StillImageSaveDestination:CAMERA_DEVICE')

@@ -1,12 +1,13 @@
 // bun run --cwd packages/slate check:guards [-- --update]
-// (`--initialize` records every current violation; it was run once, when the guards were added.)
 //
-// Guards that keep the public API from growing back, in allowlist mode: today's violations are
-// listed in scripts/guards/*.json and allowed; anything new fails. Slices shrink the lists.
-//   1. Vendor names in the main entry's exports and on Camera (including getInstance).
+// Strict guards that keep the public API from growing back:
+//   1. No vendor name in the main entry's exports or on Camera, and no getInstance. Vendor drivers
+//      and raw access are in @darkgrade/slate/protocol.
 //   2. The escape budget: `any`, `as never` and `as unknown as` per file in src/. A file may never
-//      exceed its budget; `--update` lowers budgets to the current counts (never raises them).
-//   3. Operation-table parity: every Camera method has a table entry and vice versa.
+//      exceed its budget, and a budget above the current count fails too, so the count only goes
+//      down: `--update` lowers budgets to the current counts (never raises them).
+//   3. Operation-table parity: every Camera method has a current table entry whose disposition is
+//      keep, every entry is on Camera, and nothing is planned that Camera already has.
 import { Camera } from '@camera/index'
 import { cameraOperationTable, cameraStaticOperationTable, plannedOperationTable } from '@camera/operations/table'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -15,8 +16,7 @@ import ts from 'typescript'
 
 const packageRoot = join(import.meta.dirname, '..')
 const guardDirectory = join(import.meta.dirname, 'guards')
-const initialize = process.argv.includes('--initialize')
-const update = initialize || process.argv.includes('--update')
+const update = process.argv.includes('--update')
 const failures: string[] = []
 const notes: string[] = []
 
@@ -56,28 +56,12 @@ function cameraMembers(): string[] {
 }
 
 function checkVendorNames() {
-    const allowed = readJson<{ exports: string[]; cameraMembers: string[] }>('vendor-names.json')
     const exported = mainEntryExports().filter(name => vendorPattern.test(name))
     const members = cameraMembers().filter(name => vendorPattern.test(name) || name === 'getInstance')
-    for (const [kind, found, list] of [
-        ['main-entry export', exported, allowed.exports],
-        ['Camera member', members, allowed.cameraMembers],
-    ] as const) {
-        for (const name of found)
-            if (!list.includes(name)) failures.push(`New vendor-named ${kind}: ${name}. Use the generic API instead.`)
-        const stale = list.filter(name => !found.includes(name))
-        if (stale.length) notes.push(`Remove from scripts/guards/vendor-names.json (${kind}s gone): ${stale.join(', ')}`)
-    }
-    if (!update) return
-    // --update only drops names that are gone; --initialize records what exists.
-    const keep = (found: readonly string[], list: readonly string[]) =>
-        [...found].filter(name => initialize || list.includes(name)).sort()
-    const lines = (names: string[]) => names.map(name => `        ${JSON.stringify(name)}`).join(',\n')
-    writeFileSync(
-        join(guardDirectory, 'vendor-names.json'),
-        `{\n    "exports": [\n${lines(keep(exported, allowed.exports))}\n    ],\n` +
-            `    "cameraMembers": [\n${lines(keep(members, allowed.cameraMembers))}\n    ]\n}\n`
-    )
+    for (const name of exported)
+        failures.push(`Vendor-named main-entry export: ${name}. Export it from @darkgrade/slate/protocol, or name it generically.`)
+    for (const name of members)
+        failures.push(`Vendor-named Camera member: ${name}. Use the generic API, or protocolSession(camera) for raw access.`)
 }
 
 interface EscapeCounts {
@@ -124,14 +108,15 @@ function checkEscapeBudget() {
         }
     }
     for (const path of Object.keys(budget)) if (!current[path]) shrinkable++
+    if (shrinkable && !update)
+        failures.push(`The escape budget is above the current count in ${shrinkable} places: run check:guards -- --update`)
     const total = (counts: Record<string, EscapeCounts>) =>
         Object.values(counts).reduce((sum, count) => sum + count.any + count.asNever + count.asUnknownAs, 0)
     notes.push(`Escape budget: ${total(current)} in use of ${total(budget)} allowed`)
-    if (shrinkable) notes.push(`The escape budget can shrink in ${shrinkable} places: run check:guards -- --update`)
     if (update) {
         const lowered: Record<string, EscapeCounts> = {}
         for (const [path, counts] of Object.entries(current).sort(([left], [right]) => left.localeCompare(right))) {
-            const allowed = budget[path] ?? (initialize ? counts : { any: 0, asNever: 0, asUnknownAs: 0 })
+            const allowed = budget[path] ?? { any: 0, asNever: 0, asUnknownAs: 0 }
             lowered[path] = {
                 any: Math.min(counts.any, allowed.any),
                 asNever: Math.min(counts.asNever, allowed.asNever),
@@ -150,6 +135,11 @@ function checkOperationTable() {
     if (missing.length) failures.push(`Camera methods missing from the operation table: ${missing.join(', ')}`)
     if (extra.length) failures.push(`Operation table entries not on Camera: ${extra.join(', ')}`)
     if (planned.length) failures.push(`Planned operations now on Camera; move them to current: ${planned.join(', ')}`)
+    const leaving = Object.entries(cameraOperationTable)
+        .filter(([, entry]) => entry.disposition.kind !== 'keep')
+        .map(([name, entry]) => `${name} (${entry.disposition.kind})`)
+    if (leaving.length)
+        failures.push(`Camera methods whose disposition takes them off Camera are still on it: ${leaving.join(', ')}`)
     if (!('discover' in cameraStaticOperationTable) || typeof Camera.discover !== 'function')
         failures.push('Camera.discover and its table entry differ')
 }

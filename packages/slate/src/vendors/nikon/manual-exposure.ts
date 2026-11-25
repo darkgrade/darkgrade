@@ -1,4 +1,5 @@
 import type {Camera} from '@camera/index'
+import {protocolAccess,type ProtocolSession} from '@camera/operations/protocol'
 import {ChangeCameraMode,GetDevicePropDescEx,SetDevicePropValueEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 
@@ -6,7 +7,8 @@ import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
  * Leaves REMOTE active on success so the physical dial does not override video settings.
  * Returning to PC_CAMERA (including USB recovery) restores the physical dial's mode.
  */
-export async function prepareNikonManualExposure(camera:Pick<Camera,'send'>){
+export async function prepareNikonManualExposure(target:Camera|Pick<ProtocolSession,'send'>){
+    const camera=protocolAccess(target)
     const idle=await readNikonRecordingStatus(camera)
     if(!idle||idle.recording||idle.bufferedImages)throw new Error('Nikon must confirm idle before enabling remote Manual exposure')
     const remote=await camera.send(ChangeCameraMode,{Mode:'REMOTE'})

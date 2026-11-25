@@ -5,13 +5,14 @@ import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-data
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { encodeMediaId } from '@vendors/media/media-id'
 import { expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 const transport = () =>
     ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined, getType: () => 'usb' }) as unknown as TransportInterface
 
 /** The new photo's ObjectInfo exactly as the codec decodes it from the wire. */
 function photoInfo(camera: Camera): ObjectInfo {
-    const codec = new ObjectInfoCodec(camera.getInstance().registry)
+    const codec = new ObjectInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             storageID: 0x00010001,
@@ -43,7 +44,7 @@ it.each([false, true])('takePhoto on Sony restores movie mode after success/fail
     vi.useFakeTimers()
     try {
         const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-        const driver = camera.getInstance() as SonyCamera
+        const driver = protocolSession(camera).driver as SonyCamera
         let mode = 'Movie Flexible Exposure'
         vi.spyOn(driver, 'resumeShooting').mockResolvedValue()
         vi.spyOn(driver, 'refreshPropertyStates').mockImplementation(async () => [
@@ -70,7 +71,7 @@ it.each([false, true])('takePhoto on Canon restores remote movie mode after succ
     vi.useFakeTimers()
     try {
         const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-        const driver = camera.getInstance() as CanonCamera
+        const driver = protocolSession(camera).driver as CanonCamera
         let movie = true
         vi.spyOn(driver, 'listUnknownPropertyStates').mockImplementation(() =>
             [{ code: 0xd1c2, codeHex: '0xd1c2', name: 'FixedMovie', rawValue: movie ? 1 : 0 }])

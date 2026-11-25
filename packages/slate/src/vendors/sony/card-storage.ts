@@ -20,7 +20,7 @@ export async function readSonyMovieCard(camera: any) {
     if (card.status !== 'unknown' || card.slots.length) return card
     try {
         const operations = protocolAccess(camera).driver.registry.operations
-        const identity = await camera.send(operations.GetDeviceInfo, {})
+        const identity = await protocolAccess(camera).send(operations.GetDeviceInfo, {})
         const model = identity.code === 0x2001 ? identity.data?.model : undefined
         if (typeof model !== 'string' || !model) return card
         const verified = isVerifiedFeature('sony-card-fallback', model)

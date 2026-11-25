@@ -2,6 +2,7 @@ import { CameraUnsupportedError } from '@camera/errors'
 import type { MediaItem } from '@camera/driver/media'
 import type { Camera } from '@camera/index'
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
+import { protocolSession } from '@camera/operations/protocol'
 
 /** The longest file the smoke step downloads, so a card of long clips never stalls it. */
 const DOWNLOAD_LIMIT_BYTES = 80 * 1024 * 1024
@@ -12,7 +13,7 @@ const SONY_OPERATING_MODE_CODE = 0xd0bc
 
 /** The raw and decoded values of the named Sony properties, as evidence for the card mapping. */
 async function sonyNativeCodes(camera: Camera, codes: Record<string, number>) {
-    const states = await camera.getSonyPropertyStates()
+    const states = await protocolSession(camera).getSonyPropertyStates()
     return Object.fromEntries(
         Object.entries(codes).map(([name, code]) => {
             const state = states.find(candidate => candidate.code === code)
@@ -84,13 +85,13 @@ export const mediaSmoke: SmokeArea = {
         })
 
         try {
-            const frame = await camera.captureLiveView({ includeInfo: false })
-            if (!frame.data || !isJpeg(frame.data)) throw new Error('The live-view frame after the card read is not a JPEG')
+            const frame = await camera.getLiveViewFrame()
+            if (!isJpeg(frame.jpeg)) throw new Error('The live-view frame after the card read is not a JPEG')
             // A playback image is a JPEG too: on Sony, the body must also report that it is shooting again.
             const shooting = sony ? await sonyNativeCodes(camera, { operatingMode: SONY_OPERATING_MODE_CODE }) : undefined
             if (shooting && shooting.operatingMode?.value === 'Playback')
                 throw new Error('The body still reports Playback after the live-view frame that follows a card read')
-            report.confirmed('live view after the card read', { bytes: frame.data.length, jpeg: true, ...shooting })
+            report.confirmed('live view after the card read', { bytes: frame.jpeg.length, jpeg: true, ...shooting })
         } catch (error) {
             if (!(error instanceof CameraUnsupportedError) && !/not supported/i.test(String(error))) throw error
             report.skipped('live view after the card read', String(error))

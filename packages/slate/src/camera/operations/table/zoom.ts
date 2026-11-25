@@ -33,26 +33,6 @@ export const zoomOperationTable = {
                 cli: { omitted: 'use zoom-to' },
             },
         },
-        getSonyZoomPosition: {
-            area: 'zoom',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'getCapabilities',
-                note: 'the lens focal length is in getCapabilities().lens',
-            },
-        },
-        sonyStartZoom: {
-            area: 'zoom',
-            disposition: { kind: 'replaced-by', target: 'startZoom' },
-        },
-        sonyStopZoom: {
-            area: 'zoom',
-            disposition: { kind: 'replaced-by', target: 'stopZoom' },
-        },
-        sonyPowerZoom: {
-            area: 'zoom',
-            disposition: { kind: 'replaced-by', target: 'zoomTo' },
-        },
     },
     planned: {},
 } as const satisfies AreaOperationTable

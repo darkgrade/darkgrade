@@ -1,7 +1,6 @@
 import type { ZoomDirection, ZoomOptions } from '@camera/driver/zoom'
 import type { Camera } from '@camera/index'
-import { cameraContext, driverCapabilities, requireCapability } from '@camera/operations/context'
-import { SonyCamera, type SonyZoomResult } from '@camera/sony-camera'
+import { driverCapabilities, requireCapability } from '@camera/operations/context'
 
 export interface ZoomOperations {
     /**
@@ -16,20 +15,7 @@ export interface ZoomOperations {
     startZoom(direction: ZoomDirection, options: ZoomOptions): Promise<void>
     /** Stops zooming. Always allowed: it never waits behind another operation, and resolves on a camera without zoom. */
     stopZoom(): Promise<void>
-    getSonyZoomPosition(): Promise<number>
-    /** Sony: start zooming and return immediately; call sonyStopZoom() to stop. */
-    sonyStartZoom(direction: 'wide' | 'tele', speed?: number): Promise<void>
-    sonyStopZoom(): Promise<void>
-    sonyPowerZoom(direction: 'wide' | 'tele', pulses?: number): Promise<SonyZoomResult>
 }
-
-function sonyDriver(camera: Camera, unavailable: string): SonyCamera {
-    const { driver } = cameraContext(camera)
-    if (!(driver instanceof SonyCamera)) throw new Error(unavailable)
-    return driver
-}
-
-const sonyZoomUnavailable = 'Sony zoom is only available for Sony cameras'
 
 export const zoomOperations: ZoomOperations & ThisType<Camera> = {
     async zoomTo(focalLengthMillimetres: number): Promise<number> {
@@ -43,21 +29,5 @@ export const zoomOperations: ZoomOperations & ThisType<Camera> = {
     async stopZoom(): Promise<void> {
         // Nothing can be zooming on a camera without a zoom capability, so stopping succeeds there.
         await driverCapabilities(this).zoom?.stopZoom()
-    },
-
-    async getSonyZoomPosition(): Promise<number> {
-        return sonyDriver(this, 'Sony zoom position is only available for Sony cameras').getZoomPosition()
-    },
-
-    async sonyStartZoom(direction: 'wide' | 'tele', speed?: number): Promise<void> {
-        await sonyDriver(this, sonyZoomUnavailable).startZoom(direction, speed)
-    },
-
-    async sonyStopZoom(): Promise<void> {
-        await sonyDriver(this, sonyZoomUnavailable).stopZoom()
-    },
-
-    async sonyPowerZoom(direction: 'wide' | 'tele', pulses?: number): Promise<SonyZoomResult> {
-        return sonyDriver(this, 'Sony power zoom is only available for Sony cameras').powerZoom(direction, pulses)
     },
 }

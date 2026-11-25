@@ -93,7 +93,7 @@ export class UsbVideoRecording {
                 media = []
                 for (const handle of await this.handles()) {
                     if (this.baseline.has(handle)) continue
-                    const result = await this.camera.send(this.operations.GetObjectInfo, { ObjectHandle: handle }),
+                    const result = await protocolAccess(this.camera).send(this.operations.GetObjectInfo, { ObjectHandle: handle }),
                         info = result.data
                     const reported = Number(info?.objectCompressedSize)
                     const bytes =
@@ -132,7 +132,7 @@ export class UsbVideoRecording {
         progress: (bytes: number, total: number) => void
     ) {
         const handle = Number(file.id),
-            fresh = await this.camera.send(this.operations.GetObjectInfo, { ObjectHandle: handle })
+            fresh = await protocolAccess(this.camera).send(this.operations.GetObjectInfo, { ObjectHandle: handle })
         if (fresh.code !== 0x2001 || fresh.data?.filename !== file.filename)
             throw new Error('Camera file changed; transfer refused')
         const reported = Number(fresh.data?.objectCompressedSize)
@@ -147,7 +147,7 @@ export class UsbVideoRecording {
         let offset = 0
         while (offset < file.bytes) {
             const count = Math.min(2 * 1024 * 1024, file.bytes - offset)
-            const response = await this.camera.send(
+            const response = await protocolAccess(this.camera).send(
                 extended || this.operations.GetPartialObject,
                 extended
                     ? {

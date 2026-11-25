@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import { Camera } from '@camera/index'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
+import { captureDriverImage } from '@camera/operations/photo'
 
 const names: Record<number, string> = { 0: 'Lossless', 3: 'High efficiency★', 4: 'High efficiency' }
 const raw = (name: string) => Number(Object.keys(names).find(key => names[Number(key)] === name))
@@ -61,5 +62,5 @@ it('ordinary capture leaves RAW settings alone and other vendors reject the opti
     expect(await withNikonRawCompression({} as any, undefined, async () => 'unchanged')).toBe('unchanged')
     const camera = new Camera({ vendorId: 0x04a9, transport: { isLittleEndian: () => true } as any,
         logger: { captureConsole: false, renderInTerminal: false } })
-    await expect(camera.captureImage({ rawCompression: 'lossless' })).rejects.toThrow('requires a Nikon')
+    await expect(captureDriverImage(camera, { rawCompression: 'lossless' })).rejects.toThrow('requires a Nikon')
 })

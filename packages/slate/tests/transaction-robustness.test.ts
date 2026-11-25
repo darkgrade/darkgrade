@@ -24,6 +24,7 @@ import { TransportType } from '@transport/interfaces/transport-types'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { IPTransport } from '@transport/ip/ip-transport'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 const CONTAINER = { command: 1, data: 2, response: 3, event: 4 }
 
@@ -712,7 +713,7 @@ describe('session and responses', () => {
             logger: { renderInTerminal: false, captureConsole: false },
             transactionPolicy: { timeoutMilliseconds: 20 },
         })
-        await expect(camera.send(camera.getInstance().registry.operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(
+        await expect(protocolSession(camera).send(protocolSession(camera).driver.registry.operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(
             PTPTimeoutError
         )
     })

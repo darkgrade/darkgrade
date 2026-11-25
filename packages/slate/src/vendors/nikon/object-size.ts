@@ -4,7 +4,7 @@ export async function readNikonObjectSize(camera:any,handle:number,reported:numb
     if(reported!==0xffffffff)return reported
     const operation=protocolAccess(camera).driver.registry.operations.GetObjectSize
     if(!operation)throw new Error('Nikon large-file size is unavailable; original transfer refused')
-    const response=await camera.send(operation,{ObjectHandle:handle})
+    const response=await protocolAccess(camera).send(operation,{ObjectHandle:handle})
     const value=response.data
     const size=typeof value==='bigint'||typeof value==='number'?Number(value):NaN
     if(response.code!==0x2001||!Number.isSafeInteger(size)||size<reported)

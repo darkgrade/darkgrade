@@ -9,26 +9,18 @@ export const bodyOperationTable = {
     current: {
         getBattery: {
             area: 'body',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Level, minutes left, and whether it\'s on battery, USB or DC power',
         },
         setClock: {
             area: 'body',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the camera\'s date and time',
             surfaces: {
                 cli: {
                     flags: [{ name: '--time', value: 'ISO 8601', description: 'the time to set (default: now)' }],
                 },
             },
-        },
-        setSonyDateTime: {
-            area: 'body',
-            disposition: { kind: 'replaced-by', target: 'setClock' },
-        },
-        keepDeviceOn: {
-            area: 'body',
-            disposition: { kind: 'private', handledBy: 'connect (the keep-alive heartbeat)' },
         },
     },
     planned: {},

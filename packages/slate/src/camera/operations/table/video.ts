@@ -31,42 +31,6 @@ export const videoOperationTable = {
             disposition: { kind: 'keep' },
             summary: 'Stops, waits until a finished clip is on the card, puts the camera back, and returns the clip. Always allowed',
         },
-        prepareRecordingMode: {
-            area: 'video',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'startRecording',
-                note: 'startRecording prepares video mode and card; stopRecording restores them after a confirmed idle',
-            },
-        },
-        enterMovieMode: {
-            area: 'video',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'setPhotoVideoMode',
-                note: "setPhotoVideoMode('video'); startRecording also selects video mode itself",
-            },
-        },
-        leaveMovieMode: {
-            area: 'video',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'setPhotoVideoMode',
-                note: "setPhotoVideoMode('photo'); stopRecording restores the previous mode itself",
-            },
-        },
-        prepareCanonRecordingDestination: {
-            area: 'video',
-            disposition: { kind: 'replaced-by', target: 'startRecording', note: 'the card destination is prepared inside startRecording' },
-        },
-        ensureCanonMovieSoundRecording: {
-            area: 'video',
-            disposition: {
-                kind: 'replaced-by',
-                target: 'setAudioRecording',
-                note: 'startRecording leaves movie sound as set; setAudioRecording turns it on or off',
-            },
-        },
     },
     planned: {},
 } as const satisfies AreaOperationTable

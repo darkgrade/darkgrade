@@ -59,17 +59,6 @@ export const connectionSmoke: SmokeArea = {
         })
         await camera.disconnect()
 
-        // The deprecated Sony name is connect({ observeOnly: true }) behind a vendor check.
-        const legacyObservation = await camera.connectSonyObservationSession().then(
-            async () => ({ model: (await camera.getInfo()).model, sameDriver: session.driver === driver }),
-            (error: unknown) => (error instanceof CameraUnsupportedError ? undefined : Promise.reject(error))
-        )
-        if (legacyObservation) {
-            if (legacyObservation.model !== information.model) throw new Error('connectSonyObservationSession reached another body')
-            report.confirmed('connectSonyObservationSession delegates to connect({ observeOnly: true })', legacyObservation)
-            await camera.disconnect()
-        } else report.skipped('connectSonyObservationSession', 'not a Sony body')
-
         const recovery = await camera.recover({ allowPortReset: false })
         if (!recovery.recovered) throw new Error(`recover did not prove the camera: ${JSON.stringify(recovery.steps)}`)
         report.confirmed('recover', {

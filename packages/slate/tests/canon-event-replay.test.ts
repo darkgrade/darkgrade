@@ -4,6 +4,8 @@ import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-dat
 import { createCanonRegistry } from '@ptp/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
+import { vendorDriver } from '@tests/fixtures/vendor-driver'
 
 const registry = createCanonRegistry(true)
 const codec = new CanonEventDataCodec(registry)
@@ -21,7 +23,7 @@ describe('Canon polled event replay', () => {
         let connected=false,session=0,reads=0
         const transport={isLittleEndian:()=>true,isConnected:()=>connected,on:()=>{},
             connect:async()=>{connected=true},disconnect:async()=>{connected=false}} as unknown as TransportInterface
-        const camera=new Camera({transport,vendorId:0x04a9,logger:{renderInTerminal:false,captureConsole:false}}).getInstance() as CanonCamera
+        const camera=protocolSession(new Camera({transport,vendorId:0x04a9,logger:{renderInTerminal:false,captureConsole:false}})).driver as CanonCamera
         camera.send=(async operation=>{
             if(operation.code===0x1002){session++;reads=0}
             if(operation.code===0x1001)return{code:0x2001,data:{operationsSupportedRaw:[]}}
@@ -101,7 +103,7 @@ describe('Canon polled event replay', () => {
             vendorId: 0x04a9,
             logger: { renderInTerminal: false, captureConsole: false },
         })
-        const camera = wrapper.getInstance() as CanonCamera
+        const camera = protocolSession(wrapper).driver as CanonCamera
         const polls = [
             concat(
                 words(16, 0xc189, 0xd103, 0x48),
@@ -112,8 +114,8 @@ describe('Canon polled event replay', () => {
         ]
         const observed: number[] = []
         const mutate = (event: { data: Uint8Array }) => event.data.fill(0)
-        wrapper.onCanonRawEvent(mutate)
-        wrapper.onCanonRawEvent(event => {
+        vendorDriver(wrapper, CanonCamera).onRawEvent(mutate)
+        vendorDriver(wrapper, CanonCamera).onRawEvent(event => {
             if (event.code === 0xc1a5) observed.push(new DataView(event.data.buffer).getUint32(0, true))
         })
         camera.send = (async operation => {
@@ -129,7 +131,7 @@ describe('Canon polled event replay', () => {
             expect(camera.listPropertyStates().find(state => state.code === 0xd103)?.allowedValues).toEqual([])
             const highValue = camera.registry.events.CanonValueChanged.parameters[1].codec(camera.registry)
             expect(highValue.decode(highValue.encode(0x80000518)).value).toBe(0x80000518)
-            wrapper.offCanonRawEvent(mutate)
+            vendorDriver(wrapper, CanonCamera).offRawEvent(mutate)
         } finally {
             const disconnecting = camera.disconnect()
             await vi.runAllTimersAsync()

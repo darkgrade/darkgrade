@@ -21,6 +21,7 @@ import type { CodecType } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -41,7 +42,7 @@ function concatenate(parts: Uint8Array[]): Uint8Array {
 }
 
 function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -77,7 +78,7 @@ interface Body {
 /** Sony StillFileFormat (0xD253): 1 RAW, 2 RAW+JPEG, 3 JPEG, in an SDIO inventory. */
 function sonyPhotoFormat() {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const codecs = driver.registry.codecs
     const property = driver.registry.properties.StillFileFormat
     const body: Body & { enabled: number } = { current: 0x03, choices: [0x02, 0x03], applies: true, enabled: 1 }
@@ -124,7 +125,7 @@ function sonyPhotoFormat() {
 /** Canon image format (0xD120): packed RAW/JPEG entries in CanonGetEventData property and choice records. */
 function canonPhotoFormat() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const property = driver.registry.properties.CanonImageFormat
     const formatCodec = new CanonImageFormatCodec(driver.registry)
     const encode = (packed: number) => formatCodec.encode(canonImageFormatFromPacked(packed))
@@ -180,7 +181,7 @@ function canonPhotoFormat() {
 /** Nikon NEF compression (0xD016) in photo mode: 0 lossless, 3 high efficiency star, 4 high efficiency. */
 function nikonRawCompression() {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const code = driver.registry.properties.NikonRawCompression.code
     const selector = driver.registry.properties.LiveViewSelector.code
@@ -236,7 +237,7 @@ function nikonRawCompression() {
 /** Standard PTP FlashMode (0x500C): 1 Auto, 2 Off, 3 Fill. */
 function standardFlashMode() {
     const camera = new Camera({ transport: transport() })
-    const driver = camera.getInstance()
+    const driver = protocolSession(camera).driver
     const code = driver.registry.properties.FlashMode.code
     const body: Body & { writable: boolean } = { current: 1, choices: [1, 2], applies: true, writable: true }
     const writes: number[] = []

@@ -4,6 +4,7 @@ import { Camera } from '@camera/index'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { protocolSession } from '@camera/operations/protocol'
 
 function fixture(flexible = true, initialMode = 2) {
     let mode = initialMode, iso = 1250
@@ -25,7 +26,7 @@ function fixture(flexible = true, initialMode = 2) {
     const owner = new Camera({ vendorId: 0x054c,
         transport: { isLittleEndian: () => true, isConnected: () => false, disconnect: async () => {} } as TransportInterface,
         logger: { captureConsole: false, renderInTerminal: false } })
-    const camera = owner.getInstance() as SonyCamera
+    const camera = protocolSession(owner).driver as SonyCamera
     camera.send = (async (operation, parameters: any, payload?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo') {
             const codec = new DeviceInfoCodec(camera.registry)

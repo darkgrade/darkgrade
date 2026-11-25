@@ -20,6 +20,7 @@ import type { TransportInterface } from '@transport/interfaces/transport.interfa
 import { SonyWifiCamera, type SonySdkBridge, type SonySdkProperty } from '@vendors/sony/sdk-camera'
 import { sonyCounterpartExposureProgram, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -64,7 +65,7 @@ function decodeUnsigned(data: Uint8Array): number {
 }
 
 function deviceInfo(camera: Camera, properties: number[], operations: number[]): DeviceInfo {
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -135,7 +136,7 @@ const sonyCodes = {
 /** Simulated Sony body: SDIO_GetAllExtDevicePropInfo inventory and SDIO_SetExtDevicePropValue. */
 function sonyCamera() {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-    const driver = camera.getInstance() as SonyCamera
+    const driver = protocolSession(camera).driver as SonyCamera
     const body = newBody({
         [sonyCodes.whiteBalance]: { datatype: 4, current: 0x0002, choices: [0x0002, 0x0004, 0x8011, 0x8023] },
         [sonyCodes.colorTemperature]: { datatype: 4, current: 5500, range: [2500, 9900, 100] },
@@ -195,7 +196,7 @@ const canonCodes = {
 /** Simulated Canon EOS body: CanonGetEventData records, CanonSetPropValue and the movie select switch. */
 function canonCamera() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
-    const driver = camera.getInstance() as CanonCamera
+    const driver = protocolSession(camera).driver as CanonCamera
     const operations = driver.registry.operations
     // A connected session's DeviceInfo inventory; the fixture does not run the connect sequence.
     Reflect.set(
@@ -266,7 +267,7 @@ const nikonCodes = {
 /** Simulated Nikon Z body: GetDevicePropDescEx descriptors, SetDevicePropValueEx and DeviceReady. */
 function nikonCamera(mode: 'photo' | 'video' = 'photo') {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const body = newBody({
         [nikonCodes.selector]: { datatype: 2, current: mode === 'video' ? 1 : 0, choices: [0, 1] },
@@ -344,7 +345,7 @@ function nikonCamera(mode: 'photo' | 'video' = 'photo') {
 /** Simulated standard PTP body (no vendor adapter): GetDevicePropDesc and SetDevicePropValue. */
 function standardCamera() {
     const camera = new Camera({ vendorId: 0x1d6b, transport: transport() })
-    const driver = camera.getInstance()
+    const driver = protocolSession(camera).driver
     const body = newBody({
         0x5005: { datatype: 4, current: 0x0002, choices: [0x0002, 0x0004, 0x0006, 0x8001] },
         0x5013: { datatype: 4, current: 0x0001, choices: [0x0001, 0x0002] },
@@ -612,7 +613,7 @@ describe('photo / video', () => {
 
     it('Canon: unsupported without the advertised switch operations or the FixedMovie readback', async () => {
         const { camera, body } = canonCamera()
-        Reflect.set(camera.getInstance(), 'supportedOperations', new Set([0x1001]))
+        Reflect.set(protocolSession(camera).driver, 'supportedOperations', new Set([0x1001]))
         expect((await camera.getCapabilities()).controls.photoVideoMode).toMatchObject({ allowedValues: ['photo'], writable: false })
         expect(await camera.setPhotoVideoMode('video').catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
         expect(body.switches).toEqual([])

@@ -11,7 +11,6 @@ import {
     type CameraDriverInstance,
 } from '@camera/operations/context'
 import { clearNamedEvents, reattachNamedEvents } from '@camera/operations/events'
-import { protocolSession } from '@camera/operations/protocol'
 import { SonyCamera } from '@camera/sony-camera'
 import { VendorExtensionCamera } from '@camera/vendor-extension-camera'
 import { Logger } from '@core/logger'
@@ -36,10 +35,6 @@ export interface ConnectionOperations {
     connect(options?: ConnectOptions): Promise<void>
     /** What the body reports about itself: make, model, firmware and the connection type. */
     getInfo(): Promise<CameraInfo>
-    /** @deprecated Use `protocolSession(camera).connectSonyMenuSession()` from `@darkgrade/slate/protocol`. */
-    connectSonyMenuSession(device?: DeviceDescriptor): Promise<void>
-    /** @deprecated Use `connect({ observeOnly: true })`. */
-    connectSonyObservationSession(device?: DeviceDescriptor): Promise<void>
     /**
      * Software-only recovery for a camera that stopped answering: a fresh session, then a PTP
      * Device Reset, then a USB port reset, each proven by GetDeviceInfo. The transport is closed
@@ -153,16 +148,6 @@ export const connectionOperations: ConnectionOperations & ThisType<Camera> = {
 
     async getInfo(): Promise<CameraInfo> {
         return withPublicErrors('getInfo', () => requireCapability(this, 'connection', 'getInfo').getInfo())
-    },
-
-    async connectSonyMenuSession(device?: DeviceDescriptor): Promise<void> {
-        return protocolSession(this).connectSonyMenuSession(device)
-    },
-
-    async connectSonyObservationSession(device?: DeviceDescriptor): Promise<void> {
-        if (!(cameraContext(this).driver instanceof SonyCamera))
-            throw new CameraUnsupportedError('connectSonyObservationSession', 'Sony observation sessions require a Sony camera')
-        return this.connect({ device, observeOnly: true })
     },
 
     async recover(options?: CameraRecoveryOptions): Promise<RecoveryReport> {

@@ -1,4 +1,5 @@
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
+import { protocolSession } from '@camera/operations/protocol'
 
 const EVENT_WAIT_MILLISECONDS = 15_000
 /** Sony CameraOperatingMode: Record while shooting, Playback while showing the card. */
@@ -25,7 +26,7 @@ export const eventsSmoke: SmokeArea = {
         camera.on('mediaAdded', onMedia)
         try {
             const before = (await camera.listMedia()).length
-            await camera.captureImage({ includeInfo: false, includeData: false })
+            await camera.takePhoto()
             const timedOut = await Promise.race([
                 added.then(() => false),
                 new Promise<boolean>(resolve => setTimeout(() => resolve(true), EVENT_WAIT_MILLISECONDS)),
@@ -45,7 +46,7 @@ export const eventsSmoke: SmokeArea = {
         // The shot can leave review up; Slate re-arms shooting on the next live-view frame by itself.
         let data: Uint8Array | undefined
         try {
-            data = (await camera.captureLiveView({ includeInfo: false })).data
+            data = (await camera.getLiveViewFrame()).jpeg
         } catch (error) {
             if (!/not supported/i.test(String(error))) throw error
             return report.skipped('live view after the photo', String(error))
@@ -53,7 +54,7 @@ export const eventsSmoke: SmokeArea = {
         if (!data || data[0] !== 0xff || data[1] !== 0xd8) throw new Error('The live-view frame after the photo is not a JPEG')
         const sony = (await camera.getInfo()).manufacturer === 'Sony'
         const operatingMode = sony
-            ? (await camera.getSonyPropertyStates()).find(state => state.code === SONY_OPERATING_MODE_CODE)?.value
+            ? (await protocolSession(camera).getSonyPropertyStates()).find(state => state.code === SONY_OPERATING_MODE_CODE)?.value
             : undefined
         if (operatingMode === 'Playback') throw new Error('The body still reports Playback after the live-view frame that follows a photo')
         report.confirmed('live view after the photo', { jpeg: true, ...(sony && { operatingMode }) })

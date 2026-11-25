@@ -36,8 +36,10 @@ vi.mock('@camera/index',()=>({Camera:class{
  constructor(private options:any){}
  async connect(){await this.options.transport.connect()}
  async disconnect(){await this.options.transport.disconnect()}
- getInstance(){return this}
+ get driver(){return this}
 }}))
+// The fake Camera above is its own protocol session.
+vi.mock('@camera/operations/protocol',()=>({protocolSession:(camera:unknown)=>camera,protocolAccess:(camera:unknown)=>camera}))
 const originalArguments=process.argv,originalExitCode=process.exitCode
 afterEach(()=>{process.argv=originalArguments;process.exitCode=originalExitCode;vi.restoreAllMocks()})
 for(const transport of ['usb','ptpip'])describe(transport+' identity firmware forwarding',()=>{

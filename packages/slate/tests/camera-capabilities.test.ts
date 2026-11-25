@@ -20,6 +20,7 @@ import type { TransportInterface } from '@transport/interfaces/transport.interfa
 import { USBTransport } from '@transport/usb/usb-transport'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/operations/protocol'
 
 afterEach(() => vi.useRealTimers())
 
@@ -32,7 +33,7 @@ const transport = () =>
 
 function info(camera: Camera, codes: number[], operations: number[] = [0x1001]): DeviceInfo {
     // Exercise the real dataset codec; avoid invented inventory field names.
-    const codec = new DeviceInfoCodec(camera.getInstance().registry)
+    const codec = new DeviceInfoCodec(protocolSession(camera).driver.registry)
     return codec.decode(
         codec.encode({
             standardVersion: 100,
@@ -59,7 +60,7 @@ function info(camera: Camera, codes: number[], operations: number[] = [0x1001]):
 
 function nikonFixture() {
     const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
-    const driver = camera.getInstance() as NikonCamera
+    const driver = protocolSession(camera).driver as NikonCamera
     driver.sessionId = 1
     const properties = new Map<
         number,
@@ -357,14 +358,14 @@ describe('Nikon capabilities from real descriptor codecs', () => {
 describe('library construction and vendor dispatch', () => {
     it('keeps partial vendor initialization caller-owned for standard diagnostic probes', async () => {
         const camera = new Camera({vendorId: 0x04a9, transport: transport()})
-        const driver = camera.getInstance() as CanonCamera
+        const driver = protocolSession(camera).driver as CanonCamera
         vi.spyOn(driver, 'connect').mockRejectedValue(new Error('Vendor remote mode refused'))
         const close = vi.spyOn(driver, 'disconnect').mockResolvedValue(undefined)
         vi.spyOn(driver, 'send').mockResolvedValue({code: 0x2001, data: info(camera, [], [0x1001])} as never)
         try {
             await expect(camera.connect()).rejects.toThrow('remote mode refused')
             expect(close).not.toHaveBeenCalled()
-            expect((await camera.send(driver.registry.operations.GetDeviceInfo, {})).data.model).toBe('Fixture')
+            expect((await protocolSession(camera).send(driver.registry.operations.GetDeviceInfo, {})).data.model).toBe('Fixture')
         } finally { await camera.disconnect() }
         expect(close).toHaveBeenCalledOnce()
     })
@@ -387,7 +388,7 @@ describe('library construction and vendor dispatch', () => {
         const open = vi.spyOn(Driver.prototype, 'connect').mockResolvedValue(undefined)
         try {
             await camera.connect()
-            expect(camera.getInstance()).toBeInstanceOf(Driver)
+            expect(protocolSession(camera).driver).toBeInstanceOf(Driver)
             expect(open).toHaveBeenCalledOnce()
         } finally {
             vi.restoreAllMocks()
@@ -410,7 +411,7 @@ describe('library construction and vendor dispatch', () => {
     })
     it('preserves subscriptions registered before automatic driver selection', async () => {
         const camera = new Camera()
-        const event = camera.getInstance().registry.events.ObjectAdded,
+        const event = protocolSession(camera).driver.registry.events.ObjectAdded,
             handler = vi.fn()
         camera.on(event, handler)
         vi.spyOn(USBTransport.prototype, 'isConnected').mockReturnValue(false)
@@ -430,7 +431,7 @@ describe('library construction and vendor dispatch', () => {
 describe('Sony native and SDK capabilities share the same exposure contract', () => {
     it('reads actual Sony SDIO availability and refuses a display-only exposure', async () => {
         const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-        const driver = camera.getInstance() as SonyCamera
+        const driver = protocolSession(camera).driver as SonyCamera
         const c = driver.registry.codecs
         let enabled = 1
         const send = async (operation: OperationDefinition) => {
@@ -508,7 +509,7 @@ describe('Sony native and SDK capabilities share the same exposure contract', ()
 describe('Canon structured format capabilities', () => {
     it('maps the exact advertised record and disables ambiguous labels', async () => {
         const camera = new Camera({ vendorId: 0x04a9, transport: transport() })
-        const driver = camera.getInstance() as CanonCamera
+        const driver = protocolSession(camera).driver as CanonCamera
         const records = [
             [36, 0, 0, 2500, 1, 0, 1, 0, 0],
             [36, 0, 0, 2500, 12, 0, 3, 1, 0],
@@ -554,7 +555,7 @@ describe('Canon structured format capabilities', () => {
 describe('standard PTP ranged exposure confirmation', () => {
     function fixture(applies = true) {
         const camera = new Camera({ vendorId: 0, transport: transport() })
-        const driver = camera.getInstance()
+        const driver = protocolSession(camera).driver
         const property = driver.registry.properties.ExposureTime
         const codec = property.codec(driver.registry)
         let value = '1/50'
@@ -597,7 +598,7 @@ describe('standard PTP ranged exposure confirmation', () => {
 describe.each([0x054c, 0x04a9, 0])('vendor %i application control confirmation', vendorId => {
     function fixture() {
         const camera = new Camera({ vendorId, transport: transport() })
-        const driver = camera.getInstance()
+        const driver = protocolSession(camera).driver
         let value = 'f/4'
         const property = driver instanceof CanonCamera
             ? driver.registry.properties.CanonAperture
