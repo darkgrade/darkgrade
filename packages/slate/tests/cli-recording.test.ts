@@ -104,17 +104,30 @@ describe('darkgrade camera start-recording', () => {
         expect(run.printed[0]).toMatch(/Stop was not confirmed.*reports recording/)
     })
 
-    it('still sends Stop after a Record the camera may have acted on', async () => {
+    it('sends Stop at once after a Record the camera may have acted on, and exits nonzero', async () => {
         const run = harness()
         run.camera.startRecording.mockImplementation(async () => {
+            run.calls.push('start')
             run.setState('unknown')
             throw new CameraConfirmationError('record_start', 'recording', 'unknown')
         })
-        const result = runStartRecordingCommand({ json: false }, run.dependencies)
-        await vi.waitFor(() => expect(run.progress.some(line => line.includes('stopping'))).toBe(true))
-        run.interrupt()
-        expect(await result).toBe(0)
+        // No Ctrl-C and no --duration: the unconfirmed start alone sends Stop.
+        expect(await runStartRecordingCommand({ json: true }, run.dependencies)).toBe(1)
+        expect(run.calls).toEqual(['connect', 'start', 'stop', 'disconnect'])
+        expect(run.progress.some(line => line.startsWith('Recording'))).toBe(false)
+        expect(JSON.parse(run.printed[0]!)).toMatchObject({ stopped: true, startConfirmed: false, clip: { name: 'C0002.MP4' } })
+    })
+
+    it('sends Stop at once after an unconfirmed Record even with --duration', async () => {
+        vi.useFakeTimers()
+        const run = harness()
+        run.camera.startRecording.mockRejectedValue(new CameraConfirmationError('record_start', 'recording', 'unknown'))
+        run.setState('unknown')
+        const result = runStartRecordingCommand({ durationMilliseconds: 60_000, json: false }, run.dependencies)
+        await vi.advanceTimersByTimeAsync(10)
+        expect(await result).toBe(1)
         expect(run.camera.stopRecording).toHaveBeenCalledOnce()
+        expect(run.printed[0]).toMatch(/Record was not confirmed/)
     })
 
     it('reports a refused Record and closes the session without sending Stop', async () => {

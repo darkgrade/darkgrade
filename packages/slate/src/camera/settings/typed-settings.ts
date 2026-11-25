@@ -8,7 +8,8 @@ import { liveViewControlDefinitions, liveViewSettingReaders, type LiveViewSettin
 import { modeControlDefinitions, modeSettingReaders, type ModeSettingTypes } from '@camera/settings/mode'
 import { photoControlDefinitions, photoSettingReaders, type PhotoSettingTypes } from '@camera/settings/photo'
 import type { SettingReaders } from '@camera/settings/setting-types'
-import { videoControlDefinitions, videoSettingReaders, type VideoSettingTypes } from '@camera/settings/video'
+import { videoControlDefinitions, type VideoSettingTypes } from '@camera/settings/video'
+import { videoSettingReaders } from '@camera/settings/video-readers'
 
 /** Every typed setting's value types, combined from the settings groups. */
 export interface TypedSettingTypes

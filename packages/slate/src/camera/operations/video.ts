@@ -11,8 +11,9 @@ export interface VideoOperations {
     /** What the camera reports now: `idle`, `starting`, `recording`, `stopping` or `unknown`. Unknown never counts as idle. */
     getRecordingState(): Promise<CameraRecordingState>
     /**
-     * Gets the camera ready (video mode, card destination, audio), checks the card, starts, and
-     * resolves once the camera reports recording. Record is sent once and never repeated.
+     * Gets the camera ready (video mode, card destination), checks the card, starts, and resolves
+     * once the camera reports recording. Record is sent once and never repeated. Audio is recorded
+     * as `setAudioRecording` (or the camera's own menu) left it; startRecording never changes it.
      */
     startRecording(): Promise<void>
     /**
@@ -29,7 +30,7 @@ export interface VideoOperations {
     leaveMovieMode(): Promise<void>
     /** @deprecated startRecording prepares the card destination. */
     prepareCanonRecordingDestination(): Promise<() => Promise<void>>
-    /** @deprecated startRecording turns on movie sound when it is off. */
+    /** @deprecated Use setAudioRecording('On'); startRecording leaves movie sound as it is set. */
     ensureCanonMovieSoundRecording(): Promise<boolean>
 }
 

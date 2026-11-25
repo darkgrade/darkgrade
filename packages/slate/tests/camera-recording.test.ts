@@ -16,6 +16,7 @@ import {
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@camera/nikon-camera'
 import type { SonyCamera } from '@camera/sony-camera'
+import { PTPDisconnectedError, PTPResponseError } from '@core/ptp-errors'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -165,8 +166,8 @@ interface SonyProperty {
 const sonyManual = 0x00000001
 const sonyMovieManual = 0x00078053
 
-function sonyCamera(options: { mode?: number; remainingSeconds?: number } = {}) {
-    const camera = new Camera({ vendorId: 0x054c, transport: transport() })
+function sonyCamera(options: { mode?: number; remainingSeconds?: number; firstContact?: boolean } = {}) {
+    const camera = new Camera({ vendorId: 0x054c, transport: transport(), firstContact: options.firstContact })
     const driver = camera.getInstance() as SonyCamera
     const registry = driver.registry
     const card = simulatedCard(registry)
@@ -238,7 +239,29 @@ function sonyCamera(options: { mode?: number; remainingSeconds?: number } = {}) 
         body.recording = 0
         card.finalize('C0002.MP4')
     })
-    return { camera, body, card, modeWrites, start, stop }
+    return { camera, driver, body, card, modeWrites, start, stop }
+}
+
+/**
+ * Replaces the driver's session lifecycle on the same Camera: disconnect closes the session, and
+ * connect or recover opens the next one (a new id, as a fresh OpenSession has), unless `keep` says
+ * the body preserved its interrupted session (Nikon during a recording).
+ */
+function sessionLifecycle(driver: SonyCamera | CanonCamera | NikonCamera, options: { keep?: boolean } = {}) {
+    let next = 100
+    driver.sessionId = next
+    let previous: number | null = driver.sessionId
+    vi.spyOn(driver, 'disconnect').mockImplementation(async () => {
+        previous = driver.sessionId
+        driver.sessionId = null
+    })
+    vi.spyOn(driver, 'connect').mockImplementation(async () => {
+        driver.sessionId = options.keep ? previous : ++next
+    })
+    vi.spyOn(driver, 'recover').mockImplementation(async () => {
+        driver.sessionId = options.keep ? driver.sessionId : ++next
+        return { recovered: true, needsPhysicalAction: false, steps: [], durationMilliseconds: 0 }
+    })
 }
 
 describe('Sony recording through the generic Camera', () => {
@@ -335,6 +358,18 @@ describe('Sony recording through the generic Camera', () => {
         }
     })
 
+    it('maps a failed idle check before Record to the public errors, without sending anything', async () => {
+        const sony = sonyCamera()
+        vi.spyOn(sony.driver, 'send').mockRejectedValueOnce(new PTPDisconnectedError('USB transfer failed'))
+        expect(await failure(sony.camera.startRecording())).toBeInstanceOf(CameraOutcomeUnknownError)
+        vi.spyOn(sony.driver, 'send').mockRejectedValueOnce(new PTPResponseError(0x2019, 'Device busy'))
+        const refused = await failure(sony.camera.startRecording())
+        expect(refused).toBeInstanceOf(CameraRefusedError)
+        expect(refused).not.toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(sony.start).not.toHaveBeenCalled()
+        expect(sony.modeWrites).toEqual([])
+    })
+
     it('refuses to start while the camera reports recording, without sending Record', async () => {
         const sony = sonyCamera()
         sony.body.recording = 1
@@ -355,6 +390,67 @@ describe('Sony recording through the generic Camera', () => {
         driver.sessionId = 8
         expect(await failure(sony.camera.stopRecording())).toBeInstanceOf(CameraClipNotFoundError)
         expect(sony.modeWrites).toEqual([sonyMovieManual, sonyManual])
+    })
+
+    it('after disconnect/connect on the same Camera: refuses a new start, stops once, restores and claims no clip', async () => {
+        const sony = sonyCamera({ firstContact: false })
+        sessionLifecycle(sony.driver)
+        await settled(sony.camera.startRecording())
+        await sony.camera.disconnect()
+        await sony.camera.connect()
+        const refused = await failure(sony.camera.startRecording())
+        expect(refused).toBeInstanceOf(CameraRefusedError)
+        expect(String(refused)).toContain('reconnected')
+        expect(sony.start).toHaveBeenCalledOnce()
+        const error = await failure(sony.camera.stopRecording())
+        expect(error).toBeInstanceOf(CameraClipNotFoundError)
+        expect(String(error)).toContain('renewed')
+        expect(sony.stop).toHaveBeenCalledOnce()
+        expect(sony.modeWrites).toEqual([sonyMovieManual, sonyManual])
+        // The finished session is gone: the same Camera records again and finds its own clip.
+        await settled(sony.camera.startRecording())
+        // Handle 2 appeared while the first take was not identifiable; the new take is handle 3.
+        expect((await settled(sony.camera.stopRecording())).mediaId).toBe('3')
+        expect(sony.start).toHaveBeenCalledTimes(2)
+    })
+
+    it('after a take ended during a reconnect: sends no Stop, restores the mode and claims no clip', async () => {
+        const sony = sonyCamera({ firstContact: false })
+        sessionLifecycle(sony.driver)
+        await settled(sony.camera.startRecording())
+        await sony.camera.disconnect()
+        sony.body.recording = 0
+        sony.card.finalize('C0002.MP4')
+        await sony.camera.connect()
+        expect(await failure(sony.camera.stopRecording())).toBeInstanceOf(CameraClipNotFoundError)
+        expect(sony.stop).not.toHaveBeenCalled()
+        expect(sony.modeWrites).toEqual([sonyMovieManual, sonyManual])
+    })
+
+    it('serializes rapid start, stop, start, stop: each command once, in order, each clip its own', async () => {
+        const sony = sonyCamera()
+        const order: string[] = []
+        sony.start.mockImplementation(async () => {
+            order.push('start')
+            sony.body.recording = 1
+        })
+        sony.stop.mockImplementation(async () => {
+            order.push('stop')
+            sony.body.recording = 0
+            sony.card.finalize(`C000${sony.card.files.size + 1}.MP4`)
+        })
+        const results = settled(
+            Promise.all([
+                sony.camera.startRecording(),
+                sony.camera.stopRecording(),
+                sony.camera.startRecording(),
+                sony.camera.stopRecording(),
+            ])
+        )
+        const [, first, , second] = await results
+        expect(order).toEqual(['start', 'stop', 'start', 'stop'])
+        expect([first.name, second.name]).toEqual(['C0002.MP4', 'C0003.MP4'])
+        expect(sony.modeWrites).toEqual([sonyMovieManual, sonyManual, sonyMovieManual, sonyManual])
     })
 })
 
@@ -442,7 +538,7 @@ function canonCamera(options: { movie?: boolean; sound?: number; access?: number
         values.set(canonEvent.destination, 0)
         card.finalize('MVI_0002.MP4', 8192)
     })
-    return { camera, body, values, writes, commands, start, stop }
+    return { camera, driver, body, values, writes, commands, start, stop }
 }
 
 describe('Canon recording through the generic Camera', () => {
@@ -458,15 +554,26 @@ describe('Canon recording through the generic Camera', () => {
         expect(canon.stop).toHaveBeenCalledOnce()
     })
 
-    it('turns movie sound on when it is off, through manual exposure, before Record', async () => {
-        const canon = canonCamera({ movie: true, sound: 1 })
+    it('records with sound off after setAudioRecording("Off"): Record and Stop write no sound change', async () => {
+        const canon = canonCamera({ sound: 2 })
+        expect(await settled(canon.camera.setAudioRecording('Off'))).toBe('Off')
+        expect(canon.writes).toEqual([[canonEvent.sound, 1]])
         await settled(canon.camera.startRecording())
-        expect(canon.writes).toEqual([
-            [canonEvent.exposureMode, 3],
-            [canonEvent.sound, 2],
-            [canonEvent.exposureMode, 1],
-        ])
-        expect(canon.commands).toEqual([])
+        await settled(canon.camera.stopRecording())
+        expect(canon.writes.filter(([code]) => code === canonEvent.sound)).toEqual([[canonEvent.sound, 1]])
+        expect(canon.values.get(canonEvent.sound)).toBe(1)
+        expect(await settled(canon.camera.getAudioRecording())).toBe('Off')
+        expect(canon.commands).toEqual(['CanonMovieSelectSwitchOn', 'CanonMovieSelectSwitchOff'])
+    })
+
+    it('leaves an operator-chosen Off and a manual sound level exactly as they were', async () => {
+        for (const sound of [1, 3]) {
+            const canon = canonCamera({ movie: true, sound })
+            await settled(canon.camera.startRecording())
+            await settled(canon.camera.stopRecording())
+            expect(canon.writes).toEqual([])
+            expect(canon.values.get(canonEvent.sound)).toBe(sound)
+        }
     })
 
     it('refuses without a writable card and sends no mode change or Record', async () => {
@@ -488,6 +595,18 @@ describe('Canon recording through the generic Camera', () => {
         expect(await canon.camera.getRecordingState()).toBe('recording')
     })
 
+    it('after recover on the same Camera: Stop is sent once, movie mode is put back, and a new file is not claimed', async () => {
+        const canon = canonCamera()
+        sessionLifecycle(canon.driver)
+        await settled(canon.camera.startRecording())
+        await canon.camera.recover()
+        expect(await failure(canon.camera.stopRecording())).toBeInstanceOf(CameraClipNotFoundError)
+        expect(canon.stop).toHaveBeenCalledOnce()
+        expect(canon.commands).toEqual(['CanonMovieSelectSwitchOn', 'CanonMovieSelectSwitchOff'])
+        await settled(canon.camera.startRecording())
+        expect((await settled(canon.camera.stopRecording())).mediaId).toBe('3')
+    })
+
     it('reports a refused Record as refused and leaves the camera as it was', async () => {
         const canon = canonCamera()
         canon.start.mockRejectedValue(new Error('Canon recording destination write returned 0x2019'))
@@ -499,8 +618,8 @@ describe('Canon recording through the generic Camera', () => {
 
 // ---------------------------------------------------------------------------- Nikon
 
-function nikonCamera() {
-    const camera = new Camera({ vendorId: 0x04b0, transport: transport() })
+function nikonCamera(options: { firstContact?: boolean } = {}) {
+    const camera = new Camera({ vendorId: 0x04b0, transport: transport(), firstContact: options.firstContact })
     const driver = camera.getInstance() as NikonCamera
     driver.sessionId = 1
     const registry = driver.registry
@@ -535,7 +654,7 @@ function nikonCamera() {
         body.flags = 0
         card.finalize('DSC_0002.MOV', body.finalBytes)
     })
-    return { camera, body, start, stop }
+    return { camera, driver, body, card, start, stop }
 }
 
 describe('Nikon recording through the generic Camera', () => {
@@ -568,21 +687,32 @@ describe('Nikon recording through the generic Camera', () => {
         expect(nikon.stop).toHaveBeenCalledOnce()
     })
 
-    it('waits for buffered frames (stopping) before it reports the clip', async () => {
+    it('waits for buffered frames (stopping) to reach idle, then reports the finished clip', async () => {
         const nikon = nikonCamera()
         await settled(nikon.camera.startRecording())
         nikon.stop.mockImplementation(async () => {
             nikon.body.flags = 0x200
             setTimeout(() => {
                 nikon.body.flags = 0
-                nikon.body.finalBytes = 2048
-                nikon.body.largeSize = 2048
+                nikon.card.finalize('DSC_0002.MOV', 2048)
             }, 1000)
         })
         const stopping = nikon.camera.stopRecording()
         await vi.advanceTimersByTimeAsync(500)
         expect(await nikon.camera.getRecordingState()).toBe('stopping')
-        expect(await failure(stopping)).toBeInstanceOf(CameraClipNotFoundError)
+        expect(await settled(stopping)).toEqual({ mediaId: '2', name: 'DSC_0002.MOV', sizeBytes: 2048 })
+        expect(nikon.stop).toHaveBeenCalledOnce()
+    })
+
+    it('keeps the take across a reconnect that preserved the interrupted session, and finds its clip', async () => {
+        const nikon = nikonCamera({ firstContact: false })
+        sessionLifecycle(nikon.driver, { keep: true })
+        await settled(nikon.camera.startRecording())
+        await nikon.camera.disconnect()
+        await nikon.camera.connect()
+        expect(await nikon.camera.getRecordingState()).toBe('recording')
+        expect((await settled(nikon.camera.stopRecording())).name).toBe('DSC_0002.MOV')
+        expect(nikon.stop).toHaveBeenCalledOnce()
     })
 })
 

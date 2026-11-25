@@ -13,13 +13,17 @@ import type { VendorControlProperties } from '@vendors/control-properties/vendor
  *
  * Canon carries resolution, frame rate, container and compression in one movie record, offered
  * as the video format. Nikon's movie format, size and frame rate have no decoded properties yet.
+ *
+ * Sony's AudioRecording (0xd0d2) is not mapped: its value meanings are undocumented, and on the
+ * a7 V (2026-11-24) a take recorded with raw 0 still carried a sound track, like one with raw 1.
+ * Until the meaning is measured from the audio samples or documented, audioRecording is
+ * unsupported on Sony rather than a confirmed "Off" that may still record sound.
  */
 export const videoControlProperties = {
     sony: {
         videoFormat: [sony.MovieFileFormat],
         videoQuality: [sony.MovieRecordingSetting],
         frameRate: [sony.MovieRecordingFrameRate],
-        audioRecording: [sony.AudioRecording],
         zoomMode: [sony.ZoomSetting],
     },
     canon: {

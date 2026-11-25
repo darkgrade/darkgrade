@@ -26,9 +26,11 @@ const controls: CameraControls = {
     imageSize: control('L: 33M', ['L: 33M', 'M: 14M', 'S: 8.2M']),
     aspectRatio: control('3:2', ['3:2', '4:3', '16:9', '1:1']),
     jpegQuality: control('Fine', ['Extra fine', 'Fine', 'Standard']),
-    movieFormat: control('XAVC S 4K', ['XAVC HS 4K', 'XAVC S 4K', 'XAVC S HD']),
-    movieSetting: control('100M 4:2:0 8bit', ['100M 4:2:0 8bit', '140M 4:2:2 10bit', '200M 4:2:2 10bit']),
-    movieFrameRate: control('24p', ['24p', '25p', '30p', '50p', '60p', '120p']),
+    videoFormat: control('XAVC S 4K', ['XAVC HS 4K', 'XAVC S 4K', 'XAVC S HD']),
+    videoQuality: control('100M 4:2:0 8-bit', ['100M 4:2:0 8-bit', '140M 4:2:2 10-bit', '200M 4:2:2 10-bit']),
+    frameRate: control('24p', ['24p', '25p', '30p', '50p', '60p', '120p']),
+    // Slate does not map Sony's AudioRecording yet, so a Sony body shows no audio choice.
+    audioRecording: null,
     zoomMode: control('Optical Zoom Only', ['Optical Zoom Only', 'Clear Image Zoom', 'Digital Zoom'], false),
     liveViewQuality: control('HIGH', ['LOW', 'HIGH']),
     exposureProgram: control('Manual', ['Program Auto', 'Aperture Priority', 'Shutter Priority', 'Manual']),
@@ -50,6 +52,7 @@ const connected: CameraState = {
     osdOverlay: false,
     liveView: scenario !== 'nolive',
     recording: scenario === 'rec',
+    recordingState: scenario === 'rec' ? 'recording' : 'idle',
     settings: { iso: '400', shutterSpeed: '1/50', aperture: 'F2.8' },
     downloadDir: '/Users/you/Pictures/Darkgrade Studio',
     platform: 'darwin',
@@ -68,6 +71,7 @@ const disconnected: CameraState = {
     osdOverlay: null,
     liveView: false,
     recording: false,
+    recordingState: 'idle',
     settings: { iso: null, shutterSpeed: null, aperture: null },
 }
 let state: CameraState = ['off', 'connecting'].includes(scenario) ? disconnected : connected
@@ -158,12 +162,12 @@ const api: StudioApi = {
     liveViewStart: () => ok((state = { ...state, liveView: true })),
     liveViewStop: () => ok((state = { ...state, liveView: false })),
     recordStart: () => {
-        state = { ...state, recording: true }
+        state = { ...state, recording: true, recordingState: 'recording' }
         emit('state', state)
         return ok(state)
     },
     recordStop: () => {
-        state = { ...state, recording: false }
+        state = { ...state, recording: false, recordingState: 'idle' }
         emit('state', state)
         return ok(state)
     },

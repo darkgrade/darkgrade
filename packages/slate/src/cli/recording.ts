@@ -105,6 +105,7 @@ export async function runStartRecordingCommand(
     })
     let timer: ReturnType<typeof setTimeout> | undefined
     let keepSession = false
+    let unconfirmedStart: string | undefined
     try {
         await camera.connect()
         if (stopAsked) {
@@ -117,25 +118,36 @@ export async function runStartRecordingCommand(
         } catch (error) {
             // A start the camera may still have acted on keeps Stop available: stop it now.
             if ((await camera.getRecordingState().catch(() => 'unknown' as const)) === 'idle') throw error
-            dependencies.progress(`Record was not confirmed (${error instanceof Error ? error.message : String(error)}); stopping…`)
+            unconfirmedStart = error instanceof Error ? error.message : String(error)
+            dependencies.progress(`Record was not confirmed (${unconfirmedStart}); stopping…`)
+            requestStop()
         }
-        if (options.durationMilliseconds !== undefined) {
+        if (unconfirmedStart === undefined && options.durationMilliseconds !== undefined) {
             dependencies.progress(`Recording for ${options.durationMilliseconds / 1000}s. Ctrl-C stops sooner.`)
             timer = setTimeout(() => requestStop(), options.durationMilliseconds)
-        } else dependencies.progress('Recording. Press Ctrl-C to stop.')
+        } else if (unconfirmedStart === undefined) dependencies.progress('Recording. Press Ctrl-C to stop.')
         await stopRequested
         dependencies.progress('Stopping…')
         try {
             const clip = await camera.stopRecording()
-            dependencies.print(options.json ? JSON.stringify({ stopped: true, clip }) : describeClip(clip))
-            return 0
+            if (unconfirmedStart === undefined) {
+                dependencies.print(options.json ? JSON.stringify({ stopped: true, clip }) : describeClip(clip))
+                return 0
+            }
+            dependencies.print(
+                options.json
+                    ? JSON.stringify({ stopped: true, clip, startConfirmed: false, error: unconfirmedStart })
+                    : `${describeClip(clip)} Record was not confirmed: ${unconfirmedStart}`
+            )
+            return 1
         } catch (error) {
             const state = await camera.getRecordingState().catch(() => 'unknown' as const)
             keepSession = state !== 'idle'
             const message = error instanceof Error ? error.message : String(error)
+            const startNote = unconfirmedStart === undefined ? {} : { startConfirmed: false, startError: unconfirmedStart }
             dependencies.print(
                 options.json
-                    ? JSON.stringify({ stopped: state === 'idle', state, error: message })
+                    ? JSON.stringify({ stopped: state === 'idle', state, error: message, ...startNote })
                     : state === 'idle'
                       ? `Stopped, but: ${message}`
                       : `Stop was not confirmed (${message}). The camera reports ${state}; check it before unplugging.`

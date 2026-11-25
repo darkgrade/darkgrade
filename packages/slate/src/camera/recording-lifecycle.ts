@@ -28,10 +28,11 @@ export interface VendorRecording {
     /** Waits for a new finished movie that is not in `baseline`. */
     findClip(baseline: Set<number>): Promise<Clip>
     /**
-     * For bodies whose object handles belong to one PTP session: the current session. A clip is
-     * only looked for when Stop happens in the session that recorded the baseline.
+     * The current PTP session. Object handles belong to one session, and a reconnect or recovery
+     * opens a new one (Nikon's preserved interrupted session keeps its id and its handles), so a
+     * clip is only looked for when Stop happens in the session that recorded the baseline.
      */
-    handleSession?(): number | null
+    handleSession(): number | null
     /** Sends Record once. */
     sendStart(): Promise<void>
     /** Sends Stop once. */
@@ -44,7 +45,7 @@ export interface VendorRecording {
 
 interface RecordingSession {
     baseline: Set<number>
-    handleSession: number | null | undefined
+    handleSession: number | null
     restore?: () => Promise<void>
     stopConfirmed: boolean
     clip?: Clip
@@ -107,6 +108,23 @@ export function recordingCapability(vendor: VendorRecording): VideoCapability {
         return next
     }
     const observe = (): Promise<CameraRecordingState> => vendor.readState().catch(() => 'unknown' as const)
+    /** The session was started on an earlier connection: its baseline no longer names this card's handles. */
+    const renewed = (recording: RecordingSession): boolean => recording.handleSession !== vendor.handleSession()
+
+    /** Record is only sent from idle; a camera still writing a previous take is waited for. */
+    async function requireIdle(): Promise<void> {
+        let state: CameraRecordingState
+        try {
+            state = await vendor.readState()
+            if (state === 'stopping') {
+                await confirmCameraValue('record_start', 'idle', () => vendor.readState(), startConfirmationMilliseconds)
+                state = 'idle'
+            }
+        } catch (error) {
+            throw preparationFailure(error)
+        }
+        if (state !== 'idle') throw new CameraRefusedError('startRecording', `The camera reports ${state}, not idle; Record was not sent`)
+    }
 
     async function restoreAfterFailedStart(prepared: RecordingSession, failure: unknown): Promise<void> {
         try {
@@ -135,19 +153,20 @@ export function recordingCapability(vendor: VendorRecording): VideoCapability {
         }
     }
 
-    async function start(): Promise<void> {
-        if (session)
-            throw new CameraRefusedError(
+    function unfinished(recording: RecordingSession): CameraRefusedError {
+        if (recording.stopConfirmed)
+            return new CameraRefusedError('startRecording', 'The last recording stopped but the camera setup is not restored; call stopRecording to finish it')
+        if (renewed(recording))
+            return new CameraRefusedError(
                 'startRecording',
-                session.stopConfirmed
-                    ? 'The last recording stopped but the camera setup is not restored; call stopRecording to finish it'
-                    : 'A recording is already in progress; stop it before starting another'
+                'The camera was reconnected during the last recording; call stopRecording to stop it and put the camera back'
             )
-        const state = await vendor.readState()
-        if (state === 'stopping')
-            await confirmCameraValue('record_start', 'idle', () => vendor.readState(), startConfirmationMilliseconds)
-        else if (state !== 'idle')
-            throw new CameraRefusedError('startRecording', `The camera reports ${state}, not idle; Record was not sent`)
+        return new CameraRefusedError('startRecording', 'A recording is already in progress; stop it before starting another')
+    }
+
+    async function start(): Promise<void> {
+        if (session) throw unfinished(session)
+        await requireIdle()
         let restore: (() => Promise<void>) | undefined
         let baseline: Set<number>
         try {
@@ -167,7 +186,7 @@ export function recordingCapability(vendor: VendorRecording): VideoCapability {
         }
         const prepared: RecordingSession = {
             baseline,
-            handleSession: vendor.handleSession?.(),
+            handleSession: vendor.handleSession(),
             restore,
             stopConfirmed: false,
         }
@@ -206,7 +225,7 @@ export function recordingCapability(vendor: VendorRecording): VideoCapability {
     }
 
     async function locateClip(stopped: RecordingSession): Promise<void> {
-        if (stopped.handleSession !== undefined && stopped.handleSession !== vendor.handleSession?.()) {
+        if (renewed(stopped)) {
             stopped.clipError = new CameraClipNotFoundError(
                 'stopRecording',
                 'Recording stopped, but the camera connection was renewed since it started, so its clip cannot be identified; it remains on the card'
@@ -225,6 +244,12 @@ export function recordingCapability(vendor: VendorRecording): VideoCapability {
         const before = await observe()
         if (!session && before === 'idle')
             throw new CameraClipNotFoundError('stopRecording', 'The camera is not recording, so there is no new clip')
+        if (session && before === 'idle' && renewed(session)) {
+            // The take ended while the camera was reconnected: nothing to stop, only the setup to put back.
+            session.stopConfirmed = true
+            await locateClip(session)
+            return finish(session)
+        }
         try {
             await vendor.serialize(async () => {
                 await vendor.sendStop()

@@ -48,7 +48,6 @@ function canonHost(driver: CanonCamera) {
         prepareCanonRecordingDestination: () => driver.prepareRecordingDestination(),
         enterMovieMode: () => driver.enterMovieMode(),
         leaveMovieMode: () => driver.leaveMovieMode(),
-        ensureCanonMovieSoundRecording: () => driver.ensureMovieSoundRecording(),
         setCanonManualExposureMode: () => driver.setManualExposureMode(),
         setIso: (value: string) => driver.setIso(value),
         setAperture: (value: string) => driver.setAperture(value),
@@ -74,6 +73,7 @@ function cardSteps(driver: GenericCamera, owner: Camera) {
             const movie = await waitForNewCameraMovie(host, baseline, clipFinalizationMilliseconds)
             return clipFrom(movie.handle, movie.filename, Number(movie.objectCompressedSize))
         },
+        handleSession: () => driver.sessionId,
         serialize: <T>(work: () => Promise<T>) => cameraContext(owner).controlsQueue.run('camera', work),
     }
 }
@@ -89,8 +89,6 @@ function sonyRecording(driver: SonyCamera, owner: Camera): VendorRecording {
         },
         // Selects the advertised movie mode and checks the movie card's remaining time in it.
         prepare: async () => (await openSonyRecordingMode(owner)).restore,
-        // Sony's object index belongs to one session; a renewed session renumbers it.
-        handleSession: () => driver.sessionId,
         sendStart: () => driver.startRecording(),
         sendStop: () => driver.stopRecording(),
         // The movie button is a press and release; Stop releases a press the body ignored.
@@ -112,7 +110,7 @@ function canonRecording(driver: CanonCamera, owner: Camera): VendorRecording {
             if (!cards.some(card => card.writable && card.freeBytes > 0))
                 throw new CameraRefusedError('startRecording', 'Insert a writable memory card with free space before recording')
         },
-        // Card destination, movie mode, the photo exposure copied across, and movie sound.
+        // Card destination, movie mode and the photo exposure copied across; movie sound is left as set.
         prepare: async () => (await openCanonRecordingMode(canonHost(driver))).restore,
         sendStart: () => driver.startRecording(),
         sendStop: () => driver.stopRecording(),

@@ -122,7 +122,7 @@ export function restrictToRecordingChoices<T extends Record<string,any>>(control
  return constrained
 }
 
-/** Hold movie-select mode across operator-controlled start/stop without changing a running recorder. */
+/** Hold movie-select mode across operator-controlled start/stop without changing a running recorder or its sound setting. */
 export async function openCanonRecordingMode(camera:any){
  diagnosticState(camera,'before-prepare')
  let before:CanonRecordingSettings|undefined,entered=false,requiresReadback=false,restoreDestination:(()=>Promise<void>)|undefined
@@ -140,7 +140,7 @@ export async function openCanonRecordingMode(camera:any){
   restoreDestination=await camera.prepareCanonRecordingDestination?.()
   if(!alreadyMovie){await camera.enterMovieMode();entered=true;await settleMovieMode(camera,1,requiresReadback)}
   await copySettings(camera,before)
-  await camera.ensureCanonMovieSoundRecording?.()
+  // Movie sound stays as the operator or setAudioRecording left it, Off included.
   diagnosticState(camera,'after-prepare')
  }catch(error){
   diagnosticState(camera,'failure')

@@ -79,7 +79,8 @@ function sonyCamera() {
         [0xd241, { type: 2, value: 14, choices: [11, 8, 9, 14, 15], enabled: 1 }], // MovieFileFormat, XAVC S-I 4K
         [0xd242, { type: 4, value: 41, choices: [41], enabled: 1 }], // MovieRecordingSetting, 300M 4:2:2 10-bit
         [0xd286, { type: 2, value: 5, choices: [3, 5, 7], enabled: 1 }], // MovieRecordingFrameRate, 30p
-        [0xd0d2, { type: 2, value: 1, choices: [1, 0], enabled: 1 }], // AudioRecording, On
+        // AudioRecording, raw 1; its value meanings are undocumented, so Slate does not map it.
+        [0xd0d2, { type: 2, value: 1, choices: [1, 0], enabled: 1 }],
     ])
     const body = { applies: true }
     const writes: [number, number][] = []
@@ -122,18 +123,22 @@ describe('Sony typed video settings', () => {
         expect(await camera.getVideoFormat()).toBe('XAVC S-I 4K')
         expect(await camera.getVideoQuality()).toBe('300M 4:2:2 10-bit')
         expect(await camera.getFrameRate()).toBe('30p')
-        expect(await camera.getAudioRecording()).toBe('On')
         expect(await camera.setVideoFormat('XAVC HS 4K')).toBe('XAVC HS 4K')
         expect(await camera.setFrameRate('24p')).toBe('24p')
-        expect(await camera.setAudioRecording('Off')).toBe('Off')
         expect(writes).toEqual([
             [0xd241, 11],
             [0xd286, 7],
-            [0xd0d2, 0],
         ])
         const capabilities = await camera.getCapabilities()
         expect(capabilities.controls.frameRate?.allowedValues).toEqual(['60p', '30p', '24p'])
-        expect(capabilities.controls.audioRecording?.allowedValues).toEqual(['On', 'Off'])
+    })
+
+    it('does not offer audio recording: the a7 V recorded sound with AudioRecording at raw 0', async () => {
+        const { camera, writes } = sonyCamera()
+        expect((await camera.getCapabilities()).controls.audioRecording).toBeUndefined()
+        await expect(camera.getAudioRecording()).rejects.toBeInstanceOf(CameraUnsupportedError)
+        await expect(camera.setAudioRecording('Off')).rejects.toBeInstanceOf(CameraUnsupportedError)
+        expect(writes).toEqual([])
     })
 
     it('refuses a value the camera does not offer now, before anything is sent', async () => {
@@ -145,8 +150,8 @@ describe('Sony typed video settings', () => {
 
     it('reports a greyed-out setting as unsupported', async () => {
         const { camera, records } = sonyCamera()
-        records.get(0xd0d2)!.enabled = 0
-        await expect(camera.setAudioRecording('Off')).rejects.toBeInstanceOf(CameraUnsupportedError)
+        records.get(0xd286)!.enabled = 0
+        await expect(camera.setFrameRate('24p')).rejects.toBeInstanceOf(CameraUnsupportedError)
     })
 
     it('reports a write the camera acknowledged but never showed as an unknown outcome, sent once', async () => {
@@ -161,8 +166,8 @@ describe('Sony typed video settings', () => {
 
     it('does not name a raw value no codec knows', async () => {
         const { camera, records } = sonyCamera()
-        records.get(0xd0d2)!.value = 7
-        await expect(camera.getAudioRecording()).rejects.toBeInstanceOf(CameraUnsupportedError)
+        records.get(0xd286)!.value = 0xfe
+        await expect(camera.getFrameRate()).rejects.toBeInstanceOf(CameraUnsupportedError)
     })
 })
 

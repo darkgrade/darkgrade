@@ -260,7 +260,7 @@ export const settingsOperationTable = {
             summary: 'Sets the video format and returns the value read back',
             surfaces: {
                 cli: {
-                    arguments: [{ name: 'value', description: 'for example XAVC S' }],
+                    arguments: [{ name: 'value', description: 'for example XAVC S 4K' }],
                 },
             },
         },
@@ -275,7 +275,7 @@ export const settingsOperationTable = {
             summary: 'Sets the video quality and returns the value read back',
             surfaces: {
                 cli: {
-                    arguments: [{ name: 'value', description: 'for example 4K 150 Mbps' }],
+                    arguments: [{ name: 'value', description: 'for example 150M 4:2:0 10-bit' }],
                 },
             },
         },
