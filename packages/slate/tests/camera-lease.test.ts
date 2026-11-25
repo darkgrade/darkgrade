@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { cameraDevice, cameraLabel, cameraLeaseResource, parseCameraSelector, withCameraLeases } from '@scripts/camera-lease'
+import { cameraLabel, cameraLeaseResource, parseCameraSelector, withCameraLeases } from '@scripts/camera-lease'
 
 const leaseDirectory = mkdtempSync(join(tmpdir(), 'camera-lease-test-'))
 process.env.DARKGRADE_LEASE_DIRECTORY = leaseDirectory
@@ -17,7 +17,6 @@ describe('camera:lease', () => {
         expect(cameraLeaseResource({ vendorId: 0x04a9, productId: 0x32f5 })).toBe('usb-camera:04a9:32f5')
         expect(parseCameraSelector('054c:0f7a:A1')).toEqual(sonyA)
         expect(parseCameraSelector('04a9:32f5')).toEqual({ vendorId: 0x04a9, productId: 0x32f5 })
-        expect(cameraDevice(sonyA)).toEqual({ usb: { filters: [sonyA] } })
         expect(() => parseCameraSelector('sony')).toThrow(/VID:PID/)
     })
 

@@ -25,7 +25,7 @@ import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import type { PropertyDefinition } from '@ptp/types/property'
-import { kelvinInput } from '@camera/settings/colour'
+import { kelvinInput } from '@camera/settings/values'
 import { canonicalControlInput } from '@camera/settings/typed-settings'
 import {
     canonControlProperties,
@@ -38,7 +38,7 @@ import {
     type ControlPropertyMap,
     type ControlValueInventory,
 } from '@vendors/control-properties'
-import { canonFocusModeStates } from '@vendors/control-properties/focus'
+import { canonFocusModeStates } from '@vendors/canon/control-properties'
 import { standardLens } from '@vendors/lens-information'
 import { nikonControlLabel } from '@vendors/nikon/control-values'
 import { MovieShutterAngle } from '@vendors/nikon/video-properties'

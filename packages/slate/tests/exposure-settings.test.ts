@@ -17,7 +17,7 @@ import {
     type ExposureModeAlias,
     type Iso,
     type MeteringMode,
-} from '@camera/settings/exposure'
+} from '@camera/settings/values'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { LiveViewSelector } from '@vendors/nikon/definitions/nikon-property-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'

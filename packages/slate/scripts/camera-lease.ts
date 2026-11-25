@@ -41,11 +41,6 @@ export function parseCameraSelector(selector: string): LeasedCamera {
     return { vendorId, productId, ...(serial.length ? { serialNumber: serial.join(':') } : {}) }
 }
 
-/** The Camera device filter that selects exactly this body. */
-export function cameraDevice(camera: LeasedCamera) {
-    return { usb: { filters: [{ vendorId: camera.vendorId, productId: camera.productId, ...(camera.serialNumber ? { serialNumber: camera.serialNumber } : {}) }] } }
-}
-
 function describeClaim(claim: HardwareClaim) {
     const since = Math.round((Date.now() - claim.claimedAt) / 1000)
     return `process ${claim.processId} for ${since} s (${claim.purpose})`
@@ -60,9 +55,6 @@ function studioRunning(): boolean {
 }
 
 const store = () => new FileOwnershipStore()
-
-/** Whether the module at `moduleUrl` is the script this process was started with. */
-export const isEntryPoint = (moduleUrl: string) => process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(moduleUrl)
 
 /**
  * Runs `operation` while this process holds the leases of `cameras` (claimed in a fixed order, so
@@ -160,7 +152,7 @@ async function main() {
     process.exit(exitCode)
 }
 
-if (isEntryPoint(import.meta.url))
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
     main().catch(error => {
         process.stderr.write(`camera:lease: ${error instanceof Error ? error.message : String(error)}\n`)
         process.exit(1)

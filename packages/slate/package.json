@@ -105,8 +105,6 @@
         "test:unit": "bun run scripts/test.ts",
         "test:hardware": "bun run scripts/camera-lease.ts -- --purpose \"Slate hardware tests\" vitest run tests/01_usb.test.ts tests/02_generic_camera.test.ts tests/03_sony_camera.test.ts tests/04_properties.test.ts",
         "camera:lease": "bun run scripts/camera-lease.ts",
-        "camera:smoke": "bun run scripts/camera-smoke/index.ts",
-        "camera:verify": "bun run scripts/camera-verify/index.ts",
         "test:fuzz": "vitest run tests/ptp-input-fuzz.test.ts",
         "bench:probe": "bun run tests/bench-probe.ts",
         "bench:profile": "bun run scripts/capture-profile.ts",

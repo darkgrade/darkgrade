@@ -1,26 +1,82 @@
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
 import type { CameraOperationName } from '@camera/driver'
-import { colourControlDefinitions } from '@camera/settings/colour'
-import { exposureControlDefinitions } from '@camera/settings/exposure'
-import { focusControlDefinitions } from '@camera/settings/focus'
-import { liveViewControlDefinitions } from '@camera/settings/live-view'
-import { modeControlDefinitions } from '@camera/settings/mode'
-import { photoControlDefinitions } from '@camera/settings/photo'
 import type { TypedSettingMethods } from '@camera/settings/typed-settings'
-import { videoControlDefinitions } from '@camera/settings/video'
 
 /**
- * Canonical application vocabulary, one file per settings group under `@camera/settings`.
- * Protocol property names belong to the vendor adapters (`@vendors/control-properties`).
+ * Canonical application vocabulary: ids, labels and search aliases (a vendor's own word is only an
+ * alias). Protocol property names belong to the vendor adapters (`@vendors/<vendor>/control-properties`).
  */
 export const cameraControlDefinitions = {
-    ...exposureControlDefinitions,
-    ...modeControlDefinitions,
-    ...colourControlDefinitions,
-    ...focusControlDefinitions,
-    ...photoControlDefinitions,
-    ...videoControlDefinitions,
-    ...liveViewControlDefinitions,
+    shutterSpeed: {
+        label: 'Shutter speed',
+        aliases: ['shutter speed', 'shutter angle', 'shutterAngle', 'exposureTime', 'exposure time'],
+    },
+    iso: { label: 'ISO', aliases: ['sensitivity', 'exposure index', 'gain', 'EI'] },
+    aperture: { label: 'Aperture', aliases: ['f number', 'f-stop', 'iris', 'T-stop'] },
+    exposureMode: {
+        label: 'Exposure mode',
+        aliases: ['exposure mode', 'exposure program', 'shooting mode', 'PASM', 'mode dial', 'exposureProgramMode'],
+    },
+    exposureCompensation: {
+        label: 'Exposure compensation',
+        aliases: ['exposure compensation', 'EV', 'exposure comp', 'exposure bias'],
+    },
+    meteringMode: { label: 'Metering', aliases: ['metering mode', 'metering'] },
+    photoVideoMode: {
+        label: 'Photo / video',
+        aliases: ['photo video', 'photo/video', 'still/movie', 'movie mode', 'video mode', 'stills', 'motion'],
+    },
+    driveMode: {
+        label: 'Drive mode',
+        aliases: ['drive', 'release mode', 'burst', 'continuous shooting', 'still capture mode'],
+    },
+    whiteBalance: { label: 'White balance', aliases: ['white balance', 'wb'] },
+    colorTemperature: { label: 'Colour temperature', aliases: ['colour temperature', 'color temperature', 'kelvin'] },
+    pictureStyle: {
+        label: 'Look',
+        aliases: ['look', 'picture style', 'picture control', 'creative look', 'creative style', 'film simulation'],
+    },
+    pictureProfile: { label: 'Picture profile', aliases: ['picture profile', 'gamma', 'log'] },
+    focusMode: {
+        label: 'Focus mode',
+        aliases: ['focus mode', 'One-Shot', 'AI Servo', 'Movie Servo AF', 'movie servo autofocus'],
+    },
+    focusArea: { label: 'Focus area', aliases: ['focus area', 'AF area', 'AF method'] },
+    subjectDetection: {
+        label: 'Subject detection',
+        aliases: ['subject recognition', 'subjectRecognition', 'eye tracking', 'eye AF', 'face detection', 'subject detection'],
+    },
+    detectionSubject: {
+        label: 'Detection subject',
+        aliases: ['recognition target', 'recognitionTarget', 'subject to detect', 'detection subject'],
+    },
+    eyeSelection: { label: 'Eye selection', aliases: ['eye select', 'eyeSelect', 'eye selection'] },
+    /**
+     * Canon's Continuous AF: in One-Shot it keeps the lens roughly focused before the AF press, then
+     * locks like One-Shot. That is not AF-C, so it is a setting of its own, present only where offered.
+     */
+    continuousAutofocus: { label: 'Continuous AF', aliases: ['continuous AF', 'continuous autofocus'] },
+    photoFormat: {
+        label: 'Photo format',
+        aliases: ['still format', 'stillFormat', 'image format', 'imageFormat', 'file format', 'file type', 'image quality'],
+    },
+    photoSize: { label: 'Photo size', aliases: ['image size', 'imageSize'] },
+    aspectRatio: { label: 'Aspect ratio', aliases: ['aspect ratio'] },
+    jpegQuality: { label: 'JPEG quality', aliases: ['jpeg quality'] },
+    rawCompression: { label: 'RAW compression', aliases: ['raw compression', 'NEF compression', 'raw file type'] },
+    flashMode: { label: 'Flash', aliases: ['flash mode', 'flash'] },
+    videoFormat: { label: 'Video format', aliases: ['codec', 'movie format', 'movieFormat', 'recording format'] },
+    videoQuality: {
+        label: 'Video quality',
+        aliases: ['resolution', 'bit rate', 'bitrate', 'record setting', 'movie setting', 'movieSetting', 'movie quality'],
+    },
+    frameRate: { label: 'Frame rate', aliases: ['fps', 'movie frame rate', 'movieFrameRate'] },
+    audioRecording: { label: 'Audio recording', aliases: ['sound', 'movie audio', 'movie sound', 'sound recording'] },
+    digitalZoom: { label: 'Digital zoom', aliases: ['zoom setting', 'zoomSetting', 'zoom mode', 'zoomMode', 'zoom range'] },
+    liveViewQuality: {
+        label: 'Live-view quality',
+        aliases: ['live view quality', 'preview quality', 'live view image quality'],
+    },
 } as const
 
 export type CameraControlId = keyof typeof cameraControlDefinitions

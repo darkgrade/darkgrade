@@ -242,7 +242,7 @@ The exposure settings (`aperture`, `iso`, `exposureMode`, `exposureCompensation`
 `meteringMode`) read and write canonical names. Three recorded exceptions remain:
 
 - Canon's AE mode, metering and compensation properties are plain UINT16 codecs, so their
-  canonical tables live in `src/vendors/control-properties/exposure.ts` (attributed to
+  canonical tables live in `src/vendors/canon/control-properties.ts` (attributed to
   libgphoto2 and EDSDK) rather than in `createEnumCodec` names. Moving them into the codec
   would change the numeric AE codes the transitional `exposureProgram` control, recording
   preparation and Studio still compare. The tables are covered by simulated Canon replies

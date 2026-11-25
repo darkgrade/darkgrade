@@ -21,25 +21,41 @@ export {
     CameraRefusedError,
     CameraUnsupportedError,
 } from '@camera/errors'
-export type { ShutterSpeed } from '@camera/settings/shutter-speed'
 export type {
     Aperture,
+    AspectRatio,
+    AudioRecording,
+    ColorTemperature,
+    DetectionSubject,
+    DigitalZoom,
+    DriveMode,
     ExposureCompensation,
     ExposureMode,
     ExposureModeAlias,
+    EyeSelection,
+    FlashMode,
+    FocusArea,
+    FocusMode,
+    FrameRate,
     Iso,
+    JpegQuality,
+    LiveViewQuality,
     MeteringMode,
-} from '@camera/settings/exposure'
-export type { ColorTemperature, PictureProfile, PictureStyle, WhiteBalance } from '@camera/settings/colour'
-export type { DriveMode, PhotoVideoMode } from '@camera/settings/mode'
-export type { DetectionSubject, EyeSelection, FocusArea, FocusMode, SubjectDetection } from '@camera/settings/focus'
+    PhotoFormat,
+    PhotoSize,
+    PhotoVideoMode,
+    PictureProfile,
+    PictureStyle,
+    RawCompression,
+    ShutterSpeed,
+    SubjectDetection,
+    VideoFormat,
+    VideoQuality,
+    WhiteBalance,
+} from '@camera/settings/values'
 export type { FocusDirection, FocusResult, FocusStepSize } from '@camera/driver'
 export type { CardPhoto, ComputerPhoto, Photo, PhotoDestination, TakePhotoOptions } from '@camera/driver'
-export type { AspectRatio, FlashMode, JpegQuality, PhotoFormat, PhotoSize, RawCompression } from '@camera/settings/photo'
-export type { AudioRecording, FrameRate, VideoFormat, VideoQuality } from '@camera/settings/video'
 export type { Clip } from '@camera/driver'
-export type { DigitalZoom } from '@camera/settings/video'
-export type { LiveViewQuality } from '@camera/settings/live-view'
 export type { FocusFrame, LiveViewFrame, LiveViewFrameOptions, LiveViewOverlay } from '@camera/driver'
 export type { ZoomDirection, ZoomOptions, ZoomSpeed } from '@camera/driver'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'

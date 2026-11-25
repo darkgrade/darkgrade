@@ -50,9 +50,9 @@ Check current publication state before adding installation badges or claiming np
 Application settings use `Camera.getCapabilities()`, the typed getter and setter for each
 setting (`getShutterSpeed()`/`setShutterSpeed()`, `setIso()`, `setWhiteBalance()` …) and, for UIs
 that list every setting, `Camera.setControl(id, value)`. Canonical ids, labels and search
-aliases are in `packages/slate/src/camera/controls.ts`, built from the settings groups in
-`src/camera/settings/<group>.ts`; each vendor's words map to the canonical values in
-`src/vendors/control-properties.ts`. `getCapabilities().operations` says which operations the
+aliases are in `packages/slate/src/camera/controls.ts` and canonical value types in
+`src/camera/settings/values.ts`; each vendor's properties and words map to them in
+`src/vendors/<vendor>/control-properties.ts`, read through `src/vendors/control-properties.ts`. `getCapabilities().operations` says which operations the
 camera can do now, with the reason when it cannot. Studio and test harnesses consume Slate
 rather than adding vendor tables. `shutterSpeed` covers exposure duration and angle;
 conversion requires the actual frame rate. Never guess units, round a requested control to

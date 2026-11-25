@@ -1,30 +1,98 @@
 import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState } from '@camera/controls'
+import { cameraControlDefinitions } from '@camera/controls'
 import { CameraUnsupportedError } from '@camera/errors'
-import type { ExposureContext } from '@camera/exposure-time'
-import { colourControlDefinitions, colourSettingReaders, type ColourSettingTypes } from '@camera/settings/colour'
+import type { ExposureContext, ExposureTime } from '@camera/exposure-time'
 import {
     canonicalExposureInput,
-    exposureControlDefinitions,
-    exposureSettingReaders,
-    type ExposureSettingTypes,
-} from '@camera/settings/exposure'
-import { focusControlDefinitions, focusSettingReaders, type FocusSettingTypes } from '@camera/settings/focus'
-import { liveViewControlDefinitions, liveViewSettingReaders, type LiveViewSettingTypes } from '@camera/settings/live-view'
-import { modeControlDefinitions, modeSettingReaders, type ModeSettingTypes } from '@camera/settings/mode'
-import { photoControlDefinitions, photoSettingReaders, type PhotoSettingTypes } from '@camera/settings/photo'
-import type { SettingReaders } from '@camera/settings/setting-types'
-import { videoControlDefinitions, type VideoSettingTypes } from '@camera/settings/video'
-import { videoSettingReaders } from '@camera/settings/video-readers'
+    digitalZoomValues,
+    exposureModes,
+    formatShutterSpeed,
+    isAperture,
+    isExposureCompensation,
+    isIso,
+    liveViewQualityValues,
+    meteringModes,
+    type Aperture,
+    type AspectRatio,
+    type AudioRecording,
+    type ColorTemperature,
+    type DetectionSubject,
+    type DigitalZoom,
+    type DriveMode,
+    type ExposureCompensation,
+    type ExposureMode,
+    type ExposureModeAlias,
+    type EyeSelection,
+    type FlashMode,
+    type FocusArea,
+    type FocusMode,
+    type FrameRate,
+    type Iso,
+    type JpegQuality,
+    type LiveViewQuality,
+    type MeteringMode,
+    type PhotoFormat,
+    type PhotoSize,
+    type PhotoVideoMode,
+    type PictureProfile,
+    type PictureStyle,
+    type RawCompression,
+    type ShutterSpeed,
+    type SubjectDetection,
+    type VideoFormat,
+    type VideoQuality,
+    type WhiteBalance,
+} from '@camera/settings/values'
+import { namedControlValues, videoCodecValueNames } from '@vendors/control-properties'
 
-/** Every typed setting's value types, combined from the settings groups. */
-export interface TypedSettingTypes
-    extends ExposureSettingTypes,
-        ModeSettingTypes,
-        ColourSettingTypes,
-        FocusSettingTypes,
-        PhotoSettingTypes,
-        VideoSettingTypes,
-        LiveViewSettingTypes {}
+/**
+ * The types of one typed setting.
+ * - `value`: what its getter returns and its setter resolves to, in canonical spelling.
+ * - `input`: what its setter accepts (the value, plus any other exact spelling such as an
+ *   `ExposureTime` object). Never plain `string`: test:package rejects that.
+ * - `options`: extra setter arguments, such as the frame rate a shutter-angle conversion needs.
+ */
+export interface SettingTypes<Value, Input = Value, Options extends unknown[] = []> {
+    value: Value
+    input: Input
+    options: Options
+}
+
+/**
+ * Every typed setting's value types. Each id listed here gets `get<Id>()` and `set<Id>(value)` on
+ * Camera and on every CameraControlSession. Values are the canonical names of `@camera/settings/values`.
+ */
+export interface TypedSettingTypes {
+    shutterSpeed: SettingTypes<ShutterSpeed, ShutterSpeed | ExposureTime, [context?: ExposureContext]>
+    aperture: SettingTypes<Aperture>
+    iso: SettingTypes<Iso>
+    exposureMode: SettingTypes<ExposureMode, ExposureMode | ExposureModeAlias>
+    exposureCompensation: SettingTypes<ExposureCompensation>
+    meteringMode: SettingTypes<MeteringMode>
+    photoVideoMode: SettingTypes<PhotoVideoMode>
+    driveMode: SettingTypes<DriveMode>
+    whiteBalance: SettingTypes<WhiteBalance>
+    colorTemperature: SettingTypes<ColorTemperature>
+    pictureStyle: SettingTypes<PictureStyle>
+    pictureProfile: SettingTypes<PictureProfile>
+    focusMode: SettingTypes<FocusMode>
+    focusArea: SettingTypes<FocusArea>
+    subjectDetection: SettingTypes<SubjectDetection>
+    detectionSubject: SettingTypes<DetectionSubject>
+    eyeSelection: SettingTypes<EyeSelection>
+    photoFormat: SettingTypes<PhotoFormat>
+    photoSize: SettingTypes<PhotoSize>
+    aspectRatio: SettingTypes<AspectRatio>
+    jpegQuality: SettingTypes<JpegQuality>
+    rawCompression: SettingTypes<RawCompression>
+    flashMode: SettingTypes<FlashMode>
+    videoFormat: SettingTypes<VideoFormat>
+    videoQuality: SettingTypes<VideoQuality>
+    frameRate: SettingTypes<FrameRate>
+    audioRecording: SettingTypes<AudioRecording>
+    digitalZoom: SettingTypes<DigitalZoom>
+    liveViewQuality: SettingTypes<LiveViewQuality>
+}
 
 /** The settings with a typed getter and setter. Each is a canonical control id. */
 export type TypedSettingId = keyof TypedSettingTypes & CameraControlId
@@ -39,7 +107,7 @@ export type SettingSetterName<Id extends string> = `set${Capitalize<Id>}`
 /**
  * One getter and one setter per typed setting, declared once over `setControl`: `setShutterSpeed`
  * is `setControl('shutterSpeed', …)` and resolves to the value the camera read back; the getter
- * reads the current value. Values are the canonical names of the settings groups.
+ * reads the current value. Values are the canonical names of `@camera/settings/values`.
  */
 export type TypedSettingMethods = {
     [Id in TypedSettingId as SettingGetterName<Id>]: () => Promise<SettingValue<Id>>
@@ -64,24 +132,73 @@ type PlainStringInputs = {
 const noPlainStringInputs: [PlainStringInputs] extends [never] ? true : PlainStringInputs = true
 void noPlainStringInputs
 
-export const typedSettingReaders: SettingReaders<TypedSettingTypes> = {
-    ...exposureSettingReaders,
-    ...modeSettingReaders,
-    ...colourSettingReaders,
-    ...focusSettingReaders,
-    ...photoSettingReaders,
-    ...videoSettingReaders,
-    ...liveViewSettingReaders,
+/** Converts a confirmed control observation into a setting's canonical value. */
+type SettingReader<Value> = (state: CameraControlState) => Value
+
+/**
+ * A setting's reader: the observed value when `accepts` takes it, else CameraUnsupportedError (the
+ * camera reports a value Slate has no name for). A raw value the codecs could not name is never guessed.
+ */
+function settingReader<Value extends string>(
+    accepts: (value: string) => value is Value = (_value: string): _value is Value => true
+): SettingReader<Value> {
+    return state => {
+        if (state.unrecognized?.value === undefined && accepts(state.value)) return state.value
+        throw new CameraUnsupportedError(state.id, `${state.label}: the camera reports a value Slate has no name for (${state.value})`)
+    }
 }
 
-const settingLabels: Record<string, { label: string }> = {
-    ...exposureControlDefinitions,
-    ...modeControlDefinitions,
-    ...colourControlDefinitions,
-    ...focusControlDefinitions,
-    ...photoControlDefinitions,
-    ...videoControlDefinitions,
-    ...liveViewControlDefinitions,
+/** The reader for an enumerated setting whose canonical names are `values`. */
+const enumeratedSettingReader = <Value extends string>(values: Iterable<string>) => {
+    const known = new Set(values)
+    return settingReader((value): value is Value => known.has(value))
+}
+
+const canonMovieRecordPattern = /^.+ fps · (MOV|MP4|unknown) · (ALL-I|IPB \(Standard\)|IPB \(Light\)|unknown)$/
+
+function isVideoFormat(value: string): value is VideoFormat {
+    return videoCodecValueNames('videoFormat').has(value) || canonMovieRecordPattern.test(value)
+}
+
+/** Converts a confirmed observation into each typed setting's canonical value. */
+export const typedSettingReaders: { [Id in TypedSettingId]: SettingReader<SettingValue<Id>> } = {
+    shutterSpeed: state => formatShutterSpeed(state.exposureTime, state.value),
+    aperture: settingReader(isAperture),
+    iso: settingReader(isIso),
+    exposureMode: enumeratedSettingReader<ExposureMode>(exposureModes),
+    exposureCompensation: settingReader(isExposureCompensation),
+    meteringMode: enumeratedSettingReader<MeteringMode>(meteringModes),
+    photoVideoMode: enumeratedSettingReader<PhotoVideoMode>(['photo', 'video']),
+    driveMode: settingReader<DriveMode>(),
+    whiteBalance: settingReader<WhiteBalance>(),
+    colorTemperature: state => {
+        const kelvin = Number(state.value)
+        const unreadable = `Colour temperature: the camera reports a value Slate cannot read (${state.value})`
+        if (state.unrecognized?.value !== undefined || !Number.isFinite(kelvin) || kelvin <= 0)
+            throw new CameraUnsupportedError('colorTemperature', unreadable)
+        return kelvin
+    },
+    pictureStyle: settingReader<PictureStyle>(),
+    pictureProfile: settingReader<PictureProfile>(),
+    focusMode: enumeratedSettingReader<FocusMode>(namedControlValues('focusMode')),
+    focusArea: enumeratedSettingReader<FocusArea>(namedControlValues('focusArea')),
+    subjectDetection: enumeratedSettingReader<SubjectDetection>(namedControlValues('subjectDetection')),
+    detectionSubject: enumeratedSettingReader<DetectionSubject>(namedControlValues('detectionSubject')),
+    eyeSelection: enumeratedSettingReader<EyeSelection>(namedControlValues('eyeSelection')),
+    photoFormat: settingReader<PhotoFormat>(),
+    photoSize: settingReader<PhotoSize>(),
+    aspectRatio: settingReader<AspectRatio>(),
+    jpegQuality: settingReader<JpegQuality>(),
+    rawCompression: settingReader<RawCompression>(),
+    flashMode: settingReader<FlashMode>(),
+    videoFormat: settingReader(isVideoFormat),
+    videoQuality: settingReader((value): value is VideoQuality => videoCodecValueNames('videoQuality').has(value)),
+    frameRate: settingReader((value): value is FrameRate => videoCodecValueNames('frameRate').has(value)),
+    audioRecording: settingReader(
+        (value): value is AudioRecording => value !== 'camera-specific-0' && videoCodecValueNames('audioRecording').has(value)
+    ),
+    digitalZoom: enumeratedSettingReader<DigitalZoom>(digitalZoomValues),
+    liveViewQuality: enumeratedSettingReader<LiveViewQuality>(liveViewQualityValues),
 }
 
 function isTypedSettingId(id: string): id is TypedSettingId {
@@ -109,7 +226,7 @@ function readSetting(id: TypedSettingId, state: CameraControlState | undefined) 
     if (!state)
         throw new CameraUnsupportedError(
             id,
-            `${settingLabels[id]?.label ?? id} is not available on this camera in its current mode`
+            `${cameraControlDefinitions[id].label} is not available on this camera in its current mode`
         )
     return typedSettingReaders[id](state)
 }
@@ -139,7 +256,7 @@ export function installTypedSettings(prototype: TypedSettingHost): void {
 }
 
 /**
- * The canonical spelling of a requested value: each group's exact alternative spellings (`M` for
+ * The canonical spelling of a requested value: its exact alternative spellings (`M` for
  * `Manual`, `800` for `ISO 800`). Anything else is returned unchanged and checked against the choices.
  */
 export function canonicalControlInput(id: CameraControlId, value: string): string {

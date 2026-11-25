@@ -28,10 +28,11 @@ Each of the 29 typed settings is `setControl` for its id: `src/camera/settings/t
 declares and installs the getter and setter pairs once, over the generic control API, on Camera
 and on every `CameraControlSession`.
 
-The ids, display labels and search aliases live in `src/camera/controls.ts`, built from the
-settings groups in `src/camera/settings/<group>.ts`, which also own each setting's canonical
-values. Per-vendor protocol properties and the mapping from each vendor's words to the canonical
-values live in `src/vendors/control-properties.ts` and `src/vendors/control-properties/<group>.ts`.
+The ids, display labels and search aliases live in `src/camera/controls.ts`; each setting's
+canonical values live in `src/camera/settings/values.ts`. Per-vendor protocol properties and the
+mapping from each vendor's words to the canonical values live in
+`src/vendors/<vendor>/control-properties.ts` (`generic` for standard PTP), read through
+`src/vendors/control-properties.ts`.
 An alias resolves a name; it does not change units, choose a camera mode or bypass a
 write guard. Native property names/codes remain in each observation's `source`
 for debugging. Vendor driver classes and raw `get`/`set` are protocol access through

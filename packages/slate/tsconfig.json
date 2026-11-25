@@ -26,6 +26,6 @@
             "@generated/*": ["build/generated/*"]
         }
     },
-    "include": ["src", "tests", "scripts/recover-camera.ts", "scripts/camera-lease.ts", "scripts/camera-smoke", "scripts/check-guards.ts", "*.config.ts"],
+    "include": ["src", "tests", "scripts/recover-camera.ts", "scripts/camera-lease.ts", "scripts/check-guards.ts", "*.config.ts"],
     "exclude": ["tests/runtime"]
 }

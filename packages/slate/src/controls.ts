@@ -7,22 +7,31 @@ export {
     CameraRefusedError,
     CameraUnsupportedError,
 } from '@camera/errors'
-export { formatShutterSpeed, type ShutterSpeed } from '@camera/settings/shutter-speed'
 export {
     exposureModes,
+    formatShutterSpeed,
     meteringModes,
     type Aperture,
+    type ColorTemperature,
+    type DetectionSubject,
+    type DigitalZoom,
+    type DriveMode,
     type ExposureCompensation,
     type ExposureMode,
     type ExposureModeAlias,
+    type EyeSelection,
+    type FocusArea,
+    type FocusMode,
     type Iso,
+    type LiveViewQuality,
     type MeteringMode,
-} from '@camera/settings/exposure'
-export type { ColorTemperature, PictureProfile, PictureStyle, WhiteBalance } from '@camera/settings/colour'
-export type { DriveMode, PhotoVideoMode } from '@camera/settings/mode'
-export type { DetectionSubject, EyeSelection, FocusArea, FocusMode, SubjectDetection } from '@camera/settings/focus'
-export type { DigitalZoom } from '@camera/settings/video'
-export type { LiveViewQuality } from '@camera/settings/live-view'
+    type PhotoVideoMode,
+    type PictureProfile,
+    type PictureStyle,
+    type ShutterSpeed,
+    type SubjectDetection,
+    type WhiteBalance,
+} from '@camera/settings/values'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'
 export type {
     CameraCapabilities,

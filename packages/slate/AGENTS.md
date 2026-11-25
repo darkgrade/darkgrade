@@ -39,8 +39,7 @@ To check the public API on real cameras, run `bun run --cwd packages/slate camer
 (`tests/setup/`). Anything that opens a USB camera runs under the shared lease:
 `bun run --cwd packages/slate camera:lease -- <command>` waits for exclusive use across every
 checkout and worktree (`~/.darkgrade/leases`), stops the macOS camera daemons while it runs, sets
-the variable and always releases. `camera:smoke -- --area <name>` exercises one area through the
-public Camera API (`scripts/camera-smoke/<area>.ts`). `check:guards` (in `test` and
+the variable and always releases. `check:guards` (in `test` and
 `test:package`) is strict: it fails on any vendor-named main-entry export or Camera member (raw
 access is `protocolSession(camera)` from `@darkgrade/slate/protocol`), on a file whose
 `any`/`as never`/`as unknown as` count differs from its budget (lower it with `-- --update`), and

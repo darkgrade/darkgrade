@@ -1,5 +1,5 @@
 {
-    "src/vendors/generic/generic-camera.ts": {"any":5,"asNever":0,"asUnknownAs":1},
+    "src/vendors/generic/generic-camera.ts": {"any":2,"asNever":0,"asUnknownAs":1},
     "src/camera/identification/camera-identification.ts": {"any":0,"asNever":0,"asUnknownAs":1},
     "src/camera/movie-audio.ts": {"any":1,"asNever":0,"asUnknownAs":0},
     "src/camera/index.ts": {"any":0,"asNever":1,"asUnknownAs":0},
@@ -11,9 +11,9 @@
     "src/contribute/protocol.ts": {"any":0,"asNever":0,"asUnknownAs":1},
     "src/contribute/settings.ts": {"any":5,"asNever":0,"asUnknownAs":0},
     "src/core/telemetry.ts": {"any":0,"asNever":0,"asUnknownAs":1},
-    "src/ptp/datasets/device-info-dataset.ts": {"any":4,"asNever":0,"asUnknownAs":0},
+    "src/ptp/datasets/device-info-dataset.ts": {"any":2,"asNever":0,"asUnknownAs":0},
     "src/ptp/datasets/device-prop-desc-dataset.ts": {"any":1,"asNever":0,"asUnknownAs":0},
-    "src/ptp/datasets/object-info-dataset.ts": {"any":2,"asNever":0,"asUnknownAs":0},
+    "src/ptp/datasets/object-info-dataset.ts": {"any":1,"asNever":0,"asUnknownAs":0},
     "src/vendors/sony/datasets/sdi-ext-device-prop-info-dataset.ts": {"any":2,"asNever":0,"asUnknownAs":0},
     "src/ptp/types/codec.ts": {"any":5,"asNever":0,"asUnknownAs":0},
     "src/ptp/types/event.ts": {"any":2,"asNever":0,"asUnknownAs":0},

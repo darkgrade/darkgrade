@@ -9,7 +9,7 @@ import {
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@vendors/nikon/nikon-camera'
-import type { PhotoVideoMode } from '@camera/settings/mode'
+import type { PhotoVideoMode } from '@camera/settings/values'
 import { SonyCamera, type SonyPropertyState } from '@vendors/sony/sony-camera'
 import { sendControlWrite } from '@vendors/control-write'
 import { sonyCounterpartExposureProgram, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
@@ -18,7 +18,7 @@ import type { GenericCamera } from '@vendors/generic/generic-camera'
 /**
  * photoVideoMode: whether the camera takes photos or records video, read and set through each
  * vendor's own switch.
- * - Nikon: LiveViewSelector, a single property (mapped in `@vendors/control-properties/mode`).
+ * - Nikon: LiveViewSelector, a single property (mapped in `@vendors/nikon/control-properties`).
  * - Canon: the MovieSelectSwitchOn/Off operations, read back through FixedMovie (0xd1c2; libgphoto2
  *   eosmovieswitch, EDSDK FixedMovie). A body whose lever is at Movie keeps FixedMovie at 1.
  * - Sony: a composite view of the exposure program. Movie and S&Q programs are video; the rest are
