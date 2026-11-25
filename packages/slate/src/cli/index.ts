@@ -293,6 +293,30 @@ async function openManual(version: string | undefined, terminal: Terminal): Prom
     }
 }
 
+/** `darkgrade camera <operation>`: the camera operations, loaded only when one runs. */
+async function runCameraCommand(path: readonly CommandDefinition[], words: readonly string[]): Promise<number> {
+    const { flags } = parseCommandArguments(path, words)
+    const recording = await import('@cli/recording')
+    const text = (name: string) => {
+        const value = flags.get(name)
+        return typeof value === 'string' ? value : undefined
+    }
+    const parse = <Value>(name: string, parser: (value: string) => Value): Value | undefined => {
+        const value = text(name) ?? (name === 'camera' ? process.env.DARKGRADE_CAMERA || undefined : undefined)
+        if (value === undefined) return undefined
+        try {
+            return parser(value)
+        } catch (error) {
+            throw new UsageError(`--${name}: ${error instanceof Error ? error.message : String(error)}`, path)
+        }
+    }
+    return recording.runStartRecordingCommand({
+        camera: parse('camera', recording.parseCameraId),
+        durationMilliseconds: parse('duration', recording.parseRecordingDuration),
+        json: flags.has('json'),
+    })
+}
+
 async function runCommand(
     words: readonly string[],
     flags: GlobalFlags,
@@ -322,6 +346,7 @@ async function runCommand(
     }
     if (flags.help) return help(path)
     if (path[1].name === 'telemetry') return runTelemetryCommand(path, remaining, terminal)
+    if (path[1].name === 'camera') return runCameraCommand(path, remaining)
     const { flags: commandFlags, argument } = parseCommandArguments(path, remaining)
     const json = commandFlags.has('json')
     if (command.name === 'version') {

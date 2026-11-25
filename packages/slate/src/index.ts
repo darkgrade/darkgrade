@@ -17,7 +17,12 @@ export type { CameraRecoveryOptions, CameraRecoveryReport, CameraRecoveryStep } 
 export { Camera } from '@camera/index'
 export { cameraControlDefinitions, resolveCameraControl } from '@camera/controls'
 export { CameraConfirmationError } from '@camera/confirmation'
-export { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+export {
+    CameraClipNotFoundError,
+    CameraOutcomeUnknownError,
+    CameraRefusedError,
+    CameraUnsupportedError,
+} from '@camera/errors'
 export type { ShutterSpeed } from '@camera/settings/shutter-speed'
 export type {
     Aperture,
@@ -33,6 +38,8 @@ export type { DetectionSubject, EyeSelection, FocusArea, FocusMode, SubjectDetec
 export type { FocusDirection, FocusResult, FocusStepSize } from '@camera/driver/focus'
 export type { CardPhoto, ComputerPhoto, Photo, PhotoDestination, TakePhotoOptions } from '@camera/driver/photo'
 export type { AspectRatio, FlashMode, JpegQuality, PhotoFormat, PhotoSize, RawCompression } from '@camera/settings/photo'
+export type { AudioRecording, FrameRate, VideoFormat, VideoQuality } from '@camera/settings/video'
+export type { Clip } from '@camera/driver/video'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'
 export type { CameraRecordingState, OperationAvailability } from '@camera/controls'
 export type { CardStatus, MediaDownloadOptions, MediaItem, MediaPreviewSize } from '@camera/driver/media'

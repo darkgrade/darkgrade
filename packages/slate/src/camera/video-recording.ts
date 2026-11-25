@@ -1,40 +1,27 @@
-import { CanonCamera } from '@camera/canon-camera'
-import type { CameraRecordingState } from '@camera/controls'
-import type { Camera } from '@camera/index'
+import { CameraClipNotFoundError } from '@camera/errors'
 import { readCameraObjectHandles, readCameraStorages } from '@camera/storage'
-import { openCanonRecordingMode } from '@vendors/canon/recording-mode'
 import { readNikonObjectSize } from '@vendors/nikon/object-size'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
-import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
 import type { TakeMedia } from '@workflows/video-take'
 
-/** Reuse native movie observations; missing values never prove that recording stopped. */
-export async function readCameraRecordingState(camera: Camera): Promise<CameraRecordingState> {
-    const driver = camera.getInstance()
-    const vendor = driver.vendorId
-    if (vendor === 0x054c) {
-        const state = await readSonyPtpRecordingState(camera)
-        // Native 2 is recording failure and 3 is interval-recording waiting.
-        // Neither proves idle or a start/stop transition.
-        return state === 0 ? 'idle' : state === 1 ? 'recording' : 'unknown'
-    }
-    if (vendor === 0x04b0) {
-        const state = await readNikonRecordingStatus(camera)
-        return !state ? 'unknown' : state.recording ? 'recording' : state.bufferedImages ? 'stopping' : 'idle'
-    }
-    if (driver instanceof CanonCamera) {
-        await driver.refreshEventProperties()
-        const state = driver.listPropertyStates().find(state => state.name === 'CanonRecordingDestination')?.value
-        return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
-    }
-    return 'unknown'
-}
 const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
-/** Persistent PTP movie recording, final-file discovery and bounded-memory transfer. */
+
+/** Camera.stopRecording confirms the stop first; a clip it did not find is looked for again by the recorder. */
+export async function stopCameraRecording(camera: { stopRecording(): Promise<unknown> }): Promise<void> {
+    try {
+        await camera.stopRecording()
+    } catch (error) {
+        if (!(error instanceof CameraClipNotFoundError)) throw error
+    }
+}
+
+/**
+ * Persistent PTP movie recording, final-file discovery and bounded-memory transfer. Camera's
+ * startRecording prepares the recording mode and its stopRecording restores it.
+ */
 export class UsbVideoRecording {
     private baseline = new Set<number>()
     private attempted = false
-    private movieMode?: Awaited<ReturnType<typeof openCanonRecordingMode>>
     constructor(
         private readonly camera: any,
         private readonly vendor: 'canon' | 'nikon'
@@ -49,22 +36,17 @@ export class UsbVideoRecording {
         const storages = await readCameraStorages(this.camera)
         if (!storages.some(card => card.writable && card.freeBytes > 0))
             throw new Error('Insert a writable memory card with free space before recording')
-        if (this.vendor === 'canon') {
-            const states = await this.camera.getCanonPropertyStates()
-            if (states.some((state: any) => state.name === 'CanonRecordingDestination' && state.value === 'CARD'))
-                throw new Error('This camera is already recording')
-        }
+        if (this.vendor === 'canon' && (await this.camera.getRecordingState()) === 'recording')
+            throw new Error('This camera is already recording')
         this.baseline = await this.handles()
     }
     async start() {
-        if (this.vendor === 'canon') this.movieMode = await openCanonRecordingMode(this.camera)
         this.attempted = true
         await this.camera.startRecording()
-        const states = this.vendor === 'canon' ? await this.camera.getCanonPropertyStates() : []
         const confirmed =
             this.vendor === 'nikon'
                 ? (await readNikonRecordingStatus(this.camera))?.recording === true
-                : states.some((state: any) => state.name === 'CanonRecordingDestination' && state.value === 'CARD')
+                : (await this.camera.getRecordingState()) === 'recording'
         return {
             recordingConfirmed: confirmed,
             evidence: confirmed
@@ -90,7 +72,7 @@ export class UsbVideoRecording {
             this.attempted = true
             return this.stop()
         }
-        await this.camera.stopRecording()
+        await stopCameraRecording(this.camera)
         return {
             stopped: true,
             media: [] as TakeMedia[],
@@ -100,7 +82,7 @@ export class UsbVideoRecording {
     }
     async stop() {
         if (!this.attempted) return { stopped: true, media: [] as TakeMedia[] }
-        await this.camera.stopRecording()
+        await stopCameraRecording(this.camera)
         this.attempted = false
         const deadline = Date.now() + 15000
         let media: TakeMedia[] = []
@@ -131,8 +113,6 @@ export class UsbVideoRecording {
             }
             await sleep(300)
         } while (Date.now() < deadline)
-        await this.movieMode?.restore()
-        this.movieMode = undefined
         return {
             stopped: true,
             media,
@@ -194,6 +174,5 @@ export class UsbVideoRecording {
     }
     async cleanup() {
         if (this.attempted) await this.stop()
-        else await this.movieMode?.restore()
     }
 }

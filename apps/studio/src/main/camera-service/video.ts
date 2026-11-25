@@ -1,4 +1,10 @@
-import { Camera, CameraConfirmationError, type CameraRecordingState } from '@darkgrade/slate'
+import {
+    Camera,
+    CameraClipNotFoundError,
+    CameraConfirmationError,
+    CameraOutcomeUnknownError,
+    type CameraRecordingState,
+} from '@darkgrade/slate'
 import type { CameraService } from '@main/camera-service'
 import { errorMessage } from '@main/camera-service/shared'
 import type { CameraState } from '@shared/ipc'
@@ -12,6 +18,11 @@ export interface VideoOperations {
     observeFailedRecording(camera: Camera, error: unknown): Promise<CameraRecordingState>
 }
 
+/**
+ * Slate prepares the camera for recording (video mode, card, audio) inside startRecording and puts
+ * it back inside stopRecording, after a confirmed idle. When that restore fails, Slate keeps it
+ * pending and the next stopRecording retries only the restore, so Stop stays available here.
+ */
 export const videoOperations: VideoOperations & ThisType<CameraService> = {
     // -------------------------------------------------------------- recording
 
@@ -19,8 +30,6 @@ export const videoOperations: VideoOperations & ThisType<CameraService> = {
         const camera = this.requireCameraForControl()
         await this.enqueue(async () => {
             if (this.recording) throw new Error('Stop and confirm the current recording before starting another')
-            this.recordingMode = await camera.prepareRecordingMode()
-            this.recordingStopConfirmed = false
             this.recording = true
             this.recordingState = 'starting'
             this.broadcastState()
@@ -29,15 +38,11 @@ export const videoOperations: VideoOperations & ThisType<CameraService> = {
                 this.recordingState = 'recording'
                 this.log('system', 'Recording confirmed')
             } catch (error) {
+                // An idle camera was put back by Slate, unless the failure is not a plain unconfirmed
+                // or refused Record: then its setup may still be pending, and Stop finishes it.
                 const observed = await this.observeFailedRecording(camera, error)
-                if (observed === 'idle') {
-                    this.recordingStopConfirmed = true
+                if (observed === 'idle' && error instanceof CameraOutcomeUnknownError && !(error instanceof CameraConfirmationError))
                     this.recording = true
-                    await this.recordingMode?.restore()
-                    this.recordingMode = undefined
-                    this.recordingStopConfirmed = false
-                    this.recording = false
-                }
                 throw error
             } finally {
                 this.broadcastState()
@@ -52,30 +57,26 @@ export const videoOperations: VideoOperations & ThisType<CameraService> = {
             this.recordingState = 'stopping'
             this.broadcastState()
             try {
-                if (!this.recordingStopConfirmed) {
-                    await camera.stopRecording()
-                    this.recordingStopConfirmed = true
-                }
+                const clip = await camera.stopRecording()
                 this.recordingState = 'idle'
-                await this.recordingMode?.restore()
-                this.recordingMode = undefined
-                this.recordingStopConfirmed = false
                 this.recording = false
-                this.log('system', 'Recording stop confirmed')
+                this.log('system', `Recording stop confirmed; ${clip.name} is on the card`)
             } catch (error) {
-                if (this.recordingStopConfirmed) {
+                if (error instanceof CameraClipNotFoundError) {
+                    // Stopped and put back; only the new clip could not be identified.
                     this.recordingState = 'idle'
+                    this.recording = false
+                    this.log('system', `Recording stopped, but no new clip was found: ${errorMessage(error)}`, 'error')
+                    return
+                }
+                if ((await this.observeFailedRecording(camera, error)) === 'idle') {
+                    // Stopped, but the camera setup was not put back; Stop retries the restore.
                     this.recording = true
                     this.log(
                         'system',
                         `Recording stopped; camera setup restoration failed: ${errorMessage(error)}. Retry Stop.`,
                         'error'
                     )
-                } else if ((await this.observeFailedRecording(camera, error)) === 'idle') {
-                    // A lost Stop reply can still leave verified idle with the prepared mode owned.
-                    this.recordingStopConfirmed = true
-                    this.recording = true
-                    this.log('system', 'Camera is idle; retry Stop to finish restoring camera setup.')
                 }
                 throw error
             } finally {

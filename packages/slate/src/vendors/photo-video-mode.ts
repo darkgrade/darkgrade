@@ -11,7 +11,6 @@ import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
 import type { PhotoVideoMode } from '@camera/settings/mode'
 import { SonyCamera, type SonyPropertyState } from '@camera/sony-camera'
-import { readCameraRecordingState } from '@camera/video-recording'
 import { sendControlWrite } from '@vendors/control-write'
 import { sonyCounterpartExposureProgram, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import type { GenericCamera } from '@camera/generic-camera'
@@ -123,7 +122,7 @@ export async function writePhotoVideoMode(
         throw new CameraRefusedError('photoVideoMode', `The camera does not offer ${requested} from its current mode`)
     if (state.value === requested) return state
     // Missing recording telemetry never proves idle.
-    const recording = await readCameraRecordingState(owner)
+    const recording = await owner.getRecordingState()
     if (recording !== 'idle')
         throw new CameraUnsupportedError('photoVideoMode', `Photo / video cannot change while recording is ${recording}`)
     await sendControlWrite(driver, 'photoVideoMode', () => sendPhotoVideoMode(driver, state, requested))

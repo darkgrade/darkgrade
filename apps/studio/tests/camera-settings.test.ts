@@ -1,5 +1,5 @@
 import type { Camera, CameraCapabilities } from '@darkgrade/slate'
-import { PTPDisconnectedError, CameraConfirmationError, VendorIDs } from '@darkgrade/slate'
+import { PTPDisconnectedError, CameraClipNotFoundError, CameraConfirmationError, CameraOutcomeUnknownError, VendorIDs } from '@darkgrade/slate'
 import { CameraService } from '@main/camera-service'
 import { CAMERA_CONTROL_NAMES } from '@shared/ipc'
 import { EventEmitter } from 'node:events'
@@ -149,64 +149,70 @@ describe('confirmed controls and recording', () => {
     })
     function recordingFixture() {
         const { service } = fixture()
-        const restore = vi.fn(async () => {})
-        const camera = { prepareRecordingMode: vi.fn(async () => ({ restore })),
-            startRecording: vi.fn(async () => {}), stopRecording: vi.fn(async () => {}),
+        const clip = { mediaId: '2', name: 'C0002.MP4', sizeBytes: 4096 }
+        const camera = { prepareRecordingMode: vi.fn(async () => ({ restore: async () => {} })),
+            startRecording: vi.fn(async () => {}), stopRecording: vi.fn(async (): Promise<typeof clip> => clip),
             getRecordingState: vi.fn(async () => 'idle'), getInstance: () => ({}) }
         Object.assign(service, { camera })
         // File-list timing is independent from confirmation; no background USB work in this test.
         vi.spyOn(service as unknown as { scheduleFilesRefresh(): void }, 'scheduleFilesRefresh').mockImplementation(() => {})
-        return { service, camera, restore }
+        return { service, camera, clip }
     }
-    it('keeps an ignored start idle and restores its prepared mode', async () => {
-        const { service, camera, restore } = recordingFixture()
+    it('leaves preparation to Slate and keeps an ignored start idle', async () => {
+        const { service, camera } = recordingFixture()
         camera.startRecording.mockRejectedValue(new CameraConfirmationError('record_start', 'recording', 'idle'))
         await expect(service.startRecording()).rejects.toBeInstanceOf(CameraConfirmationError)
         expect(service.getState()).toMatchObject({ recording: false, recordingState: 'idle' })
-        expect(restore).toHaveBeenCalledOnce()
         expect(camera.startRecording).toHaveBeenCalledOnce()
+        expect(camera.prepareRecordingMode).not.toHaveBeenCalled()
+    })
+    it('keeps Stop available when a failed start may have left the setup pending', async () => {
+        const { service, camera } = recordingFixture()
+        camera.startRecording.mockRejectedValue(new CameraOutcomeUnknownError('startRecording', 'putting the camera back failed'))
+        await expect(service.startRecording()).rejects.toBeInstanceOf(CameraOutcomeUnknownError)
+        expect(service.getState()).toMatchObject({ recording: true, recordingState: 'idle' })
+        camera.stopRecording.mockRejectedValueOnce(new CameraClipNotFoundError('stopRecording', 'Record did not start'))
+        await service.stopRecording()
+        expect(service.getState()).toMatchObject({ recording: false, recordingState: 'idle' })
     })
     it('retains Stop and the connection when recording stop is unconfirmed', async () => {
-        const { service, camera, restore } = recordingFixture()
+        const { service, camera } = recordingFixture()
         await service.startRecording()
         camera.stopRecording.mockRejectedValue(new CameraConfirmationError('record_stop', 'idle', 'recording'))
         await expect(service.stopRecording()).rejects.toBeInstanceOf(CameraConfirmationError)
         expect(service.getState()).toMatchObject({ connected: true, recording: true, recordingState: 'recording' })
-        expect(restore).not.toHaveBeenCalled()
         await expect(service.disconnect()).rejects.toBeInstanceOf(CameraConfirmationError)
         expect(service.getState().connected).toBe(true)
     })
     it('serializes rapid start/stop changes with state updates inside the queue', async () => {
-        const { service, camera } = recordingFixture()
+        const { service, camera, clip } = recordingFixture()
         const calls: string[] = []
         camera.startRecording.mockImplementation(async () => { calls.push('start') })
-        camera.stopRecording.mockImplementation(async () => { calls.push('stop') })
+        camera.stopRecording.mockImplementation(async () => { calls.push('stop'); return clip })
         await Promise.all([service.startRecording(), service.stopRecording(), service.startRecording(), service.stopRecording()])
         expect(calls).toEqual(['start', 'stop', 'start', 'stop'])
         expect(service.getState()).toMatchObject({ recording: false, recordingState: 'idle' })
     })
-    it('keeps mode restoration retryable after a verified Stop without replaying the Stop command', async () => {
-        const { service, camera, restore } = recordingFixture()
+    it('names the confirmed clip, and keeps Stop for a restore Slate could not finish', async () => {
+        const { service, camera } = recordingFixture()
+        const log = vi.spyOn(service, 'log')
         await service.startRecording()
-        restore.mockRejectedValueOnce(new Error('setup restoration failed'))
-        await expect(service.stopRecording()).rejects.toThrow('restoration failed')
+        camera.stopRecording.mockRejectedValueOnce(new CameraOutcomeUnknownError('stopRecording', 'Recording stopped, but putting the camera back failed'))
+        await expect(service.stopRecording()).rejects.toThrow('putting the camera back failed')
         expect(service.getState()).toMatchObject({ connected: true, recording: true, recordingState: 'idle' })
         await service.stopRecording()
-        expect(camera.stopRecording).toHaveBeenCalledOnce()
-        expect(restore).toHaveBeenCalledTimes(2)
+        expect(camera.stopRecording).toHaveBeenCalledTimes(2)
         expect(service.getState()).toMatchObject({ recording: false, recordingState: 'idle' })
+        expect(log.mock.calls.some(([, message]) => message.includes('C0002.MP4 is on the card'))).toBe(true)
     })
-    it('keeps cleanup retryable when a failed Stop reply is followed by a fresh idle observation', async () => {
-        const { service, camera, restore } = recordingFixture()
+    it('treats a stop that found no new clip as stopped, and says so', async () => {
+        const { service, camera } = recordingFixture()
+        const log = vi.spyOn(service, 'log')
         await service.startRecording()
-        camera.stopRecording.mockRejectedValueOnce(new Error('Stop reply lost'))
-        await expect(service.stopRecording()).rejects.toThrow('reply lost')
-        expect(service.getState()).toMatchObject({ connected: true, recording: true, recordingState: 'idle' })
-        expect(restore).not.toHaveBeenCalled()
+        camera.stopRecording.mockRejectedValueOnce(new CameraClipNotFoundError('stopRecording', 'no new clip within 30 seconds'))
         await service.stopRecording()
-        expect(camera.stopRecording).toHaveBeenCalledOnce()
-        expect(restore).toHaveBeenCalledOnce()
         expect(service.getState()).toMatchObject({ recording: false, recordingState: 'idle' })
+        expect(log.mock.calls.some(([, message, level]) => message.includes('no new clip') && level === 'error')).toBe(true)
     })
     function unpluggedWhileRecording() {
         const fixture = recordingFixture()

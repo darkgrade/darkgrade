@@ -66,7 +66,7 @@ export async function waitForNewCameraMovie(camera: any, baseline: Set<number>, 
                 const response = await camera.send(operations.GetObjectInfo, {ObjectHandle: handle})
                 const info = response.data, bytes = Number(info?.objectCompressedSize)
                 if (response.code === 0x2001 && Number.isSafeInteger(bytes) && bytes > 0 && info?.associationType === 0
-                    && /\.(mp4|mov|mts|m2ts|avi|crm)$/i.test(info?.filename || '')) return {...info, handle}
+                    && /\.(mp4|mov|mxf|mts|m2ts|avi|crm)$/i.test(info?.filename || '')) return {...info, handle}
             }
         } catch (error) { lastError = error }
         const remaining = deadline - Date.now()

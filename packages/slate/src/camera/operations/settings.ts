@@ -68,7 +68,7 @@ export interface SettingsOperations {
     getMovieFormat(): ReturnType<CanonCamera['getMovieFormat']>
     setMovieFormat(key: string): Promise<void>
     getCanonMovieSoundRecording(): Promise<string>
-    setCanonMovieSoundRecording(value: 'disabled' | 'auto' | 'manual'): Promise<void>
+    setCanonMovieSoundRecording(value: Parameters<CanonCamera['setMovieSoundRecording']>[0]): Promise<void>
 }
 
 function sonyDriver(camera: Camera, unavailable: string): SonyCamera {
@@ -234,7 +234,7 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
         return canonDriver(this).getMovieSoundRecording()
     },
 
-    async setCanonMovieSoundRecording(value: 'disabled' | 'auto' | 'manual'): Promise<void> {
+    async setCanonMovieSoundRecording(value: Parameters<CanonCamera['setMovieSoundRecording']>[0]): Promise<void> {
         return canonDriver(this).setMovieSoundRecording(value)
     },
 }

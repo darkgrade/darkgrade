@@ -98,6 +98,7 @@ try {
             type CardStatus, type MediaItem, type Battery, type CameraInfo,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
+        import { CameraClipNotFoundError, type AudioRecording, type Clip, type FrameRate, type VideoFormat } from '@darkgrade/slate'
         const camera = new Camera()
         configureSlateTelemetry(undefined)
         const device: Promise<{code: number; data: DeviceInfo}> = camera.send(genericOperationRegistry.GetDeviceInfo, {})
@@ -325,7 +326,34 @@ try {
         // @ts-expect-error Battery power sources are a closed set.
         const invented: Battery['powerSource'] = 'solar'
         void [cards, media, preview, download, battery, clock, info, listMediaAvailability, invented]
+        // Video: recording returns the confirmed clip; video settings take their codec names.
+        const started: Promise<void> = camera.startRecording()
+        const clip: Promise<Clip> = camera.stopRecording()
+        clip.then(finished => { const name: string = finished.name; const id: string = finished.mediaId; void [name, id] })
+        // @ts-expect-error startRecording takes no options; Slate prepares the camera itself.
+        camera.startRecording({ mode: 'movie' })
+        // @ts-expect-error stopRecording resolves to the clip, not a bare acknowledgement.
+        const stopAcknowledged: Promise<void> = camera.stopRecording()
+        // @ts-expect-error The recording state is a closed set.
+        const inventedState: CameraRecordingState = 'paused'
+        const frameRate: Promise<FrameRate> = camera.setFrameRate('24p')
+        const videoFormat: Promise<VideoFormat> = camera.getVideoFormat()
+        camera.setVideoFormat('XAVC S 4K')
+        camera.setVideoFormat('4K 23.98 fps · MP4 · IPB (Standard)')
+        camera.setVideoQuality('150M 4:2:0 10-bit')
+        const audio: Promise<AudioRecording> = camera.setAudioRecording('Off')
+        sdk.setFrameRate('60p')
+        // @ts-expect-error A frame rate is a codec name such as 24p, not a number.
+        camera.setFrameRate(24)
+        // @ts-expect-error A typed video setter never takes a plain string.
+        camera.setVideoQuality(anyString)
+        // @ts-expect-error Movie sound is On or Off, not a vendor's own word.
+        camera.setAudioRecording('auto')
+        // @ts-expect-error The old Sony/Canon names are search aliases, not control ids.
+        camera.setControl('movieFormat', 'XAVC S 4K')
+        const clipErrors = [CameraClipNotFoundError]
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
+        void [started, clip, stopAcknowledged, inventedState, frameRate, videoFormat, audio, clipErrors]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
             confirmedShutter, currentShutter, noPlainStringSetters, errors, confirmedAperture, currentIso, confirmedMode,
             confirmedCompensation, confirmedMetering, confirmedWhiteBalance, currentKelvin, look, profile, mode, drive,

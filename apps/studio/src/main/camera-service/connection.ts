@@ -191,8 +191,6 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         if (!this.recoveryInProgress) this.phase = 'idle'
         this.recording = false
         this.recordingState = 'idle'
-        this.recordingMode = undefined
-        this.recordingStopConfirmed = false
         this.battery = null
         this.controls = null
         this.card = null
@@ -223,20 +221,20 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
                 transportLost = true
             }
         }
-        if (transportLost && (this.recording || this.recordingMode))
+        if (transportLost && this.recording)
             this.log('system', 'Camera lost while recording; its recording and setup could not be confirmed', 'error')
 
         if (this.camera) {
             const camera = this.camera
             try {
                 await this.enqueue(async () => {
-                    if (!transportLost && (this.recording || this.recordingMode))
+                    if (!transportLost && this.recording)
                         throw new Error('Stop and confirm the recording before disconnecting')
                     await camera.disconnect()
                 })
             } catch (error) {
                 this.log('system', `Disconnect error: ${errorMessage(error)}`, 'error')
-                if (!transportLost && (this.recording || this.recordingMode)) throw error
+                if (!transportLost && this.recording) throw error
             }
         }
     },

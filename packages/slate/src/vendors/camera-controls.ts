@@ -568,7 +568,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
         }
         const property = Object.values(driver.registry.properties).find(property => property.code === state.source.code)
         if (!property) throw new Error('Camera control property disappeared')
-        if (driver instanceof CanonCamera && id === 'movieFormat') {
+        if (driver instanceof CanonCamera && id === 'videoFormat') {
             const choices = driver.getPropertyAllowedValues(driver.registry.properties.CanonMovieFormat)
             const choice = choices?.find(format => format.label === requested)
             if (!choice) throw new Error('Canon movie format is no longer advertised')

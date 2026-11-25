@@ -54,8 +54,6 @@ export class CameraService {
     storageSessionActive = false
     recording = false
     recordingState: CameraRecordingState = 'idle'
-    recordingMode?: { restore(): Promise<void> }
-    recordingStopConfirmed = false
     liveViewRunning = false
     liveViewStopRequested = false
     settings: CameraSettings = { iso: null, shutterSpeed: null, aperture: null }

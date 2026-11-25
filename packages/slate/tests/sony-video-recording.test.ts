@@ -65,13 +65,34 @@ it('does not turn a failed post-stop index refresh into unconfirmed recording',a
  }finally{vi.useRealTimers()}
 })
 
-it('recovers an invalid held SDK session with an idempotent Stop and no new recording',async()=>{
+it('confirms a failed Stop on a renewed SDK session by reading state, never by resending Stop',async()=>{
  vi.useFakeTimers()
  try{
-  const camera={stopRecording:async()=>{throw new Error('Sony SDK command failed (SDK code 33794)')}}
+  const first=vi.fn(async()=>{throw new Error('Sony SDK command failed (SDK code 33794)')})
   const stop=vi.fn(async()=>{}),restart=vi.fn(async()=>({stopRecording:stop,getSonyProperty:async()=>({value:'0'})}))
-  const pending=new SonyVideoRecording(camera,restart).stopInterrupted();await vi.advanceTimersByTimeAsync(500)
-  await expect(pending).resolves.toMatchObject({stopped:true});expect(restart).toHaveBeenCalledTimes(1);expect(stop).toHaveBeenCalledTimes(1)
+  const pending=new SonyVideoRecording({stopRecording:first},restart).stopInterrupted();await vi.advanceTimersByTimeAsync(500)
+  await expect(pending).resolves.toMatchObject({stopped:true});expect(restart).toHaveBeenCalledTimes(1)
+  expect(first).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled()
+ }finally{vi.useRealTimers()}
+})
+it('reports a Stop the renewed session still shows recording, without a second Stop',async()=>{
+ vi.useFakeTimers()
+ try{
+  const first=vi.fn(async()=>{throw new Error('Sony SDK command failed (SDK code 33794)')})
+  const stop=vi.fn(async()=>{}),restart=vi.fn(async()=>({stopRecording:stop,getSonyProperty:async()=>({value:'1'})}))
+  const pending=expect(new SonyVideoRecording({stopRecording:first},restart).stopInterrupted()).rejects.toThrow('did not confirm recording stopped')
+  await vi.advanceTimersByTimeAsync(16000);await pending
+  expect(first).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled()
+ }finally{vi.useRealTimers()}
+})
+it('waits out a slow Stop on one connection without resending it',async()=>{
+ vi.useFakeTimers()
+ try{
+  let samples=0
+  const camera={stopRecording:vi.fn(async()=>{}),getSonyProperty:vi.fn(async()=>({value:++samples<20?'1':'0'}))}
+  const pending=new SonyVideoRecording(camera).stopInterrupted();await vi.advanceTimersByTimeAsync(5000)
+  await expect(pending).resolves.toMatchObject({stopped:true})
+  expect(camera.stopRecording).toHaveBeenCalledTimes(1)
  }finally{vi.useRealTimers()}
 })
 
