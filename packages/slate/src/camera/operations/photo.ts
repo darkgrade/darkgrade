@@ -26,7 +26,8 @@ export interface PhotoOperations {
      * size, and for `destination: 'computer'` its bytes. Photo or video mode preparation happens
      * inside and is undone afterwards. The shutter command is never resent: an unconfirmed release
      * is CameraOutcomeUnknownError, a release the camera refuses is CameraRefusedError, and a
-     * camera that cannot take one now is CameraUnsupportedError.
+     * camera that cannot take one now is CameraUnsupportedError. It is refused while the camera
+     * reports a recording, so Stop never waits behind a photo's confirmation.
      */
     takePhoto(options?: TakePhotoOptions & { destination?: 'card' }): Promise<CardPhoto>
     takePhoto(options: TakePhotoOptions & { destination: 'computer' }): Promise<ComputerPhoto>
@@ -42,13 +43,23 @@ export interface PhotoOperations {
     resumeSonyShooting(): Promise<boolean>
 }
 
-const mediaId = (file: ConfirmedPhotoFile) => (file.captureDate ? `${file.captureDate}/${file.filename}` : file.filename)
-
 function photoFrom(file: ConfirmedPhotoFile, destination: 'card' | 'computer'): Photo {
-    const described = { mediaId: mediaId(file), name: file.filename, sizeBytes: file.objectCompressedSize }
+    const described = { ...(file.mediaId !== undefined && { mediaId: file.mediaId }), name: file.name, sizeBytes: file.sizeBytes }
     if (destination === 'card') return { destination, ...described }
     if (!file.data) throw new CameraOutcomeUnknownError('takePhoto', 'The photo was taken, but its bytes did not reach the computer')
     return { destination, ...described, data: file.data }
+}
+
+/**
+ * A photo holds the camera's operation queue until its file is confirmed, which on Nikon can take
+ * well over a minute after a long exposure. startRecording waits on the same queue, so refusing a
+ * photo while a recording is observed means Stop never waits behind one. An unreadable or unknown
+ * recording state is not a recording: generic bodies report none.
+ */
+async function refuseWhileRecording(camera: Camera): Promise<void> {
+    const state = await camera.getRecordingState().catch(() => 'unknown' as const)
+    if (state === 'recording' || state === 'starting' || state === 'stopping')
+        throw new CameraRefusedError('takePhoto', `The camera is ${state === 'recording' ? 'recording' : `${state} a recording`}; stop it before taking a photo`)
 }
 
 function takePhoto(this: Camera, options?: TakePhotoOptions & { destination?: 'card' }): Promise<CardPhoto>
@@ -61,7 +72,10 @@ async function takePhoto(this: Camera, options: TakePhotoOptions = {}): Promise<
     if (destination !== 'card' && destination !== 'computer')
         throw new CameraRefusedError('takePhoto', "destination must be 'card' or 'computer'")
     const photo = requireCapability(this, 'photo', 'takePhoto')
-    const file = await cameraContext(this).controlsQueue.run('camera', () => photo.takePhoto({ autofocus, destination }))
+    const file = await cameraContext(this).controlsQueue.run('camera', async () => {
+        await refuseWhileRecording(this)
+        return photo.takePhoto({ autofocus, destination })
+    })
     return photoFrom(file, destination)
 }
 

@@ -18,21 +18,22 @@ export interface TakePhotoOptions {
 export interface CardPhoto {
     destination: 'card'
     /**
-     * The card file, as `<capture date>/<file name>` from its object information, or the file name
-     * alone when the camera reports no capture date (Sony): the same on every connection, so it
-     * still names the file after a reconnect.
+     * The card file's media id, the same id `listMedia()` gives it, for `getMediaPreview()` and
+     * `downloadMedia()`. Absent only when the camera offers no card listing over this connection
+     * (`listMedia` is unsupported), so no id can name the file.
      */
-    mediaId: string
+    mediaId?: string
     /** The file name the camera gave the photo, such as `DSC01234.JPG`. */
     name: string
-    /**
-     * The size of the file the camera described. Sony describes the copy it sends the computer,
-     * which is smaller than the card original when the body's PC save size is reduced.
-     */
+    /** The size of the card file, as `listMedia()` reports it. */
     sizeBytes: number
 }
 
-/** A photo confirmed on the card whose bytes also reached this computer. */
+/**
+ * A photo confirmed on the card whose bytes also reached this computer. On Sony the bytes are the
+ * copy the camera sends the computer, which is smaller than the card file when the body's PC save
+ * size is reduced; `downloadMedia(mediaId)` reads the card file itself.
+ */
 export interface ComputerPhoto extends Omit<CardPhoto, 'destination'> {
     destination: 'computer'
     data: Uint8Array
@@ -40,11 +41,11 @@ export interface ComputerPhoto extends Omit<CardPhoto, 'destination'> {
 
 export type Photo = CardPhoto | ComputerPhoto
 
-/** What a driver confirms for one release: the new file's object information, and its bytes when asked. */
+/** What a driver confirms for one release: the new card file, and its bytes when asked. */
 export interface ConfirmedPhotoFile {
-    filename: string
-    captureDate: string
-    objectCompressedSize: number
+    mediaId?: string
+    name: string
+    sizeBytes: number
     data?: Uint8Array
 }
 

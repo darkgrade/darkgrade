@@ -16,7 +16,7 @@ const properties = await camera.getSonyPropertyStates()
 
 await camera.autofocus() // bounded half-press; release is guaranteed
 await camera.setFocusMode('AF-S')
-await camera.setSonyImageFormat('RAW + JPEG')
+await camera.setSonyImageFormat('RAW+JPEG')
 await camera.setSonyJpegQuality('Extra Fine')
 await camera.setSonyImageSize('Large')
 await camera.setSonyAspectRatio('3:2')

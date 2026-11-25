@@ -11,6 +11,27 @@ function fileSignature(data: Uint8Array): string {
 }
 
 /**
+ * The photo's media id is the one listMedia gives the file: it is listed, and downloadMedia reads
+ * the card file with it (a read; nothing on the card changes).
+ */
+async function mediaIdNamesTheCardFile(camera: Camera, report: SmokeReport, photo: { mediaId?: string; name: string; sizeBytes: number }) {
+    if (photo.mediaId === undefined) return report.skipped('listMedia/downloadMedia with the photo id', 'the camera offers no card listing')
+    const listed = (await camera.listMedia()).find(item => item.id === photo.mediaId)
+    if (!listed) throw new Error(`listMedia() does not list ${photo.mediaId}`)
+    if (listed.name !== photo.name || listed.sizeBytes !== photo.sizeBytes)
+        throw new Error(`listMedia() lists ${listed.name} (${listed.sizeBytes} bytes), not ${photo.name} (${photo.sizeBytes} bytes)`)
+    const downloaded = await camera.downloadMedia(photo.mediaId)
+    if (downloaded.byteLength !== photo.sizeBytes)
+        throw new Error(`downloadMedia() read ${downloaded.byteLength} bytes of a ${photo.sizeBytes}-byte photo`)
+    report.confirmed('listMedia() and downloadMedia(photo.mediaId)', {
+        mediaId: photo.mediaId,
+        listed: listed.name,
+        downloaded: downloaded.byteLength,
+        signature: fileSignature(downloaded),
+    })
+}
+
+/**
  * With the body in a movie mode, takePhoto prepares a still mode itself and puts the movie mode
  * back. The smoke selects an advertised movie mode as setup and restores the original mode.
  */
@@ -38,23 +59,27 @@ async function photoFromMovieMode(camera: Camera, report: SmokeReport) {
 
 /**
  * Takes three photos (each adds one file to the card; nothing is deleted or overwritten): one to
- * the card with autofocus, one to the computer without it, whose bytes are checked against the
- * size the camera reported, and one from a movie mode.
+ * the card with autofocus, whose media id listMedia lists and downloadMedia reads, one to the
+ * computer without it, whose bytes are checked against the card file's size, and one from a
+ * movie mode.
  */
 export const photoSmoke: SmokeArea = {
     name: 'photo',
     description: 'takePhoto to the card (autofocus), to the computer (no autofocus) and from a movie mode',
     async run(camera, report) {
-        try {
-            const card = await camera.takePhoto()
-            report.confirmed('takePhoto()', { destination: card.destination, mediaId: card.mediaId, name: card.name, sizeBytes: card.sizeBytes })
-        } catch (error) {
+        const card = await camera.takePhoto().catch(error => {
             // A scene the camera cannot focus on is the camera's answer, not a driver fault.
             if (!(error instanceof CameraRefusedError)) throw error
             report.skipped('takePhoto()', `the camera refused: ${error.message}`)
+            return undefined
+        })
+        if (card) {
+            report.confirmed('takePhoto()', { destination: card.destination, mediaId: card.mediaId, name: card.name, sizeBytes: card.sizeBytes })
+            await mediaIdNamesTheCardFile(camera, report, card)
         }
         const computer = await camera.takePhoto({ autofocus: false, destination: 'computer' })
-        if (computer.data.byteLength !== computer.sizeBytes)
+        // Sony sends the computer its PC copy, which is smaller than the card file at a reduced PC save size.
+        if (computer.data.byteLength === 0 || computer.data.byteLength > computer.sizeBytes)
             throw new Error(`Received ${computer.data.byteLength} bytes for a ${computer.sizeBytes}-byte photo`)
         report.confirmed("takePhoto({ autofocus: false, destination: 'computer' })", {
             mediaId: computer.mediaId,

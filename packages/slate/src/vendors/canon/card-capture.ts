@@ -9,7 +9,7 @@ export async function captureCanonCardImage(
     camera: CanonCamera,
     capture: () => Promise<void>,
     options: { includeInfo: boolean; includeData: boolean },
-): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+): Promise<{ info?: ObjectInfo; data?: Uint8Array; objectHandle?: number }> {
     const storageCamera = { getInstance: () => camera, send: camera.send.bind(camera) }
     const baseline = await readCameraObjectHandles(storageCamera)
     await capture()
@@ -22,7 +22,7 @@ async function confirmNewCardImage(
     storageCamera: { getInstance: () => CanonCamera; send: CanonCamera['send'] },
     baseline: Set<number>,
     options: { includeInfo: boolean; includeData: boolean },
-): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
+): Promise<{ info?: ObjectInfo; data?: Uint8Array; objectHandle: number }> {
     const deadline = Date.now() + 8000
     let lastError: unknown
     do {
@@ -51,7 +51,11 @@ async function confirmNewCardImage(
                     ? await camera.getObject(image.handle, image.info.objectCompressedSize) : undefined
                 if (data && data.length !== image.info.objectCompressedSize)
                     throw new Error('Canon captured-image transfer length does not match its metadata')
-                return { ...(options.includeInfo ? { info: image.info } : {}), ...(data ? { data } : {}) }
+                return {
+                    ...(options.includeInfo ? { info: image.info } : {}),
+                    ...(data ? { data } : {}),
+                    objectHandle: image.handle,
+                }
             }
         } catch (error) {
             // Indexing can be busy while the camera saves a new file. Transfer/metadata failures are definitive.

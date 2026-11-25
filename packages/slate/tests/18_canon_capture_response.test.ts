@@ -43,29 +43,18 @@ describe('Canon capture response handling', () => {
         const {camera} = cameraWithResponses([{code: 0x2001, parameters: [0]}, {code: 0x2001, parameters: [0]}])
         await expect(camera.captureImage({autofocus: false, includeInfo: false, includeData: false})).resolves.toEqual({})
     })
-    it('retries without autofocus after DeviceBusy and releases every pressed control', async () => {
-        const { camera, operations } = cameraWithResponses([
-            0x2001,
-            0x2019,
-            0x2001,
-            0x2001,
-            0x2001,
-            0x2001,
-            0x2001,
-        ])
+    it('refuses an AF release that cannot lock focus and never falls back to an unfocused release', async () => {
+        const { camera, operations } = cameraWithResponses([0x2001, 0x2019, 0x2001])
 
-        await expect(camera.captureImage({ includeInfo: false, includeData: false })).resolves.toEqual({})
-        expect(operations.map(operation => operation.name)).toEqual([
-            'CanonRemoteReleaseOn',
-            'CanonRemoteReleaseOn',
-            'CanonRemoteReleaseOff',
-            'CanonRemoteReleaseOn',
-            'CanonRemoteReleaseOn',
-            'CanonRemoteReleaseOff',
-            'CanonRemoteReleaseOff',
+        const refusal = await camera.captureImage({ includeInfo: false, includeData: false }).catch(error => error)
+        expect(refusal).toBeInstanceOf(CameraRefusedError)
+        expect(refusal.message).toContain('could not lock focus')
+        expect(refusal.message).toContain('AF shutter press returned 0x2019')
+        expect(operations).toEqual([
+            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'AF' } },
+            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'SHUTTER', AFMode: 'AF' } },
+            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'FOCUS' } },
         ])
-        expect(operations[0]?.params).toEqual({ ReleaseMode: 'FOCUS', AFMode: 'AF' })
-        expect(operations[3]?.params).toEqual({ ReleaseMode: 'FOCUS', AFMode: 'MF' })
     })
 
     it('releases shutter and focus after accepted capture commands', async () => {

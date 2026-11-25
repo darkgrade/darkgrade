@@ -8,7 +8,7 @@ import type { CanonCamera } from '@camera/canon-camera'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@camera/nikon-camera'
-import type { FlashMode, PhotoFormat, RawCompression } from '@camera/settings/photo'
+import type { FlashMode, PhotoFormat, PhotoSize, RawCompression } from '@camera/settings/photo'
 import type { SonyCamera } from '@camera/sony-camera'
 import { resolveCameraControl } from '@camera/controls'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
@@ -16,6 +16,8 @@ import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
 import { canonImageFormatFromPacked, CanonImageFormatCodec } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
 import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import type { SonyImageSize } from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import type { CodecType } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -337,6 +339,9 @@ describe('photo setting names and values', () => {
         expectTypeOf<'Lossless'>().toExtend<RawCompression>()
         expectTypeOf<'Off'>().toExtend<FlashMode>()
         expectTypeOf<'6000x4000'>().toExtend<Parameters<typeof camera.setPhotoSize>[0]>()
+        // Sony's size names are the codec's own, so a renamed codec value renames the setting's type.
+        expectTypeOf<CodecType<(typeof SonyImageSize)['codec']>>().toExtend<PhotoSize>()
+        expectTypeOf<PhotoSize>().not.toEqualTypeOf<string>()
         // Type-only: never called, so nothing reaches the transport.
         const vendorWords = () => {
             // @ts-expect-error The codecs spell RAW+JPEG without spaces.

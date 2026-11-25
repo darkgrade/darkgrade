@@ -176,7 +176,7 @@ try {
         // Photo: takePhoto returns the confirmed file; only a computer photo carries its bytes.
         const cardPhoto: Promise<CardPhoto> = camera.takePhoto()
         const computerPhoto: Promise<ComputerPhoto> = camera.takePhoto({ autofocus: false, destination: 'computer' })
-        void camera.takePhoto({ destination: 'computer' }).then(photo => photo.data.byteLength + photo.mediaId.length)
+        void camera.takePhoto({ destination: 'computer' }).then(photo => photo.data.byteLength + (photo.mediaId?.length ?? 0))
         // @ts-expect-error A card photo has no bytes; ask for destination 'computer'.
         void camera.takePhoto({ destination: 'card' }).then(photo => photo.data)
         // @ts-expect-error The destination is the card or the computer; 'memory' is not a destination.

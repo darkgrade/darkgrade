@@ -2,6 +2,8 @@ import type { CameraControlId, CameraControlState } from '@camera/controls'
 import { CameraUnsupportedError } from '@camera/errors'
 import type { SettingReader, SettingReaders, SettingTypes } from '@camera/settings/setting-types'
 import type { CanonImageFormat, CanonImageFormatLabel } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
+import type { SonyImageSize } from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import type { CodecType } from '@ptp/types/codec'
 import type { CodecValue } from '@vendors/control-properties'
 
 /** Photo settings. Canonical ids, labels and search aliases. */
@@ -24,8 +26,14 @@ export const photoControlDefinitions = {
  */
 export type PhotoFormat = Exclude<CodecValue<'photoFormat'>, CanonImageFormat> | CanonImageFormatLabel
 
-/** A photo size: Sony's `'Large'`, `'Medium'`, `'Small'`, or the pixel dimensions a standard body lists. */
-export type PhotoSize = Exclude<CodecValue<'photoSize'>, string> | 'Large' | 'Medium' | 'Small' | `${number}x${number}`
+/**
+ * The standard ImageSize property is a free-form string, which collapses the codec union to
+ * `string`; Sony's enumerated size names come from its own codec instead.
+ */
+type EnumeratedPhotoSize = CodecType<(typeof SonyImageSize)['codec']>
+
+/** A photo size: Sony's codec names (`'Large'`, `'Medium'`, `'Small'`), or the pixel dimensions a standard body lists. */
+export type PhotoSize = Exclude<CodecValue<'photoSize'>, string> | EnumeratedPhotoSize | `${number}x${number}`
 
 export type AspectRatio = CodecValue<'aspectRatio'>
 export type JpegQuality = CodecValue<'jpegQuality'>

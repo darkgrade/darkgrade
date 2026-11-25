@@ -1,6 +1,6 @@
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { parseSonyContentInfoList, type SonyContentInfoList } from '@vendors/sony/content-info-list'
-import { shutterOutcomeUnknown, shutterRefused } from '@camera/shutter-outcome'
+import { afterPossibleRelease, shutterOutcomeUnknown, shutterRefused } from '@camera/shutter-outcome'
 import { Logger } from '@core/logger'
 import {
     PTPDecodeError,
@@ -896,11 +896,12 @@ export class SonyCamera extends GenericCamera {
         const originalDestination = requestedDestination ? await this.get(destination) : undefined
         const originalFocus = options.autofocus === false ? await this.get(focus) : undefined
         let failure: unknown
+        const shutter = { sent: false }
         try {
             if (requestedDestination && originalDestination !== requestedDestination)
                 await this.set(destination, requestedDestination)
             if (originalFocus !== undefined && originalFocus !== 'Manual') await this.set(focus, 'Manual')
-            return await this.captureWithCurrentDestination(options)
+            return await this.captureWithCurrentDestination(options, shutter)
         } catch (error) {
             failure = error
             throw error
@@ -923,12 +924,17 @@ export class SonyCamera extends GenericCamera {
             }
             if (restorationErrors.length) {
                 const errors = [...(failure ? [failure] : []), ...restorationErrors]
-                throw new AggregateError(errors, `Sony capture/settings restoration failed: ${errors.map(String).join('; ')}`)
+                const restoration = new AggregateError(errors, `Sony capture/settings restoration failed: ${errors.map(String).join('; ')}`)
+                // After S2 a photo may exist, so a failed restoration never reads as a refusal.
+                throw afterPossibleRelease(restoration, shutter.sent)
             }
         }
     }
 
-    private async captureWithCurrentDestination({ includeInfo = true, includeData = true, autofocus = true } = {}): Promise<{
+    private async captureWithCurrentDestination(
+        { includeInfo = true, includeData = true, autofocus = true } = {},
+        shutter = { sent: false }
+    ): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
     }> {
@@ -941,7 +947,6 @@ export class SonyCamera extends GenericCamera {
             await this.set(this.registry.properties.SetPostViewEnable, 'DISABLE')
         }
 
-        let shutterSent = false
         const release = async () => {
             // Sony requires S1 to remain held through S2, including manual focus.
             // libgphoto2 camera_sony_capture uses the same two-stage release.
@@ -955,7 +960,7 @@ export class SonyCamera extends GenericCamera {
                         throw shutterRefused(error)
                     }
                 } else await this.waitMs(500)
-                shutterSent = true
+                shutter.sent = true
                 await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
                 await this.waitMs(35)
             } finally {
@@ -971,7 +976,7 @@ export class SonyCamera extends GenericCamera {
             try {
                 return await work()
             } catch (error) {
-                throw shutterSent ? shutterOutcomeUnknown(error) : error
+                throw shutter.sent ? shutterOutcomeUnknown(error) : error
             }
         }
         // A card workflow verifies the newly indexed object itself. It must not

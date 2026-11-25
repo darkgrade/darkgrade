@@ -1229,9 +1229,11 @@ export class GenericCamera {
         return this.setStandardProperty('ExposureIndex', value)
     }
 
+    /** One InitiateCapture. With info or data, resolves with the new object's handle once ObjectAdded names it. */
     async captureImage({ includeInfo = true, includeData = true } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
+        objectHandle?: number
     }> {
         if (!includeInfo && !includeData) {
             const captureResponse = await this.send(this.registry.operations.InitiateCapture, {})
@@ -1275,6 +1277,7 @@ export class GenericCamera {
             return {
                 info: info,
                 data: data,
+                objectHandle: capturedImageObjectHandle,
             }
         })
     }

@@ -26,7 +26,7 @@ export const photoOperationTable = {
             disposition: {
                 kind: 'replaced-by',
                 target: 'takePhoto',
-                note: "destination 'memory' is 'computer'; Nikon lossless RAW is setRawCompression('Lossless') before the photo",
+                note: "'computer' saves to the card and returns the bytes; host-only and SDRAM delivery ('memory') is not offered. Nikon lossless RAW is setRawCompression('Lossless') before the photo",
             },
         },
         resumeSonyShooting: {

@@ -42,10 +42,11 @@ export async function afterShutterRelease<Result>(work: () => Promise<Result>): 
 
 /**
  * The one outcome a capture with restoration failures reports: an unknown shutter outcome
- * outranks a refusal, which outranks unsupported. Other errors are returned unchanged.
+ * outranks a refusal, which outranks unsupported. Undefined when neither the error nor any error
+ * inside it is one of the three outcomes.
  */
-export function strongestShutterOutcome(error: unknown): unknown {
-    if (!(error instanceof AggregateError)) return error
+export function strongestShutterOutcome(error: unknown): Error | undefined {
+    if (!(error instanceof AggregateError)) return typedOutcome(error) && error instanceof Error ? error : undefined
     const inner: unknown[] = error.errors
     const pick = (type: typeof CameraOutcomeUnknownError | typeof CameraRefusedError | typeof CameraUnsupportedError) =>
         inner.find(candidate => candidate instanceof type)
@@ -56,5 +57,31 @@ export function strongestShutterOutcome(error: unknown): unknown {
         return withCause(new CameraRefusedError(operation, error.message), error)
     if (strongest instanceof CameraUnsupportedError)
         return withCause(new CameraUnsupportedError(operation, error.message), error)
-    return error
+    return undefined
+}
+
+/**
+ * A capture failure as one of the three outcomes. Drivers type every failure that follows a sent
+ * shutter command, so an untyped one happened before it (preparation, a mode change, a baseline
+ * read) and took nothing; once the photo was confirmed, an untyped failure is a mode restoration
+ * that failed after it, which must never read as a refusal the caller may simply retry.
+ */
+export function photoOutcome(error: unknown, photoConfirmed: boolean): Error {
+    const typed = strongestShutterOutcome(error)
+    if (typed) return typed
+    if (photoConfirmed)
+        return withCause(
+            new CameraOutcomeUnknownError(operation, `The photo was taken, but restoring the camera afterwards failed: ${messageOf(error)}`),
+            error
+        )
+    return withCause(new CameraRefusedError(operation, `No photo was taken: ${messageOf(error)}`), error)
+}
+
+/**
+ * For a driver whose own restoration follows the release: once a release may have been sent, an
+ * untyped failure (restoring a setting or mode) is an unknown outcome, never a refusal.
+ */
+export function afterPossibleRelease(error: unknown, releaseSent: boolean): unknown {
+    if (!releaseSent || strongestShutterOutcome(error)) return error
+    return shutterOutcomeUnknown(error)
 }

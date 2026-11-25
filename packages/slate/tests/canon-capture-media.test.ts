@@ -58,6 +58,7 @@ it.each([
     const assertion = expect(result).resolves.toEqual({
         ...(options.includeInfo ? { info: test.info } : {}),
         ...(options.includeData ? { data: test.data } : {}),
+        objectHandle: 4,
     })
     await vi.runAllTimersAsync()
     await assertion

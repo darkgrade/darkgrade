@@ -29,6 +29,7 @@ import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } 
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 
 const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
+const CANON_DEVICE_BUSY = 0x2019
 export interface CanonPropertyState {
     code: number
     name: string
@@ -675,6 +676,8 @@ export class CanonCamera extends GenericCamera {
     }: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean } = {}): Promise<{
         info?: ObjectInfo
         data?: Uint8Array
+        /** The new card object's handle, when info or data was requested. */
+        objectHandle?: number
     }> {
         if (typeof autofocus !== 'boolean') throw new Error('Canon capture autofocus must be true or false')
         // Once a shutter press was sent without a definitive refusal, a photo may exist.
@@ -710,10 +713,18 @@ export class CanonCamera extends GenericCamera {
                         AFMode: afMode,
                     })
                     if (shutter.code !== OK.code) {
-                        shutterRefusal = new PTPResponseError(
+                        const answer = new PTPResponseError(
                             shutter.code,
                             `Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`
                         )
+                        // DeviceBusy at an AF full press generally means the body could not lock focus.
+                        shutterRefusal = afMode === 'AF' && shutter.code === CANON_DEVICE_BUSY
+                            ? shutterRefused(new PTPResponseError(
+                                shutter.code,
+                                `The camera could not lock focus, so nothing was taken (${answer.message}); ` +
+                                    'take the photo with autofocus false to release without focusing'
+                            ))
+                            : answer
                         throw shutterRefusal
                     }
                     shutterPressed = true
@@ -745,22 +756,9 @@ export class CanonCamera extends GenericCamera {
                 }
             }
 
-            if (!autofocus) {
-                await release('MF')
-                return
-            }
-
-            try {
-                await release('AF')
-            } catch (error) {
-                if (!(error instanceof PTPResponseError) || !error.message.includes('AF shutter press returned 0x2019'))
-                    throw error
-                // DeviceBusy at full press generally means the body could not lock focus.
-                // Canon's second release parameter explicitly permits a no-AF fallback.
-                shutterSent = false
-                shutterRefusal = undefined
-                await release('MF')
-            }
+            // An AF release that cannot lock focus is refused, never repeated as an MF release:
+            // the caller asked for a focused photo. Only autofocus false releases without focus.
+            await release(autofocus ? 'AF' : 'MF')
         })
         const classified = async () => {
             try {
