@@ -44,11 +44,12 @@ the variable and always releases. `check:guards` (in `test` and
 `test:package`) is strict: it fails on any vendor-named main-entry export or Camera member (raw
 access is `protocolSession(camera)` from `@darkgrade/slate/protocol`), on a file whose
 `any`/`as never`/`as unknown as` count differs from its budget (lower it with `-- --update`), and
-on a Camera method missing from the generated operation list or without a doc comment. The MCP
-tools (`src/runtime/mcp.ts`) and `darkgrade camera <command>`s (`src/cli/commands.ts`) are generated
-at build time from Camera's signatures and doc comments (`scripts/generate-camera-operations.ts`,
-into `build/generated/`) through `src/runtime/operations.ts`: document a method's inputs on Camera,
-never add a tool by hand.
+on a Camera method missing from the generated operation list, without a doc comment, or a list
+that is out of date. The MCP tools (`src/runtime/mcp.ts`) and `darkgrade camera <command>`s
+(`src/cli/commands.ts`) are generated from Camera's signatures and doc comments
+(`scripts/generate-camera-operations.ts`, committed as `src/runtime/camera-operations.ts`, since
+Matrix and the bench CI build `src` alone; refresh it with `generate:operations`) through
+`src/runtime/operations.ts`: document a method's inputs on Camera, never add a tool by hand.
 
 ## Driver invariants
 

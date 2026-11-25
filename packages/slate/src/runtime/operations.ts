@@ -1,10 +1,10 @@
-import { cameraOperations } from '@generated/camera-operations'
+import { cameraOperations } from '@runtime/camera-operations'
 import type { Camera } from '@camera/index'
 import { announceCallSurface } from '@core/call-context'
 
 /**
- * The public Camera operations as the MCP tools and the CLI run them. The list is generated at
- * build time from Camera's own signatures and doc comments (scripts/generate-camera-operations.ts),
+ * The public Camera operations as the MCP tools and the CLI run them. The list is generated from
+ * Camera's own signatures and doc comments (scripts/generate-camera-operations.ts) and committed,
  * so every surface has the library's names, inputs and results. Type-only Camera imports keep
  * this module free of drivers, so the browser runtime can carry it.
  */

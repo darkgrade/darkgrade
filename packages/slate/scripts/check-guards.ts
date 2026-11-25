@@ -6,10 +6,12 @@
 //   2. The escape budget: `any`, `as never` and `as unknown as` per file in src/. A file may never
 //      exceed its budget, and a budget above the current count fails too, so the count only goes
 //      down: `--update` lowers budgets to the current counts (never raises them).
-//   3. Surface parity: the generated operation list (scripts/generate-camera-operations.ts) has
-//      every Camera method but the events, each with a summary from its doc comment.
+//   3. Surface parity: the committed operation list (src/runtime/camera-operations.ts, written by
+//      scripts/generate-camera-operations.ts) is what Camera generates today, and has every Camera
+//      method but the events, each with a summary from its doc comment.
 import { Camera } from '@camera/index'
-import { writeCameraOperations } from '@scripts/generate-camera-operations'
+import { cameraOperationsPath, cameraOperationsSource } from '@scripts/generate-camera-operations'
+import { surfaceOperations } from '@runtime/operations'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
@@ -127,10 +129,11 @@ function checkEscapeBudget() {
     }
 }
 
-async function checkSurfaces() {
-    writeCameraOperations()
-    // Loaded after writing, since the operations module imports the generated list.
-    const { surfaceOperations } = await import('@runtime/operations')
+function checkSurfaces() {
+    if (readFileSync(cameraOperationsPath, 'utf8') !== cameraOperationsSource())
+        failures.push(
+            `${relative(packageRoot, cameraOperationsPath)} is not what Camera generates today: run bun run --cwd packages/slate generate:operations`
+        )
     const generated = new Map(surfaceOperations().map(operation => [operation.name, operation]))
     const methods = [...Object.getOwnPropertyNames(Camera.prototype), 'discover'].filter(
         name => !['constructor', 'on', 'off'].includes(name)
@@ -143,7 +146,7 @@ async function checkSurfaces() {
 
 checkVendorNames()
 checkEscapeBudget()
-await checkSurfaces()
+checkSurfaces()
 for (const note of notes) console.log(note)
 if (failures.length) {
     for (const failure of failures) console.error(`✗ ${failure}`)

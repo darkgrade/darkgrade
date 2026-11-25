@@ -114,13 +114,14 @@
         "test:package": "bun run build && bun run scripts/check-package-exports.ts && bun run scripts/check-guards.ts",
         "check:guards": "bun run scripts/check-guards.ts",
         "test:runtime": "bun run build && bun test ./tests/runtime",
-        "mcp": "bun run scripts/generate-camera-operations.ts && bun run src/runtime/stdio.ts",
-        "typecheck": "bun run scripts/generate-camera-operations.ts && tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit",
+        "mcp": "bun run src/runtime/stdio.ts",
+        "generate:operations": "bun run scripts/generate-camera-operations.ts",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit",
         "bench:recover": "bun run scripts/recover-camera.ts",
         "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
         "test:cli": "bun run build && node --test tests/cli/*.test.ts",
         "camera:api-check": "bun run scripts/camera-api-check.ts",
-        "camera:parity": "bun run scripts/generate-camera-operations.ts && bun run scripts/camera-parity.ts"
+        "camera:parity": "bun run scripts/camera-parity.ts"
     },
     "keywords": [
         "ptp",

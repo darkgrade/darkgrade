@@ -113,15 +113,17 @@ camera shows the result; Stop is never blocked.
 
 **Camera drives every surface.** The MCP tools (`camera_` + the method in snake_case, from
 `src/runtime/mcp.ts`) and the CLI commands (`darkgrade camera ` + the method in kebab-case, from
-`src/cli/commands.ts`) are generated at build time from Camera's own signatures and doc comments
-(`scripts/generate-camera-operations.ts`, written to `build/generated/`) through
-`src/runtime/operations.ts`; never write a tool, command or table entry by hand. Every public
+`src/cli/commands.ts`) are generated from Camera's own signatures and doc comments
+(`scripts/generate-camera-operations.ts`, committed as `src/runtime/camera-operations.ts` so `src`
+builds alone: Matrix and the bench CI never run a candidate's scripts) through
+`src/runtime/operations.ts`; never write a tool, command or table entry by hand, and run
+`bun run --cwd packages/slate generate:operations` after changing a Camera method. Every public
 method needs a doc comment (its first sentence is the summary) and `@param` text for positional
 inputs; options objects describe their properties. Results are exactly what the library returns,
 with bytes moved into files. Events are library only (the CLI streams them with `darkgrade camera
 watch`); `start-recording` and `start-zoom` hold the CLI until Ctrl-C or `--duration`.
 `darkgrade cameras` is the one exception to the naming rule, for `Camera.discover`. `check:guards`
-fails when a Camera method is missing from the generated list or has no doc comment.
+fails when the committed list is out of date, or a Camera method is missing from it or has no doc comment.
 
 **No type escapes.** Slate camera code adds no `any`, `as any`, `as never` or `as unknown as`.
 `check:guards` keeps a per-file budget (`packages/slate/scripts/guards/escape-budget.json`) that

@@ -22,8 +22,7 @@
             "@runtime/*": ["src/runtime/*"],
             "@cli/*": ["src/cli/*"],
             "@tests/*": ["tests/*"],
-            "@scripts/*": ["scripts/*"],
-            "@generated/*": ["build/generated/*"]
+            "@scripts/*": ["scripts/*"]
         }
     },
     "include": ["src", "tests", "scripts/recover-camera.ts", "scripts/camera-lease.ts", "scripts/check-guards.ts", "*.config.ts"],

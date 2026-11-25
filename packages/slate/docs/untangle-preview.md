@@ -149,7 +149,7 @@ Nothing has changed yet. This file is the plan.
   - packages/slate/src/runtime/operations.ts:160 — a colorTemperature text → number special case. Use a per-control value schema from cameraControlDefinitions.
   - packages/slate/scripts/generate-camera-operations.ts:17 — repeats the runtime types. Import them.
   - packages/slate/scripts/generate-camera-operations.ts:36 and check-guards.ts:136 — two exclusion lists.
-  - packages/slate/src/runtime/operations.ts:1, vite.config.ts:9, package.json:116-117, check-guards.ts:131 — callers must run the generator before importing. Make it a build step that one script runs first.
+  - Done (2026-11-25): the list is committed as src/runtime/camera-operations.ts, so `src` builds without the generator; check:guards fails when it is out of date.
   - packages/slate/scripts/camera-api-check.ts:90 — a hand list of methods. Iterate the generated list; its vendor table goes to fix 3.
   - apps/studio/src/main/tools/studio-tools.ts:458-464 — `writtenSetting` strips 'set' from the operation name. Use the descriptor's control id.
   - packages/slate/src/index.ts:16-69 vs controls.ts:2-48 — two hand lists that have drifted. The main entry re-exports /controls.
