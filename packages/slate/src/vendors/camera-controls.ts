@@ -28,12 +28,15 @@ import type { CodecInstance } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 import {
     canonControlProperties,
+    controlValueNames,
     nikonMovieControlProperties,
     nikonPhotoControlProperties,
     sonyControlProperties,
     standardControlProperties,
+    type ControlInventory,
     type ControlPropertyMap,
 } from '@vendors/control-properties'
+import { canonFocusModeStates } from '@vendors/control-properties/focus'
 import { nikonControlLabel } from '@vendors/nikon/control-values'
 import { MovieShutterAngle } from '@vendors/nikon/video-properties'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
@@ -97,6 +100,7 @@ async function nikonStates(
         movie = selector === 'VIDEO'
     }
     // Unknown mode cannot safely select a movie or still extension.
+    const inventory: ControlInventory = movie === true ? 'nikonMovie' : movie === false ? 'nikonPhoto' : 'standard'
     const mappings: { -readonly [Id in CameraControlId]?: ControlPropertyMap[Id] } =
         movie === true
             ? { ...nikonMovieControlProperties }
@@ -152,7 +156,7 @@ async function nikonStates(
             iso.writable = false
         }
     }
-    return { states, mappings }
+    return { states, mappings, inventory }
 }
 
 /** Adapt existing observed inventories; a static registry entry alone never becomes a capability. */
@@ -171,11 +175,13 @@ export async function readCameraCapabilities(
     }
     let states: PropertyState[]
     let mappings: ControlPropertyMap<CameraControlId>
+    let valueInventory: ControlInventory
     if (camera instanceof SonyCamera) {
         const observed = await camera.refreshPropertyStates()
         const iso = camera.isoControlState(observed)
         states = observed.map(state => (state.name === 'Iso' && iso ? iso : state))
         mappings = sonyControlProperties
+        valueInventory = 'sony'
     } else if (camera instanceof CanonCamera) {
         await camera.refreshEventProperties()
         states = camera
@@ -193,9 +199,14 @@ export async function readCameraCapabilities(
                 writable: state.access === 'GetSet' && Boolean(state.allowedValues?.length),
                 ...(state.unrecognized && { unrecognized: state.unrecognized }),
             }))
+        const videoMode = camera
+            .listUnknownPropertyStates()
+            .some(state => state.name === 'FixedMovie' && state.rawValue === 1)
+        states = canonFocusModeStates(states, videoMode)
         mappings = canonControlProperties
+        valueInventory = 'canon'
     } else if (camera instanceof NikonCamera) {
-        ;({ states, mappings } = await nikonStates(
+        ;({ states, mappings, inventory: valueInventory } = await nikonStates(
             camera,
             new Set(inventory!.devicePropertiesSupported),
             inventory!.operationsSupportedRaw,
@@ -214,13 +225,18 @@ export async function readCameraCapabilities(
             })
         )
         mappings = standardControlProperties
+        valueInventory = 'standard'
     }
     const controls: CameraCapabilities['controls'] = {}
     for (const id of Object.keys(mappings) as CameraControlId[]) {
         const state = mappings[id]?.map(property => states.find(state => state.name === property.name)).find(Boolean)
         if (!state) continue
-        const label = (value: string | number | bigint) =>
-            camera instanceof NikonCamera && value !== 'Auto' ? nikonControlLabel(state.name, value) : String(value)
+        const names = controlValueNames(valueInventory, id)?.[state.name]
+        const label = (value: string | number | bigint) => {
+            const vendorLabel =
+                camera instanceof NikonCamera && value !== 'Auto' ? nikonControlLabel(state.name, value) : String(value)
+            return names?.[vendorLabel] ?? vendorLabel
+        }
         const definition = cameraControlDefinitions[id]
         const value = label(state.value),
             allowedValues = state.allowedValues?.map(label)
@@ -340,7 +356,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 throw new CameraRefusedError(id, `Requested ${id} value is outside the camera range`)
         }
     }
-    const write = async (): Promise<void> => {
+    const vendorRequested = vendorValueLabel(driver, state, requested)
+    const write = async (requested: string): Promise<void> => {
         if (driver instanceof NikonCamera) {
             const expectedMode =
                 state.source.name.startsWith('NikonMovie') || state.source.name === 'MovieShutterAngle'
@@ -451,7 +468,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
         if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(requested)
         else await driver.set(property, (id === 'colorTemperature' ? Number(requested) : requested) as never)
     }
-    await write()
+    await write(vendorRequested)
     let observed: CameraControlState | undefined
     await confirmCameraValue(
         id,
@@ -489,4 +506,21 @@ function sameExposureTicks(driver: GenericCamera, code: number): (observed: stri
             return false
         }
     }
+}
+
+/** The camera's own label for a canonical value of this control (the inverse of its value names). */
+function vendorValueLabel(driver: GenericCamera, state: CameraControlState, canonical: string): string {
+    const inventory: ControlInventory =
+        driver instanceof SonyCamera
+            ? 'sony'
+            : driver instanceof CanonCamera
+              ? 'canon'
+              : driver instanceof NikonCamera
+                ? state.source.name.startsWith('NikonMovie')
+                    ? 'nikonMovie'
+                    : 'nikonPhoto'
+                : 'standard'
+    const names = controlValueNames(inventory, state.id)?.[state.source.name]
+    const matches = Object.entries(names ?? {}).filter(([, name]) => name === canonical)
+    return matches.length === 1 ? matches[0]![0] : canonical
 }

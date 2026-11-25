@@ -276,13 +276,13 @@ describe('Nikon capability-gated focus', () => {
         expect(calls.filter(call => call.name === 'ChangeApplicationMode').at(-1)?.params).toEqual({ Mode: 'OFF' })
     })
 
-    it('routes the public Nikon focus API without changing generic autofocus return semantics', async () => {
+    it('routes the public Nikon focus API, reporting the focus result the camera gave', async () => {
         const { camera: instance, transport } = fixture()
         const camera = new Camera({ vendorId: 0x04b0, transport: transport as any,
             logger: { captureConsole: false, renderInTerminal: false } })
         const nikon = camera.getInstance() as NikonCamera
         const autofocus = vi.spyOn(nikon, 'autofocus').mockResolvedValue({ commandSent: true, focusAcquired: false, metadata: {} as any })
-        await expect(camera.autofocus()).resolves.toBeUndefined()
+        await expect(camera.autofocus()).resolves.toBe('not-acquired')
         await expect(camera.nikonAutofocus()).resolves.toMatchObject({ focusAcquired: false })
         const point = vi.spyOn(nikon, 'touchFocus').mockResolvedValue({ positionVerified: false } as any)
         await camera.nikonTouchFocus(0.5, 0.25, { focus: false })

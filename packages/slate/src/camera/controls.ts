@@ -66,7 +66,15 @@ export interface CameraCapabilities {
     controls: Partial<Record<CameraControlId, CameraControlState>>
     /** Raw standard DeviceInfo inventory, or null where unavailable; never workflow qualification. */
     advertisedOperations: number[] | null
+    /**
+     * Whether each public operation is possible right now, with the reason when it is not. Camera
+     * fills this from its driver's capability groups; a missing entry means not yet reported.
+     */
+    operations?: Partial<Record<string, OperationAvailability>>
 }
+
+/** One operation's availability now: an unsupported one says why, in words a user can act on. */
+export type OperationAvailability = { supported: true } | { supported: false; reason: string }
 
 /**
  * The same control contract on an already-connected native PTP or licensed SDK session, including

@@ -16,3 +16,14 @@ export interface VendorControlProperties<Ids extends string> {
     /** Nikon in movie mode (LiveViewSelector VIDEO). */
     nikonMovie: ControlPropertyMap<Ids>
 }
+
+/** For one setting: per property name, each vendor label and its canonical name. */
+export type ControlPropertyValueNames = { readonly [PropertyName: string]: Readonly<Record<string, string>> }
+
+/**
+ * One settings group's canonical value names for each property inventory. A group lists only the
+ * settings whose vendor labels differ from the canonical spelling; others keep the codec's label.
+ */
+export type ControlValueNames<Ids extends string> = {
+    readonly [Inventory in keyof VendorControlProperties<Ids>]?: { readonly [Id in Ids]?: ControlPropertyValueNames }
+}

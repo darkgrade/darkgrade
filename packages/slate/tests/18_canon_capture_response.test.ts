@@ -153,9 +153,18 @@ describe('Canon capture response handling', () => {
         expect(operations.filter(operation => operation.name === 'CanonRemoteReleaseOn')).toHaveLength(2)
     })
 
-    it('rejects an autofocus half press result while releasing the acknowledged control', async () => {
+    it('reports a half press that could not focus as not acquired, releasing the acknowledged control', async () => {
         const { camera, operations } = cameraWithResponses([0x2005, { code: 0x2001, parameters: [1] }, 0x2001])
-        await expect(camera.autofocus(0)).rejects.toThrow('autofocus half press rejected')
+        await expect(camera.autofocus(0)).resolves.toBe('not-acquired')
+        expect(operations.at(-1)?.name).toBe('CanonRemoteReleaseOff')
+    })
+
+    it('refuses with the EDSDK reason when a half press is rejected for another cause', async () => {
+        const { camera, operations } = cameraWithResponses([0x2005, { code: 0x2001, parameters: [6] }, 0x2001])
+        await expect(camera.autofocus(0)).rejects.toMatchObject({
+            name: 'CameraRefusedError',
+            message: expect.stringContaining('no card is inserted'),
+        })
         expect(operations.at(-1)?.name).toBe('CanonRemoteReleaseOff')
     })
 

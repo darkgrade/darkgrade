@@ -90,6 +90,7 @@ try {
         import { Camera, configureSlateTelemetry, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, SonyWifiCamera, SonyCamera, type ShutterSpeed, type TypedSettingMethods,
+            type FocusMode, type FocusArea, type FocusResult, type OperationAvailability,
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
@@ -176,9 +177,46 @@ try {
                 ? string extends Value ? Name : never : never
             : never }[keyof TypedSettingMethods]
         const noPlainStringSetters: [PlainStringSetters] extends [never] ? true : PlainStringSetters = true
+        // Focus: a confirmed result, 0–1 points, named step sizes and canonical focus settings.
+        const focused: Promise<FocusResult> = camera.autofocus()
+        camera.setFocusPoint(0.5, 0.4)
+        camera.setFocusPoint(0.5, 0.4, { autofocus: false })
+        camera.resetFocusPoint()
+        camera.nudgeFocus('near', 'small')
+        const focusMode: Promise<FocusMode> = camera.setFocusMode('AF-C')
+        const focusArea: Promise<FocusArea> = camera.getFocusArea()
+        camera.setFocusArea('Wide')
+        camera.setSubjectDetection('On')
+        camera.setDetectionSubject('People')
+        camera.setEyeSelection('Left')
+        sdk.setFocusMode('MF')
+        capabilities.then(found => {
+            const availability: OperationAvailability | undefined = found.operations?.setFocusPoint
+            void availability
+        })
+        // @ts-expect-error autofocus takes no duration; the camera decides how long it focuses.
+        camera.autofocus(800)
+        // @ts-expect-error autofocus reports acquired, not-acquired or unknown, never a bare boolean.
+        const focusedFlag: Promise<boolean> = camera.autofocus()
+        // @ts-expect-error A focus point needs both coordinates.
+        camera.setFocusPoint(0.5)
+        // @ts-expect-error The option is autofocus, not the old vendor-method focus flag.
+        camera.setFocusPoint(0.5, 0.4, { focus: false })
+        // @ts-expect-error Nudges are named sizes, never motor steps.
+        camera.nudgeFocus('near', 3)
+        // @ts-expect-error Focus moves near or far.
+        camera.nudgeFocus('in', 'small')
+        // @ts-expect-error Canon's One-Shot is a search alias; the canonical value is AF-S.
+        camera.setFocusMode('one-shot')
+        // @ts-expect-error Sony's Flexible Spot is a spot in Slate's words.
+        camera.setFocusArea('Flexible Spot M')
+        // @ts-expect-error Subject detection is On or Off, not a boolean.
+        camera.setSubjectDetection(true)
+        // @ts-expect-error Eye selection says Left or Right, not Sony's Left Eye.
+        camera.setEyeSelection('Left Eye')
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
-            confirmedShutter, currentShutter, noPlainStringSetters, errors]
+            confirmedShutter, currentShutter, noPlainStringSetters, errors, focused, focusMode, focusArea, focusedFlag]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

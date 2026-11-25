@@ -11,7 +11,7 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
     focusMode: {
         code: 265,
         label: 'Focus mode',
-        values: { '1': 'Manual', '2': 'AF-S', '3': 'AF-C', '4': 'AF-A', '6': 'DMF' },
+        values: { '1': 'MF', '2': 'AF-S', '3': 'AF-C', '4': 'AF-A', '6': 'DMF' },
     },
     whiteBalance: {
         code: 264,

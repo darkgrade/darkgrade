@@ -217,16 +217,11 @@ export class CameraService {
 
     // ------------------------------------------------------------------ focus
 
-    /** One autofocus cycle via Slate (Sony S1 half-press, Canon/Nikon AF drive). */
-    /** The camera's own focus area from before the first click-to-focus, restored by focus(). */
-    focusAreaBeforeTouch: string | null = null
     /**
-     * Click-to-focus turns Sony's eye tracking (Subject Recognition in AF) off, or the camera pulls
-     * focus straight back to a face; focus() turns it back on.
+     * A click-to-focus placed a point since the last Focus. Slate may have switched the focus area and
+     * paused subject detection for it; focus() asks Slate to put them back (resetFocusPoint).
      */
-    subjectRecognitionBeforeTouch: string | null = null
-    /** The Flexible Spot size last active on the camera, without its Lock on AF prefix. */
-    lastFlexibleSpot = 'Flexible Spot M'
+    focusPointPlaced = false
 
     /** Whether the camera's on-screen display is drawn over live view (Sony). */
     osdOverlay = false

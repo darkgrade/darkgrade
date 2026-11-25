@@ -3,6 +3,7 @@ export { cameraControlDefinitions, resolveCameraControl, unrecognizedValueLabel 
 export { CameraConfirmationError } from '@camera/confirmation'
 export { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 export { formatShutterSpeed, type ShutterSpeed } from '@camera/settings/shutter-speed'
+export type { DetectionSubject, EyeSelection, FocusArea, FocusMode, SubjectDetection } from '@camera/settings/focus'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'
 export type {
     CameraCapabilities,
@@ -11,6 +12,7 @@ export type {
     CameraControlSession,
     CameraControlState,
     CameraRecordingState,
+    OperationAvailability,
     UnrecognizedValues,
 } from '@camera/controls'
 export { exposureSeconds, matchExposureTime, parseExposureTime } from '@camera/exposure-time'

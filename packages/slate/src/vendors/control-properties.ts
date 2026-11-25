@@ -2,14 +2,23 @@ import type { CameraControlId } from '@camera/controls'
 import type { CodecType } from '@ptp/types/codec'
 import { colourControlProperties } from '@vendors/control-properties/colour'
 import { exposureControlProperties } from '@vendors/control-properties/exposure'
-import { focusControlProperties } from '@vendors/control-properties/focus'
+import { focusControlProperties, focusControlValueNames } from '@vendors/control-properties/focus'
 import { liveViewControlProperties } from '@vendors/control-properties/live-view'
 import { modeControlProperties } from '@vendors/control-properties/mode'
 import { photoControlProperties } from '@vendors/control-properties/photo'
 import { videoControlProperties } from '@vendors/control-properties/video'
-import type { ControlPropertyMap } from '@vendors/control-properties/vendor-control-properties'
+import type {
+    ControlPropertyMap,
+    ControlPropertyValueNames,
+    ControlValueNames,
+    VendorControlProperties,
+} from '@vendors/control-properties/vendor-control-properties'
 
-export type { ControlPropertyList, ControlPropertyMap } from '@vendors/control-properties/vendor-control-properties'
+export type {
+    ControlPropertyList,
+    ControlPropertyMap,
+    ControlPropertyValueNames,
+} from '@vendors/control-properties/vendor-control-properties'
 
 /**
  * Every settings group's vendor properties, one file per group under
@@ -61,3 +70,28 @@ export type CodecValue<Id extends CameraControlId> = PropertyFor<Id> extends inf
         ? CodecType<Codec>
         : never
     : never
+
+/** The property inventories Slate reads: one per vendor adapter and, for Nikon, per photo/movie mode. */
+export type ControlInventory = keyof VendorControlProperties<CameraControlId>
+
+/** Each settings group's canonical value names (see `focusControlValueNames`); groups append theirs. */
+const valueNameGroups: readonly ControlValueNames<CameraControlId>[] = [focusControlValueNames]
+
+/** The canonical names of one setting's values on one inventory, per property; undefined when the labels are canonical. */
+export function controlValueNames(inventory: ControlInventory, id: CameraControlId): ControlPropertyValueNames | undefined {
+    const tables = valueNameGroups.flatMap(group => {
+        const names = group[inventory]?.[id]
+        return names ? [names] : []
+    })
+    return tables.length ? Object.assign({}, ...tables) : undefined
+}
+
+/** Every canonical value Slate names for a setting, on any vendor. */
+export function canonicalControlValues(id: CameraControlId): ReadonlySet<string> {
+    const inventories: ControlInventory[] = ['sony', 'canon', 'standard', 'nikonPhoto', 'nikonMovie']
+    return new Set(
+        inventories.flatMap(inventory =>
+            Object.values(controlValueNames(inventory, id) ?? {}).flatMap(names => Object.values(names))
+        )
+    )
+}

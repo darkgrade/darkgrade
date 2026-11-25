@@ -1,3 +1,4 @@
+import { CanonCamera } from '@camera/canon-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -291,7 +292,9 @@ try {
     } else if (action === 'set-focus-mode') {
         if (!rawValue) throw new Error('set-focus-mode requires --value')
         ensureAdvertised(controls, 'CanonFocusMode', rawValue)
-        await camera.setFocusMode(rawValue)
+        const canon = camera.getInstance()
+        if (!(canon instanceof CanonCamera)) throw new Error('set-focus-mode over PTP/IP needs a Canon EOS camera')
+        await canon.setFocusMode(rawValue)
         detail = `Focus mode changed to ${rawValue} over PTP/IP`
     } else if (action === 'set-white-balance') {
         if (!rawValue) throw new Error('set-white-balance requires --value')

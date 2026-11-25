@@ -2,7 +2,13 @@ import { CanonCamera } from '@camera/canon-camera'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState } from '@camera/controls'
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
 import type { Camera } from '@camera/index'
-import { canonDriver, cameraContext, requireCapability } from '@camera/operations/context'
+import {
+    canonDriver,
+    cameraContext,
+    driverCapabilities,
+    operationAvailability,
+    requireCapability,
+} from '@camera/operations/context'
 import { SonyCamera } from '@camera/sony-camera'
 import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
 
@@ -42,9 +48,7 @@ export interface SettingsOperations {
     getCanonColorTemperature(): Promise<number>
     setCanonColorTemperature(kelvin: number): Promise<void>
 
-    // Focus
-    getFocusMode(): Promise<string>
-    setFocusMode(value: string): Promise<void>
+    // Focus (focusMode, focusArea, subjectDetection, detectionSubject and eyeSelection are typed settings)
     getMovieServoAutofocus(): Promise<string>
     setMovieServoAutofocus(value: string): Promise<void>
     getContinuousAutofocus(): Promise<string>
@@ -95,7 +99,8 @@ const sonyOnly = (subject: string) => `Sony ${subject} is only available for Son
 
 export const settingsOperations: SettingsOperations & ThisType<Camera> = {
     async getCapabilities(): Promise<CameraCapabilities> {
-        return requireCapability(this, 'settings', 'getCapabilities').readCapabilities()
+        const capabilities = await requireCapability(this, 'settings', 'getCapabilities').readCapabilities()
+        return { ...capabilities, operations: operationAvailability(this, capabilities) }
     },
 
     async getExposureTime(): Promise<ExposureTime> {
@@ -114,7 +119,11 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
         context?: ExposureContext
     ): Promise<CameraControlState> {
         const settings = requireCapability(this, 'settings', 'setControl')
-        return cameraContext(this).controlsQueue.run('camera', () => settings.writeControl(id, value, context))
+        return cameraContext(this).controlsQueue.run('camera', async () => {
+            const written = await settings.writeControl(id, value, context)
+            driverCapabilities(this).focus?.settingWritten(id)
+            return written
+        })
     },
 
     async getAperture(): Promise<string> {
@@ -161,14 +170,6 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
 
     async setCanonColorTemperature(kelvin: number): Promise<void> {
         await canonDriver(this).setColorTemperature(kelvin)
-    },
-
-    async getFocusMode(): Promise<string> {
-        return canonOrSonyDriver(this, 'Focus mode is only available for Canon EOS and Sony cameras').getFocusMode()
-    },
-
-    async setFocusMode(value: string): Promise<void> {
-        return canonOrSonyDriver(this, 'Focus mode is only available for Canon EOS and Sony cameras').setFocusMode(value)
     },
 
     async getMovieServoAutofocus(): Promise<string> {

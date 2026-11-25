@@ -3,7 +3,8 @@ import { Logger } from '@core/logger'
 import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
 import { captureCanonCardImage } from '@vendors/canon/card-capture'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
-import { CameraOutcomeUnknownError } from '@camera/errors'
+import type { FocusResult } from '@camera/driver/focus'
+import { CameraOutcomeUnknownError, CameraRefusedError } from '@camera/errors'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 import {
@@ -28,6 +29,8 @@ import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } 
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 
 const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
+/** EDSDK shutter result for a half-press whose autofocus failed (EDSDKErrors.h TAKE_PICTURE_AF_NG). */
+const CANON_RELEASE_RESULT_FOCUS_FAILED = 1
 export interface CanonPropertyState {
     code: number
     name: string
@@ -596,8 +599,12 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    async autofocus(durationMilliseconds = 800): Promise<void> {
-        await this.withoutPolling(async () => {
+    /**
+     * A timed AF hold. EOS reports no focus status for it, so the result is `unknown`, except when a
+     * half-press answers that the camera could not focus (`not-acquired`).
+     */
+    async autofocus(durationMilliseconds = 800): Promise<FocusResult> {
+        return this.withoutPolling(async (): Promise<FocusResult> => {
             const response = await this.send(this.registry.operations.CanonDoAutofocus, {})
             if (response.code === OK.code) {
                 try {
@@ -605,7 +612,7 @@ export class CanonCamera extends GenericCamera {
                 } finally {
                     await this.send(this.registry.operations.CanonCancelAutofocus, {})
                 }
-                return
+                return 'unknown'
             }
 
             // Several EOS DSLRs (including the EOS 80D) advertise DoAf but only
@@ -616,13 +623,21 @@ export class CanonCamera extends GenericCamera {
                 AFMode: 'AF',
             })
             if (halfPress.code !== OK.code) {
-                throw new Error(
+                throw new CameraRefusedError(
+                    'autofocus',
                     `Canon autofocus returned 0x${response.code.toString(16)} and half-press returned 0x${halfPress.code.toString(16)}`
                 )
             }
             try {
-                assertCanonCaptureResult(halfPress.parameters, 'autofocus half press')
+                // EDSDK shutter result 1: the camera could not focus. Any other result is a refusal with its reason.
+                if (halfPress.parameters?.[0] === CANON_RELEASE_RESULT_FOCUS_FAILED) return 'not-acquired'
+                try {
+                    assertCanonCaptureResult(halfPress.parameters, 'autofocus half press')
+                } catch (error) {
+                    throw new CameraRefusedError('autofocus', error instanceof Error ? error.message : String(error))
+                }
                 await new Promise(resolve => setTimeout(resolve, durationMilliseconds))
+                return 'unknown'
             } finally {
                 await this.send(this.registry.operations.CanonRemoteReleaseOff, { ReleaseMode: 'FOCUS' })
             }
@@ -934,6 +949,11 @@ export class CanonCamera extends GenericCamera {
         // The R6 III rounds small requests (2786 -> 2788, 485 -> 486).
         // Return the actual origin; a stale/ignored 200-pixel pan cannot satisfy this bound.
         return Math.abs(position.x - x) <= 4 && Math.abs(position.y - y) <= 4
+    }
+
+    /** Whether this session's DeviceInfo advertised the operation. */
+    advertises(operation: { code: number }): boolean {
+        return this.supportedOperations?.has(operation.code) ?? false
     }
 
     private assertOperationSupported(code: number): void {
