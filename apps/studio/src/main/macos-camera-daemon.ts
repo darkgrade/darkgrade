@@ -1,42 +1,14 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { killMacCameraDaemons } from '@darkgrade/slate/runtime'
 
-const execFileAsync = promisify(execFile)
+export { killMacCameraDaemons }
 
-/**
- * macOS spawns a system daemon the moment a PTP camera enumerates on USB and
- * that daemon claims the device's Still Image interface, so any attempt to
- * claim it from user space fails with LIBUSB_ERROR_ACCESS / BUSY.
- * (See packages/slate/tests/01_usb.test.ts: "Mac PTPCamera is running and
- * hijacking the USB device".)
- *
- * Process name varies by macOS version:
- *   - PTPCamera  (older macOS)
- *   - ptpcamerad (newer macOS)
- *   - mscamerad  (cameras in mass-storage mode)
- *
- * IMPORTANT: launchd respawns these continuously — a single kill is not
- * enough. macOS will clobber our access again within moments. The daemons
- * must be killed on a ~1 second loop for the entire app lifetime, which is
- * what startCameraDaemonKillerLoop does.
+/*
+ * macOS spawns a system daemon (ptpcamerad, PTPCamera or mscamerad) the moment a PTP camera
+ * enumerates on USB, and it claims the Still Image interface. Slate owns the list and the kill
+ * (`killMacCameraDaemons`, shared with `camera:lease`). launchd respawns the daemons
+ * continuously, so Studio repeats the kill on a ~1 second loop for the entire app lifetime.
  */
-const MACOS_CAMERA_DAEMONS = ['ptpcamerad', 'PTPCamera', 'mscamerad'] as const
 const KILLER_INTERVAL_MS = 1000
-
-export async function killMacCameraDaemons(): Promise<string[]> {
-    if (process.platform !== 'darwin') return []
-
-    const killed: string[] = []
-    for (const processName of MACOS_CAMERA_DAEMONS) {
-        try {
-            await execFileAsync('killall', ['-9', processName])
-            killed.push(processName)
-        } catch {
-            // "No matching processes" — daemon isn't running, which is what we want
-        }
-    }
-    return killed
-}
 
 let killerTimer: ReturnType<typeof setInterval> | null = null
 

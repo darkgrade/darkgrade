@@ -1,3 +1,4 @@
+import { hardwareTestsEnabled } from '@tests/setup/hardware'
 /**
  * USB Transport Tests
  * Tests USB device discovery, connection, and camera interaction
@@ -17,8 +18,10 @@ const log = DEBUG
     : (...args: any[]) => console.log(...args)
 
 // A USB hub or keyboard is not a PTP camera. Gate physical checks on the transport's camera discovery.
-const attachedCameras = await ((await new TransportFactory().createUSBTransport()) as USBTransport).discover()
-describe('USB Transport', () => {
+const attachedCameras = hardwareTestsEnabled
+    ? await ((await new TransportFactory().createUSBTransport()) as USBTransport).discover()
+    : []
+describe.skipIf(!hardwareTestsEnabled)('USB Transport', () => {
     let transportFactory: TransportFactory
 
     beforeAll(() => {

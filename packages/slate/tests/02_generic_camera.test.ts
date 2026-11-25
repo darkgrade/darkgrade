@@ -1,3 +1,4 @@
+import { hardwareTestsEnabled } from '@tests/setup/hardware'
 import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
@@ -8,7 +9,7 @@ import {WebUSB} from 'usb'
 
 const hardwareOperationTimeoutMilliseconds = 15_000
 
-const canonConnected=(await new WebUSB({allowAllDevices:true}).getDevices()).some(device=>device.vendorId===VendorIDs.CANON)
+const canonConnected=hardwareTestsEnabled&&(await new WebUSB({allowAllDevices:true}).getDevices()).some(device=>device.vendorId===VendorIDs.CANON)
 describe.skipIf(!canonConnected)('GenericCamera', () => {
     let transport: TransportInterface
     let camera: GenericCamera

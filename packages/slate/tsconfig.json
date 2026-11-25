@@ -20,9 +20,10 @@
             "@ptp/*": ["src/ptp/*"],
             "@vendors/*": ["src/vendors/*"],
             "@runtime/*": ["src/runtime/*"],
-            "@cli/*": ["src/cli/*"]
+            "@cli/*": ["src/cli/*"],
+            "@tests/*": ["tests/*"]
         }
     },
-    "include": ["src", "tests", "scripts/recover-camera.ts", "*.config.ts"],
+    "include": ["src", "tests", "scripts/recover-camera.ts", "scripts/camera-lease.ts", "scripts/camera-smoke", "scripts/check-guards.ts", "*.config.ts"],
     "exclude": ["tests/runtime"]
 }
