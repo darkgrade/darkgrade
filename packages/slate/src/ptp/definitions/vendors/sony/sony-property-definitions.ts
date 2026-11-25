@@ -608,6 +608,27 @@ export const MovieRecordingFrameRate = {
         ),
 } as const satisfies PropertyDefinition
 
+/**
+ * Movie sound recording. The code is named in the Camera Remote SDK property table; the a7 V
+ * (2026-11-24) reports it as UINT8 with choices 0 and 1, currently 1, the factory sound-on state.
+ */
+export const AudioRecording = {
+    code: 0xd0d2,
+    name: 'AudioRecording',
+    description: 'Sony movie sound recording.',
+    datatype: UINT8,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'Off', description: 'Movie sound is not recorded' },
+                { value: 0x01, name: 'On', description: 'Movie sound is recorded' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
 export const DateTimeSetting = {
     code: 0xd223,
     name: 'DateTimeSetting',
@@ -1886,6 +1907,7 @@ export const sonyPropertyRegistry = {
     ContentTransferEnable,
     FocusIndication,
     MovieRecordingFrameRate,
+    AudioRecording,
     DateTimeSetting,
 } as const satisfies { [key: string]: PropertyDefinition }
 

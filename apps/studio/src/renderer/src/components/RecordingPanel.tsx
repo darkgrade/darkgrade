@@ -133,21 +133,27 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                         <span className="slate-label">Video</span>
                         <ControlRow
                             label="Format"
-                            control={controls.movieFormat}
+                            control={controls.videoFormat}
                             disabled={disabled}
-                            onChange={value => onChange('movieFormat', value)}
+                            onChange={value => onChange('videoFormat', value)}
                         />
                         <ControlRow
                             label="Quality"
-                            control={controls.movieSetting}
+                            control={controls.videoQuality}
                             disabled={disabled}
-                            onChange={value => onChange('movieSetting', value)}
+                            onChange={value => onChange('videoQuality', value)}
                         />
                         <ControlRow
                             label="Frame rate"
-                            control={controls.movieFrameRate}
+                            control={controls.frameRate}
                             disabled={disabled}
-                            onChange={value => onChange('movieFrameRate', value)}
+                            onChange={value => onChange('frameRate', value)}
+                        />
+                        <ControlRow
+                            label="Audio"
+                            control={controls.audioRecording}
+                            disabled={disabled}
+                            onChange={value => onChange('audioRecording', value)}
                         />
                     </div>
                 </div>

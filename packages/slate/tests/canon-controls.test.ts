@@ -155,16 +155,16 @@ describe('Canon camera controls', () => {
         const codec = registry.properties.CanonMovieSoundRecording.codec(registry)
         expect(codec.decode(registry.codecs.uint32.encode(0)).value).toBe('camera-specific-0')
         expect(codec.encode('camera-specific-0')).toEqual(registry.codecs.uint32.encode(0))
-        expect(codec.decode(registry.codecs.uint32.encode(1)).value).toBe('disabled')
-        expect(codec.decode(registry.codecs.uint32.encode(2)).value).toBe('auto')
-        expect(codec.decode(registry.codecs.uint32.encode(3)).value).toBe('manual')
+        expect(codec.decode(registry.codecs.uint32.encode(1)).value).toBe('Off')
+        expect(codec.decode(registry.codecs.uint32.encode(2)).value).toBe('On')
+        expect(codec.decode(registry.codecs.uint32.encode(3)).value).toBe('On (manual level)')
     })
 
     it('enables disabled movie audio through Manual AE and restores the previous movie exposure mode', async () => {
         const {camera} = testCamera()
         const property = camera.registry.properties.CanonMovieSoundRecording
         const cache = (camera as any).propertyCache
-        cache.set(property, {current: 'disabled', allowed: ['auto', 'manual', 'disabled']})
+        cache.set(property, {current: 'Off', allowed: ['On', 'On (manual level)', 'Off']})
         let mode = 22
         const writes: unknown[] = []
         camera.get = (async target => target.code === property.code ? cache.get(property).current : mode) as typeof camera.get
@@ -174,7 +174,7 @@ describe('Canon camera controls', () => {
             else mode = Number(value)
         }) as typeof camera.set
         await expect(camera.ensureMovieSoundRecording()).resolves.toBe(true)
-        expect(writes).toEqual([['CanonAutoExposureMode', 3], ['CanonMovieSoundRecording', 'auto'], ['CanonAutoExposureMode', 22]])
+        expect(writes).toEqual([['CanonAutoExposureMode', 3], ['CanonMovieSoundRecording', 'On'], ['CanonAutoExposureMode', 22]])
         expect(mode).toBe(22)
         await expect(camera.ensureMovieSoundRecording()).resolves.toBe(false)
         expect(writes).toHaveLength(3)
@@ -184,17 +184,17 @@ describe('Canon camera controls', () => {
         const {camera} = testCamera()
         const property = camera.registry.properties.CanonMovieSoundRecording
         const cache = (camera as any).propertyCache
-        cache.set(property, {current: 'manual', allowed: ['auto', 'manual', 'disabled']})
+        cache.set(property, {current: 'On (manual level)', allowed: ['On', 'On (manual level)', 'Off']})
         await expect(camera.ensureMovieSoundRecording()).resolves.toBe(false)
-        cache.set(property, {current: 'disabled', allowed: ['disabled']})
+        cache.set(property, {current: 'Off', allowed: ['Off']})
         await expect(camera.ensureMovieSoundRecording()).rejects.toThrow('did not advertise')
-        await expect(camera.setMovieSoundRecording('auto')).rejects.toThrow('not advertised')
+        await expect(camera.setMovieSoundRecording('On')).rejects.toThrow('not advertised')
     })
 
     it('restores exposure mode when a sound write fails and does not treat it as enabled', async () => {
         const {camera} = testCamera()
         const property = camera.registry.properties.CanonMovieSoundRecording
-        ;(camera as any).propertyCache.set(property, {current: 'disabled', allowed: ['auto', 'disabled']})
+        ;(camera as any).propertyCache.set(property, {current: 'Off', allowed: ['On', 'Off']})
         let mode = 22
         camera.get = (async () => mode) as typeof camera.get
         camera.set = (async (target, value) => {

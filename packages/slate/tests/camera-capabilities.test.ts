@@ -499,17 +499,20 @@ describe('Canon structured format capabilities', () => {
             return { code: 0x2001, data: new CanonEventDataCodec(driver.registry).decode(wire).value }
         }
         vi.spyOn(driver, 'send').mockImplementation(send as never)
-        const state = (await camera.getCapabilities()).controls.movieFormat!
+        const state = (await camera.getCapabilities()).controls.videoFormat!
         expect(state.writable).toBe(true)
         const write = vi.spyOn(driver, 'setMovieFormat').mockImplementation(async key => {
             current = records.find(record => record.join(':') === key)!
         })
-        await camera.setControl('movieFormat', canonMovieFormatFromWire(records[1]!).label)
+        expect(await camera.getVideoFormat()).toBe('Full HD 25 fps · MOV · ALL-I')
+        const label = canonMovieFormatFromWire(records[1]!).label
+        expect(label).toBe('Full HD 25 fps · MP4 · IPB (Standard)')
+        expect(await camera.setVideoFormat('Full HD 25 fps · MP4 · IPB (Standard)')).toBe(label)
         expect(write).toHaveBeenCalledWith(records[1]!.join(':'))
         records.push([...records[1]!])
         records[2]![1] = 123 // Distinct wire record with the same human display.
-        expect((await camera.getCapabilities()).controls.movieFormat?.writable).toBe(false)
-        await expect(camera.setControl('movieFormat', state.value)).rejects.toThrow('not writable')
+        expect((await camera.getCapabilities()).controls.videoFormat?.writable).toBe(false)
+        await expect(camera.setControl('videoFormat', state.value)).rejects.toThrow('not writable')
         expect(write).toHaveBeenCalledOnce()
     })
 })

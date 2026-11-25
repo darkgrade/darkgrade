@@ -249,6 +249,66 @@ export const settingsOperationTable = {
                 },
             },
         },
+        getVideoFormat: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current video format, in canonical spelling',
+        },
+        setVideoFormat: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the video format and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example XAVC S' }],
+                },
+            },
+        },
+        getVideoQuality: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current video quality, in canonical spelling',
+        },
+        setVideoQuality: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the video quality and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example 4K 150 Mbps' }],
+                },
+            },
+        },
+        getFrameRate: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current frame rate, in canonical spelling',
+        },
+        setFrameRate: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the frame rate and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example 24p' }],
+                },
+            },
+        },
+        getAudioRecording: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current audio recording, in canonical spelling',
+        },
+        setAudioRecording: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the audio recording and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example On' }],
+                },
+            },
+        },
     },
     planned: {
         getExposureMode: {
@@ -518,66 +578,6 @@ export const settingsOperationTable = {
             surfaces: {
                 cli: {
                     arguments: [{ name: 'value', description: 'for example Off' }],
-                },
-            },
-        },
-        getVideoFormat: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current video format, in canonical spelling',
-        },
-        setVideoFormat: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the video format and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example XAVC S' }],
-                },
-            },
-        },
-        getVideoQuality: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current video quality, in canonical spelling',
-        },
-        setVideoQuality: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the video quality and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example 4K 150 Mbps' }],
-                },
-            },
-        },
-        getFrameRate: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current frame rate, in canonical spelling',
-        },
-        setFrameRate: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the frame rate and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example 24p' }],
-                },
-            },
-        },
-        getAudioRecording: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current audio recording, in canonical spelling',
-        },
-        setAudioRecording: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the audio recording and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example On' }],
                 },
             },
         },
