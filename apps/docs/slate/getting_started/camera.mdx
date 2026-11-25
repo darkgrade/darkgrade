@@ -80,74 +80,18 @@ Disconnect from the camera device.
 async disconnect(): Promise&lt;void&gt;
 ```
 
-### send
+### Protocol access
 
-Send a PTP operation to the camera.
+Raw PTP operations, property reads and writes and the standard property inventory left `Camera`.
+For bench work they are on `protocolSession(camera)` from the unsupported
+`@darkgrade/slate/protocol` entry: `send`, `get`, `set`, `readValue`, `getStandardPropertyStates`
+and `setStandardProperty`, typed by the registries' codecs and sharing the Camera's session.
+Nothing there is confirmed the way `Camera` operations are.
 
-```typescript
-async send<Op extends OperationDefinition>(
-  operation: Op,
-  params: OperationParams<Op>,
-  data?: Uint8Array,
-  maxDataLength?: number
-): Promise&lt;OperationResponse<Op>&gt;
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **operation** | `OperationDefinition` | ✓ | The operation definition to send. |
-| **params** | `OperationParams&lt;Op&gt;` | ✓ | Parameters inferred from the concrete definition. |
-| **data** | `Uint8Array` |  | Optional data payload. |
-| **maxDataLength** | `number` |  | Optional maximum data length. |
-
-### get
-
-Get a camera property value.
-
-```typescript
-async get<P extends PropertyDefinition>(property: P): Promise&lt;CodecType<P['codec']>&gt;
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **property** | `PropertyDefinition` | ✓ | The property definition to get. |
-
-### set
-
-Set a camera property value.
-
-```typescript
-async set<P extends PropertyDefinition>(
-  property: P,
-  value: CodecType<P['codec']>
-): Promise&lt;void&gt;
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **property** | `PropertyDefinition` | ✓ | The property definition to set. |
-| **value** | `CodecType&lt;P['codec']&gt;` | ✓ | The concrete property's decoded value type. |
-
-### getStandardPropertyStates
-
-Read the standard PTP properties advertised by the connected body and current USB mode. Each state includes `code`, `codeHex`, `name`, decoded `value`, raw value, `writable`, form (`none`, `range`, or `enum`), and any advertised choices/range.
-
-```typescript
-async getStandardPropertyStates(): Promise&lt;StandardPropertyState[]&gt;
-```
-
-This is protocol access to the raw inventory. Application controls use `getCapabilities()` and the typed setters (`setIso`, `setAperture`, `setShutterSpeed`), which read the same standard properties on a generic or Olympus camera. Vendor recognition alone does not prove that a body publishes ISO, aperture, focus, or capture operations.
-
-### setStandardProperty
-
-Set one recognized standard property by its PTP name, for protocol work; applications use the typed setters, which return the confirmed value. Darkgrade re-reads the live property descriptors, rejects absent and read-only properties, and rejects enum values the body did not advertise.
-
-```typescript
-async setStandardProperty(
-  propertyNameOrCode: string | number,
-  value: string | number
-): Promise&lt;void&gt;
-```
+Application controls use `getCapabilities()` and the typed setters (`setIso`, `setAperture`,
+`setShutterSpeed`), which read the same standard properties on a generic or Olympus camera.
+Vendor recognition alone does not prove that a body publishes ISO, aperture, focus, or capture
+operations:
 
 ```typescript
 const { controls } = await camera.getCapabilities()
@@ -160,9 +104,12 @@ The physically tested Olympus E-PL5 MTP mode publishes battery level and writabl
 
 ### on
 
-Register an event handler.
+Register an event handler. `settingsChanged` fires when a setting changes on the camera and
+`mediaAdded` when a new photo or clip lands; a raw `EventDefinition` from the protocol registry is
+for bench work.
 
 ```typescript
+on(event: 'settingsChanged' | 'mediaAdded', handler: () => void): void
 on(
   event: EventDefinition,
   handler: function
@@ -286,37 +233,35 @@ async getMeteringMode(): Promise&lt;MeteringMode&gt;
 async setMeteringMode(value: MeteringMode): Promise&lt;MeteringMode&gt;
 ```
 
-### captureImage
+### takePhoto
 
-Capture an image from the camera.
+Takes one photo and resolves only once the camera shows the new file. Photo or video mode is
+prepared inside and undone afterwards; the shutter command is never resent.
 
 ```typescript
-async captureImage(params?: object)
+async takePhoto(options?: { autofocus?: boolean; destination?: 'card' | 'computer' }): Promise&lt;Photo&gt;
 ```
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| **params** | `object` |  | Capture parameters. |
-| **params.includeInfo** | `boolean` |  | Whether to include object info in the response. Defaults to `true`. |
-| **params.includeData** | `boolean` |  | Whether to include image data in the response. Defaults to `true`. |
+| **options.autofocus** | `boolean` |  | Focus before the release. Defaults to `true`. |
+| **options.destination** | `'card' \| 'computer'` |  | `card` (the default) keeps it on the card; `computer` also returns its bytes as `data`. |
 
-### captureLiveView
+The photo carries its `mediaId`, `name` and `sizeBytes`, the same id `listMedia()` reports.
 
-Capture a live view frame from the camera.
+### getLiveViewFrame
+
+The current picture as a JPEG, with the camera's focus frames (0–1 from the top-left) and, with
+`overlay`, the camera's on-screen info as a PNG. Each call waits for the camera's next frame.
 
 ```typescript
-async captureLiveView(params?: object)
+async getLiveViewFrame(options?: { overlay?: boolean }): Promise&lt;LiveViewFrame&gt;
 ```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **params** | `object` |  | Live view capture parameters. |
-| **params.includeInfo** | `boolean` |  | Whether to include object info in the response. Defaults to `true`. |
-| **params.includeData** | `boolean` |  | Whether to include image data in the response. Defaults to `true`. |
 
 ### startRecording
 
-Start video recording.
+Gets the camera ready (video mode, card destination), starts, and resolves once the camera reports
+recording. Record is sent once and never repeated.
 
 ```typescript
 async startRecording(): Promise&lt;void&gt;
@@ -324,35 +269,35 @@ async startRecording(): Promise&lt;void&gt;
 
 ### stopRecording
 
-Stop video recording.
+Stops, waits until a finished clip is on the card, puts the camera back, and resolves to the clip.
+Always allowed.
 
 ```typescript
-async stopRecording(): Promise&lt;void&gt;
+async stopRecording(): Promise&lt;Clip&gt;
 ```
 
-### listObjects
-
-List all objects stored on the camera.
+### getRecordingState
 
 ```typescript
-async listObjects(): Promise&lt;object&gt;
+async getRecordingState(): Promise&lt;'idle' | 'starting' | 'recording' | 'stopping' | 'unknown'&gt;
 ```
 
-### getObject
+Unknown never counts as idle.
 
-Retrieve an object from the camera.
+### Card and media
 
 ```typescript
-async getObject(
-  objectHandle: number,
-  objectSize: number
+async getCardStatus(): Promise&lt;CardStatus[]&gt;
+async listMedia(): Promise&lt;MediaItem[]&gt;
+async getMediaPreview(id: string, size?: 'thumbnail' | 'preview'): Promise&lt;Uint8Array&gt;
+async downloadMedia(
+  id: string,
+  options?: { onProgress?: (receivedBytes: number, totalBytes: number) => void; signal?: AbortSignal }
 ): Promise&lt;Uint8Array&gt;
 ```
 
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **objectHandle** | `number` | ✓ | The handle of the object to retrieve. |
-| **objectSize** | `number` | ✓ | The size of the object in bytes. |
+Media ids survive a reconnect while the file stays on the card. Nothing on the card is ever
+deleted or changed.
 
 ## Exports
 

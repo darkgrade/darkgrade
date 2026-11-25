@@ -25,7 +25,7 @@
 //                    Metal decoder on, frames are decoded there and reach JavaScript as surfaces. Sony bodies only;
 //                    other bodies get the transport alone.
 import { Camera, TransportType, VendorIDs, type FocusFrame } from '@darkgrade/slate'
-import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@darkgrade/slate/protocol'
+import { parseSonyFocalFrameInfo } from '@darkgrade/slate/protocol'
 import { preferences } from '@main/preferences'
 import { IPC_EVENTS, type UsbTransportChoice } from '@shared/ipc'
 import { app } from 'electron'

@@ -590,7 +590,7 @@ const DRIVEN_CALLS = [
         callout: 'capture',
         values: ['', '', '', ''],
         request: () => 'Take the shot',
-        call: () => 'camera.captureImage()',
+        call: () => 'camera.takePhoto()',
     },
 ] as const
 

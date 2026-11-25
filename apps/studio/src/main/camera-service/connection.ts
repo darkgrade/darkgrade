@@ -1,5 +1,4 @@
 import { Camera } from '@darkgrade/slate'
-import { protocolSession } from '@darkgrade/slate/protocol'
 import type { CameraService } from '@main/camera-service'
 import {
     CONNECT_RETRY_DELAY_MS,

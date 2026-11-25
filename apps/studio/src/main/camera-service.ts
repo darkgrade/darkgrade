@@ -1,4 +1,4 @@
-import { Camera, runBenchmark, VendorIDs, type CameraInfo, type CameraRecordingState } from '@darkgrade/slate'
+import { Camera, runBenchmark, type CameraInfo, type CameraRecordingState } from '@darkgrade/slate'
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'

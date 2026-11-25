@@ -1,5 +1,4 @@
-import { Camera, CameraUnsupportedError, PTPResponseError, PTPTimeoutError, VendorIDs, type LiveViewFrame } from '@darkgrade/slate'
-import type { SonyFocalFrame } from '@darkgrade/slate/protocol'
+import { Camera, CameraUnsupportedError, PTPResponseError, PTPTimeoutError, type LiveViewFrame } from '@darkgrade/slate'
 import type { CameraService } from '@main/camera-service'
 import {
     LIVE_VIEW_ERROR_DELAY_MS,
