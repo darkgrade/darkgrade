@@ -100,6 +100,7 @@ const ZOOM_SETTLE_MILLISECONDS = 1500
 /** Beyond this distance the first pass runs at medium speed; closer, slow. */
 const ZOOM_MEDIUM_SPEED_DISTANCE_MILLIMETRES = 10
 const zoomUnavailableReason = 'The camera reports remote zoom unavailable with this lens and mode'
+const focusAreaLockedReason = 'The camera reports its focus area unavailable in its current mode, so no focus point can be placed'
 const noFocalLengthReason = 'The lens does not report its focal length, so zoomTo cannot confirm where it lands'
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
 /** Zoom Position (0xD214): an incremental property, so its state reports it writable. */
@@ -1535,8 +1536,10 @@ export class SonyCamera extends GenericCamera {
     private availabilityOfFocus(capabilities: CameraCapabilities): OperationAvailability {
         const area = capabilities.controls.focusArea
         const spot = area && sonyAreaLabel(area.value)
-        if (spot && isMovableFocusArea(spot)) this.focusSession().lastSpot = sonyPlainArea(spot)
-        return area ? supported : unsupported('The camera reports no focus area to place a point in')
+        const movable = spot !== undefined && isMovableFocusArea(spot)
+        if (movable) this.focusSession().lastSpot = sonyPlainArea(spot)
+        if (!area) return unsupported('The camera reports no focus area to place a point in')
+        return movable || area.writable ? supported : unsupported(focusAreaLockedReason)
     }
 
     /** This session's focus memory. A point placed before a disconnect never changes a later session. */
@@ -1598,6 +1601,8 @@ export class SonyCamera extends GenericCamera {
         const area = String(await this.get(properties.FocusArea))
         if (isMovableFocusArea(area)) current.lastSpot = sonyPlainArea(area)
         else {
+            if (!this.propertyCache.get(properties.FocusArea.code)?.vendorExtensions.enabled)
+                throw new CameraUnsupportedError('setFocusPoint', focusAreaLockedReason)
             const spot = await this.spotFor(area)
             await this.set(properties.FocusArea, spot)
             current.changes.previousArea ??= area
