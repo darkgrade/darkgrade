@@ -4,8 +4,9 @@ import type { FocusFrame, LiveViewCapability, LiveViewFrame } from '@camera/driv
 import { CameraUnsupportedError } from '@camera/errors'
 import type { Camera } from '@camera/index'
 import { NikonCamera, type NikonLiveViewMetadata } from '@camera/nikon-camera'
-import type { CameraDriverInstance } from '@camera/operations/context'
+import { cameraContext, type CameraDriverInstance } from '@camera/operations/context'
 import { SonyCamera } from '@camera/sony-camera'
+import type { Logger } from '@core/logger'
 
 /** After this long without an overlay request, the next frame switches the camera's overlay output off. */
 export const OVERLAY_IDLE_MILLISECONDS = 2_000
@@ -25,10 +26,15 @@ const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve
  * on-screen display output is switched on by the first overlay request and off once overlays stop.
  */
 class SonyLiveView implements LiveViewCapability {
+    /** True until the camera confirms its overlay output is off. */
     private overlayOutput = false
-    private lastOverlayRequestMs = 0
+    /** When the output may next be switched off: an idle interval after the last overlay request or failed attempt. */
+    private switchOffDueMs = 0
 
-    constructor(private readonly driver: SonyCamera) {}
+    constructor(
+        private readonly driver: SonyCamera,
+        private readonly logger: Logger
+    ) {}
 
     support(): Record<'getLiveViewFrame', OperationSupport> {
         const states = this.driver.listPropertyStates()
@@ -63,17 +69,37 @@ class SonyLiveView implements LiveViewCapability {
         )
         const jpeg = requireImage(frame.data)
         if (overlay) return { jpeg, focusFrames, overlay: await this.readOverlay() }
-        if (this.overlayOutput && Date.now() - this.lastOverlayRequestMs > OVERLAY_IDLE_MILLISECONDS) {
-            this.overlayOutput = false
-            await this.driver.setOsdImageMode(false)
-        }
+        if (this.overlayOutput && Date.now() > this.switchOffDueMs) await this.switchOverlayOutputOff()
         return { jpeg, focusFrames }
+    }
+
+    /**
+     * The frame already read is never lost to this: a failed or unconfirmed switch-off is logged
+     * and tried again on a frame one idle interval later.
+     */
+    private async switchOverlayOutputOff(): Promise<void> {
+        try {
+            await this.driver.setOsdImageMode(false)
+            this.overlayOutput = false
+        } catch (error) {
+            this.switchOffDueMs = Date.now() + OVERLAY_IDLE_MILLISECONDS
+            this.logger.addLog({
+                type: 'console',
+                level: 'warn',
+                consoleLevel: 'warn',
+                args: [
+                    `Switching the camera's overlay output off was not confirmed; trying again later: ${
+                        error instanceof Error ? error.message : String(error)
+                    }`,
+                ],
+            })
+        }
     }
 
     private async readOverlay(): Promise<{ png: Uint8Array }> {
         if (!this.driver.listPropertyStates().some(state => state.name === 'OsdImageMode'))
             throw new CameraUnsupportedError('getLiveViewFrame', overlayUnsupported)
-        this.lastOverlayRequestMs = Date.now()
+        this.switchOffDueMs = Date.now() + OVERLAY_IDLE_MILLISECONDS
         this.overlayOutput = true
         const { image } = await this.driver.captureOsdImage()
         return { png: image }
@@ -146,8 +172,8 @@ function canonLiveView(driver: CanonCamera): LiveViewCapability {
  * Each vendor's live view, or undefined when the driver has none (standard PTP has no live-view
  * operation, so generic and other vendor-extension bodies report it unsupported).
  */
-export function liveViewCapability(driver: CameraDriverInstance, _owner: Camera): LiveViewCapability | undefined {
-    if (driver instanceof SonyCamera) return new SonyLiveView(driver)
+export function liveViewCapability(driver: CameraDriverInstance, owner: Camera): LiveViewCapability | undefined {
+    if (driver instanceof SonyCamera) return new SonyLiveView(driver, cameraContext(owner).logger)
     if (driver instanceof NikonCamera) return nikonLiveView(driver)
     if (driver instanceof CanonCamera) return canonLiveView(driver)
     return undefined

@@ -34,6 +34,8 @@ import { GenericCamera } from './generic-camera'
 const SONY_LIVE_VIEW_OBJECT_HANDLE = 0xffffc002
 const SONY_ZOOM_CONTROL_CODE = 0xd214
 const SONY_ZOOM_SPEED_RANGE_CODE = 0xd25e
+/** Properties whose state carries the descriptor's numeric range (Zoom Speed Range bounds the zoom speed). */
+const rangedPropertyNames: ReadonlySet<string> = new Set(['ColorTemperature', 'ZoomSpeed'])
 const SONY_DATE_TIME_RESULT_TIMEOUT_MS = 5_000
 const SONY_CONTENT_LIST_LIMIT = 1000
 const SONY_CONTENT_LIST_MAX_BYTES = 64 * 1024 * 1024
@@ -407,7 +409,7 @@ export class SonyCamera extends GenericCamera {
                 enabled: descriptor.vendorExtensions.enabled,
                 sonyEnabledFlag: descriptor.sonyEnabledFlag,
                 sonyGetSetFlag: descriptor.sonyGetSetFlag,
-                ...(descriptor.devicePropertyName === 'ColorTemperature' &&
+                ...(rangedPropertyNames.has(descriptor.devicePropertyName) &&
                     typeof descriptor.minimumValue === 'number' && typeof descriptor.maximumValue === 'number' && typeof descriptor.stepSize === 'number'
                     ? { range: { minimum: descriptor.minimumValue, maximum: descriptor.maximumValue, step: descriptor.stepSize } } : {}),
             }))
@@ -790,7 +792,7 @@ export class SonyCamera extends GenericCamera {
      * The top of Zoom Speed Range (0xD25E), whose range matches Zoom Operation's. Speed 1 is the
      * slowest; a body set to a fixed remote zoom speed reports 1.
      */
-    async maximumZoomSpeed(): Promise<number> {
+    private async maximumZoomSpeed(): Promise<number> {
         const cached = this.propertyCache.get(SONY_ZOOM_SPEED_RANGE_CODE)
         const descriptor = cached ?? (await this.readDescriptor(SONY_ZOOM_SPEED_RANGE_CODE).catch(() => undefined))
         const maximum = Number(descriptor?.maximumValue)

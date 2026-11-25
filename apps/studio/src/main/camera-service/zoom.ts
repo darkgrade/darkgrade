@@ -25,11 +25,20 @@ export const zoomOperations: ZoomOperations & ThisType<CameraService> = {
 
     async zoomStart(direction: 'wide' | 'tele'): Promise<void> {
         const camera = this.requireCameraForControl()
-        await this.enqueue(() => camera.startZoom(direction === 'tele' ? 'in' : 'out', { speed: 'fast' }))
+        const releasesAtPress = this.zoomReleases
+        await this.enqueue(async () => {
+            // Released while this press waited in the queue: the stop already went out, so never start.
+            if (this.zoomReleases !== releasesAtPress) return
+            await camera.startZoom(direction === 'tele' ? 'in' : 'out', { speed: 'fast' })
+        })
     },
 
-    /** Stop is never blocked: it goes straight to the camera instead of waiting behind queued work. */
+    /**
+     * Stop is never blocked: it goes straight to the camera instead of waiting behind queued work,
+     * and cancels a press still waiting in the queue. Slate itself drops a start a stop overtakes.
+     */
     async zoomStop(): Promise<void> {
+        this.zoomReleases++
         const camera = this.camera
         if (!camera || !this.connected) return
         await camera.stopZoom()

@@ -34,6 +34,15 @@ async function driveZoom(camera: Camera, report: SmokeReport, startFocalLength: 
     await camera.stopZoom()
     const moved = (await camera.getCapabilities()).lens?.focalLengthMillimetres ?? null
     report.confirmed('stopZoom after 400 ms', { from: startFocalLength, to: moved })
+    // A release that overtakes a press still being prepared: the start must never go out.
+    const pending = camera.startZoom('in', { speed: 'fast' })
+    await camera.stopZoom()
+    await pending
+    await wait(600)
+    const afterTap = (await camera.getCapabilities()).lens?.focalLengthMillimetres ?? null
+    if (afterTap !== null && moved !== null && afterTap !== moved)
+        throw new Error(`A stop before the start went out still zoomed: ${moved} mm to ${afterTap} mm`)
+    report.confirmed('stopZoom while startZoom was being prepared', { from: moved, to: afterTap })
     if (startFocalLength === null) return report.skipped('zoomTo', 'the lens does not report its focal length')
     const landed = await camera.zoomTo(startFocalLength)
     report.confirmed(`zoomTo(${startFocalLength})`, `landed at ${landed} mm`)

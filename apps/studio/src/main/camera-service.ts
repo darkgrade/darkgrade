@@ -44,6 +44,8 @@ export class CameraService {
     controls: CameraControls | null = null
     card: CameraCard | null = null
     lens: CameraLens | null = null
+    /** Advanced by every zoom release, so a zoom press still waiting in the queue never starts after it. */
+    zoomReleases = 0
     clock: CameraClock | null = null
     clockTimer: ReturnType<typeof setInterval> | null = null
     /** Which Sony property each setting was read from on this body. */

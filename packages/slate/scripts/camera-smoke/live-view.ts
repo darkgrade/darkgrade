@@ -1,4 +1,5 @@
 import { CameraUnsupportedError } from '@camera/errors'
+import { SonyCamera } from '@camera/sony-camera'
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
 
 const JPEG_START = [0xff, 0xd8]
@@ -61,5 +62,12 @@ export const liveViewSmoke: SmokeArea = {
         await new Promise(resolve => setTimeout(resolve, 2_500))
         const after = await camera.getLiveViewFrame()
         report.confirmed('getLiveViewFrame() after overlays stop', { overlay: after.overlay ? 'present' : 'none' })
+        const driver = camera.getInstance()
+        if (!(driver instanceof SonyCamera)) return
+        // The output switch is private to Slate; this check reads it back from a fresh inventory.
+        await camera.getCapabilities()
+        const output = driver.listPropertyStates().find(state => state.name === 'OsdImageMode')?.value
+        if (output !== 'OFF') throw new Error(`The camera's overlay output read back ${String(output)}, not OFF`)
+        report.confirmed("camera's overlay output after overlays stop (read back)", output)
     },
 }

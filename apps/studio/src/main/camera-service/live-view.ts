@@ -119,6 +119,8 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
                 const overlay = this.overlayDue()
                 try {
                     // Slate waits for the camera's next frame itself; the queue keeps every other command apart.
+                    // That wait holds the queue for at most one frame interval, accepted so pacing stays private
+                    // to Slate; Stop never waits behind it (zoomStop skips the queue and cancels a waiting press).
                     const captureStartedMs = performance.now()
                     const frame = await this.enqueue(() => camera.getLiveViewFrame({ overlay }))
                     captureMs += performance.now() - captureStartedMs
