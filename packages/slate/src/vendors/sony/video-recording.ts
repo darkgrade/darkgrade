@@ -23,17 +23,20 @@ export class SonyVideoRecording {
         do{const state=await this.camera.getSonyProperty('RecordingState');if(state.value==='1')return {recordingConfirmed:true,evidence:'Sony SDK reports recording'};if(state.value==='2')throw new Error('Camera reports recording failed');await sleep(100)}while(Date.now()<deadline)
         throw new Error('Camera did not confirm recording started')
     }
+    /**
+     * Stop is sent once. Confirmation only reads RecordingState, on the same connection or on a
+     * renewed SDK session; it never sends Stop again, so an unconfirmed Stop stays the caller's to repeat.
+     */
     private async confirmStopped(){
+        let stopSent=false
         for(let connection=0;connection<2;connection++){
             try{
-                await this.camera.stopRecording()
-                const started=Date.now(),deadline=started+15000
-                let retried=false
+                if(!stopSent){stopSent=true;await this.camera.stopRecording()}
+                const deadline=Date.now()+15000
                 do{
                     await sleep(200)
                     const state=await this.camera.getSonyProperty('RecordingState')
                     if(state.value==='0')return
-                    if(!retried&&Date.now()-started>=1500){await this.camera.stopRecording();retried=true}
                 }while(Date.now()<deadline)
                 throw new Error('Camera did not confirm recording stopped; do not disconnect power')
             }catch(error){
