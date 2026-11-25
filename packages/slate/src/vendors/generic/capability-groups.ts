@@ -1,4 +1,4 @@
-import type { CameraRecordingState, OperationAvailability } from '@camera/controls'
+import type { CameraCapabilities, CameraRecordingState, OperationAvailability } from '@camera/controls'
 import type { CardStatus, Clip, MediaDownloadOptions, MediaItem, MediaPreviewSize } from '@camera/driver'
 
 export interface VideoCapability {
@@ -24,7 +24,9 @@ export interface MediaCapability {
     /** A JPEG of a photo or clip. */
     getMediaPreview(id: string, size: MediaPreviewSize): Promise<Uint8Array>
     downloadMedia(id: string, options: MediaDownloadOptions): Promise<Uint8Array>
-    /** Operations this driver has but cannot do right now, with the reason. */
-    availability?(): Promise<Partial<Record<'getCardStatus' | 'listMedia' | 'getMediaPreview' | 'downloadMedia', OperationAvailability>>>
+    /** Operations this driver has but cannot do right now, with the reason, judged from this observation. */
+    availability?(
+        capabilities: CameraCapabilities
+    ): Promise<Partial<Record<'getCardStatus' | 'listMedia' | 'getMediaPreview' | 'downloadMedia', OperationAvailability>>>
 }
 

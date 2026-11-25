@@ -1,8 +1,6 @@
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Logger } from '@core/logger'
-import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { PTP_DISCOVERY_VENDORS } from '@transport/usb/usb-transport'
 import { describe, expect, it } from 'vitest'
 
 /** A GenericCamera whose transactions are answered by `send`, with no transport underneath. */
@@ -36,10 +34,6 @@ const batteryLevel = {
 }
 
 describe('Olympus generic PTP support', () => {
-    it('requests Olympus devices during WebUSB discovery', () => {
-        expect(PTP_DISCOVERY_VENDORS).toContainEqual({ vendorId: VendorIDs.OLYMPUS, name: 'Olympus' })
-    })
-
     it('publishes only standard properties advertised by an Olympus body', async () => {
         const camera = answeredCamera(() => (async (operation, params) => {
             if (operation.name === 'GetDeviceInfo')

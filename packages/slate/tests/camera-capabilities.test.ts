@@ -15,6 +15,9 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { PropertyDefinition } from '@ptp/types/property'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
+import { VendorExtensionCamera } from '@vendors/generic/vendor-extension-camera'
+import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { deviceInfo, fakeTransport as transport, propertyDescriptor, sonyPropertyInventory, vendorCodeList } from '@tests/fixtures/camera-fixtures'
@@ -315,6 +318,40 @@ describe('library construction and vendor dispatch', () => {
             await camera.connect()
             expect(protocolSession(camera).driver).toBeInstanceOf(Driver)
             expect(open).toHaveBeenCalledOnce()
+        } finally {
+            vi.restoreAllMocks()
+        }
+    })
+    it.each([
+        ['Fujifilm', VendorIDs.FUJIFILM, VendorExtensionCamera],
+        ['an unknown vendor', 0x1234, GenericCamera],
+    ] as const)('connects %s body with no device filter and reports what its DeviceInfo advertises', async (_name, vendorId, Driver) => {
+        const camera = new Camera({ firstContact: false })
+        vi.spyOn(USBTransport.prototype, 'isConnected').mockReturnValue(false)
+        vi.spyOn(USBTransport.prototype, 'connect').mockResolvedValue(undefined)
+        vi.spyOn(USBTransport.prototype, 'getDeviceIdentity').mockReturnValue({ vendorId, productId: 1 })
+        vi.spyOn(GenericCamera.prototype, 'connect').mockResolvedValue(undefined)
+        const operations = { capture: 0x100e, storageIds: 0x1004, storageInfo: 0x1005, handles: 0x1007, objectInfo: 0x1008, thumb: 0x100a }
+        let advertised = [0x1001, 0x1002, 0x1015]
+        try {
+            await camera.connect()
+            const driver = protocolSession(camera).driver
+            expect(Object.getPrototypeOf(driver)).toBe(Driver.prototype)
+            driver.sessionId = 1
+            vi.spyOn(driver, 'send').mockImplementation((async (operation: OperationDefinition) =>
+                operation.name === 'GetDeviceInfo'
+                    ? { code: 0x2001, data: info(camera, [], advertised) }
+                    : { code: 0x2005 }) as never)
+            const unadvertised = (await camera.getCapabilities()).operations ?? {}
+            expect(unadvertised.takePhoto).toEqual({ supported: false, reason: 'The camera does not advertise InitiateCapture' })
+            expect(unadvertised.listMedia).toMatchObject({ supported: false, reason: expect.stringContaining('GetStorageIDs') })
+            expect(unadvertised.getCardStatus).toMatchObject({ supported: false, reason: expect.stringContaining('GetStorageInfo') })
+            for (const name of ['autofocus', 'getLiveViewFrame', 'startRecording', 'zoomTo'] as const)
+                expect(unadvertised[name]).toEqual({ supported: false, reason: `${name} is not supported by this camera` })
+            advertised = [0x1001, 0x1002, ...Object.values(operations)]
+            const offered = (await camera.getCapabilities()).operations ?? {}
+            for (const name of ['takePhoto', 'listMedia', 'getCardStatus', 'getMediaPreview', 'downloadMedia'] as const)
+                expect(offered[name]).toEqual({ supported: true })
         } finally {
             vi.restoreAllMocks()
         }

@@ -19,16 +19,44 @@ const DEVICE_RESET_REQUEST = 0x66
 
 export const USB_LIMITS = { MAX_USB_TRANSFER: 1024 * 1024 * 1024, DEFAULT_BULK_SIZE: 8192 } as const
 
-export const PTP_DISCOVERY_VENDORS = [
-    { vendorId: 0x04b0, name: 'Nikon' },
-    { vendorId: 0x054c, name: 'Sony' },
-    { vendorId: 0x04a9, name: 'Canon' },
-    { vendorId: 0x07b4, name: 'Olympus' },
-] as const
+/** Any vendor's PTP still-image interface; the default when no device descriptor names a body. */
+const PTP_STILL_IMAGE_FILTER = { classCode: 0x06, subclassCode: 0x01 } as const
 
 const LIBUSB_ENDPOINT_IN = usb.LIBUSB_ENDPOINT_IN
 /** Marks a bulk-IN reader released by a Device Reset Request or disconnect. */
 const RELEASED = new Error('Bulk IN reader released')
+
+type NodeUSBDevice = ReturnType<typeof usb.getDeviceList>[number]
+
+function hasMatchingInterface(device: NodeUSBDevice, filter: USBDeviceFilter): boolean {
+    try {
+        return device.allConfigDescriptors.some(configuration =>
+            configuration.interfaces.flat().some(
+                descriptor =>
+                    descriptor.bInterfaceClass === filter.classCode &&
+                    (filter.subclassCode === undefined || descriptor.bInterfaceSubClass === filter.subclassCode) &&
+                    (filter.protocolCode === undefined || descriptor.bInterfaceProtocol === filter.protocolCode)
+            )
+        )
+    } catch {
+        return false
+    }
+}
+
+/**
+ * node-usb opens every device a filter without vendor and product admits, to read its interfaces.
+ * Narrow such an interface-class filter to the ids whose config descriptors, readable without
+ * opening the device, carry that interface, so hubs, capture cards and other devices stay closed.
+ */
+function narrowInterfaceFilters(filters: USBDeviceFilter[], devices: NodeUSBDevice[]): USBDeviceFilter[] {
+    return filters.flatMap(filter => {
+        if (filter.vendorId !== undefined || filter.productId !== undefined || filter.classCode === undefined)
+            return [filter]
+        return devices
+            .filter(device => hasMatchingInterface(device, filter))
+            .map(device => ({ ...filter, vendorId: device.deviceDescriptor.idVendor, productId: device.deviceDescriptor.idProduct }))
+    })
+}
 
 function isUsbDeviceGone(error: unknown): boolean {
     return error instanceof Error && /LIBUSB_(?:ERROR|TRANSFER)_NO_DEVICE\b/.test(error.message)
@@ -85,25 +113,29 @@ export class USBTransport implements TransportInterface {
 
     private discoveryFilters(device?: DeviceDescriptor): USBDeviceFilter[] {
         if (device?.usb?.filters.length) return device.usb.filters
-        return PTP_DISCOVERY_VENDORS.map(vendor => ({ vendorId: vendor.vendorId, classCode: 0x06, subclassCode: 0x01 }))
+        return [PTP_STILL_IMAGE_FILTER]
     }
 
-    private async getUSB(filters: USBDeviceFilter[]): Promise<USB> {
+    /** Returns null when no attached device can match, so node-usb opens nothing. */
+    private async getUSB(filters: USBDeviceFilter[]): Promise<USB | null> {
         if (typeof navigator !== 'undefined' && 'usb' in navigator) return navigator.usb
         if (this.suppliedUsb) return this.suppliedUsb
 
-        const scope = JSON.stringify(filters)
+        const allowedDevices = narrowInterfaceFilters(filters, usb.getDeviceList())
+        if (!allowedDevices.length) return null
+        const scope = JSON.stringify(allowedDevices)
         if (this.usb && this.usbScope === scope) return this.usb
         const { WebUSB } = await import('usb')
-        this.usb = new WebUSB({ allowedDevices: filters, allowAllDevices: false, deviceTimeout: 1000 })
+        this.usb = new WebUSB({ allowedDevices, allowAllDevices: false, deviceTimeout: 1000 })
         this.usbScope = scope
         return this.usb
     }
 
+    /** Attached USB cameras the descriptor admits; with none, any vendor's PTP still-image body. */
     async discover(device?: DeviceDescriptor) {
         const filters = this.discoveryFilters(device)
         const usb = await this.getUSB(filters)
-        const devices = await usb.getDevices()
+        const devices = usb ? await usb.getDevices() : []
         return devices
             .filter(device => filters.some(filter => this.matchesFilter(device, filter)))
             .map(device => {

@@ -1434,12 +1434,20 @@ export class GenericCamera {
         return emittedEvents(this, event, handler)
     }
 
+    /**
+     * What a body on these standard paths can do, from what its DeviceInfo advertises. A brand's
+     * own takePhoto sends its own operations, so only the standard InitiateCapture release is judged here.
+     */
     async availability(
         operation: CameraOperationName,
-        _capabilities: CameraCapabilities
+        capabilities: CameraCapabilities
     ): Promise<OperationAvailability | undefined> {
         if (operation === 'getCardStatus' || operation === 'listMedia' || operation === 'getMediaPreview' || operation === 'downloadMedia')
-            return (await (await this.mediaGroup()).availability?.())?.[operation]
+            return (await (await this.mediaGroup()).availability?.(capabilities))?.[operation]
+        if (operation === 'takePhoto' && this.takePhoto === GenericCamera.prototype.takePhoto) {
+            const { operationsAdvertised } = await import('@vendors/generic/generic-operations')
+            return operationsAdvertised(capabilities, [this.registry.operations.InitiateCapture])
+        }
         if (operation !== 'setClock') return undefined
         if (this.#clockCheck?.sessionId !== this.sessionId)
             this.#clockCheck = {

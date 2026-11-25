@@ -158,7 +158,8 @@ function standardCard(
                         registry,
                         options.identity,
                         options.clock === false ? [0x5001] : [0x5001, 0x5011],
-                        options.thumbnails === false ? [0x1001, 0x1009] : [0x1001, 0x1009, 0x100a]
+                        // GetDeviceInfo, the storage and object listing, GetObject, GetPartialObject; GetThumb optional.
+                        [0x1001, 0x1004, 0x1005, 0x1007, 0x1008, 0x1009, 0x101b, ...(options.thumbnails === false ? [] : [0x100a])]
                     ),
                 }
             case 'GetStorageIDs':

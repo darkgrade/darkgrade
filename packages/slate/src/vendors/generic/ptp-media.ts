@@ -1,3 +1,4 @@
+import type { CameraCapabilities } from '@camera/controls'
 import type { CardStatus, MediaDownloadOptions, MediaItem, MediaPreviewSize } from '@camera/driver'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
@@ -6,6 +7,7 @@ import type { CameraDriverInstance } from '@camera/camera-context'
 import { readCameraStorages } from '@vendors/generic/storage'
 import { GetThumb } from '@ptp/definitions/operation-definitions'
 import { OK } from '@ptp/definitions/response-definitions'
+import { operationsAdvertised } from '@vendors/generic/generic-operations'
 import { decodeMediaId, newestFirst, type ObjectMediaReference } from '@vendors/generic/media-id'
 import { PtpObjectIndex, reportingRefusals, type IndexedObject } from '@vendors/generic/ptp-object-index'
 
@@ -83,11 +85,18 @@ export function ptpMediaCapability(driver: CameraDriverInstance, owner: Camera):
             })
         },
 
-        async availability() {
+        /** The standard operations these paths send, as the body's DeviceInfo advertises them. */
+        async availability(capabilities: CameraCapabilities) {
+            const { GetStorageIDs, GetStorageInfo, GetObjectHandles, GetObjectInfo } = driver.registry.operations
+            const cards = operationsAdvertised(capabilities, [GetStorageIDs, GetStorageInfo])
+            const files = operationsAdvertised(capabilities, [GetStorageIDs, GetObjectHandles, GetObjectInfo])
+            const availability: Awaited<ReturnType<NonNullable<MediaCapability['availability']>>> = {}
+            if (!cards.supported) availability.getCardStatus = cards
+            if (!files.supported) return { ...availability, listMedia: files, getMediaPreview: files, downloadMedia: files }
             const thumbnails = await reportingRefusals('getMediaPreview', () => index.thumbnailsSupported('getMediaPreview'))
-            return thumbnails
-                ? {}
-                : { getMediaPreview: { supported: false, reason: 'This camera does not offer thumbnails of its card files' } }
+            if (!thumbnails)
+                availability.getMediaPreview = { supported: false, reason: 'This camera does not offer thumbnails of its card files' }
+            return availability
         },
     }
 }

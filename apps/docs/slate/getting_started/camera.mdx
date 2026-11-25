@@ -62,7 +62,7 @@ async connect(options?: ConnectOptions): Promise&lt;void&gt;
 | Option | Type | Required | Description |
 | ------ | ---- | -------- | ----------- |
 | **observeOnly** | `boolean` |  | Read without changing any setting. Sony keeps its dial priority and saved image destination. Default `false`. |
-| **device** | `DeviceDescriptor` |  | The body to open. If not provided, uses the device from the constructor options. |
+| **device** | `DeviceDescriptor` |  | The body to open. If not provided, uses the device from the constructor options; with neither, opens the one attached PTP camera of any vendor. |
 
 ### disconnect
 
