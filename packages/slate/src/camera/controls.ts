@@ -66,6 +66,27 @@ export interface CameraCapabilities {
     controls: Partial<Record<CameraControlId, CameraControlState>>
     /** Raw standard DeviceInfo inventory, or null where unavailable; never workflow qualification. */
     advertisedOperations: number[] | null
+    /** The attached lens, from the same observation as `controls`; absent when the camera reports neither field. */
+    lens?: CameraLens
+    /**
+     * Whether each public operation can run on this camera now, with the camera's reason when not.
+     * Filled by `Camera.getCapabilities()`; an operation that is not listed has no support check yet.
+     */
+    operations?: Partial<Record<string, OperationSupport>>
+}
+
+/** The attached lens as the camera reports it. Each field is null when the camera does not report it. */
+export interface CameraLens {
+    name: string | null
+    /** The current focal length, in millimetres. */
+    focalLengthMillimetres: number | null
+}
+
+/** Whether an operation can run now; `reason` says why not. `options` covers optional parts, such as an overlay. */
+export interface OperationSupport {
+    supported: boolean
+    reason?: string
+    options?: Partial<Record<string, OperationSupport>>
 }
 
 /**

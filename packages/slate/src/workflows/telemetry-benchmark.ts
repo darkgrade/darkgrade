@@ -206,8 +206,8 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
                 })
             if (options.live && !firstContact)
                 await check('live-transfer', async () => {
-                    const frame = await camera.captureLiveView({ includeData: true })
-                    if (!frame.data?.length) throw new Error('No frame transferred')
+                    const frame = await camera.getLiveViewFrame()
+                    if (!frame.jpeg.length) throw new Error('No frame transferred')
                 })
         }
     } finally {

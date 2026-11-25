@@ -790,7 +790,7 @@ export class SonyCamera extends GenericCamera {
      * The top of Zoom Speed Range (0xD25E), whose range matches Zoom Operation's. Speed 1 is the
      * slowest; a body set to a fixed remote zoom speed reports 1.
      */
-    private async maximumZoomSpeed(): Promise<number> {
+    async maximumZoomSpeed(): Promise<number> {
         const cached = this.propertyCache.get(SONY_ZOOM_SPEED_RANGE_CODE)
         const descriptor = cached ?? (await this.readDescriptor(SONY_ZOOM_SPEED_RANGE_CODE).catch(() => undefined))
         const maximum = Number(descriptor?.maximumValue)

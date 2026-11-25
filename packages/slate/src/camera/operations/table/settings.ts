@@ -249,6 +249,36 @@ export const settingsOperationTable = {
                 },
             },
         },
+        getDigitalZoom: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current digital zoom, in canonical spelling',
+        },
+        setDigitalZoom: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the digital zoom and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Off' }],
+                },
+            },
+        },
+        getLiveViewQuality: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current live-view quality, in canonical spelling',
+        },
+        setLiveViewQuality: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the live-view quality and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example High' }],
+                },
+            },
+        },
     },
     planned: {
         getExposureMode: {
@@ -578,36 +608,6 @@ export const settingsOperationTable = {
             surfaces: {
                 cli: {
                     arguments: [{ name: 'value', description: 'for example On' }],
-                },
-            },
-        },
-        getDigitalZoom: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current digital zoom, in canonical spelling',
-        },
-        setDigitalZoom: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the digital zoom and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Off' }],
-                },
-            },
-        },
-        getLiveViewQuality: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current live-view quality, in canonical spelling',
-        },
-        setLiveViewQuality: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the live-view quality and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example High' }],
                 },
             },
         },

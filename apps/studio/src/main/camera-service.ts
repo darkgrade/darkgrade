@@ -84,7 +84,7 @@ export class CameraService {
             lens: this.connected ? this.lens : null,
             clock: this.connected ? this.clock : null,
             controls: this.controls,
-            osdOverlay: this.connected && this.detectedVendorId === VendorIDs.SONY ? this.osdOverlay : null,
+            osdOverlay: this.connected && this.overlaySupported ? this.osdOverlay : null,
             liveView: this.liveViewRunning,
             recording: this.recording,
             recordingState: this.recordingState,
@@ -213,8 +213,6 @@ export class CameraService {
     settingsRefreshTimer: ReturnType<typeof setTimeout> | null = null
     settingsRefreshDeferred = false
 
-    zoomSafetyTimer: ReturnType<typeof setTimeout> | null = null
-
     // ------------------------------------------------------------------ focus
 
     /** One autofocus cycle via Slate (Sony S1 half-press, Canon/Nikon AF drive). */
@@ -228,8 +226,10 @@ export class CameraService {
     /** The Flexible Spot size last active on the camera, without its Lock on AF prefix. */
     lastFlexibleSpot = 'Flexible Spot M'
 
-    /** Whether the camera's on-screen display is drawn over live view (Sony). */
+    /** Whether the camera's on-screen display is drawn over live view. */
     osdOverlay = false
+    /** Whether the camera can send its on-screen display, from its latest capabilities. */
+    overlaySupported = false
     lastOsdFrameMs = 0
 
     /** The camera's focus frames as last sent, so only changes go to the window. */

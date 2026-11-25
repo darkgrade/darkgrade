@@ -17,7 +17,7 @@ function FrameSize(): React.JSX.Element {
 export interface PreviewQualityProps {
     /** Live view is running: the details show its frame rate and size. */
     live: boolean
-    /** Sony's Live View Image Quality (LOW / HIGH); null when the camera has none. */
+    /** The camera's live-view quality (Low / High); null when the camera has none. */
     quality: CameraControl | null
     disabled: boolean
     onQualityChange: (value: string) => void
@@ -30,7 +30,7 @@ export interface PreviewQualityProps {
 export function PreviewQuality(props: PreviewQualityProps & { className: string }): React.JSX.Element | null {
     const { quality } = props
     if (!quality?.value) return null
-    const high = quality.value === 'HIGH'
+    const high = quality.value === 'High'
     return (
         <HoverTip
             tip={
@@ -59,7 +59,7 @@ export function PreviewQuality(props: PreviewQualityProps & { className: string 
                     variant="ghost"
                     className={`${props.className} w-auto! px-2! text-[13px] font-semibold tracking-wide`}
                     disabled={props.disabled || !quality.enabled}
-                    onClick={() => props.onQualityChange(high ? 'LOW' : 'HIGH')}
+                    onClick={() => props.onQualityChange(high ? 'Low' : 'High')}
                     aria-label={`Preview quality: ${high ? 'HQ' : 'LQ'}. Switch to ${high ? 'LQ' : 'HQ'}`}
                 />
             }

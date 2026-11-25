@@ -5,6 +5,7 @@ import {
     cameraControlDefinitions,
     type CameraCapabilities,
     type CameraControlId,
+    type CameraLens,
     type CameraControlInputs,
     type CameraControlState,
     type UnrecognizedValues,
@@ -27,17 +28,21 @@ import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import type { CodecInstance } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 import {
+    canonicalControlValue,
     canonControlProperties,
     nikonMovieControlProperties,
     nikonPhotoControlProperties,
     sonyControlProperties,
     standardControlProperties,
+    vendorControlValue,
     type ControlPropertyMap,
 } from '@vendors/control-properties'
+import { standardLens } from '@vendors/lens-information'
 import { nikonControlLabel } from '@vendors/nikon/control-values'
 import { MovieShutterAngle } from '@vendors/nikon/video-properties'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import { NikonShotControls } from '@vendors/nikon/shot-controls'
+import { sonyLens } from '@vendors/sony/lens'
 
 interface PropertyState {
     code: number
@@ -171,8 +176,12 @@ export async function readCameraCapabilities(
     }
     let states: PropertyState[]
     let mappings: ControlPropertyMap<CameraControlId>
+    // The lens comes from the same observation as the controls: Sony's inventory, or the standard
+    // FocalLength property on a full read of a Nikon or standard body. Canon reports none Slate decodes.
+    let lens: CameraLens | undefined
     if (camera instanceof SonyCamera) {
         const observed = await camera.refreshPropertyStates()
+        lens = sonyLens(observed)
         const iso = camera.isoControlState(observed)
         states = observed.map(state => (state.name === 'Iso' && iso ? iso : state))
         mappings = sonyControlProperties
@@ -201,6 +210,7 @@ export async function readCameraCapabilities(
             inventory!.operationsSupportedRaw,
             requested
         ))
+        if (requested === undefined) lens = await standardLens(camera, inventory!.devicePropertiesSupported)
     } else {
         const standardMappings: ControlPropertyMap<CameraControlId> = standardControlProperties
         states = (await camera.getStandardPropertyStates(requested ? standardMappings[requested]?.[0]?.name : undefined)).map(
@@ -214,13 +224,17 @@ export async function readCameraCapabilities(
             })
         )
         mappings = standardControlProperties
+        if (inventory) lens = await standardLens(camera, inventory.devicePropertiesSupported)
     }
     const controls: CameraCapabilities['controls'] = {}
     for (const id of Object.keys(mappings) as CameraControlId[]) {
         const state = mappings[id]?.map(property => states.find(state => state.name === property.name)).find(Boolean)
         if (!state) continue
         const label = (value: string | number | bigint) =>
-            camera instanceof NikonCamera && value !== 'Auto' ? nikonControlLabel(state.name, value) : String(value)
+            canonicalControlValue(
+                state.name,
+                camera instanceof NikonCamera && value !== 'Auto' ? nikonControlLabel(state.name, value) : String(value)
+            )
         const definition = cameraControlDefinitions[id]
         const value = label(state.value),
             allowedValues = state.allowedValues?.map(label)
@@ -279,6 +293,7 @@ export async function readCameraCapabilities(
         observedAt: Date.now(),
         controls,
         advertisedOperations: inventory ? [...inventory.operationsSupportedRaw] : null,
+        ...(lens ? { lens } : {}),
     }
 }
 
@@ -340,6 +355,8 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 throw new CameraRefusedError(id, `Requested ${id} value is outside the camera range`)
         }
     }
+    // Admission and confirmation use canonical names; the driver writes the vendor's own word.
+    const written = vendorControlValue(state.source.name, requested)
     const write = async (): Promise<void> => {
         if (driver instanceof NikonCamera) {
             const expectedMode =
@@ -364,11 +381,11 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 focusMode: 'set-focus-mode',
             } as const
             if (state.source.name.startsWith('NikonMovie') && id in movieActions) {
-                await new NikonShotControls(owner).apply(movieActions[id as keyof typeof movieActions], requested)
+                await new NikonShotControls(owner).apply(movieActions[id as keyof typeof movieActions], written)
                 return
             }
             if (state.source.name === 'NikonPhotoShutterSpeed' || state.source.name === 'NikonMovieShutterSpeed') {
-                await driver.setShutterSpeed(requested)
+                await driver.setShutterSpeed(written)
                 return
             }
             const property = Object.values(driver.registry.properties).find(
@@ -378,7 +395,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
             const descriptor = await driver.propertyDescriptor(property)
             const index =
                 descriptor.supportedValuesDecoded?.findIndex(
-                    decoded => nikonControlLabel(property.name, decoded) === requested
+                    decoded => nikonControlLabel(property.name, decoded) === written
                 ) ?? -1
             let target = index >= 0 ? descriptor.supportedValuesRaw?.[index] : undefined
             let decoded = index >= 0 ? descriptor.supportedValuesDecoded?.[index] : undefined
@@ -388,13 +405,13 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 state.range &&
                 (id === 'colorTemperature' || id === 'shutterSpeed')
             ) {
-                const numeric = property.name === 'MovieShutterAngle' ? parseExposureTime(requested) : undefined
+                const numeric = property.name === 'MovieShutterAngle' ? parseExposureTime(written) : undefined
                 const raw =
                     property.name === 'MovieShutterAngle' && numeric?.kind === 'angle'
                         ? numeric.degrees * 100
                         : property.name === 'ExposureTime'
-                          ? Number(requested) * 10000
-                          : Number(requested)
+                          ? Number(written) * 10000
+                          : Number(written)
                 if (
                     typeof descriptor.minimumValue === 'number' &&
                     typeof descriptor.maximumValue === 'number' &&
@@ -405,7 +422,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
                     (descriptor.stepSize === 0 || (raw - descriptor.minimumValue) % descriptor.stepSize === 0)
                 ) {
                     target = raw
-                    decoded = property.name === 'ExposureTime' ? requested : raw
+                    decoded = property.name === 'ExposureTime' ? written : raw
                 }
             }
             if (descriptor.getSet !== 'GET_SET' || target === undefined)
@@ -424,14 +441,14 @@ export async function writeCameraControl<Id extends CameraControlId>(
             return
         }
         if (!(driver instanceof SonyCamera) && !(driver instanceof CanonCamera)) {
-            await driver.setStandardProperty(state.source.code, requested)
+            await driver.setStandardProperty(state.source.code, written)
             return
         }
         const property = Object.values(driver.registry.properties).find(property => property.code === state.source.code)
         if (!property) throw new Error('Camera control property disappeared')
         if (driver instanceof CanonCamera && id === 'movieFormat') {
             const choices = driver.getPropertyAllowedValues(driver.registry.properties.CanonMovieFormat)
-            const choice = choices?.find(format => format.label === requested)
+            const choice = choices?.find(format => format.label === written)
             if (!choice) throw new Error('Canon movie format is no longer advertised')
             await driver.setMovieFormat(choice.key)
             return
@@ -441,15 +458,15 @@ export async function writeCameraControl<Id extends CameraControlId>(
                 .listPropertyStates()
                 .find(property => property.code === state.source.code)?.allowedValues
             const choice = choices?.find(
-                value => value && typeof value === 'object' && 'label' in value && value.label === requested
+                value => value && typeof value === 'object' && 'label' in value && value.label === written
             )
             if (!choice || typeof choice !== 'object' || !('packed' in choice) || typeof choice.packed !== 'number')
                 throw new Error('Canon photo format is no longer advertised')
             await driver.setImageFormat(choice.packed)
             return
         }
-        if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(requested)
-        else await driver.set(property, (id === 'colorTemperature' ? Number(requested) : requested) as never)
+        if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(written)
+        else await driver.set(property, (id === 'colorTemperature' ? Number(written) : written) as never)
     }
     await write()
     let observed: CameraControlState | undefined

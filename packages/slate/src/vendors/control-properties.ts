@@ -3,11 +3,13 @@ import type { CodecType } from '@ptp/types/codec'
 import { colourControlProperties } from '@vendors/control-properties/colour'
 import { exposureControlProperties } from '@vendors/control-properties/exposure'
 import { focusControlProperties } from '@vendors/control-properties/focus'
+import { liveViewValueNames } from '@camera/settings/live-view'
+import { videoValueNames } from '@camera/settings/video'
 import { liveViewControlProperties } from '@vendors/control-properties/live-view'
 import { modeControlProperties } from '@vendors/control-properties/mode'
 import { photoControlProperties } from '@vendors/control-properties/photo'
 import { videoControlProperties } from '@vendors/control-properties/video'
-import type { ControlPropertyMap } from '@vendors/control-properties/vendor-control-properties'
+import type { ControlPropertyMap, ControlValueNames } from '@vendors/control-properties/vendor-control-properties'
 
 export type { ControlPropertyList, ControlPropertyMap } from '@vendors/control-properties/vendor-control-properties'
 
@@ -61,3 +63,17 @@ export type CodecValue<Id extends CameraControlId> = PropertyFor<Id> extends inf
         ? CodecType<Codec>
         : never
     : never
+
+/** Canonical names for vendor codec values, keyed by property name, from every settings group. */
+export const controlValueNames: ControlValueNames = { ...videoValueNames, ...liveViewValueNames }
+
+/** The canonical name for a value a vendor property decoded; a value without one keeps its codec word. */
+export function canonicalControlValue(propertyName: string, value: string): string {
+    return controlValueNames[propertyName]?.[value] ?? value
+}
+
+/** The vendor property's own word for a canonical value, for writing it back. */
+export function vendorControlValue(propertyName: string, canonical: string): string {
+    const names = controlValueNames[propertyName]
+    return (names && Object.keys(names).find(value => names[value] === canonical)) ?? canonical
+}

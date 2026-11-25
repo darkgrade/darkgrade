@@ -44,7 +44,8 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
     zoomSetting: {
         code: 293,
         label: 'Zoom range',
-        values: { '1': 'Optical Zoom', '2': 'Smart Zoom', '3': 'Clear Image Zoom', '4': 'Digital Zoom' },
+        // Canonical digitalZoom names (Optical Zoom Only is Off); Smart Zoom has no PTP codec value yet.
+        values: { '1': 'Off', '2': 'Smart Zoom', '3': 'Clear Image Zoom', '4': 'Digital Zoom' },
     },
     exposureProgram: { code: 261, label: 'Exposure program' },
     apertureMode: { code: 310, label: 'Aperture auto/manual' },

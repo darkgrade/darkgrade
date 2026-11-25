@@ -1,3 +1,4 @@
+import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 
 /** A canonical control's properties in preference order: the first one the camera advertises wins. */
@@ -16,3 +17,14 @@ export interface VendorControlProperties<Ids extends string> {
     /** Nikon in movie mode (LiveViewSelector VIDEO). */
     nikonMovie: ControlPropertyMap<Ids>
 }
+
+/**
+ * Canonical names for one property's codec values: every value the codec decodes must have one
+ * (the compiler checks it against `CodecType`), so a codec change cannot leak a vendor's word.
+ */
+export type CanonicalValueNames<Property extends PropertyDefinition> = Readonly<
+    Record<Extract<CodecType<Property['codec']>, string>, string>
+>
+
+/** Canonical value names keyed by vendor property name. A property without an entry keeps its codec's words. */
+export type ControlValueNames = Readonly<Record<string, Readonly<Record<string, string>>>>
