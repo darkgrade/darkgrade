@@ -3,7 +3,11 @@
     "version": "0.1.0",
     "type": "module",
     "description": "Connect to & control your camera via PTP with 2 lines of TypeScript",
-    "repository": { "type": "git", "url": "git+https://github.com/darkgrade/darkgrade.git", "directory": "packages/slate" },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/darkgrade/darkgrade.git",
+        "directory": "packages/slate"
+    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -89,17 +93,68 @@
             "import": "./dist/contribute/settings.mjs",
             "require": "./dist/contribute/settings.cjs"
         },
-        "./tsconfig.base.json": "./tsconfig.base.json"
+        "./tsconfig.base.json": "./tsconfig.base.json",
+        "./telemetry": {
+            "types": "./dist/contribute/application.d.ts",
+            "import": "./dist/contribute/application.mjs",
+            "require": "./dist/contribute/application.cjs"
+        },
+        "./telemetry/application": {
+            "types": "./dist/contribute/application.d.ts",
+            "import": "./dist/contribute/application.mjs",
+            "require": "./dist/contribute/application.cjs"
+        },
+        "./telemetry/batch": {
+            "types": "./dist/contribute/batch.d.ts",
+            "import": "./dist/contribute/batch.mjs",
+            "require": "./dist/contribute/batch.cjs"
+        },
+        "./telemetry/installation-store": {
+            "types": "./dist/contribute/installation-store.d.ts",
+            "import": "./dist/contribute/installation-store.mjs",
+            "require": "./dist/contribute/installation-store.cjs"
+        },
+        "./telemetry/node": {
+            "types": "./dist/contribute/node.d.ts",
+            "import": "./dist/contribute/node.mjs",
+            "require": "./dist/contribute/node.cjs"
+        },
+        "./telemetry/protocol": {
+            "types": "./dist/contribute/protocol.d.ts",
+            "import": "./dist/contribute/protocol.mjs",
+            "require": "./dist/contribute/protocol.cjs"
+        },
+        "./telemetry/schema": {
+            "types": "./dist/contribute/schema.d.ts",
+            "import": "./dist/contribute/schema.mjs",
+            "require": "./dist/contribute/schema.cjs"
+        },
+        "./telemetry/settings": {
+            "types": "./dist/contribute/settings.d.ts",
+            "import": "./dist/contribute/settings.mjs",
+            "require": "./dist/contribute/settings.cjs"
+        },
+        "./telemetry/server": {
+            "types": "./dist/telemetry/server/index.d.ts",
+            "import": "./dist/telemetry/server/index.js",
+            "require": "./dist/telemetry/server/index.js"
+        },
+        "./telemetry/postgres": {
+            "types": "./dist/telemetry/server/postgres.d.ts",
+            "import": "./dist/telemetry/server/postgres.js",
+            "require": "./dist/telemetry/server/postgres.js"
+        }
     },
     "files": [
         "dist",
         "tsconfig.base.json",
         "docs/contribute.md",
         "docs/camera-controls.md",
-        "docs/pre-release-audit.md"
+        "docs/pre-release-audit.md",
+        "telemetry/README.md"
     ],
     "scripts": {
-        "build": "bun run scripts/generate-camera-operations.ts --compatibility && vite build",
+        "build": "bun run scripts/generate-camera-operations.ts --compatibility && vite build && tsc -p telemetry/tsconfig.json",
         "dev": "vite build --watch",
         "test": "bun run scripts/test.ts",
         "test:unit": "bun run scripts/test.ts",
@@ -116,12 +171,19 @@
         "test:runtime": "bun run build && bun test ./tests/runtime",
         "mcp": "bun run src/runtime/stdio.ts",
         "generate:operations": "bun run scripts/generate-camera-operations.ts",
-        "typecheck": "bun run scripts/generate-camera-operations.ts --compatibility && tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit",
+        "typecheck": "bun run scripts/generate-camera-operations.ts --compatibility && tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit && tsc -p telemetry/tsconfig.json --noEmit",
         "bench:recover": "bun run scripts/recover-camera.ts",
         "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
         "test:cli": "bun run build && node --test tests/cli/*.test.ts",
         "camera:api-check": "bun run scripts/camera-api-check.ts",
-        "camera:parity": "bun run scripts/camera-parity.ts"
+        "camera:parity": "bun run scripts/camera-parity.ts",
+        "test:telemetry": "bun run build && node --test tests/telemetry/*.test.ts",
+        "telemetry:start": "node dist/telemetry/server/main.js",
+        "telemetry:cleanup": "node dist/telemetry/server/operations.js cleanup",
+        "telemetry:review": "node dist/telemetry/server/operations.js review",
+        "telemetry:export": "node dist/telemetry/server/operations.js export",
+        "telemetry:smoke": "node dist/telemetry/server/smoke.js",
+        "test:telemetry:postgres": "bun run build && node --test tests/telemetry/postgres.test.ts"
     },
     "keywords": [
         "ptp",
@@ -152,14 +214,17 @@
         "vite": "^7.3.7",
         "vite-plugin-dts": "^5.0.3",
         "vitest": "^4.1.12",
-        "zod": "4.6.6"
+        "zod": "4.6.6",
+        "pg": "8.16.3",
+        "@types/pg": "8.15.6"
     },
     "engines": {
         "node": ">=22.18"
     },
     "peerDependencies": {
         "@modelcontextprotocol/server": "2.3.0",
-        "zod": "4.6.6"
+        "zod": "4.6.6",
+        "pg": "8.16.3"
     },
     "peerDependenciesMeta": {
         "@modelcontextprotocol/server": {
@@ -167,6 +232,12 @@
         },
         "zod": {
             "optional": true
+        },
+        "pg": {
+            "optional": true
         }
+    },
+    "imports": {
+        "#telemetry-server/*": "./dist/telemetry/server/*.js"
     }
 }

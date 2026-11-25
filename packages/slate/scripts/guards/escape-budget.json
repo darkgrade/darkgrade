@@ -31,5 +31,12 @@
     "src/vendors/sony/sdk-controls.ts": {"any":1,"asNever":0,"asUnknownAs":0},
     "src/vendors/sony/video-recording.ts": {"any":10,"asNever":0,"asUnknownAs":0},
     "src/workflows/shot-analysis.ts": {"any":1,"asNever":0,"asUnknownAs":0},
-    "src/workflows/shot-setup.ts": {"any":1,"asNever":0,"asUnknownAs":0}
+    "src/workflows/shot-setup.ts": {"any":1,"asNever":0,"asUnknownAs":0},
+    "src/telemetry/server/smoke.ts": {"any":1,"asNever":0,"asUnknownAs":0},
+    "src/telemetry/server/matrix-pages.ts": {"any":1,"asNever":0,"asUnknownAs":0},
+    "src/telemetry/server/postgres.ts": {"any":5,"asNever":0,"asUnknownAs":0},
+    "src/telemetry/server/review.ts": {"any":2,"asNever":0,"asUnknownAs":0},
+    "src/telemetry/server/protocol-research.ts": {"any":0,"asNever":0,"asUnknownAs":1},
+    "src/telemetry/server/telemetry.ts": {"any":1,"asNever":0,"asUnknownAs":0},
+    "src/telemetry/server/database.ts": {"any":9,"asNever":0,"asUnknownAs":0}
 }

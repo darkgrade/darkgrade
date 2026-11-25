@@ -1,5 +1,5 @@
-import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
-import { cleanupWithdrawals, createTelemetry, DAILY_BATCH_LIMIT, type ContactMessage } from '#collector/telemetry'
+import { exportReviewedPatterns, reviewDiagnostic } from '#telemetry-server/review'
+import { cleanupWithdrawals, createTelemetry, DAILY_BATCH_LIMIT, type ContactMessage } from '#telemetry-server/telemetry'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { batch, enroll, memoryDatabase, request } from './telemetry-fixture.ts'

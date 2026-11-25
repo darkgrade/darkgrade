@@ -1,4 +1,4 @@
-import { createTelemetry, resendContactSender, type ContactMessage } from '#collector/telemetry'
+import { createTelemetry, resendContactSender, type ContactMessage } from '@darkgrade/slate/telemetry/server'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -83,7 +83,7 @@ test('actual CLI and HTTPS collector link a verified email, report status and un
                 process.execPath,
                 ['--input-type=module', '--eval', runner, '--', 'telemetry', ...args],
                 {
-                    cwd: fileURLToPath(new URL('..', import.meta.url)),
+                    cwd: fileURLToPath(new URL('../..', import.meta.url)),
                     env: {
                         ...process.env,
                         DARKGRADE_HOME: directory,

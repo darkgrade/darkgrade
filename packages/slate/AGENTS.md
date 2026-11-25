@@ -4,9 +4,14 @@ Read the root [`AGENTS.md`](../../AGENTS.md) first: its rules apply here too, an
 to them.
 
 Notes for work inside `packages/slate`. The repository-wide rules are in the root `AGENTS.md`;
-telemetry and collector rules are in `apps/contribution-collector/AGENTS.md`.
+telemetry and collector rules are in `packages/slate/src/telemetry/AGENTS.md`.
 
 ## Where things live
+
+The telemetry server lives in `src/telemetry/server`, exported through
+`@darkgrade/slate/telemetry/server`; `/telemetry/postgres` alone needs the optional database
+driver. Deployment assets are in `telemetry/`, and server tests in `tests/telemetry` run
+with `test:telemetry` or the full suite. Do not create another telemetry app or package.
 
 Diagnostics live in `packages/slate/src/contribute` and are exported as
 `@darkgrade/slate/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.

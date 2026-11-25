@@ -1,4 +1,4 @@
-import { createTelemetry, resendContactSender } from '#collector/telemetry'
+import { createTelemetry, resendContactSender } from '#telemetry-server/telemetry'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { enroll, memoryDatabase, request } from './telemetry-fixture.ts'

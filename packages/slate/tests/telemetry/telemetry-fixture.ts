@@ -1,7 +1,7 @@
-import { BATCH_SCHEMA, NOTICE_VERSION } from '@darkgrade/slate/contribute/batch'
-import { DISCLOSURE, SCHEMA } from '@darkgrade/slate/contribute/schema'
+import { BATCH_SCHEMA, NOTICE_VERSION } from '@darkgrade/slate/telemetry/batch'
+import { DISCLOSURE, SCHEMA } from '@darkgrade/slate/telemetry/schema'
 import { randomUUID } from 'node:crypto'
-import type { Database, Row } from '../src/database.ts'
+import type { Database, Row } from '#telemetry-server/database'
 
 export function memoryDatabase() {
     const records = new Map<string, Record<string, any>>()

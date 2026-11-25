@@ -10,7 +10,7 @@ const credentials = [
 // Product code belongs in Slate, Studio or CLI; these existing ancillary workspaces may stay.
 const workspaceManifests = new Set([
     'packages/slate/package.json', 'packages/cli/package.json',
-    'apps/studio/package.json', 'apps/contribution-collector/package.json', 'apps/docs/package.json',
+    'apps/studio/package.json', 'apps/docs/package.json',
     'apps/darkgrade.com/package.json', 'apps/darkgrade.com/drkgrd.co/package.json',
 ])
 

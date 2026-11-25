@@ -1,17 +1,31 @@
 # Telemetry and the collector
 
-Read the root [`AGENTS.md`](../../AGENTS.md) first: its rules apply here too, and this file only adds
+Read the root [`AGENTS.md`](../../../../AGENTS.md) first: its rules apply here too, and this file only adds
 to them.
 
-Notes for work on telemetry: the collector in `apps/contribution-collector`, the diagnostics
+Notes for work on telemetry: the server in `packages/slate/src/telemetry/server`, the diagnostics
 client in `packages/slate/src/contribute`, and the Matrix export. The repository-wide rules
 are in the root `AGENTS.md`.
+
+## One telemetry implementation
+
+Telemetry ingestion, Postgres, email confirmation, authenticated support queries, expiry,
+withdrawal and Matrix export belong in Slate's `src/telemetry/server`. Do not recreate a
+collector workspace or app. The portable client reuses `src/contribute`; canonical imports
+are `@darkgrade/slate/telemetry` and `/telemetry/{application,batch,schema,protocol,settings}`.
+The earlier `/contribute/*` exports are compatibility aliases, not parallel implementations.
+Importing `/telemetry/server` never starts a service or connects Postgres; only the explicit
+`/telemetry/postgres` adapter and `telemetry:start` use the optional `pg` peer.
+Keep deployment assets in `packages/slate/telemetry`, and reuse its Dockerfile and workflows.
+The former collector's type escapes were carried over without additions from #126
+(`4f1f9e2`) into Slate's existing guard budget; this now guards the server too. Never raise
+those counts or weaken the camera guard to accommodate server changes.
 
 ## Contact identity
 
 Email linking reuses `requestContact`, `contactStatus`, `removeContact` and the collector's
 existing single-use challenges. Keep Resend credentials in server Secret Manager configuration;
-never put them in Slate, CLI, Studio, diagnostic events, Matrix exports or client preferences.
+never embed them in Slate's client, CLI, Studio, diagnostic events, Matrix exports or client preferences.
 Private support lookup belongs in Telemetry, never Matrix exports. Join current/pending
 addresses to retained sessions by installation ID; shared camera fingerprints never merge
 people. Pending submissions are claims. Keep the old verified identity until the latest
@@ -151,7 +165,7 @@ minimal health/CPU/disk monitoring. Notification delivery requires verified chan
 email requires a configured sender. Do not claim live email delivery from a mock sender test.
 
 The ingestion implementation replaced project 18 with one HTTPS service and Postgres.
-`apps/contribution-collector/src/postgres.ts`
+`packages/slate/src/telemetry/server/postgres.ts`
 stores flat telemetry_events plus operational state; main.ts performs its own cleanup and
 serves an operator-authenticated /internal timeline. Firestore/GCS/grant collector deployment
 code and the separate cleanup job were removed. Terraform provisions Cloud Run + Cloud SQL

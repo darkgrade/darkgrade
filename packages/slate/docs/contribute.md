@@ -1,4 +1,4 @@
-# Slate diagnostics (`@darkgrade/slate/contribute`)
+# Slate telemetry (`@darkgrade/slate/telemetry`)
 
 The shared diagnostics queue behind Darkgrade Slate, CLI and native Studio. On first use,
 sharing defaults on. There is no required first-run notice or prompt. Imports and npm
@@ -7,7 +7,7 @@ installation do not open cameras, write settings or contact a collector.
 What Darkgrade collects, why, which services receive it and the controls people have are
 stated only in the [privacy policy](https://darkgrade.com/privacy). This document covers how the module works.
 
-On Node, `nodeDiagnostics()` from `@darkgrade/slate/contribute/settings` owns one queue across
+On Node, `nodeDiagnostics()` from `@darkgrade/slate/telemetry/settings` owns one queue across
 cameras. Slate's ordinary USB/PTP-IP camera path attaches it to the existing connection
 before connection, then replaces Unknown model/firmware with the GetDeviceInfo result. It does not create a
 second camera session. Custom transports need explicit configuration; loopback PTP/IP
@@ -26,7 +26,7 @@ Node clients use the hosted collector by default; `DARKGRADE_TELEMETRY_URL` over
 the HTTPS origin. `DARKGRADE_CONTRIBUTIONS=0` or `DO_NOT_TRACK=1` overrides cloud
 sharing. Saved opt-outs survive updates and Studio migrates its earlier encrypted state.
 
-`createApplicationDiagnostics` from `@darkgrade/slate/contribute/application` is the portable
+`createApplicationDiagnostics` from `@darkgrade/slate/telemetry/application` is the portable
 entry point for custom/browser hosts. Supply an endpoint and persistent store. Optional
 `presentNotice` is an embedding-product hook, not a requirement. `observe(transport,
 context)` retains the same connection. `configureSlateTelemetry(client)` installs that
@@ -35,7 +35,7 @@ client for Slate's camera path without importing Node settings in the browser.
 Batches flush every 30 seconds, with a bounded queue, deadlines, backoff and idempotent
 retry. An active process checks shared preferences before upload.
 
-Decoded protocol evidence is validated by `@darkgrade/slate/contribute/protocol`; numeric
+Decoded protocol evidence is validated by `@darkgrade/slate/telemetry/protocol`; numeric
 values must fit the declared PTP type.
 
 `darkgrade telemetry benchmark` finds the attached USB PTP camera and reads a deep camera
@@ -98,3 +98,8 @@ are separate evidence and cannot update observed state. Missing or old values re
 snapshotting performs no camera reads, sleeps or synchronous uploads. Canon FixedMovie uses
 PTP property `0xd1c2` (libgphoto2 `ptp.h` / `config.c`, `eosmovieswitch`); Canon EDSDK
 13.20.21 names the same feature `kEdsPropID_FixedMovie` with a different SDK identifier.
+
+The server implementation belongs to Slate too: `@darkgrade/slate/telemetry/server`
+exposes ingestion, confirmation, support and export functions; `/telemetry/postgres`
+is the optional database adapter. See [deployment](../telemetry/README.md).
+The earlier `/contribute/*` imports are compatibility aliases of these same clients.

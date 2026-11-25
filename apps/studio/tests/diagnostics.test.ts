@@ -1,4 +1,4 @@
-import { closeNodeDiagnostics } from '@darkgrade/slate/contribute/settings'
+import { closeNodeDiagnostics } from '@darkgrade/slate/telemetry/settings'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -69,7 +69,7 @@ test('corrupt shared settings fail closed rather than resetting a preference', a
 })
 test('the previous encrypted Studio opt-out migrates into shared settings without a notice', async () => {
     const identity = createHash('sha256').update('https://telemetry.example').digest('hex').slice(0, 20)
-    const { installationFileStore } = await import('@darkgrade/slate/contribute/installation-store')
+    const { installationFileStore } = await import('@darkgrade/slate/telemetry/installation-store')
     const store = installationFileStore(join(fixture.directory, `diagnostics-${identity}.bin`), {
         encrypt: value => Buffer.from(value).reverse(),
         decrypt: value => Buffer.from(value).reverse().toString(),

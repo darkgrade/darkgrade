@@ -1,10 +1,10 @@
-import { operatorAuthorized } from '#collector/investigate'
-import { exportMatrixPage, InvalidMatrixCursor, MatrixExportChanged } from '#collector/matrix-pages'
-import type { EventFilters, SuggestionField } from '#collector/operator-queries'
-import type { postgresDatabase } from '#collector/postgres'
-import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
-import { withdrawInstallation } from '#collector/telemetry'
-import { saveProtocolFinding } from '#collector/protocol-research'
+import { operatorAuthorized } from '#telemetry-server/investigate'
+import { exportMatrixPage, InvalidMatrixCursor, MatrixExportChanged } from '#telemetry-server/matrix-pages'
+import type { EventFilters, SuggestionField } from '#telemetry-server/operator-queries'
+import type { postgresDatabase } from '#telemetry-server/postgres'
+import { exportReviewedPatterns, reviewDiagnostic } from '#telemetry-server/review'
+import { withdrawInstallation } from '#telemetry-server/telemetry'
+import { saveProtocolFinding } from '#telemetry-server/protocol-research'
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }

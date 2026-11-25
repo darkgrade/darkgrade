@@ -60,3 +60,7 @@ bun run studio
 ```
 
 Needs an Apple silicon Mac.
+
+Slate also owns the [telemetry client and server](packages/slate/telemetry/README.md).
+The server is an explicit `@darkgrade/slate/telemetry/server` entry, with a separate
+Postgres adapter; importing camera or browser APIs does not start it.

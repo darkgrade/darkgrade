@@ -185,7 +185,7 @@ you are changing before you start, regardless of the agent harness:
 
 - `packages/slate/AGENTS.md`: where Slate's modules live, driver invariants, bench findings,
   private camera recordings and fuzz checks.
-- `apps/contribution-collector/AGENTS.md`: telemetry, the collector, its database rules,
+- `packages/slate/src/telemetry/AGENTS.md`: telemetry, the collector, its database rules,
   contributor identity and the Matrix export.
 - `packages/cli/AGENTS.md`: the thin `darkgrade` executable.
 

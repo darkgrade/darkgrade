@@ -25,7 +25,7 @@ jobs:
               with:
                   node-version: '24'
             - run: bun install --frozen-lockfile --ignore-scripts
-            - run: npm run test:contribute --prefix packages/slate && npm run test --prefix apps/contribution-collector
+            - run: npm run test:contribute --prefix packages/slate && npm run test:telemetry --prefix packages/slate
             - name: Check deployment configuration
               run: test -n "$PROJECT" && test -n "$REGION" && test -n "$PUBLIC_URL"
             - uses: google-github-actions/auth@v2
@@ -39,7 +39,7 @@ jobs:
                   REGISTRY="$REGION-docker.pkg.dev/$PROJECT/darkgrade-telemetry"
                   IMAGE="$REGISTRY/collector:$GITHUB_SHA"
                   gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
-                  docker build -f apps/contribution-collector/Dockerfile -t "$IMAGE" .
+                  docker build -f packages/slate/telemetry/Dockerfile -t "$IMAGE" .
                   docker push "$IMAGE"
                   DIGEST=$(gcloud artifacts docker images describe "$IMAGE" --format='value(image_summary.digest)')
                   test -n "$DIGEST"
@@ -51,5 +51,5 @@ jobs:
             - name: Verify public service
               run: |
                   set -euo pipefail
-                  TELEMETRY_SMOKE_URL="$PUBLIC_URL" npm run smoke --prefix apps/contribution-collector
+                  TELEMETRY_SMOKE_URL="$PUBLIC_URL" npm run telemetry:smoke --prefix packages/slate
                   echo "Verified image: $TELEMETRY_IMAGE" >> "$GITHUB_STEP_SUMMARY"

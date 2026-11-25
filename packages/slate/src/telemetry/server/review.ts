@@ -1,9 +1,9 @@
-import type { Database } from '#collector/database'
-import { changeMatrixGeneration } from '#collector/matrix-generation'
-import { validateBatch } from '@darkgrade/slate/contribute/batch'
+import type { Database } from '#telemetry-server/database'
+import { changeMatrixGeneration } from '#telemetry-server/matrix-generation'
+import { validateBatch } from '@darkgrade/slate/telemetry/batch'
 import { createHash } from 'node:crypto'
-import type { ProtocolFinding } from '#collector/protocol-research'
-import {cameraConnection} from '#collector/transport'
+import type { ProtocolFinding } from '#telemetry-server/protocol-research'
+import {cameraConnection} from '#telemetry-server/transport'
 
 /** Matrix's strict importer (darkgrade/outpost private/apps/matrix/src/protocol-evidence.ts and
  * telemetry.ts) rejects a whole snapshot over one field or kind it does not know. So the export
