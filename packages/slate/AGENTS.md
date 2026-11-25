@@ -36,6 +36,14 @@ the real codec.
 
 ## Tests and the attached camera
 
+Release CI belongs in the Matrix application on Outpost. Simulation and physical
+qualification share that app's tracked workflow; hardware goes through Fleet Bench's
+native Test Bench job against the exact PR commit. Do not add another standalone
+Matrix worker or a copied engine. Inspect the existing Matrix, Fleet and Test Bench
+paths before changing a gate. Preserve current-head checks, first-attempt failures,
+native camera leases, cleanup receipts and the existing `matrix/*` check names.
+An infrastructure error is not a camera regression, and a skipped camera is not a pass.
+
 To check the public API on real cameras, run `bun run --cwd packages/slate camera:api-check`
 (every attached Sony, Canon and Nikon, in parallel, once) and follow `docs/camera-api-check.md`.
 `camera:parity` then lists what each vendor is missing against Sony, Studio's gaps first.
