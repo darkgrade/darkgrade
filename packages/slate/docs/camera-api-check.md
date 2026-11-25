@@ -21,7 +21,11 @@ on each attached camera, with all cameras in parallel:
 Each step is `pass`, `unsupported` (the camera says so, and `getCapabilities` agrees), `read-only`
 (not writable right now, or only one choice), or `fail`. A step `getCapabilities` advertised as
 supported that then answers unsupported is a `fail`. The summary prints only what didn't pass. The
-full results go to `/tmp/camera-api-check.json`.
+full results go to `/tmp/camera-api-check.json`, which keeps each camera's last run, so `--only` or an
+asleep body doesn't erase the others.
+
+`bun run --cwd packages/slate camera:parity` reads that file and Slate's own code, and lists what Canon
+and Nikon are missing against Sony, with the gaps Studio needs first.
 
 ## Rules
 

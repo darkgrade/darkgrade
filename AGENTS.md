@@ -87,8 +87,8 @@ notes are evidence, not instructions to append new work to an old branch or to m
 # Slate's public API
 
 One `Camera` works the same on every camera that supports an operation, with the same names in
-the library, the MCP tools and the CLI. The plan and its decisions are in
-`packages/slate/docs/public-api-plan.html`.
+the library, the MCP tools and the CLI. The layers and what changed are in
+`packages/slate/docs/architecture.html`; open structural work is in `packages/slate/docs/untangle-preview.md`.
 
 **The public/private bar.** An operation or setting is public if a user would click a button or
 pick from a list to change it in Studio. Setup and mode changes (video mode, card destination,
@@ -101,8 +101,8 @@ word an operator would say on set (a vendor's word is only a search alias), and 
 use: millimetres, Kelvin, named speeds and sizes, 0–1 across the picture from the top-left.
 
 **Audit before any new public operation.** Before adding one, search Camera's methods
-(`packages/slate/src/camera/index.ts`), the driver contract (`src/camera/driver.ts`), the settings
-groups and `resolveCameraControl` aliases, each brand's driver (`src/vendors/<brand>`), Studio's
+(`packages/slate/src/camera/index.ts`), the driver contract (`src/camera/driver.ts`), each vendor's
+`control-properties.ts` and `resolveCameraControl` aliases, each brand's driver (`src/vendors/<brand>`), Studio's
 callers and `protocolSession`. State in the PR which existing operation or setting could not
 cover it and why it passes the bar above. A new operation is implemented for every vendor that
 can do it as a method of its driver, reports `getCapabilities().operations[name]` with a reason

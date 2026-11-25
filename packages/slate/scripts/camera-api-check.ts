@@ -3,7 +3,7 @@
  * Usage: bun run --cwd packages/slate camera:api-check [-- --only sony|canon|nikon]
  * Method: packages/slate/docs/camera-api-check.md
  */
-import { writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { Camera } from '@camera/index'
 import { typedSettingIds } from '@camera/settings/typed-settings'
 import { killMacCameraDaemons } from '@transport/usb/macos-camera-daemons'
@@ -156,6 +156,11 @@ for (const result of results) {
         console.log(`  ${step.outcome.padEnd(11)} ${step.step}: ${step.detail}`)
     }
 }
-writeFileSync('/tmp/camera-api-check.json', JSON.stringify(results, null, 2))
+// Keep the last result of every camera not checked this time, so --only or an asleep body loses nothing.
+const resultsPath = '/tmp/camera-api-check.json'
+const earlier = existsSync(resultsPath) ? (JSON.parse(readFileSync(resultsPath, 'utf8')) as { serialNumber?: string; vendor?: string }[]) : []
+const checkedAt = new Date().toISOString()
+const kept = earlier.filter(result => !results.some(checked => checked.vendor === result.vendor && checked.serialNumber === result.serialNumber))
+writeFileSync(resultsPath, JSON.stringify([...kept, ...results.map(result => ({ ...result, checkedAt }))], null, 2))
 console.log('\nFull results: /tmp/camera-api-check.json')
 process.exit(results.some(result => result.steps.some(step => step.outcome === 'fail')) ? 1 : 0)

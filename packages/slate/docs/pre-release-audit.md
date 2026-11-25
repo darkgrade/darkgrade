@@ -264,7 +264,7 @@ and polls the canonical readback, so an ignored write is a `CameraConfirmationEr
 
 ## Public API — 2026-11-24
 
-The public API plan (`public-api-plan.html`, decisions settled 2026-11-24) replaces the
+The public API plan (decisions settled 2026-11-24; the result is drawn in `architecture.html`) replaces the
 escape-hatch position recorded above. On `slate/generic-camera-api`:
 
 - **`getInstance()` is reversed.** It is removed from `Camera`, and `check:guards` fails on any

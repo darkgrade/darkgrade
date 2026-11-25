@@ -119,7 +119,8 @@
         "bench:recover": "bun run scripts/recover-camera.ts",
         "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
         "test:cli": "bun run build && node --test tests/cli/*.test.ts",
-        "camera:api-check": "bun run scripts/camera-api-check.ts"
+        "camera:api-check": "bun run scripts/camera-api-check.ts",
+        "camera:parity": "bun run scripts/generate-camera-operations.ts && bun run scripts/camera-parity.ts"
     },
     "keywords": [
         "ptp",
