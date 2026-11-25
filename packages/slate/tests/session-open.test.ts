@@ -1,4 +1,4 @@
-import {GenericCamera} from '@camera/generic-camera'
+import {GenericCamera} from '@vendors/generic/generic-camera'
 import {Logger} from '@core/logger'
 import {describe,expect,it,vi} from 'vitest'
 function camera(responses:number[]){const instance=new GenericCamera({isLittleEndian:()=>true,isConnected:()=>true,on:()=>{}}as any,new Logger({renderInTerminal:false,captureConsole:false}));vi.spyOn(instance,'send').mockImplementation(async()=>({code:responses.shift()!})as any);return instance}

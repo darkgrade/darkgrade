@@ -1,16 +1,16 @@
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
-import { CanonCamera } from '@camera/canon-camera'
-import { GenericCamera } from '@camera/generic-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
-import { NikonCamera } from '@camera/nikon-camera'
-import { SonyCamera } from '@camera/sony-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
 import { genericEventRegistry } from '@ptp/definitions/event-definitions'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { observeCameraEvents } from '@workflows/camera-event-observation'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 describe('public Camera USB connection lifecycle', () => {
     it.each(['disconnect', 'recover'] as const)(

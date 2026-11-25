@@ -1,10 +1,10 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import type { Camera } from '@camera/index'
-import { protocolAccess } from '@camera/operations/protocol'
-import { SonyCamera } from '@camera/sony-camera'
+import { protocolAccess } from '@camera/protocol-session'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { slateBuildMetadata } from '@core/telemetry'
 import { type ProtocolEvidence } from '@contribute/protocol'
-import { createNikonRegistry } from '@ptp/registry'
+import { createNikonRegistry } from '@vendors/registry'
 import { capturePropertyCodes } from '@vendors/capture-properties'
 
 export interface BenchmarkCheck {

@@ -1,4 +1,4 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 import type { StatePhase } from '@contribute/protocol'
 /** The existing event cache is the only input; no extra USB commands, waits or cloud calls. */
 function diagnosticState(camera:any,phase:StatePhase){

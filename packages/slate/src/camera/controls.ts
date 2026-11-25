@@ -1,12 +1,12 @@
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
-import type { CameraOperationName } from '@camera/operations/table/index'
-import type { TypedSettingMethods } from '@camera/settings/typed-settings'
+import type { CameraOperationName } from '@camera/operation-table/index'
 import { colourControlDefinitions } from '@camera/settings/colour'
 import { exposureControlDefinitions } from '@camera/settings/exposure'
 import { focusControlDefinitions } from '@camera/settings/focus'
 import { liveViewControlDefinitions } from '@camera/settings/live-view'
 import { modeControlDefinitions } from '@camera/settings/mode'
 import { photoControlDefinitions } from '@camera/settings/photo'
+import type { TypedSettingMethods } from '@camera/settings/typed-settings'
 import { videoControlDefinitions } from '@camera/settings/video'
 
 /**
@@ -33,17 +33,13 @@ export type CameraControlInputs = {
 }
 
 /** Raw wire values the camera reported that Slate has no name for, spelled by `unrecognizedValueLabel`. */
+export { unrecognizedValueLabel } from '@ptp/datasets/device-prop-desc-dataset'
+
 export interface UnrecognizedValues {
     /** The current value; the control is then read-only and its `value` reads `Unrecognized (<raw>)`. */
     value?: string
     /** Advertised choices left out of `allowedValues`; they are never writable. */
     choices?: string[]
-}
-
-/** Hexadecimal for integers (`0x1234`), verbatim for text. */
-export function unrecognizedValueLabel(raw: number | bigint | string): string {
-    if (typeof raw === 'string') return raw
-    return raw < 0 ? `-0x${(-raw).toString(16)}` : `0x${raw.toString(16)}`
 }
 
 export interface CameraControlState {

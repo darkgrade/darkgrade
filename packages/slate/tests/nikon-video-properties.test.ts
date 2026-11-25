@@ -1,7 +1,7 @@
-import {NikonCamera} from '@camera/nikon-camera'
+import {NikonCamera} from '@vendors/nikon/nikon-camera'
 import {Logger} from '@core/logger'
 import {OK} from '@ptp/definitions/response-definitions'
-import {createNikonRegistry} from '@ptp/registry'
+import {createNikonRegistry} from '@vendors/registry'
 import {ExternalDCIn, MovieShutterAngle, MovieShutterMode} from '@vendors/nikon/video-properties'
 import {describe, expect, it, vi} from 'vitest'
 

@@ -1,4 +1,4 @@
-import { createCanonRegistry, createNikonRegistry, createPTPRegistry, createSonyRegistry } from '@ptp/registry'
+import { createCanonRegistry, createNikonRegistry, createPTPRegistry, createSonyRegistry } from '@vendors/registry'
 import type { PropertyDefinition } from '@ptp/types/property'
 
 export const captureRegistry = (vendorId: number) =>

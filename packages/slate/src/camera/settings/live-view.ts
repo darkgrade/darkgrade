@@ -1,5 +1,5 @@
 import { enumeratedSettingReader, type SettingReaders, type SettingTypes } from '@camera/settings/setting-types'
-import type * as sony from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import type * as sony from '@vendors/sony/definitions/sony-property-definitions'
 import type { CanonicalValueNames } from '@vendors/control-properties/vendor-control-properties'
 
 /** Live-view settings. Canonical ids, labels and search aliases. */

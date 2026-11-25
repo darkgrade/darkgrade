@@ -2,7 +2,7 @@ import { Camera } from '@camera/index'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 // Numeric observations from Z6 III camera_controls, 2026-10-29. Movie white balance (0xd23a) is
 // an enumeration: its observed 32789 (0x8015) decodes to the Nikon name "Same as photo settings".

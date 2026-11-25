@@ -1,4 +1,4 @@
-import type { Clip } from '@camera/driver/video'
+import type { Clip } from '@camera/driver'
 import type { Camera } from '@camera/index'
 import { describeDevice, selectBenchmarkCamera, type DiscoveredCamera } from '@cli/benchmark'
 

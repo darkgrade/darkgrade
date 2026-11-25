@@ -1,6 +1,6 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 import { CameraClipNotFoundError } from '@camera/errors'
-import { readCameraObjectHandles, readCameraStorages } from '@camera/storage'
+import { readCameraObjectHandles, readCameraStorages } from '@vendors/generic/storage'
 import { readNikonObjectSize } from '@vendors/nikon/object-size'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import type { TakeMedia } from '@workflows/video-take'

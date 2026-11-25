@@ -1,4 +1,4 @@
-import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@camera/sony-camera'
+import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@vendors/sony/sony-camera'
 import { performSonySdkControl, sonySdkCapabilities, sonySdkControlWireValue } from '@vendors/sony/sdk-controls'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs } from '@camera/controls'
 import { matchExposureTime, type ExposureContext, type ExposureTime, type ExposureTimeInput } from '@camera/exposure-time'
@@ -13,11 +13,11 @@ import { isSonyModelName } from '@vendors/sony/model-name'
 import { isVerifiedFeature } from '@camera/validated-models'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { canonicalControlInput, installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
-import type { Battery } from '@camera/driver/body'
-import type { CardStatus } from '@camera/driver/media'
-import { batteryFromPower } from '@vendors/capabilities/body'
+import type { Battery } from '@camera/driver'
+import type { CardStatus } from '@camera/driver'
+import { batteryFromPower } from '@vendors/generic/generic-operations'
 import { normalizeCameraPower } from '@vendors/camera-power'
-import { sonySdkCardStatus } from '@vendors/media/sony-media'
+import { sonySdkCardStatus } from '@vendors/sony/media'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
 export interface SonySdkBridge {

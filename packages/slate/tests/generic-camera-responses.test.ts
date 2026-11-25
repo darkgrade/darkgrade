@@ -1,5 +1,5 @@
 import { createContributions } from '@darkgrade/slate/contribute'
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Logger } from '@core/logger'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'

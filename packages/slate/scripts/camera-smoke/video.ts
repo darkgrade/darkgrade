@@ -1,10 +1,10 @@
-import type { Clip } from '@camera/driver/video'
+import type { Clip } from '@camera/driver'
 import { CameraUnsupportedError } from '@camera/errors'
 import type { Camera } from '@camera/index'
 import { readCameraMovieAudio } from '@camera/movie-audio'
-import { readCameraObjectHandles } from '@camera/storage'
+import { readCameraObjectHandles } from '@vendors/generic/storage'
 import type { SmokeArea, SmokeReport } from '@scripts/camera-smoke/smoke-area'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const takeMilliseconds = 3000
 

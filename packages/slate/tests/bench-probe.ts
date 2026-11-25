@@ -1,4 +1,4 @@
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Logger } from '@core/logger'
 import { GetDeviceInfo, OpenSession } from '@ptp/definitions/operation-definitions'
 import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'

@@ -4,7 +4,7 @@ import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { afterAll, describe, expect, it } from 'vitest'
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import {WebUSB} from 'usb'
 
 const hardwareOperationTimeoutMilliseconds = 15_000

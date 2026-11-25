@@ -1,6 +1,6 @@
 import type {Camera} from '@camera/index'
-import {protocolAccess,type ProtocolSession} from '@camera/operations/protocol'
-import {ChangeCameraMode,GetDevicePropDescEx,SetDevicePropValueEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
+import {protocolAccess,type ProtocolSession} from '@camera/protocol-session'
+import {ChangeCameraMode,GetDevicePropDescEx,SetDevicePropValueEx} from '@vendors/nikon/definitions/nikon-operation-definitions'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 
 /** Enable remote Manual exposure on an owned idle Nikon session.

@@ -1,8 +1,8 @@
-import { GenericCamera } from '@camera/generic-camera'
-import { NikonCamera } from '@camera/nikon-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
-import { createPTPRegistry } from '@ptp/registry'
+import { createPTPRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 /**

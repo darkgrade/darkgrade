@@ -1,7 +1,7 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Logger } from '@core/logger'
-import { CanonLiveViewDatasetCodec, canonLiveViewPosition } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
-import { createCanonRegistry } from '@ptp/registry'
+import { CanonLiveViewDatasetCodec, canonLiveViewPosition } from '@vendors/canon/datasets/canon-live-view-dataset'
+import { createCanonRegistry } from '@vendors/registry'
 import type { PropertyDefinition } from '@ptp/types/property'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
@@ -395,7 +395,7 @@ describe('Canon live-view lifecycle and controls', () => {
         cache.set(property, { current: 'SDRAM' })
         camera.send = (async operation =>
             operation.code === 0x9116 ? { code: 0x2001, data: [] } : { code: 0x2001 }) as typeof camera.send
-        await camera.stopRecording()
+        await camera.sendStopRecording()
         expect(await camera.get(property)).toBe('SDRAM')
     })
 

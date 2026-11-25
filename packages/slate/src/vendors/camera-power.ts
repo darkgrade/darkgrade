@@ -1,6 +1,6 @@
 import type { Camera } from '@camera/index'
-import { isCamera } from '@camera/operations/context'
-import { protocolAccess, protocolSession, type ProtocolSession } from '@camera/operations/protocol'
+import { isCamera } from '@camera/camera-context'
+import { protocolAccess, protocolSession, type ProtocolSession } from '@camera/protocol-session'
 import {GetDevicePropDesc} from '@ptp/definitions/operation-definitions'
 import type { CameraPower } from '@workflows/camera-power'
 

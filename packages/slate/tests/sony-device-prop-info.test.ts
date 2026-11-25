@@ -1,5 +1,5 @@
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
-import { createSonyRegistry } from '@ptp/registry'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
+import { createSonyRegistry } from '@vendors/registry'
 import { describe, expect, test } from 'vitest'
 
 const littleEndianRegistry = createSonyRegistry(true)

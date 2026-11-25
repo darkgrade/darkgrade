@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { NikonLiveViewDatasetCodec } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
-import { createNikonRegistry } from '@ptp/registry'
+import { NikonLiveViewDatasetCodec } from '@vendors/nikon/datasets/nikon-live-view-dataset'
+import { createNikonRegistry } from '@vendors/registry'
 
 describe('NikonLiveViewDatasetCodec', () => {
     it('uses the camera-declared 512-byte display-info size for older Nikon bodies', () => {

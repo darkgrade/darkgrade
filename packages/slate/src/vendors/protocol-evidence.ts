@@ -6,7 +6,7 @@ import {
     type StatePhase,
 } from '@contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
-import { createCanonRegistry, createNikonRegistry, createSonyRegistry, type Registry } from '@ptp/registry'
+import { createCanonRegistry, createNikonRegistry, createSonyRegistry, type Registry } from '@vendors/registry'
 
 const definitionsByVendor = new Map<number, Registry>([
     [0x04a9, createCanonRegistry(true)],

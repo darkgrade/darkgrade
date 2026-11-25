@@ -1,4 +1,4 @@
-import { cameraOperationTable, kebabCase, type OperationEntry } from '@camera/operations/table'
+import { cameraOperationTable, kebabCase, type OperationEntry } from '@camera/operation-table/index'
 import { surfaceOperations, type SurfaceOperation } from '@runtime/operations'
 
 /** The one description of the command tree. Help, the manual page, shell completions,

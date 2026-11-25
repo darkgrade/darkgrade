@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Camera } from '@camera/index'
-import { protocolSession } from '@camera/operations/protocol'
-import { captureDriverImage } from '@camera/operations/photo'
+import { protocolSession } from '@camera/protocol-session'
+import { captureDriverImage } from '@vendors/generic/capture-driver-image'
 
 function fixture() {
     const facade = new Camera({ vendorId: 0x054c, transport: { isLittleEndian: () => true } as any,

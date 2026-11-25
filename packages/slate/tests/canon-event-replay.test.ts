@@ -1,10 +1,10 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Camera } from '@camera/index'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { createCanonRegistry } from '@ptp/registry'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { createCanonRegistry } from '@vendors/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 import { vendorDriver } from '@tests/fixtures/vendor-driver'
 
 const registry = createCanonRegistry(true)

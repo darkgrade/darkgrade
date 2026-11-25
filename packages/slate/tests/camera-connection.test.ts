@@ -3,15 +3,15 @@
  * connect({ observeOnly }), getInfo from a DeviceInfo dataset encoded with the real codec,
  * disconnect/connect on the same Camera, and the protocol session that replaces getInstance().
  */
-import type { CanonCamera } from '@camera/canon-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
-import { protocolAccess, protocolSession } from '@camera/operations/protocol'
+import { protocolAccess, protocolSession } from '@camera/protocol-session'
 import { PTPResponseError, PTPTimeoutError } from '@core/ptp-errors'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { cameraOperationTable, plannedOperationTable } from '@camera/operations/table'
-import type { SonyCamera } from '@camera/sony-camera'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { cameraOperationTable, plannedOperationTable } from '@camera/operation-table/index'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'

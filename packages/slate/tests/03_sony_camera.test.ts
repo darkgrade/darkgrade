@@ -1,13 +1,13 @@
 import { hardwareTestsEnabled } from '@tests/setup/hardware'
 import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
-import * as SonyProps from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import * as SonyProps from '@vendors/sony/definitions/sony-property-definitions'
 import { USBTransport } from '@transport/usb/usb-transport'
 import * as fs from 'fs'
 import * as path from 'path'
 import { WebUSB } from 'usb'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { SonyCamera } from '../src/camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 
 const sonyConnected = hardwareTestsEnabled && (await new WebUSB({ allowAllDevices: true }).getDevices()).some(
     device => device.vendorId === VendorIDs.SONY

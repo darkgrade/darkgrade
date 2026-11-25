@@ -1,4 +1,4 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -8,8 +8,8 @@ import { IPTransport } from '@transport/ip/ip-transport'
 import { writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import path from 'node:path'
-import { captureDriverImage } from '@camera/operations/photo'
-import { protocolSession } from '@camera/operations/protocol'
+import { captureDriverImage } from '@vendors/generic/capture-driver-image'
+import { protocolSession } from '@camera/protocol-session'
 import { vendorDriver } from '@tests/fixtures/vendor-driver'
 
 type Action =

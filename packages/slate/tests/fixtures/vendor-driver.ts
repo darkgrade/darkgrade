@@ -1,6 +1,6 @@
-import type { GenericCamera } from '@camera/generic-camera'
+import type { GenericCamera } from '@vendors/generic/generic-camera'
 import type { Camera } from '@camera/index'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 /** The Camera's current driver as the vendor class a test expects, or a failure naming both. */
 export function vendorDriver<Driver extends GenericCamera>(

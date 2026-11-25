@@ -6,21 +6,21 @@
  */
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
-import type { CanonCamera } from '@camera/canon-camera'
-import type { NikonCamera } from '@camera/nikon-camera'
-import type { SonyCamera } from '@camera/sony-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import type { PictureProfile, PictureStyle, WhiteBalance } from '@camera/settings/colour'
 import type { DriveMode, PhotoVideoMode } from '@camera/settings/mode'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyWifiCamera, type SonySdkBridge, type SonySdkProperty } from '@vendors/sony/sdk-camera'
 import { sonyCounterpartExposureProgram, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 afterEach(() => {
     vi.useRealTimers()

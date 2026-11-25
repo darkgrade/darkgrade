@@ -1,4 +1,4 @@
-import type { DiscoveredCamera } from '@camera/driver/connection'
+import type { DiscoveredCamera } from '@camera/driver'
 import type { Camera } from '@camera/index'
 import { CameraOperationQueue } from '@core/operation-queue'
 import {

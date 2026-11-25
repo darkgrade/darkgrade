@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { Camera } from '@camera/index'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 it('the generic Nikon ISO getter preserves Auto when an ISO test restores its original value', async () => {
     const camera = new Camera({ vendorId: 0x04b0, transport: { isLittleEndian: () => true } as any,

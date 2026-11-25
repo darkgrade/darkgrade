@@ -1,4 +1,4 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Logger } from '@core/logger'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { writeFile } from 'node:fs/promises'
@@ -193,7 +193,7 @@ try {
     }
 
     if (argumentsSet.has('--autofocus')) {
-        await canonCamera.autofocus()
+        await canonCamera.performAutofocus()
         report.autofocus = 'completed'
     }
 

@@ -1,6 +1,6 @@
 import type { SettingTypes } from '@camera/settings/setting-types'
-import type { CanonMovieFormat } from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
-import type * as sony from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import type { CanonMovieFormat } from '@vendors/canon/datasets/canon-movie-format-dataset'
+import type * as sony from '@vendors/sony/definitions/sony-property-definitions'
 import type { CodecValue } from '@vendors/control-properties'
 import type { CanonicalValueNames } from '@vendors/control-properties/vendor-control-properties'
 

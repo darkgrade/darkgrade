@@ -1,13 +1,8 @@
 import type { OperationAvailability } from '@camera/controls'
-import {
-    ZOOM_SAFETY_STOP_MILLISECONDS,
-    type ZoomCapability,
-    type ZoomDirection,
-    type ZoomOptions,
-    type ZoomSpeed,
-} from '@camera/driver/zoom'
+import { ZOOM_SAFETY_STOP_MILLISECONDS, type ZoomDirection, type ZoomOptions, type ZoomSpeed } from '@camera/driver'
+import { type ZoomCapability } from '@vendors/generic/capability-groups'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import type { SonyCamera, SonyPropertyState } from '@camera/sony-camera'
+import type { SonyCamera, SonyPropertyState } from '@vendors/sony/sony-camera'
 import { PTPResponseError } from '@core/ptp-errors'
 import { sonyFocalLengthMillimetres } from '@vendors/sony/lens'
 
@@ -237,7 +232,7 @@ export class SonyPowerZoom implements ZoomCapability {
         if (this.stops !== stopsAtStart) return false
         this.armSafetyStop()
         try {
-            await this.driver.startZoom(direction === 'in' ? 'tele' : 'wide', level)
+            await this.driver.sendZoomStart(direction === 'in' ? 'tele' : 'wide', level)
             this.zooming = this.stops === stopsAtStart
             return true
         } catch (error) {
@@ -268,7 +263,7 @@ export class SonyPowerZoom implements ZoomCapability {
         const wasZooming = this.zooming
         this.zooming = false
         try {
-            await this.driver.stopZoom()
+            await this.driver.sendZoomStop()
         } catch (error) {
             // Nothing this session started was moving, so a refused stop changed nothing.
             if (error instanceof PTPResponseError && !wasZooming) return

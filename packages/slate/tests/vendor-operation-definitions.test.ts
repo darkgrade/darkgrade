@@ -4,15 +4,15 @@
  * darkgrade test bench; the rest check the shapes the cited libgphoto2 helpers use.
  */
 import { Camera } from '@camera/index'
-import { VendorExtensionCamera } from '@camera/vendor-extension-camera'
+import { VendorExtensionCamera } from '@vendors/generic/vendor-extension-camera'
 import { Logger } from '@core/logger'
-import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
+import { NikonEventListCodec } from '@vendors/nikon/datasets/nikon-event-list-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
-import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@ptp/registry'
+import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@vendors/registry'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 /** Records command containers and answers every transaction with OK. */
 function recordingTransport(dataReplies: Map<number, Uint8Array> = new Map()) {

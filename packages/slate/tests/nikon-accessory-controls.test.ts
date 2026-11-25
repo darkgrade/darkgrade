@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it,vi} from 'vitest'
 import {NikonAccessoryController,encodeNikonAccessoryInfo,encodeNikonAccessoryKey} from '@vendors/nikon/accessory-controls'
-import {createNikonRegistry} from '@ptp/registry'
+import {createNikonRegistry} from '@vendors/registry'
 
 function fixture(options:{manufacturer?:string;readyCode?:number;recording?:number|null;pressCode?:number;releaseCode?:number;throwPress?:boolean;changeSessionOnPress?:boolean;readyCodes?:number[];menuExitCode?:number;restoreCode?:number;rejectPress?:boolean;pressFailure?:unknown;onInfo?:()=>void}={}){
     const instance={sessionId:41 as number|null,registry:createNikonRegistry(true)}

@@ -4,28 +4,28 @@
  * with the real codecs (Sony SDIO inventories, Nikon/standard descriptors, Canon event records)
  * and the Sony focus frames come from a real a7 V live-view capture.
  */
-import type { CanonCamera } from '@camera/canon-camera'
-import type { LiveViewFrame } from '@camera/driver/live-view'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
+import type { LiveViewFrame } from '@camera/driver'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
-import type { NikonCamera } from '@camera/nikon-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { LiveViewQuality } from '@camera/settings/live-view'
 import type { DigitalZoom } from '@camera/settings/video'
-import type { SonyCamera } from '@camera/sony-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { PTPTimeoutError } from '@core/ptp-errors'
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { CanonLiveViewDatasetCodec } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
-import { NikonLiveViewDatasetCodec } from '@ptp/datasets/vendors/nikon/nikon-live-view-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { CanonLiveViewDatasetCodec } from '@vendors/canon/datasets/canon-live-view-dataset'
+import { NikonLiveViewDatasetCodec } from '@vendors/nikon/datasets/nikon-live-view-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 afterEach(() => {
     vi.useRealTimers()

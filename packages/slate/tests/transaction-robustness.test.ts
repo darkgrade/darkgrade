@@ -3,9 +3,9 @@
  * framing, late replies, DeviceBusy storms, malformed datasets and vanished transports. Each test
  * scripts the exact bytes on a stub transport; none of this is recorded camera behaviour.
  */
-import { CanonCamera } from '@camera/canon-camera'
-import { SonyCamera } from '@camera/sony-camera'
-import { GenericCamera } from '@camera/generic-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import {
@@ -17,14 +17,14 @@ import {
     PTPTimeoutError,
 } from '@core/ptp-errors'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { createNikonRegistry } from '@ptp/registry'
-import { SDIO_GetPartialLargeObject } from '@ptp/definitions/vendors/sony/sony-operation-definitions'
+import { createNikonRegistry } from '@vendors/registry'
+import { SDIO_GetPartialLargeObject } from '@vendors/sony/definitions/sony-operation-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { IPTransport } from '@transport/ip/ip-transport'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const CONTAINER = { command: 1, data: 2, response: 3, event: 4 }
 

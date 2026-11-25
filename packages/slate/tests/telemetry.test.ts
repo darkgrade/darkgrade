@@ -378,7 +378,7 @@ test('Sony USB SDK fingerprints require an acknowledged serial selection, and wi
 test('facts already reported for an identified body are not re-sent on every connection', async () => {
     vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
     vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const { GenericCamera } = await import('@camera/generic-camera')
+    const { GenericCamera } = await import('@vendors/generic/generic-camera')
     const { resetReportedFacts } = await import('@core/telemetry')
     const { Logger } = await import('@core/logger')
     resetReportedFacts()

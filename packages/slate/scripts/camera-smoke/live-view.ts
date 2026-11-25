@@ -1,7 +1,7 @@
 import { CameraUnsupportedError } from '@camera/errors'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const JPEG_START = [0xff, 0xd8]
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47]

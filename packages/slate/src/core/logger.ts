@@ -1,4 +1,4 @@
-import { Registry } from '@ptp/registry'
+import { Registry } from '@vendors/registry'
 import { LoggerConfig, defaultLoggerConfig } from './logger-config'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'

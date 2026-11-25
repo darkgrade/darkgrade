@@ -1,6 +1,6 @@
 import { CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
 
 const OK = 0x2001

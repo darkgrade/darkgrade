@@ -3,22 +3,22 @@
  * Sony, Canon and Nikon bodies whose replies are encoded with the real codecs: a confirmed write,
  * a refused value, an unavailable setting and a write the camera never shows.
  */
-import type { CanonCamera } from '@camera/canon-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { resolveCameraControl } from '@camera/controls'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
-import type { NikonCamera } from '@camera/nikon-camera'
-import type { SonyCamera } from '@camera/sony-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { PTPRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { AudioRecording, FrameRate, VideoFormat, VideoQuality } from '@camera/settings/video'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 afterEach(() => {
     vi.useRealTimers()

@@ -1,4 +1,4 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 /** PTP access describes host uploads; Nikon's camera-side card protection is separate. */
 export async function nikonCanRecordToStorage(camera: any, accessCapability: number): Promise<boolean> {
     if (accessCapability !== 0 && accessCapability !== 2) return false

@@ -1,8 +1,8 @@
 import type { CameraControlId, CameraControlState } from '@camera/controls'
 import { CameraUnsupportedError } from '@camera/errors'
 import type { SettingReader, SettingReaders, SettingTypes } from '@camera/settings/setting-types'
-import type { CanonImageFormat, CanonImageFormatLabel } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
-import type { SonyImageSize } from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import type { CanonImageFormat, CanonImageFormatLabel } from '@vendors/canon/datasets/canon-image-format-dataset'
+import type { SonyImageSize } from '@vendors/sony/definitions/sony-property-definitions'
 import type { CodecType } from '@ptp/types/codec'
 import type { CodecValue } from '@vendors/control-properties'
 

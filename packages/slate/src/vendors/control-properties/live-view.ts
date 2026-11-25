@@ -1,5 +1,5 @@
 import type { liveViewControlDefinitions } from '@camera/settings/live-view'
-import * as sony from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import * as sony from '@vendors/sony/definitions/sony-property-definitions'
 import type { VendorControlProperties } from '@vendors/control-properties/vendor-control-properties'
 
 /**

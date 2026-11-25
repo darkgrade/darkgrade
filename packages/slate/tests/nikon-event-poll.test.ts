@@ -1,11 +1,11 @@
-import { NikonCamera } from '@camera/nikon-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
-import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
+import { NikonEventListCodec } from '@vendors/nikon/datasets/nikon-event-list-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 import { vendorDriver } from '@tests/fixtures/vendor-driver'
 
 const fixture = () =>

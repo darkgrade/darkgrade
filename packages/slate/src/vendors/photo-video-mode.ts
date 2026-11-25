@@ -1,4 +1,4 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { confirmCameraValue } from '@camera/confirmation'
 import {
     cameraControlDefinitions,
@@ -8,12 +8,12 @@ import {
 } from '@camera/controls'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { Camera } from '@camera/index'
-import { NikonCamera } from '@camera/nikon-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { PhotoVideoMode } from '@camera/settings/mode'
-import { SonyCamera, type SonyPropertyState } from '@camera/sony-camera'
+import { SonyCamera, type SonyPropertyState } from '@vendors/sony/sony-camera'
 import { sendControlWrite } from '@vendors/control-write'
 import { sonyCounterpartExposureProgram, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
-import type { GenericCamera } from '@camera/generic-camera'
+import type { GenericCamera } from '@vendors/generic/generic-camera'
 
 /**
  * photoVideoMode: whether the camera takes photos or records video, read and set through each

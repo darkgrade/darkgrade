@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { createCanonRegistry } from '../src/ptp/registry'
-import { CanonCamera } from '@camera/canon-camera'
+import { createCanonRegistry } from '@vendors/registry'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Logger } from '@core/logger'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 

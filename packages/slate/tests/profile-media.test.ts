@@ -1,6 +1,6 @@
 import {expect, it} from 'vitest'
 import {captureProfilePhoto} from '@vendors/profile-media'
-import {createNikonRegistry, createSonyRegistry} from '@ptp/registry'
+import {createNikonRegistry, createSonyRegistry} from '@vendors/registry'
 import type {Camera} from '@camera/index'
 
 it.each([false, true])('recorded Nikon card photo transfers only the new object; truncated=%s', async truncated => {

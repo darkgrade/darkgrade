@@ -1,7 +1,7 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 import {Camera} from '@camera/index'
 import {IPTransport} from '@transport/ip/ip-transport'
-import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
+import {GetDevicePropDescEx} from '@vendors/nikon/definitions/nikon-operation-definitions'
 
 export interface NikonWifiConnectionOptions {
     address:string

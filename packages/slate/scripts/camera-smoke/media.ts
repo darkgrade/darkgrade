@@ -1,8 +1,8 @@
 import { CameraUnsupportedError } from '@camera/errors'
-import type { MediaItem } from '@camera/driver/media'
+import type { MediaItem } from '@camera/driver'
 import type { Camera } from '@camera/index'
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 /** The longest file the smoke step downloads, so a card of long clips never stalls it. */
 const DOWNLOAD_LIMIT_BYTES = 80 * 1024 * 1024

@@ -1,4 +1,4 @@
-import type { NikonCamera } from '@camera/nikon-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 
 /** Explicit lossless NEF capture; the caller holds Photo mode until restoration finishes. */
 export async function withNikonRawCompression<T>(

@@ -1,5 +1,5 @@
 import type {Camera} from '@camera/index'
-import {protocolAccess,type ProtocolSession} from '@camera/operations/protocol'
+import {protocolAccess,type ProtocolSession} from '@camera/protocol-session'
 import type {OperationDefinition} from '@ptp/types/operation'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
 import {NikonMenuController} from '@vendors/nikon/menu-controls'

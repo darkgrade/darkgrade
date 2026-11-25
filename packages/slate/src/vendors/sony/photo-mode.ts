@@ -1,6 +1,6 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 import type { Camera } from '@camera/index'
-import type { SonyCamera, SonyPropertyState } from '@camera/sony-camera'
+import type { SonyCamera, SonyPropertyState } from '@vendors/sony/sony-camera'
 import { isSonyMovieExposureProgram, sonyCounterpartExposureProgram } from '@vendors/sony/exposure-program'
 import { readSonyMovieCard } from '@vendors/sony/card-storage'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'

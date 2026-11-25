@@ -6,9 +6,9 @@ import {
     type MeteringMode,
 } from '@camera/settings/exposure'
 import * as standard from '@ptp/definitions/property-definitions'
-import * as canon from '@ptp/definitions/vendors/canon/canon-property-definitions'
-import * as nikon from '@ptp/definitions/vendors/nikon/nikon-shooting-property-definitions'
-import * as sony from '@ptp/definitions/vendors/sony/sony-property-definitions'
+import * as canon from '@vendors/canon/definitions/canon-property-definitions'
+import * as nikon from '@vendors/nikon/definitions/nikon-shooting-property-definitions'
+import * as sony from '@vendors/sony/definitions/sony-property-definitions'
 import type {
     ControlValueVocabulary,
     VendorControlProperties,

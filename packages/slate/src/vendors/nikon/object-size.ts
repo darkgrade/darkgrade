@@ -1,4 +1,4 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 /** PTP ObjectInfo uses 0xffffffff when the real size needs Nikon's 64-bit query. */
 export async function readNikonObjectSize(camera:any,handle:number,reported:number):Promise<number>{
     if(reported!==0xffffffff)return reported

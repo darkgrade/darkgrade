@@ -5,7 +5,7 @@
  * flip the simulated recording state. Each vendor covers a confirmed take with its clip, a
  * refused start, and starts and stops whose outcome the camera never confirms.
  */
-import type { CanonCamera } from '@camera/canon-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { CameraConfirmationError } from '@camera/confirmation'
 import {
     CameraClipNotFoundError,
@@ -14,20 +14,20 @@ import {
     CameraUnsupportedError,
 } from '@camera/errors'
 import { Camera } from '@camera/index'
-import type { NikonCamera } from '@camera/nikon-camera'
-import type { SonyCamera } from '@camera/sony-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { PTPDisconnectedError, PTPResponseError } from '@core/ptp-errors'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfoCodec } from '@ptp/datasets/storage-info-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { PTPRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
@@ -232,10 +232,10 @@ function sonyCamera(options: { mode?: number; remainingSeconds?: number; firstCo
         throw new Error(`Unexpected Sony operation ${operation.name}`)
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    const start = vi.spyOn(driver, 'startRecording').mockImplementation(async () => {
+    const start = vi.spyOn(driver, 'sendStartRecording').mockImplementation(async () => {
         if (body.startWorks) body.recording = 1
     })
-    const stop = vi.spyOn(driver, 'stopRecording').mockImplementation(async () => {
+    const stop = vi.spyOn(driver, 'sendStopRecording').mockImplementation(async () => {
         if (!body.stopWorks || body.recording !== 1) return
         body.recording = 0
         card.finalize('C0002.MP4')
@@ -531,10 +531,10 @@ function canonCamera(options: { movie?: boolean; sound?: number; access?: number
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
     const body = { startWorks: true, stopWorks: true }
-    const start = vi.spyOn(driver, 'startRecording').mockImplementation(async () => {
+    const start = vi.spyOn(driver, 'sendStartRecording').mockImplementation(async () => {
         if (body.startWorks) values.set(canonEvent.destination, 4)
     })
-    const stop = vi.spyOn(driver, 'stopRecording').mockImplementation(async () => {
+    const stop = vi.spyOn(driver, 'sendStopRecording').mockImplementation(async () => {
         if (!body.stopWorks) return
         values.set(canonEvent.destination, 0)
         card.finalize('MVI_0002.MP4', 8192)
@@ -647,10 +647,10 @@ function nikonCamera(options: { firstContact?: boolean } = {}) {
         throw new Error(`Unexpected Nikon operation ${operation.name}`)
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    const start = vi.spyOn(driver, 'startRecording').mockImplementation(async () => {
+    const start = vi.spyOn(driver, 'sendStartRecording').mockImplementation(async () => {
         body.flags = 0x400
     })
-    const stop = vi.spyOn(driver, 'stopRecording').mockImplementation(async () => {
+    const stop = vi.spyOn(driver, 'sendStopRecording').mockImplementation(async () => {
         if (!body.stopWorks) return
         body.flags = 0
         card.finalize('DSC_0002.MOV', body.finalBytes)

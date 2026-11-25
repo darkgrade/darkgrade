@@ -1,8 +1,14 @@
-import { unrecognizedValueLabel, type UnrecognizedValues } from '@camera/controls'
+import type { UnrecognizedValues } from '@camera/controls'
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { CustomCodec, type CodecInstance, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
+
+/** Hexadecimal for integers (`0x1234`), verbatim for text. */
+export function unrecognizedValueLabel(raw: number | bigint | string): string {
+    if (typeof raw === 'string') return raw
+    return raw < 0 ? `-0x${(-raw).toString(16)}` : `0x${raw.toString(16)}`
+}
 
 export interface DevicePropDesc {
     devicePropertyCode: number
@@ -35,7 +41,10 @@ export interface DevicePropDesc {
  * entry darkgrade has not named yet). The descriptor stays usable with the raw value in that slot
  * instead of failing as a whole; `undefined` marks the value unrecognized.
  */
-function tryDecode(codec: CodecInstance<number | bigint | string>, bytes: Uint8Array): number | bigint | string | undefined {
+function tryDecode(
+    codec: CodecInstance<number | bigint | string>,
+    bytes: Uint8Array
+): number | bigint | string | undefined {
     try {
         return codec.decode(bytes, 0).value
     } catch {
@@ -57,7 +66,9 @@ export function recognizedDescriptorValues(descriptor: DevicePropDesc): {
         ...(rejected.size > 0 && { choices: [...rejected].map(unrecognizedValueLabel) }),
     }
     return {
-        ...(descriptor.supportedValuesDecoded && { allowedValues: descriptor.supportedValuesDecoded.filter(recognized) }),
+        ...(descriptor.supportedValuesDecoded && {
+            allowedValues: descriptor.supportedValuesDecoded.filter(recognized),
+        }),
         ...(descriptor.supportedValuesRaw && { allowedRawValues: descriptor.supportedValuesRaw.filter(recognized) }),
         ...(Object.keys(unrecognized).length > 0 && { unrecognized }),
     }

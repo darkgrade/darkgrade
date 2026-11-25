@@ -1,5 +1,5 @@
 import type { Camera } from '@camera/index'
-import { cliCommand, publicOperations } from '@camera/operations/table'
+import { cliCommand, publicOperations } from '@camera/operation-table/index'
 import { runCameraOperationCommand } from '@cli/camera-operation'
 import { cameraCommandOperations, resolveCommand } from '@cli/commands'
 import { runDarkgradeCli } from '@cli/index'

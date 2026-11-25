@@ -1,4 +1,4 @@
-import { sonyDateTimeString } from '@camera/sony-camera'
+import { sonyDateTimeString } from '@vendors/sony/sony-camera'
 import { describe, expect, it } from 'vitest'
 
 describe('Sony date/time string', () => {

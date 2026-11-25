@@ -1,4 +1,4 @@
-import { createSonyRegistry } from '@ptp/registry'
+import { createSonyRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 // Codes mapped from the Camera Remote SDK's PTP-code table and confirmed on the

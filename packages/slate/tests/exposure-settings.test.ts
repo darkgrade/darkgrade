@@ -4,10 +4,10 @@
  * Each covers canonical values read from the vendor's words, a confirmed write of the camera's own
  * choice, a refused value, an unavailable control and an acknowledged write the camera never shows.
  */
-import type { CanonCamera } from '@camera/canon-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
-import type { NikonCamera } from '@camera/nikon-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import {
     canonicalExposureInput,
     formatExposureCompensation,
@@ -18,18 +18,18 @@ import {
     type Iso,
     type MeteringMode,
 } from '@camera/settings/exposure'
-import type { SonyCamera } from '@camera/sony-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
-import { LiveViewSelector } from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
+import { LiveViewSelector } from '@vendors/nikon/definitions/nikon-property-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { canonicalControlValues } from '@vendors/control-properties'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 afterEach(() => {
     vi.useRealTimers()

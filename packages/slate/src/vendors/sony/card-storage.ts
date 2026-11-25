@@ -1,4 +1,4 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 import { sonyPtpMovieCard } from '@vendors/sony/ptp-recording-card'
 import { isVerifiedFeature } from '@camera/validated-models'
 

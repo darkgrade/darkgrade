@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest'
-import {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@camera/storage'
+import {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@vendors/generic/storage'
 import {readSonyMovieCard} from '@vendors/sony/card-storage'
 function fixture(access:number,flags='notInApplicationMode (Not in application mode)',vendor=0x04b0){return {get driver(){return ({vendorId:vendor,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info'},properties:{MovieRecProhibitionCondition:'flags'}}})},get:async()=>flags,send:async(op:string)=>({code:0x2001,data:op==='ids'?[0x10000,0x20001]:{accessCapability:access,maxCapacity:256n,freeSpaceInBytes:128n,volumeLabel:'Slot 2'}})}}
 describe('camera-side card write capability',()=>{

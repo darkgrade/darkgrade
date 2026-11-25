@@ -1,11 +1,11 @@
 import { Camera } from '@camera/index'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
-import { createFujifilmRegistry, createPTPRegistry } from '@ptp/registry'
+import { createFujifilmRegistry, createPTPRegistry } from '@vendors/registry'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const registry = createFujifilmRegistry(true)
 

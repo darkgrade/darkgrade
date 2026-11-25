@@ -1,8 +1,8 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import type { CameraRecordingState } from '@camera/controls'
 import { Camera } from '@camera/index'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { openSonyRecordingMode } from '@vendors/sony/photo-mode'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -25,10 +25,10 @@ function fixture(vendorId: number) {
         {code:0xd24a,rawValue:120,sonyEnabledFlag:2},
     ] as any)
     const read = vi.spyOn(camera, 'getRecordingState').mockImplementation(async () => state)
-    const start = vi.spyOn(protocolSession(camera).driver, 'startRecording').mockImplementation(async () => {
+    const start = vi.spyOn(protocolSession(camera).driver, 'sendStartRecording').mockImplementation(async () => {
         state = 'recording'
     })
-    const stop = vi.spyOn(protocolSession(camera).driver, 'stopRecording').mockImplementation(async () => {
+    const stop = vi.spyOn(protocolSession(camera).driver, 'sendStopRecording').mockImplementation(async () => {
         state = 'idle'
     })
     return {

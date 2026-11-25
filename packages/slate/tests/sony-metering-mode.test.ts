@@ -1,4 +1,4 @@
-import { createSonyRegistry } from '@ptp/registry'
+import { createSonyRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 // ExposureMeteringMode (0x500b) on Sony bodies. The ILCE-6700 advertises

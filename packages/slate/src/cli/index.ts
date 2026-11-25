@@ -1,4 +1,4 @@
-import { kebabCase } from '@camera/operations/table'
+import { kebabCase } from '@camera/operation-table/index'
 import { OperationInputError } from '@runtime/operations'
 import {
     cameraCommandOperations,

@@ -1,5 +1,5 @@
-import { protocolAccess } from '@camera/operations/protocol'
-import {readCameraObjectHandles} from '@camera/storage'
+import { protocolAccess } from '@camera/protocol-session'
+import {readCameraObjectHandles} from '@vendors/generic/storage'
 import {stopCameraRecording} from '@camera/video-recording'
 import type {TakeMedia} from '@workflows/video-take'
 

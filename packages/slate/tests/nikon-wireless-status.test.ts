@@ -1,6 +1,6 @@
 import {readNikonWirelessStatus} from '@vendors/nikon/wireless-status'
 import {describe,expect,it,vi} from 'vitest'
-import {createNikonRegistry} from '@ptp/registry'
+import {createNikonRegistry} from '@vendors/registry'
 import {DevicePropDescCodec} from '@ptp/datasets/device-prop-desc-dataset'
 
 function fixture({manufacturer='Nikon Corporation',model='Z6_3',advertised=true,malformed=false,queryFailure=false,queryThrow=false,pathValue=0,pathAdvertised=false,pathWrongProperty=false,pathThrow=false}={}) {

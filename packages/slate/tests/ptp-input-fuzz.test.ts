@@ -1,8 +1,8 @@
-import { createPTPRegistry } from '@ptp/registry'
+import { createPTPRegistry } from '@vendors/registry'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { SDIExtDevicePropInfoCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
+import { SDIExtDevicePropInfoCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { NikonEventListCodec } from '@vendors/nikon/datasets/nikon-event-list-dataset'
 import { describe, expect, it } from 'vitest'
 
 // Independent wire seeds, not encoded by the implementation under test. Layouts:

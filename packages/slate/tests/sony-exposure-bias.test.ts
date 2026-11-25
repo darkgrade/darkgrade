@@ -1,4 +1,4 @@
-import { createSonyRegistry } from '@ptp/registry'
+import { createSonyRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 // ExposureBiasCompensation (0x5010). The ILCE-6700 advertises this property in

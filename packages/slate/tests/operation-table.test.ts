@@ -7,7 +7,7 @@ import {
     mcpToolName,
     plannedOperationTable,
     publicOperations,
-} from '@camera/operations/table'
+} from '@camera/operation-table/index'
 import { settingGetterName, settingSetterName, typedSettingIds } from '@camera/settings/typed-settings'
 import { describe, expect, it } from 'vitest'
 

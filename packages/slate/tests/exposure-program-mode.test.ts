@@ -1,4 +1,4 @@
-import { createPTPRegistry } from '@ptp/registry'
+import { createPTPRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 // ExposureProgramMode (0x500e) decoding. Values verified against the Sony Camera

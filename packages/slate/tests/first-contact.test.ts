@@ -1,7 +1,7 @@
 import { Camera } from '@camera/index'
 import { isValidatedModel } from '@camera/validated-models'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { createPTPRegistry } from '@ptp/registry'
+import { createPTPRegistry } from '@vendors/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
 import { recordFirstContact, type FirstContactDependencies } from '@workflows/first-contact'
 import { runCameraBenchmark } from '@workflows/telemetry-benchmark'

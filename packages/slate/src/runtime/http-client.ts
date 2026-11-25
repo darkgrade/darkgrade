@@ -1,4 +1,4 @@
-import type { DiscoveredCamera } from '@camera/driver/connection'
+import type { DiscoveredCamera } from '@camera/driver'
 import { HardwareBusyError } from '@runtime/errors'
 import { readOperationInput, surfaceOperation, type OperationInput } from '@runtime/operations'
 import type { CameraClient, OperationReply } from '@runtime/runtime'

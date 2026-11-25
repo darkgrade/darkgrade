@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { Camera } from '@camera/index'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
-import { captureDriverImage } from '@camera/operations/photo'
+import { captureDriverImage } from '@vendors/generic/capture-driver-image'
 
 const names: Record<number, string> = { 0: 'Lossless', 3: 'High efficiency★', 4: 'High efficiency' }
 const raw = (name: string) => Number(Object.keys(names).find(key => names[Number(key)] === name))

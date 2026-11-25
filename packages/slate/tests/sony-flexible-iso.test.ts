@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Camera } from '@camera/index'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
-import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import type { SonyDevicePropDesc } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 function fixture(flexible = true, initialMode = 2) {
     let mode = initialMode, iso = 1250

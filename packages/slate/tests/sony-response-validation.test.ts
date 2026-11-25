@@ -1,10 +1,10 @@
 import { Camera } from '@camera/index'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
-import type { SonyDevicePropDesc } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import type { SonyDevicePropDesc } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 function cameraFixture() {
     const transport = { isLittleEndian: () => true, isConnected: () => true } as unknown as TransportInterface

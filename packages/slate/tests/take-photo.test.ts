@@ -6,19 +6,19 @@
  * a refused release, an unsupported request and a release the camera never confirms, which is
  * never repeated.
  */
-import type { CanonCamera } from '@camera/canon-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
-import type { NikonCamera } from '@camera/nikon-camera'
-import type { SonyCamera } from '@camera/sony-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { sonyContentList } from '@tests/fixtures/sony-content-list'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { decodeMediaId, encodeMediaId, type MediaReference } from '@vendors/media/media-id'
+import { decodeMediaId, encodeMediaId, type MediaReference } from '@vendors/generic/media-id'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 afterEach(() => {
     vi.useRealTimers()

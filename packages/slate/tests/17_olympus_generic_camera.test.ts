@@ -1,11 +1,11 @@
 import { Camera } from '@camera/index'
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { PTP_DISCOVERY_VENDORS } from '@transport/usb/usb-transport'
 import { describe, expect, it } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 describe('Olympus generic PTP support', () => {
     it('requests Olympus devices during WebUSB discovery', () => {

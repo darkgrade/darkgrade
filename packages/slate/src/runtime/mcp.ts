@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import type { OperationParameter } from '@camera/operations/table'
+import type { OperationParameter } from '@camera/operation-table/index'
 import { HardwareBusyError } from '@runtime/errors'
 import { surfaceOperations, type SurfaceOperation } from '@runtime/operations'
 import type { CameraClient, OperationReply } from '@runtime/runtime'

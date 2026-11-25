@@ -1,8 +1,8 @@
 import { Camera } from '@camera/index'
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { captureDriverImage } from '@camera/operations/photo'
-import { protocolSession } from '@camera/operations/protocol'
+import { captureDriverImage } from '@vendors/generic/capture-driver-image'
+import { protocolSession } from '@camera/protocol-session'
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })

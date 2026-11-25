@@ -1,4 +1,4 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 export interface CameraMovieAudio {status:'present'|'absent'|'unverified';detail:string}
 function atom(bytes:Uint8Array,offset:number,end:number){
     if(offset+8>end)throw new Error('Incomplete movie atom header')

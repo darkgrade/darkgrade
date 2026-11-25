@@ -1,4 +1,4 @@
-import { createSonyRegistry } from '@ptp/registry'
+import { createSonyRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 // FocusArea (0xd22c). Wide=0x0001 and Flexible Spot S=0x0101 were verified on the

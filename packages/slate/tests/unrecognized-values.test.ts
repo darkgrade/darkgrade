@@ -1,17 +1,17 @@
-import { CanonCamera } from '@camera/canon-camera'
-import { GenericCamera } from '@camera/generic-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { validateProtocol, type ProtocolEvidence } from '@contribute/protocol'
 import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { readCameraCapabilities } from '@vendors/camera-controls'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const logger = () => new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
 

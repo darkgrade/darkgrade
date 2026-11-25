@@ -1,7 +1,7 @@
 import { Camera } from '@camera/index'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { expect, it } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 function fixture(codes: number[]) {
     let connected = false

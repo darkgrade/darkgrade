@@ -1,4 +1,4 @@
-import { createSonyRegistry } from '@ptp/registry'
+import { createSonyRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 // FlashMode (0x500c) on Sony bodies. Verified on the darkgrade-testbench by setting

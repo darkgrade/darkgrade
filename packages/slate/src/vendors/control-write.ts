@@ -1,5 +1,5 @@
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import type { GenericCamera } from '@camera/generic-camera'
+import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { PTPResponseError } from '@core/ptp-errors'
 import { OK } from '@ptp/definitions/response-definitions'
 

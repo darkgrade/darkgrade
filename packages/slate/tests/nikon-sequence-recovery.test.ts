@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest'
-import {NikonCamera} from '@camera/nikon-camera'
+import {NikonCamera} from '@vendors/nikon/nikon-camera'
 import {Logger} from '@core/logger'
 import {TransportType} from '@transport/interfaces/transport-types'
 import type {TransportInterface} from '@transport/interfaces/transport.interface'

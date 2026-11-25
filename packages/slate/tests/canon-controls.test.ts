@@ -1,15 +1,15 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Logger } from '@core/logger'
 import {
     canonImageFormatFromPacked,
     CanonImageFormatCodec,
-} from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
+} from '@vendors/canon/datasets/canon-image-format-dataset'
 import {
     canonMovieFormatFromWire,
     CanonMovieFormatCodec,
-} from '@ptp/datasets/vendors/canon/canon-movie-format-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { createCanonRegistry } from '@ptp/registry'
+} from '@vendors/canon/datasets/canon-movie-format-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { createCanonRegistry } from '@vendors/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -208,7 +208,7 @@ describe('Canon camera controls', () => {
     it('drives and always releases standalone autofocus', async () => {
         const { camera, operations } = testCamera()
 
-        await camera.autofocus(0)
+        await camera.performAutofocus(0)
 
         expect(operations).toEqual(['CanonDoAutofocus', 'CanonCancelAutofocus'])
     })
@@ -220,7 +220,7 @@ describe('Canon camera controls', () => {
             return { code: operation.name === 'CanonDoAutofocus' ? 0x2002 : 0x2001 }
         }) as typeof camera.send
 
-        await camera.autofocus(0)
+        await camera.performAutofocus(0)
 
         expect(operations).toEqual(['CanonDoAutofocus', 'CanonRemoteReleaseOn', 'CanonRemoteReleaseOff'])
     })
@@ -316,18 +316,18 @@ describe('Canon interrupted recording Stop',()=>{
         cache.set(property,{current:'CARD'})
         camera.send=(async()=>{reads++;cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
         camera.set=(async()=>{writes++}) as typeof camera.set
-        await camera.stopRecording();expect(reads).toBe(1);expect(writes).toBe(0)
+        await camera.sendStopRecording();expect(reads).toBe(1);expect(writes).toBe(0)
     })
     it('does not treat missing recording telemetry as idle',async()=>{
         const {camera}=testCamera();camera.set=(async()=>{throw new Error('Unconfirmed stop')}) as typeof camera.set
-        await expect(camera.stopRecording()).rejects.toThrow('Unconfirmed stop')
+        await expect(camera.sendStopRecording()).rejects.toThrow('Unconfirmed stop')
     })
     it('retries busy Stop and accepts idle only after camera readback',async()=>{
         const {camera}=testCamera();const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
         cache.set(property,{current:'CARD'});let writes=0,reads=0
         camera.send=(async()=>{if(++reads===2)cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
         camera.set=(async()=>{writes++;throw Object.assign(new Error('busy'),{code:0x2019})}) as typeof camera.set
-        await camera.stopRecording();expect(writes).toBe(1);expect(reads).toBe(2)
+        await camera.sendStopRecording();expect(writes).toBe(1);expect(reads).toBe(2)
     })
 })
 
@@ -336,7 +336,7 @@ it('accepts EOS movie standby after reconnect without issuing Record or switchin
     cache.set(property,{current:'SDRAM'});let writes=0
     camera.set=(async()=>{writes++}) as typeof camera.set
     camera.enterMovieMode=async()=>{throw new Error('Must not change mode')}
-    await camera.stopRecording();expect(writes).toBe(0)
+    await camera.sendStopRecording();expect(writes).toBe(0)
 })
 
 it('waits through transient Canon movie-switch busy without repeating recording',async()=>{
@@ -407,7 +407,7 @@ it.each(['delayed', 'missing'] as const)('requires idle readback after an acknow
             expect(value).toBe('NONE')
             writes++
         }) as typeof camera.set
-        const stop = camera.stopRecording().catch(error => error)
+        const stop = camera.sendStopRecording().catch(error => error)
         await vi.runAllTimersAsync()
         const result = await stop
         if (telemetry === 'delayed') expect(result).toBeUndefined()

@@ -1,4 +1,4 @@
-import { nikonWhiteBalanceValues } from '@ptp/definitions/vendors/nikon/nikon-shooting-property-definitions'
+import { nikonWhiteBalanceValues } from '@vendors/nikon/definitions/nikon-shooting-property-definitions'
 import { nikonShutterLabel } from '@vendors/nikon/shutter-values'
 
 /** Nikon's photo (0xd061) and movie (0xd1fa) focus-mode codes, as the USB reference lists them. */

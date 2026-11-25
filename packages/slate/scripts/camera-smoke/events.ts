@@ -1,5 +1,5 @@
 import type { SmokeArea } from '@scripts/camera-smoke/smoke-area'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const EVENT_WAIT_MILLISECONDS = 15_000
 /** Sony CameraOperatingMode: Record while shooting, Playback while showing the card. */

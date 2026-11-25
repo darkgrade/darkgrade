@@ -7,25 +7,25 @@
  */
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
-import { readCameraObjectHandles } from '@camera/storage'
-import type { CanonCamera } from '@camera/canon-camera'
-import type { NikonCamera } from '@camera/nikon-camera'
-import type { SonyCamera } from '@camera/sony-camera'
+import { readCameraObjectHandles } from '@vendors/generic/storage'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
+import type { NikonCamera } from '@vendors/nikon/nikon-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfoCodec } from '@ptp/datasets/storage-info-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
-import type { Registry } from '@ptp/registry'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
+import type { Registry } from '@vendors/registry'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
-import { decodeMediaId, encodeMediaId } from '@vendors/media/media-id'
+import { decodeMediaId, encodeMediaId } from '@vendors/generic/media-id'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -787,7 +787,7 @@ describe('a simulated Sony body', () => {
     it('re-arms shooting on the next live-view frame after a recording stops, without reopening', async () => {
         const { camera, driver, body } = sonyCamera()
         const reopen = vi.spyOn(driver, 'reopenSession').mockResolvedValue(undefined)
-        await driver.stopRecording()
+        await driver.sendStopRecording()
         expect((await protocolSession(camera).driver.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
         expect(body.transferModeChanges).toEqual(['DISABLE'])
         expect(reopen).not.toHaveBeenCalled()

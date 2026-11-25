@@ -1,6 +1,6 @@
-import { sonyFallbackPropertyName } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
-import { SONY_SDK_PROPERTY_NAMES } from '@ptp/definitions/vendors/sony/sony-sdk-property-names'
-import { createSonyRegistry } from '@ptp/registry'
+import { sonyFallbackPropertyName } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
+import { SONY_SDK_PROPERTY_NAMES } from '@vendors/sony/definitions/sony-sdk-property-names'
+import { createSonyRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 const registry = createSonyRegistry(true)

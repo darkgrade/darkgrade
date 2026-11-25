@@ -1,11 +1,11 @@
-import type { CanonCamera } from '@camera/canon-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { Camera } from '@camera/index'
-import type { SonyCamera } from '@camera/sony-camera'
+import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { encodeMediaId } from '@vendors/media/media-id'
+import { encodeMediaId } from '@vendors/generic/media-id'
 import { expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const transport = () =>
     ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined, getType: () => 'usb' }) as unknown as TransportInterface

@@ -1,7 +1,7 @@
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 import type {Camera} from '@camera/index'
-import {GetDevicePropDescEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
-import {ConnectionPath} from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
+import {GetDevicePropDescEx} from '@vendors/nikon/definitions/nikon-operation-definitions'
+import {ConnectionPath} from '@vendors/nikon/definitions/nikon-property-definitions'
 import {isVerifiedFeature} from '@camera/validated-models'
 
 /** Official Z6III USB/MTP Rev.2.00 §6.5.15.2; this verifies PTP transport, not provisioned credentials.

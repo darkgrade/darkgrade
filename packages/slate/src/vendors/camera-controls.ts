@@ -1,4 +1,4 @@
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import {
@@ -17,10 +17,10 @@ import {
     type ExposureContext,
     type ExposureTimeInput,
 } from '@camera/exposure-time'
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import type { Camera } from '@camera/index'
-import { NikonCamera } from '@camera/nikon-camera'
-import { SonyCamera } from '@camera/sony-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'

@@ -1,7 +1,7 @@
 import {it,expect} from 'vitest'
 import {NikonShotControls} from '@vendors/nikon/shot-controls'
 import {getDatatypeByCode} from '@ptp/definitions/datatype-definitions'
-import {createNikonRegistry} from '@ptp/registry'
+import {createNikonRegistry} from '@vendors/registry'
 
 function fixture(){
  const codes={iso:0xd1aa,aperture:0xd1a9,shutterSpeed:0xd1a8,shutterMode:0x1d074,whiteBalance:0xd23a,focusMode:0xd1fa,autoIso:0xd0ad,exposureProgram:0x500e}

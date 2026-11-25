@@ -1,6 +1,6 @@
-import type { CanonCamera } from '@camera/canon-camera'
-import { afterShutterRelease } from '@camera/shutter-outcome'
-import { readCameraObjectHandles } from '@camera/storage'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
+import { afterShutterRelease } from '@vendors/generic/shutter-outcome'
+import { readCameraObjectHandles } from '@vendors/generic/storage'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 

@@ -1,6 +1,6 @@
 import { cameraControlDefinitions, type CameraControlId } from '@camera/controls'
 import type { Camera } from '@camera/index'
-import { publicOperations, type OperationParameter } from '@camera/operations/table'
+import { publicOperations, type OperationParameter } from '@camera/operation-table/index'
 
 /**
  * The public Camera operations as the MCP tools and the CLI run them, drawn from the operation

@@ -1,4 +1,4 @@
-import { NikonCamera } from '@camera/nikon-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { Logger } from '@core/logger'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'

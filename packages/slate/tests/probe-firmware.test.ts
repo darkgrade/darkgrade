@@ -19,7 +19,7 @@ const cameraFixture=()=>({
  async send(operation:{code:number}){return {code:0x2001,...(operation.code===0x1001?{data:{manufacturer:'Fixture manufacturer',model:'Fixture camera',deviceVersion:fixture.version,serialNumber:'fixture-serial',operationsSupportedRaw:[0x1001]}}:{})}},
  async getCanonPropertyStates(){return []},async getCanonUnknownPropertyStates(){return []},getCanonNetworkState(){return {}},
 })
-vi.mock('@camera/generic-camera',()=>({GenericCamera:class{
+vi.mock('@vendors/generic/generic-camera',()=>({GenericCamera:class{
  sessionId=0
  registry=cameraFixture().registry
  send=cameraFixture().send
@@ -39,7 +39,7 @@ vi.mock('@camera/index',()=>({Camera:class{
  get driver(){return this}
 }}))
 // The fake Camera above is its own protocol session.
-vi.mock('@camera/operations/protocol',()=>({protocolSession:(camera:unknown)=>camera,protocolAccess:(camera:unknown)=>camera}))
+vi.mock('@camera/protocol-session',()=>({protocolSession:(camera:unknown)=>camera,protocolAccess:(camera:unknown)=>camera}))
 const originalArguments=process.argv,originalExitCode=process.exitCode
 afterEach(()=>{process.argv=originalArguments;process.exitCode=originalExitCode;vi.restoreAllMocks()})
 for(const transport of ['usb','ptpip'])describe(transport+' identity firmware forwarding',()=>{

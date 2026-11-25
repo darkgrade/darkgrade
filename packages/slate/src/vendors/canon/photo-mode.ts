@@ -1,4 +1,4 @@
-import type { CanonCamera } from '@camera/canon-camera'
+import type { CanonCamera } from '@vendors/canon/canon-camera'
 import { CameraUnsupportedError } from '@camera/errors'
 
 /** What photo-mode preparation needs from the Canon driver. */

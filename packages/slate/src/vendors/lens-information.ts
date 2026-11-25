@@ -1,5 +1,5 @@
 import type { CameraLens } from '@camera/controls'
-import type { GenericCamera } from '@camera/generic-camera'
+import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { PTPResponseError } from '@core/ptp-errors'
 import { FocalLength } from '@ptp/definitions/property-definitions'
 

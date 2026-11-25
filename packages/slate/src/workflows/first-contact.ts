@@ -1,5 +1,5 @@
 import type { Camera } from '@camera/index'
-import { protocolAccess } from '@camera/operations/protocol'
+import { protocolAccess } from '@camera/protocol-session'
 import { isValidatedModel } from '@camera/validated-models'
 import { runBenchmark } from '@workflows/telemetry-benchmark'
 

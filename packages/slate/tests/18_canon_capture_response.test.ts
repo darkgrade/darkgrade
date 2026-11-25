@@ -1,11 +1,11 @@
 import { CameraRefusedError } from '@camera/errors'
-import { CanonCamera } from '@camera/canon-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
-import { captureDriverImage } from '@camera/operations/photo'
-import { protocolSession } from '@camera/operations/protocol'
+import { captureDriverImage } from '@vendors/generic/capture-driver-image'
+import { protocolSession } from '@camera/protocol-session'
 
 function cameraWithResponses(responses: Array<number | {code: number; parameters?: number[]}>) {
     const transport = {
@@ -147,13 +147,13 @@ describe('Canon capture response handling', () => {
 
     it('reports a half press that could not focus as not acquired, releasing the acknowledged control', async () => {
         const { camera, operations } = cameraWithResponses([0x2005, { code: 0x2001, parameters: [1] }, 0x2001])
-        await expect(camera.autofocus(0)).resolves.toBe('not-acquired')
+        await expect(camera.performAutofocus(0)).resolves.toBe('not-acquired')
         expect(operations.at(-1)?.name).toBe('CanonRemoteReleaseOff')
     })
 
     it('refuses with the EDSDK reason when a half press is rejected for another cause', async () => {
         const { camera, operations } = cameraWithResponses([0x2005, { code: 0x2001, parameters: [6] }, 0x2001])
-        await expect(camera.autofocus(0)).rejects.toMatchObject({
+        await expect(camera.performAutofocus(0)).rejects.toMatchObject({
             name: 'CameraRefusedError',
             message: expect.stringContaining('no card is inserted'),
         })

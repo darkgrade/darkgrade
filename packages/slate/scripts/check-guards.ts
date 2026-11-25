@@ -9,7 +9,7 @@
 //   3. Operation-table parity: every Camera method has a current table entry whose disposition is
 //      keep, every entry is on Camera, and nothing is planned that Camera already has.
 import { Camera } from '@camera/index'
-import { cameraOperationTable, cameraStaticOperationTable, plannedOperationTable } from '@camera/operations/table'
+import { cameraOperationTable, cameraStaticOperationTable, plannedOperationTable } from '@camera/operation-table/index'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'

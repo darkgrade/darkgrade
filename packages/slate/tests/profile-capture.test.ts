@@ -1,9 +1,9 @@
 import { Camera } from '@camera/index'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
+import { createPTPRegistry, createNikonRegistry } from '@vendors/registry'
 import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
 import {
@@ -12,12 +12,12 @@ import {
     sanitizeProfileTransaction,
     type ProfileObservation,
 } from '@vendors/profile-capture'
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { configureSlateTelemetry } from '@core/telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 const codecs = createPTPRegistry(true).codecs
 it('retains numeric Canon write intent and rejection without inventing a readback or retaining opaque bytes', () => {

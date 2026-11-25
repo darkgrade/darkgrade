@@ -1,12 +1,12 @@
 import { Logger } from '@core/logger'
 import { PTPResponseError } from '@core/ptp-errors'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
-import { NotLiveView } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
+import { NotLiveView } from '@vendors/nikon/definitions/nikon-response-definitions'
 import { describe, expect, it, vi } from 'vitest'
-import { NikonCamera } from '@camera/nikon-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfoCodec, type ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import type { Registry } from '@ptp/registry'
+import type { Registry } from '@vendors/registry'
 
 /** A DeviceInfo reply exactly as the codec decodes it from the wire. */
 function deviceInfo(registry: Registry, operationsSupportedRaw: number[]): DeviceInfo {

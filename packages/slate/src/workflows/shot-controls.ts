@@ -2,7 +2,7 @@ import type {ShotProperty} from '@workflows/shot-setup'
 import {nikonControlLabel} from '@vendors/nikon/control-values'
 import {nikonMovieControlProperties,nikonPhotoControlProperties} from '@vendors/control-properties'
 import {resolveCameraControl} from '@camera/controls'
-import {createPTPRegistry} from '@ptp/registry'
+import {createPTPRegistry} from '@vendors/registry'
 import {getDatatypeByCode} from '@ptp/definitions/datatype-definitions'
 
 export interface ShotSourceProperty {name?:string;value?:unknown;allowedValues?:unknown[];writable?:boolean;enabled?:boolean}

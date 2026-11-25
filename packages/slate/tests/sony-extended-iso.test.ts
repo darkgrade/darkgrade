@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSonyRegistry } from '@ptp/registry'
+import { createSonyRegistry } from '@vendors/registry'
 import { performSonySdkControl, sonySdkControls } from '@vendors/sony/sdk-controls'
 import type { SonyWifiCamera, SonySdkProperty } from '@vendors/sony/sdk-camera'
 

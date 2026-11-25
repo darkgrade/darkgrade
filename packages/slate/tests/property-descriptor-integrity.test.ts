@@ -1,9 +1,9 @@
 import { Camera } from '@camera/index'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { createPTPRegistry } from '@ptp/registry'
+import { createPTPRegistry } from '@vendors/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/operations/protocol'
+import { protocolSession } from '@camera/protocol-session'
 
 describe('property descriptor integrity', () => {
     const registry = createPTPRegistry(true)
