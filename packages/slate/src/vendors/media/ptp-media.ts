@@ -4,6 +4,7 @@ import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
 import type { CameraDriverInstance } from '@camera/operations/context'
 import { readCameraStorages } from '@camera/storage'
+import { PTPError } from '@core/ptp-errors'
 import { GetThumb } from '@ptp/definitions/operation-definitions'
 import { OK } from '@ptp/definitions/response-definitions'
 import { decodeMediaId, newestFirst, type ObjectMediaReference } from '@vendors/media/media-id'
@@ -40,7 +41,15 @@ export async function readStorageCardStatus(owner: Camera): Promise<CardStatus[]
 async function objectSize(owner: Camera, driver: CameraDriverInstance, indexed: IndexedObject): Promise<number> {
     const reported = indexed.info.objectCompressedSize
     if (reported !== OBJECT_SIZE_UNREPORTED) return reported
-    if (driver instanceof NikonCamera) return readNikonObjectSize(owner, indexed.objectHandle, reported)
+    if (driver instanceof NikonCamera) {
+        try {
+            return await readNikonObjectSize(owner, indexed.objectHandle, reported)
+        } catch (error) {
+            // Transport, timeout and response errors pass through; the size check's own refusal is the camera's.
+            if (error instanceof PTPError || !(error instanceof Error)) throw error
+            throw new CameraRefusedError('downloadMedia', error.message)
+        }
+    }
     throw new CameraUnsupportedError(
         'downloadMedia',
         `${indexed.item.name} is larger than 4 GiB and this camera does not report its full size; copy it from the card`

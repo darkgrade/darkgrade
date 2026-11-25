@@ -129,7 +129,6 @@
         "panCanonLiveView",
         "pollNikonEvents",
         "prepareCanonRecordingDestination",
-        "resumeSonyShooting",
         "setCanonColorTemperature",
         "setCanonHdmiLiveViewMode",
         "setCanonLiveViewAutofocusMode",

@@ -7,6 +7,7 @@
  */
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
+import { readCameraObjectHandles } from '@camera/storage'
 import type { CanonCamera } from '@camera/canon-camera'
 import type { NikonCamera } from '@camera/nikon-camera'
 import type { SonyCamera } from '@camera/sony-camera'
@@ -175,7 +176,9 @@ function standardCard(
         clock: '20260101T000000',
         clockApplies: true,
         clockWritable: true,
+        clockResponse: 0x2001,
         refuseThumbnails: false,
+        refuseDownloads: false,
         downloads: [] as number[],
     }
     const send: Send = async (operation, parameters, data) => {
@@ -213,6 +216,7 @@ function standardCard(
             case 'GetPartialObjectEx': {
                 const file = files.find(candidate => candidate.handle === parameters.ObjectHandle)
                 if (!file) return { code: 0x2009 }
+                if (state.refuseDownloads) return { code: 0x2019 }
                 state.downloads.push(file.handle)
                 const offset = Number(parameters.Offset ?? parameters.OffsetLower)
                 const length = Number(parameters.MaxBytes ?? parameters.MaxSizeLower)
@@ -226,6 +230,7 @@ function standardCard(
                 return { code: 0x200a }
             case 'SetDevicePropValue':
                 expect(parameters.DevicePropCode).toBe(0x5011)
+                if (state.clockResponse !== 0x2001) return { code: state.clockResponse }
                 if (state.clockApplies) state.clock = registry.codecs.string.decode(data!).value
                 return { code: 0x2001 }
         }
@@ -289,6 +294,15 @@ function sonyContentList(
     return concatenate(parts)
 }
 
+/** A Sony live-view dataset: offset and size of the JPEG, no focal frames, then the JPEG at offset 24. */
+function liveViewDataset(image: Uint8Array): Uint8Array {
+    const header = new Uint8Array(24)
+    const view = new DataView(header.buffer)
+    view.setUint32(0, header.length, true)
+    view.setUint32(4, image.length, true)
+    return concatenate([header, image])
+}
+
 /** Simulated Sony body: SDIO inventory with card, battery and mode properties, content list, transfer. */
 function sonyCamera() {
     const { transport, emit } = simulatedTransport()
@@ -302,7 +316,10 @@ function sonyCamera() {
         photosRemaining: 412,
         transfer: false,
         operatingMode: 1,
-        recording: 0,
+        /** Native RecordingState (0xD21D), or undefined when the body leaves it out of its inventory. */
+        recording: 0 as number | undefined,
+        inventoryResponse: 0x2001,
+        controls: [] as string[],
         dateTimeResult: 1 as number | undefined,
         dateTimeResponse: 0x2001,
         previewResponse: 0x2001,
@@ -315,6 +332,13 @@ function sonyCamera() {
     const card: CardFile[] = [
         { handle: 0x21, storageId: 0x00010001, name: 'DSC00001.ARW', bytes: Uint8Array.of(1, 2, 3, 4), captureDate: '' },
         { handle: 0x22, storageId: 0x00010001, name: 'C0001.MP4', bytes: Uint8Array.of(5, 6), captureDate: '', reportedSize: 0xffffffff },
+    ]
+    const contents = [
+        { contentId: 3, createdLocalMs: Date.UTC(2026, 10, 24, 9, 0, 0), files: [{ fileId: 1, path: 'DCIM/100MSDCF/DSC00001.ARW', size: 4 }] },
+        { contentId: 4, createdLocalMs: Date.UTC(2026, 10, 24, 9, 5, 0), files: [
+            { fileId: 1, path: 'PRIVATE/M4ROOT/CLIP/C0001.MP4', size: bigClip, video: true },
+            { fileId: 2, path: 'PRIVATE/M4ROOT/CLIP/C0001M01.XML', size: 900 },
+        ] },
     ]
     const property = (code: number, type: 2 | 6, value: number) => {
         const encode = (raw: number) => (type === 2 ? codecs.uint8.encode(raw) : codecs.uint32.encode(raw))
@@ -339,7 +363,7 @@ function sonyCamera() {
             property(0xd038, 6, 95),
             property(0xd295, 2, body.transfer ? 1 : 0),
             property(0xd0bc, 2, body.operatingMode),
-            property(0xd21d, 2, body.recording),
+            ...(body.recording === undefined ? [] : [property(0xd21d, 2, body.recording)]),
         ]
         const wire = concatenate([codecs.uint32.encode(properties.length), codecs.uint32.encode(0), ...properties])
         return new SDIDevicePropInfoArrayCodec(driver.registry).decode(wire).value
@@ -347,6 +371,7 @@ function sonyCamera() {
     const send: Send = async (operation, parameters, data) => {
         switch (operation.name) {
             case 'SDIO_GetAllExtDevicePropInfo':
+                if (body.inventoryResponse !== 0x2001) return { code: body.inventoryResponse }
                 return { code: 0x2001, data: inventory() }
             case 'GetDeviceInfo':
                 return {
@@ -356,23 +381,23 @@ function sonyCamera() {
             case 'SDIO_GetContentInfoList':
                 if (body.listResponse !== 0x2001) return { code: body.listResponse }
                 expect(parameters.Extra1).toBe(1)
-                return {
-                    code: 0x2001,
-                    data: sonyContentList(1, [
-                        { contentId: 3, createdLocalMs: Date.UTC(2026, 10, 24, 9, 0, 0), files: [{ fileId: 1, path: 'DCIM/100MSDCF/DSC00001.ARW', size: 4 }] },
-                        { contentId: 4, createdLocalMs: Date.UTC(2026, 10, 24, 9, 5, 0), files: [
-                            { fileId: 1, path: 'PRIVATE/M4ROOT/CLIP/C0001.MP4', size: bigClip, video: true },
-                            { fileId: 2, path: 'PRIVATE/M4ROOT/CLIP/C0001M01.XML', size: 900 },
-                        ] },
-                    ]),
-                }
+                return { code: 0x2001, data: sonyContentList(1, contents) }
             case 'SDIO_GetContentCompressedData':
                 if (body.previewResponse !== 0x2001) return { code: body.previewResponse }
                 return { code: 0x2001, data: jpeg(Number(parameters.Type)) }
             case 'SDIO_SetContentsTransferMode':
                 body.transferModeChanges.push(String(parameters.TransferMode))
                 body.transfer = parameters.TransferMode === 'ENABLE'
+                // Reading the card switches the body to Playback, and leaving transfer mode does not undo it.
+                if (body.transfer) body.operatingMode = 2
                 return { code: 0x2001 }
+            case 'SDIO_ControlDevice':
+                body.controls.push(`0x${Number(parameters.sdiControlCode).toString(16)}`)
+                return { code: 0x2001 }
+            case 'GetObject':
+                expect(parameters.ObjectHandle).toBe(0xffffc002)
+                // In Playback, the body refuses live view.
+                return body.operatingMode === 2 ? { code: 0x200f } : { code: 0x2001, data: liveViewDataset(jpeg(0x77)) }
             case 'GetStorageIDs':
                 return { code: 0x2001, data: [0x00010001] }
             case 'GetObjectHandles':
@@ -402,7 +427,7 @@ function sonyCamera() {
     vi.spyOn(driver as unknown as { waitMs(milliseconds: number): Promise<void> }, 'waitMs').mockImplementation(
         () => new Promise(resolve => setTimeout(resolve, 0))
     )
-    return { camera, driver, body, card, bigClip, emit }
+    return { camera, driver, body, card, contents, bigClip, emit }
 }
 
 function canonCamera(options: { clock?: boolean; thumbnails?: boolean } = {}) {
@@ -540,6 +565,25 @@ describe('card and media on a simulated generic PTP body', () => {
         await expect(camera.getMediaPreview(jpegItem.id)).rejects.toBeInstanceOf(CameraRefusedError)
     })
 
+    it('delivers settingsChanged and mediaAdded from the standard events until off()', async () => {
+        const { camera, emit } = genericCamera()
+        const settings = vi.fn()
+        const media = vi.fn()
+        camera.on('settingsChanged', settings)
+        camera.on('mediaAdded', media)
+        emit({ code: 0x4006, parameters: [0x5007], transactionId: 0 })
+        emit({ code: 0x4002, parameters: [0x11], transactionId: 0 })
+        emit({ code: 0x4004, parameters: [0x10001], transactionId: 0 })
+        expect(settings).toHaveBeenCalledOnce()
+        expect(media).toHaveBeenCalledOnce()
+        camera.off('settingsChanged', settings)
+        camera.off('mediaAdded', media)
+        emit({ code: 0x4006, parameters: [0x5007], transactionId: 0 })
+        emit({ code: 0x4002, parameters: [0x12], transactionId: 0 })
+        expect(settings).toHaveBeenCalledOnce()
+        expect(media).toHaveBeenCalledOnce()
+    })
+
     it('reports make, model, firmware and connection, without guessing a lens mount', async () => {
         const { camera } = genericCamera()
         expect(await camera.getInfo()).toEqual({ manufacturer: 'Example Optics', model: 'Model 1', firmware: '2.0', connection: 'ip' })
@@ -556,6 +600,18 @@ describe('clock on standard PTP bodies', () => {
         const moment = new Date(2026, 10, 24, 14, 5, 9)
         await camera.setClock(moment)
         expect(state.clock).toBe('20261124T140509')
+        expect(vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'SetDevicePropValue')).toHaveLength(1)
+    })
+
+    it.each([
+        ['Canon', canonCamera],
+        ['Nikon', nikonCamera],
+        ['generic', genericCamera],
+    ] as const)('reports a %s refusal of the new time as refused, written once', async (_vendor, simulate) => {
+        const { camera, driver, state } = simulate()
+        state.clockResponse = 0x2019
+        await expect(camera.setClock(new Date(2026, 10, 24, 14, 5, 9))).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(state.clock).toBe('20260101T000000')
         expect(vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'SetDevicePropValue')).toHaveLength(1)
     })
 
@@ -672,17 +728,99 @@ describe('a simulated Sony body', () => {
         await expect(camera.downloadMedia(photo.id, { signal: cancel.signal })).rejects.toBe('cancelled')
     })
 
-    it('returns to shooting after a card read only when the body shows playback, and never during a recording', async () => {
-        const { driver, body } = sonyCamera()
-        const reopen = vi.spyOn(driver, 'reopenSession').mockResolvedValue(undefined)
-        expect(await driver.returnToShooting()).toBe(false)
-        body.operatingMode = 2
-        body.recording = 1
-        expect(await driver.returnToShooting()).toBe(false)
-        expect(reopen).not.toHaveBeenCalled()
-        body.recording = 0
-        expect(await driver.returnToShooting()).toBe(true)
+    it('reopens once on the live-view frame after a download that left the body in playback', async () => {
+        const { camera, driver, body } = sonyCamera()
+        const reopen = vi.spyOn(driver, 'reopenSession').mockImplementation(async () => {
+            body.operatingMode = 1
+        })
+        const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
+        await camera.downloadMedia(photo.id)
+        expect(body.operatingMode).toBe(2)
+        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
         expect(reopen).toHaveBeenCalledOnce()
+        await camera.captureLiveView({ includeInfo: false })
+        expect(reopen).toHaveBeenCalledOnce()
+    })
+
+    it.each([
+        ['missing', undefined],
+        ['recording', 1],
+        ['recording failed', 2],
+        ['waiting for interval recording', 3],
+    ] as const)('keeps the session when the native recording state is %s', async (_state, recording) => {
+        const { camera, driver, body } = sonyCamera()
+        const reopen = vi.spyOn(driver, 'reopenSession').mockResolvedValue(undefined)
+        const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
+        await camera.downloadMedia(photo.id)
+        body.recording = recording
+        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
+        expect(reopen).not.toHaveBeenCalled()
+    })
+
+    it('never reopens while a caller holds an object-handle baseline from this session', async () => {
+        const { camera, driver, body } = sonyCamera()
+        const reopen = vi.spyOn(driver, 'reopenSession').mockResolvedValue(undefined)
+        const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
+        await camera.downloadMedia(photo.id)
+        // A recording or capture workflow reads the handles it compares against later.
+        expect(await readCameraObjectHandles(camera)).toEqual(new Set([0x21, 0x22]))
+        expect(body.operatingMode).toBe(2)
+        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
+        expect(reopen).not.toHaveBeenCalled()
+    })
+
+    it('handles a live-view refusal itself: one return to shooting, with no capture or record command', async () => {
+        const { camera, driver, body } = sonyCamera()
+        const reopen = vi.spyOn(driver, 'reopenSession').mockImplementation(async () => {
+            body.operatingMode = 1
+        })
+        // Left in Playback by something other than Slate's own media reads.
+        body.operatingMode = 2
+        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
+        expect(reopen).toHaveBeenCalledOnce()
+        const { ShutterReleaseButton, ShutterHalfReleaseButton, MovieRecButton } = driver.registry.properties
+        for (const control of [ShutterReleaseButton, ShutterHalfReleaseButton, MovieRecButton])
+            expect(body.controls).not.toContain(`0x${control.code.toString(16)}`)
+    })
+
+    it('re-arms shooting on the next live-view frame after a recording stops, without reopening', async () => {
+        const { camera, driver, body } = sonyCamera()
+        const reopen = vi.spyOn(driver, 'reopenSession').mockResolvedValue(undefined)
+        await driver.stopRecording()
+        expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(jpeg(0x77))
+        expect(body.transferModeChanges).toEqual(['DISABLE'])
+        expect(reopen).not.toHaveBeenCalled()
+    })
+
+    it('reuses a fresh property snapshot for the card status, and refuses when the camera refuses its inventory', async () => {
+        const { camera, driver } = sonyCamera()
+        const inventoryReads = () =>
+            vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'SDIO_GetAllExtDevicePropInfo').length
+        await camera.getSonyPropertyStates()
+        const before = inventoryReads()
+        expect(await camera.getCardStatus()).toHaveLength(2)
+        expect(inventoryReads()).toBe(before)
+        const refused = sonyCamera()
+        refused.body.inventoryResponse = 0x2019
+        await expect(refused.camera.getCardStatus()).rejects.toBeInstanceOf(CameraRefusedError)
+    })
+
+    it('checks a preview id against the card index in a new session, finding the file by name or refusing', async () => {
+        const { camera, driver, contents } = sonyCamera()
+        const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
+        const previewRequests = () =>
+            vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'SDIO_GetContentCompressedData')
+        // A new session, after the body deleted a file and renumbered its index.
+        driver.sessionId = 8
+        contents[0]!.files[0] = { fileId: 1, path: 'DCIM/100MSDCF/DSC00002.ARW', size: 6 }
+        contents.push({ contentId: 5, createdLocalMs: Date.UTC(2026, 10, 24, 9, 0, 0), files: [{ fileId: 1, path: 'DCIM/100MSDCF/DSC00001.ARW', size: 4 }] })
+        expect(await camera.getMediaPreview(photo.id, 'thumbnail')).toEqual(jpeg(1))
+        expect(previewRequests().at(-1)?.[1]).toMatchObject({ ContentID: 5 })
+        contents.pop()
+        driver.sessionId = 9
+        const sent = previewRequests().length
+        await expect(camera.getMediaPreview(photo.id)).rejects.toThrow('DSC00001.ARW is no longer on the card')
+        expect(previewRequests()).toHaveLength(sent)
     })
 
     it('reads the battery from the same snapshot', async () => {
@@ -760,6 +898,85 @@ describe('Canon events, identity and card', () => {
         expect(await camera.getInfo()).toMatchObject({ manufacturer: 'Canon', model: 'Canon EOS R8', lensMount: 'RF' })
         expect((await camera.listMedia()).map(item => item.name)).toEqual(['IMG_0002.CR3', 'MVI_0003.MP4', 'IMG_0001.JPG'])
         expect((await camera.getCardStatus())[0]).toMatchObject({ slot: 1, freeBytes: 32_000_000_000 })
+    })
+})
+
+describe.each([
+    ['Canon', canonCamera],
+    ['Nikon', nikonCamera],
+] as const)('%s thumbnails and downloads', (_vendor, simulate) => {
+    it('returns the thumbnail and the file, each requested once', async () => {
+        const { camera, driver, state } = simulate()
+        const items = await camera.listMedia()
+        const jpegItem = items.find(item => item.name === 'IMG_0001.JPG')!
+        expect(await camera.getMediaPreview(jpegItem.id, 'thumbnail')).toEqual(jpeg(0x51))
+        expect(vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'GetThumb')).toHaveLength(1)
+        expect(await camera.downloadMedia(jpegItem.id)).toEqual(jpeg(1))
+        expect(state.downloads).toEqual([0x11])
+    })
+
+    it('reports a refused thumbnail and a refused download as refused, without asking again', async () => {
+        const { camera, driver, state } = simulate()
+        const jpegItem = (await camera.listMedia()).find(item => item.name === 'IMG_0001.JPG')!
+        state.refuseThumbnails = true
+        await expect(camera.getMediaPreview(jpegItem.id)).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'GetThumb')).toHaveLength(1)
+        state.refuseDownloads = true
+        const downloadRequests = () =>
+            vi.mocked(driver.send).mock.calls.filter(([operation]) => /^GetPartialObject/.test(operation.name)).length
+        await expect(camera.downloadMedia(jpegItem.id)).rejects.toBeInstanceOf(CameraRefusedError)
+        expect(downloadRequests()).toBe(1)
+        expect(state.downloads).toEqual([])
+    })
+
+    it('has no larger preview than the thumbnail', async () => {
+        const { camera } = simulate()
+        const jpegItem = (await camera.listMedia()).find(item => item.name === 'IMG_0001.JPG')!
+        await expect(camera.getMediaPreview(jpegItem.id, 'preview')).rejects.toBeInstanceOf(CameraUnsupportedError)
+    })
+})
+
+describe('Nikon originals over 4 GiB', () => {
+    const bigFile = (files: CardFile[]) => {
+        const file: CardFile = {
+            handle: 0x14,
+            storageId: 0x00010001,
+            name: 'DSC_0004.MOV',
+            bytes: Uint8Array.of(7, 7),
+            captureDate: '20261124T091520',
+            reportedSize: 0xffffffff,
+        }
+        files.push(file)
+        return file
+    }
+
+    it('downloads with the size from Nikon GetObjectSize, a UINT64 for the exact handle', async () => {
+        const { camera, driver, files, send } = nikonCamera()
+        bigFile(files)
+        const fullSize = 0x1_2345_6789n
+        vi.mocked(driver.send).mockImplementation((async (operation: OperationDefinition, parameters: Record<string, unknown>, data?: Uint8Array) => {
+            if (operation.name !== 'GetObjectSize') return send(operation, parameters, data)
+            expect(parameters.ObjectHandle).toBe(0x14)
+            const codec = driver.registry.codecs.uint64
+            return { code: 0x2001, data: codec.decode(codec.encode(fullSize)).value }
+        }) as never)
+        const clip = (await camera.listMedia()).find(item => item.name === 'DSC_0004.MOV')!
+        const getObject = vi.spyOn(driver, 'getObject').mockResolvedValue(Uint8Array.of(7, 7))
+        await camera.downloadMedia(clip.id)
+        expect(getObject).toHaveBeenCalledWith(0x14, Number(fullSize), undefined, undefined)
+    })
+
+    it('refuses the download when the camera does not confirm the full size, and transfers nothing', async () => {
+        const { camera, driver, files, send, state } = nikonCamera()
+        bigFile(files)
+        vi.mocked(driver.send).mockImplementation((async (operation: OperationDefinition, parameters: Record<string, unknown>, data?: Uint8Array) =>
+            operation.name === 'GetObjectSize' ? { code: 0x2019 } : send(operation, parameters, data)) as never)
+        const clip = (await camera.listMedia()).find(item => item.name === 'DSC_0004.MOV')!
+        const refusal = camera.downloadMedia(clip.id)
+        await expect(refusal).rejects.toBeInstanceOf(CameraRefusedError)
+        await expect(refusal).rejects.toThrow('did not confirm the full 64-bit original size')
+        expect(state.downloads).toEqual([])
+        expect(vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'GetObjectSize')).toHaveLength(1)
     })
 })
 

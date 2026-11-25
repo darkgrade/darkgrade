@@ -368,8 +368,10 @@ describe('Sony preview results', () => {
             const { camera } = cameraFixture()
             const started = Date.now()
             const requestTimes: number[] = []
-            camera.send = (async () => {
-                requestTimes.push(Date.now() - started)
+            const otherRequests: string[] = []
+            camera.send = (async operation => {
+                if (operation.name === 'GetObject') requestTimes.push(Date.now() - started)
+                else otherRequests.push(operation.name)
                 return { code: 0x200f }
             }) as typeof camera.send
             const rejected = expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({
@@ -377,7 +379,10 @@ describe('Sony preview results', () => {
             })
             await vi.runAllTimersAsync()
             await rejected
-            expect(Date.now() - started).toBe(150)
+            // After the deadline it tries one return to shooting (leave transfer mode, 100 ms, read
+            // back), which the body also refuses; the frame is not asked for again.
+            expect(Date.now() - started).toBe(250)
+            expect(otherRequests).toEqual(['SDIO_SetContentsTransferMode', 'SDIO_GetAllExtDevicePropInfo'])
             expect(requestTimes.length).toBeLessThanOrEqual(22)
             expect(requestTimes.every(time => time < 150)).toBe(true)
             expect(camera.takeLiveViewStatistics()).toEqual({

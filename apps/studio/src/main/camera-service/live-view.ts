@@ -35,8 +35,6 @@ export interface LiveViewOperations {
     /** EXPERIMENT(usb-transport): true once the Swift live-view loop has run and ended; false when it isn't chosen. */
     runSwiftLiveViewIfChosen(): Promise<boolean>
     stopLiveView(): Promise<CameraState>
-    /** Sony can be left showing playback (AccessDenied on live view); re-arm remote shooting. */
-    resumeShooting(): Promise<void>
     /**
      * Sony card downloads switch the body into "content transfer" mode — a playback-like state —
      * while live view requires shooting mode. Interleaving them makes the camera flip modes per
@@ -137,9 +135,8 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
                     consecutiveErrors++
                     const message = errorMessage(error)
                     if (requiresReconnect(error)) break
-                    // AccessDenied: the body is still in playback/transfer state. Put it back and keep going.
+                    // AccessDenied: Slate already tried returning the body to shooting once; ask again shortly.
                     if (error instanceof PTPResponseError && error.code === PTP_ACCESS_DENIED) {
-                        await this.resumeShooting()
                         await delay(LIVE_VIEW_ERROR_DELAY_MS)
                         continue
                     }
@@ -230,17 +227,6 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
         this.liveViewRunning = false
         this.broadcastState()
         return this.getState()
-    },
-
-    /** Sony can be left showing playback (AccessDenied on live view); re-arm remote shooting. */
-    async resumeShooting(): Promise<void> {
-        const camera = this.camera
-        if (!camera || !this.connected) return
-        try {
-            await this.enqueue(async () => (this.recording ? false : camera.resumeSonyShooting()))
-        } catch (error) {
-            this.log('system', `Couldn't return the camera to shooting: ${errorMessage(error)}`, 'error')
-        }
     },
 
     async withLiveViewPaused<T>(operation: () => Promise<T>): Promise<T> {

@@ -11,13 +11,6 @@ export const photoOperationTable = {
             area: 'photo',
             disposition: { kind: 'rename-to', target: 'takePhoto' },
         },
-        resumeSonyShooting: {
-            area: 'photo',
-            disposition: {
-                kind: 'private',
-                handledBy: 'takePhoto and listMedia (resuming shooting after a card read)',
-            },
-        },
     },
     planned: {
         takePhoto: {

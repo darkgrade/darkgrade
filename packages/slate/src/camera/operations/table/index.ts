@@ -54,6 +54,8 @@ export const cameraStaticOperationTable = connectionStaticOperationTable satisfi
 >
 
 export type CameraMethodName = Extract<keyof Camera, string>
+/** A public Camera method today, by name: the keys of the table's current entries. */
+export type CameraOperationName = keyof typeof cameraOperationTable
 export type CameraStaticMethodName = Exclude<Extract<keyof typeof Camera, string>, 'prototype'>
 
 // The compiler fails when a Camera method and the table disagree, in either direction.

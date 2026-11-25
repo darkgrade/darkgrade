@@ -1,4 +1,5 @@
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
+import type { CameraOperationName } from '@camera/operations/table/index'
 import type { TypedSettingMethods } from '@camera/settings/typed-settings'
 import { colourControlDefinitions } from '@camera/settings/colour'
 import { exposureControlDefinitions } from '@camera/settings/exposure'
@@ -71,7 +72,7 @@ export interface CameraCapabilities {
      * it cannot. An operation absent here has no availability report yet; a call still answers
      * CameraUnsupportedError when it cannot run.
      */
-    operations?: Partial<Record<string, OperationAvailability>>
+    operations?: Partial<Record<CameraOperationName, OperationAvailability>>
 }
 
 export interface OperationAvailability {
