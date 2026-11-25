@@ -128,7 +128,38 @@ fails when a Camera method is missing from the generated list or has no doc comm
 can only go down: fix the type rather than raise a budget, and lower budgets with
 `check:guards -- --update` after removing escapes. Setting value types come from the vendor
 codecs, never hand-written lists (the recorded exceptions are in `pre-release-audit.md`), and no
-typed setter takes a plain `string` (`test:package` asserts this on the packed types).
+typed setter takes a plain `string` (`test:package` asserts this on the packed types). Every
+typed setter must reject a value its codecs can't produce; a change that widens one to `string`
+is a bug, not a type fix.
+
+**Nothing vendor-specific is published outside `/protocol`.** No published entry (main,
+`/controls`, `/runtime`, `/cli`, `/contribute`) exports a vendor-named symbol, and no public type
+carries a vendor's own word as a value: vendors map their words to canonical ones in their
+`control-properties.ts`. `/protocol` is the one unsupported exception, for benches; don't add to
+it what a `Camera` method could do.
+
+**Shared code never asks which brand it has.** Code outside `src/vendors/<brand>/` does not import
+a brand folder or test `instanceof SonyCamera`/`CanonCamera`/`NikonCamera` or a vendor id; the
+driver answers instead. Dependencies point one way: surfaces → `Camera` → driver contract ← brand
+drivers → `ptp/` → `transport/`. Don't add an import cycle.
+
+**Organise by vendor and layer, never by how the work was split.** When agents work in parallel,
+give each existing files to own; don't create per-area modules, test files or scripts (settings
+groups, smoke areas) to keep them apart. Before adding a module, test file or script, search for
+the one it duplicates and extend that.
+
+**Tests.** Test each behaviour once, at the highest layer that can see it (the public `Camera`
+with a fake device, or a host behaviour), using `packages/slate/tests/fixtures/` rather than a new
+fake per file. Don't re-prove one shared path per setting or per vendor; use one table. A test
+must be able to fail on a real regression: no asserting a mock was called with what it was just
+told. Real cameras are checked by `camera:api-check` alone; extend it rather than adding another
+runner. Delete a test along with the code it covered.
+
+**Hosts don't re-implement Slate.** Studio, Test Bench and other hosts call Slate's public API
+and runtime: no second camera queue, vendor table, alias map or nearest-value snapping.
+
+**Say why a PR grows.** Report Slate's net source and test lines against `main` in the PR, and
+justify growth; moved code and generated data are reported separately.
 
 # The privacy policy is the source of truth
 
