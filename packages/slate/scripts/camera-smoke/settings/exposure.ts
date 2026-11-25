@@ -63,10 +63,17 @@ async function readTyped<Value extends string>(report: SmokeReport, setting: Typ
  * setter and checks the restore read back exactly.
  */
 async function changeAndRestore<Value extends string>(camera: Camera, report: SmokeReport, setting: TypedSetting<Value>) {
+    // Wait first: right after a mode change the a7 V still reports the previous mode's metered
+    // value (0.4" in Aperture priority) until the control turns writable with its own (1/40).
+    const writable = await waitForWritable(camera, setting.id)
     const original = await readTyped(report, setting)
     if (original === undefined) return
-    const control = await waitForWritable(camera, setting.id)
-    if (!control) return report.skipped(setterName(setting.id), `${setting.id} is not writable in the current mode`)
+    if (!writable) return report.skipped(setterName(setting.id), `${setting.id} is not writable in the current mode`)
+    const control = (await camera.getCapabilities()).controls[setting.id]
+    if (!control?.writable) return report.skipped(setterName(setting.id), `${setting.id} is not writable in the current mode`)
+    const settled = await setting.get()
+    if (settled !== original)
+        throw new Error(`${setting.id} read ${original} and then ${settled}; refusing to restore an unsettled value`)
     const choices = control.allowedValues ?? []
     report.confirmed(`getCapabilities().controls.${setting.id}`, {
         value: control.value,
