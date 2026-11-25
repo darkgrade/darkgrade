@@ -11,21 +11,21 @@ describe('Sony FlashMode (0x500c) decode', () => {
     const decode = (raw: number) => codec.decode(registry.codecs.uint16.encode(raw)).value
 
     it('decodes the SDK-verified vendor flash modes', () => {
-        expect(decode(0x0003)).toBe('Fill-flash')
-        expect(decode(0x8001)).toBe('Slow Sync')
-        expect(decode(0x8003)).toBe('Rear Sync')
+        expect(decode(0x0003)).toBe('Fill')
+        expect(decode(0x8001)).toBe('Slow sync')
+        expect(decode(0x8003)).toBe('Rear sync')
     })
 
-    it('labels the standard low-range modes', () => {
-        expect(decode(0x0001)).toBe('Autoflash')
-        expect(decode(0x0002)).toBe('Flash Off')
+    it('uses the canonical names for the standard low-range modes', () => {
+        expect(decode(0x0001)).toBe('Auto')
+        expect(decode(0x0002)).toBe('Off')
     })
 
-    it('falls back readably for unknown modes', () => {
-        expect(decode(0x8005)).toBe('Mode 0x8005')
+    it('refuses to name an unknown mode, so descriptors report it as unrecognized', () => {
+        expect(() => decode(0x8005)).toThrow('Invalid enum value')
     })
 
     it('round-trips a known mode through encode', () => {
-        expect([...codec.encode('Rear Sync')]).toEqual([0x03, 0x80])
+        expect([...codec.encode('Rear sync')]).toEqual([0x03, 0x80])
     })
 })

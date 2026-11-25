@@ -130,6 +130,96 @@ export const settingsOperationTable = {
             area: 'settings',
             disposition: { kind: 'replaced-by', target: 'setAspectRatio' },
         },
+        getPhotoFormat: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current photo format, in canonical spelling',
+        },
+        setPhotoFormat: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the photo format and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example RAW+JPEG' }],
+                },
+            },
+        },
+        getPhotoSize: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current photo size, in canonical spelling',
+        },
+        setPhotoSize: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the photo size and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Large' }],
+                },
+            },
+        },
+        getAspectRatio: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current aspect ratio, in canonical spelling',
+        },
+        setAspectRatio: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the aspect ratio and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example 3:2' }],
+                },
+            },
+        },
+        getJpegQuality: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current JPEG quality, in canonical spelling',
+        },
+        setJpegQuality: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the JPEG quality and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Fine' }],
+                },
+            },
+        },
+        getRawCompression: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current RAW compression, in canonical spelling',
+        },
+        setRawCompression: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the RAW compression and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Lossless' }],
+                },
+            },
+        },
+        getFlashMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'The current flash mode, in canonical spelling',
+        },
+        setFlashMode: {
+            area: 'settings',
+            disposition: { kind: 'keep' },
+            summary: 'Sets the flash mode and returns the value read back',
+            surfaces: {
+                cli: {
+                    arguments: [{ name: 'value', description: 'for example Off' }],
+                },
+            },
+        },
         getSonyMovieFileFormat: {
             area: 'settings',
             disposition: { kind: 'replaced-by', target: 'getVideoFormat' },
@@ -428,96 +518,6 @@ export const settingsOperationTable = {
             surfaces: {
                 cli: {
                     arguments: [{ name: 'value', description: 'for example Auto' }],
-                },
-            },
-        },
-        getPhotoFormat: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current photo format, in canonical spelling',
-        },
-        setPhotoFormat: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the photo format and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example RAW+JPEG' }],
-                },
-            },
-        },
-        getPhotoSize: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current photo size, in canonical spelling',
-        },
-        setPhotoSize: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the photo size and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Large' }],
-                },
-            },
-        },
-        getAspectRatio: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current aspect ratio, in canonical spelling',
-        },
-        setAspectRatio: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the aspect ratio and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example 3:2' }],
-                },
-            },
-        },
-        getJpegQuality: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current JPEG quality, in canonical spelling',
-        },
-        setJpegQuality: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the JPEG quality and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Fine' }],
-                },
-            },
-        },
-        getRawCompression: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current RAW compression, in canonical spelling',
-        },
-        setRawCompression: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the RAW compression and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Lossless' }],
-                },
-            },
-        },
-        getFlashMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current flash mode, in canonical spelling',
-        },
-        setFlashMode: {
-            area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'Sets the flash mode and returns the value read back',
-            surfaces: {
-                cli: {
-                    arguments: [{ name: 'value', description: 'for example Off' }],
                 },
             },
         },

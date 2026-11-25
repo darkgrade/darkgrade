@@ -1,3 +1,4 @@
+import { CameraOutcomeUnknownError } from '@darkgrade/slate'
 import type { CameraService } from '@main/camera-service'
 import { PREVIEWABLE_EXTENSIONS, PREVIEW_MAX_BYTES, formatBytes } from '@main/camera-service/shared'
 import type { CaptureOptions, CaptureResult } from '@shared/ipc'
@@ -15,10 +16,18 @@ export const photoOperations: PhotoOperations & ThisType<CameraService> = {
 
     async capture(options: CaptureOptions = {}): Promise<CaptureResult> {
         const camera = this.requireCameraForControl()
-        const { info, data } = await this.enqueue(() => camera.captureImage({ autofocus: options.autofocus ?? true }))
-        if (!data) throw new Error('Camera returned no image data')
-
-        const filename = info?.filename ?? `capture-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`
+        // Saved to the card as well; resolves only once the camera shows the new file.
+        const photo = await this.enqueue(() =>
+            camera.takePhoto({ autofocus: options.autofocus ?? true, destination: 'computer' })
+        ).catch(error => {
+            // The shutter may have fired: never retake on the user's behalf; show what is on the card.
+            if (error instanceof CameraOutcomeUnknownError) {
+                this.log('system', 'The photo could not be confirmed; check the card before taking another', 'error')
+                this.scheduleFilesRefresh()
+            }
+            throw error
+        })
+        const { data, name: filename } = photo
         const savedPath = await this.saveToDownloadDir(filename, data)
         this.log('system', `Captured ${filename} (${formatBytes(data.byteLength)}) → ${savedPath}`)
 

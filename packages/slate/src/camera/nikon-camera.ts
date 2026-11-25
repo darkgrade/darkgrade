@@ -1,5 +1,6 @@
 import { Logger } from '@core/logger'
-import { CameraOutcomeUnknownError } from '@camera/errors'
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@camera/shutter-outcome'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
 import {withNikonRawCompression} from '@vendors/nikon/raw-capture'
 import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
@@ -305,9 +306,10 @@ export class NikonCamera extends GenericCamera {
     }
 
     /**
-     * Saves a still to the camera card by default. Explicit memory capture waits for a
-     * new SDRAM object event and retrieves that object's metadata and complete bytes.
-     * Card capture returns no media; callers must discover and download its new object.
+     * Saves a still to the camera card by default and resolves once the card reports the new file
+     * (its ObjectAdded event). Explicit memory capture waits for a new SDRAM object event and
+     * retrieves that object's metadata and complete bytes. A refused release is
+     * CameraRefusedError; once the release is sent, an unconfirmed file is CameraOutcomeUnknownError.
      */
     async captureImage(options: { includeInfo?: boolean; includeData?: boolean; autofocus?: boolean; destination?: 'card' | 'memory'; rawCompression?: 'lossless' } = {}): Promise<{
         info?: ObjectInfo
@@ -319,22 +321,31 @@ export class NikonCamera extends GenericCamera {
         if (this.transport.getType() === TransportType.IP) await this.enableRemoteMode()
         let info: ObjectInfo | undefined
         let data: Uint8Array | undefined
+        const cardHandles: number[] = []
+        const recordCardObject = (event: { ObjectHandle?: number }) => {
+            if (event.ObjectHandle && !cardHandles.includes(event.ObjectHandle)) cardHandles.push(event.ObjectHandle)
+        }
+        let releaseSent = false
         const release = async () => {
+            // Events queued before this release must not count as its file.
+            await this.pollEvents()
+            cardHandles.length = 0
             if (!memory && options.autofocus !== false) {
+                releaseSent = true
                 const response = await this.send(this.registry.operations.InitiateCapture, {})
-                this.assertNikonResponse(response.code, 'InitiateCapture')
+                this.assertReleaseAccepted(response.code, 'InitiateCapture')
                 return
             }
             const information = await this.send(this.registry.operations.GetDeviceInfo, {})
             this.assertNikonResponse(information.code, 'GetDeviceInfo')
             if (!information.data?.operationsSupportedRaw.includes(0x9207))
-                throw new Error('Nikon does not advertise the requested capture mode; no shutter command sent')
-            if (memory) await this.pollEvents()
+                throw new CameraUnsupportedError('takePhoto', 'Nikon does not advertise the requested capture mode; no shutter command sent')
             // Z6III command reference rev 2, 6.2.4.1: normal release, save to card.
+            releaseSent = true
             const response = await this.send(this.registry.operations.InitiateCaptureRecInMedia, {
                 AfMode: options.autofocus === false ? 0xffffffff : 0xfffffffe, Target: memory ? 1 : 0,
             })
-            this.assertNikonResponse(response.code, 'InitiateCaptureRecInMedia')
+            this.assertReleaseAccepted(response.code, 'InitiateCaptureRecInMedia')
         }
         const finish = async (waitForBuffer = true) => {
             if (memory) {
@@ -348,11 +359,27 @@ export class NikonCamera extends GenericCamera {
             // Wait without replaying the release before restoring RAW or photo/movie modes.
             await this.pollDeviceReady(60000, [], [SilentReleaseBusy.code])
             if (!memory && waitForBuffer) await this.waitForImageBufferReady(30000)
+            if (!memory) {
+                const captured = await this.readCapturedCardImage(cardHandles, options.includeData === true)
+                if (options.includeInfo !== false) info = captured.info
+                data = captured.data
+            }
         }
         const capture = (waitForBuffer = true) => withNikonRawCompression(this, options.rawCompression, async () => {
             await this.enableLiveView()
-            await release()
-            await finish(waitForBuffer)
+            this.on(this.registry.events.ObjectAdded, recordCardObject)
+            try {
+                try {
+                    await release()
+                } catch (error) {
+                    // A refusal or an unsupported mode took nothing; a lost reply to a sent release may have.
+                    const definitive = error instanceof CameraUnsupportedError || error instanceof CameraRefusedError
+                    throw releaseSent && !definitive ? shutterOutcomeUnknown(error) : error
+                }
+                await afterShutterRelease(() => finish(waitForBuffer))
+            } finally {
+                this.off(this.registry.events.ObjectAdded, recordCardObject)
+            }
         })
 
         // Setup capture
@@ -402,6 +429,51 @@ export class NikonCamera extends GenericCamera {
         } else throw new Error('Nikon live-view selector is unknown; capture was not sent')
 
         return { info: info, data: data }
+    }
+
+    /** A refused release took nothing: report the camera's answer as a refusal, not an unknown outcome. */
+    private assertReleaseAccepted(code: number, operation: string): void {
+        if (code !== OK.code)
+            throw shutterRefused(new PTPResponseError(code, `Nikon ${operation} returned 0x${code.toString(16)}`, { operation }))
+    }
+
+    /**
+     * The new card file this release wrote, from the ObjectAdded events Nikon queues for it (the
+     * event queue is drained before the release, so an older file never counts). Folders are
+     * skipped; of a RAW+JPEG pair the JPEG is preferred. Never deletes or rewrites card files.
+     */
+    private async readCapturedCardImage(handles: number[], includeData: boolean): Promise<{ info: ObjectInfo; data?: Uint8Array }> {
+        const deadline = Date.now() + 15000
+        const inspected = new Map<number, ObjectInfo | null>()
+        while (Date.now() < deadline) {
+            for (const event of await this.pollEvents()) {
+                const handle = event.parameters[0]
+                if (event.code === this.registry.events.ObjectAdded.code && handle && !handles.includes(handle))
+                    handles.push(handle)
+            }
+            for (const handle of handles) {
+                if (inspected.has(handle)) continue
+                const response = await this.send(this.registry.operations.GetObjectInfo, { ObjectHandle: handle })
+                this.assertNikonResponse(response.code, 'GetObjectInfo')
+                const info = response.data
+                if (!info) throw new Error('Nikon card image metadata is missing')
+                const file = info.associationType === 0 && info.objectFormat !== 0x3001 && info.objectCompressedSize > 0
+                inspected.set(handle, file ? info : null)
+            }
+            const files = [...inspected.entries()].flatMap(([handle, info]) => (info ? [{ handle, info }] : []))
+            const chosen = files.find(file => /\.jpe?g$/i.test(file.info.filename)) ?? files[0]
+            if (chosen) {
+                if (!Number.isSafeInteger(chosen.info.objectCompressedSize) || chosen.info.objectCompressedSize > 512 * 1024 * 1024)
+                    throw new Error('Nikon card image size is invalid or exceeds the transfer bound')
+                if (!includeData) return { info: chosen.info }
+                const data = await this.getObject(chosen.handle, chosen.info.objectCompressedSize)
+                if (data.length !== chosen.info.objectCompressedSize)
+                    throw new Error('Nikon card image transfer length differs from its metadata')
+                return { info: chosen.info, data }
+            }
+            await this.waitMs(100)
+        }
+        throw new Error('Nikon released the shutter, but no new image file appeared on the card within 15 seconds')
     }
 
     /** Transfer the new SDRAM object identified by Nikon's event queue; never reads or deletes card images. */

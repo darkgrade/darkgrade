@@ -1,3 +1,4 @@
+import { CameraRefusedError } from '@camera/errors'
 import { CanonCamera } from '@camera/canon-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
@@ -149,7 +150,7 @@ describe('Canon capture response handling', () => {
 
     it('does not repeat the shutter when AF rejection also fails cleanup', async () => {
         const { camera, operations } = cameraWithResponses([0x2001, 0x2019, 0x2019])
-        await expect(camera.captureImage({ includeInfo: false, includeData: false })).rejects.toThrow(AggregateError)
+        await expect(camera.captureImage({ includeInfo: false, includeData: false })).rejects.toThrow(CameraRefusedError)
         expect(operations.filter(operation => operation.name === 'CanonRemoteReleaseOn')).toHaveLength(2)
     })
 

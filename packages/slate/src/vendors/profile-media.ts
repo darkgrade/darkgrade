@@ -68,7 +68,11 @@ export async function captureProfilePhoto(
         if (original !== 'HOST_PRIORITY') await camera.set(priority, 'HOST_PRIORITY')
         if (originalDestination !== undefined && originalDestination !== 'CAMERA_DEVICE')
             await camera.set(destination, 'CAMERA_DEVICE')
-        return await withSonyPhotoMode(camera, capture)
+        const exposureProgram = camera.getInstance().registry.properties.ExposureProgramMode
+        return await withSonyPhotoMode({
+            refreshPropertyStates: () => camera.getSonyPropertyStates(),
+            setExposureProgram: value => camera.set(exposureProgram, value),
+        }, capture)
     } catch (error) {
         failure = error
         throw error

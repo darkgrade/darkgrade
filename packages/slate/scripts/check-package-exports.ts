@@ -91,6 +91,7 @@ try {
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, SonyWifiCamera, SonyCamera, type ShutterSpeed, type TypedSettingMethods,
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
+            type CardPhoto, type ComputerPhoto, type PhotoFormat, type RawCompression,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
         const camera = new Camera()
@@ -171,6 +172,33 @@ try {
         camera.setShutterSpeed(anyString)
         // @ts-expect-error A vendor's own word is not a canonical shutter speed.
         camera.setShutterSpeed('fast')
+        // Photo: takePhoto returns the confirmed file; only a computer photo carries its bytes.
+        const cardPhoto: Promise<CardPhoto> = camera.takePhoto()
+        const computerPhoto: Promise<ComputerPhoto> = camera.takePhoto({ autofocus: false, destination: 'computer' })
+        void camera.takePhoto({ destination: 'computer' }).then(photo => photo.data.byteLength + photo.mediaId.length)
+        // @ts-expect-error A card photo has no bytes; ask for destination 'computer'.
+        void camera.takePhoto({ destination: 'card' }).then(photo => photo.data)
+        // @ts-expect-error The destination is the card or the computer; 'memory' is not a destination.
+        camera.takePhoto({ destination: 'memory' })
+        // @ts-expect-error RAW compression is a setting (setRawCompression), not a photo option.
+        camera.takePhoto({ rawCompression: 'lossless' })
+        // @ts-expect-error The old capture name is not on a control session.
+        sdk.takePhoto()
+        const photoFormat: Promise<PhotoFormat> = camera.setPhotoFormat('RAW+JPEG')
+        const rawCompression: Promise<RawCompression> = camera.setRawCompression('Lossless')
+        camera.setPhotoSize('Large')
+        camera.setAspectRatio('16:9')
+        camera.setJpegQuality('Fine')
+        camera.setFlashMode('Off')
+        sdk.setPhotoFormat('RAW')
+        // @ts-expect-error Photo formats use the codecs' canonical spelling.
+        camera.setPhotoFormat('RAW + JPEG')
+        // @ts-expect-error The old setting id is not a typed setter.
+        camera.setStillFormat('RAW')
+        // @ts-expect-error A flash mode is a canonical word, not the vendor's.
+        camera.setFlashMode('Fill-flash')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setJpegQuality(anyString)
         type PlainStringSetters = { [Name in keyof TypedSettingMethods]: Name extends \`set\${string}\`
             ? TypedSettingMethods[Name] extends (value: infer Value, ...options: never[]) => unknown
                 ? string extends Value ? Name : never : never
@@ -178,7 +206,8 @@ try {
         const noPlainStringSetters: [PlainStringSetters] extends [never] ? true : PlainStringSetters = true
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
-            confirmedShutter, currentShutter, noPlainStringSetters, errors]
+            confirmedShutter, currentShutter, noPlainStringSetters, errors, cardPhoto, computerPhoto, photoFormat,
+            rawCompression]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

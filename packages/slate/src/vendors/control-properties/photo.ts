@@ -1,11 +1,13 @@
 import type { photoControlDefinitions } from '@camera/settings/photo'
 import * as standard from '@ptp/definitions/property-definitions'
 import * as canon from '@ptp/definitions/vendors/canon/canon-property-definitions'
+import * as nikon from '@ptp/definitions/vendors/nikon/nikon-shooting-property-definitions'
 import * as sony from '@ptp/definitions/vendors/sony/sony-property-definitions'
 import type { VendorControlProperties } from '@vendors/control-properties/vendor-control-properties'
 
 const standardProperties = {
-    imageSize: [standard.ImageSize],
+    photoSize: [standard.ImageSize],
+    flashMode: [standard.FlashMode],
 } as const
 
 /**
@@ -15,19 +17,21 @@ const standardProperties = {
  */
 export const photoControlProperties = {
     sony: {
-        stillFormat: [sony.StillFileFormat, sony.CompressionSetting],
-        imageSize: [sony.SonyImageSize],
+        photoFormat: [sony.StillFileFormat, sony.CompressionSetting],
+        photoSize: [sony.SonyImageSize],
         aspectRatio: [sony.AspectRatio],
         jpegQuality: [sony.JpegQuality],
+        flashMode: [sony.FlashMode],
     },
     canon: {
-        stillFormat: [canon.CanonImageFormat, canon.CanonImageFormatSd],
+        photoFormat: [canon.CanonImageFormat, canon.CanonImageFormatSd],
     },
     standard: standardProperties,
     nikonPhoto: {
         ...standardProperties,
+        rawCompression: [nikon.NikonRawCompression],
     },
     nikonMovie: {
-        ...standardProperties,
+        photoSize: standardProperties.photoSize,
     },
 } as const satisfies VendorControlProperties<keyof typeof photoControlDefinitions>

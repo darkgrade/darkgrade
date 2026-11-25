@@ -1,5 +1,7 @@
 import { expect, it, vi } from 'vitest'
-import { withCanonPhotoMode, openCanonRecordingMode, withCanonRecordingMode } from '@vendors/canon/recording-mode'
+import { openCanonRecordingMode, withCanonRecordingMode } from '@vendors/canon/recording-mode'
+import { withCanonPhotoMode, type CanonPhotoModeDriver } from '@vendors/canon/photo-mode'
+import { CameraUnsupportedError } from '@camera/errors'
 
 it('prepares the card before movie selection and restores it only after leaving movie mode', async () => {
     vi.useFakeTimers()
@@ -45,15 +47,18 @@ it('reports the physical Canon selector requirement without retrying an already-
     vi.useFakeTimers()
     try {
         const camera = {
-            getCanonUnknownPropertyStates: async () => [{ name: 'FixedMovie', rawValue: 1 }],
-            getCanonPropertyStates: async () => [{ name: 'CanonAutoExposureMode', value: 1 }],
+            listUnknownPropertyStates: () => [{ code: 0xd1c2, codeHex: '0xd1c2', name: 'FixedMovie', rawValue: 1 }],
+            listPropertyStates: () => [{ code: 0xd105, name: 'CanonAutoExposureMode', description: '', access: 'GetSet', value: 1 }],
             leaveMovieMode: vi.fn(async () => undefined),
             enterMovieMode: vi.fn(async () => { throw new Error('DeviceBusy') }),
         }
         const capture = vi.fn()
-        const result = expect(withCanonPhotoMode(camera, capture)).rejects.toThrow('physical still/movie selector')
+        const outcome = withCanonPhotoMode(camera as unknown as CanonPhotoModeDriver, capture)
+        const result = expect(outcome).rejects.toThrow('physical still/movie selector')
+        const typed = expect(outcome).rejects.toBeInstanceOf(CameraUnsupportedError)
         await vi.runAllTimersAsync()
         await result
+        await typed
         expect(capture).not.toHaveBeenCalled()
         expect(camera.enterMovieMode).not.toHaveBeenCalled()
     } finally {

@@ -1,5 +1,6 @@
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { parseSonyContentInfoList, type SonyContentInfoList } from '@vendors/sony/content-info-list'
+import { shutterOutcomeUnknown, shutterRefused } from '@camera/shutter-outcome'
 import { Logger } from '@core/logger'
 import {
     PTPDecodeError,
@@ -923,13 +924,21 @@ export class SonyCamera extends GenericCamera {
             await this.set(this.registry.properties.SetPostViewEnable, 'DISABLE')
         }
 
+        let shutterSent = false
         const release = async () => {
             // Sony requires S1 to remain held through S2, including manual focus.
             // libgphoto2 camera_sony_capture uses the same two-stage release.
             try {
                 await this.set(this.registry.properties.ShutterHalfReleaseButton, 'DOWN')
-                if (autofocus) await this.waitForFocus()
-                else await this.waitMs(500)
+                if (autofocus) {
+                    try {
+                        await this.waitForFocus()
+                    } catch (error) {
+                        // The body could not focus and S2 was never pressed: nothing was taken.
+                        throw shutterRefused(error)
+                    }
+                } else await this.waitMs(500)
+                shutterSent = true
                 await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
                 await this.waitMs(35)
             } finally {
@@ -940,14 +949,27 @@ export class SonyCamera extends GenericCamera {
                 }
             }
         }
+        // Once S2 was sent, a photo may exist: any later failure is an unknown outcome, never a retry.
+        const confirm = async <Result>(work: () => Promise<Result>): Promise<Result> => {
+            try {
+                return await work()
+            } catch (error) {
+                throw shutterSent ? shutterOutcomeUnknown(error) : error
+            }
+        }
         // A card workflow verifies the newly indexed object itself. It must not
         // require the separate host-delivery event when no host image was requested.
         if (!includeInfo && !includeData) {
-            await this.waitForCapturedImageObjectHandle(release, false)
+            await confirm(() => this.waitForCapturedImageObjectHandle(release, false))
             return {}
         }
-        const capturedImageObjectHandle = await this.waitForCapturedImageObjectHandle(release)
+        return confirm(async () => this.transferCapturedImage(await this.waitForCapturedImageObjectHandle(release), includeInfo, includeData))
+    }
 
+    private async transferCapturedImage(capturedImageObjectHandle: number, includeInfo: boolean, includeData: boolean): Promise<{
+        info?: ObjectInfo
+        data?: Uint8Array
+    }> {
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
 

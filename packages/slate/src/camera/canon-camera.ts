@@ -4,6 +4,7 @@ import { assertCanonCaptureResult } from '@vendors/canon/capture-result'
 import { captureCanonCardImage } from '@vendors/canon/card-capture'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import { CameraOutcomeUnknownError } from '@camera/errors'
+import { shutterOutcomeUnknown, shutterRefused } from '@camera/shutter-outcome'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonExtendedDeviceInfo } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
 import {
@@ -676,6 +677,9 @@ export class CanonCamera extends GenericCamera {
         data?: Uint8Array
     }> {
         if (typeof autofocus !== 'boolean') throw new Error('Canon capture autofocus must be true or false')
+        // Once a shutter press was sent without a definitive refusal, a photo may exist.
+        let shutterSent = false
+        let shutterRefusal: unknown
         const capture = () => this.withoutPolling(async () => {
             const release = async (afMode: 'AF' | 'MF') => {
                 let focusPressed = false
@@ -700,18 +704,25 @@ export class CanonCamera extends GenericCamera {
                     await new Promise(resolve => setTimeout(resolve, afMode === 'AF' ? 1000 : 250))
 
                     shutterAttempted = true
+                    shutterSent = true
                     const shutter = await this.send(this.registry.operations.CanonRemoteReleaseOn, {
                         ReleaseMode: 'SHUTTER',
                         AFMode: afMode,
                     })
                     if (shutter.code !== OK.code) {
-                        throw new PTPResponseError(
+                        shutterRefusal = new PTPResponseError(
                             shutter.code,
                             `Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`
                         )
+                        throw shutterRefusal
                     }
                     shutterPressed = true
-                    assertCanonCaptureResult(shutter.parameters, `${afMode} shutter press`)
+                    try {
+                        assertCanonCaptureResult(shutter.parameters, `${afMode} shutter press`)
+                    } catch (error) {
+                        shutterRefusal = error
+                        throw error
+                    }
                 } catch (error) {
                     failure = error
                     throw error
@@ -746,11 +757,24 @@ export class CanonCamera extends GenericCamera {
                     throw error
                 // DeviceBusy at full press generally means the body could not lock focus.
                 // Canon's second release parameter explicitly permits a no-AF fallback.
+                shutterSent = false
+                shutterRefusal = undefined
                 await release('MF')
             }
         })
-        if (includeInfo || includeData) return captureCanonCardImage(this, capture, { includeInfo, includeData })
-        await capture()
+        const classified = async () => {
+            try {
+                await capture()
+            } catch (error) {
+                // A press the body answered with a refusal took nothing; anything else after a sent press may have.
+                const refused = !shutterSent || (shutterRefusal !== undefined &&
+                    (error === shutterRefusal || (error instanceof AggregateError && error.errors.includes(shutterRefusal))))
+                throw refused ? shutterRefused(error) : shutterOutcomeUnknown(error)
+            }
+        }
+        if (includeInfo || includeData)
+            return captureCanonCardImage(this, classified, { includeInfo, includeData })
+        await classified()
         return {}
     }
 

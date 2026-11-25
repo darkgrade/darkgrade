@@ -1,4 +1,5 @@
 import type { CanonCamera } from '@camera/canon-camera'
+import { afterShutterRelease } from '@camera/shutter-outcome'
 import { readCameraObjectHandles } from '@camera/storage'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
@@ -12,6 +13,16 @@ export async function captureCanonCardImage(
     const storageCamera = { getInstance: () => camera, send: camera.send.bind(camera) }
     const baseline = await readCameraObjectHandles(storageCamera)
     await capture()
+    // The shutter was accepted: an unconfirmed or untransferred still is an unknown outcome, never a retry.
+    return afterShutterRelease(() => confirmNewCardImage(camera, storageCamera, baseline, options))
+}
+
+async function confirmNewCardImage(
+    camera: CanonCamera,
+    storageCamera: { getInstance: () => CanonCamera; send: CanonCamera['send'] },
+    baseline: Set<number>,
+    options: { includeInfo: boolean; includeData: boolean },
+): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
     const deadline = Date.now() + 8000
     let lastError: unknown
     do {

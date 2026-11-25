@@ -106,15 +106,15 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                         <span className="slate-label">Photo</span>
                         <ControlRow
                             label="Format"
-                            control={controls.stillFormat}
+                            control={controls.photoFormat}
                             disabled={photoDisabled}
-                            onChange={value => onChange('stillFormat', value)}
+                            onChange={value => onChange('photoFormat', value)}
                         />
                         <ControlRow
                             label="Size"
-                            control={controls.imageSize}
+                            control={controls.photoSize}
                             disabled={photoDisabled}
-                            onChange={value => onChange('imageSize', value)}
+                            onChange={value => onChange('photoSize', value)}
                         />
                         <ControlRow
                             label="Aspect"

@@ -1,4 +1,5 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
+import { createEnumCodec } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 
 /**
@@ -36,9 +37,24 @@ export const NikonMovieISO = scalarProperty(
 export const NikonPhotoAutoISO = scalarProperty(
     'NikonPhotoAutoISO', 0xd054, 'uint8', 'Photo Auto ISO: 0 off, 1 on'
 )
-export const NikonRawCompression = scalarProperty(
-    'NikonRawCompression', 0xd016, 'uint8', 'NEF compression: 0 lossless, 3 high efficiency star, 4 high efficiency'
-)
+/** NEF compression, from the same specification; other wire values stay unrecognized and read-only. */
+export const NikonRawCompression = {
+    name: 'NikonRawCompression',
+    code: 0xd016,
+    description: 'NEF compression: 0 lossless, 3 high efficiency star, 4 high efficiency',
+    datatype: getDatatypeByName('UINT8')!.code,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0, name: 'Lossless', description: 'Lossless compressed' },
+                { value: 3, name: 'High efficiency★', description: 'High efficiency star' },
+                { value: 4, name: 'High efficiency', description: 'High efficiency' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
 export const NikonMovieAutoISO = scalarProperty(
     'NikonMovieAutoISO', 0xd0ad, 'uint8', 'Movie Auto ISO in manual exposure mode: 0 off, 1 on'
 )
