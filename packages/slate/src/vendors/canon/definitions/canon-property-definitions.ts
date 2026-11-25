@@ -369,10 +369,15 @@ export const CanonLiveViewMode = enumProperty(0xd1b0, 'CanonLiveViewMode', 'Set 
  */
 export const CanonCaptureDestination = uint32Property(0xd11c, 'CanonCaptureDestination', 'Capture storage target (camera-advertised card values or host memory).')
 
-export const CanonRecordingDestination = enumProperty(0xd1b8, 'CanonRecordingDestination', 'Movie recording destination.', 'uint16', [
-    { value: 0x0, name: 'NONE', description: 'None (not recording)' },
-    { value: 0x3, name: 'SDRAM', description: 'Camera memory' },
-    { value: 0x4, name: 'CARD', description: 'Memory card' },
+/**
+ * The movie Record command and its status, not a destination: libgphoto2 PTP_DPC_CANON_EOS_EVFRecordStatus
+ * (config.c starts a movie by writing 4 and stops it with 0) and EDSDK kEdsPropID_Record (4 begins, 0 ends
+ * movie shooting). Bodies report 3 in movie standby. The value names are the earlier labels, kept for callers.
+ */
+export const CanonRecordStatus = enumProperty(0xd1b8, 'CanonRecordStatus', 'Movie Record command and status: 4 records to the card, 0 stops.', 'uint16', [
+    { value: 0x0, name: 'NONE', description: 'Not recording; writing it stops a recording' },
+    { value: 0x3, name: 'SDRAM', description: 'Movie standby (not recording)' },
+    { value: 0x4, name: 'CARD', description: 'Recording to the card; writing it starts a recording' },
 ])
 
 export const CanonLvViewTypeSelect = uint16Property(0xd1bc, 'CanonLvViewTypeSelect', 'Canon Live View Type Select')
@@ -446,7 +451,7 @@ export const canonPropertyRegistry = {
     CanonMovieSoundRecording,
     CanonMovieServoAutofocus,
     CanonLiveViewMode,
-    CanonRecordingDestination,
+    CanonRecordStatus,
     CanonCaptureDestination,
     CanonLvViewTypeSelect,
     CanonMovieSize,

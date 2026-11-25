@@ -343,7 +343,7 @@ describe('Canon live-view lifecycle and controls', () => {
 
     it('does not require the movie stop command to echo zero when the body reports standby', async () => {
         const { camera, cache } = connectedCamera()
-        const property = camera.registry.properties.CanonRecordingDestination
+        const property = camera.registry.properties.CanonRecordStatus
         cache.set(property, { current: 'SDRAM' })
         camera.send = (async operation =>
             operation.code === 0x9116 ? { code: 0x2001, data: [] } : { code: 0x2001 }) as typeof camera.send

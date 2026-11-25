@@ -130,7 +130,7 @@ it('retains all five rejected Canon write attempts with their exact transaction 
     const evidence: any[] = []
     const stop = camera.observeProfile('a2e40c0c-4695-4e0a-a80b-b63caac50001', entry => evidence.push(entry))
     try {
-        await expect(camera.set(camera.registry.properties.CanonRecordingDestination, 'CARD')).rejects.toMatchObject({ code: 0x2019 })
+        await expect(camera.set(camera.registry.properties.CanonRecordStatus, 'CARD')).rejects.toMatchObject({ code: 0x2019 })
         expect(evidence).toHaveLength(5)
         expect(evidence.map(entry => entry.transactionId)).toEqual(transport.commands.map(command => command.transactionId))
         expect(evidence.every(entry => entry.type === 'property-write' && entry.property === 0xd1b8 &&

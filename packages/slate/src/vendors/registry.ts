@@ -6,6 +6,7 @@ import { responseRegistry } from '@ptp/definitions/response-definitions'
 import { canonEventRegistry } from '@vendors/canon/definitions/canon-event-definitions'
 import { canonOperationRegistry } from '@vendors/canon/definitions/canon-operation-definitions'
 import { canonPropertyRegistry } from '@vendors/canon/definitions/canon-property-definitions'
+import { canonResponseRegistry } from '@vendors/canon/definitions/canon-response-definitions'
 import { fujifilmOperationRegistry } from '@vendors/fujifilm/definitions/fujifilm-operation-definitions'
 import { leicaOperationRegistry } from '@vendors/leica/definitions/leica-operation-definitions'
 import { nikonEventRegistry } from '@vendors/nikon/definitions/nikon-event-definitions'
@@ -69,7 +70,9 @@ export type NikonRegistry = ExtendedRegistry<
 export type CanonRegistry = ExtendedRegistry<
     typeof canonOperationRegistry,
     Override<typeof genericPropertyRegistry, typeof canonPropertyRegistry>,
-    Override<typeof genericEventRegistry, typeof canonEventRegistry>
+    Override<typeof genericEventRegistry, typeof canonEventRegistry>,
+    typeof formatRegistry,
+    Override<typeof responseRegistry, typeof canonResponseRegistry>
 >
 type FujifilmRegistry = ExtendedRegistry<
     typeof fujifilmOperationRegistry,
@@ -113,7 +116,7 @@ export const createCanonRegistry = (littleEndian: boolean): CanonRegistry =>
         properties: { ...genericPropertyRegistry, ...canonPropertyRegistry },
         events: { ...genericEventRegistry, ...canonEventRegistry },
         formats: formatRegistry,
-        responses: responseRegistry,
+        responses: { ...responseRegistry, ...canonResponseRegistry },
     }) as const
 
 /**

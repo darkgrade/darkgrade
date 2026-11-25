@@ -118,7 +118,7 @@ Nothing has changed yet. This file is the plan.
   - packages/slate/src/ptp/datasets/device-prop-desc-dataset.ts:89 and sdi-ext-device-prop-info-dataset.ts:85 — descriptor interpretation is copied. One routine.
   - packages/slate/src/ptp/datasets/device-prop-desc-dataset.ts:1, 56 with camera/controls.ts:88 — ptp↔camera imports for UnrecognizedValues/`recognizedDescriptorValues`. The application view moves to camera/.
   - packages/slate/src/vendors/canon/canon-camera.ts:62, photo-video-mode.ts:31, camera-controls.ts:265, protocol-evidence.ts:24 — FixedMovie 0xd1c2 is a constant three times and read three ways (reported in two areas). Make it a typed Canon property read by one driver reader.
-  - packages/slate/src/vendors/canon/canon-camera.ts:285, 865, 1285-1286 — CanonRecordingDestination is interpreted three ways. One reader.
+  - packages/slate/src/vendors/canon/canon-camera.ts:285, 865, 1285-1286 — CanonRecordStatus is interpreted three ways. One reader.
   - apps/contribution-collector/src/transport.ts:7 — Slate Sony op names 'connect_wifi'/'connect_bluetooth_direct' hard-coded in the collector. Export them from the contribute schema.
 
 - **3. One vendor table: vendorId → name, make, registry factory, driver factory, discovery scope, lens-mount rules, event aliases.**

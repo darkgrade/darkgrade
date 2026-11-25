@@ -177,7 +177,7 @@ describe('Canon camera controls', () => {
 describe('Canon interrupted recording Stop', () => {
     it('accepts freshly read idle state without sending another stop write', async () => {
         const { camera, cache } = testCamera()
-        const property = camera.registry.properties.CanonRecordingDestination
+        const property = camera.registry.properties.CanonRecordStatus
         cache.set(property, { current: 'CARD' })
         let reads = 0, writes = 0
         camera.send = (async () => { reads++; cache.set(property, { current: 'NONE' }); return { code: 0x2001, data: [] } }) as typeof camera.send
@@ -189,7 +189,7 @@ describe('Canon interrupted recording Stop', () => {
 
     it('retries busy Stop and accepts idle only after camera readback', async () => {
         const { camera, cache } = testCamera()
-        const property = camera.registry.properties.CanonRecordingDestination
+        const property = camera.registry.properties.CanonRecordStatus
         cache.set(property, { current: 'CARD' })
         let writes = 0, reads = 0
         camera.send = (async () => { if (++reads === 2) cache.set(property, { current: 'NONE' }); return { code: 0x2001, data: [] } }) as typeof camera.send
@@ -229,7 +229,7 @@ it.each(['delayed', 'missing'] as const)('requires idle readback after an acknow
     vi.useFakeTimers()
     try {
         const { camera, cache } = testCamera()
-        const property = camera.registry.properties.CanonRecordingDestination
+        const property = camera.registry.properties.CanonRecordStatus
         cache.set(property, { current: 'CARD' })
         let reads = 0, writes = 0
         camera.send = (async operation => {

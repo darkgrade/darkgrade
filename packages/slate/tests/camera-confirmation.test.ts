@@ -124,7 +124,7 @@ it('Canon recording observation refreshes events instead of confirming a stale c
         cached = 'NONE'
     })
     vi.spyOn(driver, 'listPropertyStates').mockImplementation(
-        () => [{ name: 'CanonRecordingDestination', value: cached }] as never
+        () => [{ name: 'CanonRecordStatus', value: cached }] as never
     )
     expect(await camera.getRecordingState()).toBe('idle')
     expect(refresh).toHaveBeenCalledOnce()

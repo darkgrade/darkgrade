@@ -284,7 +284,7 @@ export class CanonCamera extends GenericCamera {
         device?: DeviceDescriptor,
         options: CameraRecoveryOptions = {}
     ): Promise<CameraRecoveryReport> {
-        if (this.propertyCache.get(this.registry.properties.CanonRecordingDestination)?.current === 'CARD')
+        if (this.propertyCache.get(this.registry.properties.CanonRecordStatus)?.current === 'CARD')
             throw new CameraUnsupportedError('recover', 'Stop the Canon recording before recovering its session')
         await this.stopPolling()
         await this.disconnect().catch(() => {})
@@ -357,7 +357,7 @@ export class CanonCamera extends GenericCamera {
             // Record is a command/state property: stop (0) may report standby (3).
             const verifyReadback =
                 this.propertyCache.get(property)?.current !== undefined &&
-                property.code !== this.registry.properties.CanonRecordingDestination.code
+                property.code !== this.registry.properties.CanonRecordStatus.code
             const data = new Uint8Array(Math.max(12, 8 + encodedValue.length))
             data.set(this.registry.codecs.uint32.encode(data.length), 0)
             data.set(this.registry.codecs.uint32.encode(property.code), 4)
@@ -697,7 +697,7 @@ export class CanonCamera extends GenericCamera {
 
     async sendStartRecording(): Promise<void> {
         await this.enableLiveView()
-        await this.set(this.registry.properties.CanonRecordingDestination, 'CARD')
+        await this.set(this.registry.properties.CanonRecordStatus, 'CARD')
     }
 
     /**
@@ -755,7 +755,7 @@ export class CanonCamera extends GenericCamera {
                     0x00200000
                 )
                 if (response.code === OK.code && response.data?.image) return response.data
-                if (![CANON_DEVICE_BUSY, 0xa102].includes(response.code))
+                if (![CANON_DEVICE_BUSY, this.registry.responses.ObjectNotReady.code].includes(response.code))
                     this.assertResponseOk(response.code, 'viewfinder read')
                 await wait(100)
             }
@@ -855,7 +855,7 @@ export class CanonCamera extends GenericCamera {
     }
 
     async sendStopRecording(): Promise<void> {
-        const property = this.registry.properties.CanonRecordingDestination
+        const property = this.registry.properties.CanonRecordStatus
         const deadline = Date.now() + 5000
         let stopRequested = false
         for (;;) {
@@ -1294,7 +1294,7 @@ export class CanonCamera extends GenericCamera {
             ...cardSteps(this, this.requireOwner()),
             readState: async () => {
                 await this.refreshEventProperties()
-                const state = this.listPropertyStates().find(state => state.name === 'CanonRecordingDestination')?.value
+                const state = this.listPropertyStates().find(state => state.name === 'CanonRecordStatus')?.value
                 return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
             },
             checkCard: async () => {

@@ -197,8 +197,8 @@ function canonBody(recordingDestination = 0) {
         if (operation.name === 'GetDeviceInfo')
             return { code: 0x2001, data: deviceInfo(driver, { operationsSupportedRaw: [0x1001, 0x1002, 0x1003, 0x9114, 0x9115, 0x9116] }) }
         if (operation.name !== 'CanonGetEventData') return { code: 0x2001 }
-        // One CanonRecordingDestination value record on the first read, then only the terminator.
-        const destination = canonValue(driver.registry.properties.CanonRecordingDestination.code, recordingDestination)
+        // One CanonRecordStatus value record on the first read, then only the terminator.
+        const destination = canonValue(driver.registry.properties.CanonRecordStatus.code, recordingDestination)
         return { code: 0x2001, data: canonEvents(driver.registry, eventReads++ === 0 ? [destination] : []) }
     }) as never)
     return { camera, driver, sent }
