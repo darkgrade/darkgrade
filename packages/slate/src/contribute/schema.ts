@@ -14,9 +14,15 @@ export interface DiagnosticEntry {
     callId?: string
     /** Only on a `call` entry: which public operation was asked for, through which surface, and how it ended. */
     call?: ApiCall
-    kind: 'connect' | 'disconnect' | 'reset' | 'command' | 'response' | 'data' | 'event' | 'unknown' | 'call'
+    /**
+     * `attach`: observation began on a connection that was already open, so the connection's
+     * earlier work is not in this session.
+     */
+    kind: 'connect' | 'disconnect' | 'reset' | 'command' | 'response' | 'data' | 'event' | 'unknown' | 'call' | 'attach'
     direction: 'out' | 'in' | 'lifecycle'
     code?: number
+    /** On `data` and `response` entries: the operation code of the command in the same transaction. */
+    commandCode?: number
     bytes: number
     durationMilliseconds: number
     failed: boolean
@@ -228,10 +234,23 @@ export function validateContribution(value: unknown): asserts value is Contribut
                 'operation',
                 'callId',
                 'call',
+                'commandCode',
             ]) ||
-            !['connect', 'disconnect', 'reset', 'command', 'response', 'data', 'event', 'unknown', 'call'].includes(
-                String(entry.kind)
-            ) ||
+            ![
+                'connect',
+                'disconnect',
+                'reset',
+                'command',
+                'response',
+                'data',
+                'event',
+                'unknown',
+                'call',
+                'attach',
+            ].includes(String(entry.kind)) ||
+            (entry.commandCode !== undefined &&
+                (!integer(entry.commandCode, 65535) || !['data', 'response'].includes(String(entry.kind)))) ||
+            (entry.kind === 'attach' && (entry.direction !== 'lifecycle' || entry.code !== undefined)) ||
             (entry.callId !== undefined && !isContributionId(entry.callId)) ||
             (entry.kind === 'call') !== (entry.call !== undefined) ||
             (entry.kind === 'call' && (entry.callId === undefined || entry.direction !== 'lifecycle')) ||

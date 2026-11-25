@@ -70,13 +70,27 @@ export function validateInstallationState(state: unknown): asserts state is Inst
     )
         throw new Error('Invalid diagnostics settings; restore preferences before enabling collection')
 }
-/** The batch without public-call records and their links, or undefined when it has none. */
-function withoutCalls(batch: DiagnosticBatch): DiagnosticBatch | undefined {
-    if (!batch.contributions.some(camera => camera.entries.some(entry => entry.call || entry.callId))) return
+/** Protocol evidence an older collector validates; later types are Telemetry's request and response detail. */
+const LEGACY_PROTOCOL_TYPES = new Set(['inventory', 'unknown', 'state-snapshot', 'property-write', 'descriptor', 'property-value', 'unrecognized-value', 'benchmark'])
+/** An entry as an older collector accepts it, or undefined when it has nothing such a collector knows. */
+function legacyEntry(entry: DiagnosticEntry): DiagnosticEntry | undefined {
+    if (entry.kind === 'call' || entry.kind === 'attach') return
+    if (entry.protocol && !LEGACY_PROTOCOL_TYPES.has(entry.protocol.type)) return
+    const { callId: _callId, commandCode: _commandCode, ...rest } = entry
+    if (rest.protocol?.type !== 'property-write') return rest
+    const { prior: _prior, priorAgeMilliseconds: _age, ...protocol } = rest.protocol
+    return { ...rest, protocol }
+}
+/**
+ * The batch as a collector older than public-call records, command codes and request evidence
+ * accepts it, or undefined when it has none of them.
+ */
+function legacyBatch(batch: DiagnosticBatch): DiagnosticBatch | undefined {
     const contributions = batch.contributions.map(camera => ({
         ...camera,
-        entries: camera.entries.filter(entry => entry.kind !== 'call').map(({ callId: _callId, ...entry }) => entry),
+        entries: camera.entries.flatMap(entry => legacyEntry(entry) ?? []),
     }))
+    if (JSON.stringify(contributions) === JSON.stringify(batch.contributions)) return
     return { ...batch, contributions: contributions.filter(camera => camera.entries.length || camera.droppedEntries) }
 }
 
@@ -112,7 +126,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         dropped = 0,
         retryAt = 0
     let storageError = false,
-        callsRejected = false,
+        legacyCollector = false,
         lastError: string | null = null
     const queue = new Map<string, Contribution>()
     let pending: DiagnosticBatch | undefined
@@ -274,7 +288,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             count = 0
             queueBytes = 0
         }
-        if (callsRejected) pending = withoutCalls(pending) ?? pending
+        if (legacyCollector) pending = legacyBatch(pending) ?? pending
         const batch = pending
         try {
             validateBatch(batch)
@@ -297,11 +311,11 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 return 'disabled'
             }
             if ([400, 404, 405, 409, 413, 415, 422].includes(response.status)) {
-                // A collector older than public-call records rejects the whole batch: keep its
-                // protocol entries by sending it again without them, and leave them out from now on.
-                const legacy = callsRejected ? undefined : withoutCalls(batch)
+                // A collector older than public-call records, command codes and request evidence
+                // rejects the whole batch: send what it knows again, and leave the rest out from now on.
+                const legacy = legacyCollector ? undefined : legacyBatch(batch)
                 if (legacy) {
-                    callsRejected = true
+                    legacyCollector = true
                     pending = legacy
                     return send()
                 }

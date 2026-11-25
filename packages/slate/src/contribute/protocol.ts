@@ -25,6 +25,48 @@ export type ProtocolEvidence = {
           transactionId: number
           outcome: 'response' | 'error'
           response?: number
+          /** The last value read before the write (from the observed cache, never a new read) and its age. */
+          prior?: ProtocolNumber
+          priorAgeMilliseconds?: number
+      }
+    | {
+          /** A focus-point command's position in the camera's own units (Nikon ChangeAfArea, Sony AF-area position). */
+          type: 'focus-point'
+          x: number
+          y: number
+          transactionId: number
+          outcome: 'response' | 'error'
+          response?: number
+      }
+    | {
+          /** The numeric fields of an ObjectInfo dataset: no file name, keywords or handle. */
+          type: 'object-info'
+          format: number
+          /** As the camera sent it: 0xffffffff means larger than 4 GiB. */
+          size: number
+          /** The camera clock's PTP DateTime (`YYYYMMDDThhmmss`), when it sent one. */
+          captureDate?: string
+          transactionId: number
+      }
+    | {
+          /** An object read's byte counts: the first request of a transfer, a short read and any failed read. */
+          type: 'transfer'
+          offset?: ProtocolNumber
+          requestedBytes?: number
+          receivedBytes?: number
+          transactionId: number
+          outcome: 'response' | 'error'
+          response?: number
+      }
+    | {
+          /** A warning register read after an error response (Nikon WarningStatus after HardwareError). */
+          type: 'warning-status'
+          property: number
+          value: number
+          flags: string[]
+          /** The operation and transaction whose response prompted the read. */
+          operation: number
+          transactionId: number
       }
     | {
           type: 'descriptor'
@@ -76,6 +118,12 @@ const fits = (value: unknown, dataType: number) => {
     const integer = BigInt(value as string | number)
     return integer >= (signed ? -(1n << (bits - 1n)) : 0n) && integer < 1n << (signed ? bits - 1n : bits)
 }
+
+/** A request's transaction and how it ended: a response code, or an error before one arrived. */
+const requestOutcome = (item: { transactionId: unknown; outcome: unknown; response?: unknown }) =>
+    integer(item.transactionId) &&
+    ['response', 'error'].includes(String(item.outcome)) &&
+    (item.outcome === 'response' ? integer(item.response, 0xffff) : item.response === undefined)
 
 export function isSafeProtocolProperty(vendorId: number, property: number) {
     return (protocolProperties[vendorId] ?? protocolProperties[0]).includes(property)
@@ -129,14 +177,49 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
                 !integer(setting.ageMilliseconds))
         ) throw new Error('Invalid observed state snapshot')
     } else if (item.type === 'property-write') {
-        fields = ['property', 'dataType', 'requested', 'transactionId', 'outcome', 'response']
+        fields = ['property', 'dataType', 'requested', 'transactionId', 'outcome', 'response', 'prior', 'priorAgeMilliseconds']
         if (
             !safeProperty(item.vendorId, item.property, item.dataType) ||
             !fits(item.requested, item.dataType) ||
-            !integer(item.transactionId) ||
-            !['response', 'error'].includes(item.outcome) ||
-            (item.outcome === 'response' ? !integer(item.response, 0xffff) : item.response !== undefined)
+            !requestOutcome(item) ||
+            (item.prior === undefined) !== (item.priorAgeMilliseconds === undefined) ||
+            (item.prior !== undefined && !fits(item.prior, item.dataType)) ||
+            (item.priorAgeMilliseconds !== undefined && !integer(item.priorAgeMilliseconds))
         ) throw new Error('Invalid property write evidence')
+    } else if (item.type === 'focus-point') {
+        fields = ['x', 'y', 'transactionId', 'outcome', 'response']
+        if (!integer(item.x, 0xffff) || !integer(item.y, 0xffff) || !requestOutcome(item)) throw new Error('Invalid focus point evidence')
+    } else if (item.type === 'object-info') {
+        fields = ['format', 'size', 'captureDate', 'transactionId']
+        if (
+            !integer(item.format, 0xffff) ||
+            !integer(item.size) ||
+            !integer(item.transactionId) ||
+            (item.captureDate !== undefined &&
+                (typeof item.captureDate !== 'string' || !/^\d{8}T\d{6}(?:\.\d)?(?:Z|[+-]\d{4})?$/.test(item.captureDate)))
+        )
+            throw new Error('Invalid object info evidence')
+    } else if (item.type === 'transfer') {
+        fields = ['offset', 'requestedBytes', 'receivedBytes', 'transactionId', 'outcome', 'response']
+        if (
+            (item.offset !== undefined && !fits(item.offset, 8)) ||
+            (item.requestedBytes !== undefined && !integer(item.requestedBytes)) ||
+            (item.receivedBytes !== undefined && !integer(item.receivedBytes)) ||
+            !requestOutcome(item)
+        )
+            throw new Error('Invalid transfer evidence')
+    } else if (item.type === 'warning-status') {
+        fields = ['property', 'value', 'flags', 'operation', 'transactionId']
+        if (
+            !integer(item.property) ||
+            !integer(item.value) ||
+            !Array.isArray(item.flags) ||
+            item.flags.length > 32 ||
+            item.flags.some(flag => typeof flag !== 'string' || !/^[a-z][a-z-]{0,31}$/.test(flag)) ||
+            !integer(item.operation, 0xffff) ||
+            !integer(item.transactionId)
+        )
+            throw new Error('Invalid warning status evidence')
     } else if (item.type === 'descriptor' || item.type === 'property-value') {
         fields =
             item.type === 'descriptor'

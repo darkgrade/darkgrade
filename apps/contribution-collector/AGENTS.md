@@ -97,6 +97,25 @@ collector rejects a batch with call entries; the client (`contribute/application
 again without them and leaves them out for the rest of the process, so protocol entries still arrive,
 but calls reach Telemetry only once this collector is deployed.
 
+Commands and requests (2026-11-25): every `data` and `response` entry carries `commandCode`, the
+opcode of the command in the same transaction (the operation-name allowlist still names only a few),
+so an issue says which command a response answers. Requests keep only numbers, from what the
+transaction already held (no extra reads, `vendors/protocol-evidence.ts` `requestEvidence`):
+`property-write` for Canon 0x9110, standard and Nikon SetDevicePropValue(Ex) and Sony 0x9205/0x9207 on
+allowlisted properties, with `prior`/`priorAgeMilliseconds` from the observed cache when the session
+had read the property; `focus-point` (Nikon ChangeAfArea X/Y, Sony AF-area position 0xd2dc, camera
+units); `object-info` (format, size as sent, PTP capture date; never the file name or handle);
+`transfer` (offset, requested and received bytes of the first read of an object, a short read and
+any failed read; Sony's live-view handle is left out); `warning-status` (Nikon reads WarningStatus
+0xd102 once after HardwareError 0xa001 and records its value and named bits, `explainResponse`).
+These are events, never deduplicated as facts. A DeviceInfo read before the vendor driver is chosen
+(discovery, the bench probe) is judged against the vendor its manufacturer names, not the standard
+set, so vendor operations no longer fill the unknown-code queue. A diagnostics session belongs to
+the connection: a driver replacing another on the same transport continues it, and observation that
+starts on a connection already open begins with an `attach` entry. An older collector rejects
+these fields; the client then sends what it knows (no calls, attach, commandCode, new evidence types
+or prior) for the rest of the process. The Matrix export leaves the new kinds, types and fields out.
+
 Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
 failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
 writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,

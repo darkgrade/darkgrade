@@ -58,7 +58,7 @@ import { OBJECT_SIZE_UNREPORTED, reportingRefusals } from '@vendors/generic/ptp-
 import { afterShutterRelease, cardObjectFile, classified, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import { setStandardClock, standardClockUnavailable } from '@vendors/generic/standard-clock'
 import { messageOf } from '@vendors/generic/typed-failure'
-import { propertyWriteEvidence, protocolEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
+import { requestEvidence, protocolEvidence, stateSnapshotEvidence, type CachedDiagnosticSetting } from '@vendors/protocol-evidence'
 import { createPTPRegistry, Registry } from '@vendors/registry'
 
 /** How long a camera takes to enumerate again after a USB port reset. */
@@ -211,7 +211,8 @@ export class GenericCamera {
             return
         }
         const scoped = this.profileObserver ? { ...evidence, benchmarkId: this.profileObserver.id } : evidence
-        if (scoped.type === 'property-write' || scoped.type === 'state-snapshot') {
+        // Requests and what they returned happen once each; only facts about the body are deduplicated.
+        if (!['inventory', 'unknown', 'descriptor', 'property-value', 'unrecognized-value', 'benchmark'].includes(scoped.type)) {
             this.telemetry.protocol(scoped, operation)
             this.profileObserver?.observe(scoped)
             return
@@ -558,7 +559,10 @@ export class GenericCamera {
         this.transactionQueue = result.then(() => undefined, () => undefined)
         const response = await result
         for (const observe of this.responseObservers) observe(operation.name, response.code)
-        if (response.code !== OK.code) noteCallResponse(response.code)
+        if (response.code !== OK.code) {
+            noteCallResponse(response.code)
+            await this.explain(operation.code, response)
+        }
         if (response.code !== OK.code || !('data' in response) || !response.data) return response
         if (operation.code === 0x1001) await this.telemetry.identify(response.data as unknown as DeviceInfo)
         try {
@@ -569,6 +573,21 @@ export class GenericCamera {
         }
         return response
     }
+
+    private async explain(operation: number, response: { code: number }) {
+        const transactionId = this.responseTransactions.get(response)
+        if (this.explaining || transactionId === undefined) return
+        this.explaining = true
+        try {
+            await this.explainResponse(operation, response.code, transactionId)
+        } catch {
+            /* An explanation is diagnostics only: the caller still gets the camera's own response. */
+        } finally {
+            this.explaining = false
+        }
+    }
+    /** The transaction each response answered, for explanations recorded after it returns. */
+    private readonly responseTransactions = new WeakMap<object, number>()
 
     private async sendTransaction<Op extends OperationDefinition>(
         operation: Op, params: OperationParams<Op>, data?: Uint8Array, maxDataLength?: number
@@ -772,10 +791,11 @@ export class GenericCamera {
         const sessionId = this.sessionId ?? 0
         try {
             const response = await this.exchange(operation, paramsRecord, encodedParams, transactionId, sessionId, data, maxDataLength)
-            this.recordPropertyWrite(operation.code, data, transactionId, response.code)
+            this.recordRequest(operation, paramsRecord, data, transactionId, response)
+            this.responseTransactions.set(response, transactionId)
             return response
         } catch (error) {
-            this.recordPropertyWrite(operation.code, data, transactionId)
+            this.recordRequest(operation, paramsRecord, data, transactionId)
             if (error instanceof PTPTimeoutError || error instanceof PTPProtocolError) {
                 this.needsResynchronization = true
                 this.lastFailure = { operation: operation.name, transactionId, cause: error }
@@ -786,14 +806,34 @@ export class GenericCamera {
         }
     }
 
-    private recordPropertyWrite(operation: number, data: Uint8Array | undefined, transactionId: number, response?: number) {
+    /** The values, positions and byte counts a transaction asked for, from what it already holds: no extra reads. */
+    private recordRequest(
+        operation: OperationDefinition,
+        parameters: Record<string, number | bigint | string>,
+        data: Uint8Array | undefined,
+        transactionId: number,
+        response?: { code: number; data?: unknown }
+    ) {
         try {
-            const evidence = propertyWriteEvidence(this.vendorId ?? 0, operation, data, transactionId, response)
-            if (evidence) this.recordProtocol(evidence, operation)
+            const observed = (property: number) => {
+                const cached = this.diagnosticSettings.get(property)
+                const dataType = cached?.dataType ?? this.propertyByCode(property)?.datatype
+                return cached ? { ...cached, dataType } : { dataType }
+            }
+            for (const evidence of requestEvidence(this.vendorId ?? 0, operation, parameters, data, transactionId, response, observed, performance.now()))
+                this.recordProtocol(evidence, operation.code)
         } catch {
             /* Optional diagnostics cannot change the result of a camera transaction. */
         }
     }
+
+    /**
+     * Called once per transaction that did not answer OK, after it completed. A driver may read what
+     * explains the response (Nikon reads WarningStatus after HardwareError) and record it; it must not
+     * change the transaction's result, retry it, or throw.
+     */
+    protected async explainResponse(_operation: number, _response: number, _transactionId: number): Promise<void> {}
+    private explaining = false
 
     private async exchange<Op extends OperationDefinition>(
         operation: Op,

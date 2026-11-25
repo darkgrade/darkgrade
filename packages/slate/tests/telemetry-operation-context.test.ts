@@ -47,8 +47,8 @@ describe('Sony telemetry transaction context', () => {
         f.incoming.push(packet(3, 0x200f, 52))
         await f.observed.transport.receive(12, 1, 52)
         expect(f.entries.filter(entry => entry.kind === 'response')).toMatchObject([
-            { code: 0x200f, operation: 'sony_live_view_frame', transactionId: 51 },
-            { code: 0x200f, operation: 'sony_card_index', transactionId: 52 },
+            { code: 0x200f, operation: 'sony_live_view_frame', transactionId: 51, commandCode: 0x1009 },
+            { code: 0x200f, operation: 'sony_card_index', transactionId: 52, commandCode: 0x923c },
         ])
         expect(JSON.stringify(f.entries)).not.toMatch(/4294950914|0xffffc002|parameters|payload|filename/)
         validateContribution({
@@ -91,7 +91,7 @@ describe('Sony telemetry transaction context', () => {
         ] as const) {
             const f = fixture(vendor)
             await f.observed.transport.send(packet(1, 0x1009, 1, handle), 1, 1)
-            expect(f.entries[0].operation).toBe('get_object')
+            expect(f.entries.find(entry => entry.kind === 'command')?.operation).toBe('get_object')
         }
     })
 
@@ -114,5 +114,7 @@ describe('Sony telemetry transaction context', () => {
         f.incoming.push(packet(3, 0x200f, 1))
         await f.observed.transport.receive(12, 1, 1)
         expect(f.entries.at(-1)?.operation).toBeUndefined()
+        // An unnamed command is still the one its response answers.
+        expect(f.entries.at(-1)?.commandCode).toBe(0x9207)
     })
 })

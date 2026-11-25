@@ -164,11 +164,13 @@ export function slateTelemetry(source: TransportInterface) {
         },
         protocol(protocol: ProtocolEvidence, operation?: number) {
             try {
-                const write = protocol.type === 'property-write'
-                observed?.record({ protocol, kind: write ? 'command' : 'data', direction: write ? 'out' : 'in', code: operation,
-                    ...(write && { transactionId: protocol.transactionId }),
+                // A request's evidence sits with its command; what the camera returned, with its data.
+                const request = protocol.type === 'property-write' || protocol.type === 'focus-point' || protocol.type === 'transfer'
+                const transactionId = 'transactionId' in protocol ? protocol.transactionId : undefined
+                observed?.record({ protocol, kind: request ? 'command' : 'data', direction: request ? 'out' : 'in', code: operation,
+                    ...(transactionId !== undefined && { transactionId }),
                     bytes: 0, durationMilliseconds: 0,
-                    failed: write && (protocol.outcome === 'error' || protocol.response !== 0x2001) })
+                    failed: request && (protocol.outcome === 'error' || protocol.response !== 0x2001) })
             } catch { /* Optional evidence never changes camera behavior. */ }
         },
         operation<Result>(name: string, work: () => Promise<Result>): Promise<Result> {

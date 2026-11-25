@@ -29,6 +29,7 @@ import { TransportInterface } from '@transport/interfaces/transport.interface'
 import type { VideoCapability } from '@vendors/generic/capability-groups'
 import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { GenericCamera } from '@vendors/generic/generic-camera'
+import { warningStatusEvidence } from '@vendors/protocol-evidence'
 import {
     cardObjectFile,
     cardSteps,
@@ -115,6 +116,14 @@ export class NikonCamera extends GenericCamera {
         super(transport, logger)
         this.registry = createNikonRegistry(transport.isLittleEndian())
         logger.setRegistry(this.registry)
+    }
+
+    /** HardwareError says to inspect WarningStatus: record its bits so the error says which warning it was. */
+    protected override async explainResponse(operation: number, response: number, transactionId: number): Promise<void> {
+        if (response !== HardwareError.code) return
+        const warning = this.registry.properties.NikonWarningStatus
+        const evidence = warningStatusEvidence(this.vendorId, warning.code, await this.get(warning), operation, transactionId)
+        if (evidence) this.recordProtocol(evidence, operation)
     }
 
     protected async verifyRecoveryState(information: DeviceInfo): Promise<void> {

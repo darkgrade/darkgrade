@@ -391,7 +391,7 @@ test('the record of cameras last seen at a USB identity keeps what the body repo
     }
 })
 
-test('a collector that rejects public-call records still receives the protocol entries, without the calls', async () => {
+test('a collector that rejects public-call records, command codes and request evidence still receives what it knows', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-legacy-collector-'))
     const sent: string[] = []
     const client = await createApplicationDiagnostics({
@@ -403,8 +403,9 @@ test('a collector that rejects public-call records still receives the protocol e
                 return Response.json({ installKey: body.installKey, noticeVersion: body.noticeVersion })
             }
             sent.push(String(init!.body))
-            // An older collector's strict validation: no call kind, no callId field.
-            return /"call"|callId/.test(String(init!.body))
+            // An older collector's strict validation: no call or attach kinds, callId or commandCode
+            // fields, request evidence types or a write's prior value.
+            return /"call"|callId|commandCode|"attach"|focus-point|object-info|"transfer"|warning-status|"prior"/.test(String(init!.body))
                 ? Response.json({ error: 'Invalid diagnostic entry' }, { status: 400 })
                 : Response.json({ accepted: true }, { status: 202 })
         },
@@ -415,10 +416,20 @@ test('a collector that rejects public-call records still receives the protocol e
             surface: 'library' as const, outcome: 'ok' as const, attribution: 'async-context' as const }
         client.record(camera, { ...entry, callId })
         client.record(camera, { kind: 'call', direction: 'lifecycle', bytes: 0, failed: false, durationMilliseconds: 2, callId, call })
+        client.record(camera, { kind: 'attach', direction: 'lifecycle', bytes: 0, failed: false, durationMilliseconds: 0 })
+        client.record(camera, { kind: 'response', direction: 'in', code: 0x2019, commandCode: 0x90c8, transactionId: 4, bytes: 12,
+            failed: false, durationMilliseconds: 1 })
+        client.record(camera, { kind: 'command', direction: 'out', code: 0x1016, transactionId: 5, bytes: 0, failed: false,
+            durationMilliseconds: 0, protocol: { type: 'property-write', vendorId: 0, property: 0x500f, dataType: 4, requested: 800,
+                transactionId: 5, outcome: 'response', response: 0x2001, prior: 400, priorAgeMilliseconds: 3 } })
+        client.record(camera, { kind: 'data', direction: 'in', code: 0x1008, transactionId: 6, bytes: 0, failed: false,
+            durationMilliseconds: 0, protocol: { type: 'object-info', vendorId: 0, format: 0x3801, size: 10, transactionId: 6 } })
         assert.equal(await client.flush(), 'sent')
         assert.equal(sent.length, 2)
         const delivered = JSON.parse(sent[1]).contributions[0].entries
-        assert.deepEqual(delivered.map((item: { kind: string }) => item.kind), ['command'])
+        assert.deepEqual(delivered.map((item: { kind: string }) => item.kind), ['command', 'response', 'command'])
+        assert.equal(delivered[1].code, 0x2019)
+        assert.equal(delivered[2].protocol.requested, 800)
         assert.equal(client.status().error, null)
         // Later batches leave calls out from the start.
         client.record(camera, { ...entry, callId })
