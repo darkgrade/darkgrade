@@ -63,7 +63,7 @@ Canon USB live-view JPEG capture, preview magnification, color temperature and l
 
 ## Capability-driven standard controls
 
-Use `camera.getStandardPropertyStates()` for generic PTP and Olympus bodies. It returns only recognized properties advertised by the attached camera, including live value, writability, enum choices, and ranges. `camera.setStandardProperty(name, value)` rejects absent/read-only properties and unadvertised enum values before writing.
+Use `camera.getCapabilities()` for generic PTP and Olympus bodies, as for every other. It returns only controls the attached camera advertises, with live value, writability, choices and ranges, and the typed setters (`setIso`, `setAperture`, `setShutterSpeed`) reject absent, read-only and unadvertised values before writing and resolve to the value read back. `getStandardPropertyStates()` and `setStandardProperty()` remain protocol access to the raw standard-property inventory.
 
 The Olympus E-PL5 hardware test exposes battery and writable date/time in MTP mode, but no ISO, aperture, shutter, white balance, focus, or remote-capture operation. Newer Olympus bodies automatically gain whatever standard controls they actually publish; support is not inferred from the brand name.
 

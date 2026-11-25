@@ -30,13 +30,14 @@ try {
 `shutterSpeed` is one control with duration, angle, Bulb, Time or flash-sync state.
 `exposureTime`, `exposure time`, `shutter angle` and `shutterAngle` are search aliases
 that resolve to it; capabilities and writes use the `shutterSpeed` id.
-`getExposureTime()` returns a discriminated union. Native angle mode stays in angle
-mode; a write never changes the body's shutter-control mode implicitly.
+`setShutterSpeed()` resolves to the value read back; the control's `exposureTime` field is a
+discriminated union. Native angle mode stays in angle mode; a write never changes the body's
+shutter-control mode implicitly.
 
 ```typescript
-await camera.setExposureTime({ kind: 'duration', seconds: 1 / 50 })
-await camera.setExposureTime('180°', { framesPerSecond: 25 })
-await camera.setExposureTime('180°', { framesPerSecond: 24000 / 1001 })
+await camera.setShutterSpeed({ kind: 'duration', seconds: 1 / 50 })
+await camera.setShutterSpeed('180°', { framesPerSecond: 25 })
+await camera.setShutterSpeed('180°', { framesPerSecond: 24000 / 1001 })
 ```
 
 The exact requested value must be advertised. Converting units requires the actual

@@ -36,12 +36,11 @@ For application UIs, use the [shared control model](/slate/getting_started/contr
 covers exposure duration and shutter angle without implicit mode changes. Multiple USB
 bodies require an explicit device filter.
 
-For a generic or Olympus body, inspect the live standard-property inventory first:
+For any body, including a generic or Olympus one, read the live capabilities first:
 
 ```typescript
-const properties = await camera.getStandardPropertyStates()
-const iso = properties.find(property => property.name === 'ExposureIndex')
-if (iso?.writable) await camera.setStandardProperty('ExposureIndex', 'ISO 800')
+const { controls } = await camera.getCapabilities()
+if (controls.iso?.writable && controls.iso.allowedValues?.includes('ISO 800')) await camera.setIso('ISO 800')
 ```
 
 This prevents an application from presenting ISO, aperture, or focus controls solely because it recognizes a vendor name. For example, the physically tested Olympus E-PL5 MTP mode publishes battery and camera date/time but no exposure or remote-capture property.

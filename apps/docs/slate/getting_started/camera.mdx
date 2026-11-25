@@ -25,7 +25,7 @@ constructor(options?: CameraOptions)
 
 ## Methods
 
-### getCapabilities, getExposureTime, setExposureTime, setControl
+### getCapabilities, getShutterSpeed, setShutterSpeed, setControl
 
 Use the [shared control model](/slate/getting_started/controls) for application
 settings. It exposes only observed properties and re-checks current choices before
@@ -35,8 +35,8 @@ mode is preserved.
 
 ```typescript
 const { controls } = await camera.getCapabilities()
-const exposure = await camera.getExposureTime()
-await camera.setExposureTime('180°', { framesPerSecond: 25 })
+const shutterSpeed = await camera.getShutterSpeed()
+await camera.setShutterSpeed('180°', { framesPerSecond: 25 })
 await camera.setControl('colorTemperature', 5600)
 ```
 
@@ -119,11 +119,11 @@ Read the standard PTP properties advertised by the connected body and current US
 async getStandardPropertyStates(): Promise&lt;StandardPropertyState[]&gt;
 ```
 
-Use this method before building controls for a generic or Olympus camera. Vendor recognition alone does not prove that a body publishes ISO, aperture, focus, or capture operations.
+This is protocol access to the raw inventory. Application controls use `getCapabilities()` and the typed setters (`setIso`, `setAperture`, `setShutterSpeed`), which read the same standard properties on a generic or Olympus camera. Vendor recognition alone does not prove that a body publishes ISO, aperture, focus, or capture operations.
 
 ### setStandardProperty
 
-Set one recognized standard property. Darkgrade re-reads the live property descriptors, rejects absent and read-only properties, and rejects enum values the body did not advertise.
+Set one recognized standard property by its PTP name, for protocol work; applications use the typed setters, which return the confirmed value. Darkgrade re-reads the live property descriptors, rejects absent and read-only properties, and rejects enum values the body did not advertise.
 
 ```typescript
 async setStandardProperty(
@@ -133,9 +133,9 @@ async setStandardProperty(
 ```
 
 ```typescript
-const properties = await camera.getStandardPropertyStates()
-if (properties.find(property => property.name === 'ExposureIndex')?.writable) {
-  await camera.setStandardProperty('ExposureIndex', 'ISO 400')
+const { controls } = await camera.getCapabilities()
+if (controls.iso?.writable && controls.iso.allowedValues?.includes('ISO 400')) {
+  await camera.setIso('ISO 400')
 }
 ```
 
