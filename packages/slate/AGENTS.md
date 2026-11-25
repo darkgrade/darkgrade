@@ -46,6 +46,9 @@ An infrastructure error is not a camera regression, and a skipped camera is not 
 Hardware qualification loads the pinned source entries; distribution and type checks stay in
 GitHub CI. Retain staging logs with the receipt and reinstall discarded dependencies when
 resuming partial qualification.
+Per-capture RAW fixtures must reuse Slate's existing photo-mode capture and restoration
+scope, rather than pre-writing a photo-only control from a movie-mode inventory. Refuse
+before the shutter if idle cannot be confirmed, and verify the returned original's bytes.
 
 To check the public API on real cameras, run `bun run --cwd packages/slate camera:api-check`
 (every attached Sony, Canon and Nikon, in parallel, once) and follow `docs/camera-api-check.md`.
