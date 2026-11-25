@@ -113,7 +113,20 @@ const schema = `
 CREATE TABLE IF NOT EXISTS telemetry_unknown_code_repairs (
     key text NOT NULL, installation_id uuid NOT NULL, PRIMARY KEY (key, installation_id)
 );
-CREATE OR REPLACE FUNCTION telemetry_event_signal(failed boolean, kind text, code integer, properties jsonb)
+-- A busy reply is a retry warning, not an error: every DeviceBusy (0x2019, which Nikon answers to its
+-- DeviceReady poll 0x90C8 while it works) and Canon's ObjectNotReady (0xA102, libgphoto2
+-- PTP_RC_EOS_ObjectNotReady), which Slate retries. It still counts as a signal, never in errors.
+CREATE OR REPLACE FUNCTION telemetry_event_busy(kind text, code integer, manufacturer text)
+RETURNS boolean LANGUAGE sql IMMUTABLE AS $f$
+    SELECT coalesce(kind='response' AND (code=8217 OR (code=41218 AND manufacturer ILIKE 'canon%')),false)
+$f$;
+CREATE OR REPLACE FUNCTION telemetry_event_error(failed boolean, kind text, code integer, manufacturer text)
+RETURNS boolean LANGUAGE sql IMMUTABLE AS $f$
+    SELECT failed OR (kind='response' AND code IS NOT NULL AND code<>8193 AND NOT telemetry_event_busy(kind,code,manufacturer))
+$f$;
+-- The operator queries call this too, so a signal is derived in one place. (The four-argument
+-- version before manufacturer was added stays for an older instance still running during a deploy.)
+CREATE OR REPLACE FUNCTION telemetry_event_signal(failed boolean, kind text, code integer, properties jsonb, manufacturer text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $f$
     SELECT CASE WHEN kind='call' THEN 'call:'||coalesce(properties->'call'->>'operation','unknown')
             ||':'||coalesce(properties->'call'->>'outcome','unknown')
@@ -121,6 +134,9 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $f$
         WHEN coalesce((properties->>'droppedEntries')::int,0)>0 THEN 'dropped-events'
         WHEN properties ? 'operation' THEN 'operation:'||(properties->>'operation')
         WHEN kind='response' AND code=8193 THEN 'ok'
+        WHEN kind='response' AND code=8217 AND manufacturer ILIKE 'nikon%' AND properties->>'commandCode'='37064'
+            THEN 'response:0x2019:device-ready'
+        WHEN kind='response' AND code=41218 AND manufacturer ILIKE 'canon%' THEN 'response:0xa102:object-not-ready'
         WHEN code IS NOT NULL THEN kind||':0x'||lpad(to_hex(code),4,'0')
         ELSE kind END
 $f$;
@@ -132,7 +148,7 @@ BEGIN
     INSERT INTO telemetry_sessions AS s (installation_id,session_id,events,errors,signals,started_at,ended_at,
         latest_received_at,manufacturer,model,transports,evidence,backends,revisions,hardware_fingerprints,truncated)
     SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id, count(*),
-        count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)),
+        count(*) FILTER (WHERE telemetry_event_error(failed,kind,code,manufacturer)),
         count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)
             OR coalesce((properties->>'droppedEntries')::int,0)>0),
         min(coalesce(occurred_at,received_at)), max(coalesce(occurred_at,received_at)), max(received_at),
@@ -155,7 +171,7 @@ BEGIN
         truncated=s.truncated OR EXCLUDED.truncated;
     INSERT INTO telemetry_session_signals AS g (installation_id,session_id,signal,events,latest)
     SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid),
-        telemetry_event_signal(failed,kind,code,properties), count(*), max(received_at)
+        telemetry_event_signal(failed,kind,code,properties,manufacturer), count(*), max(coalesce(occurred_at,received_at))
     FROM added GROUP BY 1,2,3 ORDER BY 1,2,3
     ON CONFLICT (installation_id,session_id,signal) DO UPDATE SET
         events=g.events+EXCLUDED.events, latest=greatest(g.latest,EXCLUDED.latest);
@@ -185,7 +201,7 @@ BEGIN
     -- Counts stay exact immediately. Time bounds and label sets are refreshed by maintenance (stale).
     UPDATE telemetry_sessions s SET events=s.events-r.events, errors=s.errors-r.errors, signals=s.signals-r.signals, stale=true
     FROM (SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id, count(*) AS events,
-            count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)) AS errors,
+            count(*) FILTER (WHERE telemetry_event_error(failed,kind,code,manufacturer)) AS errors,
             count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)
                 OR coalesce((properties->>'droppedEntries')::int,0)>0) AS signals
           FROM removed GROUP BY 1,2) r
@@ -195,7 +211,7 @@ BEGIN
     WHERE s.installation_id=r.installation_id AND s.session_id=r.session_id AND s.events<=0;
     UPDATE telemetry_session_signals g SET events=g.events-r.events
     FROM (SELECT installation_id, coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id,
-            telemetry_event_signal(failed,kind,code,properties) AS signal, count(*) AS events FROM removed GROUP BY 1,2,3) r
+            telemetry_event_signal(failed,kind,code,properties,manufacturer) AS signal, count(*) AS events FROM removed GROUP BY 1,2,3) r
     WHERE g.installation_id=r.installation_id AND g.session_id=r.session_id AND g.signal=r.signal;
     DELETE FROM telemetry_session_signals g USING (SELECT DISTINCT installation_id,
             coalesce(session_id,'00000000-0000-0000-0000-000000000000'::uuid) AS session_id FROM removed) r
@@ -248,7 +264,7 @@ const adoptSessionIdentity = (scope: string) => `
             AND count(DISTINCT hardware_fingerprint)<=1) k
     WHERE u.model='Unknown' AND u.installation_id=k.installation_id AND u.session_id=k.session_id`
 const sessionAggregate = `count(*) AS events,
-    count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)) AS errors,
+    count(*) FILTER (WHERE telemetry_event_error(failed,kind,code,manufacturer)) AS errors,
     count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193)
         OR coalesce((properties->>'droppedEntries')::int,0)>0) AS signals,
     min(coalesce(occurred_at,received_at)) AS started_at, max(coalesce(occurred_at,received_at)) AS ended_at,
@@ -316,12 +332,14 @@ async function purgeUnidentified(connection: PoolClient, purge: { marker: string
 /** Build the session summaries once from existing events. Uploads wait behind the table lock so
  * no event is counted twice or missed; later starts find the marker and skip this. The work is
  * done a few hundred sessions at a time: one statement over every event needs more temporary
- * space than a small database instance allows. */
+ * space than a small database instance allows. `sessions-v2` (2026-11-25): busy replies stopped
+ * counting as errors, Nikon's busy DeviceReady poll and Canon's ObjectNotReady got signals of their
+ * own, and a signal's `latest` became its events' occurrence time; v1 summaries are rebuilt once. */
 const rebuilt = new WeakSet<Pool>()
 async function backfillRollups(pool: Pool) {
     if (rebuilt.has(pool)) return
     const done = await pool.query(
-        `SELECT 1 FROM telemetry_rollup_state WHERE name IN ('sessions-v1','unknown-codes-v1',${
+        `SELECT 1 FROM telemetry_rollup_state WHERE name IN ('sessions-v2','unknown-codes-v1',${
             unidentifiedPurges.map(purge => `'${purge.marker}'`).join(',')})`
     )
     if (done.rowCount === 2 + unidentifiedPurges.length) {
@@ -334,7 +352,7 @@ async function backfillRollups(pool: Pool) {
         await connection.query('SET LOCAL statement_timeout=0')
         await connection.query("SET LOCAL work_mem='64MB'")
         await connection.query("SELECT pg_advisory_xact_lock(hashtext('darkgrade.telemetry.rollup'))")
-        const again = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
+        const again = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v2'")
         if (!again.rowCount) {
             await connection.query('LOCK TABLE telemetry_events IN SHARE ROW EXCLUSIVE MODE')
             await connection.query(`CREATE INDEX IF NOT EXISTS telemetry_events_errors ON telemetry_events (received_at)
@@ -377,8 +395,8 @@ async function backfillRollups(pool: Pool) {
                 )
                 await connection.query(
                     `INSERT INTO telemetry_session_signals (installation_id,session_id,signal,events,latest)
-                     SELECT e.installation_id, e.session_id, telemetry_event_signal(e.failed,e.kind,e.code,e.properties),
-                        count(*), max(e.received_at)
+                     SELECT e.installation_id, e.session_id, telemetry_event_signal(e.failed,e.kind,e.code,e.properties,e.manufacturer),
+                        count(*), max(coalesce(e.occurred_at,e.received_at))
                      FROM telemetry_events e JOIN ${page} p ON e.installation_id=p.installation_id AND e.session_id=p.session_id
                      GROUP BY 1,2,3`,
                     range
@@ -388,9 +406,9 @@ async function backfillRollups(pool: Pool) {
                 SELECT installation_id, ${sessionless}, ${sessionAggregate}
                 FROM telemetry_events WHERE session_id IS NULL GROUP BY 1`)
             await connection.query(`INSERT INTO telemetry_session_signals (installation_id,session_id,signal,events,latest)
-                SELECT installation_id, ${sessionless}, telemetry_event_signal(failed,kind,code,properties), count(*), max(received_at)
+                SELECT installation_id, ${sessionless}, telemetry_event_signal(failed,kind,code,properties,manufacturer), count(*), max(coalesce(occurred_at,received_at))
                 FROM telemetry_events WHERE session_id IS NULL GROUP BY 1,3`)
-            await connection.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v1',now())")
+            await connection.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v2',now())")
         }
         const codes = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='unknown-codes-v1'")
         if (!codes.rowCount) {

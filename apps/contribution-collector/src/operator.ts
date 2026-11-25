@@ -239,7 +239,11 @@ export async function operatorApi(
                 return json({ error: 'Invalid session cursor' }, 400)
             }
         }
-        return json(await database.operator.session(parameters.installation, parameters.session, after))
+        const replay = await database.operator.session(parameters.installation, parameters.session, after)
+        // A first page with nothing on it is a session this installation never uploaded (or one withdrawn);
+        // a later page may be empty only because the last one ended exactly at its limit.
+        if (!after && !replay.events.length) return json({ error: 'Session not found' }, 404)
+        return json(replay)
     }
     if (path === '/internal/api/installations' && request.method === 'GET') {
         if (

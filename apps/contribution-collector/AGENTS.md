@@ -61,6 +61,19 @@ settings directory: manufacturer and model only, firmware `unknown`, and a body 
 when one exact serial was requested. A body never seen stays Unknown. Sony Wi-Fi attempts carry
 the model the caller named; the trust (`fingerprint`) step shares the following connect's session.
 Collector purge markers `purge-unidentified-2026-11-14` and `-14b` are one-time and dated.
+Busy replies (2026-11-25, marker `sessions-v2`): every DeviceBusy (0x2019) and Canon's ObjectNotReady
+(0xA102, libgphoto2 `PTP_RC_EOS_ObjectNotReady`, which Slate retries) is a retry warning: a signal,
+never an error (`telemetry_event_busy`, `telemetry_event_error`). Nikon's busy DeviceReady poll
+(0x2019 answering `commandCode` 0x90C8) is `response:0x2019:device-ready` and Canon's 0xA102
+`response:0xa102:object-not-ready`; the filter `response:0x2019` also selects the readings named apart.
+Issues leave busy replies out unless a signal filter asks for them. The SQL functions in postgres.ts
+are the one derivation: the triggers, the rebuild, maintenance and the operator queries all call
+them, so a filter on raw events agrees with the summaries. A signal's `latest` and an issue's
+`latest` are when its events happened (`coalesce(occurred_at,received_at)`); an issue also returns
+`latest_received_at` and `command_code` (the command a response answers, when the entry carries it).
+An unknown session's replay is a 404. The Matrix export (`diagnosticPattern` in review.ts) passes
+only the evidence types, fields and entry kinds Matrix's strict importer accepts; teach Matrix a new
+type or field before adding it there.
 
 ## What clients record
 

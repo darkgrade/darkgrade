@@ -5,6 +5,30 @@ import { createHash } from 'node:crypto'
 import type { ProtocolFinding } from '#collector/protocol-research'
 import {cameraConnection} from '#collector/transport'
 
+/** Matrix's strict importer (darkgrade/outpost private/apps/matrix/src/protocol-evidence.ts and
+ * telemetry.ts) rejects a whole snapshot over one field or kind it does not know. So the export
+ * passes only the evidence types it accepts, with only their fields (property-write's `prior` and
+ * `priorAgeMilliseconds`, benchmark's `purpose` are left out), and only the entry kinds it lists:
+ * `call` and `attach` entries, `unrecognized-value`, `focus-point`, `object-info`, `transfer` and
+ * `warning-status` evidence stay Telemetry's. Teach Matrix a type before adding it here. */
+const matrixProtocolFields: Record<string, readonly string[]> = {
+    inventory: ['category', 'codes'],
+    unknown: ['category', 'code', 'advertised'],
+    'state-snapshot': ['workflow', 'phase', 'basis', 'settings'],
+    'property-write': ['property', 'dataType', 'requested', 'transactionId', 'outcome', 'response'],
+    descriptor: ['property', 'dataType', 'writable', 'current', 'default', 'values', 'minimum', 'maximum', 'step'],
+    'property-value': ['property', 'dataType', 'current', 'values'],
+    benchmark: ['status', 'checks', 'failures'],
+}
+const matrixKinds = new Set(['connect', 'disconnect', 'reset', 'command', 'response', 'data', 'event', 'unknown'])
+function matrixProtocol(protocol: { type: string }) {
+    const fields = Object.hasOwn(matrixProtocolFields, protocol.type) ? matrixProtocolFields[protocol.type] : undefined
+    if (!fields) return undefined
+    return Object.fromEntries(
+        Object.entries(protocol).filter(([key]) => ['type', 'vendorId', 'benchmarkId', ...fields].includes(key))
+    )
+}
+
 /** Deterministic validated diagnostics; a review label is independent of import eligibility. */
 export function diagnosticPattern(
     recordId: string,
@@ -32,8 +56,8 @@ export function diagnosticPattern(
             }
         >()
         for (const entry of contribution.entries) {
-            // Public call records are Telemetry's debugging view; Matrix's pattern schema has no call kind.
-            if (entry.protocol || entry.call) continue
+            // Public calls and attach records are Telemetry's debugging view; Matrix's pattern schema has neither kind.
+            if (entry.protocol || !matrixKinds.has(entry.kind)) continue
             const key = `${entry.kind}/${entry.direction}/${entry.operation ?? 'ptp'}/${entry.code ?? 'none'}`
             const summary = observed.get(key) ?? {
                 kind: entry.kind,
@@ -53,12 +77,15 @@ export function diagnosticPattern(
             summary.totalMilliseconds += entry.durationMilliseconds
             observed.set(key, summary)
         }
+        const protocol = contribution.entries.flatMap(entry => {
+            const evidence = entry.protocol && matrixProtocol(entry.protocol)
+            return evidence ? [evidence] : []
+        })
         return {
             camera: cameraConnection(contribution.camera,contribution.entries),
             droppedEntries: contribution.droppedEntries,
             observed: [...observed.values()],
-            ...(contribution.entries.some(entry => entry.protocol) &&
-                { protocol: contribution.entries.flatMap(entry => entry.protocol ? [entry.protocol] : []) }),
+            ...(protocol.length && { protocol }),
         }
     })
     const pattern = {

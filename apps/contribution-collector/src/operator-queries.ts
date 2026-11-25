@@ -16,29 +16,25 @@ export interface EventFilters {
 }
 export type SuggestionField = 'model' | 'installation' | 'session' | 'revision' | 'hardware' | 'signal'
 
-// A public Camera call is its own signal, `call:<operation>:<outcome>`, before the generic failure:
-// the PTP response under it keeps its own. Only `call` entries (new in 2026-11) take this branch,
-// so every earlier event's signal, and the summaries built from it, are unchanged.
-const eventSignal=`CASE WHEN kind='call' THEN 'call:'||coalesce(properties->'call'->>'operation','unknown')
-        ||':'||coalesce(properties->'call'->>'outcome','unknown')
-    WHEN failed THEN 'failed'
-    WHEN coalesce((properties->>'droppedEntries')::int,0)>0 THEN 'dropped-events'
-    WHEN properties ? 'operation' THEN 'operation:'||(properties->>'operation')
-    WHEN kind='response' AND code=8193 THEN 'ok'
-    WHEN code IS NOT NULL THEN kind||':0x'||lpad(to_hex(code),4,'0')
-    ELSE kind END`
+// An event's signal and whether it is an error are derived by the database's own functions
+// (`telemetry_event_signal`, `telemetry_event_error` in postgres.ts), the same ones the summary
+// triggers and the rebuild use, so a filter on raw events always agrees with the summaries.
+const eventSignal=`telemetry_event_signal(failed,kind,code,properties,manufacturer)`
 const sessionless=`'00000000-0000-0000-0000-000000000000'::uuid`
 const signalName=`CASE WHEN signal='failed' THEN 'Failed'
     WHEN signal='dropped-events' THEN 'Dropped events'
     WHEN signal='response:0x2019' THEN 'Device busy · 0x2019'
+    WHEN signal='response:0x2019:device-ready' THEN 'Device busy · 0x2019 (DeviceReady poll)'
+    WHEN signal='response:0xa102:object-not-ready' THEN 'Object not ready · 0xA102'
+    WHEN signal='attach' THEN 'Attached to an open connection'
     WHEN signal='ok' THEN 'OK'
     WHEN signal LIKE 'call:%:%' THEN split_part(signal,':',2)||' · '||initcap(replace(split_part(signal,':',3),'-',' '))
     WHEN signal LIKE 'call:%' THEN split_part(signal,':',2)||' · any outcome'
     ELSE replace(signal,'operation:','') END`
-/** `call:<operation>` (no outcome) selects every outcome of that public operation. */
-const signalMatches=(column:string,parameter:string)=>`(${column}=${parameter} OR (${parameter} LIKE 'call:%'
-    AND ${parameter} NOT LIKE 'call:%:%' AND ${column} LIKE ${parameter}||':%'))`
-
+/** `call:<operation>` (no outcome) selects every outcome of that public operation, and a response
+ * code (`response:0x2019`) also selects the readings of it named apart (`response:0x2019:device-ready`). */
+const signalMatches=(column:string,parameter:string)=>`(${column}=${parameter} OR (((${parameter} LIKE 'call:%'
+    AND ${parameter} NOT LIKE 'call:%:%') OR ${parameter} ~ '^response:0x[0-9a-f]{4}$') AND ${column} LIKE ${parameter}||':%'))`
 /** Parameterized, bounded operator queries. Contact data is restricted to the explicit support lookup. */
 export function operatorQueries(pool: Pool) {
     const activeSource = `EXISTS (SELECT 1 FROM telemetry_state d WHERE d.path=telemetry_events.batch_path
@@ -62,7 +58,10 @@ export function operatorQueries(pool: Pool) {
         AND ($7::text IS NULL OR $7=ANY(s.hardware_fingerprints))
         AND ($8::text IS NULL OR EXISTS (SELECT 1 FROM telemetry_session_signals wanted
             WHERE wanted.installation_id=s.installation_id AND wanted.session_id=s.session_id AND ${signalMatches('wanted.signal','$8')}))`
-    const errors = `(failed OR (kind='response' AND code IS NOT NULL AND code<>8193))`
+    // Issues list errors. A busy reply (telemetry_event_busy) is a retry warning: it is listed only when
+    // a signal filter asks for it. The first clause is the partial index telemetry_events_errors.
+    const errors = `(failed OR (kind='response' AND code IS NOT NULL AND code<>8193))
+        AND (failed OR NOT telemetry_event_busy(kind,code,manufacturer) OR $8::text IS NOT NULL)`
     const values = (filters: EventFilters) => [
         filters.days,
         filters.installation || null,
@@ -232,10 +231,13 @@ export function operatorQueries(pool: Pool) {
                 hardware: 'choice',
             }[field]
             if (!column) throw new Error('Invalid suggestion field')
+            // A value's camera is the latest session's, manufacturer and model from that same row.
+            const latestSession=(value:string)=>`(array_agg(${value} ORDER BY s.latest_received_at DESC,s.installation_id,s.session_id))[1]`
             const expand = field === 'revision' ? ', unnest(s.revisions) AS choice'
                 : field === 'hardware' ? ', unnest(s.hardware_fingerprints) AS choice' : ''
             const result = await pool.query(
-                `SELECT ${column} AS value, min(s.manufacturer) AS manufacturer, min(s.model) AS model, count(DISTINCT s.model)::int AS models,
+                `SELECT ${column} AS value, ${latestSession('s.manufacturer')} AS manufacturer, ${latestSession('s.model')} AS model,
+                count(DISTINCT s.model)::int AS models,
                 min(s.installation_id::text) AS installation, count(DISTINCT s.installation_id)::int AS installations,
                 (SELECT array_agg(DISTINCT kind) FROM unnest(array_agg(array_to_string(s.evidence,','))) joined,
                     unnest(string_to_array(joined,',')) kind) AS evidence,
@@ -308,7 +310,9 @@ export function operatorQueries(pool: Pool) {
                     `SELECT manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,
                     properties->>'operation' AS operation,count(*)::int AS occurrences,
                     count(*) FILTER(WHERE failed)::int AS failures,
-                    count(DISTINCT installation_id)::int AS installations,max(received_at) AS latest,
+                    count(DISTINCT installation_id)::int AS installations,
+                    max(coalesce(occurred_at,received_at)) AS latest,max(received_at) AS latest_received_at,
+                    (properties->>'commandCode')::int AS command_code,
                     properties->'call'->>'operation' AS call_operation,properties->'call'->>'outcome' AS call_outcome,
                     properties->'call'->'error'->>'type' AS call_error,
                     (properties->'call'->'error'->>'response')::int AS call_response,
@@ -318,8 +322,8 @@ export function operatorQueries(pool: Pool) {
                     FROM telemetry_events WHERE ${errors} AND ${where}
                     GROUP BY manufacturer,model,firmware,revision,transport,evidence,hardware_fingerprint,kind,code,properties->>'operation',
                         properties->'call'->>'operation',properties->'call'->>'outcome',properties->'call'->'error'->>'type',
-                        properties->'call'->'error'->>'response'
-                    ORDER BY max(received_at) DESC LIMIT 100`,
+                        properties->'call'->'error'->>'response',properties->>'commandCode'
+                    ORDER BY max(coalesce(occurred_at,received_at)) DESC LIMIT 100`,
                     parameters
                 ),
                 filters.includeEvents === false ? Promise.resolve({rows: []}) : pool.query(

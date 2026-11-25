@@ -530,12 +530,14 @@ test(
             assert.equal(second.events.at(-1).properties.operation, 'record_stop')
             assert.equal((await operatorApi(admin(path + '&after=not-a-cursor'), key, database)).status, 400)
             assert.equal((await operatorApi(admin('/session?session=' + session), key, database)).status, 400)
-            const empty = await (
-                await operatorApi(admin('/session?installation=' + randomUUID() + '&session=' + session), key, database)
-            ).json()
-            assert.equal(empty.events.length, 0)
+            // Another installation's session, a session never uploaded and a withdrawn one are not found.
+            const other = await operatorApi(admin('/session?installation=' + randomUUID() + '&session=' + session), key, database)
+            assert.equal(other.status, 404)
+            assert.deepEqual(await other.json(), { error: 'Session not found' })
+            const unknown = '/session?installation=' + user.installId + '&session=' + randomUUID()
+            assert.equal((await operatorApi(admin(unknown), key, database)).status, 404)
             await handle(request('/v2/installation', 'DELETE', user.installKey))
-            assert.equal((await (await operatorApi(admin(path), key, database)).json()).events.length, 0)
+            assert.equal((await operatorApi(admin(path), key, database)).status, 404)
         } finally {
             await handle(request('/v2/installation', 'DELETE', user.installKey))
             await database.close()
@@ -717,7 +719,7 @@ test('session summaries stay exact through uploads, late identity, withdrawal, r
     const summaries=async()=>(await pool.query(`SELECT session_id,events::int,errors::int,signals::int,model,manufacturer,hardware_fingerprints,stale
         FROM telemetry_sessions WHERE installation_id=$1 ORDER BY session_id`,[user.installId])).rows
     const recomputed=async()=>(await pool.query(`SELECT session_id,count(*)::int AS events,
-        count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code<>8193))::int AS errors
+        count(*) FILTER (WHERE failed OR (kind='response' AND code IS NOT NULL AND code NOT IN (8193,8217)))::int AS errors
         FROM telemetry_events WHERE installation_id=$1 AND session_id IS NOT NULL GROUP BY 1 ORDER BY 1`,[user.installId])).rows
     try{
         // The first commands of a connection are uploaded before its identity read completes.
@@ -730,13 +732,14 @@ test('session summaries stay exact through uploads, late identity, withdrawal, r
             {sessionId:session,kind:'response',code:0x2019},{sessionId:session,kind:'response',code:0x2001,failed:true}])
         rows=await summaries()
         const identified=rows.find(row=>row.session_id===session),unidentified=rows.find(row=>row.session_id===native)
-        assert.deepEqual([identified.events,identified.errors,identified.signals,identified.model],[4,2,2,'Canon EOS R6 Mark III'])
+        // DeviceBusy is a retry warning: a signal, never an error.
+        assert.deepEqual([identified.events,identified.errors,identified.signals,identified.model],[4,1,2,'Canon EOS R6 Mark III'])
         assert.equal(unidentified.model,'Unknown','a session that never read identity is not given one')
         const events=await pool.query('SELECT model,firmware FROM telemetry_events WHERE installation_id=$1 AND session_id=$2',[user.installId,session])
         assert.ok(events.rows.every(row=>row.model==='Canon EOS R6 Mark III'&&row.firmware==='3-1.0.1'),'early events adopt the session identity')
         assert.match((await database.get(`diagnostics/${user.installId}_${early.id}`))!.payload,/"model":"Unknown"/,'signed source payload is unchanged')
         const report=await database.operator.report({days:1,installation:user.installId,includeEvents:false})
-        assert.deepEqual([report.summary.events,report.summary.errors,report.summary.sessions],[5,2,2])
+        assert.deepEqual([report.summary.events,report.summary.errors,report.summary.sessions],[5,1,2])
         assert.equal((await database.operator.suggestions('model','',{days:1,installation:user.installId})).items.find(item=>item.value==='Unknown').events,1)
         assert.equal((await database.operator.report({days:1,installation:user.installId,signal:'response:0x2019',includeEvents:false})).sessions.length,1)
         assert.equal((await database.operator.report({days:1,installation:user.installId,model:'Canon EOS R6 Mark III',includeEvents:false})).summary.events,4)
@@ -756,7 +759,7 @@ test('session summaries stay exact through uploads, late identity, withdrawal, r
         assert.deepEqual((await pool.query('SELECT signal,events::int FROM telemetry_session_signals WHERE installation_id=$1 ORDER BY signal',[user.installId])).rows,
             [{signal:'failed',events:1},{signal:'response:0x2019',events:1}])
         await database.refreshSessions()
-        assert.deepEqual((await summaries()).map(row=>[row.events,row.errors,row.stale]),[[2,2,false]])
+        assert.deepEqual((await summaries()).map(row=>[row.events,row.errors,row.stale]),[[2,1,false]])
 
         // Another installation's withdrawal never touches these summaries; this one's removes them.
         await upload(other,{},[{sessionId:randomUUID()}])
@@ -888,5 +891,101 @@ test('public API calls are their own signals, group issues by operation and erro
         const stored=await database.get(`diagnostics/${user.installId}_${payload.id}`)
         const pattern=diagnosticPattern(`${user.installId}_${payload.id}`,stored!)
         assert.deepEqual(pattern.patterns[0].observed.map((row:{kind:string})=>row.kind).sort(),['command','response'])
+    }finally{await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
+})
+
+test('busy replies are warnings with their own signals, issues name the command answered and when it happened', {skip:!process.env.DATABASE_URL}, async()=>{
+    let database=await postgresDatabase(process.env.DATABASE_URL!),handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+    const user=await enroll(handle),pool=new Pool({connectionString:process.env.DATABASE_URL!})
+    const canon=randomUUID(),nikon=randomUUID(),occurred=new Date(Date.now()-3_600_000).toISOString()
+    const upload=async(camera:Record<string,unknown>,entries:Record<string,unknown>[])=>{
+        const payload=batch(),entry=payload.contributions[0].entries[0]
+        Object.assign(payload.contributions[0].camera,camera)
+        payload.contributions[0].entries=entries.map(fields=>({...entry,kind:'response',direction:'in',failed:false,occurredAt:occurred,...fields})) as any
+        const sent=await handle(request('/v2/batches','POST',user.installKey,payload))
+        assert.equal(sent.status,202,await sent.text())
+        return `diagnostics/${user.installId}_${payload.id}`
+    }
+    const summaries=async()=>(await pool.query(`SELECT session_id,events::int,errors::int,signals::int FROM telemetry_sessions
+        WHERE installation_id=$1 ORDER BY session_id`,[user.installId])).rows
+    const signals=async()=>(await pool.query(`SELECT session_id,signal,events::int,latest FROM telemetry_session_signals
+        WHERE installation_id=$1 ORDER BY session_id,signal`,[user.installId])).rows
+    try{
+        await upload({manufacturer:'Canon.Inc',model:'Canon EOS R6 Mark III'},[
+            {sessionId:canon,code:0x2019},{sessionId:canon,code:0xa102},{sessionId:canon,code:0x2002}])
+        const nikonBatch=await upload({manufacturer:'Nikon',model:'Z 6_3'},[{sessionId:nikon,code:0x2001}])
+        // Until Slate's schema carries them, the new fields (a response's commandCode, the attach entry)
+        // are written the way the collector stores an uploaded entry: in `properties`, through the triggers.
+        const stored=(await pool.query('SELECT * FROM telemetry_events WHERE batch_path=$1',[nikonBatch])).rows[0]
+        const add=(sequence:number,kind:string,code:number|null,properties:Record<string,unknown>)=>pool.query(`INSERT INTO telemetry_events
+            (batch_path,sequence,installation_id,session_id,occurred_at,received_at,manufacturer,model,firmware,revision,transport,
+             evidence,kind,code,failed,properties,hardware_fingerprint,backend,connection_normalized)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,false,$15,$16,$17,true)`,
+            [nikonBatch,sequence,stored.installation_id,stored.session_id,occurred,stored.received_at,stored.manufacturer,stored.model,
+                stored.firmware,stored.revision,stored.transport,stored.evidence,kind,code,
+                JSON.stringify({...stored.properties,kind,code:code??undefined,direction:kind==='attach'?'lifecycle':'in',...properties}),
+                stored.hardware_fingerprint,stored.backend])
+        await add(10,'attach',null,{})
+        await add(11,'response',0x2019,{commandCode:0x90c8})
+        await add(12,'response',0x2002,{commandCode:0x9207})
+        await add(13,'response',0xa102,{commandCode:0x9207})
+
+        const before=await summaries()
+        assert.deepEqual(before.find(row=>row.session_id===canon),{session_id:canon,events:3,errors:1,signals:3},
+            'DeviceBusy and Canon ObjectNotReady are signals, not errors')
+        assert.deepEqual(before.find(row=>row.session_id===nikon),{session_id:nikon,events:5,errors:2,signals:3},
+            'a busy DeviceReady poll is a warning; 0xA102 is an error on a Nikon body')
+        const kept=await signals()
+        assert.deepEqual(kept.filter(row=>row.session_id===canon).map(row=>row.signal),
+            ['response:0x2002','response:0x2019','response:0xa102:object-not-ready'])
+        assert.deepEqual(kept.filter(row=>row.session_id===nikon).map(row=>row.signal),
+            ['attach','ok','response:0x2002','response:0x2019:device-ready','response:0xa102'])
+        assert.ok(kept.every(row=>row.latest.toISOString()===occurred),'a signal is dated when its events happened')
+
+        const report=await database.operator.report({days:1,installation:user.installId})
+        assert.deepEqual(report.issues.map(issue=>[issue.manufacturer,issue.code,issue.command_code]).sort(),
+            [['Canon.Inc',0x2002,null],['Nikon',0xa102,0x9207],['Nikon',0x2002,0x9207]],'busy replies are left out of Issues')
+        assert.ok(report.issues.every(issue=>issue.latest.toISOString()===occurred&&+issue.latest_received_at>+issue.latest),
+            'an issue is dated when it happened, not when it was uploaded')
+        assert.equal(report.summary.errors,3)
+
+        // A response code also selects the readings of it named apart, in sessions and in Issues.
+        const busy=await database.operator.report({days:1,installation:user.installId,signal:'response:0x2019'})
+        assert.equal(busy.sessions.length,2)
+        assert.deepEqual(busy.issues.map(issue=>[issue.manufacturer,issue.command_code]).sort(),[['Canon.Inc',null],['Nikon',0x90c8]])
+        const poll=await database.operator.report({days:1,installation:user.installId,signal:'response:0x2019:device-ready'})
+        assert.deepEqual(poll.sessions.map(row=>row.session_id),[nikon])
+        assert.deepEqual(poll.events.map(event=>event.properties.commandCode),[0x90c8])
+        const label=async(query:string)=>(await database.operator.suggestions('signal',query,{days:1,installation:user.installId})).items
+            .map(item=>[item.value,item.label])
+        assert.deepEqual(await label('poll'),[['response:0x2019:device-ready','Device busy · 0x2019 (DeviceReady poll)']])
+        assert.deepEqual(await label('not ready'),[['response:0xa102:object-not-ready','Object not ready · 0xA102']])
+        assert.deepEqual(await label('attached'),[['attach','Attached to an open connection']])
+
+        // The rebuild derives exactly what the triggers kept.
+        await pool.query("DELETE FROM telemetry_rollup_state WHERE name='sessions-v2'")
+        await pool.query('UPDATE telemetry_sessions SET errors=99 WHERE installation_id=$1',[user.installId])
+        await database.close();database=await postgresDatabase(process.env.DATABASE_URL!)
+        handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+        assert.deepEqual(await summaries(),before)
+        assert.deepEqual(await signals(),kept)
+    }finally{await handle(request('/v2/installation','DELETE',user.installKey));await pool.end();await database.close()}
+})
+
+test('a revision suggestion names the camera of one session that carried it', {skip:!process.env.DATABASE_URL}, async()=>{
+    let now=new Date(Date.now()-60_000)
+    const database=await postgresDatabase(process.env.DATABASE_URL!),handle=createTelemetry(database,{publicUrl:'https://telemetry.example',now:()=>now})
+    const user=await enroll(handle),revision=randomBytes(4).toString('hex')
+    try{
+        // min() of each column alone would say "Nikon ILCE-6700": a camera that never sent this revision.
+        for(const camera of [{manufacturer:'Sony',model:'ILCE-6700'},{manufacturer:'Nikon',model:'Z 6_3'}]){
+            const payload=batch()
+            Object.assign(payload.contributions[0].camera,camera,{revision})
+            Object.assign(payload.contributions[0].entries[0],{sessionId:randomUUID()})
+            assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
+            now=new Date(+now+1000)
+        }
+        const [item]=(await database.operator.suggestions('revision',revision,{days:1,installation:user.installId})).items
+        assert.deepEqual([item.value,item.manufacturer,item.model,item.models],[revision,'Nikon','Z 6_3',2])
     }finally{await handle(request('/v2/installation','DELETE',user.installKey));await database.close()}
 })

@@ -5,6 +5,7 @@ import {admissionLimit} from '#collector/abuse-limits'
 import {batch,enroll,memoryDatabase,request} from './telemetry-fixture.ts'
 import assert from 'node:assert/strict'
 import {test} from 'node:test'
+import {randomUUID} from 'node:crypto'
 
 test('burst limits are shared, bounded and recover without blocking withdrawal',async()=>{
  const {database}=memoryDatabase();let date=new Date();const options={publicUrl:'https://telemetry.example',now:()=>date,enrollmentBurstLimit:2,uploadBurstLimit:20,installationBurstLimit:2}
@@ -33,4 +34,24 @@ test('profile evidence and referenced findings reach Matrix but never become a h
  const query=page.next;assert.equal(query,null)
  assert.equal((await handle(request('/v2/installation','DELETE',user.installKey))).status,200)
  assert.equal((await exportMatrixPage(database)).records.length,0);assert.ok(!records.has('protocolFindings/'+sourceRecord))
+})
+test('the Matrix export passes only the evidence types, fields and entry kinds Matrix accepts',async()=>{
+ const {database}=memoryDatabase(),handle=createTelemetry(database,{publicUrl:'https://telemetry.example'}),user=await enroll(handle),payload=batch()
+ const entry=payload.contributions[0].entries[0],benchmarkId=randomUUID(),callId=randomUUID()
+ const write={type:'property-write',vendorId:0x04a9,property:0xd11c,dataType:6,requested:2,transactionId:1,outcome:'response',response:0x2001}
+ payload.contributions[0].entries=[
+  {...entry,kind:'response',direction:'in',code:0x2001},
+  {...entry,protocol:write},
+  {...entry,protocol:{type:'benchmark',benchmarkId,vendorId:0x04a9,status:'complete',checks:2,failures:0,purpose:'first-contact'}},
+  {...entry,protocol:{type:'unrecognized-value',vendorId:0x04a9,property:0xd11c,dataType:6,raw:7,choice:true}},
+  {...entry,kind:'call',direction:'lifecycle',callId,code:undefined,call:{operation:'getBattery',tool:'camera_get_battery',
+   command:'darkgrade camera get-battery',surface:'library',outcome:'ok',attribution:'async-context'}},
+ ] as any
+ const sent=await handle(request('/v2/batches','POST',user.installKey,payload));assert.equal(sent.status,202,await sent.text())
+ const row=(await exportMatrixPage(database)).records.find(r=>r.sourceRecord===user.installId+'_'+payload.id)!
+ const pattern=row.patterns[0]
+ assert.deepEqual(pattern.protocol,[write,{type:'benchmark',benchmarkId,vendorId:0x04a9,status:'complete',checks:2,failures:0}],
+  'unrecognized-value and benchmark purpose are Telemetry-only')
+ assert.deepEqual(pattern.observed.map((o:{kind:string})=>o.kind),['response'],'no call entries; evidence entries are not observed rows')
+ assert.equal((await handle(request('/v2/installation','DELETE',user.installKey))).status,200)
 })
