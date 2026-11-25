@@ -217,8 +217,8 @@ export class Camera {
     /**
      * Zooms to a focal length ("go to 35") and resolves to the focal length, in millimetres, where
      * the lens landed, read back from the camera. Needs a power-zoom lens that reports its focal length.
-     * Asked for a focal length beyond the lens's range, it stops at the end; one the lens passes but
-     * cannot be stopped within half a millimetre of fails with CameraOutcomeUnknownError naming where it is.
+     * Asked for a focal length beyond the lens's range, it stops at the end; one the lens cannot be
+     * brought within a millimetre of fails with CameraOutcomeUnknownError naming where it is.
      * @param focalLengthMillimetres the focal length to go to, such as 35
      */
     async zoomTo(focalLengthMillimetres: number): Promise<number> {

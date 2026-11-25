@@ -127,10 +127,20 @@ writes UTCTime 0xD17C as libgphoto2 does; it has not run on hardware yet, so saf
 bench before claiming Canon clock support.
 The darkgrade01 acceptance run the same day (Test Bench 31bbe67): a Z5 II in AF-A uses auto-area with no
 AF-area setting, so getCapabilities judges setFocusPoint from a running live view's afModeState, as the call
-does, and leaves it unreported while live view is off rather than starting it. An a6700 zooming 35 to 23 mm
-landed at 21 after one slow correction (zooming in, 21 to 23, landed exactly): zoomTo now makes up to three
-slow corrections, gives a reversing lens 2.5 s to start, holds a reading 300 ms before calling it settled,
-and fails with CameraOutcomeUnknownError when it cannot land within 0.5 mm. 23 ms after Auto to Manual the
+does, and leaves it unreported while live view is off rather than starting it. Sony zoomTo (rewritten after
+the a6700 + E PZ 16-50mm II landed 20 to 28 for 25, fw 2.00, traces df92ae65…057ebf9b): ZoomDistance 0xD00B
+is whole millimetres (whatever its descriptor says), changes every 160–250 ms and trails the lens about
+0.25 s; speed 1 is 12–13 mm/s (about 20 near tele) and coasts 2–4 mm after the stop, speed 4 35–55 mm/s and
+7–9 mm. So a movement stops on an estimate (`vendors/sony/zoom-motion.ts`: the newest reading carried
+forward by the measured rate over the lag, plus the coast; dead reckoning before the first change), learns
+the coast and lag per lens, speed and way from each landing, ends with slow movements from one side (a lens
+past the target backs off and comes again), accepts ±1 mm and, after six movements, fails with
+CameraOutcomeUnknownError naming where it is. A stopped-before-it-showed movement must hold its reading
+800 ms before it counts as unmoved. Slate 86e6e9c's exact 35 and 23 were not precision: its zoomTo 23 started
+at 23 (it returned in 498 ms) and its 35 was settled on two equal reads 60 ms apart, which the 160–250 ms
+update cadence makes the value at the stop. The a6700 also lists Camera Remote SDK ZoomPositionSetting
+(0xE040, SDK 700, writable, 0) and ZoomPositionCurrentValue (0xE041, 5180, enabled flag 2): an absolute
+lens-position zoom not tried on hardware, so not used. 23 ms after Auto to Manual the
 a6700 still showed Auto's shutter and aperture read-only: a Sony exposure mode resolves once the settings it
 hands over are writable (at most 1.5 s, re-read on SDIE_DevicePropChanged). Back from Movie Manual to Manual
 the a6700 showed them writable, read-only again about 100 ms later, then writable: a Sony photo/video switch
