@@ -33,23 +33,31 @@ export const videoOperationTable = {
         },
         prepareRecordingMode: {
             area: 'video',
-            disposition: { kind: 'private', handledBy: 'startRecording / stopRecording' },
+            disposition: {
+                kind: 'replaced-by',
+                target: 'startRecording',
+                note: 'startRecording prepares video mode, card and audio; stopRecording restores them after a confirmed idle',
+            },
         },
         enterMovieMode: {
             area: 'video',
-            disposition: { kind: 'private', handledBy: 'startRecording (video mode)' },
+            disposition: { kind: 'replaced-by', target: 'startRecording', note: 'video mode is selected inside startRecording' },
         },
         leaveMovieMode: {
             area: 'video',
-            disposition: { kind: 'private', handledBy: 'stopRecording (restores the previous mode)' },
+            disposition: { kind: 'replaced-by', target: 'stopRecording', note: 'the previous mode is restored after a confirmed idle' },
         },
         prepareCanonRecordingDestination: {
             area: 'video',
-            disposition: { kind: 'private', handledBy: 'startRecording (card destination)' },
+            disposition: { kind: 'replaced-by', target: 'startRecording', note: 'the card destination is prepared inside startRecording' },
         },
         ensureCanonMovieSoundRecording: {
             area: 'video',
-            disposition: { kind: 'private', handledBy: 'startRecording (audio)' },
+            disposition: {
+                kind: 'replaced-by',
+                target: 'startRecording',
+                note: 'startRecording turns movie sound on when it is off; setAudioRecording chooses it explicitly',
+            },
         },
     },
     planned: {},

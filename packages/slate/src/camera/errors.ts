@@ -38,3 +38,14 @@ export class CameraOutcomeUnknownError extends Error {
         this.name = 'CameraOutcomeUnknownError'
     }
 }
+
+/**
+ * The camera confirmed it stopped recording, but no new finished clip appeared on the card in time.
+ * Stop is not resent; any footage stays on the card, where listing the card finds it later.
+ */
+export class CameraClipNotFoundError extends CameraOutcomeUnknownError {
+    constructor(operation: string, message: string) {
+        super(operation, message)
+        this.name = 'CameraClipNotFoundError'
+    }
+}

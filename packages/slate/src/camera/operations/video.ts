@@ -1,23 +1,35 @@
-import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import type { CameraRecordingState } from '@camera/controls'
+import type { Clip } from '@camera/driver/video'
 import type { Camera } from '@camera/index'
 import { CanonCamera } from '@camera/canon-camera'
-import { canonDriver, cameraContext } from '@camera/operations/context'
+import { canonDriver, cameraContext, requireCapability } from '@camera/operations/context'
 import { SonyCamera } from '@camera/sony-camera'
-import { readCameraRecordingState } from '@camera/video-recording'
 import { openCanonRecordingMode } from '@vendors/canon/recording-mode'
-import { readSonyMovieCard } from '@vendors/sony/card-storage'
 import { openSonyRecordingMode } from '@vendors/sony/photo-mode'
 
 export interface VideoOperations {
+    /** What the camera reports now: `idle`, `starting`, `recording`, `stopping` or `unknown`. Unknown never counts as idle. */
     getRecordingState(): Promise<CameraRecordingState>
+    /**
+     * Gets the camera ready (video mode, card destination, audio), checks the card, starts, and
+     * resolves once the camera reports recording. Record is sent once and never repeated.
+     */
     startRecording(): Promise<void>
-    /** Hold the camera's required recording mode until a confirmed stop, then restore it. */
+    /**
+     * Stops, waits until a finished clip is on the card, puts the camera back, and resolves to the
+     * clip. Always allowed. Throws CameraClipNotFoundError when the camera stopped but no new clip
+     * appeared; called again after a failed restore, it retries only the restore.
+     */
+    stopRecording(): Promise<Clip>
+    /** @deprecated startRecording prepares the recording mode and stopRecording restores it. */
     prepareRecordingMode(): Promise<{ restore(): Promise<void> }>
-    stopRecording(): Promise<void>
+    /** @deprecated startRecording selects video mode. */
     enterMovieMode(): Promise<void>
+    /** @deprecated stopRecording restores the previous mode. */
     leaveMovieMode(): Promise<void>
+    /** @deprecated startRecording prepares the card destination. */
     prepareCanonRecordingDestination(): Promise<() => Promise<void>>
+    /** @deprecated startRecording turns on movie sound when it is off. */
     ensureCanonMovieSoundRecording(): Promise<boolean>
 }
 
@@ -25,20 +37,15 @@ const canonMovieModeUnavailable = 'Canon movie mode is only available for Canon 
 
 export const videoOperations: VideoOperations & ThisType<Camera> = {
     async getRecordingState(): Promise<CameraRecordingState> {
-        return readCameraRecordingState(this)
+        return requireCapability(this, 'video', 'getRecordingState').getRecordingState()
     },
 
     async startRecording(): Promise<void> {
-        const context = cameraContext(this)
-        return context.controlsQueue.run('camera', async () => {
-            const state = await this.getRecordingState()
-            if (state === 'stopping') await confirmCameraValue('record_start', 'idle', () => this.getRecordingState(), 5000)
-            else if (state !== 'idle') throw new CameraConfirmationError('record_start', 'idle before starting', state)
-            if (context.driver instanceof SonyCamera && (await readSonyMovieCard(this)).remainingMovieSeconds === 0)
-                throw new Error('No movie recording time remains on the selected Sony memory card')
-            await context.driver.startRecording()
-            await confirmCameraValue('record_start', 'recording', () => this.getRecordingState(), 5000)
-        })
+        return requireCapability(this, 'video', 'startRecording').startRecording()
+    },
+
+    async stopRecording(): Promise<Clip> {
+        return requireCapability(this, 'video', 'stopRecording').stopRecording()
     },
 
     async prepareRecordingMode(): Promise<{ restore(): Promise<void> }> {
@@ -46,16 +53,6 @@ export const videoOperations: VideoOperations & ThisType<Camera> = {
         if (driver instanceof CanonCamera) return openCanonRecordingMode(this)
         if (driver instanceof SonyCamera) return openSonyRecordingMode(this)
         return { restore: async () => {} }
-    },
-
-    async stopRecording(): Promise<void> {
-        const context = cameraContext(this)
-        return context.controlsQueue.run('camera', async () => {
-            // Sony's movie-button release still belongs to cleanup after an ignored press.
-            if (!(context.driver instanceof SonyCamera) && (await this.getRecordingState()) === 'idle') return
-            await context.driver.stopRecording()
-            await confirmCameraValue('record_stop', 'idle', () => this.getRecordingState(), 15000)
-        })
     },
 
     async enterMovieMode(): Promise<void> {

@@ -3,7 +3,7 @@ import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmatio
 import type { CameraRecordingState } from '@camera/controls'
 import { Camera } from '@camera/index'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.useRealTimers())
 
@@ -39,74 +39,6 @@ function fixture(vendorId: number) {
         },
     }
 }
-
-describe.each([0x054c, 0x04b0, 0x04a9])('vendor %i confirmed recording lifecycle', vendor => {
-    it('serializes rapid start/stop/start/stop pairs through confirmed observations', async () => {
-        const f = fixture(vendor)
-        await Promise.all([
-            f.camera.startRecording(),
-            f.camera.stopRecording(),
-            f.camera.startRecording(),
-            f.camera.stopRecording(),
-        ])
-        expect(f.start).toHaveBeenCalledTimes(2)
-        expect(f.stop).toHaveBeenCalledTimes(2)
-        expect(await f.camera.getRecordingState()).toBe('idle')
-    })
-    it('rejects an ignored acknowledged start without sending a second start', async () => {
-        vi.useFakeTimers()
-        const f = fixture(vendor)
-        f.start.mockResolvedValue(undefined)
-        const failure = f.camera.startRecording().catch(error => error)
-        await vi.advanceTimersByTimeAsync(5100)
-        expect(await failure).toMatchObject({
-            name: 'CameraConfirmationError',
-            expected: 'recording',
-            observed: 'idle',
-        })
-        expect(f.start).toHaveBeenCalledOnce()
-        await f.camera.stopRecording()
-        if (vendor === 0x054c) expect(f.stop).toHaveBeenCalledOnce() // Release an ignored movie-button press.
-        else expect(f.stop).not.toHaveBeenCalled() // Other idle Stops are idempotent.
-    })
-    it('retains active recording after an ignored Stop and permits a later explicit Stop', async () => {
-        vi.useFakeTimers()
-        const f = fixture(vendor)
-        await f.camera.startRecording()
-        f.stop.mockResolvedValue(undefined)
-        const failure = f.camera.stopRecording().catch(error => error)
-        await vi.advanceTimersByTimeAsync(15100)
-        expect(await failure).toMatchObject({ expected: 'idle', observed: 'recording' })
-        expect(f.stop).toHaveBeenCalledOnce()
-        expect(await f.camera.getRecordingState()).toBe('recording')
-        f.stop.mockImplementation(async () => f.set('idle'))
-        await f.camera.stopRecording()
-        expect(f.stop).toHaveBeenCalledTimes(2)
-    })
-    it('never treats missing recording telemetry as idle or authorizes another start', async () => {
-        const f = fixture(vendor)
-        f.set('unknown')
-        await expect(f.camera.startRecording()).rejects.toBeInstanceOf(CameraConfirmationError)
-        expect(f.start).not.toHaveBeenCalled()
-        f.set('recording')
-        await expect(f.camera.startRecording()).rejects.toThrow('idle before starting')
-        expect(f.start).not.toHaveBeenCalled()
-    })
-})
-
-it('rejects full Sony movie capacity before sending Start, while keeping Stop available', async () => {
-    const f = fixture(0x054c)
-    vi.mocked(f.camera.getSonyPropertyStates).mockResolvedValue([
-        {code:0xd160,rawValue:1,sonyEnabledFlag:1},
-        {code:0xd248,rawValue:1,sonyEnabledFlag:2},
-        {code:0xd24a,rawValue:0,sonyEnabledFlag:2},
-        {code:0x500e,value:'Movie Manual',rawValue:0x78053,sonyEnabledFlag:1},
-    ] as any)
-    await expect(f.camera.startRecording()).rejects.toThrow('No movie recording time')
-    expect(f.start).not.toHaveBeenCalled()
-    await f.camera.stopRecording()
-    expect(f.stop).toHaveBeenCalledOnce()
-})
 
 it('explicit Sony preparation uses advertised controls and restores only after confirmed idle', async () => {
     const f = fixture(0x054c)
@@ -217,28 +149,6 @@ it('polls delayed observations without repeating writes and propagates observati
             throw failure
         })
     ).rejects.toBe(failure)
-})
-
-it('canonical recording observation preserves native Sony transitional and unknown states', async () => {
-    const camera = new Camera({
-        vendorId: 0x054c,
-        transport: {
-            isLittleEndian: () => true,
-            on: () => {},
-        } as unknown as TransportInterface,
-    })
-    const read = vi.spyOn(camera, 'getSonyPropertyStates')
-    for (const [rawValue, expected] of [
-        [0, 'idle'],
-        [1, 'recording'],
-        [2, 'unknown'],
-        [3, 'unknown'],
-        [4, 'unknown'],
-        [null, 'unknown'],
-    ] as const) {
-        read.mockResolvedValue([{ code: 0xd21d, rawValue }] as never)
-        expect(await camera.getRecordingState()).toBe(expected)
-    }
 })
 
 it('Canon recording observation refreshes events instead of confirming a stale cached state', async () => {

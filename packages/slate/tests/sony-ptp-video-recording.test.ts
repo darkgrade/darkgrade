@@ -26,29 +26,32 @@ it('native take confirms state, discovers only the new original and streams veri
  expect(chunks).toEqual([3]);expect(progress).toHaveBeenLastCalledWith(3,3)
  expect(f.camera.send.mock.calls.some(([op])=>op.name==='SDIO_GetPartialLargeObject')).toBe(true)
 })
-it('preserves prepared movie mode through an unconfirmed Stop and restores after explicit cleanup',async()=>{
+it('keeps Stop available after an unconfirmed Stop; explicit cleanup sends the next one',async()=>{
  vi.useFakeTimers()
  try{
   const f=fixture();await f.recording.prepare();await f.recording.start()
   f.camera.stopRecording.mockResolvedValueOnce(undefined)
   const failure=expect(f.recording.stop()).rejects.toThrow('preserve camera power')
   await vi.advanceTimersByTimeAsync(15100);await failure
-  expect(f.restore).not.toHaveBeenCalled()
   await f.recording.cleanup()
-  expect(f.restore).toHaveBeenCalledOnce()
   expect(f.camera.startRecording).toHaveBeenCalledOnce()
   expect(f.camera.stopRecording).toHaveBeenCalledTimes(2)
  }finally{vi.useRealTimers()}
 })
-it('restores explicit movie preparation if indexing fails or the prepared take is cancelled',async()=>{
+it('leaves movie mode to Camera: indexing failure or a cancelled take never sends Record or a mode write',async()=>{
  const f=fixture()
  f.camera.send.mockRejectedValueOnce(new Error('Card index unavailable'))
  await expect(f.recording.prepare()).rejects.toThrow('Card index unavailable')
- expect(f.restore).toHaveBeenCalledOnce()
- f.restore.mockClear()
  await f.recording.prepare();await f.recording.cleanup()
- expect(f.restore).toHaveBeenCalledOnce()
+ expect(f.camera.prepareRecordingMode).not.toHaveBeenCalled()
  expect(f.camera.startRecording).not.toHaveBeenCalled()
+ expect(f.camera.stopRecording).not.toHaveBeenCalled()
+})
+it('accepts a stop whose clip Camera could not find, and looks for the original itself',async()=>{
+ const {CameraClipNotFoundError}=await import('@camera/errors')
+ const f=fixture();await f.recording.prepare();await f.recording.start()
+ f.camera.stopRecording.mockImplementationOnce(async()=>{f.setState(0);f.setHandles([1,2]);throw new CameraClipNotFoundError('stopRecording','no new clip yet')})
+ expect((await f.recording.stop()).media).toEqual([{id:'2',filename:'new.MP4',bytes:3,verified:true}])
 })
 it('a command acknowledgement without observed recording fails and cleanup still sends Stop',async()=>{
  vi.useFakeTimers()
