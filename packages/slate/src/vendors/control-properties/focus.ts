@@ -1,6 +1,7 @@
 import type { focusControlDefinitions } from '@camera/settings/focus'
 import * as standard from '@ptp/definitions/property-definitions'
 import * as canon from '@ptp/definitions/vendors/canon/canon-property-definitions'
+import * as nikonStandard from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
 import * as nikon from '@ptp/definitions/vendors/nikon/nikon-shooting-property-definitions'
 import * as sony from '@ptp/definitions/vendors/sony/sony-property-definitions'
 import type { SonyFocusAreaName } from '@ptp/definitions/vendors/sony/sony-property-definitions'
@@ -39,7 +40,7 @@ export const focusControlProperties = {
     standard: standardProperties,
     nikonPhoto: {
         ...standardProperties,
-        focusMode: [nikon.NikonStillFocusMode, standard.FocusMode],
+        focusMode: [nikon.NikonStillFocusMode, nikonStandard.FocusMode],
     },
     nikonMovie: {
         ...standardProperties,
@@ -159,17 +160,21 @@ const nikonFocusModes = {
     Manual: 'MF',
 } as const satisfies Names<NikonFocusModeLabel>
 
-/** PTP 1.1 FocusMode (0x500a): 1 manual, 2 automatic, 3 automatic macro. */
-const standardFocusModes = { '1': 'MF', '2': 'AF', '3': 'AF macro' } as const
+/** PTP FocusMode (0x500a): manual, automatic, automatic macro. */
+const standardFocusModes = {
+    Manual: 'MF',
+    Automatic: 'AF',
+    'Automatic Macro': 'AF macro',
+} as const satisfies Names<CodecType<typeof standard.FocusMode.codec>>
 
 /** Nikon's vendor values of the standard FocusMode (0x8010–0x8013), next to the standard ones. */
 const nikonStandardFocusModes = {
     ...standardFocusModes,
-    '32784': 'AF-S',
-    '32785': 'AF-C',
-    '32786': 'AF-A',
-    '32787': 'AF-F',
-} as const
+    'AF-S': 'AF-S',
+    'AF-C': 'AF-C',
+    'AF-A': 'AF-A',
+    'AF-F': 'AF-F',
+} as const satisfies Names<CodecType<typeof nikonStandard.FocusMode.codec>>
 
 /**
  * The canonical name of each vendor value, per inventory, setting and property. The keys of each

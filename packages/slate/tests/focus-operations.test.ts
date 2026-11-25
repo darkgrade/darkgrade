@@ -30,6 +30,8 @@ const transport = () =>
     ({
         isLittleEndian: () => true,
         isConnected: () => true,
+        connect: async () => undefined,
+        disconnect: async () => undefined,
         on: () => undefined,
         getType: () => 'USB',
     }) as unknown as TransportInterface
@@ -82,7 +84,9 @@ interface SonyValue {
  * A simulated Sony body: SDIO property inventory, SetExtDevicePropValue and ControlDevice, every
  * value encoded with the property's own codec. A half-press sets FocusIndication to `focusOnPress`.
  */
-function sonyCamera(initial: { focusArea?: string; subjectDetection?: string } = {}) {
+const SONY_AREAS = ['Wide', 'Zone', 'Center', 'Flexible Spot S', 'Flexible Spot M', 'Lock on AF Wide', 'Lock on AF Flexible Spot M']
+
+function sonyCamera(initial: { focusArea?: string; subjectDetection?: string; areas?: string[] } = {}) {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
     const driver = camera.getInstance() as SonyCamera
     const registry = driver.registry
@@ -96,7 +100,7 @@ function sonyCamera(initial: { focusArea?: string; subjectDetection?: string } =
                 properties.FocusArea,
                 {
                     value: initial.focusArea ?? 'Wide',
-                    choices: ['Wide', 'Zone', 'Center', 'Flexible Spot S', 'Flexible Spot M', 'Lock on AF Wide', 'Lock on AF Flexible Spot M'],
+                    choices: initial.areas ?? SONY_AREAS,
                 },
             ],
             [properties.SubjectRecognitionInAF, { value: initial.subjectDetection ?? 'On', choices: ['Off', 'On'] }],
@@ -112,7 +116,10 @@ function sonyCamera(initial: { focusArea?: string; subjectDetection?: string } =
     }
     const positions: { x: number; y: number }[] = []
     const writes: { name: string; value: unknown }[] = []
+    /** The bytes of each property write, as sent. */
+    const wire: { name: string; data: number[] }[] = []
     const halfPresses: string[] = []
+    const inventoryReads = { count: 0 }
     const descriptor = (property: PropertyDefinition, state: SonyValue) => {
         const codec = codecOf(property)
         const current = codec.encode(state.value)
@@ -136,6 +143,7 @@ function sonyCamera(initial: { focusArea?: string; subjectDetection?: string } =
         if (operation.name === 'GetDeviceInfo')
             return { code: 0x2001, data: deviceInfo(camera, [], [0x1001, 0x9209, 0x9205, 0x9207]) }
         if (operation.name === 'SDIO_GetAllExtDevicePropInfo') {
+            inventoryReads.count++
             const entries = [...body.values.entries()]
             const wire = concatenate([
                 registry.codecs.uint32.encode(entries.length),
@@ -148,6 +156,7 @@ function sonyCamera(initial: { focusArea?: string; subjectDetection?: string } =
             const property = [...body.values.keys()].find(candidate => candidate.code === parameters.DevicePropCode)!
             const value = codecOf(property).decode(data!).value
             writes.push({ name: property.name, value })
+            wire.push({ name: property.name, data: [...data!] })
             if (body.applies) body.values.get(property)!.value = String(value)
             return { code: 0x2001 }
         }
@@ -169,11 +178,13 @@ function sonyCamera(initial: { focusArea?: string; subjectDetection?: string } =
             }
             return { code: 0x2001 }
         }
+        // Opening and closing a session: the handshake is acknowledged, nothing else is simulated.
+        if (/Session|SDIO_Connect|SDIO_GetExtDeviceInfo/.test(operation.name)) return { code: 0x2001 }
         throw new Error(`Unexpected Sony operation ${operation.name}`)
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
     const value = (property: PropertyDefinition) => body.values.get(property)!.value
-    return { camera, driver, body, positions, writes, halfPresses, value, properties }
+    return { camera, driver, body, positions, writes, wire, halfPresses, inventoryReads, value, properties }
 }
 
 describe('focus on a simulated Sony body', () => {
@@ -189,9 +200,27 @@ describe('focus on a simulated Sony body', () => {
         expect(halfPresses).toHaveLength(6)
     })
 
-    it('shows face and eye frames while subject detection is on, so live view has frames to draw', async () => {
-        const { camera, value, properties } = sonyCamera()
+    it('shows face and eye frames once a session while subject detection is on, from the inventory it read', async () => {
+        const { camera, value, properties, writes, inventoryReads } = sonyCamera()
+        await camera.getCapabilities()
+        expect(value(properties.FaceEyeFrameDisplay)).toBe('ON')
+        await camera.getCapabilities()
+        // autofocus checks the frames from the last inventory: no read of its own beyond its focus polls.
+        const readsBeforeFirst = inventoryReads.count
         await camera.autofocus()
+        const readsOfFirst = inventoryReads.count - readsBeforeFirst
+        await camera.autofocus()
+        expect(inventoryReads.count - readsBeforeFirst - readsOfFirst).toBe(readsOfFirst)
+        expect(writes.filter(write => write.name === 'FaceEyeFrameDisplay')).toHaveLength(1)
+    })
+
+    it('leaves Face/Eye Frame Display alone while subject detection is off, until it is turned on', async () => {
+        const { camera, value, properties } = sonyCamera({ subjectDetection: 'Off' })
+        await camera.getCapabilities()
+        await camera.autofocus()
+        expect(value(properties.FaceEyeFrameDisplay)).toBe('OFF')
+        expect(await camera.setSubjectDetection('On')).toBe('On')
+        await camera.getCapabilities()
         expect(value(properties.FaceEyeFrameDisplay)).toBe('ON')
     })
 
@@ -249,6 +278,20 @@ describe('focus on a simulated Sony body', () => {
         expect(value(properties.SubjectRecognitionInAF)).toBe('Off')
     })
 
+    it('forgets what a point changed when the same Camera disconnects and connects again', async () => {
+        const { camera, value, properties, writes } = sonyCamera()
+        await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+        expect(value(properties.FocusArea)).toBe('Flexible Spot M')
+        await camera.disconnect()
+        await camera.connect()
+        // The user's spot in the new session stays where it is: nothing from the old session is undone.
+        const before = writes.length
+        await camera.resetFocusPoint()
+        expect(writes.slice(before).filter(write => write.name !== 'FaceEyeFrameDisplay')).toEqual([])
+        expect(value(properties.FocusArea)).toBe('Flexible Spot M')
+        expect(value(properties.SubjectRecognitionInAF)).toBe('Off')
+    })
+
     it('refuses a point outside the picture before sending anything', async () => {
         const { camera, positions, writes } = sonyCamera()
         await expect(camera.setFocusPoint(1.2, 0.5)).rejects.toBeInstanceOf(CameraRefusedError)
@@ -279,12 +322,47 @@ describe('focus on a simulated Sony body', () => {
         expect(await camera.setEyeSelection('Left')).toBe('Left')
         expect(await camera.setDetectionSubject('Birds')).toBe('Birds')
         expect(writes).toEqual([
+            { name: 'FaceEyeFrameDisplay', value: 'ON' },
             { name: 'FocusMode', value: 'Manual' },
             { name: 'RightLeftEyeSelect', value: 'Left Eye' },
             { name: 'RecognitionTarget', value: 'Bird' },
         ])
         await expect(camera.setFocusMode('AF-A')).rejects.toBeInstanceOf(CameraRefusedError)
         await expect(camera.setControl('focusMode', 'Manual')).rejects.toBeInstanceOf(CameraRefusedError)
+    })
+
+    it('writes the tracking spot this body offers when two Sony values share its name', async () => {
+        const current = sonyCamera({ subjectDetection: 'Off' })
+        expect(await current.camera.setFocusArea('Tracking Spot M')).toBe('Tracking Spot M')
+        expect(current.wire).toEqual([{ name: 'FocusArea', data: [0x05, 0x02] }])
+
+        const older = sonyCamera({
+            subjectDetection: 'Off',
+            areas: ['Wide', 'Flexible Spot M', 'Tracking Flexible Spot S', 'Tracking Flexible Spot M'],
+        })
+        expect(await older.camera.setControl('focusArea', 'Tracking Spot M')).toMatchObject({ value: 'Tracking Spot M' })
+        expect(older.wire).toEqual([{ name: 'FocusArea', data: [0x02, 0x03] }])
+
+        // A body offering both Sony values under one name cannot be written by that name.
+        const both = sonyCamera({ subjectDetection: 'Off', areas: ['Wide', 'Lock on AF Flexible Spot M', 'Tracking Flexible Spot M'] })
+        await expect(both.camera.setFocusArea('Tracking Spot M')).rejects.toBeInstanceOf(CameraUnsupportedError)
+        expect(both.wire).toEqual([])
+    })
+
+    it('treats an older Tracking Flexible Spot as a tracking spot of that size, not as a plain area', async () => {
+        const { camera, value, properties } = sonyCamera({
+            focusArea: 'Tracking Flexible Spot S',
+            subjectDetection: 'Off',
+            areas: ['Wide', 'Flexible Spot S', 'Flexible Spot M', 'Lock on AF Wide', 'Tracking Flexible Spot S'],
+        })
+        await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+        expect(value(properties.FocusArea)).toBe('Tracking Flexible Spot S')
+        expect(await camera.setFocusArea('Wide')).toBe('Wide')
+        await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+        expect(value(properties.FocusArea)).toBe('Flexible Spot S')
+        expect(await camera.setFocusArea('Tracking Wide')).toBe('Tracking Wide')
+        await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
+        expect(value(properties.FocusArea)).toBe('Tracking Flexible Spot S')
     })
 
     it('reports a focus-mode write the body never shows as unknown, without resending it', async () => {
@@ -528,6 +606,17 @@ describe('focus on a simulated Canon body', () => {
         expect(calls.some(call => call.name === 'CanonViewfinderPosition')).toBe(false)
         await expect(camera.nudgeFocus('near', 'large')).rejects.toBeInstanceOf(CameraUnsupportedError)
         expect((await camera.getCapabilities()).operations?.nudgeFocus).toMatchObject({ supported: false })
+    })
+
+    it('resets the point in magnified live view too: the frame goes back to the centre', async () => {
+        const { camera, body, calls } = canonCamera({ magnification: 5 })
+        body.frame.x = 4000
+        body.frame.y = 3000
+        await camera.resetFocusPoint()
+        expect(calls.filter(call => call.name === 'CanonViewfinderPosition').map(call => call.parameters)).toEqual([
+            { X: 2700, Y: 1800 },
+        ])
+        expect(body.frame).toMatchObject({ x: 2700, y: 1800, magnification: 5 })
     })
 
     it('names One-Shot, AI Servo and manual AF-S, AF-C and MF, and writes the EOS value', async () => {

@@ -15,8 +15,9 @@ export interface FocusOperations {
     autofocus(): Promise<FocusResult>
     /**
      * Focuses on a point in the picture, 0–1 from the top-left. Where the focus area has no position
-     * (Sony Wide, Zone, Center), Slate switches to a spot and pauses subject detection;
-     * `resetFocusPoint` puts both back. `autofocus: false` only moves the point.
+     * (Sony Wide, Zone, Center), Slate switches to a spot; on Sony it also pauses subject detection so
+     * eye tracking does not pull focus back to a face. `resetFocusPoint` puts both back. An area
+     * chosen with a setter since the point stays. `autofocus: false` only moves the point.
      */
     setFocusPoint(x: number, y: number, options?: { autofocus?: boolean }): Promise<void>
     /** Back to the centre and the focus area and subject detection from before. Never refused because of state. */

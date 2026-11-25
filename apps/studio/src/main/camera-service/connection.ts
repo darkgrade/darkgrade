@@ -202,7 +202,8 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         this.detectedVendorId = null
         this.detectedName = null
         this.detectedModel = null
-        this.focusPointPlaced = false
+        this.focusPointChanges = null
+        this.focusPointAvailable = false
         this.focusFramesKey = '[]'
         this.osdOverlay = false
         this.settings = { iso: null, shutterSpeed: null, aperture: null }

@@ -2,7 +2,7 @@ import { Camera, runCameraBenchmark, VendorIDs, type CameraRecordingState } from
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'
-import { focusOperations, type FocusOperations } from '@main/camera-service/focus'
+import { focusOperations, type FocusOperations, type FocusPointChanges } from '@main/camera-service/focus'
 import { liveViewOperations, type LiveViewOperations } from '@main/camera-service/live-view'
 import { mediaOperations, type MediaOperations } from '@main/camera-service/media'
 import { photoOperations, type PhotoOperations } from '@main/camera-service/photo'
@@ -85,6 +85,7 @@ export class CameraService {
             clock: this.connected ? this.clock : null,
             controls: this.controls,
             osdOverlay: this.connected && this.detectedVendorId === VendorIDs.SONY ? this.osdOverlay : null,
+            clickToFocus: this.connected && this.focusPointAvailable,
             liveView: this.liveViewRunning,
             recording: this.recording,
             recordingState: this.recordingState,
@@ -217,11 +218,10 @@ export class CameraService {
 
     // ------------------------------------------------------------------ focus
 
-    /**
-     * A click-to-focus placed a point since the last Focus. Slate may have switched the focus area and
-     * paused subject detection for it; focus() asks Slate to put them back (resetFocusPoint).
-     */
-    focusPointPlaced = false
+    /** What click-to-focus changed since the last Focus, as read back after the click; focus() undoes only that. */
+    focusPointChanges: FocusPointChanges | null = null
+    /** Slate's last report of whether a focus point can be placed (getCapabilities().operations). */
+    focusPointAvailable = false
 
     /** Whether the camera's on-screen display is drawn over live view (Sony). */
     osdOverlay = false

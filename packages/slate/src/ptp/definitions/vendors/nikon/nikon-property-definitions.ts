@@ -1,10 +1,12 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
-import { BitfieldCodec, EnumCodec } from '@ptp/types/codec'
+import { STANDARD_FOCUS_MODES } from '@ptp/definitions/property-definitions'
+import { BitfieldCodec, createEnumCodec, EnumCodec } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
 import {nikonVideoPropertyRegistry} from '@vendors/nikon/video-properties'
 import { nikonShootingPropertyRegistry } from './nikon-shooting-property-definitions'
 
 const UINT8 = getDatatypeByName('UINT8')!.code
+const UINT16 = getDatatypeByName('UINT16')!.code
 const UINT32 = getDatatypeByName('UINT32')!.code
 
 /** Nikon Z5_2 USB/MTP reference §6.5.6.24; libgphoto2 PTP_DPC_NIKON_WarningStatus.
@@ -17,6 +19,30 @@ export const NikonWarningStatus = {
     datatype: UINT32,
     access: 'Get',
     codec: registry => registry.codecs.uint32,
+} as const satisfies PropertyDefinition
+
+/**
+ * The standard FocusMode with Nikon's vendor values (libgphoto2 PTP_VENDOR_NIKON FocusMode:
+ * 0x8010 AF-S, 0x8011 AF-C, 0x8012 AF-A, 0x8013 AF-F), next to the PTP 1.1 ones.
+ */
+export const FocusMode = {
+    code: 0x500a,
+    name: 'FocusMode',
+    description: 'Focus mode, with Nikon autofocus modes',
+    datatype: UINT16,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                ...STANDARD_FOCUS_MODES,
+                { value: 0x8010, name: 'AF-S', description: 'Single-servo autofocus' },
+                { value: 0x8011, name: 'AF-C', description: 'Continuous-servo autofocus' },
+                { value: 0x8012, name: 'AF-A', description: 'Automatic AF-S / AF-C selection' },
+                { value: 0x8013, name: 'AF-F', description: 'Full-time autofocus' },
+            ] as const,
+            registry.codecs.uint16
+        ),
 } as const satisfies PropertyDefinition
 
 export const LiveViewStatus = {
@@ -98,6 +124,7 @@ export const nikonPropertyRegistry = {
     ...nikonShootingPropertyRegistry,
     ConnectionPath,
     NikonWarningStatus,
+    FocusMode,
     LiveViewStatus,
     LiveViewSelector,
     MovieRecProhibitionCondition,

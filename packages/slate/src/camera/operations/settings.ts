@@ -100,6 +100,7 @@ const sonyOnly = (subject: string) => `Sony ${subject} is only available for Son
 export const settingsOperations: SettingsOperations & ThisType<Camera> = {
     async getCapabilities(): Promise<CameraCapabilities> {
         const capabilities = await requireCapability(this, 'settings', 'getCapabilities').readCapabilities()
+        await driverCapabilities(this).focus?.capabilitiesObserved?.(capabilities)
         return { ...capabilities, operations: operationAvailability(this, capabilities) }
     },
 

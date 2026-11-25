@@ -37,4 +37,10 @@ export interface FocusCapability {
     availability(capabilities: CameraCapabilities): Record<FocusOperationName, OperationAvailability>
     /** A focus setting was written by the application; forget what a focus point had changed about it. */
     settingWritten(id: string): void
+    /**
+     * The application read the camera's settings (`getCapabilities`). Lets a driver keep what focus
+     * needs in place from that observation, without reads of its own: Sony turns on Face/Eye Frame
+     * Display once per session while subject detection is on, so live view has face and eye frames.
+     */
+    capabilitiesObserved?(capabilities: CameraCapabilities): Promise<void>
 }

@@ -159,6 +159,13 @@ async function nikonStates(
     return { states, mappings, inventory }
 }
 
+/**
+ * The camera's own labels behind each canonical value of one observation. Two vendor values can
+ * share a canonical name (Sony's Lock-on AF and older Tracking spots are both "Tracking Spot M"),
+ * so a write sends the one this body offered rather than guessing from the name tables.
+ */
+const observedVendorLabels = new WeakMap<CameraControlState, ReadonlyMap<string, ReadonlySet<string>>>()
+
 /** Adapt existing observed inventories; a static registry entry alone never becomes a capability. */
 export async function readCameraCapabilities(
     camera: GenericCamera,
@@ -232,10 +239,13 @@ export async function readCameraCapabilities(
         const state = mappings[id]?.map(property => states.find(state => state.name === property.name)).find(Boolean)
         if (!state) continue
         const names = controlValueNames(valueInventory, id)?.[state.name]
+        const vendorLabels = new Map<string, Set<string>>()
         const label = (value: string | number | bigint) => {
             const vendorLabel =
                 camera instanceof NikonCamera && value !== 'Auto' ? nikonControlLabel(state.name, value) : String(value)
-            return names?.[vendorLabel] ?? vendorLabel
+            const canonical = names?.[vendorLabel] ?? vendorLabel
+            vendorLabels.set(canonical, (vendorLabels.get(canonical) ?? new Set()).add(vendorLabel))
+            return canonical
         }
         const definition = cameraControlDefinitions[id]
         const value = label(state.value),
@@ -255,7 +265,7 @@ export async function readCameraCapabilities(
             }
         }
         const uniqueChoices = !allowedValues || new Set(allowedValues).size === allowedValues.length
-        controls[id] = {
+        const control: CameraControlState = {
             id,
             label: definition.label,
             aliases: definition.aliases,
@@ -290,6 +300,8 @@ export async function readCameraCapabilities(
             ...(exposureTime ? { exposureTime } : {}),
             ...(state.unrecognized && { unrecognized: { ...state.unrecognized } }),
         }
+        controls[id] = control
+        observedVendorLabels.set(control, vendorLabels)
     }
     return {
         observedAt: Date.now(),
@@ -508,8 +520,20 @@ function sameExposureTicks(driver: GenericCamera, code: number): (observed: stri
     }
 }
 
-/** The camera's own label for a canonical value of this control (the inverse of its value names). */
+/**
+ * The camera's own label for a canonical value of this control: the one this observation offered,
+ * or else the inverse of its value names. A name that still stands for more than one vendor value
+ * is refused before anything is sent.
+ */
 function vendorValueLabel(driver: GenericCamera, state: CameraControlState, canonical: string): string {
+    const offered = [...(observedVendorLabels.get(state)?.get(canonical) ?? [])]
+    if (offered.length === 1) return offered[0]!
+    const ambiguous = (labels: string[]) =>
+        new CameraRefusedError(
+            state.id,
+            `${canonical} stands for more than one ${state.source.name} value (${labels.join(', ')}); the camera's choice is ambiguous`
+        )
+    if (offered.length > 1) throw ambiguous(offered)
     const inventory: ControlInventory =
         driver instanceof SonyCamera
             ? 'sony'
@@ -521,6 +545,9 @@ function vendorValueLabel(driver: GenericCamera, state: CameraControlState, cano
                     : 'nikonPhoto'
                 : 'standard'
     const names = controlValueNames(inventory, state.id)?.[state.source.name]
-    const matches = Object.entries(names ?? {}).filter(([, name]) => name === canonical)
-    return matches.length === 1 ? matches[0]![0] : canonical
+    const matches = Object.entries(names ?? {})
+        .filter(([, name]) => name === canonical)
+        .map(([label]) => label)
+    if (matches.length > 1) throw ambiguous(matches)
+    return matches[0] ?? canonical
 }

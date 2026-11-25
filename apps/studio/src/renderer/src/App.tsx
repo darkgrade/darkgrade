@@ -41,6 +41,7 @@ const INITIAL_STATE: CameraState = {
     clock: null,
     controls: null,
     osdOverlay: null,
+    clickToFocus: false,
     liveView: false,
     recording: false,
     recordingState: 'idle',
@@ -384,7 +385,7 @@ export function App(): React.JSX.Element {
                             onRetryLiveView={() => void run(() => api.liveViewStart())}
                             onFocus={focus}
                             onFocusAt={
-                                cameraState.vendor === 'Sony' || cameraState.vendor === 'Nikon'
+                                cameraState.clickToFocus
                                     ? async (x, y) => (await run(() => api.focusAt(x, y))) !== null
                                     : null
                             }

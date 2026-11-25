@@ -1,5 +1,5 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
-import { baseCodecs, CustomCodec } from '@ptp/types/codec'
+import { baseCodecs, createEnumCodec, CustomCodec } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
 
 const UNDEF = getDatatypeByName('UNDEF')!.code
@@ -121,13 +121,20 @@ export const FocusDistance = {
     codec: baseCodecs.uint16,
 } as const satisfies PropertyDefinition
 
+/** PIMA 15740 (PTP) FocusMode values; vendors extend it from 0x8000 in their own registries. */
+export const STANDARD_FOCUS_MODES = [
+    { value: 0x0001, name: 'Manual', description: 'Manual focus' },
+    { value: 0x0002, name: 'Automatic', description: 'Automatic focus' },
+    { value: 0x0003, name: 'Automatic Macro', description: 'Automatic focus, close-up' },
+] as const
+
 export const FocusMode = {
     code: 0x500a,
     name: 'FocusMode',
     description: 'Focus mode',
     datatype: UINT16,
     access: 'GetSet',
-    codec: baseCodecs.uint16,
+    codec: registry => createEnumCodec(registry, STANDARD_FOCUS_MODES, registry.codecs.uint16),
 } as const satisfies PropertyDefinition
 
 export const ExposureMeteringMode = {

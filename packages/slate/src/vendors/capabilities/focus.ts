@@ -5,14 +5,14 @@ import type {
     FocusDirection,
     FocusOperationName,
     FocusPointOptions,
-    FocusResult,
     FocusStepSize,
 } from '@camera/driver/focus'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import type { Camera } from '@camera/index'
 import { NikonCamera } from '@camera/nikon-camera'
-import type { CameraDriverInstance } from '@camera/operations/context'
+import { cameraContext, type CameraDriverInstance } from '@camera/operations/context'
 import { isMovableFocusArea, SonyCamera } from '@camera/sony-camera'
+import type { Logger } from '@core/logger'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { controlValueNames } from '@vendors/control-properties'
@@ -70,7 +70,17 @@ const SONY_GRID_WIDTH = 640
 const SONY_GRID_HEIGHT = 480
 const SONY_FOCUS_DURATION_MILLISECONDS = 800
 const SONY_DEFAULT_SPOT = 'Flexible Spot M'
-const SONY_TRACKING_PREFIX = 'Lock on AF '
+/** Lock-on AF areas on current bodies (0x02xx), Tracking Flexible Spot on older ones (0x03xx). */
+const SONY_TRACKING_PREFIXES = ['Lock on AF ', 'Tracking '] as const
+
+function sonyTrackingPrefix(area: string): string | undefined {
+    return SONY_TRACKING_PREFIXES.find(prefix => area.startsWith(prefix))
+}
+
+/** A spot without its tracking prefix: "Lock on AF Flexible Spot M" and "Tracking Flexible Spot M" are "Flexible Spot M". */
+function sonyPlainArea(area: string): string {
+    return area.slice(sonyTrackingPrefix(area)?.length ?? 0)
+}
 
 /**
  * What a focus point changed on a Sony body, so `resetFocusPoint` can put it back: the focus area
@@ -83,45 +93,82 @@ interface SonyPointChanges {
     pausedSubjectDetection?: boolean
 }
 
-function sonyFocusCapability(driver: SonyCamera): FocusCapability {
-    const properties = driver.registry.properties
-    const changes: SonyPointChanges = {}
-    let lastSpot = SONY_DEFAULT_SPOT
+/** What the focus capability remembers about one PTP session; a new session starts fresh. */
+interface SonyFocusSession {
+    sessionId: number | null
+    changes: SonyPointChanges
+    /** The spot size last active on the camera, without its tracking prefix. */
+    lastSpot: string
+    /** Face/Eye Frame Display was checked since subject detection was last seen turning on. */
+    faceFramesChecked: boolean
+}
 
-    /** Face and eye frames stay out of live view unless Face/Eye Frame Display is on. */
-    async function showFaceFramesWhileDetecting(): Promise<void> {
-        const states = await driver.refreshPropertyStates()
-        const detection = states.find(state => state.name === properties.SubjectRecognitionInAF.name)
-        const display = states.find(state => state.name === properties.FaceEyeFrameDisplay.name)
-        if (detection?.value !== 'On' || !display || display.value === 'ON' || !display.writable) return
-        await driver.set(properties.FaceEyeFrameDisplay, 'ON')
+function sonyFocusCapability(driver: SonyCamera, logger: Logger): FocusCapability {
+    const properties = driver.registry.properties
+    const freshSession = (sessionId: number | null): SonyFocusSession => ({
+        sessionId,
+        changes: {},
+        lastSpot: SONY_DEFAULT_SPOT,
+        faceFramesChecked: false,
+    })
+    let remembered = freshSession(driver.sessionId)
+
+    /** This session's memory. A point placed before a disconnect never changes a later session. */
+    function session(): SonyFocusSession {
+        if (remembered.sessionId !== driver.sessionId) remembered = freshSession(driver.sessionId)
+        return remembered
     }
 
-    /** The spot to switch to from an area without a position, keeping Lock-on AF when it was on. */
+    /**
+     * Face and eye frames stay out of live view unless Face/Eye Frame Display is on, so eye tracking
+     * would show nothing. Turned on once per session while subject detection is on, from the
+     * property states the driver last read (no reads of its own). This is display only: a body that
+     * refuses keeps its own setting, and the refusal is logged rather than raised.
+     */
+    async function showFaceFramesWhileDetecting(): Promise<void> {
+        const current = session()
+        if (current.faceFramesChecked) return
+        const states = driver.listPropertyStates()
+        const detection = states.find(state => state.name === properties.SubjectRecognitionInAF.name)
+        if (detection?.value !== 'On') return
+        current.faceFramesChecked = true
+        const display = states.find(state => state.name === properties.FaceEyeFrameDisplay.name)
+        if (!display || display.value === 'ON' || !display.writable) return
+        try {
+            await driver.set(properties.FaceEyeFrameDisplay, 'ON')
+        } catch (error) {
+            if (!(error instanceof PTPResponseError)) throw error
+            logger.addLog({
+                type: 'console',
+                level: 'warn',
+                consoleLevel: 'warn',
+                args: [`Sony Face/Eye Frame Display stayed off: ${error.message}`],
+            })
+        }
+    }
+
+    /** The spot to switch to from an area without a position, keeping tracking when it was on. */
     async function spotFor(area: string): Promise<string> {
         const states = await driver.refreshPropertyStates()
         const offered = (states.find(state => state.name === properties.FocusArea.name)?.allowedValues ?? []).map(String)
-        const tracking = area.startsWith(SONY_TRACKING_PREFIX)
-        const preferred = tracking ? `${SONY_TRACKING_PREFIX}${lastSpot}` : lastSpot
-        if (offered.includes(preferred)) return preferred
+        const tracking = sonyTrackingPrefix(area) !== undefined
+        const { lastSpot } = session()
+        const preferred = tracking ? SONY_TRACKING_PREFIXES.map(prefix => `${prefix}${lastSpot}`) : [lastSpot]
+        const match = preferred.find(candidate => offered.includes(candidate))
+        if (match) return match
         const alternative = offered.find(
-            candidate => isMovableFocusArea(candidate) && candidate.startsWith(SONY_TRACKING_PREFIX) === tracking
+            candidate => isMovableFocusArea(candidate) && (sonyTrackingPrefix(candidate) !== undefined) === tracking
         )
         if (!alternative)
             throw new CameraUnsupportedError('setFocusPoint', `The camera offers no movable focus area from ${area}`)
         return alternative
     }
 
-    async function autofocus(): Promise<FocusResult> {
-        await showFaceFramesWhileDetecting()
-        return driver.autofocus(SONY_FOCUS_DURATION_MILLISECONDS)
-    }
-
     return {
         availability(capabilities) {
             const area = capabilities.controls.focusArea
             const spot = area && sonyAreaLabel(area.value)
-            if (spot && isMovableFocusArea(spot)) lastSpot = spot.replace(SONY_TRACKING_PREFIX, '')
+            if (spot && isMovableFocusArea(spot)) session().lastSpot = sonyPlainArea(spot)
             const point = area ? supported : unsupported('The camera reports no focus area to place a point in')
             return {
                 autofocus: supported,
@@ -131,21 +178,29 @@ function sonyFocusCapability(driver: SonyCamera): FocusCapability {
             }
         },
 
-        autofocus,
+        async capabilitiesObserved(capabilities) {
+            if (capabilities.controls.subjectDetection?.value === 'On') await showFaceFramesWhileDetecting()
+        },
+
+        async autofocus() {
+            await showFaceFramesWhileDetecting()
+            return driver.autofocus(SONY_FOCUS_DURATION_MILLISECONDS)
+        },
 
         async setFocusPoint(x: number, y: number, options: FocusPointOptions) {
             requirePoint(x, y)
+            const current = session()
             const area = String(await driver.get(properties.FocusArea))
-            if (isMovableFocusArea(area)) lastSpot = area.replace(SONY_TRACKING_PREFIX, '')
+            if (isMovableFocusArea(area)) current.lastSpot = sonyPlainArea(area)
             else {
                 const spot = await spotFor(area)
                 await driver.set(properties.FocusArea, spot)
-                changes.previousArea ??= area
-                changes.placedArea = spot
+                current.changes.previousArea ??= area
+                current.changes.placedArea = spot
             }
             if ((await driver.get(properties.SubjectRecognitionInAF)) === 'On') {
                 await driver.set(properties.SubjectRecognitionInAF, 'Off')
-                changes.pausedSubjectDetection = true
+                current.changes.pausedSubjectDetection = true
             }
             await driver.setAfAreaPosition(
                 Math.round(x * (SONY_GRID_WIDTH - 1)),
@@ -155,6 +210,7 @@ function sonyFocusCapability(driver: SonyCamera): FocusCapability {
         },
 
         async resetFocusPoint() {
+            const { changes } = session()
             await restoreAll('resetFocusPoint', [
                 async () => {
                     const area = String(await driver.get(properties.FocusArea))
@@ -183,8 +239,12 @@ function sonyFocusCapability(driver: SonyCamera): FocusCapability {
         },
 
         settingWritten(id: string) {
-            if (id === 'focusArea') changes.previousArea = changes.placedArea = undefined
-            if (id === 'subjectDetection') changes.pausedSubjectDetection = undefined
+            const current = session()
+            if (id === 'focusArea') current.changes.previousArea = current.changes.placedArea = undefined
+            if (id === 'subjectDetection') {
+                current.changes.pausedSubjectDetection = undefined
+                current.faceFramesChecked = false
+            }
         },
     }
 }
@@ -255,7 +315,11 @@ const CANON_FOCUS_DURATION_MILLISECONDS = 800
 function canonFocusCapability(driver: CanonCamera): FocusCapability {
     const operations = driver.registry.operations
 
-    async function placeFrame(operation: string, x: number, y: number): Promise<void> {
+    /**
+     * Moves the frame so its centre is at (x, y). A point needs unmagnified live view, where the frame
+     * is the AF point; resetting only recentres it, which is also right while magnified.
+     */
+    async function placeFrame(operation: 'setFocusPoint' | 'resetFocusPoint', x: number, y: number): Promise<void> {
         const missing = [operations.CanonGetViewfinderData, operations.CanonViewfinderPosition].filter(
             definition => !driver.advertises(definition)
         )
@@ -265,7 +329,7 @@ function canonFocusCapability(driver: CanonCamera): FocusCapability {
                 `The camera does not advertise ${missing.map(definition => definition.name).join(', ')}`
             )
         const position = await driver.getLiveViewPosition()
-        if (position.magnification !== 1)
+        if (operation === 'setFocusPoint' && position.magnification !== 1)
             throw new CameraUnsupportedError(operation, 'Canon places a focus point only in unmagnified live view')
         const visibleWidth = position.maximumX - position.minimumX + position.width
         const visibleHeight = position.maximumY - position.minimumY + position.height
@@ -354,8 +418,8 @@ function genericFocusCapability(): FocusCapability {
  * says whether focusing is possible and why not; an operation the camera cannot do throws
  * CameraUnsupportedError with the same reason.
  */
-export function focusCapability(driver: CameraDriverInstance, _owner: Camera): FocusCapability {
-    if (driver instanceof SonyCamera) return sonyFocusCapability(driver)
+export function focusCapability(driver: CameraDriverInstance, owner: Camera): FocusCapability {
+    if (driver instanceof SonyCamera) return sonyFocusCapability(driver, cameraContext(owner).logger)
     if (driver instanceof NikonCamera) return nikonFocusCapability(driver)
     if (driver instanceof CanonCamera) return canonFocusCapability(driver)
     return genericFocusCapability()
