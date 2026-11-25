@@ -954,6 +954,43 @@ export class NikonCamera extends GenericCamera {
         throw new Error('Nikon DeviceReady timed out')
     }
 
+    /**
+     * @internal Switch photo/video (LiveViewSelector) for the generic photoVideoMode setting, the
+     * way every other selector change in this driver does (see `setStandardProperty`): in REMOTE
+     * mode, after ending an active live view, waiting for DeviceReady. The previous live view and
+     * PC-camera mode are restored afterwards, whether or not the camera took the selector. The
+     * caller confirms the readback; the selector is sent once.
+     */
+    async selectPhotoVideoMode(mode: 'PHOTO' | 'VIDEO'): Promise<void> {
+        await this.getLiveViewStatus()
+        const restoreLiveView = this.liveViewStatus === 'ON'
+        const restoreLiveViewOwnership = this.ownsLiveView
+        const restorePcMode = this.cameraMode !== 'REMOTE'
+        let failure: unknown
+        try {
+            await this.enableRemoteMode()
+            await this.selectLiveViewMode(mode, true)
+        } catch (error) {
+            failure = error
+            throw error
+        } finally {
+            try {
+                if (restoreLiveView) await this.enableLiveView()
+                this.ownsLiveView = restoreLiveViewOwnership
+                if (restorePcMode) await this.enablePcCameraMode()
+            } catch (error) {
+                // A failed restoration leaves the body's mode unknown, whatever the selector did.
+                const restoration = new CameraOutcomeUnknownError(
+                    'photoVideoMode',
+                    `Restoring Nikon live view and camera mode after the photo/video switch failed: ${String(error)}` +
+                        (failure ? `; the switch itself failed: ${String(failure)}` : '')
+                )
+                restoration.cause = failure ? new AggregateError([failure, error]) : error
+                throw restoration
+            }
+        }
+    }
+
     /** A failed activation may still have changed the selector; forced restoration sends the original value despite stale caches. */
     private async selectLiveViewMode(mode: 'PHOTO' | 'VIDEO', force = false): Promise<void> {
         if (!force && this.liveViewMode === mode) return

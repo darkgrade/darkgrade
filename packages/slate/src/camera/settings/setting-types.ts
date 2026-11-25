@@ -1,4 +1,5 @@
 import type { CameraControlState } from '@camera/controls'
+import { CameraUnsupportedError } from '@camera/errors'
 
 /**
  * The types of one typed setting.
@@ -19,4 +20,19 @@ export type SettingReader<Value> = (state: CameraControlState) => Value
 /** One reader per typed setting in a group. */
 export type SettingReaders<Types> = {
     [Id in keyof Types]: SettingReader<Types[Id] extends { value: infer Value } ? Value : never>
+}
+
+/**
+ * The reader for an enumerated setting whose canonical names are its codec names: the observed
+ * value is returned as is, and a raw value the codecs have no name for is reported, never guessed.
+ */
+export function namedSettingReader<Value extends string>(label: string): SettingReader<Value> {
+    return state => {
+        if (state.unrecognized?.value !== undefined)
+            throw new CameraUnsupportedError(
+                state.id,
+                `${label}: the camera reports a value Slate has no name for (${state.value})`
+            )
+        return state.value as Value
+    }
 }

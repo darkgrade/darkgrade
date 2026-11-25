@@ -1,4 +1,5 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
+import { createEnumCodec } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
 
 /**
@@ -42,9 +43,6 @@ export const NikonRawCompression = scalarProperty(
 export const NikonMovieAutoISO = scalarProperty(
     'NikonMovieAutoISO', 0xd0ad, 'uint8', 'Movie Auto ISO in manual exposure mode: 0 off, 1 on'
 )
-export const NikonMovieWhiteBalance = scalarProperty(
-    'NikonMovieWhiteBalance', 0xd23a, 'uint16', 'Movie white balance selection; raw camera value'
-)
 export const NikonMovieShutterSpeed = scalarProperty(
     'NikonMovieShutterSpeed', 0xd1a8, 'uint32', 'Movie exposure time: upper 16 bits numerator, lower 16 bits denominator'
 )
@@ -81,6 +79,147 @@ export const NikonMovieFocusPointLock = scalarProperty(
     'NikonMovieFocusPointLock', 0x0001d016, 'uint8', 'Movie focus-point lock: 0 off, 1 on'
 )
 
+
+/**
+ * Nikon white balance (photo 0x5005, movie 0xD23A), named in Slate's canonical white-balance
+ * spelling: Nikon's "Sunny" is Daylight, "Incandescent" is Tungsten, "Preset manual" is Custom.
+ * Values from the Nikon Z 9 USB/MTP reference (UsbMtpE_06) §6.5.1.4 and §6.5.3.14.
+ */
+export const nikonWhiteBalanceValues = [
+    { value: 0x0002, name: 'Auto', description: 'Auto' },
+    { value: 0x0004, name: 'Daylight', description: 'Sunny' },
+    { value: 0x0005, name: 'Fluorescent', description: 'Fluorescent' },
+    { value: 0x0006, name: 'Tungsten', description: 'Incandescent' },
+    { value: 0x0007, name: 'Flash', description: 'Flash (photo only)' },
+    { value: 0x8010, name: 'Cloudy', description: 'Cloudy' },
+    { value: 0x8011, name: 'Shade', description: 'Shade' },
+    { value: 0x8012, name: 'Color Temperature', description: 'Choose color temperature' },
+    { value: 0x8013, name: 'Custom', description: 'Preset manual' },
+    { value: 0x8015, name: 'Same as photo', description: 'Movie only: same as photo settings' },
+    { value: 0x8016, name: 'Natural Light Auto', description: 'Natural light auto' },
+] as const
+
+/** Photo white balance: the standard 0x5005 code with Nikon's own values. */
+export const NikonWhiteBalance = {
+    code: 0x5005,
+    name: 'WhiteBalance',
+    description: 'Photo white balance (Nikon values)',
+    datatype: getDatatypeByName('UINT16')!.code,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            nikonWhiteBalanceValues.filter(entry => entry.value !== 0x8015),
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+export const NikonMovieWhiteBalance = {
+    code: 0xd23a,
+    name: 'NikonMovieWhiteBalance',
+    description: 'Movie white balance selection',
+    datatype: getDatatypeByName('UINT16')!.code,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            nikonWhiteBalanceValues.filter(entry => entry.value !== 0x0007),
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+/** Release mode: the standard 0x5013 code with Nikon's values (Z 9 USB/MTP reference §6.5.1.15). */
+export const NikonStillCaptureMode = {
+    code: 0x5013,
+    name: 'StillCaptureMode',
+    description: 'Release mode (Nikon values)',
+    datatype: getDatatypeByName('UINT16')!.code,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'Single', description: 'Single-frame shooting' },
+                { value: 0x0002, name: 'Continuous high', description: 'Continuous high-speed shooting' },
+                { value: 0x8010, name: 'Continuous low', description: 'Continuous low-speed shooting' },
+                { value: 0x8011, name: 'Self-timer', description: 'Self-timer' },
+                { value: 0x8100, name: 'Quick setting', description: 'Release-mode dial at the quick setting position' },
+            ] as const,
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+/**
+ * Picture Control, named in Slate's canonical look spelling (Z 9 USB/MTP reference §6.5.13.1 and
+ * §6.5.13.2). 101-120 are Creative Picture Controls; 201-209 are Custom Picture Controls 1-9.
+ */
+const nikonPictureControlValues = [
+    { value: 1, name: 'Standard', description: 'Standard' },
+    { value: 2, name: 'Neutral', description: 'Neutral' },
+    { value: 3, name: 'Vivid', description: 'Vivid' },
+    { value: 4, name: 'Monochrome', description: 'Monochrome' },
+    { value: 5, name: 'Portrait', description: 'Portrait' },
+    { value: 6, name: 'Landscape', description: 'Landscape' },
+    { value: 7, name: 'Flat', description: 'Flat' },
+    { value: 8, name: 'Auto', description: 'Auto' },
+    { value: 11, name: 'Rich tone portrait', description: 'Rich Tone Portrait' },
+    { value: 100, name: 'Same as photo', description: 'Movie only: same as photo settings' },
+    { value: 101, name: 'Dream', description: 'Creative Picture Control' },
+    { value: 102, name: 'Morning', description: 'Creative Picture Control' },
+    { value: 103, name: 'Pop', description: 'Creative Picture Control' },
+    { value: 104, name: 'Sunday', description: 'Creative Picture Control' },
+    { value: 105, name: 'Somber', description: 'Creative Picture Control' },
+    { value: 106, name: 'Drama', description: 'Creative Picture Control' },
+    { value: 107, name: 'Silence', description: 'Creative Picture Control' },
+    { value: 108, name: 'Bleach', description: 'Creative Picture Control' },
+    { value: 109, name: 'Melancholic', description: 'Creative Picture Control' },
+    { value: 110, name: 'Pure', description: 'Creative Picture Control' },
+    { value: 111, name: 'Denim', description: 'Creative Picture Control' },
+    { value: 112, name: 'Toy', description: 'Creative Picture Control' },
+    { value: 113, name: 'Sepia', description: 'Creative Picture Control' },
+    { value: 114, name: 'Blue', description: 'Creative Picture Control' },
+    { value: 115, name: 'Red', description: 'Creative Picture Control' },
+    { value: 116, name: 'Pink', description: 'Creative Picture Control' },
+    { value: 117, name: 'Charcoal', description: 'Creative Picture Control' },
+    { value: 118, name: 'Graphite', description: 'Creative Picture Control' },
+    { value: 119, name: 'Binary', description: 'Creative Picture Control' },
+    { value: 120, name: 'Carbon', description: 'Creative Picture Control' },
+    { value: 201, name: 'Custom 1', description: 'Custom Picture Control 1' },
+    { value: 202, name: 'Custom 2', description: 'Custom Picture Control 2' },
+    { value: 203, name: 'Custom 3', description: 'Custom Picture Control 3' },
+    { value: 204, name: 'Custom 4', description: 'Custom Picture Control 4' },
+    { value: 205, name: 'Custom 5', description: 'Custom Picture Control 5' },
+    { value: 206, name: 'Custom 6', description: 'Custom Picture Control 6' },
+    { value: 207, name: 'Custom 7', description: 'Custom Picture Control 7' },
+    { value: 208, name: 'Custom 8', description: 'Custom Picture Control 8' },
+    { value: 209, name: 'Custom 9', description: 'Custom Picture Control 9' },
+] as const
+
+/** ActivePicCtrlItem: the photo Picture Control. */
+export const NikonPictureControl = {
+    code: 0xd200,
+    name: 'NikonPictureControl',
+    description: 'Photo Picture Control',
+    datatype: getDatatypeByName('UINT16')!.code,
+    access: 'GetSet',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            nikonPictureControlValues.filter(entry => entry.value !== 100),
+            registry.codecs.uint16
+        ),
+} as const satisfies PropertyDefinition
+
+/** MovieActivePicCtrlItem: the video Picture Control. */
+export const NikonMoviePictureControl = {
+    code: 0xd237,
+    name: 'NikonMoviePictureControl',
+    description: 'Movie Picture Control',
+    datatype: getDatatypeByName('UINT16')!.code,
+    access: 'GetSet',
+    codec: registry => createEnumCodec(registry, nikonPictureControlValues, registry.codecs.uint16),
+} as const satisfies PropertyDefinition
+
 export const nikonShootingPropertyRegistry = {
     NikonWhiteBalanceKelvin,
     NikonMovieWhiteBalanceKelvin,
@@ -88,7 +227,11 @@ export const nikonShootingPropertyRegistry = {
     NikonPhotoAutoISO,
     NikonRawCompression,
     NikonMovieAutoISO,
+    WhiteBalance: NikonWhiteBalance,
     NikonMovieWhiteBalance,
+    StillCaptureMode: NikonStillCaptureMode,
+    NikonPictureControl,
+    NikonMoviePictureControl,
     NikonMovieShutterSpeed,
     NikonPhotoShutterSpeed,
     NikonMovieFNumber,

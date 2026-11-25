@@ -37,11 +37,19 @@ export const videoOperationTable = {
         },
         enterMovieMode: {
             area: 'video',
-            disposition: { kind: 'private', handledBy: 'startRecording (video mode)' },
+            disposition: {
+                kind: 'replaced-by',
+                target: 'setPhotoVideoMode',
+                note: "setPhotoVideoMode('video'); startRecording also selects video mode itself",
+            },
         },
         leaveMovieMode: {
             area: 'video',
-            disposition: { kind: 'private', handledBy: 'stopRecording (restores the previous mode)' },
+            disposition: {
+                kind: 'replaced-by',
+                target: 'setPhotoVideoMode',
+                note: "setPhotoVideoMode('photo'); stopRecording restores the previous mode itself",
+            },
         },
         prepareCanonRecordingDestination: {
             area: 'video',

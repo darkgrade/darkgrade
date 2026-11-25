@@ -1,9 +1,16 @@
 import type { SonySdkProperty, SonyWifiCamera } from '@vendors/sony/sdk-camera'
 import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import { sonyIsoLabel } from '@vendors/sony/iso-value'
-import { cameraControlDefinitions, resolveCameraControl, type CameraCapabilities, type CameraControlId } from '@camera/controls'
+import {
+    cameraControlDefinitions,
+    resolveCameraControl,
+    unrecognizedValueLabel,
+    type CameraCapabilities,
+    type CameraControlId,
+    type UnrecognizedValues,
+} from '@camera/controls'
 import { parseExposureTime } from '@camera/exposure-time'
-import { canonicalControlValues } from '@vendors/control-properties'
+import { canonicalControlValues, hasCanonicalControlValues } from '@vendors/control-properties'
 
 const controls: Record<string, { code: number; label: string; values?: Record<string, string> }> = {
     aperture: { code: 256, label: 'Aperture' },
@@ -18,23 +25,29 @@ const controls: Record<string, { code: number; label: string; values?: Record<st
         code: 264,
         label: 'White balance',
         values: {
+            // CrWhiteBalanceSetting, in the canonical names of the PTP WhiteBalance codec.
             '0': 'Auto',
             '17': 'Daylight',
             '18': 'Shade',
             '19': 'Cloudy',
             '20': 'Tungsten',
-            '33': 'Warm White',
-            '34': 'Cool White',
-            '35': 'Day White',
-            '36': 'Daylight fluorescent',
+            '32': 'Fluorescent',
+            '33': 'Fluorescent Warm White',
+            '34': 'Fluorescent Cool White',
+            '35': 'Fluorescent Day White',
+            '36': 'Fluorescent Daylight',
             '48': 'Flash',
             '1': 'Underwater Auto',
             '256': 'Color Temperature',
             '257': 'Custom 1',
             '258': 'Custom 2',
             '259': 'Custom 3',
+            '260': 'Custom',
         },
     },
+    pictureStyle: { code: 453, label: 'Look' },
+    pictureProfile: { code: 426, label: 'Picture profile' },
+    driveMode: { code: 270, label: 'Drive mode' },
     imageFormat: { code: 262, label: 'Image format' },
     jpegQuality: { code: 301, label: 'JPEG quality' },
     imageSize: { code: 272, label: 'Image size', values: { '1': 'L', '2': 'M', '3': 'S' } },
@@ -86,6 +99,17 @@ function label(property: SonySdkProperty, key: string, value: string): string {
         return `${packed >>> 16}/${packed & 65535}`
     }
     return controls[key]?.values?.[value] || SONY_SDK_SETTING_LABELS[property.code]?.[value] || value
+}
+/** Controls whose values are numbers or are spelled from the number itself, so every value has a name. */
+const computedLabels = new Set(['aperture', 'shutterSpeed', 'iso', 'zoomPosition', 'exposureComp', 'colorTemperature'])
+/** A documented name for an enumerated SDK value, or undefined when Slate has none. */
+function documentedLabel(property: SonySdkProperty, key: string, value: string): string | undefined {
+    if (computedLabels.has(key)) return label(property, key, value)
+    return controls[key]?.values?.[value] || SONY_SDK_SETTING_LABELS[property.code]?.[value]
+}
+/** Hexadecimal, as PTP spells an unrecognized raw value; text stays verbatim. */
+function unrecognizedSdkValue(value: string): string {
+    return /^-?\d+$/.test(value) ? unrecognizedValueLabel(BigInt(value)) : value
 }
 function findProperty(properties: SonySdkProperty[], key: string): SonySdkProperty | undefined {
     if (key === 'shutterSpeed') {
@@ -142,9 +166,27 @@ export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabi
     for (const [name, state] of Object.entries(sonySdkControls(properties))) for (const id of sdkControlIds(name)) {
         if (id === 'shutterSpeed' && state.code === 259 && state.rawValue === '4294967295') continue
         const definition = cameraControlDefinitions[id]
-        const vendorChoices = state.valueForm === 'enum' ? state.allowedValues : undefined
-        const canonical = canonicalControlValues('sonySdk', id, state.value, vendorChoices)
-        const choices = canonical ? canonical.allowedValues : vendorChoices
+        const property = properties.find(candidate => candidate.code === state.code)!
+        // An enumerated value with no documented name is reported, never offered or written. A setting
+        // with canonical names reports its unnamed values through that vocabulary instead.
+        const enumerated = state.valueForm === 'enum' && !hasCanonicalControlValues('sonySdk', id)
+        const currentUnnamed = enumerated && documentedLabel(property, name, state.rawValue) === undefined
+        const unnamedChoices = enumerated
+            ? (property.allowedValues ?? []).filter(raw => documentedLabel(property, name, raw) === undefined)
+            : []
+        const namedChoices = state.valueForm !== 'enum'
+            ? undefined
+            : (property.allowedValues ?? [])
+                  .filter(raw => !unnamedChoices.includes(raw))
+                  .map(raw => label(property, name, raw))
+        const canonical = currentUnnamed ? undefined : canonicalControlValues('sonySdk', id, state.value, namedChoices)
+        const unrecognizedChoices = [...unnamedChoices.map(unrecognizedSdkValue), ...canonical?.unrecognized?.choices ?? []]
+        const unrecognized: UnrecognizedValues = {
+            ...(currentUnnamed && { value: unrecognizedSdkValue(state.rawValue) }),
+            ...(canonical?.unrecognized?.value !== undefined && { value: canonical.unrecognized.value }),
+            ...(unrecognizedChoices.length > 0 && { choices: unrecognizedChoices }),
+        }
+        const choices = canonical ? canonical.allowedValues : namedChoices
         const unique = choices !== undefined && choices.length > 0 && new Set(choices).size === choices.length
         let exposureTime: ReturnType<typeof parseExposureTime> | undefined
         if (id === 'shutterSpeed') {
@@ -152,13 +194,15 @@ export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabi
         }
         result[id] = {
             id, label: definition.label, aliases: definition.aliases,
-            value: id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${state.value})` : canonical?.value ?? state.value,
+            value: unrecognized.value !== undefined
+                ? `Unrecognized (${unrecognized.value})`
+                : id === 'shutterSpeed' && !exposureTime ? `Unknown exposure (${state.value})` : canonical?.value ?? state.value,
             source: { code: state.code, name: state.name, protocol: 'sony-sdk' },
             allowedValues: choices, enabled: state.enabled,
-            writable: state.writable && unique && (id !== 'shutterSpeed' || Boolean(exposureTime)) &&
-                canonical?.unrecognized?.value === undefined,
+            writable: state.writable && unique && unrecognized.value === undefined &&
+                (id !== 'shutterSpeed' || Boolean(exposureTime)),
             ...(exposureTime ? { exposureTime } : {}),
-            ...(canonical?.unrecognized && { unrecognized: canonical.unrecognized }),
+            ...(Object.keys(unrecognized).length > 0 && { unrecognized }),
         }
     }
     // The SDK does not supply a standard PTP DeviceInfo operation inventory.

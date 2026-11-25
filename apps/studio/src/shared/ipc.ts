@@ -112,6 +112,7 @@ export interface CameraControl {
 }
 
 export const CAMERA_CONTROL_NAMES = [
+    'photoVideoMode',
     'whiteBalance',
     'colorTemperature',
     'focusMode',

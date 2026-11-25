@@ -326,9 +326,10 @@ export class CanonCamera extends GenericCamera {
                 try {
                     const response = await this.send(this.registry.operations.CanonSetDevicePropValue, {}, data)
                     if (response.code !== OK.code) {
-                        const error = new Error(`Canon ${property.name} write returned 0x${response.code.toString(16)}`)
-                        Object.assign(error, { code: response.code })
-                        throw error
+                        throw new PTPResponseError(
+                            response.code,
+                            `Canon ${property.name} write returned 0x${response.code.toString(16)}`
+                        )
                     }
                     break
                 } catch (error: any) {
@@ -558,6 +559,11 @@ export class CanonCamera extends GenericCamera {
         if (await this.get(property) === 3) return
         await this.set(property, 3)
         if (await this.get(property) !== 3) throw new Error('Canon did not confirm Manual exposure mode')
+    }
+
+    /** @internal Whether this session's DeviceInfo advertised an operation; unknown before connect. */
+    advertisesOperation(code: number): boolean {
+        return this.supportedOperations?.has(code) === true
     }
 
     async enterMovieMode(): Promise<void> {

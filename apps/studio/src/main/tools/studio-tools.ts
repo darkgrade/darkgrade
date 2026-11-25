@@ -101,27 +101,23 @@ function recordChange(change: Omit<SettingChange, 'group'>): void {
     if (changeHistory.length > MAXIMUM_REMEMBERED_CHANGES) changeHistory.shift()
 }
 
-/** "Movie mode" and "photo mode" keep the exposure type: Manual ↔ Movie Manual, Aperture Priority ↔ Movie Aperture Priority. */
-function counterpartMode(requested: string, current: string | null, options: string[]): string | null {
-    const wantsMovie = /^(movie|video|film)( mode)?$/i.test(requested.trim())
-    const wantsPhoto = /^(photo|still|stills|picture)( mode)?$/i.test(requested.trim())
-    if (!wantsMovie && !wantsPhoto) return null
-    const base = (current ?? '').replace(/^(movie|s&q)\s+/i, '')
-    const target = wantsMovie ? `movie ${base}` : base
-    return (
-        options.find(option => option.toLowerCase() === target.toLowerCase()) ??
-        options.find(option => (wantsMovie ? /^movie/i.test(option) : !/^(movie|s&q)/i.test(option))) ??
-        null
-    )
+/**
+ * "Movie mode" and "photo mode" asked of the exposure mode are Slate's photoVideoMode, which keeps
+ * the exposure type itself (Manual ↔ Movie Manual on Sony).
+ */
+function photoVideoRequest(name: SettingName, requested: string): SettingName {
+    return name === 'exposureProgram' && /^(movie|video|film|photo|still|stills|picture)( mode)?$/i.test(requested.trim())
+        ? 'photoVideoMode'
+        : name
 }
 
-async function applySetting(name: SettingName, value: string): Promise<string> {
+async function applySetting(requestedName: SettingName, value: string): Promise<string> {
+    const name = photoVideoRequest(requestedName, value)
     const control = availableSettings()[name]
     if (!control) throw new Error(`${CAMERA_CONTROL_LABELS[name]} isn't available on this camera right now`)
     if (!control.enabled)
         throw new Error(`${CAMERA_CONTROL_LABELS[name]} can't be changed in the camera's current mode`)
-    const modeSwitch = name === 'exposureProgram' ? counterpartMode(value, control.value, control.options) : null
-    const chosen = modeSwitch ?? (control.options.length ? matchOption(name, value, control.options) : value)
+    const chosen = control.options.length ? matchOption(name, value, control.options) : value
     if (!chosen) {
         throw new Error(
             `${CAMERA_CONTROL_LABELS[name]} has no value "${value}". Choices: ${control.options.join(', ')}`
@@ -214,7 +210,7 @@ function stepByStops(
 }
 
 function isMovieMode(): boolean {
-    return /movie|video|s&q/i.test(cameraService.getState().controls?.exposureProgram?.value ?? '')
+    return cameraService.getState().controls?.photoVideoMode?.value === 'video'
 }
 
 async function adjustExposure(stops: number, using: string): Promise<unknown> {

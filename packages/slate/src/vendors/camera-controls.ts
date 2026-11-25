@@ -41,6 +41,8 @@ import { nikonControlLabel } from '@vendors/nikon/control-values'
 import { MovieShutterAngle } from '@vendors/nikon/video-properties'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import { NikonShotControls } from '@vendors/nikon/shot-controls'
+import { canonPhotoVideoModeState, sonyPhotoVideoModeState, writePhotoVideoMode } from '@vendors/photo-video-mode'
+import { sendControlWrite } from '@vendors/control-write'
 
 interface PropertyState {
     code: number
@@ -237,14 +239,18 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
     let states: PropertyState[]
     let mappings: ControlPropertyMap<CameraControlId>
     let inventory: ControlValueInventory = 'standard'
+    // Controls composed from more than one observation (see `@vendors/photo-video-mode`).
+    let composed: CameraCapabilities['controls'] = {}
     if (camera instanceof SonyCamera) {
         inventory = 'sony'
         const observed = await camera.refreshPropertyStates()
         const iso = camera.isoControlState(observed)
         states = observed.map(state => (state.name === 'Iso' && iso ? iso : state))
         mappings = sonyControlProperties
+        composed = { photoVideoMode: sonyPhotoVideoModeState(observed) }
     } else if (camera instanceof CanonCamera) {
         await camera.refreshEventProperties()
+        composed = { photoVideoMode: canonPhotoVideoModeState(camera) }
         states = camera
             .listPropertyStates()
             .flatMap(state => {
@@ -359,6 +365,8 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
             ...(unrecognized && { unrecognized }),
         }
     }
+    for (const [id, state] of Object.entries(composed) as [CameraControlId, CameraControlState | undefined][])
+        if (state && (requested === undefined || requested === id)) controls[id] = state
     return {
         capabilities: {
             observedAt: Date.now(),
@@ -387,6 +395,10 @@ export async function writeCameraControl<Id extends CameraControlId>(
     value: CameraControlInputs[Id],
     context?: ExposureContext
 ): Promise<CameraControlState> {
+    if (id === 'photoVideoMode')
+        return writePhotoVideoMode(owner, driver, String(value), async () =>
+            (await readCameraCapabilities(driver, id)).controls.photoVideoMode
+        )
     // Nikon descriptors are separate transactions: refresh this control and its live guards,
     // rather than reading every unrelated descriptor before each write. No cached admission.
     const observation = await observeControls(driver, id)
@@ -568,7 +580,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
         if (driver instanceof SonyCamera && id === 'iso') await driver.setIso(vendorLabel)
         else await driver.set(property, written as never)
     }
-    await write()
+    await sendControlWrite(driver, id, write)
     let observed: CameraControlState | undefined
     await confirmCameraValue(
         id,

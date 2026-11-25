@@ -1,5 +1,5 @@
 import type { Camera } from '@camera/index'
-import { isSonyMovieExposureProgram } from '@vendors/sony/exposure-program'
+import { isSonyMovieExposureProgram, sonyCounterpartExposureProgram } from '@vendors/sony/exposure-program'
 import { readSonyMovieCard } from '@vendors/sony/card-storage'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 
@@ -8,9 +8,10 @@ export async function openSonyRecordingMode(camera: Camera) {
     if (await camera.getRecordingState() !== 'idle') throw new Error('Stop Sony recording before preparing movie mode')
     const before = (await camera.getCapabilities()).controls.exposureProgram
     const original = before?.value
-    const target = isSonyMovieExposureProgram(original) ? original : `Movie ${original}`
-    if (!isSonyMovieExposureProgram(original) &&
-        (!before?.writable || !before.allowedValues?.includes(target as string)))
+    // The same counterpart photoVideoMode selects (`@vendors/sony/exposure-program`).
+    const target = isSonyMovieExposureProgram(original) ? original : sonyCounterpartExposureProgram(original)
+    if (target === undefined || !isSonyMovieExposureProgram(original) &&
+        (!before?.writable || !before.allowedValues?.includes(target)))
         throw new Error('Select Movie mode on the Sony camera; no corresponding writable movie mode was advertised')
     let changed = false
     const selectMode = async (requested: string) => {

@@ -91,6 +91,7 @@ try {
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, SonyWifiCamera, SonyCamera, type ShutterSpeed, type TypedSettingMethods,
             type Aperture, type Iso, type ExposureMode, type ExposureCompensation, type MeteringMode,
+            type WhiteBalance, type PictureStyle, type PictureProfile, type PhotoVideoMode, type DriveMode,
             CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError,
             TransportFactory, TransportType } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
@@ -104,7 +105,7 @@ try {
             request: async () => ({}), close: async () => {}
         })
         camera.send(genericOperationRegistry.OpenSession, {SessionID: 1})
-        camera.set(genericPropertyRegistry.WhiteBalance, 2)
+        camera.set(genericPropertyRegistry.WhiteBalance, 'Daylight')
         camera.setExposureTime({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
         camera.setControl('colorTemperature', 5600)
         camera.setControl('iso', 'ISO 800')
@@ -194,6 +195,36 @@ try {
         camera.setExposureCompensation(0.7)
         // @ts-expect-error Canon Evaluative and Nikon Matrix are both Multi.
         camera.setMeteringMode('Evaluative')
+        // Colour and mode: canonical names from the vendor codecs, Kelvin as a number, photo or video.
+        const confirmedWhiteBalance: Promise<WhiteBalance> = camera.setWhiteBalance('Daylight')
+        const currentKelvin: Promise<number> = camera.getColorTemperature()
+        camera.setColorTemperature(5600)
+        const look: Promise<PictureStyle> = camera.setPictureStyle('Standard')
+        const profile: Promise<PictureProfile> = camera.setPictureProfile('PP8')
+        const mode: Promise<PhotoVideoMode> = camera.setPhotoVideoMode('video')
+        const drive: Promise<DriveMode> = camera.setDriveMode('Continuous high')
+        sdk.setWhiteBalance('Underwater Auto')
+        // @ts-expect-error Nikon's own word for daylight is spelled Daylight.
+        camera.setWhiteBalance('Sunny')
+        // @ts-expect-error Canon's kebab-case codes are not canonical names.
+        camera.setWhiteBalance('daylight')
+        // One name per concept: ISO 15740's Manual white balance and every vendor preset are Custom.
+        camera.setWhiteBalance('Custom')
+        // @ts-expect-error Preset white balance is spelled Custom, not Manual.
+        camera.setWhiteBalance('Manual')
+        camera.setPictureStyle('Same as photo')
+        // @ts-expect-error Same as photo is written in sentence case for white balance and look alike.
+        camera.setWhiteBalance('Same as Photo')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setWhiteBalance(anyString)
+        // @ts-expect-error Kelvin is a number.
+        camera.setColorTemperature('5600')
+        // @ts-expect-error Photo or video; Sony's own movie program names are not modes.
+        camera.setPhotoVideoMode('Movie Manual')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setDriveMode(anyString)
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setPictureStyle(anyString)
         type PlainStringSetters = { [Name in keyof TypedSettingMethods]: Name extends \`set\${string}\`
             ? TypedSettingMethods[Name] extends (value: infer Value, ...options: never[]) => unknown
                 ? string extends Value ? Name : never : never
@@ -202,7 +233,7 @@ try {
         const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
         void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
             confirmedShutter, currentShutter, noPlainStringSetters, errors, confirmedAperture, currentIso, confirmedMode,
-            confirmedCompensation, confirmedMetering]
+            confirmedCompensation, confirmedMetering, confirmedWhiteBalance, currentKelvin, look, profile, mode, drive]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)

@@ -294,16 +294,14 @@ export const settingsOperationTable = {
                 },
             },
         },
-    },
-    planned: {
         getPhotoVideoMode: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current photo/video mode, in canonical spelling',
         },
         setPhotoVideoMode: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the photo/video mode and returns the value read back',
             surfaces: {
                 cli: {
@@ -313,12 +311,12 @@ export const settingsOperationTable = {
         },
         getDriveMode: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current drive mode, in canonical spelling',
         },
         setDriveMode: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the drive mode and returns the value read back',
             surfaces: {
                 cli: {
@@ -328,12 +326,12 @@ export const settingsOperationTable = {
         },
         getColorTemperature: {
             area: 'settings',
-            disposition: { kind: 'add' },
-            summary: 'The current colour temperature, in canonical spelling',
+            disposition: { kind: 'keep' },
+            summary: 'The current colour temperature, in kelvin',
         },
         setColorTemperature: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the colour temperature and returns the value read back',
             surfaces: {
                 cli: {
@@ -343,12 +341,12 @@ export const settingsOperationTable = {
         },
         getPictureStyle: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current look (picture style), in canonical spelling',
         },
         setPictureStyle: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the look (picture style) and returns the value read back',
             surfaces: {
                 cli: {
@@ -358,12 +356,12 @@ export const settingsOperationTable = {
         },
         getPictureProfile: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'The current picture profile, in canonical spelling',
         },
         setPictureProfile: {
             area: 'settings',
-            disposition: { kind: 'add' },
+            disposition: { kind: 'keep' },
             summary: 'Sets the picture profile and returns the value read back',
             surfaces: {
                 cli: {
@@ -371,6 +369,8 @@ export const settingsOperationTable = {
                 },
             },
         },
+    },
+    planned: {
         getFocusArea: {
             area: 'settings',
             disposition: { kind: 'add' },

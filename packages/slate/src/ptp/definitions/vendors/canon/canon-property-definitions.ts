@@ -247,12 +247,36 @@ export const CanonAutoExposureMode = {
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
+/**
+ * Canon EOS drive mode, named in Slate's canonical drive-mode spelling. Values follow the EDSDK
+ * 13.20.21 MultiCamCui sample drivemode_table and libgphoto2 config.c canon_eos_drive_mode
+ * (6d5c61ef7687b74fe792e4aeae7fc40f2ad42d88); the EDSDK property ID differs from this PTP code.
+ */
 export const CanonDriveMode = {
     code: 0xd106,
     name: 'CanonDriveMode',
     description: 'Canon Drive Mode',
     datatype: 0x0004,
-    codec: registry => registry.codecs.uint16,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x00, name: 'Single', description: 'Single shooting' },
+                { value: 0x01, name: 'Continuous', description: 'Continuous shooting' },
+                { value: 0x04, name: 'Continuous high', description: 'High-speed continuous' },
+                { value: 0x05, name: 'Continuous low', description: 'Low-speed continuous' },
+                { value: 0x06, name: 'Single soft', description: 'Single silent (soft) shooting' },
+                { value: 0x07, name: 'Self-timer continuous', description: 'Self-timer, continuous' },
+                { value: 0x10, name: 'Self-timer 10 s', description: 'Self-timer 10 seconds' },
+                { value: 0x11, name: 'Self-timer 2 s', description: 'Self-timer 2 seconds' },
+                { value: 0x12, name: 'Continuous high+', description: 'High-speed continuous plus' },
+                { value: 0x13, name: 'Single silent', description: 'Silent single shooting' },
+                { value: 0x14, name: 'Continuous soft', description: 'Silent (soft) continuous shooting' },
+                { value: 0x15, name: 'Continuous silent high', description: 'Silent high-speed continuous' },
+                { value: 0x16, name: 'Continuous soft low', description: 'Silent (soft) low-speed continuous' },
+            ] as const,
+            registry.codecs.uint16
+        ),
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
@@ -284,6 +308,11 @@ export const CanonFocusMode = {
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
+/**
+ * Canon EOS white balance, named in Slate's canonical white-balance spelling. Values follow
+ * EDSDK EDSDKTypes.h kEdsWhiteBalance_* and libgphoto2 config.c canon_eos_whitebalance
+ * (6d5c61ef7687b74fe792e4aeae7fc40f2ad42d88). Value 7 is undocumented and reads as unrecognized.
+ */
 export const CanonWhiteBalance = {
     code: 0xd109,
     name: 'CanonWhiteBalance',
@@ -293,26 +322,25 @@ export const CanonWhiteBalance = {
         createEnumCodec(
             registry,
             [
-                { value: 0, name: 'auto', description: 'Auto white balance' },
-                { value: 1, name: 'daylight', description: 'Daylight' },
-                { value: 2, name: 'cloudy', description: 'Cloudy' },
-                { value: 3, name: 'tungsten', description: 'Tungsten light' },
-                { value: 4, name: 'fluorescent', description: 'White fluorescent light' },
-                { value: 5, name: 'flash', description: 'Flash' },
-                { value: 6, name: 'manual', description: 'Custom white balance' },
-                { value: 7, name: 'unknown-7', description: 'Camera-specific white balance mode 7' },
-                { value: 8, name: 'shade', description: 'Shade' },
-                { value: 9, name: 'color-temperature', description: 'Color temperature' },
-                { value: 10, name: 'pc-1', description: 'PC custom white balance 1' },
-                { value: 11, name: 'pc-2', description: 'PC custom white balance 2' },
-                { value: 12, name: 'pc-3', description: 'PC custom white balance 3' },
-                { value: 15, name: 'manual-2', description: 'Custom white balance 2' },
-                { value: 16, name: 'manual-3', description: 'Custom white balance 3' },
-                { value: 18, name: 'manual-4', description: 'Custom white balance 4' },
-                { value: 19, name: 'manual-5', description: 'Custom white balance 5' },
-                { value: 20, name: 'pc-4', description: 'PC custom white balance 4' },
-                { value: 21, name: 'pc-5', description: 'PC custom white balance 5' },
-                { value: 23, name: 'auto-white', description: 'Auto white balance, white priority' },
+                { value: 0, name: 'Auto', description: 'Auto white balance' },
+                { value: 1, name: 'Daylight', description: 'Daylight' },
+                { value: 2, name: 'Cloudy', description: 'Cloudy' },
+                { value: 3, name: 'Tungsten', description: 'Tungsten light' },
+                { value: 4, name: 'Fluorescent', description: 'White fluorescent light' },
+                { value: 5, name: 'Flash', description: 'Flash' },
+                { value: 6, name: 'Custom', description: 'Custom white balance' },
+                { value: 8, name: 'Shade', description: 'Shade' },
+                { value: 9, name: 'Color Temperature', description: 'Color temperature' },
+                { value: 10, name: 'PC Custom 1', description: 'PC custom white balance 1' },
+                { value: 11, name: 'PC Custom 2', description: 'PC custom white balance 2' },
+                { value: 12, name: 'PC Custom 3', description: 'PC custom white balance 3' },
+                { value: 15, name: 'Custom 2', description: 'Custom white balance 2' },
+                { value: 16, name: 'Custom 3', description: 'Custom white balance 3' },
+                { value: 18, name: 'Custom 4', description: 'Custom white balance 4' },
+                { value: 19, name: 'Custom 5', description: 'Custom white balance 5' },
+                { value: 20, name: 'PC Custom 4', description: 'PC custom white balance 4' },
+                { value: 21, name: 'PC Custom 5', description: 'PC custom white balance 5' },
+                { value: 23, name: 'Auto White Priority', description: 'Auto white balance, white priority' },
             ] as const,
             registry.codecs.uint8
         ),
@@ -364,12 +392,37 @@ export const CanonColorSpace = {
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 
+/**
+ * Canon EOS Picture Style, named in Slate's canonical look spelling. Values follow EDSDK
+ * EDSDKTypes.h kEdsPictureStyle_* and libgphoto2 config.c canon_eos_picturestyle
+ * (6d5c61ef7687b74fe792e4aeae7fc40f2ad42d88).
+ */
 export const CanonPictureStyle = {
     code: 0xd110,
     name: 'CanonPictureStyle',
     description: 'Canon Picture Style',
     datatype: 0x0004,
-    codec: registry => registry.codecs.uint16,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x81, name: 'Standard', description: 'Standard' },
+                { value: 0x82, name: 'Portrait', description: 'Portrait' },
+                { value: 0x83, name: 'Landscape', description: 'Landscape' },
+                { value: 0x84, name: 'Neutral', description: 'Neutral' },
+                { value: 0x85, name: 'Faithful', description: 'Faithful' },
+                { value: 0x86, name: 'Monochrome', description: 'Monochrome' },
+                { value: 0x87, name: 'Auto', description: 'Auto' },
+                { value: 0x88, name: 'Fine detail', description: 'Fine Detail' },
+                { value: 0x21, name: 'User defined 1', description: 'User defined 1' },
+                { value: 0x22, name: 'User defined 2', description: 'User defined 2' },
+                { value: 0x23, name: 'User defined 3', description: 'User defined 3' },
+                { value: 0x41, name: 'PC 1', description: 'Computer-registered style 1' },
+                { value: 0x42, name: 'PC 2', description: 'Computer-registered style 2' },
+                { value: 0x43, name: 'PC 3', description: 'Computer-registered style 3' },
+            ] as const,
+            registry.codecs.uint16
+        ),
     access: 'GetSet' as const,
 } as const satisfies PropertyDefinition
 

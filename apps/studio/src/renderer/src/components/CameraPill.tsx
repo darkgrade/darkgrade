@@ -91,7 +91,7 @@ function cardSpaceLabel(cameraState: CameraState): string | null {
 }
 
 function inMovieMode(cameraState: CameraState): boolean {
-    return /^Movie /i.test(cameraState.controls?.exposureProgram?.value ?? '')
+    return cameraState.controls?.photoVideoMode?.value === 'video'
 }
 
 type DetailRow = [label: string, value: string]

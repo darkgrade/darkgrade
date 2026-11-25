@@ -11,7 +11,7 @@ import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
 import { isSonyModelName } from '@vendors/sony/model-name'
 import { isVerifiedFeature } from '@camera/validated-models'
-import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { canonicalControlInput, installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
@@ -468,8 +468,12 @@ export class SonyWifiCamera {
             await new Promise(resolve => setTimeout(resolve, 200))
             after = await this.getSonyProperty(before.code)
         } while (after.value !== String(value) && Date.now() < deadline)
+        // Sent and acknowledged by the bridge but never shown: unconfirmed, never resent.
         if (after.value !== String(value))
-            throw new Error(`Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`)
+            throw new CameraOutcomeUnknownError(
+                before.name,
+                `Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`
+            )
         return { before, after, verified: true }
     }
 

@@ -204,7 +204,7 @@ try {
         // empirical test when that enumeration is absent.
         const alternate =
             whiteBalanceChoices?.find(value => value !== initialWhiteBalance) ||
-            (initialWhiteBalance === 'daylight' ? 'auto' : 'daylight')
+            (initialWhiteBalance === 'Daylight' ? 'Auto' : 'Daylight')
         try {
             await canonCamera.setWhiteBalance(alternate)
             if ((await canonCamera.getWhiteBalance()) !== alternate)

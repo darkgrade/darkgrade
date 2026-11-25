@@ -27,6 +27,8 @@ export type {
     Iso,
     MeteringMode,
 } from '@camera/settings/exposure'
+export type { ColorTemperature, PictureProfile, PictureStyle, WhiteBalance } from '@camera/settings/colour'
+export type { DriveMode, PhotoVideoMode } from '@camera/settings/mode'
 export type { SettingInput, SettingValue, TypedSettingId, TypedSettingMethods } from '@camera/settings/typed-settings'
 export type { CameraRecordingState } from '@camera/controls'
 export type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState, CameraControlSession, UnrecognizedValues } from '@camera/controls'

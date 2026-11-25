@@ -78,6 +78,11 @@ function controlValueVocabulary(inventory: ControlValueInventory, id: CameraCont
     return valueGroups.map(group => group[inventory][id]).find(Boolean)
 }
 
+/** Whether a setting's vendor words are mapped to canonical names on this inventory. */
+export function hasCanonicalControlValues(inventory: ControlValueInventory, id: CameraControlId): boolean {
+    return controlValueVocabulary(inventory, id) !== undefined
+}
+
 /** One control's observation in canonical names, and the vendor choice behind each name. */
 export interface CanonicalControlValues {
     /** The canonical value, or `Unrecognized (<vendor word>)` when Slate has no name for it. */

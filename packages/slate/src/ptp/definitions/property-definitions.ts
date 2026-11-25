@@ -1,5 +1,5 @@
 import { getDatatypeByName } from '@ptp/definitions/datatype-definitions'
-import { baseCodecs, CustomCodec } from '@ptp/types/codec'
+import { baseCodecs, createEnumCodec, CustomCodec } from '@ptp/types/codec'
 import { PropertyDefinition } from '@ptp/types/property'
 
 const UNDEF = getDatatypeByName('UNDEF')!.code
@@ -54,13 +54,30 @@ export const CompressionSetting = {
     codec: baseCodecs.uint8,
 } as const satisfies PropertyDefinition
 
+/**
+ * ISO 15740 WhiteBalance values, named in Slate's canonical white-balance spelling. Vendor values
+ * (0x8000 and up) belong to each vendor's own definition; here they read as unrecognized.
+ */
 export const WhiteBalance = {
     code: 0x5005,
     name: 'WhiteBalance',
     description: 'White balance setting',
     datatype: UINT16,
     access: 'GetSet',
-    codec: baseCodecs.uint16,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'Custom', description: 'Manual (preset) white balance' },
+                { value: 0x0002, name: 'Auto', description: 'Automatic white balance' },
+                { value: 0x0003, name: 'One-push Auto', description: 'One-push automatic white balance' },
+                { value: 0x0004, name: 'Daylight', description: 'Daylight' },
+                { value: 0x0005, name: 'Fluorescent', description: 'Fluorescent' },
+                { value: 0x0006, name: 'Tungsten', description: 'Tungsten' },
+                { value: 0x0007, name: 'Flash', description: 'Flash' },
+            ] as const,
+            registry.codecs.uint16
+        ),
 } as const satisfies PropertyDefinition
 
 export const RGBGain = {
@@ -291,13 +308,23 @@ export const CaptureDelay = {
     codec: baseCodecs.uint32,
 } as const satisfies PropertyDefinition
 
+/** ISO 15740 StillCaptureMode values, named in Slate's canonical drive-mode spelling. */
 export const StillCaptureMode = {
     code: 0x5013,
     name: 'StillCaptureMode',
     description: 'Still capture mode',
     datatype: UINT16,
     access: 'GetSet',
-    codec: baseCodecs.uint16,
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 0x0001, name: 'Single', description: 'Normal single-frame capture' },
+                { value: 0x0002, name: 'Continuous', description: 'Burst' },
+                { value: 0x0003, name: 'Timelapse', description: 'Timelapse' },
+            ] as const,
+            registry.codecs.uint16
+        ),
 } as const satisfies PropertyDefinition
 
 export const Contrast = {

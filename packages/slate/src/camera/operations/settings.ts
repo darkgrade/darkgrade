@@ -31,8 +31,6 @@ export interface SettingsOperations {
     setCanonManualExposureMode(): Promise<void>
 
     // Colour
-    getWhiteBalance(): Promise<string>
-    setWhiteBalance(value: string): Promise<void>
     getSonyColorTemperature(): Promise<number>
     setSonyColorTemperature(value: number): Promise<void>
     getCanonColorTemperature(): Promise<number>
@@ -115,16 +113,6 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
 
     async setCanonManualExposureMode(): Promise<void> {
         await canonDriver(this).setManualExposureMode()
-    },
-
-    async getWhiteBalance(): Promise<string> {
-        return canonOrSonyDriver(this, 'White balance is only available for Canon EOS and Sony cameras').getWhiteBalance()
-    },
-
-    async setWhiteBalance(value: string): Promise<void> {
-        return canonOrSonyDriver(this, 'White balance is only available for Canon EOS and Sony cameras').setWhiteBalance(
-            value
-        )
     },
 
     async getSonyColorTemperature(): Promise<number> {
