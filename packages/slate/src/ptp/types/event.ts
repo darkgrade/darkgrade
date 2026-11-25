@@ -17,10 +17,7 @@ export interface EventDefinition {
 
 export type EventCode = number
 
-/**
- * Cross-platform EventEmitter implementation
- * Works in both Node.js and browser environments
- */
+/** An event emitter for Node.js and browsers. */
 
 export type EventData = number | string | object | number[] | Record<string, any>
 type EventListener<T = EventData> = (data: T) => void
@@ -38,14 +35,10 @@ export class EventEmitter {
 
     emit<T = EventData>(event: string, data: T): boolean {
         const listeners = this.events.get(event)
-        if (listeners) {
-            // A capture handler may remove itself; every listener present at dispatch still receives this event.
-            listeners.slice().forEach(listener => {
-                listener(data)
-            })
-            return true
-        }
-        return false
+        if (!listeners) return false
+        // A capture handler may remove itself; every listener present at dispatch still receives this event.
+        for (const listener of listeners.slice()) listener(data)
+        return true
     }
 
     once<T = EventData>(event: string, listener: EventListener<T>): this {
@@ -57,39 +50,27 @@ export class EventEmitter {
     }
 
     addListener<T = EventData>(event: string, listener: EventListener<T>): this {
-        if (!this.events.has(event)) {
-            this.events.set(event, [])
-        }
+        if (!this.events.has(event)) this.events.set(event, [])
         this.events.get(event)!.push(listener)
         return this
     }
 
     removeListener<T = EventData>(event: string, listener: EventListener<T>): this {
         const listeners = this.events.get(event)
-        if (listeners) {
-            const index = listeners.indexOf(listener)
-            if (index !== -1) {
-                listeners.splice(index, 1)
-            }
-            if (listeners.length === 0) {
-                this.events.delete(event)
-            }
-        }
+        const index = listeners?.indexOf(listener) ?? -1
+        if (index !== -1) listeners!.splice(index, 1)
+        if (listeners?.length === 0) this.events.delete(event)
         return this
     }
 
     removeAllListeners(event?: string): this {
-        if (event) {
-            this.events.delete(event)
-        } else {
-            this.events.clear()
-        }
+        if (event) this.events.delete(event)
+        else this.events.clear()
         return this
     }
 
     listenerCount(event: string): number {
-        const listeners = this.events.get(event)
-        return listeners ? listeners.length : 0
+        return this.events.get(event)?.length ?? 0
     }
 
     eventNames(): string[] {

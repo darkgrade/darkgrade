@@ -3,11 +3,9 @@ import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 /**
- * The wire channel opened by Sony Camera Remote SDK after SSH authentication.
- *
- * Darkgrade deliberately does not implement Sony's proprietary SSH/64321
- * handshake here. An SDK adapter supplies this channel after validating the
- * camera fingerprint and credentials.
+ * The wire channel opened by Sony Camera Remote SDK after SSH authentication. Darkgrade does not
+ * implement Sony's proprietary SSH/64321 handshake: an SDK adapter supplies this channel after
+ * validating the camera fingerprint and credentials.
  */
 export interface SonyRemoteSdkChannel {
     send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void>
@@ -27,16 +25,11 @@ export interface SonyRemoteSdkConnectionOptions {
     timeout?: number
 }
 
-export type SonyRemoteSdkChannelFactory = (
-    options: SonyRemoteSdkConnectionOptions
-) => Promise<SonyRemoteSdkChannel>
+export type SonyRemoteSdkChannelFactory = (options: SonyRemoteSdkConnectionOptions) => Promise<SonyRemoteSdkChannel>
 
 /**
- * Transport adapter for an authenticated Sony Camera Remote SDK session.
- *
- * This class is intentionally transport-only. The channel factory is where a
- * supported Sony SDK binding belongs; keeping it injected lets the core remain
- * usable without bundling Sony's platform-specific SDK or retaining secrets.
+ * Transport adapter for an authenticated Sony Camera Remote SDK session. The injected channel
+ * factory holds the Sony SDK binding, so Slate neither bundles that SDK nor retains secrets.
  */
 export class SonyRemoteSdkTransport implements TransportInterface {
     private channel?: SonyRemoteSdkChannel
@@ -91,18 +84,17 @@ export class SonyRemoteSdkTransport implements TransportInterface {
     }
 
     async classRequestReset(): Promise<void> {
-        const channel = this.requireChannel()
-        if (channel.reset) await channel.reset()
+        await this.requireChannel().reset?.()
     }
 
     on(handler: (event: PTPEvent) => void): void {
         this.eventHandler = handler
-        if (this.channel?.on) this.channel.on(handler)
+        this.channel?.on?.(handler)
     }
 
     off(handler: (event: PTPEvent) => void): void {
         if (this.eventHandler === handler) this.eventHandler = undefined
-        if (this.channel?.off) this.channel.off(handler)
+        this.channel?.off?.(handler)
     }
 
     private requireChannel(): SonyRemoteSdkChannel {

@@ -2,12 +2,13 @@ import type { TransportInterface } from '@transport/interfaces/transport.interfa
 import {
     durableRecordingWrite,
     encryptRecording,
+    recordingHash,
     recordingKeyFromEnvironment,
     validateRecordingKey,
     type RecordingKey,
 } from '@transport/recording-storage'
 import { recordFullTransport, type TransportRecordingEntry } from '@transport/recording-transport'
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { mkdir, open, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -22,7 +23,6 @@ export interface RecordingProvenance {
     sources: string[]
     limitations: string[]
 }
-const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 /** A new private directory of immutable, content-addressed blobs plus attribution. No cloud credentials. */
 export async function createRecordingBundle(
@@ -87,11 +87,11 @@ export async function createRecordingBundle(
                 entries.push(entry)
                 return
             }
-            const sha256 = digest(bytes)
+            const sha256 = recordingHash(bytes)
             const path = `blobs/${sha256}`
             if (!files.has(path)) {
                 const encrypted = encrypt(bytes, path),
-                    encryptedPath = `blobs/${digest(encrypted)}`
+                    encryptedPath = `blobs/${recordingHash(encrypted)}`
                 await durableRecordingWrite(join(directory, encryptedPath), encrypted)
                 files.set(path, { path, sha256, bytes: bytes.length, encryptedPath })
             }
@@ -126,12 +126,13 @@ export async function createRecordingBundle(
                 )
                 if (trace.length > 16 * 1024 * 1024) throw new Error('Recording trace exceeds limit')
                 await durableRecordingWrite(join(directory, 'trace.enc'), encrypt(trace, 'trace.json'))
-                files.set('trace.json', {
+                const traceFile = {
                     path: 'trace.json',
-                    sha256: digest(trace),
+                    sha256: recordingHash(trace),
                     bytes: trace.length,
                     encryptedPath: 'trace.enc',
-                })
+                }
+                files.set('trace.json', traceFile)
                 const bundle = {
                     schema: 'darkgrade.recording-bundle/v1',
                     ...metadata,
@@ -145,25 +146,13 @@ export async function createRecordingBundle(
                     encrypt(Buffer.from(JSON.stringify(bundle)), 'metadata')
                 )
                 const encryptedFiles = []
-                for (const path of [
-                    'metadata.enc',
-                    'journal.ndjson',
-                    ...[...files.values()].map(file => file.encryptedPath),
-                ]) {
+                const encryptedPaths = [...files.values()].map(file => file.encryptedPath)
+                for (const path of ['metadata.enc', 'journal.ndjson', ...encryptedPaths]) {
                     const bytes = await readFile(join(directory, path))
-                    encryptedFiles.push({ path, sha256: digest(bytes), bytes: bytes.length })
+                    encryptedFiles.push({ path, sha256: recordingHash(bytes), bytes: bytes.length })
                 }
-                await durableRecordingWrite(
-                    join(directory, 'recording.json'),
-                    Buffer.from(
-                        JSON.stringify({
-                            ...outer,
-                            state: 'complete',
-                            complete: status.complete,
-                            files: encryptedFiles,
-                        })
-                    )
-                )
+                const completed = { ...outer, state: 'complete', complete: status.complete, files: encryptedFiles }
+                await durableRecordingWrite(join(directory, 'recording.json'), Buffer.from(JSON.stringify(completed)))
                 finalized = true
                 key.fill(0)
                 return {

@@ -1,4 +1,5 @@
-// Forward declaration to avoid circular dependency
+import { concatenateBytes } from '@ptp/datasets/codecs/byte-sequence'
+
 export type PTPRegistry = {
     codecs: BaseCodecRegistry
     operations: Record<string, any>
@@ -30,7 +31,6 @@ export interface BaseCodecRegistry {
 
 export type CodecBuilder<T> = (registry: PTPRegistry) => CodecInstance<T>
 
-// Codec definition can be either a builder function or an instance (for backward compatibility)
 export type CodecDefinition<T> = CodecBuilder<T> | CodecInstance<T>
 
 export type EnumValue<T> = {
@@ -45,7 +45,7 @@ export abstract class CustomCodec<T> implements CodecInstance<T> {
     public get codecs() {
         return this.registry.codecs
     }
-    // For backward compatibility
+
     public get baseCodecs() {
         return this.registry.codecs
     }
@@ -71,23 +71,17 @@ export class EnumCodec<T, Names extends string = string> extends CustomCodec<Nam
     encode(value: Names): Uint8Array {
         if (typeof value === 'string') {
             const enumValue = this.nameToValue.get(value)
-            if (!enumValue) {
-                throw new Error(`Invalid enum name: ${value}`)
-            }
+            if (!enumValue) throw new Error(`Invalid enum name: ${value}`)
             return this.baseCodec.encode(enumValue.value)
         }
-        if (!this.valueToName.has(value)) {
-            throw new Error(`Invalid enum value: ${value}`)
-        }
+        if (!this.valueToName.has(value)) throw new Error(`Invalid enum value: ${value}`)
         return this.baseCodec.encode(value)
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: Names; bytesRead: number } {
         const result = this.baseCodec.decode(buffer, offset)
         const enumValue = this.valueToName.get(result.value)
-        if (!enumValue) {
-            throw new Error(`Invalid enum value: ${result.value}`)
-        }
+        if (!enumValue) throw new Error(`Invalid enum value: ${result.value}`)
         return { value: enumValue.name as Names, bytesRead: result.bytesRead }
     }
 
@@ -104,7 +98,7 @@ export class EnumCodec<T, Names extends string = string> extends CustomCodec<Nam
     }
 }
 
-// Helper function to create a typed EnumCodec with inferred enum names
+/** An EnumCodec whose names are inferred from its values. */
 export function createEnumCodec<T, const Values extends readonly EnumValue<T>[]>(
     registry: PTPRegistry,
     values: Values,
@@ -130,25 +124,17 @@ export class RangeCodec<T extends number> extends CustomCodec<T> {
     }
 
     encode(value: T): Uint8Array {
-        if (value < this.range.minimum || value > this.range.maximum) {
+        if (value < this.range.minimum || value > this.range.maximum)
             throw new Error(`Value ${value} out of range [${this.range.minimum}, ${this.range.maximum}]`)
-        }
-
-        const adjustedValue = value - this.range.minimum
-        if (this.range.step !== 0 && adjustedValue % this.range.step !== 0) {
+        if (this.range.step !== 0 && (value - this.range.minimum) % this.range.step !== 0)
             throw new Error(`Value ${value} not aligned to step ${this.range.step}`)
-        }
-
         return this.baseCodec.encode(value)
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: T; bytesRead: number } {
         const result = this.baseCodec.decode(buffer, offset)
-
-        if (result.value < this.range.minimum || result.value > this.range.maximum) {
+        if (result.value < this.range.minimum || result.value > this.range.maximum)
             throw new Error(`Decoded value ${result.value} out of range [${this.range.minimum}, ${this.range.maximum}]`)
-        }
-
         return result
     }
 
@@ -157,241 +143,117 @@ export class RangeCodec<T extends number> extends CustomCodec<T> {
     }
 }
 
-export class Uint8Codec {
-    readonly type = 'uint8' as const
+/** A view of `size` bytes at `offset`, or an error naming the PTP datatype that did not fit. */
+function readView(buffer: Uint8Array, offset: number, size: number, datatype: string): DataView {
+    if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < size)
+        throw new Error(`Insufficient buffer size for ${datatype}`)
+    return new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
+}
 
-    encode(value: number): Uint8Array {
-        const buffer = new Uint8Array(1)
-        buffer[0] = value & 0xff
-        return buffer
-    }
+function written(size: number, write: (view: DataView) => void): Uint8Array {
+    const buffer = new Uint8Array(size)
+    write(new DataView(buffer.buffer))
+    return buffer
+}
 
-    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 1) {
-            throw new Error('Insufficient buffer size for UINT8')
+/** A fixed-width PTP integer read and written through DataView, in the transport's byte order. */
+function integerCodec<const Type extends string, Value extends number | bigint>(
+    type: Type,
+    size: number,
+    read: (view: DataView, littleEndian: boolean) => Value,
+    write: (view: DataView, value: Value, littleEndian: boolean) => void
+) {
+    return class {
+        readonly type = type
+        constructor(readonly littleEndian = false) {}
+
+        encode(value: Value): Uint8Array {
+            return written(size, view => write(view, value, this.littleEndian))
         }
-        return { value: buffer[offset], bytesRead: 1 }
+
+        decode(buffer: Uint8Array, offset = 0): { value: Value; bytesRead: number } {
+            return {
+                value: read(readView(buffer, offset, size, type.toUpperCase()), this.littleEndian),
+                bytesRead: size,
+            }
+        }
     }
 }
 
-export class Uint16Codec {
-    readonly type = 'uint16' as const
-    private readonly littleEndian: boolean
-
-    constructor(littleEndian = false) {
-        this.littleEndian = littleEndian
-    }
-
-    encode(value: number): Uint8Array {
-        const buffer = new Uint8Array(2)
-        const view = new DataView(buffer.buffer)
-        view.setUint16(0, value, this.littleEndian)
-        return buffer
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 2) {
-            throw new Error('Insufficient buffer size for UINT16')
-        }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
-        return { value: view.getUint16(0, this.littleEndian), bytesRead: 2 }
-    }
-}
-
-export class Uint32Codec {
-    readonly type = 'uint32' as const
-    private readonly littleEndian: boolean
-
-    constructor(littleEndian = false) {
-        this.littleEndian = littleEndian
-    }
-
-    encode(value: number): Uint8Array {
-        const buffer = new Uint8Array(4)
-        const view = new DataView(buffer.buffer)
-        view.setUint32(0, value, this.littleEndian)
-        return buffer
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 4) {
-            throw new Error('Insufficient buffer size for UINT32')
-        }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
-        return { value: view.getUint32(0, this.littleEndian), bytesRead: 4 }
-    }
-}
-
-export class Uint64Codec {
-    readonly type = 'uint64' as const
-    private readonly littleEndian: boolean
-
-    constructor(littleEndian = false) {
-        this.littleEndian = littleEndian
-    }
-
-    encode(value: bigint): Uint8Array {
-        const buffer = new Uint8Array(8)
-        const view = new DataView(buffer.buffer)
-        view.setBigUint64(0, value, this.littleEndian)
-        return buffer
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: bigint; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 8) {
-            throw new Error('Insufficient buffer size for UINT64')
-        }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
-        return { value: view.getBigUint64(0, this.littleEndian), bytesRead: 8 }
-    }
-}
-
-export class Int8Codec {
-    readonly type = 'int8' as const
-
-    encode(value: number): Uint8Array {
-        const buffer = new Uint8Array(1)
-        const view = new DataView(buffer.buffer)
-        view.setInt8(0, value)
-        return buffer
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 1) {
-            throw new Error('Insufficient buffer size for INT8')
-        }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
-        return { value: view.getInt8(0), bytesRead: 1 }
-    }
-}
-
-export class Int16Codec {
-    readonly type = 'int16' as const
-    private readonly littleEndian: boolean
-
-    constructor(littleEndian = false) {
-        this.littleEndian = littleEndian
-    }
-
-    encode(value: number): Uint8Array {
-        const buffer = new Uint8Array(2)
-        const view = new DataView(buffer.buffer)
-        view.setInt16(0, value, this.littleEndian)
-        return buffer
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 2) {
-            throw new Error('Insufficient buffer size for INT16')
-        }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
-        return { value: view.getInt16(0, this.littleEndian), bytesRead: 2 }
-    }
-}
-
-export class Int32Codec {
-    readonly type = 'int32' as const
-    private readonly littleEndian: boolean
-
-    constructor(littleEndian = false) {
-        this.littleEndian = littleEndian
-    }
-
-    encode(value: number): Uint8Array {
-        const buffer = new Uint8Array(4)
-        const view = new DataView(buffer.buffer)
-        view.setInt32(0, value, this.littleEndian)
-        return buffer
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: number; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 4) {
-            throw new Error('Insufficient buffer size for INT32')
-        }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
-        return { value: view.getInt32(0, this.littleEndian), bytesRead: 4 }
-    }
-}
-
-export class Int64Codec {
-    readonly type = 'int64' as const
-    private readonly littleEndian: boolean
-
-    constructor(littleEndian = false) {
-        this.littleEndian = littleEndian
-    }
-
-    encode(value: bigint): Uint8Array {
-        const buffer = new Uint8Array(8)
-        const view = new DataView(buffer.buffer)
-        view.setBigInt64(0, value, this.littleEndian)
-        return buffer
-    }
-
-    decode(buffer: Uint8Array, offset = 0): { value: bigint; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 8) {
-            throw new Error('Insufficient buffer size for INT64')
-        }
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
-        return { value: view.getBigInt64(0, this.littleEndian), bytesRead: 8 }
-    }
-}
+export class Uint8Codec extends integerCodec(
+    'uint8',
+    1,
+    view => view.getUint8(0),
+    (view, value: number) => view.setUint8(0, value)
+) {}
+export class Int8Codec extends integerCodec(
+    'int8',
+    1,
+    view => view.getInt8(0),
+    (view, value: number) => view.setInt8(0, value)
+) {}
+export class Uint16Codec extends integerCodec(
+    'uint16',
+    2,
+    (view, little) => view.getUint16(0, little),
+    (view, value: number, little) => view.setUint16(0, value, little)
+) {}
+export class Int16Codec extends integerCodec(
+    'int16',
+    2,
+    (view, little) => view.getInt16(0, little),
+    (view, value: number, little) => view.setInt16(0, value, little)
+) {}
+export class Uint32Codec extends integerCodec(
+    'uint32',
+    4,
+    (view, little) => view.getUint32(0, little),
+    (view, value: number, little) => view.setUint32(0, value, little)
+) {}
+export class Int32Codec extends integerCodec(
+    'int32',
+    4,
+    (view, little) => view.getInt32(0, little),
+    (view, value: number, little) => view.setInt32(0, value, little)
+) {}
+export class Uint64Codec extends integerCodec(
+    'uint64',
+    8,
+    (view, little) => view.getBigUint64(0, little),
+    (view, value: bigint, little) => view.setBigUint64(0, value, little)
+) {}
+export class Int64Codec extends integerCodec(
+    'int64',
+    8,
+    (view, little) => view.getBigInt64(0, little),
+    (view, value: bigint, little) => view.setBigInt64(0, value, little)
+) {}
 
 export class StringCodec {
     readonly type = 'string' as const
-    private readonly littleEndian: boolean
-
-    constructor(littleEndian = false) {
-        this.littleEndian = littleEndian
-    }
+    constructor(private readonly littleEndian = false) {}
 
     encode(value: string): Uint8Array {
         if (value.length > 254) throw new Error('PTP string exceeds 254 UTF-16 code units')
         const numChars = value.length + 1
-        const buffer = new Uint8Array(1 + numChars * 2)
-        const view = new DataView(buffer.buffer)
-
-        buffer[0] = numChars
-
-        for (let i = 0; i < value.length; i++) {
-            const charCode = value.charCodeAt(i)
-            view.setUint16(1 + i * 2, charCode, this.littleEndian)
-        }
-
-        view.setUint16(buffer.length - 2, 0, this.littleEndian)
-
-        return buffer
+        return written(1 + numChars * 2, view => {
+            view.setUint8(0, numChars)
+            for (let i = 0; i < value.length; i++) view.setUint16(1 + i * 2, value.charCodeAt(i), this.littleEndian)
+        })
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 1) {
-            throw new Error('Insufficient buffer size for string length')
-        }
+        readView(buffer, offset, 1, 'string length')
 
         const numChars = buffer[offset]
-
-        if (numChars === 0) {
-            return { value: '', bytesRead: 1 }
-        }
-
+        if (numChars === 0) return { value: '', bytesRead: 1 }
         const totalBytes = 1 + numChars * 2
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < totalBytes) {
-            throw new Error('Insufficient buffer size for string')
-        }
-
-        const view = new DataView(buffer.buffer, buffer.byteOffset + offset, buffer.byteLength - offset)
+        const view = readView(buffer, offset, totalBytes, 'string')
         if (view.getUint16(totalBytes - 2, this.littleEndian) !== 0)
             throw new Error('PTP string is missing its terminator')
         const chars: number[] = []
-        for (let i = 0; i < numChars - 1; i++) {
-            const charCode = view.getUint16(1 + i * 2, this.littleEndian)
-            chars.push(charCode)
-        }
-
-        return {
-            value: String.fromCharCode(...chars),
-            bytesRead: totalBytes,
-        }
+        for (let i = 0; i < numChars - 1; i++) chars.push(view.getUint16(1 + i * 2, this.littleEndian))
+        return { value: String.fromCharCode(...chars), bytesRead: totalBytes }
     }
 }
 
@@ -412,29 +274,24 @@ export class BitfieldCodec extends CustomCodec<string> {
     }
 
     encode(value: string): Uint8Array {
-        if (value === '' || value === 'none') {
-            return this.baseCodec.encode(0)
-        }
-        // Parse as comma-separated flag names
-        const flagNames = value.split(',').map(s => s.trim())
+        return this.baseCodec.encode(this.bitsOf(value, name => name))
+    }
+
+    /** Comma-separated flag names; unknown names are ignored. */
+    private bitsOf(value: string, flagName: (item: string) => string): number {
+        if (value === '' || value === 'none') return 0
         let bits = 0
-        for (const flagName of flagNames) {
-            const flag = this.flags.find(f => f.name === flagName)
-            if (flag) {
-                bits |= 1 << flag.bit
-            }
+        for (const item of value.split(',')) {
+            const flag = this.flags.find(candidate => candidate.name === flagName(item.trim()))
+            if (flag) bits |= 1 << flag.bit
         }
-        return this.baseCodec.encode(bits)
+        return bits
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: string; bytesRead: number } {
         const result = this.baseCodec.decode(buffer, offset)
         const bits = result.value
-
-        if (bits === 0) {
-            return { value: 'none', bytesRead: result.bytesRead }
-        }
-
+        if (bits === 0) return { value: 'none', bytesRead: result.bytesRead }
         const activeFlags = this.flags
             .filter(flag => !!(bits & (1 << flag.bit)))
             .map(flag => `${flag.name} (${flag.description})`)
@@ -447,21 +304,7 @@ export class BitfieldCodec extends CustomCodec<string> {
     }
 
     getRawValue(value: string): number {
-        if (value === '' || value === 'none') {
-            return 0
-        }
-        const flagNames = value
-            .split(',')
-            .map(s => s.trim())
-            .map(s => s.split(' ')[0])
-        let bits = 0
-        for (const flagName of flagNames) {
-            const flag = this.flags.find(f => f.name === flagName)
-            if (flag) {
-                bits |= 1 << flag.bit
-            }
-        }
-        return bits
+        return this.bitsOf(value, item => item.split(' ')[0])
     }
 }
 
@@ -474,46 +317,23 @@ export class ArrayCodec<T> extends CustomCodec<T[]> {
     }
 
     encode(values: T[]): Uint8Array {
-        const buffers: Uint8Array[] = []
-
-        buffers.push(this.baseCodecs.uint32.encode(values.length))
-
-        for (const value of values) {
-            buffers.push(this.elementCodec.encode(value))
-        }
-
-        const totalLength = buffers.reduce((sum, buf) => sum + buf.length, 0)
-        const result = new Uint8Array(totalLength)
-        let offset = 0
-        for (const buffer of buffers) {
-            result.set(buffer, offset)
-            offset += buffer.length
-        }
-
-        return result
+        return concatenateBytes([
+            this.baseCodecs.uint32.encode(values.length),
+            ...values.map(value => this.elementCodec.encode(value)),
+        ])
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: T[]; bytesRead: number } {
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < 4) {
-            throw new Error('Insufficient buffer size for array length')
-        }
-
+        readView(buffer, offset, 4, 'array length')
         const lengthResult = this.baseCodecs.uint32.decode(buffer, offset)
-        const length = lengthResult.value
-
         const values: T[] = []
         let currentOffset = offset + lengthResult.bytesRead
-
-        for (let i = 0; i < length; i++) {
+        for (let i = 0; i < lengthResult.value; i++) {
             const result = this.elementCodec.decode(buffer, currentOffset)
             values.push(result.value)
             currentOffset += result.bytesRead
         }
-
-        return {
-            value: values,
-            bytesRead: currentOffset - offset,
-        }
+        return { value: values, bytesRead: currentOffset - offset }
     }
 }
 

@@ -61,7 +61,7 @@ export type ProtocolEvidence = {
           purpose?: 'first-contact'
       }
 )
-const integer = (value: unknown, maximum = 0xffffffff) =>
+const integer = (value: unknown, maximum = 0xffffffff): value is number =>
     typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= maximum
 const numeric = (value: unknown) =>
     (typeof value === 'number' && Number.isSafeInteger(value)) ||
@@ -80,6 +80,10 @@ const fits = (value: unknown, dataType: number) => {
 export function isSafeProtocolProperty(vendorId: number, property: number) {
     return (protocolProperties[vendorId] ?? protocolProperties[0]).includes(property)
 }
+
+/** An allowlisted property of this vendor with a standard integer datatype code (1 to 10). */
+const safeProperty = (vendorId: number, property: unknown, dataType: unknown) =>
+    integer(property) && isSafeProtocolProperty(vendorId, property) && integer(dataType, 10) && dataType >= 1
 
 /** Explicit numeric fields only. This never accepts raw payloads, device text, filenames or credentials. */
 export function validateProtocol(value: unknown): asserts value is ProtocolEvidence {
@@ -121,16 +125,13 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
             new Set(item.settings.map(setting => setting?.property)).size !== item.settings.length ||
             item.settings.some(setting => !setting || typeof setting !== 'object' ||
                 Object.keys(setting).some(key => !['property', 'dataType', 'current', 'ageMilliseconds'].includes(key)) ||
-                !integer(setting.property) || !isSafeProtocolProperty(item.vendorId, setting.property) ||
-                !integer(setting.dataType, 10) || setting.dataType < 1 || !fits(setting.current, setting.dataType) ||
+                !safeProperty(item.vendorId, setting.property, setting.dataType) || !fits(setting.current, setting.dataType) ||
                 !integer(setting.ageMilliseconds))
         ) throw new Error('Invalid observed state snapshot')
     } else if (item.type === 'property-write') {
         fields = ['property', 'dataType', 'requested', 'transactionId', 'outcome', 'response']
         if (
-            !integer(item.property) ||
-            !isSafeProtocolProperty(item.vendorId, item.property) ||
-            !integer(item.dataType, 10) || item.dataType < 1 ||
+            !safeProperty(item.vendorId, item.property, item.dataType) ||
             !fits(item.requested, item.dataType) ||
             !integer(item.transactionId) ||
             !['response', 'error'].includes(item.outcome) ||
@@ -142,10 +143,7 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
                 ? ['property', 'dataType', 'writable', 'current', 'default', 'values', 'minimum', 'maximum', 'step']
                 : ['property', 'dataType', 'current', 'values']
         if (
-            !integer(item.property) ||
-            !isSafeProtocolProperty(item.vendorId, item.property) ||
-            !integer(item.dataType, 10) ||
-            item.dataType < 1 ||
+            !safeProperty(item.vendorId, item.property, item.dataType) ||
             (item.type === 'descriptor' && typeof item.writable !== 'boolean') ||
             ['current', 'default', 'minimum', 'maximum', 'step'].some(
                 key => key in item && !fits((item as unknown as Record<string, unknown>)[key], item.dataType)
@@ -159,9 +157,7 @@ export function validateProtocol(value: unknown): asserts value is ProtocolEvide
     } else if (item.type === 'unrecognized-value') {
         fields = ['property', 'dataType', 'raw', 'choice']
         if (
-            !integer(item.property) ||
-            !isSafeProtocolProperty(item.vendorId, item.property) ||
-            !integer(item.dataType, 10) || item.dataType < 1 ||
+            !safeProperty(item.vendorId, item.property, item.dataType) ||
             !fits(item.raw, item.dataType) ||
             typeof item.choice !== 'boolean'
         ) throw new Error('Invalid unrecognized value evidence')

@@ -1,4 +1,4 @@
-import { PTPProtocolError, PTPTimeoutError, type PTPErrorContext } from '@core/ptp-errors'
+import { PTPProtocolError, PTPTimeoutError, type PTPErrorContext, type PTPProtocolViolation } from '@core/ptp-errors'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 
 /** How long and how often darkgrade waits for a camera before giving up on a transaction. */
@@ -112,23 +112,17 @@ export class TransactionChannel {
 
     configure(update: Partial<TransactionPolicy>): void {
         const policy = { ...this.policy, ...update }
-        if (
-            !Number.isSafeInteger(policy.timeoutMilliseconds) ||
-            policy.timeoutMilliseconds < 1 ||
-            policy.timeoutMilliseconds > 0x7fffffff
-        )
+        const integerWithin = (value: number, minimum: number, maximum = Number.MAX_SAFE_INTEGER) =>
+            Number.isSafeInteger(value) && value >= minimum && value <= maximum
+        if (!integerWithin(policy.timeoutMilliseconds, 1, 0x7fffffff))
             throw new Error('Transaction timeout must be a positive bounded integer')
         if (!Number.isFinite(policy.minimumThroughputBytesPerSecond) || policy.minimumThroughputBytesPerSecond <= 0)
             throw new Error('Transaction minimum throughput must be positive and finite')
-        if (
-            !Number.isSafeInteger(policy.deviceBusyRetries) ||
-            policy.deviceBusyRetries < 0 ||
-            policy.deviceBusyRetries > 32
-        )
+        if (!integerWithin(policy.deviceBusyRetries, 0, 32))
             throw new Error('DeviceBusy retries must be an integer from 0 to 32')
-        if (!Number.isSafeInteger(policy.deviceBusyBackoffMilliseconds) || policy.deviceBusyBackoffMilliseconds < 0)
+        if (!integerWithin(policy.deviceBusyBackoffMilliseconds, 0))
             throw new Error('DeviceBusy backoff must be a nonnegative integer')
-        if (!Number.isSafeInteger(policy.deviceBusyBudgetMilliseconds) || policy.deviceBusyBudgetMilliseconds < 0)
+        if (!integerWithin(policy.deviceBusyBudgetMilliseconds, 0))
             throw new Error('DeviceBusy budget must be a nonnegative integer')
         if (typeof policy.automaticUSBReset !== 'boolean')
             throw new Error('Automatic USB reset must be enabled or disabled with a boolean')
@@ -150,13 +144,8 @@ export class TransactionChannel {
     }
 
     async send(container: Uint8Array, sessionId: number, context: PTPErrorContext): Promise<void> {
-        const timeout = this.timeoutFor(container.length)
-        await this.guard(
-            this.transport.send(container, sessionId, context.transactionId ?? 0),
-            'send',
-            timeout,
-            context
-        )
+        const sent = this.transport.send(container, sessionId, context.transactionId ?? 0)
+        await this.guard(sent, 'send', this.timeoutFor(container.length), context)
     }
 
     async receive(sessionId: number, expected: ExpectedContainer): Promise<Container> {
@@ -220,24 +209,19 @@ export class TransactionChannel {
     }
 
     private parse(raw: Uint8Array, context: PTPErrorContext): Container {
-        if (raw.length < HEADER_BYTES) {
+        if (raw.length < HEADER_BYTES)
             throw new PTPProtocolError(
                 'short-container',
                 `container of ${raw.length} bytes has no complete header`,
                 context
             )
-        }
         const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
         const declaredLength = view.getUint32(0, true)
-        if (declaredLength < HEADER_BYTES) {
+        if (declaredLength < HEADER_BYTES)
             throw new PTPProtocolError('short-container', `container declares ${declaredLength} bytes`, context)
-        }
         if (raw.length < declaredLength) {
-            throw new PTPProtocolError(
-                'truncated-container',
-                `container declares ${declaredLength} bytes but ${raw.length} arrived`,
-                context
-            )
+            const detail = `container declares ${declaredLength} bytes but ${raw.length} arrived`
+            throw new PTPProtocolError('truncated-container', detail, context)
         }
         return {
             type: view.getUint16(4, true),
@@ -252,10 +236,8 @@ export class TransactionChannel {
         if (container.transactionId === expected.transactionId) return undefined
         // Some cameras (Leica per libgphoto2 ptp.c ptp_transaction_new) answer CloseSession with transaction 0.
         if (this.isCloseSessionReply(container, expected)) return undefined
-        if (isStale(container.transactionId, expected.transactionId)) {
-            return `late container for transaction ${container.transactionId} while waiting for ${expected.transactionId}`
-        }
-        return undefined
+        if (!isStale(container.transactionId, expected.transactionId)) return undefined
+        return `late container for transaction ${container.transactionId} while waiting for ${expected.transactionId}`
     }
 
     private isCloseSessionReply(container: Container, expected: ExpectedContainer): boolean {
@@ -269,38 +251,24 @@ export class TransactionChannel {
     private check(container: Container, expected: ExpectedContainer, context: PTPErrorContext): Container {
         const allowed: number[] =
             expected.phase === 'data' ? [CONTAINER_TYPE.data, CONTAINER_TYPE.response] : [CONTAINER_TYPE.response]
-        if (!allowed.includes(container.type)) {
-            throw new PTPProtocolError(
-                'unexpected-container-type',
-                `expected a ${expected.phase} container, got type ${container.type}`,
-                context
-            )
+        const fail = (reason: PTPProtocolViolation, detail: string): never => {
+            throw new PTPProtocolError(reason, detail, context)
         }
-        const transactionMatches =
-            container.transactionId === expected.transactionId || this.isCloseSessionReply(container, expected)
-        if (!transactionMatches) {
-            throw new PTPProtocolError(
+        if (!allowed.includes(container.type))
+            fail('unexpected-container-type', `expected a ${expected.phase} container, got type ${container.type}`)
+        if (container.transactionId !== expected.transactionId && !this.isCloseSessionReply(container, expected))
+            fail(
                 'transaction-mismatch',
-                `reply belongs to transaction ${container.transactionId}, expected ${expected.transactionId}`,
-                context
+                `reply belongs to transaction ${container.transactionId}, expected ${expected.transactionId}`
             )
-        }
-        if (container.type === CONTAINER_TYPE.data && container.code !== expected.operationCode &&
-            container.code !== expected.dataOperationCode)
-            throw new PTPProtocolError(
+        const { type, code, payload } = container
+        if (type === CONTAINER_TYPE.data && code !== expected.operationCode && code !== expected.dataOperationCode)
+            fail(
                 'operation-mismatch',
-                `data belongs to opcode 0x${container.code.toString(16)}, expected 0x${expected.operationCode.toString(16)}`,
-                context
+                `data belongs to opcode 0x${code.toString(16)}, expected 0x${expected.operationCode.toString(16)}`
             )
-        if (
-            container.type === CONTAINER_TYPE.response &&
-            (container.payload.length % 4 || container.payload.length > 20)
-        )
-            throw new PTPProtocolError(
-                'unexpected-container-type',
-                'response has invalid UINT32 parameter framing',
-                context
-            )
+        if (type === CONTAINER_TYPE.response && (payload.length % 4 || payload.length > 20))
+            fail('unexpected-container-type', 'response has invalid UINT32 parameter framing')
         return container
     }
 }

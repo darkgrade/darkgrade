@@ -1,4 +1,13 @@
-import type { CameraContext, DiagnosticEntry } from '@contribute/schema'
+import { DISCLOSURE, SCHEMA, type CameraContext, type Contribution, type DiagnosticEntry } from '@contribute/schema'
+
+export function newContribution(camera: CameraContext, entries: DiagnosticEntry[], droppedEntries = 0): Contribution {
+    return { schema: SCHEMA, disclosure: DISCLOSURE, id: crypto.randomUUID(), camera, entries, droppedEntries }
+}
+
+export function environmentDisabled() {
+    const environment = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    return environment?.DARKGRADE_CONTRIBUTIONS === '0' || environment?.DO_NOT_TRACK === '1'
+}
 
 export interface CameraEvent {
     code: number
@@ -79,12 +88,11 @@ export function observeTransport<Device, Kind extends string>(
     const listeners = new Set<(event: CameraEvent) => void>()
     const pending = new Map<number, { operation: string; generation: number }>()
     const save = (entry: DiagnosticEntry) => {
-        if (!detached && enabled()) {
-            try {
-                record({ ...entry, occurredAt: new Date().toISOString(), sessionId })
-            } catch {
-                /* Diagnostics must not break camera cleanup. */
-            }
+        if (detached || !enabled()) return
+        try {
+            record({ ...entry, occurredAt: new Date().toISOString(), sessionId })
+        } catch {
+            /* Diagnostics must not break camera cleanup. */
         }
     }
     const operation = async <Result>(
@@ -177,12 +185,8 @@ export function observeTransport<Device, Kind extends string>(
         isConnected: () => source.isConnected(),
         isLittleEndian: () => source.isLittleEndian(),
         getType: () => source.getType(),
-        on: listener => {
-            listeners.add(listener)
-        },
-        off: listener => {
-            listeners.delete(listener)
-        },
+        on: listener => void listeners.add(listener),
+        off: listener => void listeners.delete(listener),
     }
     return {
         transport,

@@ -1,9 +1,7 @@
-import { observeTransport, type CameraTransport } from '@contribute/observe'
+import { environmentDisabled, newContribution, observeTransport, type CameraTransport } from '@contribute/observe'
 import {
-    DISCLOSURE,
     MAXIMUM_BODY_BYTES,
     MAXIMUM_ENTRIES,
-    SCHEMA,
     validateContribution,
     type CameraContext,
     type Contribution,
@@ -33,11 +31,6 @@ export interface ContributionOptions {
     flushIntervalMilliseconds?: number
 }
 
-function environmentDisabled() {
-    const environment = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-    return environment?.DARKGRADE_CONTRIBUTIONS === '0' || environment?.DO_NOT_TRACK === '1'
-}
-
 /** Importing this package does nothing. Explicit client initialization enables metadata diagnostics unless the saved preference or environment opts out. */
 export async function createContributions(options: ContributionOptions) {
     const endpoint = new URL(options.endpoint)
@@ -51,14 +44,7 @@ export async function createContributions(options: ContributionOptions) {
     if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 3_600_000)
         throw new Error('Invalid flush interval')
     const camera = structuredClone(options.camera)
-    validateContribution({
-        schema: SCHEMA,
-        disclosure: DISCLOSURE,
-        id: crypto.randomUUID(),
-        camera,
-        entries: [],
-        droppedEntries: 0,
-    })
+    validateContribution(newContribution(camera, []))
     const savedPreference = await options.consent.read()
     let consent = savedPreference === null || savedPreference === true
     let lastGrant: string | undefined
@@ -85,10 +71,7 @@ export async function createContributions(options: ContributionOptions) {
     const accessToken = (signal: AbortSignal, withdrawal = false) =>
         new Promise<string>((resolve, reject) => {
             const cancelled = () => reject(new Error('Token request cancelled'))
-            if (signal.aborted) {
-                cancelled()
-                return
-            }
+            if (signal.aborted) return cancelled()
             signal.addEventListener('abort', cancelled, { once: true })
             Promise.resolve()
                 .then(() => (withdrawal && options.withdrawalToken ? options.withdrawalToken() : options.accessToken()))
@@ -127,14 +110,7 @@ export async function createContributions(options: ContributionOptions) {
         if (Date.now() < retryAfter) return 'retry'
         const epoch = generation
         if (!pending) {
-            pending = {
-                schema: SCHEMA,
-                disclosure: DISCLOSURE,
-                id: crypto.randomUUID(),
-                camera,
-                entries,
-                droppedEntries,
-            }
+            pending = newContribution(camera, entries, droppedEntries)
             entries = []
             droppedEntries = 0
         }
@@ -197,14 +173,18 @@ export async function createContributions(options: ContributionOptions) {
         (upload ??= send().finally(() => {
             upload = undefined
         }))
-    const timer = setInterval(() => {
-        void flush().catch(() => {})
-    }, interval)
+    const timer = setInterval(() => void flush().catch(() => {}), interval)
     ;(timer as unknown as { unref?: () => void }).unref?.()
     return {
         enabled,
         observe<Device, Kind extends string>(source: CameraTransport<Device, Kind>) {
-            return observeTransport(source, enabled, record, () => generation, () => camera)
+            return observeTransport(
+                source,
+                enabled,
+                record,
+                () => generation,
+                () => camera
+            )
         },
         status: () => ({
             enabled: enabled(),

@@ -20,17 +20,11 @@ export class VariableValueCodec extends CustomCodec<VariableValue> {
     }
 
     encode(value: VariableValue | number | bigint | string): Uint8Array {
-        if (value && typeof value === 'object' && 'rawBytes' in value) {
-            return value.rawBytes
-        }
+        if (value && typeof value === 'object' && 'rawBytes' in value) return value.rawBytes
 
         const datatypeDefinition = getDatatypeByCode(this.dataType)
-        if (!datatypeDefinition) {
-            throw new Error(`Unknown datatype: 0x${this.dataType.toString(16)}`)
-        }
-        if (!datatypeDefinition.codec) {
-            throw new Error(`Datatype ${this.dataType} has no codec`)
-        }
+        if (!datatypeDefinition) throw new Error(`Unknown datatype: 0x${this.dataType.toString(16)}`)
+        if (!datatypeDefinition.codec) throw new Error(`Datatype ${this.dataType} has no codec`)
 
         const codec =
             typeof datatypeDefinition.codec === 'function'
@@ -46,12 +40,8 @@ export class VariableValueCodec extends CustomCodec<VariableValue> {
 
     decode(buffer: Uint8Array, offset = 0): { value: VariableValue; bytesRead: number } {
         const datatypeDefinition = getDatatypeByCode(this.dataType)
-        if (!datatypeDefinition) {
-            throw new Error(`Unknown datatype: 0x${this.dataType.toString(16)}`)
-        }
-        if (!datatypeDefinition.codec) {
-            throw new Error(`Datatype ${this.dataType} has no codec`)
-        }
+        if (!datatypeDefinition) throw new Error(`Unknown datatype: 0x${this.dataType.toString(16)}`)
+        if (!datatypeDefinition.codec) throw new Error(`Datatype ${this.dataType} has no codec`)
 
         const codec =
             typeof datatypeDefinition.codec === 'function'

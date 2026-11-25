@@ -46,9 +46,7 @@ export function recordFullTransport(source: TransportInterface, options: Transpo
     let activeOperations = 0
     let writes = Promise.resolve()
     const listeners = new Set<(event: PTPEvent) => void>()
-    const fail = (reason: string) => {
-        recordingError ??= reason
-    }
+    const fail = (reason: string) => void (recordingError ??= reason)
     const append = (entry: TransportRecordingEntry) => {
         const size = entry.bytes?.byteLength ?? 0
         if (
@@ -139,12 +137,8 @@ export function recordFullTransport(source: TransportInterface, options: Transpo
                 sessionId,
                 transactionId,
             }),
-        on: handler => {
-            listeners.add(handler)
-        },
-        off: handler => {
-            listeners.delete(handler)
-        },
+        on: handler => void listeners.add(handler),
+        off: handler => void listeners.delete(handler),
     }
     const status = () => ({
         complete: closed && !recordingError && activeOperations === 0 && pendingEntries === 0,

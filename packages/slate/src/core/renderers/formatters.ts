@@ -1,8 +1,30 @@
-import { safeStringify } from './safe-stringify'
+type DisplayValue = number | bigint | string | boolean | null | undefined | object | Uint8Array
 
 const MAX_LINE_WIDTH = 100
 
-type DisplayValue = number | bigint | string | boolean | null | undefined | object | Uint8Array
+export function safeStringify(value: DisplayValue): string {
+    if (typeof value === 'bigint') return value.toString()
+    if (typeof value === 'object' && value !== null)
+        return JSON.stringify(value, (_key, entry) => (typeof entry === 'bigint' ? entry.toString() : entry))
+    return JSON.stringify(value)
+}
+
+export function formatTimestamp(timestamp: number): string {
+    const date = new Date(timestamp)
+    const hours24 = date.getHours()
+    const pad = (value: number, length = 2) => value.toString().padStart(length, '0')
+    return `${hours24 % 12 || 12}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)} ${hours24 >= 12 ? 'PM' : 'AM'}`
+}
+
+export function formatBytes(bytes: number, decimals: number = 2): string {
+    if (bytes < 1000) return `${bytes} B`
+    let scaled = bytes / 1000
+    for (const unit of ['KB', 'MB']) {
+        if (scaled < 1000) return `${scaled.toFixed(decimals)} ${unit}`
+        scaled /= 1000
+    }
+    return `${scaled.toFixed(decimals)} GB`
+}
 
 function arrayItem(value: DisplayValue): string {
     if (typeof value === 'bigint') return value.toString()

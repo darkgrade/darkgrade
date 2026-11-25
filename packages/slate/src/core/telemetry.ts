@@ -20,12 +20,8 @@ export async function slateBuildMetadata() {
             const { fileURLToPath } = await import('node:url')
             const cwd = fileURLToPath(new URL('../../../../', import.meta.url))
             const git = (args: string[]) =>
-                execFileSync('git', args, {
-                    cwd,
-                    timeout: 1000,
-                    encoding: 'utf8',
-                    stdio: ['ignore', 'pipe', 'ignore'],
-                }).trim()
+                execFileSync('git', args, { cwd, timeout: 1000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+                    .trim()
             const revision = git(['rev-parse', 'HEAD'])
             if (!/^[a-f0-9]{40}$/.test(revision)) return
             return { revision, dirty: git(['status', '--porcelain', '--untracked-files=no']).length > 0 }
@@ -211,6 +207,13 @@ export function slateTelemetry(source: TransportInterface) {
     return observer
 }
 
+const sdkOperationName = (command: Record<string, string>) =>
+    command.cmd !== 'command' || command.id !== '1' || !['0', '1'].includes(command.param)
+        ? command.cmd
+        : command.param === '1'
+          ? 'record_start'
+          : 'record_stop'
+
 /** SDK calls are named operations, not invented PTP packets. Arguments/results never enter records. */
 export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
     let model = 'Unknown'
@@ -241,11 +244,8 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                 if (command.cmd === 'connect' && result.ok === true && evidence === 'hardware' && model !== 'Unknown') {
                     // The SDK bridge selects a device by this exact USB serial before acknowledging connection.
                     try {
-                        hardwareFingerprint = await cameraHardwareFingerprint({
-                            manufacturer: 'Sony',
-                            model,
-                            serialNumber: command.serial,
-                        })
+                        const body = { manufacturer: 'Sony', model, serialNumber: command.serial }
+                        hardwareFingerprint = await cameraHardwareFingerprint(body)
                     } catch {
                         hardwareFingerprint = undefined
                     }
@@ -276,14 +276,7 @@ export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
                                 },
                                 {
                                     kind: 'command',
-                                    operation:
-                                        command.cmd === 'command' &&
-                                        command.id === '1' &&
-                                        ['0', '1'].includes(command.param)
-                                            ? command.param === '1'
-                                                ? 'record_start'
-                                                : 'record_stop'
-                                            : command.cmd,
+                                    operation: sdkOperationName(command),
                                     direction: 'out',
                                     bytes: 0,
                                     failed,

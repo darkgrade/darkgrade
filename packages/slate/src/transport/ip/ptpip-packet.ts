@@ -1,3 +1,5 @@
+import { concatenateBytes } from '@ptp/datasets/codecs/byte-sequence'
+
 export enum PTPIPPacketType {
     InitCommandRequest = 1,
     InitCommandAck = 2,
@@ -32,34 +34,16 @@ export interface PTPIPCommandAck {
 const HEADER_LENGTH = 8
 const MAX_PACKET_LENGTH = 1024 * 1024 * 1024
 
-function uint16(value: number): Uint8Array {
-    const bytes = new Uint8Array(2)
-    new DataView(bytes.buffer).setUint16(0, value, true)
+function littleEndian(size: number, write: (view: DataView) => void): Uint8Array {
+    const bytes = new Uint8Array(size)
+    write(new DataView(bytes.buffer))
     return bytes
 }
-
-function uint32(value: number): Uint8Array {
-    const bytes = new Uint8Array(4)
-    new DataView(bytes.buffer).setUint32(0, value, true)
-    return bytes
-}
-
+const uint16 = (value: number) => littleEndian(2, view => view.setUint16(0, value, true))
+const uint32 = (value: number) => littleEndian(4, view => view.setUint32(0, value, true))
 function uint64(value: number): Uint8Array {
     if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Invalid PTP/IP data length ${value}`)
-    const bytes = new Uint8Array(8)
-    new DataView(bytes.buffer).setBigUint64(0, BigInt(value), true)
-    return bytes
-}
-
-function concatenate(parts: Bytes[]): Bytes {
-    const length = parts.reduce((total, part) => total + part.length, 0)
-    const result = new Uint8Array(length)
-    let offset = 0
-    for (const part of parts) {
-        result.set(part, offset)
-        offset += part.length
-    }
-    return result
+    return littleEndian(8, view => view.setBigUint64(0, BigInt(value), true))
 }
 
 function utf16LittleEndian(value: string): Uint8Array {
@@ -112,13 +96,11 @@ export function takePTPIPPackets(buffer: Bytes): { packets: PTPIPPacket[]; remai
 
 export function buildInitCommandRequest(clientGuid: Bytes, clientName: string): Bytes {
     if (clientGuid.length !== 16) throw new Error('PTP/IP client GUID must be exactly 16 bytes')
-    const version = new Uint8Array(4)
-    const versionView = new DataView(version.buffer)
-    versionView.setUint16(0, 0, true)
-    versionView.setUint16(2, 1, true)
+    // Protocol version 1.0: minor 0, then major 1.
+    const version = concatenateBytes([uint16(0), uint16(1)])
     return encodePTPIPPacket(
         PTPIPPacketType.InitCommandRequest,
-        concatenate([clientGuid, utf16LittleEndian(clientName), version])
+        concatenateBytes([clientGuid, utf16LittleEndian(clientName), version])
     )
 }
 
@@ -150,20 +132,26 @@ export function buildOperationRequest(
     sendsData: boolean
 ): Uint8Array {
     if (parameters.length % 4 !== 0 || parameters.length > 20) {
-        throw new Error(`PTP/IP operation parameters must contain zero to five uint32 values, received ${parameters.length} bytes`)
+        throw new Error(
+            `PTP/IP operation parameters must contain zero to five uint32 values, received ${parameters.length} bytes`
+        )
     }
     return encodePTPIPPacket(
         PTPIPPacketType.OperationRequest,
-        concatenate([uint32(sendsData ? 2 : 1), uint16(operationCode), uint32(transactionId), parameters])
+        concatenateBytes([uint32(sendsData ? 2 : 1), uint16(operationCode), uint32(transactionId), parameters])
     )
 }
 
 export function buildStartData(transactionId: number, totalLength: number): Uint8Array {
-    return encodePTPIPPacket(PTPIPPacketType.StartData, concatenate([uint32(transactionId), uint64(totalLength)]))
+    return encodePTPIPPacket(PTPIPPacketType.StartData, concatenateBytes([uint32(transactionId), uint64(totalLength)]))
 }
 
-export function buildDataPacket(type: PTPIPPacketType.Data | PTPIPPacketType.EndData, transactionId: number, data: Bytes) {
-    return encodePTPIPPacket(type, concatenate([uint32(transactionId), data]))
+export function buildDataPacket(
+    type: PTPIPPacketType.Data | PTPIPPacketType.EndData,
+    transactionId: number,
+    data: Bytes
+) {
+    return encodePTPIPPacket(type, concatenateBytes([uint32(transactionId), data]))
 }
 
 export function buildPong(): Uint8Array {
@@ -195,9 +183,11 @@ export function parseEvent(packet: PTPIPPacket) {
 }
 
 export function parseStartData(packet: PTPIPPacket) {
-    if (packet.type !== PTPIPPacketType.StartData || packet.payload.length < 12) throw new Error('Invalid PTP/IP start-data packet')
+    if (packet.type !== PTPIPPacketType.StartData || packet.payload.length < 12)
+        throw new Error('Invalid PTP/IP start-data packet')
     const view = new DataView(packet.payload.buffer, packet.payload.byteOffset, packet.payload.byteLength)
     const totalLength = view.getBigUint64(4, true)
-    if (totalLength > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`PTP/IP data length ${totalLength} is not safely representable`)
+    if (totalLength > BigInt(Number.MAX_SAFE_INTEGER))
+        throw new Error(`PTP/IP data length ${totalLength} is not safely representable`)
     return { transactionId: view.getUint32(0, true), totalLength: Number(totalLength) }
 }
