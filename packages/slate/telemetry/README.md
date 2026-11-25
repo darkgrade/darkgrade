@@ -1,25 +1,60 @@
 # Darkgrade telemetry
 
-One HTTPS service and one Postgres database. The service validates and batches camera
-metadata, serves a private investigation timeline, and performs its own cleanup. No
-Firestore, GCS recording store, email provider, separate cleanup worker or scheduler is
-required. This replaces the undeployed project 18 infrastructure.
+Slate owns the telemetry client and server. One HTTPS service and one Postgres database
+validate and batch camera metadata, serve the private investigation timeline, and perform
+cleanup. Optional email confirmation uses the existing Resend adapter.
 
 What Darkgrade collects, why, which services receive it and the controls people have are
 stated only in the [privacy policy](https://darkgrade.com/privacy). This document covers how the service works.
 
 ## Local development
 
-Build `packages/slate` and this app, then run a local Postgres 17 database. Set
+Build `packages/slate`, then run a local Postgres 17 database. Set
 `DATABASE_URL` to its connection string and `TELEMETRY_PUBLIC_URL` to the intended HTTPS
-origin. `npm start` starts the service on port 8080. `npm test` includes real Postgres
-integration tests when `DATABASE_URL` is set. `npm run smoke` uses `TELEMETRY_SMOKE_URL`
+origin. From the repository root:
+
+```sh
+npm run build --prefix packages/slate
+npm run telemetry:start --prefix packages/slate
+npm run test:telemetry --prefix packages/slate
+npm run telemetry:smoke --prefix packages/slate
+```
+
+The service starts on port 8080. Tests include real Postgres
+integration tests when `DATABASE_URL` is set. The smoke check uses `TELEMETRY_SMOKE_URL`
 (HTTPS, or explicit loopback HTTP for local checks). It creates and deletes only its own
 synthetic installation; it does not operate a camera.
 
-The Dockerfile is built from the repository root after both packages are built. Production
+The Dockerfile is built from the repository root after Slate is built:
+
+```sh
+docker build -f packages/slate/telemetry/Dockerfile -t darkgrade-telemetry .
+```
+
+Production
 connects through Cloud SQL's authenticated Unix socket; direct remote Postgres connections
 must use certificate-verified TLS. Do not expose a plaintext Postgres port publicly.
+
+## Module boundaries
+
+- `@darkgrade/slate/telemetry` (also `/telemetry/application`) is the existing portable
+  application client. `/telemetry/settings` supplies Node installation settings.
+  `/telemetry/{batch,schema,protocol}` share the same validators with the server.
+  The earlier `/contribute/*` exports remain aliases of these implementations.
+- `@darkgrade/slate/telemetry/server` exposes the existing request handler,
+  withdrawal/cleanup, Resend confirmation, operator queries and Matrix export APIs.
+  Importing it does not start a listener, read deployment configuration or connect a database.
+- `@darkgrade/slate/telemetry/postgres` is the database adapter. `pg@8.16.3` is an
+  optional peer used only by this entry and the standalone service; camera, CLI and
+  browser clients do not load it.
+- Server source and tests live in `src/telemetry/server` and `tests/telemetry`.
+  This directory contains deployment assets, not another workspace or application.
+  `telemetry:cleanup`, `telemetry:review RECORD_ID` and `telemetry:export FILE` reuse
+  the existing operational commands.
+
+The standalone service composes these same implementations. Its HTTPS routes,
+environment variable names, database tables, maintenance markers and Cloud Run resource
+names are unchanged. Outpost Telemetry and Matrix keep using their existing HTTP contracts.
 
 ## Data and behavior
 

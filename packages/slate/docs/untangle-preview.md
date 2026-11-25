@@ -119,7 +119,7 @@ Nothing has changed yet. This file is the plan.
   - packages/slate/src/ptp/datasets/device-prop-desc-dataset.ts:1, 56 with camera/controls.ts:88 — ptp↔camera imports for UnrecognizedValues/`recognizedDescriptorValues`. The application view moves to camera/.
   - packages/slate/src/vendors/canon/canon-camera.ts:62, photo-video-mode.ts:31, camera-controls.ts:265, protocol-evidence.ts:24 — FixedMovie 0xd1c2 is a constant three times and read three ways (reported in two areas). Make it a typed Canon property read by one driver reader.
   - packages/slate/src/vendors/canon/canon-camera.ts:285, 865, 1285-1286 — CanonRecordStatus is interpreted three ways. One reader.
-  - apps/contribution-collector/src/transport.ts:7 — Slate Sony op names 'connect_wifi'/'connect_bluetooth_direct' hard-coded in the collector. Export them from the contribute schema.
+  - packages/slate/src/telemetry/server/transport.ts:7 — Slate Sony op names 'connect_wifi'/'connect_bluetooth_direct' hard-coded in the collector. Export them from the contribute schema.
 
 - **3. One vendor table: vendorId → name, make, registry factory, driver factory, discovery scope, lens-mount rules, event aliases.**
   Lives in vendors/ (root), and only brand folders hold vendor data. Every vendor switch reads it.
@@ -288,7 +288,7 @@ Nothing has changed yet. This file is the plan.
   - apps/studio/src/main/assistant/assistant-service.ts:44-50, 603-607, 703 — `withTimeout` reports failure while the command is still running. Show the outcome as unknown.
   - apps/studio/src/main/assistant/assistant-service.ts:334, 447, 802 — warm-up and template failures swallowed.
   - apps/studio/src/renderer/src/gpu/device.ts:30, 165-167, 208-210, 296 and DiagnosticsSettings.tsx:41-110 — the renderer swallows errors. Add a renderer → Activity error channel and keep the IpcResult error.
-  - apps/contribution-collector/src/operations.ts:37 and main.ts:64, 86 — the cause is discarded. Log the error kind.
+  - packages/slate/src/telemetry/server/operations.ts:37 and main.ts:64, 86 — the cause is discarded. Log the error kind.
 
 - **11. Services are injected, library defaults are inert, and shared contracts and local state each have one owner.**
   Through CameraOptions: Logger (inert default), telemetry store, known cameras, diagnostics sink, image decoder and scene reviewer. Slate's contribute module owns installation identity, key format, transitions and the effective-sharing rule. A local-state module owns atomic writes, locks, liveness and the `DARKGRADE_HOME` root. A `UsbDeviceId` type owns VID:PID[:serial]. Afterwards core imports nothing from contribute or vendors.
@@ -477,7 +477,7 @@ Nothing has changed yet. This file is the plan.
     - packages/slate/scripts/test.ts:13 and package.json:104-121 — duplicate runner commands, plus the `test:unit` alias.
     - packages/slate/src/cli/doctor.ts:24 — read the Node minimum from engines.
     - packages/cli/package.json:12, 17 — derive externals from Slate's dependencies. Fix egoroof-blowfish.
-    - apps/contribution-collector/src/database.ts:1 and postgres.ts:226 — the Firestore-shaped interface over Postgres. Replace with a typed key-value interface.
+    - packages/slate/src/telemetry/server/database.ts:1 and postgres.ts:226 — the Firestore-shaped interface over Postgres. Replace with a typed key-value interface.
   - Studio main:
     - apps/studio/src/main/camera-service/shared.ts:54-55, 9 — dead constants and unused imports.
     - apps/studio/src/main/camera-service/media.ts:141-143 — a `throwIfAborted` that cannot throw.

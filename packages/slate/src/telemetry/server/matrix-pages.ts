@@ -1,5 +1,5 @@
-import type { Database, MatrixSource } from '#collector/database'
-import { diagnosticPattern } from '#collector/review'
+import type { Database, MatrixSource } from '#telemetry-server/database'
+import { diagnosticPattern } from '#telemetry-server/review'
 import { createHash } from 'node:crypto'
 
 interface Cursor {

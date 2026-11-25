@@ -1,8 +1,8 @@
-import { allowBurst } from '#collector/abuse-limits'
-import type { Database, Transaction } from '#collector/database'
-import { changeMatrixGeneration } from '#collector/matrix-generation'
-import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/slate/contribute/batch'
-import { MAXIMUM_BODY_BYTES } from '@darkgrade/slate/contribute/schema'
+import { allowBurst } from '#telemetry-server/abuse-limits'
+import type { Database, Transaction } from '#telemetry-server/database'
+import { changeMatrixGeneration } from '#telemetry-server/matrix-generation'
+import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/slate/telemetry/batch'
+import { MAXIMUM_BODY_BYTES } from '@darkgrade/slate/telemetry/schema'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 export const RETENTION_DAYS = 90

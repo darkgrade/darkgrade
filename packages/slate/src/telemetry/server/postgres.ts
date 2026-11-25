@@ -1,7 +1,7 @@
-import type { Database, Transaction } from '#collector/database'
-import { operatorQueries } from '#collector/operator-queries'
+import type { Database, Transaction } from '#telemetry-server/database'
+import { operatorQueries } from '#telemetry-server/operator-queries'
 import { Pool, type PoolClient } from 'pg'
-import {cameraConnection} from '#collector/transport'
+import {cameraConnection} from '#telemetry-server/transport'
 
 /** Statements that take a lock on telemetry_events. They run only until its triggers exist:
  * every later start would otherwise queue an exclusive lock behind any long-running work and

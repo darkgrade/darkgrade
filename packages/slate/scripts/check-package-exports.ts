@@ -43,6 +43,23 @@ try {
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
             `if(typeof (${cli}).runDarkgradeCli !== 'function')throw new Error('CLI runner is missing')`],
             { cwd: isolated, stdio: 'inherit' })
+        const load = (name: string) => format === 'esm' ? `await import('${name}')` : `require('${name}')`
+        const telemetryChecks = Object.entries(entries).filter(([path]) => path).map(([path, name]) =>
+            `if((${load('@darkgrade/slate/telemetry' + path)})[${JSON.stringify(name)}] !==
+                (${load('@darkgrade/slate/contribute' + path)})[${JSON.stringify(name)}])
+                throw new Error('Telemetry must reuse the existing client: ' + ${JSON.stringify(path)})`
+        ).join(';')
+        execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
+            `process.env.DATABASE_URL='invalid';process.env.TELEMETRY_PUBLIC_URL='invalid';
+            ${telemetryChecks};
+            if((${load('@darkgrade/slate/telemetry')}).createApplicationDiagnostics !==
+                (${load('@darkgrade/slate/contribute/application')}).createApplicationDiagnostics)
+                throw new Error('Telemetry must use the application client');
+            const server=${load('@darkgrade/slate/telemetry/server')};
+            for(const name of ['createTelemetry','cleanupWithdrawals','resendContactSender',
+                'operatorApi','exportMatrixPage'])
+                if(typeof server[name]!=='function')throw new Error('Missing telemetry server API: '+name)`,
+        ], { cwd: isolated, stdio: 'inherit' })
     }
     for (const path of ['', '/application', '/batch', '/protocol', '/schema']) {
         const entry = join(isolated, 'browser.ts')
@@ -50,6 +67,17 @@ try {
         const result = await Bun.build({ entrypoints: [entry], target: 'browser' })
         if (!result.success) throw new AggregateError(result.logs, 'Browser diagnostics import failed: ' + path)
     }
+    for (const path of ['', '/application', '/batch', '/protocol', '/schema']) {
+        const entry = join(isolated, 'telemetry-browser.ts')
+        writeFileSync(entry, `export * from ${JSON.stringify('@darkgrade/slate/telemetry' + path)}`)
+        const result = await Bun.build({ entrypoints: [entry], target: 'browser' })
+        if (!result.success) throw new AggregateError(result.logs, 'Browser telemetry import failed: ' + path)
+    }
+    const serverBrowserEntry = join(isolated, 'telemetry-server-browser.ts')
+    writeFileSync(serverBrowserEntry, "export * from '@darkgrade/slate/telemetry/server'")
+    const serverBrowserBuilds = await Bun.build({ entrypoints: [serverBrowserEntry], target: 'browser' })
+        .then(result => result.success, () => false)
+    if (serverBrowserBuilds) throw new Error('The telemetry server must remain Node-only')
     const controlsEntry = join(isolated, 'controls-browser.ts')
     writeFileSync(controlsEntry, "export * from '@darkgrade/slate/controls'")
     const controlsBuild = await Bun.build({ entrypoints: [controlsEntry], target: 'browser' })
@@ -61,12 +89,16 @@ try {
         import { type DiagnosticBatch } from '@darkgrade/slate/contribute/batch'
         import { nodeDiagnostics } from '@darkgrade/slate/contribute/settings'
         import { runDarkgradeCli } from '@darkgrade/slate/cli'
+        import { createApplicationDiagnostics as telemetryClient } from '@darkgrade/slate/telemetry'
+        import { createTelemetry, type Database } from '@darkgrade/slate/telemetry/server'
         const command: (args: readonly string[]) => Promise<number> = runDarkgradeCli
         const context: CameraContext = { manufacturer: 'Test', model: 'Fixture', firmware: '1',
             revision: 'abcdef0', dirty: false, transport: 'usb', evidence: 'synthetic' }
         const batch: DiagnosticBatch = { schema: 'darkgrade.diagnostic-batch/v2', id: 'fixture', contributions: [] }
         const state: InstallationState = { enabled: false, noticeVersion: 'fixture', withdrawalPending: false }
-        void [context, batch, state, createApplicationDiagnostics, nodeDiagnostics, command]
+        const service: (database: Database, options: { publicUrl: string }) =>
+            (request: Request) => Promise<Response> = createTelemetry
+        void [context, batch, state, createApplicationDiagnostics, nodeDiagnostics, command, telemetryClient, service]
     `)
     writeFileSync(join(isolated, 'tsconfig.json'), JSON.stringify({
         compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext',

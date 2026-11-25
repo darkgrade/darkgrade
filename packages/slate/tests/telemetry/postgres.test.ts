@@ -1,9 +1,9 @@
-import { investigate } from '#collector/investigate'
-import { operatorApi } from '#collector/operator'
-import { postgresDatabase } from '#collector/postgres'
-import { diagnosticPattern, exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
-import { createTelemetry } from '#collector/telemetry'
-import { NOTICE_VERSION } from '@darkgrade/slate/contribute/batch'
+import { investigate } from '#telemetry-server/investigate'
+import { operatorApi } from '#telemetry-server/operator'
+import { postgresDatabase } from '#telemetry-server/postgres'
+import { diagnosticPattern, exportReviewedPatterns, reviewDiagnostic } from '#telemetry-server/review'
+import { createTelemetry } from '#telemetry-server/telemetry'
+import { NOTICE_VERSION } from '@darkgrade/slate/telemetry/batch'
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { test } from 'node:test'
@@ -135,7 +135,7 @@ test('legacy transport migration keeps query labels and Matrix projections consi
         assert.equal(report.events.length,2)
         assert.ok(report.events.every(event=>event.transport==='wifi'&&event.backend==='vendor-api'))
         assert.equal((await database.get(`diagnostics/${user.installId}_${payload.id}`))?.payload,source?.payload)
-        const {exportMatrixPage}=await import('#collector/matrix-pages')
+        const {exportMatrixPage}=await import('#telemetry-server/matrix-pages')
         const page=await exportMatrixPage(database)
         assert.ok(page.records.find(row=>row.installId===user.installId)?.patterns.every(pattern=>pattern.camera.transport==='wifi'))
     }finally{
@@ -145,7 +145,7 @@ test('legacy transport migration keeps query labels and Matrix projections consi
 })
 
 test('Matrix pages use a bounded database snapshot and preserve watermark, review, credit and withdrawal', {skip:!process.env.DATABASE_URL},async()=>{
-    const {exportMatrixPage,MatrixExportChanged}=await import('#collector/matrix-pages')
+    const {exportMatrixPage,MatrixExportChanged}=await import('#telemetry-server/matrix-pages')
     const database=await postgresDatabase(process.env.DATABASE_URL!)
     const handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
     const user=await enroll(handle)
@@ -549,8 +549,8 @@ test(
     'real Postgres indexes a body across installations, sessions and Matrix without leaking its serial',
     { skip: !process.env.DATABASE_URL },
     async () => {
-        const { exportMatrixPage } = await import('#collector/matrix-pages')
-        const { cameraHardwareFingerprint } = await import('@darkgrade/slate/contribute/schema')
+        const { exportMatrixPage } = await import('#telemetry-server/matrix-pages')
+        const { cameraHardwareFingerprint } = await import('@darkgrade/slate/telemetry/schema')
         const database = await postgresDatabase(process.env.DATABASE_URL!)
         const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
         const users = await Promise.all([enroll(handle), enroll(handle)])
@@ -663,7 +663,7 @@ test('observed camera snapshots survive Postgres replay and Matrix independently
   assert.equal((await handle(request('/v2/batches','POST',user.installKey,payload))).status,202)
   const replay=await database.operator.session(user.installId,session)
   assert.deepEqual(replay.events[0].properties.protocol,snapshot)
-  const {exportMatrixPage}=await import('#collector/matrix-pages'),page=await exportMatrixPage(database)
+  const {exportMatrixPage}=await import('#telemetry-server/matrix-pages'),page=await exportMatrixPage(database)
   const row=page.records.find(row=>row.sourceRecord===user.installId+'_'+payload.id)
   assert.ok(row);assert.equal(page.hardwarePass,false)
   const evidence=row.patterns.flatMap((pattern:any)=>pattern.protocol||[])
@@ -818,7 +818,7 @@ test('the unknown-code queue reads its summary: counts across installations, a c
 })
 
 test('the one-time removal deletes only old unidentified events, keeps identified and later ones, and leaves summaries exact', {skip:!process.env.DATABASE_URL}, async()=>{
-    const {unidentifiedPurge}=await import('#collector/postgres')
+    const {unidentifiedPurge}=await import('#telemetry-server/postgres')
     let database=await postgresDatabase(process.env.DATABASE_URL!)
     let handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
     const user=await enroll(handle),pool=new Pool({connectionString:process.env.DATABASE_URL!})

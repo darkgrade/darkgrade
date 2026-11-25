@@ -256,6 +256,12 @@ Underneath, transactions are bounded by timeouts, replies are checked against PT
 
 ## Next Steps
 
+Telemetry's portable client is `@darkgrade/slate/telemetry`; Node hosts use
+`@darkgrade/slate/telemetry/settings`. The server implementation is a separate
+`@darkgrade/slate/telemetry/server` entry, with `/telemetry/postgres` for its optional
+database adapter. The earlier `/contribute/*` imports remain compatible.
+See the repository's `packages/slate/telemetry/README.md` for deployment.
+
 - See [PTP/IP over Wi-Fi](/slate/getting_started/ptp-ip)
 - Learn about [PTP](/slate/getting_started/what-is-ptp) - Understanding the protocol
 - Check [Feature Compatibility](/slate/getting_started/feature-compatibility) - See what each camera supports

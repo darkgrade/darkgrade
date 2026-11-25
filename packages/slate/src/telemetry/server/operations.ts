@@ -1,6 +1,6 @@
-import { postgresDatabase } from '#collector/postgres'
-import { exportReviewedPatterns, reviewDiagnostic } from '#collector/review'
-import { cleanupWithdrawals } from '#collector/telemetry'
+import { postgresDatabase } from '#telemetry-server/postgres'
+import { exportReviewedPatterns, reviewDiagnostic } from '#telemetry-server/review'
+import { cleanupWithdrawals } from '#telemetry-server/telemetry'
 import { randomUUID } from 'node:crypto'
 import { rename, unlink, writeFile } from 'node:fs/promises'
 

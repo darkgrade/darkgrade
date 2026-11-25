@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cameraConnection } from '#collector/transport'
+import { cameraConnection } from '#telemetry-server/transport'
 import { camera } from './telemetry-fixture.ts'
 test('connection labels keep named vendor calls separate from native PTP without rewriting source objects',()=>{
  const legacy={...camera,manufacturer:'Sony',transport:'sony-sdk' as const}

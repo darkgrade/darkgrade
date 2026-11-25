@@ -1,4 +1,4 @@
-import type { Database } from '#collector/database'
+import type { Database } from '#telemetry-server/database'
 
 /** Shared fixed windows survive restarts and apply across collector instances.
  * No caller-controlled forwarding headers or raw IP addresses become identities. */

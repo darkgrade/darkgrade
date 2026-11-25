@@ -1,8 +1,8 @@
-import { admissionLimit } from '#collector/abuse-limits'
-import { investigate } from '#collector/investigate'
-import { operatorApi } from '#collector/operator'
-import { postgresDatabase } from '#collector/postgres'
-import { cleanupWithdrawals, createTelemetry, DAILY_BATCH_LIMIT, resendContactSender } from '#collector/telemetry'
+import { admissionLimit } from '#telemetry-server/abuse-limits'
+import { investigate } from '#telemetry-server/investigate'
+import { operatorApi } from '#telemetry-server/operator'
+import { postgresDatabase } from '#telemetry-server/postgres'
+import { cleanupWithdrawals, createTelemetry, DAILY_BATCH_LIMIT, resendContactSender } from '#telemetry-server/telemetry'
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
 

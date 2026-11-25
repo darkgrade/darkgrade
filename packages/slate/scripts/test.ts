@@ -17,4 +17,5 @@ if (!filters.length) {
     run('bun', ['test', './tests/runtime'])
     run('node', ['--test', ...globSync('tests/contribute/*.test.ts')])
     run('node', ['--test', ...globSync('tests/cli/*.test.ts')])
+    run('node', ['--test', ...globSync('tests/telemetry/*.test.ts')])
 }

@@ -1,5 +1,5 @@
-import { BATCH_SCHEMA, NOTICE_VERSION } from '@darkgrade/slate/contribute/batch'
-import { DISCLOSURE, SCHEMA } from '@darkgrade/slate/contribute/schema'
+import { BATCH_SCHEMA, NOTICE_VERSION } from '@darkgrade/slate/telemetry/batch'
+import { DISCLOSURE, SCHEMA } from '@darkgrade/slate/telemetry/schema'
 import { randomUUID } from 'node:crypto'
 
 const endpoint = new URL(process.env.TELEMETRY_SMOKE_URL ?? '')

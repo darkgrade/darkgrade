@@ -26,5 +26,5 @@
         }
     },
     "include": ["src", "tests", "scripts/recover-camera.ts", "scripts/camera-lease.ts", "scripts/check-guards.ts", "*.config.ts"],
-    "exclude": ["tests/runtime"]
+    "exclude": ["tests/runtime", "tests/telemetry", "src/telemetry/server"]
 }

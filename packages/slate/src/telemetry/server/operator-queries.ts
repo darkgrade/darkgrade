@@ -1,4 +1,9 @@
-import type { Pool } from 'pg'
+import type { Row } from '#telemetry-server/database'
+
+/** The query capability used by operators, without exposing the optional Postgres driver. */
+export interface OperatorQueryConnection {
+    query(sql: string, values?: unknown[]): Promise<{ rows: Row['data'][] }>
+}
 
 export interface EventFilters {
     days: number
@@ -36,7 +41,7 @@ const signalName=`CASE WHEN signal='failed' THEN 'Failed'
 const signalMatches=(column:string,parameter:string)=>`(${column}=${parameter} OR (((${parameter} LIKE 'call:%'
     AND ${parameter} NOT LIKE 'call:%:%') OR ${parameter} ~ '^response:0x[0-9a-f]{4}$') AND ${column} LIKE ${parameter}||':%'))`
 /** Parameterized, bounded operator queries. Contact data is restricted to the explicit support lookup. */
-export function operatorQueries(pool: Pool) {
+export function operatorQueries(pool: OperatorQueryConnection) {
     const activeSource = `EXISTS (SELECT 1 FROM telemetry_state d WHERE d.path=telemetry_events.batch_path
         AND d.data->>'expiresAt' > to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
         AND EXISTS (SELECT 1 FROM telemetry_state i WHERE i.path='installations/'||telemetry_events.installation_id
@@ -140,7 +145,7 @@ export function operatorQueries(pool: Pool) {
                 ) cameras ON true ORDER BY selected.id COLLATE "C"`,
                 [filters.email?.trim().toLowerCase() || null, filters.installations ?? null, filters.after || null,includeHistory,pageSize+1]
             )
-            const items = result.rows.slice(0, pageSize).map(row => ({
+            const items = result.rows.slice(0, pageSize).map((row): Row['data'] => ({
                 ...row, events: Number(row.events), errors: Number(row.errors), signals: Number(row.signals),
             }))
             return { items, next: result.rows.length > pageSize ? items.at(-1)!.id : null, retentionDays: 90, cameraLimit: 50, identityOnly:!includeHistory }
@@ -355,7 +360,7 @@ export function operatorQueries(pool: Pool) {
             const selected = sessions.rows.slice(0, 100),
                 last = selected.at(-1)
             const sessionsNext =
-                sessions.rows.length > 100
+                sessions.rows.length > 100 && last
                     ? Buffer.from(
                           JSON.stringify({
                               time: last.cursor_time,
@@ -394,7 +399,7 @@ export function operatorQueries(pool: Pool) {
             const events = result.rows.slice(0, 500),
                 last = events.at(-1)
             const next =
-                result.rows.length > 500
+                result.rows.length > 500 && last
                     ? Buffer.from(
                           JSON.stringify({ time: last.cursor_time, batch: last.batch_path, sequence: last.sequence })
                       ).toString('base64url')

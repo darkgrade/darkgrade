@@ -19,6 +19,7 @@ export default defineConfig({
         // rewritten to relative paths so consumers can resolve them.
         dts({
             include: ['src'],
+            exclude: ['src/telemetry/server/**'],
             entryRoot: 'src',
             compilerOptions: { stripInternal: true },
             beforeWriteFile(filePath, content) {

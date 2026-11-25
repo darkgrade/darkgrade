@@ -1,4 +1,4 @@
-import type { Transaction } from '#collector/database'
+import type { Transaction } from '#telemetry-server/database'
 import { randomUUID } from 'node:crypto'
 
 /** Invalidates an in-progress export when review, withdrawal or attribution changes. */
