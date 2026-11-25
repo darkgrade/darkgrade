@@ -1041,9 +1041,10 @@ export class CanonCamera extends GenericCamera {
             try {
                 await this.maintainKeepAlive()
                 if (!this.polling) return
+                // GetEvent is destructive: a response already read is always processed, even when a
+                // pause or stopPolling began during it (both wait for this loop, so it precedes them).
                 const response = await this.getEvents()
-                if (this.polling && Array.isArray(response.data) && response.data.length > 0)
-                    this.processEvents(response.data)
+                if (Array.isArray(response.data) && response.data.length > 0) this.processEvents(response.data)
             } catch {}
             if (!this.polling) return
             await wait(intervalMilliseconds)

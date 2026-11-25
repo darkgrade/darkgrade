@@ -18,7 +18,9 @@ const transport = () =>
     ({ isLittleEndian: () => true, isConnected: () => true, on: () => undefined }) as unknown as TransportInterface
 
 /** A simulated EOS body: the release announces its files through ObjectAddedEx, read with GetEvent. */
-function fixture(options: { noNewImage?: boolean; staleImage?: boolean; shortTransfer?: boolean; delayed?: boolean; oversize?: boolean } = {}) {
+function fixture(
+    options: { noNewImage?: boolean; staleImage?: boolean; shortTransfer?: boolean; delayed?: boolean; oversize?: boolean; slowEvents?: boolean } = {}
+) {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
     const driver = protocolSession(camera).driver as CanonCamera
     const data = Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)
@@ -64,7 +66,10 @@ function fixture(options: { noNewImage?: boolean; staleImage?: boolean; shortTra
         if (operation.name === 'CanonGetEventData') {
             // A delayed body announces its files one poll later.
             if (options.delayed && polls++ < 2) return { code: 0x2001, data: canonEvents(driver.registry, []) }
-            return { code: 0x2001, data: canonEvents(driver.registry, queued.splice(0)) }
+            // GetEvent is destructive: the records leave the camera's queue when it is read.
+            const records = queued.splice(0)
+            if (options.slowEvents && records.length) await new Promise(resolve => setTimeout(resolve, 100))
+            return { code: 0x2001, data: canonEvents(driver.registry, records) }
         }
         if (operation.name === 'CanonRemoteReleaseOn') {
             shutters.push(String(parameters.ReleaseMode))
@@ -101,6 +106,21 @@ it.each([
     await vi.runAllTimersAsync()
     await assertion
     expect(test.downloads).toEqual(options.includeData ? [4] : [])
+    expect(test.shutters).toEqual(['FOCUS', 'SHUTTER'])
+})
+
+it('keeps the files a background poll read while a capture paused polling', async () => {
+    // The poll already in flight when the capture pauses polling holds the release's ObjectAddedEx.
+    const test = fixture({ slowEvents: true })
+    const polling = test.driver as unknown as { startPolling(): void; stopPolling(): Promise<void> }
+    polling.startPolling()
+    const result = test.driver.captureImage({ autofocus: false })
+    const assertion = expect(result).resolves.toMatchObject({ objectHandle: 4, data: test.data })
+    await vi.advanceTimersByTimeAsync(10_000)
+    await assertion
+    const stopped = polling.stopPolling()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await stopped
     expect(test.shutters).toEqual(['FOCUS', 'SHUTTER'])
 })
 
