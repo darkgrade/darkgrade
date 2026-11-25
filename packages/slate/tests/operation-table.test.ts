@@ -62,7 +62,7 @@ describe('operation table parity', () => {
 
     it("derives the plan's public API: 27 methods plus a typed pair for each of 29 settings", () => {
         const publicNames = publicOperations().map(operation => operation.name)
-        const settingMethods = planSettings.flatMap(id => [settingGetterName(id), settingSetterName(id)])
+        const settingMethods: string[] = planSettings.flatMap(id => [settingGetterName(id), settingSetterName(id)])
         expect(publicNames.filter(name => !settingMethods.includes(name)).sort()).toEqual([...planPublicMethods].sort())
         expect(publicNames.filter(name => settingMethods.includes(name)).sort()).toEqual(settingMethods.sort())
         for (const id of typedSettingIds) expect(cameraOperationTable).toHaveProperty(settingSetterName(id))

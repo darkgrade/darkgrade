@@ -2,10 +2,9 @@ import { CanonCamera } from '@camera/canon-camera'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs, CameraControlState } from '@camera/controls'
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
 import type { Camera } from '@camera/index'
-import { canonDriver, cameraContext } from '@camera/operations/context'
+import { canonDriver, cameraContext, requireCapability } from '@camera/operations/context'
 import { SonyCamera } from '@camera/sony-camera'
 import type { CanonImageFormat } from '@ptp/datasets/vendors/canon/canon-image-format-dataset'
-import { readCameraCapabilities, writeCameraControl } from '@vendors/camera-controls'
 
 /**
  * Settings: the generic control API, plus the vendor-named accessors that the typed settings
@@ -96,7 +95,7 @@ const sonyOnly = (subject: string) => `Sony ${subject} is only available for Son
 
 export const settingsOperations: SettingsOperations & ThisType<Camera> = {
     async getCapabilities(): Promise<CameraCapabilities> {
-        return readCameraCapabilities(cameraContext(this).driver)
+        return requireCapability(this, 'settings', 'getCapabilities').readCapabilities()
     },
 
     async getExposureTime(): Promise<ExposureTime> {
@@ -114,8 +113,8 @@ export const settingsOperations: SettingsOperations & ThisType<Camera> = {
         value: CameraControlInputs[Id],
         context?: ExposureContext
     ): Promise<CameraControlState> {
-        const camera = cameraContext(this)
-        return camera.controlsQueue.run('camera', () => writeCameraControl(this, camera.driver, id, value, context))
+        const settings = requireCapability(this, 'settings', 'setControl')
+        return cameraContext(this).controlsQueue.run('camera', () => settings.writeControl(id, value, context))
     },
 
     async getAperture(): Promise<string> {

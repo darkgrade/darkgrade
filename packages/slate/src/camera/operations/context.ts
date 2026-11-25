@@ -1,6 +1,8 @@
 import { CanonCamera } from '@camera/canon-camera'
+import type { CameraDriverCapabilities, CapabilityArea } from '@camera/driver/contract'
+import { CameraUnsupportedError } from '@camera/errors'
 import type { GenericCamera } from '@camera/generic-camera'
-import type { CameraOptions } from '@camera/index'
+import type { Camera, CameraOptions } from '@camera/index'
 import type { NikonCamera } from '@camera/nikon-camera'
 import type { SonyCamera } from '@camera/sony-camera'
 import type { VendorExtensionCamera } from '@camera/vendor-extension-camera'
@@ -9,6 +11,7 @@ import type { CameraOperationQueue } from '@core/operation-queue'
 import type { EventDefinition } from '@ptp/types/event'
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { resolveDriverCapabilities } from '@vendors/capabilities'
 
 export type CameraDriverInstance = GenericCamera | SonyCamera | NikonCamera | CanonCamera | VendorExtensionCamera
 
@@ -40,6 +43,33 @@ export function canonDriver(
 }
 
 const contexts = new WeakMap<object, CameraContext>()
+const capabilities = new WeakMap<CameraDriverInstance, CameraDriverCapabilities>()
+
+/**
+ * The current driver's capability groups (the driver contract). Resolved once per driver, so a
+ * driver replaced on connect gets its own. Area operations call this instead of branching on
+ * vendor classes.
+ */
+export function driverCapabilities(camera: Camera): CameraDriverCapabilities {
+    const { driver } = cameraContext(camera)
+    let resolved = capabilities.get(driver)
+    if (!resolved) {
+        resolved = resolveDriverCapabilities(driver, camera)
+        capabilities.set(driver, resolved)
+    }
+    return resolved
+}
+
+/** One capability group, or CameraUnsupportedError naming the operation that needed it. */
+export function requireCapability<Area extends CapabilityArea>(
+    camera: Camera,
+    area: Area,
+    operation: string
+): NonNullable<CameraDriverCapabilities[Area]> {
+    const capability = driverCapabilities(camera)[area]
+    if (!capability) throw new CameraUnsupportedError(operation, `${operation} is not supported by this camera`)
+    return capability
+}
 
 export function bindCameraContext(camera: object, context: CameraContext): void {
     contexts.set(camera, context)
