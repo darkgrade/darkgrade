@@ -14,6 +14,7 @@ import {
     delay,
     discoverCamera,
     errorMessage,
+    requestedCamera,
     requiresReconnect,
     vendorIdForMake,
 } from '@main/camera-service/shared'
@@ -81,7 +82,8 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
     },
 
     async connectInternal(): Promise<CameraState> {
-        // Discover the device first so Camera opens that exact body.
+        // Discover the device first so Camera opens that exact body; DARKGRADE_CAMERA=VID:PID picks one of several.
+        const requested = requestedCamera()
         const discovered = await this.discoverWithRetry(DISCOVERY_ATTEMPTS)
         if (discovered) {
             this.detectedVendorId = discovered.vendorId
@@ -92,16 +94,15 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
             this.log('system', 'No camera found via USB discovery — trying generic PTP connect', 'error')
         }
 
-        const device: DeviceDescriptor = discovered
-            ? { usb: { filters: [{ vendorId: discovered.vendorId, productId: discovered.productId }] } }
-            : undefined
+        const filter = discovered ? { vendorId: discovered.vendorId, productId: discovered.productId } : requested
+        const device: DeviceDescriptor = filter ? { usb: { filters: [filter] } } : undefined
 
         const camera = new Camera({
             logger: { expanded: false, renderInTerminal: false, captureConsole: false },
             device,
             transactionPolicy: TRANSACTION_POLICY,
             // EXPERIMENT(usb-transport): the chosen transport's options; none by default.
-            ...experimentalCameraOptions(discovered?.vendorId, message => this.log('system', message)),
+            ...experimentalCameraOptions(filter?.vendorId, message => this.log('system', message)),
         })
         try {
             await camera.connect()
@@ -161,9 +162,14 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
                 usb.on('attach', device => {
                     const vendorId = device?.deviceDescriptor?.idVendor
                     if (!vendorId || !KNOWN_CAMERA_VENDOR_IDS.has(vendorId) || this.connected) return
-                    this.log('system', `${VENDOR_NAMES[vendorId]} camera plugged in — connecting…`)
+                    const productId = device.deviceDescriptor.idProduct
                     void delay(HOTPLUG_CONNECT_DELAY_MS)
-                        .then(() => this.connect())
+                        .then(() => {
+                            const requested = requestedCamera()
+                            if (requested && (requested.vendorId !== vendorId || requested.productId !== productId)) return
+                            this.log('system', `${VENDOR_NAMES[vendorId]} camera plugged in — connecting…`)
+                            return this.connect()
+                        })
                         .catch(error => this.log('system', `Auto-connect failed: ${errorMessage(error)}`, 'error'))
                 })
                 usb.on('detach', device => {
@@ -207,7 +213,6 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         this.detectedVendorId = null
         this.detectedName = null
         this.detectedModel = null
-        this.focusPointChanges = null
         this.focusPointAvailable = false
         this.focusFramesKey = '[]'
         this.osdOverlay = false

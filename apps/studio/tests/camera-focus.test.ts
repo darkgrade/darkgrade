@@ -26,7 +26,8 @@ function control(id: 'focusArea' | 'subjectDetection', value: string, allowedVal
 /**
  * Studio's click-to-focus, Focus button and F key go through Slate's generic focus operations only.
  * The camera behaves as Slate does on a Sony body: a point from Wide switches to a spot, a point
- * pauses subject detection, and resetFocusPoint puts back what the point changed.
+ * pauses subject detection, and resetFocusPoint puts back what the point changed. Studio never resets:
+ * Focus after a click focuses at the clicked point.
  */
 function fixture(
     initial: { focusArea?: string | null; subjectDetection?: string | null; result?: FocusResult; canPlace?: boolean } = {}
@@ -100,7 +101,7 @@ describe('Studio focus', () => {
         expect(order).toEqual(['autofocus'])
     })
 
-    it('after a click from Wide, Focus puts back the area and eye tracking the click changed, once', async () => {
+    it('after a click from Wide, Focus and F focus at the clicked point without recentring', async () => {
         const { service, camera, order, body } = await connectedFixture()
         await service.focusAt(0.25, 0.75)
         expect(camera.setFocusPoint).toHaveBeenCalledWith(0.25, 0.75)
@@ -108,24 +109,18 @@ describe('Studio focus', () => {
         expect(service.getState().controls?.focusArea?.value).toBe('Spot M')
         await service.focus()
         await service.focus()
-        expect(order).toEqual(['setFocusPoint', 'resetFocusPoint', 'autofocus', 'autofocus'])
-        expect(body).toMatchObject({ focusArea: 'Wide', subjectDetection: 'On' })
-    })
-
-    it('after a click in the user’s own spot, Focus keeps the point and turns eye tracking back on', async () => {
-        const { service, camera, order, body } = await connectedFixture({ focusArea: 'Spot M' })
-        await service.focusAt(0.1, 0.2)
-        await service.focus()
         expect(camera.resetFocusPoint).not.toHaveBeenCalled()
-        expect(order).toEqual(['setFocusPoint', 'setSubjectDetection On', 'autofocus'])
-        expect(body.focusArea).toBe('Spot M')
+        expect(order).toEqual(['setFocusPoint', 'autofocus', 'autofocus'])
+        expect(body).toMatchObject({ focusArea: 'Spot M', subjectDetection: 'Off' })
     })
 
-    it('after a click in a spot with eye tracking off, F only focuses, at the clicked point', async () => {
-        const { service, order } = await connectedFixture({ focusArea: 'Tracking Spot M', subjectDetection: 'Off' })
+    it('after a click in the user’s own spot, Focus keeps the point', async () => {
+        const { service, camera, order, body } = await connectedFixture({ focusArea: 'Tracking Spot M', subjectDetection: 'Off' })
         await service.focusAt(0.6, 0.4)
         await service.focus()
+        expect(camera.resetFocusPoint).not.toHaveBeenCalled()
         expect(order).toEqual(['setFocusPoint', 'autofocus'])
+        expect(body.focusArea).toBe('Tracking Spot M')
     })
 
     it('on a camera without focus-area settings (Nikon), F focuses at the clicked point without a reset', async () => {
@@ -155,7 +150,5 @@ describe('Studio focus', () => {
             new CameraUnsupportedError('setFocusPoint', 'This camera has no remote focus operations that Slate supports')
         )
         await expect(service.focusAt(0.5, 0.5)).rejects.toThrow('no remote focus operations')
-        await service.focus()
-        expect(camera.resetFocusPoint).not.toHaveBeenCalled()
     })
 })

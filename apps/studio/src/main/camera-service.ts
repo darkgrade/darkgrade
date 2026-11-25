@@ -2,7 +2,7 @@ import { Camera, runBenchmark, type CameraInfo, type CameraRecordingState } from
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'
-import { focusOperations, type FocusOperations, type FocusPointChanges } from '@main/camera-service/focus'
+import { focusOperations, type FocusOperations } from '@main/camera-service/focus'
 import { liveViewOperations, type LiveViewOperations } from '@main/camera-service/live-view'
 import { mediaOperations, type MediaOperations } from '@main/camera-service/media'
 import { photoOperations, type PhotoOperations } from '@main/camera-service/photo'
@@ -218,8 +218,6 @@ export class CameraService {
 
     // ------------------------------------------------------------------ focus
 
-    /** What click-to-focus changed since the last Focus, as read back after the click; focus() undoes only that. */
-    focusPointChanges: FocusPointChanges | null = null
     /** Slate's last report of whether a focus point can be placed (getCapabilities().operations). */
     focusPointAvailable = false
 

@@ -3,11 +3,10 @@ import {
     identifyCamera,
     PTPDisconnectedError,
     PTPRecoveryRequiredError,
-    VendorIDs,
     type MediaItem,
     type TransactionPolicy,
 } from '@darkgrade/slate'
-import type { SonyContent, SonyContentFile } from '@darkgrade/slate/protocol'
+import { VendorIDs, type SonyContent, type SonyContentFile } from '@darkgrade/slate/protocol'
 import type { CameraControlName, FileEntry, FilePreview } from '@shared/ipc'
 
 // Constants and helpers the camera service's area modules share.
@@ -160,12 +159,26 @@ export interface DiscoveredCamera {
  * Studio discovers first to present a body identity and select an explicit device.
  * Slate also selects the actual USB vendor itself when Camera.connect() is used alone.
  */
+/** The camera DARKGRADE_CAMERA names as VID:PID, as the darkgrade CLI reads it; undefined when it is unset. */
+export function requestedCamera(value = process.env.DARKGRADE_CAMERA): { vendorId: number; productId: number } | undefined {
+    if (!value) return undefined
+    if (!/^[a-f0-9]{4}:[a-f0-9]{4}$/i.test(value))
+        throw new Error(`DARKGRADE_CAMERA must be a USB id such as 054c:0e78, not "${value}"`)
+    const [vendorId, productId] = value.split(':').map(part => parseInt(part, 16))
+    return { vendorId: vendorId!, productId: productId! }
+}
+
 export async function discoverCamera(): Promise<DiscoveredCamera | null> {
     // Camera.discover lists PTP still-image interfaces only: a known vendor's body in a non-PTP USB
     // mode (mass storage, webcam) is not listed, so connect takes the generic path and reports why.
     const devices = await Camera.discover().catch(() => [])
-    // A known vendor's body first; any other still-image-class device after it.
-    const device = devices.find(candidate => KNOWN_CAMERA_VENDOR_IDS.has(candidate.vendorId)) ?? devices[0]
+    const requested = requestedCamera()
+    // The requested body only; otherwise a known vendor's body first, any other still-image-class device after it.
+    const device = requested
+        ? devices.find(
+              candidate => candidate.vendorId === requested.vendorId && candidate.productId === requested.productId
+          )
+        : (devices.find(candidate => KNOWN_CAMERA_VENDOR_IDS.has(candidate.vendorId)) ?? devices[0])
     if (!device) return null
     return {
         vendorId: device.vendorId,

@@ -1,7 +1,8 @@
 import type { Camera, CameraCapabilities } from '@darkgrade/slate'
-import { PTPDisconnectedError, CameraClipNotFoundError, CameraConfirmationError, CameraOutcomeUnknownError, PTPRecoveryRequiredError, VendorIDs } from '@darkgrade/slate'
+import { PTPDisconnectedError, CameraClipNotFoundError, CameraConfirmationError, CameraOutcomeUnknownError, PTPRecoveryRequiredError } from '@darkgrade/slate'
+import { VendorIDs } from '@darkgrade/slate/protocol'
 import { CameraService } from '@main/camera-service'
-import { requiresReconnect } from '@main/camera-service/shared'
+import { requestedCamera, requiresReconnect } from '@main/camera-service/shared'
 import { CAMERA_CONTROL_NAMES } from '@shared/ipc'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
@@ -271,5 +272,13 @@ describe('confirmed controls and recording', () => {
         } finally {
             vi.useRealTimers()
         }
+    })
+})
+
+describe('DARKGRADE_CAMERA', () => {
+    it('names the attached camera Studio connects to, as VID:PID like the CLI', () => {
+        expect(requestedCamera(undefined)).toBeUndefined()
+        expect(requestedCamera('054c:0E78')).toEqual({ vendorId: 0x054c, productId: 0x0e78 })
+        expect(() => requestedCamera('sony')).toThrow('USB id such as 054c:0e78')
     })
 })

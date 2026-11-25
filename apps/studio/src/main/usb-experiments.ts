@@ -24,8 +24,8 @@
 //   swift-live-view  The same transport, and live view fetched by a Swift thread between Slate's transactions. With the
 //                    Metal decoder on, frames are decoded there and reach JavaScript as surfaces. Sony bodies only;
 //                    other bodies get the transport alone.
-import { Camera, TransportType, VendorIDs, type FocusFrame } from '@darkgrade/slate'
-import { parseSonyFocalFrameInfo } from '@darkgrade/slate/protocol'
+import { Camera, type FocusFrame } from '@darkgrade/slate'
+import { parseSonyFocalFrameInfo, TransportType, VendorIDs } from '@darkgrade/slate/protocol'
 import { preferences } from '@main/preferences'
 import { IPC_EVENTS, type UsbTransportChoice } from '@shared/ipc'
 import { app } from 'electron'
@@ -248,6 +248,8 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
     await host.enqueue(() => host.camera.getLiveViewFrame())
     let last = addon.liveStatistics()
     let lastAtMs = performance.now()
+    let framesAtLastCheck = last.frames
+    let returningToShooting = false
     await new Promise<void>(resolve => {
         const finish = (): void => {
             if (stopLoop !== finish) return
@@ -260,6 +262,19 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
         stopLoop = finish
         const report = setInterval(() => {
             if (!host.stillConnected()) return finish()
+            const framesSoFar = addon.liveStatistics().frames
+            // A card read or a shot review leaves the body in playback, which refuses every request the loop sends.
+            // A frame of Slate's own returns it to shooting (reads only), as the Node loop's next frame does.
+            if (framesSoFar === framesAtLastCheck && !returningToShooting && !host.stopRequested()) {
+                returningToShooting = true
+                void host
+                    .enqueue(() => host.camera.getLiveViewFrame())
+                    .catch(error =>
+                        host.log(`Live view could not return to shooting: ${error instanceof Error ? error.message : String(error)}`, true)
+                    )
+                    .finally(() => (returningToShooting = false))
+            }
+            framesAtLastCheck = framesSoFar
             if (performance.now() - lastAtMs < STATISTICS_INTERVAL_MS) return
             const now = addon.liveStatistics()
             const seconds = (performance.now() - lastAtMs) / 1000

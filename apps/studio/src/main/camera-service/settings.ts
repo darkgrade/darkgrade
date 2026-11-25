@@ -1,5 +1,5 @@
-import { Camera, VendorIDs, type CameraCapabilities, type CameraControlState } from '@darkgrade/slate'
-import { resolveCameraControl } from '@darkgrade/slate/controls'
+import { Camera, type CameraCapabilities, type CameraControlState } from '@darkgrade/slate'
+import { VendorIDs } from '@darkgrade/slate/protocol'
 import type { CameraService } from '@main/camera-service'
 import {
     errorMessage,
@@ -70,8 +70,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
     /** All vendors share Slate's control vocabulary; only observed controls reach the sidebar. */
     async readControls(camera: Camera, capabilities: CameraCapabilities): Promise<CameraControls> {
         const pick = (name: CameraControlName): CameraControl | null => {
-            const id = resolveCameraControl(name)
-            const state = id ? capabilities.controls[id] : undefined
+            const state = capabilities.controls[name]
             if (!state) return null
             this.controlProperties.set(name, state.source.name)
             return this.observedControl(name, state)
@@ -96,15 +95,12 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
         if (!CAMERA_CONTROL_NAMES.includes(name)) throw new Error(`Unknown setting ${String(name)}`)
         const camera = this.requireCameraForControl()
         return this.enqueue(async () => {
-            const id = resolveCameraControl(name)
-            if (!id) throw new Error('Unknown camera control')
-            const encoded = name === 'colorTemperature' ? Number(value) : value
             let observed: CameraControlState
             try {
                 observed =
-                    id === 'colorTemperature'
-                        ? await camera.setControl(id, Number(encoded))
-                        : await camera.setControl(id, String(encoded))
+                    name === 'colorTemperature'
+                        ? await camera.setControl(name, Number(value))
+                        : await camera.setControl(name, value)
             } catch (error) {
                 await this.refreshSettingsRaw().catch(() => {})
                 this.log('system', `${CAMERA_CONTROL_LABELS[name]} change unconfirmed: ${errorMessage(error)}`, 'error')
@@ -116,11 +112,9 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture')
                 this.settings = { ...this.settings, [name]: observed.value }
             this.broadcastState()
-            // Choosing an area or subject detection by hand keeps it: Focus no longer undoes a click's changes.
-            if (name === 'focusArea' || name === 'subjectDetection') this.focusPointChanges = null
             this.log('system', `${CAMERA_CONTROL_LABELS[name]} → ${observed.value}`)
             // A mode change reshapes what the other settings allow, so those still read back before returning.
-            if (name === 'exposureProgram' || name === 'exposureMode' || name === 'photoVideoMode' || name === 'whiteBalance' || name === 'focusMode') {
+            if (name === 'exposureMode' || name === 'photoVideoMode' || name === 'whiteBalance' || name === 'focusMode') {
                 await this.refreshSettingsRaw()
             }
             // A new area or subject setting only takes effect once AF runs again; in PC Remote it doesn't

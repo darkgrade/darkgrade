@@ -1,6 +1,6 @@
 import type { SpeechModelId } from '@shared/speech-models'
-import { cameraControlDefinitions, resolveCameraControl } from '@darkgrade/slate/controls'
-import type { CameraRecordingState } from '@darkgrade/slate/controls'
+import { cameraControlDefinitions } from '@darkgrade/slate/controls'
+import type { CameraControlId, CameraRecordingState } from '@darkgrade/slate/controls'
 import type { DepthModelSize, VisionEngineStatus, VisionModelId, VisionOverlay } from '@shared/vision-models'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
@@ -111,41 +111,14 @@ export interface CameraControl {
     enabled: boolean
 }
 
-export const CAMERA_CONTROL_NAMES = [
-    'photoVideoMode',
-    'whiteBalance',
-    'colorTemperature',
-    'focusMode',
-    'focusArea',
-    'subjectDetection',
-    'detectionSubject',
-    'eyeSelection',
-    'photoFormat',
-    'photoSize',
-    'aspectRatio',
-    'jpegQuality',
-    'videoFormat',
-    'videoQuality',
-    'frameRate',
-    'audioRecording',
-    'digitalZoom',
-    'liveViewQuality',
-    'exposureProgram',
-    'aperture',
-    'shutterSpeed',
-    'iso',
-    'exposureMode',
-    'exposureCompensation',
-    'meteringMode',
-] as const
-export type CameraControlName = (typeof CAMERA_CONTROL_NAMES)[number]
+/** Slate's control ids, in its own order: Studio adds no vocabulary of its own. */
+export const CAMERA_CONTROL_NAMES = Object.keys(cameraControlDefinitions) as [CameraControlId, ...CameraControlId[]]
+export type CameraControlName = CameraControlId
 
 /** What each setting is called on screen, in logs and in tool descriptions. */
-export const CAMERA_CONTROL_LABELS = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => {
-    const id = resolveCameraControl(name)
-    if (!id) throw new Error(`Studio control ${name} has no Slate definition`)
-    return [name, cameraControlDefinitions[id].label]
-})) as Record<CameraControlName, string>
+export const CAMERA_CONTROL_LABELS = Object.fromEntries(
+    CAMERA_CONTROL_NAMES.map(name => [name, cameraControlDefinitions[name].label])
+) as Record<CameraControlName, string>
 export type CameraControls = Record<CameraControlName, CameraControl | null>
 
 /** The attached lens and where its zoom sits. */

@@ -9,7 +9,8 @@ speech recognition and text models run on your own machine.
 
 Plug in a Sony, Nikon or Canon camera over USB and Studio connects to it. From one screen you can set
 exposure, focus and white balance, watch live view, take a photo or record, and download what’s on the
-card. Return takes a photo and F focuses.
+card. Return takes a photo and F focuses. With several cameras attached, `DARKGRADE_CAMERA=VID:PID`
+(as for the `darkgrade` CLI, e.g. `054c:0e78`) picks the one Studio connects to.
 
 Press **Voice** and say what you want: *“set ISO to 800”*, *“take a photo”*, *“start recording”*.
 
