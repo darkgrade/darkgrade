@@ -26,8 +26,10 @@ Application controls use `Camera.getCapabilities()` and `Camera.setControl()`. C
 ids/labels/search aliases are in `packages/slate/src/camera/controls.ts`; vendor property
 preference is in `src/vendors/control-properties.ts`. Studio and test harnesses consume
 Slate rather than adding vendor tables. `shutterSpeed` covers exposure duration and angle;
-conversion requires the actual frame rate. Never guess units, switch modes implicitly,
-round a requested control to the nearest enum, or treat registry presence as availability.
+conversion requires the actual frame rate. Never guess units, round a requested control to
+the nearest enum, or treat registry presence as availability. An operation may set up the
+state it needs and must restore it afterwards; a setting write never changes another setting
+or mode to make itself writable (recorded exception: Sony ISO switches gain mode).
 Preserve Bulb/Time/flash-sync, current read-only/empty/ambiguous choices, idle/session guards
 and failed readbacks. Different transports must not claim parity without adapter evidence.
 
