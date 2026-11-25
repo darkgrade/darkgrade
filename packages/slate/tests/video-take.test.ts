@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from 'vitest'
 import {VideoTake,type TakeCamera} from '@workflows/video-take'
+type Collected=Parameters<TakeCamera['collect']>[0]
 function fixture(){
  const calls:string[]=[],failures=new Set<string>(),devices=new Map<string,TakeCamera>()
  for(const camera of ['one','two'])devices.set(camera,{prepare:async()=>{calls.push('prepare:'+camera)},start:async()=>({recordingConfirmed:true,evidence:'camera acknowledged'}),stop:async()=>{calls.push('stop:'+camera);if(failures.delete(camera))throw new Error('temporary stop failure');return {stopped:true,media:[{id:camera,filename:camera+'.mp4',bytes:100,verified:true}]}},collect:async files=>files.map(file=>({...file,downloadUrl:'/files/'+file.id})),close:async()=>{calls.push('close:'+camera)}})
@@ -56,33 +57,30 @@ it('bounds repeated transfer failures and clears the active recovery indicator',
 
 
 describe('cancelled preparation and file identity',()=>{
- it('stops an armed take without leaving ready cameras or issuing record',async()=>{
+ it.each([
+  ['stop after preparing',async(take:VideoTake)=>{await take.prepare();await take.stop()}],
+  ['cancel before record',async(take:VideoTake)=>{await take.prepare();take.requestStop();await take.start()}],
+ ] as const)('ends an armed take without ready cameras, record or stop commands (%s)',async(_case,cancel)=>{
   const fixtureState=fixture();let starts=0
   for(const camera of fixtureState.devices.values())camera.start=async()=>{starts++;return {recordingConfirmed:true,evidence:'started'}}
-  await fixtureState.take.prepare();await fixtureState.take.stop()
+  await cancel(fixtureState.take)
   expect(starts).toBe(0);expect(fixtureState.take.state.stage).toBe('review');expect(fixtureState.take.state.cameras.every(camera=>camera.state==='stopped')).toBe(true)
   expect(fixtureState.calls.filter(call=>call.startsWith('stop:'))).toHaveLength(0)
- })
- it('does not commit record after cancellation of an armed take',async()=>{
-  const fixtureState=fixture();let starts=0
-  for(const camera of fixtureState.devices.values())camera.start=async()=>{starts++;return {recordingConfirmed:true,evidence:'started'}}
-  await fixtureState.take.prepare();fixtureState.take.requestStop();await fixtureState.take.start()
-  expect(starts).toBe(0);expect(fixtureState.take.state.stage).toBe('review');expect(fixtureState.take.state.cameras.every(camera=>camera.state==='stopped')).toBe(true)
  })
  it('clears prepared peers when another camera cannot prepare',async()=>{
   const fixtureState=fixture();fixtureState.devices.get('two')!.prepare=async()=>{throw new Error('No card')}
   await fixtureState.take.prepare();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].state).toBe('stopped');expect(fixtureState.take.state.cameras[1].state).toBe('error')
  })
- it('rejects duplicate transfer results that omit an original file',async()=>{
+ it.each([
+  ['duplicate results that omit an original',(files:Collected)=>[files[0],files[0]].map(file=>({...file,downloadUrl:'/files/a'}))],
+  ['a changed filename with the same ID and byte count',(files:Collected)=>files.map(file=>({...file,filename:'different.mp4',downloadUrl:'/files/'+file.id}))],
+  ['a driver mutating its collection input',(files:Collected)=>{files[0].bytes=200;return files.map(file=>({...file,downloadUrl:'/files/'+file.id}))}],
+ ] as const)('rejects transfer results that do not match the stopped originals: %s',async(_case,collect)=>{
   const fixtureState=fixture();fixtureState.devices.get('one')!.stop=async()=>({stopped:true,media:[{id:'a',filename:'a.mp4',bytes:100,verified:true},{id:'b',filename:'b.mp4',bytes:100,verified:true}]})
   await fixtureState.take.start();await fixtureState.take.stop()
-  fixtureState.devices.get('one')!.collect=async files=>[files[0],files[0]].map(file=>({...file,downloadUrl:'/files/a'}))
-  await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].state).not.toBe('collected');expect(fixtureState.take.state.cameras[0].error).toContain('did not match')
- })
- it('rejects changed filenames even when ID and byte count match',async()=>{
-  const fixtureState=fixture();await fixtureState.take.start();await fixtureState.take.stop()
-  fixtureState.devices.get('one')!.collect=async files=>files.map(file=>({...file,filename:'different.mp4',downloadUrl:'/files/'+file.id}))
-  await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention')
+  fixtureState.devices.get('one')!.collect=async files=>collect(files)
+  await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].state).not.toBe('collected')
+  expect(fixtureState.take.state.cameras[0].error).toContain('did not match');expect(fixtureState.take.state.cameras[0].media.map(file=>file.bytes)).toEqual([100,100])
  })
  it('rejects duplicated saved camera identities before resuming any driver',()=>{
   const fixtureState=fixture(),state=structuredClone(fixtureState.take.state);state.stage='review';state.cameras=state.cameras.map(camera=>({...camera,state:'stopped',camera:'one'}))
@@ -96,11 +94,6 @@ it('reserves start across the asynchronous prepare-to-record boundary',async()=>
  for(const camera of fixtureState.devices.values())camera.start=async()=>{starts++;return {recordingConfirmed:true,evidence:'confirmed'}}
  const take=new VideoTake('race','Race',fixtureState.devices,1,state=>{if(state.stage==='armed'&&!competing)competing=Promise.resolve().then(()=>take.start()).catch(error=>error)})
  await take.start();expect(await competing).toBeInstanceOf(Error);expect(starts).toBe(2);await take.stop()
-})
-it('a driver cannot change expected file identity by mutating its collection input',async()=>{
- const fixtureState=fixture();await fixtureState.take.start();await fixtureState.take.stop()
- fixtureState.devices.get('one')!.collect=async files=>{files[0].bytes=200;return files.map(file=>({...file,downloadUrl:'/files/'+file.id}))}
- await fixtureState.take.collect();expect(fixtureState.take.state.stage).toBe('attention');expect(fixtureState.take.state.cameras[0].media[0].bytes).toBe(100)
 })
 
 for (const individual of [false,true]) it(`retains the first stop request separately from delayed completion (${individual ? 'single' : 'all'})`,async()=>{

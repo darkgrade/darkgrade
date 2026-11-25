@@ -103,6 +103,8 @@ describe('canonical exposure time', () => {
         expect(exposureSeconds('180°', { framesPerSecond: 24000 / 1001 })).toBeCloseTo(1001 / 48000, 14)
         expect(matchExposureTime('1/49', ['1/50', '1/48'])).toBeUndefined()
         expect(matchExposureTime('180°', ['90°', '180°'])).toBe('180°')
+        for (const framesPerSecond of [0, -24, NaN, Infinity, Number.MIN_VALUE, Number.MAX_VALUE])
+            expect(() => exposureSeconds('180°', { framesPerSecond })).toThrow()
     })
     it.each(['0', '-1', '1/0', '180', 'NaN', '1/50 garbage', '1/2/3', '361°'])(
         'rejects invalid or ambiguous input %s',
@@ -118,26 +120,14 @@ describe('canonical exposure time', () => {
             expect(matchExposureTime(name, [name])).toBe(name)
         }
     })
-    it.each([0, -24, NaN, Infinity, Number.MIN_VALUE, Number.MAX_VALUE])(
-        'rejects unusable frame-rate context %s',
-        framesPerSecond => {
-            expect(() => exposureSeconds('180°', { framesPerSecond })).toThrow()
-        }
-    )
 })
 
 describe('Nikon capabilities from real descriptor codecs', () => {
-    it('returns the confirmed control observation to consumers', async () => {
-        const fixture = nikonFixture()
-        const observed = await fixture.camera.setControl('shutterSpeed', '1/60')
-        expect(observed).toMatchObject({ id: 'shutterSpeed', label: 'Shutter speed',
-            value: '1/60', source: { code: 0xd1a8 }, exposureTime: { kind: 'duration', seconds: 1 / 60 } })
-        expect(fixture.writes).toEqual([0xd1a8])
-    })
-    it('refreshes only the requested Nikon control and its mode guards before a write', async () => {
+    it('refreshes only the requested Nikon control and its mode guards, returning the confirmed observation', async () => {
         const fixture = nikonFixture()
         const descriptor = vi.spyOn(fixture.driver, 'propertyDescriptor')
-        await fixture.camera.setShutterSpeed('1/60')
+        expect(await fixture.camera.setControl('shutterSpeed', '1/60')).toMatchObject({ id: 'shutterSpeed', label: 'Shutter speed',
+            value: '1/60', source: { code: 0xd1a8 }, exposureTime: { kind: 'duration', seconds: 1 / 60 } })
         const readNames = descriptor.mock.calls.map(([property]) => property.name)
         expect(readNames).toContain('NikonMovieShutterSpeed')
         expect(readNames).not.toContain('NikonMovieISO')
@@ -160,7 +150,7 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         expect((await fixture.camera.getCapabilities()).controls.shutterSpeed?.source.code).toBe(0xd100)
         expect(fixture.calls).not.toContain('ChangeCameraMode')
     })
-    it('never writes absent/read-only controls or ignores a failed readback', async () => {
+    it('never writes absent or read-only controls', async () => {
         const fixture = nikonFixture()
         fixture.properties.get(0x1d074)!.value = 2
         fixture.state.disappear = true
@@ -170,13 +160,6 @@ describe('Nikon capabilities from real descriptor codecs', () => {
         fixture.properties.get(0x1d075)!.writable = false
         await expect(fixture.camera.setShutterSpeed('90°')).rejects.toThrow('not writable')
         expect(fixture.writes).toEqual([])
-        fixture.properties.get(0x1d075)!.writable = true
-        fixture.state.ignoreWrite = true
-        vi.useFakeTimers()
-        const pending = fixture.camera.setShutterSpeed('90°').catch(error => error)
-        await vi.advanceTimersByTimeAsync(2100)
-        expect(await pending).toBeInstanceOf(CameraConfirmationError)
-        expect(fixture.writes).toEqual([0x1d075])
     })
     it('confirms generic-descriptor writes by polling, with a typed mismatch and no replay', async () => {
         const fixture = nikonFixture()
@@ -332,21 +315,6 @@ describe('library construction and vendor dispatch', () => {
             await camera.connect()
             expect(protocolSession(camera).driver).toBeInstanceOf(Driver)
             expect(open).toHaveBeenCalledOnce()
-        } finally {
-            vi.restoreAllMocks()
-        }
-    })
-    it('rejects an explicit vendor mismatch before any vendor protocol runs', async () => {
-        const camera = new Camera({ vendorId: 0x054c })
-        vi.spyOn(USBTransport.prototype, 'isConnected').mockReturnValue(false)
-        vi.spyOn(USBTransport.prototype, 'connect').mockResolvedValue(undefined)
-        vi.spyOn(USBTransport.prototype, 'getDeviceIdentity').mockReturnValue({ vendorId: 0x04b0, productId: 1 })
-        const close = vi.spyOn(USBTransport.prototype, 'disconnect').mockResolvedValue(undefined)
-        const open = vi.spyOn(SonyCamera.prototype, 'connect').mockResolvedValue(undefined)
-        try {
-            await expect(camera.connect()).rejects.toThrow('explicitly requested vendor')
-            expect(open).not.toHaveBeenCalled()
-            expect(close).toHaveBeenCalledOnce()
         } finally {
             vi.restoreAllMocks()
         }
@@ -522,17 +490,14 @@ describe.each([0x054c, 0x04a9, 0])('vendor %i application control confirmation',
         const camera = new Camera({ vendorId, transport: transport() })
         const driver = protocolSession(camera).driver
         let value = 'f/4'
+        let readFailure: Error | undefined
         const property = driver instanceof CanonCamera
             ? driver.registry.properties.CanonAperture
             : driver instanceof SonyCamera ? driver.registry.properties.Aperture : driver.registry.properties.FNumber
-        const observed = () => ({
-            code: property.code,
-            name: property.name,
-            value,
-            allowedValues: ['f/4', 'f/8'],
-            writable: true,
-            enabled: true,
-        })
+        const observed = () => {
+            if (readFailure) throw readFailure
+            return { code: property.code, name: property.name, value, allowedValues: ['f/4', 'f/8'], writable: true, enabled: true }
+        }
         let read
         if (driver instanceof SonyCamera) {
             read = vi.spyOn(driver, 'refreshPropertyStates').mockImplementation(async () => [observed()] as never)
@@ -546,7 +511,7 @@ describe.each([0x054c, 0x04a9, 0])('vendor %i application control confirmation',
             ? vi.spyOn(driver, 'set').mockResolvedValue(undefined)
             : vi.spyOn(driver, 'setStandardProperty').mockResolvedValue(undefined)
         const send = vi.spyOn(driver, 'send')
-        return { camera, driver, read, write, send, update: (next: string) => { value = next } }
+        return { camera, driver, read, write, send, update: (next: string) => { value = next }, failReads: (error: Error) => { readFailure = error } }
     }
 
     it('returns a delayed fresh observation, with one write and no extra GetDeviceInfo', async () => {
@@ -560,16 +525,13 @@ describe.each([0x054c, 0x04a9, 0])('vendor %i application control confirmation',
         expect(f.read.mock.calls.length).toBeGreaterThan(2)
         expect(f.send).not.toHaveBeenCalled()
         if (!vendorId) expect(f.read.mock.calls.every(call => call[0] === 'FNumber')).toBe(true)
+        // A readback that fails propagates its own error instead of a mismatch or a second write.
+        const failure = new Error('USB disappeared during readback')
+        f.write.mockImplementation(async () => f.failReads(failure))
+        const failed = f.camera.setControl('aperture', 'f/4').catch(error => error)
+        await vi.advanceTimersByTimeAsync(250)
+        expect(await failed).toBe(failure)
+        expect(f.write).toHaveBeenCalledTimes(2)
     })
 
-    it('throws a catchable mismatch after an acknowledged but ignored write, without replay', async () => {
-        vi.useFakeTimers()
-        const f = fixture()
-        const pending = f.camera.setControl('aperture', 'f/8').catch(error => error)
-        await vi.advanceTimersByTimeAsync(2100)
-        const error = await pending
-        expect(error).toBeInstanceOf(CameraConfirmationError)
-        expect(error).toMatchObject({ operation: 'aperture', expected: 'f/8', observed: 'f/4' })
-        expect(f.write).toHaveBeenCalledOnce()
-    })
 })

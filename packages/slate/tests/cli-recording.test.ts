@@ -7,7 +7,6 @@ import {
     type RecordingCamera,
     type StartRecordingDependencies,
 } from '@cli/recording'
-import { resolveCommand } from '@cli/commands'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => vi.useRealTimers())
@@ -53,15 +52,6 @@ function harness() {
 }
 
 describe('darkgrade camera start-recording', () => {
-    it('is named and described by the operation table', () => {
-        const { path, remaining } = resolveCommand(['camera', 'start-recording'])
-        expect(remaining).toEqual([])
-        const command = path.at(-1)!
-        expect(command.name).toBe('start-recording')
-        expect(command.summary).toMatch(/Gets the camera ready/)
-        expect(command.flags?.map(flag => flag.name)).toEqual(['duration', 'camera', 'json'])
-    })
-
     it('reads durations people type and refuses ones it cannot honour', () => {
         expect(parseRecordingDuration('10s')).toBe(10_000)
         expect(parseRecordingDuration('1.5s')).toBe(1500)
@@ -104,30 +94,23 @@ describe('darkgrade camera start-recording', () => {
         expect(run.printed[0]).toMatch(/Stop was not confirmed.*reports recording/)
     })
 
-    it('sends Stop at once after a Record the camera may have acted on, and exits nonzero', async () => {
+    it.each([
+        { flag: 'no --duration', options: { json: true }, printed: /^\{"stopped":true,"clip":\{.*"name":"C0002\.MP4".*\},"startConfirmed":false/ },
+        { flag: '--duration', options: { durationMilliseconds: 60_000, json: false }, printed: /C0002\.MP4.*Record was not confirmed/ },
+    ])('sends Stop at once after a Record the camera may have acted on, with $flag, and exits nonzero', async ({ options, printed }) => {
+        vi.useFakeTimers()
         const run = harness()
         run.camera.startRecording.mockImplementation(async () => {
             run.calls.push('start')
             run.setState('unknown')
             throw new CameraConfirmationError('record_start', 'recording', 'unknown')
         })
-        // No Ctrl-C and no --duration: the unconfirmed start alone sends Stop.
-        expect(await runStartRecordingCommand({ json: true }, run.dependencies)).toBe(1)
-        expect(run.calls).toEqual(['connect', 'start', 'stop', 'disconnect'])
-        expect(run.progress.some(line => line.startsWith('Recording'))).toBe(false)
-        expect(JSON.parse(run.printed[0]!)).toMatchObject({ stopped: true, startConfirmed: false, clip: { name: 'C0002.MP4' } })
-    })
-
-    it('sends Stop at once after an unconfirmed Record even with --duration', async () => {
-        vi.useFakeTimers()
-        const run = harness()
-        run.camera.startRecording.mockRejectedValue(new CameraConfirmationError('record_start', 'recording', 'unknown'))
-        run.setState('unknown')
-        const result = runStartRecordingCommand({ durationMilliseconds: 60_000, json: false }, run.dependencies)
+        const result = runStartRecordingCommand(options, run.dependencies)
         await vi.advanceTimersByTimeAsync(10)
         expect(await result).toBe(1)
-        expect(run.camera.stopRecording).toHaveBeenCalledOnce()
-        expect(run.printed[0]).toMatch(/Record was not confirmed/)
+        expect(run.calls).toEqual(['connect', 'start', 'stop', 'disconnect'])
+        expect(run.progress.some(line => line.startsWith('Recording'))).toBe(false)
+        expect(run.printed[0]).toMatch(printed)
     })
 
     it('reports a refused Record and closes the session without sending Stop', async () => {

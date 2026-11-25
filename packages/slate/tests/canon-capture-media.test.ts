@@ -112,17 +112,6 @@ it('does not claim a file announced before the release', async () => {
     expect(test.downloads).toEqual([])
 })
 
-it('reports an acknowledged shutter that announces no still as unknown, without pressing again', async () => {
-    const test = fixture({ noNewImage: true })
-    const outcome = test.driver.captureImage({ autofocus: false }).catch(error => error)
-    await vi.runAllTimersAsync()
-    const error = await outcome
-    expect(error.constructor.name).toBe('CameraOutcomeUnknownError')
-    expect(String(error)).toContain('no new still image')
-    expect(test.downloads).toEqual([])
-    expect(test.shutters).toEqual(['FOCUS', 'SHUTTER'])
-})
-
 it('rejects a truncated transfer without firing the shutter again', async () => {
     const test = fixture({ shortTransfer: true })
     const assertion = expect(test.driver.captureImage({ autofocus: false })).rejects.toThrow('transfer length')

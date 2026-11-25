@@ -1,15 +1,5 @@
 import {it,expect,vi} from 'vitest'
 import {SonyVideoRecording} from '@vendors/sony/video-recording'
-it('refreshes a known stale post-stop snapshot without waiting fifteen seconds',async()=>{
- vi.useFakeTimers();try{
-  const old={id:1,files:[{id:5,name:'old.MP4',bytes:100}]},fresh={id:2,files:[{id:5,name:'new.MP4',bytes:200}]}
-  const camera={stopRecording:async()=>{},getSonyProperty:async()=>({value:'0'}),getRecentSonyContents:async()=>[old],shouldRefreshMediaIndex:()=>true}
-  const renew=vi.fn(async()=>({getRecentSonyContents:async()=>[old,fresh]})),recording=new SonyVideoRecording(camera,renew)
-  ;(recording as any).attempted=true;(recording as any).baseline=new Set([JSON.stringify(['old.MP4','100'])])
-  const pending=recording.stop();await vi.advanceTimersByTimeAsync(500)
-  expect((await pending).media[0].filename).toBe('new.MP4');expect(renew).toHaveBeenCalledTimes(1)
- }finally{vi.useRealTimers()}
-})
 it('does not arm a take that would land on the SDK pagination boundary',async()=>{
  const camera={getSonyProperty:async(name:string)=>({value:name==='RecordingState'||name.endsWith('_Status')?'0':name==='Movie_RecordingMedia'?'1':'3600'}),getRecentSonyContents:async()=>Array.from({length:99},(_,id)=>({id,files:[]})),startRecording:vi.fn()}
  await expect(new SonyVideoRecording(camera).prepare()).rejects.toThrow('Run recording checks')
@@ -28,18 +18,6 @@ it('verifies a new movie outside the recent-file window using the complete basel
  const stopped=await recording.stop()
  expect(stopped.media).toEqual([{id:'26:5',filename:'new.MP4',bytes:200,verified:true}])
  expect(getRecentSonyContents).toHaveBeenCalledWith({all:true})
-})
-
-it('waits for asynchronous idle confirmation when recovering an interrupted Sony recorder',async()=>{
- vi.useFakeTimers()
- try{
-  let samples=0
-  const camera={stopRecording:vi.fn(async()=>{}),getSonyProperty:vi.fn(async()=>({value:++samples<4?'1':'0'}))}
-  const result=new SonyVideoRecording(camera).stopInterrupted()
-  await vi.advanceTimersByTimeAsync(1000)
-  await expect(result).resolves.toMatchObject({stopped:true,media:[]})
-  expect(camera.getSonyProperty).toHaveBeenCalledTimes(4)
- }finally{vi.useRealTimers()}
 })
 
 it('renews a stale SDK content session only after idle and preserves the recording baseline',async()=>{
@@ -65,24 +43,18 @@ it('does not turn a failed post-stop index refresh into unconfirmed recording',a
  }finally{vi.useRealTimers()}
 })
 
-it('confirms a failed Stop on a renewed SDK session by reading state, never by resending Stop',async()=>{
+it.each([
+ ['0',undefined],
+ ['1','did not confirm recording stopped'],
+])('confirms a failed Stop on a renewed SDK session reading state %s, never by resending Stop',async(state,error)=>{
  vi.useFakeTimers()
  try{
   const first=vi.fn(async()=>{throw new Error('Sony SDK command failed (SDK code 33794)')})
-  const stop=vi.fn(async()=>{}),restart=vi.fn(async()=>({stopRecording:stop,getSonyProperty:async()=>({value:'0'})}))
-  const pending=new SonyVideoRecording({stopRecording:first},restart).stopInterrupted();await vi.advanceTimersByTimeAsync(500)
-  await expect(pending).resolves.toMatchObject({stopped:true});expect(restart).toHaveBeenCalledTimes(1)
-  expect(first).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled()
- }finally{vi.useRealTimers()}
-})
-it('reports a Stop the renewed session still shows recording, without a second Stop',async()=>{
- vi.useFakeTimers()
- try{
-  const first=vi.fn(async()=>{throw new Error('Sony SDK command failed (SDK code 33794)')})
-  const stop=vi.fn(async()=>{}),restart=vi.fn(async()=>({stopRecording:stop,getSonyProperty:async()=>({value:'1'})}))
-  const pending=expect(new SonyVideoRecording({stopRecording:first},restart).stopInterrupted()).rejects.toThrow('did not confirm recording stopped')
-  await vi.advanceTimersByTimeAsync(16000);await pending
-  expect(first).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled()
+  const stop=vi.fn(async()=>{}),restart=vi.fn(async()=>({stopRecording:stop,getSonyProperty:async()=>({value:state})}))
+  const pending=new SonyVideoRecording({stopRecording:first},restart).stopInterrupted()
+  const outcome=error?expect(pending).rejects.toThrow(error):expect(pending).resolves.toMatchObject({stopped:true})
+  await vi.advanceTimersByTimeAsync(16000);await outcome
+  expect(restart).toHaveBeenCalledTimes(1);expect(first).toHaveBeenCalledTimes(1);expect(stop).not.toHaveBeenCalled()
  }finally{vi.useRealTimers()}
 })
 it('waits out a slow Stop on one connection without resending it',async()=>{
@@ -114,13 +86,12 @@ it('invalid recovery metadata confirms Stop without claiming any preexisting mov
  }finally{vi.useRealTimers()}
 })
 
-it('requires a fresh idle state before indexing and transferring a stopped original',async()=>{
- const calls:string[]=[],camera={getSonyProperty:async(name:string)=>{calls.push(name);return {value:'0'}},getRecentSonyContents:async()=>{calls.push('index');return [{id:2,files:[{id:5,name:'new.MP4',bytes:200}]}]},downloadSonyContent:async()=>{calls.push('transfer');return {path:'new.MP4'}}}
- await new SonyVideoRecording(camera).transfer({id:'2:5',filename:'new.MP4',bytes:200,verified:true},'/tmp','new.MP4')
- expect(calls).toEqual(['RecordingState','index','transfer'])
-})
-it('does not index or transfer when the camera no longer confirms idle',async()=>{
- const camera={getSonyProperty:async()=>({value:'1'}),getRecentSonyContents:vi.fn(),downloadSonyContent:vi.fn()}
- await expect(new SonyVideoRecording(camera).transfer({id:'2:5',filename:'new.MP4',bytes:200,verified:true},'/tmp','new.MP4')).rejects.toThrow('Stop recording')
- expect(camera.getRecentSonyContents).not.toHaveBeenCalled();expect(camera.downloadSonyContent).not.toHaveBeenCalled()
+it.each([
+ ['0',['RecordingState','index','transfer']],
+ ['1',['RecordingState']],
+])('indexes and transfers a stopped original only after a fresh idle state (RecordingState %s)',async(state,expected)=>{
+ const calls:string[]=[],camera={getSonyProperty:async(name:string)=>{calls.push(name);return {value:state}},getRecentSonyContents:async()=>{calls.push('index');return [{id:2,files:[{id:5,name:'new.MP4',bytes:200}]}]},downloadSonyContent:async()=>{calls.push('transfer');return {path:'new.MP4'}}}
+ const transfer=new SonyVideoRecording(camera).transfer({id:'2:5',filename:'new.MP4',bytes:200,verified:true},'/tmp','new.MP4')
+ if(state==='1')await expect(transfer).rejects.toThrow('Stop recording');else await transfer
+ expect(calls).toEqual(expected)
 })

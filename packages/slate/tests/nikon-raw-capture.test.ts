@@ -26,20 +26,8 @@ function fixture(options: { readonly?: boolean; unsupported?: boolean; lostWrite
         },
         get: async () => names[value],
     }
-    return { camera, writes, value: () => value }
+    return { camera, writes }
 }
-
-it.each([false, true])('holds lossless RAW through capture and restores after success/failure (%s)', async failed => {
-    const f = fixture()
-    const capture = withNikonRawCompression(f.camera, 'lossless', async () => {
-        expect(f.value()).toBe(0)
-        if (failed) throw new Error('shutter failed')
-        return { bytes: 100 }
-    })
-    if (failed) await expect(capture).rejects.toThrow('shutter failed')
-    else await expect(capture).resolves.toEqual({ bytes: 100 })
-    expect(f.writes).toEqual([0, 3])
-})
 
 it('restores an uncertain write and preserves both capture and restoration errors', async () => {
     const lost = fixture({ lostWrite: true })

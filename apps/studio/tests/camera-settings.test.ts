@@ -1,4 +1,4 @@
-import type { Camera, CameraCapabilities } from '@darkgrade/slate'
+import type { CameraCapabilities } from '@darkgrade/slate'
 import { PTPDisconnectedError, CameraClipNotFoundError, CameraConfirmationError, CameraOutcomeUnknownError, PTPRecoveryRequiredError } from '@darkgrade/slate'
 import { VendorIDs } from '@darkgrade/slate/protocol'
 import { CameraService } from '@main/camera-service'
@@ -47,12 +47,10 @@ function fixture() {
         },
     }
     const getCapabilities = vi.fn(async () => capabilities)
+    const camera = { getCapabilities, getInstance: () => ({}) }
     const service = new CameraService()
-    Object.assign(service, {
-        camera: { getCapabilities, getInstance: () => ({}) } as unknown as Camera,
-        connected: true,
-    })
-    return { service, capabilities, getCapabilities }
+    Object.assign(service, { camera, connected: true })
+    return { service, camera, capabilities, getCapabilities }
 }
 
 describe('camera settings refresh failures', () => {
@@ -114,15 +112,15 @@ describe('reconnect classification', () => {
 
 describe('confirmed controls and recording', () => {
     it('shows the observed control returned by Slate rather than the requested alias', async () => {
-        const { service, capabilities } = fixture()
+        const { service, camera, capabilities } = fixture()
         const set = vi.fn(async () => ({ ...capabilities.controls.iso!, value: '100' }))
-        Object.assign((service as unknown as { camera: object }).camera, { setControl: set })
+        Object.assign(camera, { setControl: set })
         await service.setIso('ISO 100')
         expect(service.getState().settings.iso).toBe('100')
         expect(set).toHaveBeenCalledWith('iso', 'ISO 100')
     })
     it('shows the confirmed exposure mode and re-reads the settings a mode change reshapes', async () => {
-        const { service, capabilities, getCapabilities } = fixture()
+        const { service, camera, capabilities, getCapabilities } = fixture()
         const exposureMode = {
             id: 'exposureMode' as const,
             label: 'Exposure mode',
@@ -144,18 +142,18 @@ describe('confirmed controls and recording', () => {
             capabilities.controls.exposureMode = { ...exposureMode, value: 'Aperture priority' }
             return capabilities.controls.exposureMode
         })
-        Object.assign((service as unknown as { camera: object }).camera, { setControl: set })
+        Object.assign(camera, { setControl: set })
         await service.setControl('exposureMode', 'Aperture priority')
         expect(set).toHaveBeenCalledWith('exposureMode', 'Aperture priority')
         expect(service.getState().controls?.exposureMode?.value).toBe('Aperture priority')
         expect(getCapabilities).toHaveBeenCalledTimes(2)
     })
     it('never displays a failed control request as applied and refreshes actual observations once', async () => {
-        const { service, capabilities, getCapabilities } = fixture()
+        const { service, camera, capabilities, getCapabilities } = fixture()
         await service.refreshSettings()
         const failure = new CameraConfirmationError('iso', '800', '400')
         const set = vi.fn(async () => { throw failure })
-        Object.assign((service as unknown as { camera: object }).camera, { setControl: set })
+        Object.assign(camera, { setControl: set })
         await expect(service.setIso('800')).rejects.toBe(failure)
         expect(service.getState().settings.iso).toBe(capabilities.controls.iso!.value)
         expect(set).toHaveBeenCalledOnce()
@@ -164,22 +162,13 @@ describe('confirmed controls and recording', () => {
     function recordingFixture() {
         const { service } = fixture()
         const clip = { mediaId: '2', name: 'C0002.MP4', sizeBytes: 4096 }
-        const camera = { prepareRecordingMode: vi.fn(async () => ({ restore: async () => {} })),
-            startRecording: vi.fn(async () => {}), stopRecording: vi.fn(async (): Promise<typeof clip> => clip),
+        const camera = { startRecording: vi.fn(async () => {}), stopRecording: vi.fn(async (): Promise<typeof clip> => clip),
             getRecordingState: vi.fn(async () => 'idle'), getInstance: () => ({}) }
         Object.assign(service, { camera })
         // File-list timing is independent from confirmation; no background USB work in this test.
         vi.spyOn(service as unknown as { scheduleFilesRefresh(): void }, 'scheduleFilesRefresh').mockImplementation(() => {})
         return { service, camera, clip }
     }
-    it('leaves preparation to Slate and keeps an ignored start idle', async () => {
-        const { service, camera } = recordingFixture()
-        camera.startRecording.mockRejectedValue(new CameraConfirmationError('record_start', 'recording', 'idle'))
-        await expect(service.startRecording()).rejects.toBeInstanceOf(CameraConfirmationError)
-        expect(service.getState()).toMatchObject({ recording: false, recordingState: 'idle' })
-        expect(camera.startRecording).toHaveBeenCalledOnce()
-        expect(camera.prepareRecordingMode).not.toHaveBeenCalled()
-    })
     it('keeps Stop available when a failed start may have left the setup pending', async () => {
         const { service, camera } = recordingFixture()
         camera.startRecording.mockRejectedValue(new CameraOutcomeUnknownError('startRecording', 'putting the camera back failed'))

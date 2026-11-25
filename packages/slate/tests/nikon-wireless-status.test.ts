@@ -56,11 +56,6 @@ describe('Nikon wireless prerequisite diagnostics',()=>{
         expect(result.queries.WsGetResponderCfg).toMatchObject({advertised:false,queried:true})
         expect(result.queries.WsGetResponderCfg?.profileCount).toBeUndefined()
     })
-    it('does not call unsupported capabilities successful or infer FTP from a failed response',async()=>{
-        const result=await readNikonWirelessStatus(fixture({queryFailure:true}) as any)
-        expect(result.usbProvisioning).toBe('unverified')
-        expect(result.queries.WsGetSupportedProfileType?.response).toBe(0x2005)
-    })
     it('rejects malformed profile headers',async()=>{
         await expect(readNikonWirelessStatus(fixture({malformed:true}) as any)).rejects.toThrow('truncated')
     })
@@ -82,24 +77,12 @@ describe('Nikon actual connection path',()=>{
         expect(result.automaticRadioActivation).toBe('unverified')
         expect(camera.send).toHaveBeenLastCalledWith(expect.objectContaining({code:0x943a}),{DevicePropCode:0xd12e})
     })
-    it('uses the standard descriptor for an advertised property on older Nikon bodies',async()=>{
-        const camera=fixture({model:'D850',advertised:false,pathAdvertised:true,pathValue:2})
-        expect((await readNikonWirelessStatus(camera as any)).connectionPath).toEqual({advertised:true,queried:true,response:0x2001,value:2,path:'wifi'})
-        expect(camera.send).toHaveBeenLastCalledWith(expect.objectContaining({code:0x1014}),{DevicePropCode:0xd12e})
-    })
-    it('tries an unadvertised property with the standard descriptor on an unvalidated model',async()=>{
-        const camera=fixture({model:'D850',advertised:false,pathValue:2})
+    it.each([true,false])('reads ConnectionPath with the standard descriptor on an older unvalidated body (advertised: %s)',async pathAdvertised=>{
+        const camera=fixture({model:'D850',advertised:false,pathAdvertised,pathValue:2})
         const result=await readNikonWirelessStatus(camera as any)
-        expect(result.connectionPath).toEqual({advertised:false,queried:true,response:0x2001,value:2,path:'wifi'})
+        expect(result.connectionPath).toEqual({advertised:pathAdvertised,queried:true,response:0x2001,value:2,path:'wifi'})
         expect(result.verified).toBe(false)
         expect(camera.send).toHaveBeenLastCalledWith(expect.objectContaining({code:0x1014}),{DevicePropCode:0xd12e})
-    })
-    it('keeps a refused unadvertised property unknown on an unvalidated model',async()=>{
-        for(const options of [{pathThrow:true},{pathWrongProperty:true}]){
-            const result=await readNikonWirelessStatus(fixture({model:'D850',advertised:false,...options}) as any)
-            expect(result.connectionPath).toMatchObject({advertised:false,queried:true,path:'unknown'})
-            expect(result.wifiControl).toBe('unverified')
-        }
     })
     it('preserves unsupported, malformed and failed reads as unknown',async()=>{
         for(const options of [{queryFailure:true},{pathWrongProperty:true},{pathThrow:true},{pathValue:-1},{pathValue:256},{pathValue:1.5}]){

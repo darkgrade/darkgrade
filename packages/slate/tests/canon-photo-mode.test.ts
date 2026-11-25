@@ -20,7 +20,7 @@ const transport = () =>
  * A Canon driver whose FixedMovie readback follows its movie-select commands. `selector` decides
  * what a command does: apply at once, apply after a few event polls, or be ignored.
  */
-function canon(options: { movie?: boolean; selector?: 'applies' | 'delayed' | 'ignored'; fixedMovie?: boolean } = {}) {
+function canon(options: { movie?: boolean; selector?: 'applies' | 'delayed' | 'ignored' } = {}) {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
     const driver = protocolSession(camera).driver as CanonCamera
     const order: string[] = []
@@ -33,9 +33,7 @@ function canon(options: { movie?: boolean; selector?: 'applies' | 'delayed' | 'i
         if (options.selector === 'delayed') pending = value
         else movie = value
     }
-    vi.spyOn(driver, 'listUnknownPropertyStates').mockImplementation(() =>
-        options.fixedMovie === false ? [] : [{ code: 0xd1c2, codeHex: '0xd1c2', name: 'FixedMovie', rawValue: movie }]
-    )
+    driver['unknownPropertyCache'].set(0xd1c2, { get rawValue() { return movie } })
     vi.spyOn(driver, 'listPropertyStates').mockReturnValue([
         { code: 0xd105, name: 'CanonAutoExposureMode', description: '', access: 'GetSet', value: 1 },
     ])

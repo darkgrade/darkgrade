@@ -1,6 +1,6 @@
-import { fakeProbe, pageProbe } from './studio-probe'
+import { pageProbe } from './studio-probe'
 import { walkStudio } from './studio-walk'
-import { _electron as electron, expect, test } from '@playwright/test'
+import { _electron as electron, test } from '@playwright/test'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
@@ -8,21 +8,8 @@ import { join, resolve } from 'node:path'
 const studioDirectory = resolve(import.meta.dirname, '..')
 const camera = process.env.DARKGRADE_CAMERA ?? 'attached-camera'
 const screenshotDirectory = join(import.meta.dirname, 'results', camera.replace(/[^a-z0-9]+/gi, '-'))
-const fake = process.env.DARKGRADE_E2E_FAKE === '1'
 
-test(`Studio feature walk (${fake ? 'dry run against a fake' : camera})`, async () => {
-    if (fake) {
-        const walk = walkStudio({
-            probe: fakeProbe(),
-            page: undefined,
-            screenshotDirectory,
-            connectTimeoutMilliseconds: 1000,
-            includeVisionOverlays: false,
-        })
-        await expect(walk).rejects.toThrow(/fake Studio .* did not report a connected camera/)
-        await walk.catch(error => console.log(`Dry run failed as designed: ${error instanceof Error ? error.message : error}`))
-        return
-    }
+test(`Studio feature walk (${camera})`, async () => {
     if (!process.env.DARKGRADE_CAMERA_LEASE)
         throw new Error('Run the walk through the camera lease: bun run --cwd apps/studio e2e (see e2e/README.md)')
     const main = join(studioDirectory, 'out/main/index.js')

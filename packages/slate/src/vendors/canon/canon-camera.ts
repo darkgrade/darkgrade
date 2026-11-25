@@ -1282,7 +1282,7 @@ export class CanonCamera extends GenericCamera {
             ...cardSteps(this, this.requireOwner()),
             readState: async () => {
                 await this.refreshEventProperties()
-                const state = this.propertyCache.get(this.registry.properties.CanonRecordingDestination)?.current
+                const state = this.listPropertyStates().find(state => state.name === 'CanonRecordingDestination')?.value
                 return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
             },
             checkCard: async () => {

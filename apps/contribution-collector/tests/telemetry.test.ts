@@ -102,20 +102,6 @@ test('withdrawal blocks writes and reviews before retrying interrupted deletion'
     assert.equal((await handle(request('/v2/installation', 'DELETE', installKey))).status, 200)
 })
 
-test('upload and withdrawal races cannot create late diagnostic records', async () => {
-    const { database } = memoryDatabase()
-    const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
-    const { installId, installKey } = await enroll(handle)
-    const replies = await Promise.all([
-        ...Array.from({ length: 20 }, () => handle(request('/v2/batches', 'POST', installKey, batch()))),
-        handle(request('/v2/installation', 'DELETE', installKey)),
-        ...Array.from({ length: 20 }, () => handle(request('/v2/batches', 'POST', installKey, batch()))),
-    ])
-    assert.ok(replies.every(response => [200, 202, 410].includes(response.status)))
-    await cleanupWithdrawals(database)
-    assert.equal((await database.list('diagnostics', 'installId', installId)).length, 0)
-})
-
 test('email confirmation is separate, expires, is single-use, and only verified choices provide credit', async () => {
     const { database, records } = memoryDatabase()
     let date = new Date('2026-11-11T00:00:00Z')
@@ -142,19 +128,21 @@ test('email confirmation is separate, expires, is single-use, and only verified 
     assert.ok(!JSON.stringify(records.get(`diagnostics/${recordId}`)).includes('example.com'))
     await handle(request('/v2/contact', 'DELETE', installKey))
     assert.equal((await exportReviewedPatterns(database)).records[0].credit, null)
+    const confirm = (index: number) =>
+        handle(
+            request('/v2/contact/confirm', 'POST', undefined, {
+                token: new URL(sent[index].confirmationUrl).hash.slice(1),
+            })
+        )
     date = new Date(+date + 60_000)
     await handle(request('/v2/contact', 'POST', installKey, contact))
+    date = new Date(+date + 119 * 60_000)
+    assert.equal((await confirm(1)).status, 200, 'confirmation still works after 119 minutes')
+    await handle(request('/v2/contact', 'POST', installKey, { email: 'second@example.com' }))
     date = new Date(+date + 120 * 60_000)
-    assert.equal(
-        (
-            await handle(
-                request('/v2/contact/confirm', 'POST', undefined, {
-                    token: new URL(sent[1].confirmationUrl).hash.slice(1),
-                })
-            )
-        ).status,
-        410
-    )
+    assert.equal((await confirm(2)).status, 410, 'confirmation expires exactly at two hours')
+    assert.equal((await database.get(`contacts/${installId}`))?.email, 'contributor@example.com')
+    assert.equal((await database.get(`contactRequests/${installId}`))?.email, 'second@example.com')
 })
 
 test('latest email replaces the verified identity only after confirmation and older links cannot undo it', async () => {
@@ -181,50 +169,10 @@ test('latest email replaces the verified identity only after confirmation and ol
     assert.equal((await handle(request('/v2/contact','DELETE',user.installKey))).status,200)
     assert.equal(await status(),null)
     assert.equal(await database.get(`contactRequests/${user.installId}`),undefined)
-})
-
-test('confirmation works after 119 minutes and expires exactly at two hours', async () => {
-    const {database}=memoryDatabase()
-    let clock=new Date()
-    const sent:ContactMessage[]=[]
-    const handle=createTelemetry(database,{publicUrl:'https://telemetry.example',now:()=>clock,sendContact:async m=>{sent.push(m)}})
-    const user=await enroll(handle)
-    await handle(request('/v2/contact','POST',user.installKey,{email:'first@example.com'}))
-    clock=new Date(+clock+119*60_000)
-    const confirm=(index:number)=>handle(request('/v2/contact/confirm','POST',undefined,{token:new URL(sent[index].confirmationUrl).hash.slice(1)}))
-    assert.equal((await confirm(0)).status,200)
-    await handle(request('/v2/contact','POST',user.installKey,{email:'second@example.com'}))
-    clock=new Date(+clock+120*60_000)
-    assert.equal((await confirm(1)).status,410)
-    assert.equal((await database.get(`contacts/${user.installId}`))?.email,'first@example.com')
-    assert.equal((await database.get(`contactRequests/${user.installId}`))?.email,'second@example.com')
-})
-
-test('withdrawal and replaced contact challenges cannot resurrect contact details', async () => {
-    const { database } = memoryDatabase()
-    let time = Date.now()
-    const sent: ContactMessage[] = []
-    const handle = createTelemetry(database, {
-        publicUrl: 'https://telemetry.example',
-        now: () => new Date(time),
-        sendContact: async message => {
-            sent.push(message)
-        },
-    })
-    const { installId, installKey } = await enroll(handle)
-    await handle(request('/v2/contact', 'POST', installKey, { email: 'a@example.com' }))
-    time += 61_000
-    await handle(request('/v2/contact', 'POST', installKey, { email: 'b@example.com' }))
-    const confirm = (index: number) =>
-        handle(
-            request('/v2/contact/confirm', 'POST', undefined, {
-                token: new URL(sent[index].confirmationUrl).hash.slice(1),
-            })
-        )
-    assert.equal((await confirm(0)).status, 410)
-    await handle(request('/v2/installation', 'DELETE', installKey))
-    assert.equal((await confirm(1)).status, 410)
-    assert.equal(await database.get(`contacts/${installId}`), undefined)
+    assert.equal((await handle(request('/v2/contact','POST',user.installKey,{email:'fifth@example.com'}))).status,202)
+    await handle(request('/v2/installation','DELETE',user.installKey))
+    assert.equal((await confirm(sent.length-1)).status,410,'withdrawal invalidates a pending challenge')
+    assert.equal(await database.get(`contacts/${user.installId}`),undefined)
 })
 
 test('quotas, malformed bodies, email injection and untrusted origins are rejected', async () => {

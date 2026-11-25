@@ -1,5 +1,4 @@
 import { Camera } from '@camera/index'
-import { isValidatedModel } from '@camera/validated-models'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry } from '@vendors/registry'
 import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
@@ -110,9 +109,6 @@ describe('first contact', () => {
     })
 
     it('skips validated bodies, opted-out installations and never throws', async () => {
-        expect(isValidatedModel('ILCE-6700')).toBe(true)
-        expect(isValidatedModel(' canon eos r6 mark iii ')).toBe(true)
-        expect(isValidatedModel('ILCE-7M5')).toBe(false)
         const validated = fixture({ ...fujifilm, manufacturer: 'Sony Corporation', model: 'ILCE-6700' })
         const camera = new Camera({ transport: validated.transport, logger: quiet })
         await camera.connect()

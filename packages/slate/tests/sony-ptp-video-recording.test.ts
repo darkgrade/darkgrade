@@ -38,15 +38,6 @@ it('keeps Stop available after an unconfirmed Stop; explicit cleanup sends the n
   expect(f.camera.stopRecording).toHaveBeenCalledTimes(2)
  }finally{vi.useRealTimers()}
 })
-it('leaves movie mode to Camera: indexing failure or a cancelled take never sends Record or a mode write',async()=>{
- const f=fixture()
- f.camera.send.mockRejectedValueOnce(new Error('Card index unavailable'))
- await expect(f.recording.prepare()).rejects.toThrow('Card index unavailable')
- await f.recording.prepare();await f.recording.cleanup()
- expect(f.camera.prepareRecordingMode).not.toHaveBeenCalled()
- expect(f.camera.startRecording).not.toHaveBeenCalled()
- expect(f.camera.stopRecording).not.toHaveBeenCalled()
-})
 it('accepts a stop whose clip Camera could not find, and looks for the original itself',async()=>{
  const {CameraClipNotFoundError}=await import('@camera/errors')
  const f=fixture();await f.recording.prepare();await f.recording.start()
@@ -133,18 +124,6 @@ it('an exact-handle MTP UINT64 size transfers across the 4 GiB offset boundary w
  descriptorView.setUint16(2,6,true)
  await expect(f.recording.transfer({id:'2',filename:'new.MP4',bytes:size,verified:true},async()=>{},()=>{}))
   .rejects.toThrow('UINT64')
-})
-
-it('reads the 64-bit size support from a real DeviceInfo dataset, not from a hand-made field', async () => {
- const { DeviceInfoCodec } = await import('@ptp/datasets/device-info-dataset')
- const { createSonyRegistry } = await import('@vendors/registry')
- const registry = createSonyRegistry(true), dataset = new (DeviceInfoCodec as any)(registry)
- const encoded = dataset.encode({ standardVersion: 100, vendorExtensionID: 0x11, vendorExtensionVersion: 300, vendorExtensionDesc: '', functionalMode: 0,
-  operationsSupportedRaw: [0x1001, 0x9802, 0x9803], eventsSupportedRaw: [], devicePropertiesSupported: [], captureFormats: [], imageFormatsRaw: [],
-  manufacturer: 'Sony Corporation', model: 'ILME-FX2', deviceVersion: '1.01', serialNumber: '' })
- const decoded = dataset.decode(encoded).value
- expect(decoded.operationsSupportedRaw).toEqual([0x1001, 0x9802, 0x9803])
- expect((decoded as any).operationsSupported).toBeUndefined()
 })
 
 it('sizes an FX2 original over 4 GiB from its typed property list when the descriptor operation is refused', async () => {

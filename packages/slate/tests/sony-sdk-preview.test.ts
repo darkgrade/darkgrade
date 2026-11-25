@@ -10,22 +10,12 @@ function property(code: number, value: string, allowedValues?: string[]): SonySd
     return { code, name: String(code), type: 4, value, writable: false, allowedValues }
 }
 describe('Sony SDK preview capabilities', () => {
-    it('decodes JPEG dimensions, rate and bitrate from the SDK format', () => {
-        expect(decodeSonyMonitoringFormat(packed(1, 1, 3, 1))).toMatchObject({
-            qualityLevel: 1,
-            codec: 'jpeg',
-            width: 640,
-            height: 360,
-            framesPerSecond: 7.5,
-            megabitsPerSecond: 8,
-            variableResolution: false,
-        })
-    })
-    it('preserves codec distinctions and the variable-resolution bit', () => {
-        const value = (BigInt(packed(3, 2, 7, 6)) | (1n << 47n)).toString()
-        const h264 = { codec: 'h264', width: 1920, height: 1080, framesPerSecond: 30, variableResolution: true }
-        expect(decodeSonyMonitoringFormat(value)).toMatchObject(h264)
-        expect(decodeSonyMonitoringFormat(packed(5, 3, 6, 5))?.codec).toBe('h265')
+    it.each([
+        [packed(1, 1, 3, 1), { qualityLevel: 1, codec: 'jpeg', width: 640, height: 360, framesPerSecond: 7.5, megabitsPerSecond: 8, variableResolution: false }],
+        [(BigInt(packed(3, 2, 7, 6)) | (1n << 47n)).toString(), { codec: 'h264', width: 1920, height: 1080, framesPerSecond: 30, variableResolution: true }],
+        [packed(5, 3, 6, 5), { codec: 'h265' }],
+    ])('decodes SDK monitoring format %s with its codec, size, rate and variable-resolution bit', (value, expected) => {
+        expect(decodeSonyMonitoringFormat(value)).toMatchObject(expected)
     })
     it('rejects invalid, unknown and oversized descriptors', () => {
         const invalid = ['-1', '0', '1.5', '1e9', '18446744073709551616']

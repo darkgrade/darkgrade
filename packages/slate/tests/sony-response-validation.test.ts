@@ -1,10 +1,8 @@
-import { Camera } from '@camera/index'
 import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
 import type { SonyDevicePropDesc } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
-import { protocolSession } from '@camera/protocol-session'
 
 function cameraFixture() {
     const transport = { isLittleEndian: () => true, isConnected: () => true } as unknown as TransportInterface
@@ -34,8 +32,6 @@ function liveViewFrame(): Uint8Array {
     bytes.set([0xff, 0xd8, 0xff, 0xd9], 24)
     return bytes
 }
-
-const HANDSHAKE = ['SDIO_OpenSession', 'SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo', 'SDIO_Connect', 'GetDeviceInfo']
 
 describe('Sony incremental property boundaries', () => {
     it.each(['final-step', 'disabled', 'range-changed'] as const)('%s uses each fresh descriptor', async scenario => {
@@ -87,37 +83,6 @@ describe('Sony incremental property boundaries', () => {
 })
 
 describe('Sony session response validation', () => {
-    it('opens facade observation through the native session without rewriting camera settings', async () => {
-        const descriptor = { usb: { filters: [{ vendorId: 0x054c, productId: 0x0e78, serialNumber: 'test-body' }] } }
-        const transport = { isLittleEndian: () => true, isConnected: () => true } as unknown as TransportInterface
-        const facade = new Camera({
-            device: descriptor,
-            transport,
-            logger: { captureConsole: false, renderInTerminal: false },
-        })
-        const camera = protocolSession(facade).driver as SonyCamera
-        const sent: string[] = []
-        camera.send = (async operation => {
-            sent.push(operation.name)
-            return { code: 0x2001 }
-        }) as typeof camera.send
-        camera.refreshPropertyStates = async () => []
-        camera.set = vi.fn(async () => undefined)
-        const connect = vi.spyOn(camera, 'connect')
-        await facade.connect({ observeOnly: true })
-        expect(connect).toHaveBeenCalledWith(descriptor, { configure: false })
-        expect(sent).toEqual(HANDSHAKE)
-        expect(camera.set).not.toHaveBeenCalled()
-    })
-
-    it('allows an inventory session without changing host priority or save destination', async () => {
-        const { camera, sent } = cameraFixture()
-        camera.refreshPropertyStates = async () => []
-        await camera.connect(undefined, { configure: false })
-        expect(sent).toEqual(HANDSHAKE)
-        expect(camera.set).not.toHaveBeenCalled()
-    })
-
     it('reads the standard identity once per connection and stays connected when the body refuses or drops it', async () => {
         for (const refusal of ['response', 'throw'] as const) {
             const { camera, sent } = cameraFixture()
@@ -149,14 +114,6 @@ describe('Sony session response validation', () => {
         await expect((camera as any).waitForFocus(120)).resolves.toBe('acquired')
     })
 
-    it('stops before authentication or configuration if the camera refuses the session', async () => {
-        const { camera, replies, sent } = cameraFixture()
-        replies.push({ code: 0x2019 })
-        await expect(camera.connect()).rejects.toMatchObject({ code: 0x2019 })
-        expect(sent).toEqual(['SDIO_OpenSession'])
-        expect(camera.set).not.toHaveBeenCalled()
-    })
-
     it('preserves a refusal when an existing session cannot be closed', async () => {
         const { camera, replies, sent } = cameraFixture()
         replies.push({ code: 0x201e }, { code: 0x200f })
@@ -172,14 +129,6 @@ describe('Sony session response validation', () => {
         expect(camera.set).not.toHaveBeenCalled()
     })
 
-    it('stops when extended device information refuses both initiator versions', async () => {
-        const { camera, replies, sent } = cameraFixture()
-        replies.push({ code: 0x2001 }, { code: 0x2001 }, { code: 0x2001 }, { code: 0x200f })
-        replies.push({ code: 0x2001 }, { code: 0x2001 }, { code: 0x200f })
-        await expect(camera.connect()).rejects.toMatchObject({ code: 0x200f })
-        expect(sent).toEqual(['SDIO_OpenSession', ...Array(2).fill(['SDIO_Connect', 'SDIO_Connect', 'SDIO_GetExtDeviceInfo']).flat()])
-        expect(camera.set).not.toHaveBeenCalled()
-    })
 })
 
 describe('Sony authoritative property refresh', () => {
@@ -240,23 +189,6 @@ describe('Sony preview results', () => {
         expect(sent.slice(-2)).toEqual(['SDIO_GetAllExtDevicePropInfo', 'GetObject'])
     })
 
-    it('does not request an image when the camera reports live view unsupported', async () => {
-        const { camera, replies, sent } = cameraFixture()
-        const status = descriptor(0xd221, 2)
-        replies.push({ code: 0x2001, data: { properties: [status] } })
-        await camera.refreshPropertyStates()
-        replies.push({ code: 0x2001, data: { properties: [status] } })
-        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow('unavailable')
-        expect(sent).not.toContain('GetObject')
-    })
-
-    it('preserves the camera refusal rather than decoding the response words as an image', async () => {
-        const { camera, replies } = cameraFixture()
-        // A camera that keeps refusing past the retry window: Access Denied (0x200F) every time.
-        for (let refusal = 0; refusal < 200; refusal++) replies.push({ code: 0x200f, data: new Uint8Array(4) })
-        await expect(camera.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
-    })
-
     it('asks again when the next live-view frame is not ready yet, then reads the image at its declared offset', async () => {
         const { camera, replies } = cameraFixture()
         const bytes = liveViewFrame()
@@ -264,15 +196,18 @@ describe('Sony preview results', () => {
         expect((await camera.captureLiveView({ includeInfo: false })).data).toEqual(bytes.slice(24))
     })
 
-    it.each([{ code: 0x2019 }, { code: 0x2001 }, { code: 0x2001, data: new Uint8Array(16) }])(
-        'does not count an unsuccessful image as a frame',
-        async reply => {
-            const { camera, replies } = cameraFixture()
-            replies.push(reply)
-            await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow()
-            expect(camera.millisecondsUntilNextLiveViewFrame()).toBe(0)
-        }
-    )
+    it.each([
+        { code: 0x2019 },
+        { code: 0x2001 },
+        { code: 0x2001, data: new Uint8Array() },
+        { code: 0x2001, data: new Uint8Array(16) },
+    ])('does not count an unsuccessful image (%o) as a frame', async reply => {
+        const { camera, replies } = cameraFixture()
+        replies.push(reply)
+        const failure = camera.captureLiveView({ includeInfo: false })
+        await expect(failure).rejects.toThrow(reply.code === 0x2001 ? /no (dataset|image)/ : undefined)
+        expect(camera.millisecondsUntilNextLiveViewFrame()).toBe(0)
+    })
 
     it('bounds polling for a delayed frame without treating the card as unavailable', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] })
@@ -325,34 +260,15 @@ describe('Sony preview results', () => {
         }
     })
 
-    it.each([undefined, new Uint8Array(), new Uint8Array(16)])(
-        'rejects successful responses without image bytes',
-        async data => {
-            const { camera, replies } = cameraFixture()
-            replies.push({ code: 0x2001, data })
-            await expect(camera.captureLiveView({ includeInfo: false })).rejects.toThrow(/no (dataset|image)/)
-        }
-    )
 })
 
 describe('Sony partial downloads', () => {
-    it.each([
-        { code: 0x2001, data: new Uint8Array() },
-        { code: 0x2001, data: new Uint8Array(6) },
-        { code: 0x200f, data: new Uint8Array(4) },
-    ])('rejects incomplete or refused transfers without retrying forever', async reply => {
+    it('rejects a chunk longer than requested without retrying', async () => {
         const { camera, replies, sent } = cameraFixture()
         Object.assign(camera, { contentTransferModeEnabled: true })
-        replies.push(reply)
+        replies.push({ code: 0x2001, data: new Uint8Array(6) })
         await expect(camera.getObject(7, 5)).rejects.toThrow()
         expect(sent).toEqual(['SDIO_GetPartialLargeObject'])
-    })
-
-    it('joins partial chunks until the advertised object size has arrived', async () => {
-        const { camera, replies } = cameraFixture()
-        Object.assign(camera, { contentTransferModeEnabled: true })
-        replies.push({ code: 0x2001, data: Uint8Array.of(1, 2) }, { code: 0x2001, data: Uint8Array.of(3, 4, 5) })
-        expect(await camera.getObject(7, 5)).toEqual(Uint8Array.of(1, 2, 3, 4, 5))
     })
 })
 

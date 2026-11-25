@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
     SonyRemoteSdkTransport,
     type SonyRemoteSdkChannel,
-} from '../src/transport/sony-remote/sony-remote-sdk-transport'
+} from '@transport/sony-remote/sony-remote-sdk-transport'
 
 function channel(): SonyRemoteSdkChannel & { emit: (code: number) => void } {
     let eventHandler: ((event: { code: number; transactionId: number; parameters: number[] }) => void) | undefined

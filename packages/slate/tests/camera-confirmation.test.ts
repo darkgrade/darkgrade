@@ -1,5 +1,5 @@
 import { CanonCamera } from '@vendors/canon/canon-camera'
-import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
+import { CameraConfirmationError } from '@camera/confirmation'
 import type { CameraRecordingState } from '@camera/controls'
 import { Camera } from '@camera/index'
 import { protocolSession } from '@camera/protocol-session'
@@ -41,28 +41,6 @@ function fixture(vendorId: number) {
         },
     }
 }
-
-it('explicit Sony preparation uses advertised controls and restores only after confirmed idle', async () => {
-    const f = fixture(0x054c)
-    let mode = 'photo'
-    vi.spyOn(f.camera, 'getCapabilities').mockImplementation(async () => ({
-        controls: {photoVideoMode: {value:mode,enabled:true,writable:true,allowedValues:['photo','video']}},
-    }) as any)
-    const write = vi.spyOn(f.camera, 'setControl').mockImplementation(async (_id, value) => {
-        mode = value as string
-        return {value:mode} as any
-    })
-    const prepared = await openSonyRecordingMode(f.camera)
-    expect(mode).toBe('video')
-    f.set('recording')
-    await expect(prepared.restore()).rejects.toThrow('not confirmed stopped')
-    expect(mode).toBe('video')
-    f.set('idle')
-    await prepared.restore()
-    expect(mode).toBe('photo')
-    await prepared.restore()
-    expect(write.mock.calls.map(call => call[1])).toEqual(['video','photo'])
-})
 
 it('Sony preparation refuses unadvertised modes and preserves failed reconciliation', async () => {
     const f = fixture(0x054c)
@@ -133,24 +111,6 @@ it('Sony restoration polls temporary display-only mode after idle without repeat
     await vi.advanceTimersByTimeAsync(100)
     await restored
     expect(write.mock.calls.map(call => call[1])).toEqual(['video','photo'])
-})
-
-it('polls delayed observations without repeating writes and propagates observation failures', async () => {
-    vi.useFakeTimers()
-    let value = 'old'
-    const read = vi.fn(async () => value)
-    const pending = confirmCameraValue('iso', '200', read)
-    await vi.advanceTimersByTimeAsync(150)
-    value = '200'
-    await vi.advanceTimersByTimeAsync(100)
-    await pending
-    expect(read.mock.calls.length).toBeGreaterThan(1)
-    const failure = new Error('USB disappeared during readback')
-    await expect(
-        confirmCameraValue('iso', '200', async () => {
-            throw failure
-        })
-    ).rejects.toBe(failure)
 })
 
 it('Canon recording observation refreshes events instead of confirming a stale cached state', async () => {

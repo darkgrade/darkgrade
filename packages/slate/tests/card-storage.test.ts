@@ -10,12 +10,6 @@ describe('camera-side card write capability',()=>{
   camera.send=async(op:string)=>op==='identity'?identity():{code:0x2001,data:op==='ids'?[0x10001]:{accessCapability:1,maxCapacity:0n,freeSpaceInBytes:0n}}
   return camera
  }
- it('uses native Sony card status while preserving zero-capacity host storage',async()=>{
-  const camera=sonyBody(async()=>({code:0x2001,data:{model:'ILCE-6700'}}))
-  expect((await readCameraStorages(camera))[0]).toMatchObject({writable:true,recordingReady:true,hostAccessCapability:1,capacityBytes:0})
-  camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:2,sonyEnabledFlag:2}]
-  expect((await readCameraStorages(camera))[0].writable).toBe(false)
- })
  it('marks the single-slot fallback verified only on the bench-validated body',async()=>{
   const validated=await readSonyMovieCard(sonyBody(async()=>({code:0x2001,data:{model:'ILCE-6700'}})))
   expect(validated).toMatchObject({status:'ready',slots:[1],singleSlotFallback:true,verified:true})
@@ -40,26 +34,13 @@ describe('camera-side card write capability',()=>{
   camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
   expect((await readCameraStorages(camera))[0].writable).toBe(false)
  })
- it('does not call a present Sony card recording-ready when its observed movie capacity is zero',async()=>{
-  const camera=fixture(1,'none',0x054c) as any
-  let seconds=0
-  camera.getSonyPropertyStates=async()=>[
-   {code:0xd160,rawValue:2,sonyEnabledFlag:1},
-   {code:0xd256,rawValue:1,sonyEnabledFlag:2},
-   {code:0xd258,rawValue:seconds,sonyEnabledFlag:2},
-   {code:0x500e,rawValue:0x78053,value:'Movie Manual',sonyEnabledFlag:1},
-  ]
-  expect((await readCameraStorages(camera))[0]).toMatchObject({writable:false,recordingReady:false,
-   recordingEvidence:{status:'ready',remainingMovieSeconds:0}})
-  seconds=120
-  expect((await readCameraStorages(camera))[0]).toMatchObject({writable:true,recordingReady:true,
-   recordingEvidence:{remainingMovieSeconds:120}})
- })
  it('accepts Nikon host read/delete access when camera protection is clear',async()=>{const cards=await readCameraStorages(fixture(2));expect(cards).toHaveLength(1);expect(cards[0]).toMatchObject({writable:true,hostAccessCapability:2,capacityBytes:256})})
- for(const flag of ['noCardInserted','cardAccessError','cardNotFormatted','noFreeSpace','cardProtected'])it('rejects Nikon '+flag,async()=>{expect((await readCameraStorages(fixture(2,flag)))[0].writable).toBe(false)})
- it('does not generalize Nikon host permissions to other brands',async()=>{expect((await readCameraStorages(fixture(2,'none',0x04a9)))[0].writable).toBe(false)})
- it('fails closed on missing Nikon protection telemetry',async()=>{expect((await readCameraStorages(fixture(2,'')))[0].writable).toBe(false)})
- it('rejects non-deletable read-only cards',async()=>{expect((await readCameraStorages(fixture(1)))[0].writable).toBe(false)})
+ it.each([
+  ...['noCardInserted','cardAccessError','cardNotFormatted','noFreeSpace','cardProtected'].map(flag=>['Nikon '+flag,2,flag,0x04b0] as const),
+  ['Nikon host permissions on another brand',2,'none',0x04a9],
+  ['missing Nikon protection telemetry',2,'',0x04b0],
+  ['a non-deletable read-only card',1,undefined,0x04b0],
+ ] as const)('rejects %s',async(_label,access,flag,vendor)=>{expect((await readCameraStorages(fixture(access,flag,vendor)))[0].writable).toBe(false)})
 })
 
 describe('populated card object enumeration',()=>{

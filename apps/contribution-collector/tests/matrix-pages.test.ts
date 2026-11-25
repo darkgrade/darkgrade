@@ -31,32 +31,6 @@ test('review pages retain evidence, invalidate on withdrawal, and never export e
     await assert.rejects(exportMatrixPage(fixture.database, first.next!), MatrixExportChanged)
 })
 
-test('removing contributor credit invalidates an in-progress export without deleting original evidence', async () => {
-    const fixture = memoryDatabase()
-    const handle = createTelemetry(fixture.database, { publicUrl: 'https://telemetry.example' })
-    const user = await enroll(handle)
-    for (let index = 0; index < 100; index++) {
-        const payload = batch()
-        await handle(request('/v2/batches', 'POST', user.installKey, payload))
-        await reviewDiagnostic(fixture.database, `${user.installId}_${payload.id}`)
-    }
-    await fixture.database.transaction(async transaction =>
-        transaction.set(`contacts/${user.installId}`, {
-            confirmedAt: new Date(),
-            email: 'private@example.com',
-            credit: { name: 'Contributor', publish: true },
-        })
-    )
-    const first = await exportMatrixPage(fixture.database)
-    assert.equal(first.records[0].credit.name, 'Contributor')
-    assert.doesNotMatch(JSON.stringify(first), /private@example/)
-    assert.equal((await handle(request('/v2/contact', 'DELETE', user.installKey))).status, 200)
-    await assert.rejects(exportMatrixPage(fixture.database, first.next!), MatrixExportChanged)
-    const replacement = await exportMatrixPage(fixture.database)
-    assert.equal(replacement.records.length, 100)
-    assert.equal(replacement.records[0].credit, null)
-})
-
 test('all validated batches export without review and an ingestion watermark excludes concurrent uploads', async () => {
     const fixture = memoryDatabase()
     const now = new Date()

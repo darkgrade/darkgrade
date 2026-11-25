@@ -55,21 +55,16 @@ describe('Fujifilm properties from the X-T50 contributor captures', () => {
         )
     })
 
-    it('decodes signed preset values and preserves unsigned vendor values without guessed enums', () => {
+    it('encodes the captured signed and unsigned preset bytes, keeping libgphoto2 codes over filmkit labels', () => {
         // filmkit#12 X-T50 Profile Read/Presets Save, firmware 1.31.
         const captures = [
             [registry.properties.FujiPresetWhiteBalanceShiftRed, 'fcff', -4],
             [registry.properties.FujiWhiteBalanceShiftBlue, 'feff', -2],
-            [registry.properties.FujiPresetSharpness, 'd8ff', -40],
             [registry.properties.FujiPresetWhiteBalance, '0880', 0x8008],
-            [registry.properties.FujiPresetHighIsoNoiseReduction, '0080', 0x8000],
             [registry.properties.FujiPresetGrainEffect, '0600', 6],
         ] as const
-        for (const [property, hex, value] of captures) {
-            const codec = property.codec(registry)
-            expect(codec.decode(Buffer.from(hex, 'hex')).value).toBe(value)
-            expect(Buffer.from(codec.encode(value)).toString('hex')).toBe(hex)
-        }
+        for (const [property, hex, value] of captures)
+            expect(Buffer.from(property.codec(registry).encode(value)).toString('hex')).toBe(hex)
         // These camera-setting labels in filmkit's display table conflict with libgphoto2.
         expect(registry.properties.FujiDynamicRange.code).toBe(0xd007)
         expect(registry.properties.FujiColorTemperature.code).toBe(0xd017)

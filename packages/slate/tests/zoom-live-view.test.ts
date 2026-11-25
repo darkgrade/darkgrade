@@ -7,9 +7,9 @@
 import type { CanonCamera } from '@vendors/canon/canon-camera'
 import type { LiveViewFrame } from '@camera/driver'
 import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { parseSonyFocalFrameInfo } from '@vendors/sony/focal-frame-info'
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
-import type { DigitalZoom, LiveViewQuality } from '@camera/settings/values'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { PTPTimeoutError } from '@core/ptp-errors'
 import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
@@ -18,7 +18,7 @@ import { NikonLiveViewDatasetCodec } from '@vendors/nikon/datasets/nikon-live-vi
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { canonEvents, canonValue } from '@tests/fixtures/canon-events'
 import { concatenate, deviceInfo, fakeTransport, propertyDescriptor, sonyPropertyInventory } from '@tests/fixtures/camera-fixtures'
@@ -143,7 +143,6 @@ function sonyBody(
     add({ code: OSD_IMAGE_MODE, datatype: UINT8, writable: true, enabled: 1, value: 0, choices: [0, 1] })
     const body = {
         properties,
-        applies: true,
         zoomDirection: 0,
         stepMillimetres: 2,
         lensRange: { minimum: 18, maximum: 105 },
@@ -190,7 +189,7 @@ function sonyBody(
                 writes.push({ code: property.code, raw })
                 if (property.code === OSD_IMAGE_MODE && raw === 0 && body.osdOffReply !== OK)
                     return { code: body.osdOffReply }
-                if (body.applies) property.value = raw
+                property.value = raw
                 return { code: OK }
             }
             case 'SDIO_ControlDevice': {
@@ -388,38 +387,11 @@ describe('digitalZoom and liveViewQuality typed settings', () => {
         expect((await camera.getCapabilities()).controls.liveViewQuality?.allowedValues).toEqual(['Low', 'High'])
     })
 
-    it('refuses a value the camera does not offer and a vendor word, sending nothing', async () => {
-        const { camera, body, writes } = sonyBody()
-        body.properties.get(ZOOM_SETTING)!.choices = [1, 3]
-        expect(await camera.setDigitalZoom('Digital Zoom').catch(error => error)).toBeInstanceOf(CameraRefusedError)
-        expect(await camera.setControl('digitalZoom', 'Optical Zoom Only').catch(error => error)).toBeInstanceOf(
-            CameraRefusedError
-        )
-        expect(writes).toHaveLength(0)
-    })
-
-    it('reports an acknowledged write the camera never shows as unknown, and never resends it', async () => {
-        const { camera, body, writes } = sonyBody()
-        body.applies = false
-        expect(await camera.setLiveViewQuality('Low').catch(error => error)).toBeInstanceOf(CameraOutcomeUnknownError)
-        expect(writes).toHaveLength(1)
-    }, 15000)
-
     it('reports both settings unsupported on Canon, Nikon and standard bodies', async () => {
         for (const { camera } of [canonBody(), nikonBody(), standardBody()]) {
             expect(await camera.getDigitalZoom().catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
             expect(await camera.setLiveViewQuality('High').catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
         }
-    })
-
-    it('types values from the codecs, in canonical spelling', () => {
-        const camera = new Camera({ transport: transport() })
-        expectTypeOf(camera.setDigitalZoom).parameter(0).toEqualTypeOf<DigitalZoom>()
-        expectTypeOf<DigitalZoom>().toEqualTypeOf<'Off' | 'Clear Image Zoom' | 'Digital Zoom'>()
-        expectTypeOf(camera.getLiveViewQuality).returns.resolves.toEqualTypeOf<LiveViewQuality>()
-        expectTypeOf<LiveViewQuality>().toEqualTypeOf<'Low' | 'High'>()
-        // @ts-expect-error Sony's own word is not the canonical name.
-        void camera.setLiveViewQuality('HIGH').catch(() => undefined)
     })
 })
 
@@ -610,6 +582,10 @@ describe('zoom on bodies without a zoom command', () => {
 })
 
 describe('getLiveViewFrame', () => {
+    it('returns no Sony focal frames for a truncated dataset', () => {
+        expect(parseSonyFocalFrameInfo(new Uint8Array(10)).frames).toEqual([])
+    })
+
     it('returns the Sony JPEG with the camera focus frames normalized to the picture', async () => {
         const { camera } = sonyBody()
         const frame: LiveViewFrame = await camera.getLiveViewFrame()

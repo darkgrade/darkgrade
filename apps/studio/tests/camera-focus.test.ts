@@ -1,5 +1,4 @@
-import type { Camera, CameraCapabilities, CameraControlState, FocusResult } from '@darkgrade/slate'
-import { CameraUnsupportedError } from '@darkgrade/slate'
+import type { CameraCapabilities, CameraControlState, FocusResult } from '@darkgrade/slate'
 import { CameraService } from '@main/camera-service'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -82,7 +81,7 @@ function fixture(
         getInstance: () => ({}),
     }
     const service = new CameraService()
-    Object.assign(service, { camera: camera as unknown as Camera, connected: true })
+    Object.assign(service, { camera, connected: true })
     return { service, camera, order, body }
 }
 
@@ -101,35 +100,22 @@ describe('Studio focus', () => {
         expect(order).toEqual(['autofocus'])
     })
 
-    it('after a click from Wide, Focus and F focus at the clicked point without recentring', async () => {
-        const { service, camera, order, body } = await connectedFixture()
+    it.each([
+        ['from Wide, Focus and F focus at the clicked spot', {}, 'Spot M', true],
+        ['in the user’s own spot, Focus keeps the point', { focusArea: 'Tracking Spot M', subjectDetection: 'Off' }, 'Tracking Spot M', true],
+        ['on a camera without focus-area settings (Nikon), F focuses at the point', { focusArea: null, subjectDetection: null }, undefined, false],
+    ])('after a click %s without recentring', async (_name, initial, focusArea, rereadsSettings) => {
+        const { service, camera, order } = await connectedFixture(initial)
+        const reads = camera.getCapabilities.mock.calls.length
         await service.focusAt(0.25, 0.75)
         expect(camera.setFocusPoint).toHaveBeenCalledWith(0.25, 0.75)
+        expect(camera.getCapabilities.mock.calls.length > reads).toBe(rereadsSettings)
         // The panel shows what the camera now uses.
-        expect(service.getState().controls?.focusArea?.value).toBe('Spot M')
+        expect(service.getState().controls?.focusArea?.value).toBe(focusArea)
         await service.focus()
         await service.focus()
         expect(camera.resetFocusPoint).not.toHaveBeenCalled()
         expect(order).toEqual(['setFocusPoint', 'autofocus', 'autofocus'])
-        expect(body).toMatchObject({ focusArea: 'Spot M', subjectDetection: 'Off' })
-    })
-
-    it('after a click in the user’s own spot, Focus keeps the point', async () => {
-        const { service, camera, order, body } = await connectedFixture({ focusArea: 'Tracking Spot M', subjectDetection: 'Off' })
-        await service.focusAt(0.6, 0.4)
-        await service.focus()
-        expect(camera.resetFocusPoint).not.toHaveBeenCalled()
-        expect(order).toEqual(['setFocusPoint', 'autofocus'])
-        expect(body.focusArea).toBe('Tracking Spot M')
-    })
-
-    it('on a camera without focus-area settings (Nikon), F focuses at the clicked point without a reset', async () => {
-        const { service, camera, order } = await connectedFixture({ focusArea: null, subjectDetection: null })
-        const reads = camera.getCapabilities.mock.calls.length
-        await service.focusAt(0.6, 0.4)
-        expect(camera.getCapabilities.mock.calls.length).toBe(reads)
-        await service.focus()
-        expect(order).toEqual(['setFocusPoint', 'autofocus'])
     })
 
     it('offers click-to-focus only when Slate says a focus point can be placed', async () => {
@@ -144,11 +130,4 @@ describe('Studio focus', () => {
         expect(camera.setFocusPoint).not.toHaveBeenCalled()
     })
 
-    it('passes Slate’s reason through when the camera cannot place a point', async () => {
-        const { service, camera } = await connectedFixture()
-        camera.setFocusPoint.mockRejectedValue(
-            new CameraUnsupportedError('setFocusPoint', 'This camera has no remote focus operations that Slate supports')
-        )
-        await expect(service.focusAt(0.5, 0.5)).rejects.toThrow('no remote focus operations')
-    })
 })

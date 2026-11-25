@@ -3,39 +3,33 @@ import { NikonLiveViewDatasetCodec } from '@vendors/nikon/datasets/nikon-live-vi
 import { createNikonRegistry } from '@vendors/registry'
 
 describe('NikonLiveViewDatasetCodec', () => {
-    it('uses the camera-declared 512-byte display-info size for older Nikon bodies', () => {
-        const displayInfoSize = 512
+    const legacyImage = () => {
         const jpeg = new Uint8Array(700).fill(0x5a)
         jpeg.set([0xff, 0xd8], 0)
         jpeg.set([0xff, 0xd9], jpeg.length - 2)
+        return jpeg
+    }
+    it.each([
+        ['a 700-byte', legacyImage()],
+        ['a short', Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)],
+    ])('uses the declared 512-byte display-info size of older bodies for %s image, reading no newer telemetry', (_size, jpeg) => {
+        const displayInfoSize = 512
         const data = new Uint8Array(displayInfoSize + jpeg.length)
         const view = new DataView(data.buffer)
         view.setUint16(0, 1, false)
-        view.setUint16(2, 0, false)
         view.setUint32(8, displayInfoSize, false)
         view.setUint32(12, jpeg.length, false)
         data.set(jpeg, displayInfoSize)
 
-        const decoded = new NikonLiveViewDatasetCodec(createNikonRegistry(true)).decode(data).value
-
-        expect(decoded.displayInfoSize).toBe(512)
-        expect(decoded.liveViewImageSize).toBe(jpeg.length)
-        expect(decoded.liveViewImage).toEqual(jpeg)
-        expect(decoded.videoRecordingInfo).toBeUndefined()
-        expect(decoded.imagingTemperatureStatus).toBeUndefined()
-        expect(decoded.afFrameData.length).toBe(512 - 56)
-    })
-
-    it('accepts short legacy images without reading newer telemetry from their bytes', () => {
-        const data = new Uint8Array(512 + 4)
-        const view = new DataView(data.buffer)
-        view.setUint32(8, 512, false)
-        view.setUint32(12, 4, false)
-        data.set([0xff, 0xd8, 0xff, 0xd9], 512)
         const decoded = new NikonLiveViewDatasetCodec(createNikonRegistry(true)).decode(data)
-        expect(decoded.value.liveViewImage).toEqual(data.slice(512))
-        expect(decoded.value.videoRecordingInfo).toBeUndefined()
+
         expect(decoded.bytesRead).toBe(data.length)
+        expect(decoded.value.displayInfoSize).toBe(512)
+        expect(decoded.value.liveViewImageSize).toBe(jpeg.length)
+        expect(decoded.value.liveViewImage).toEqual(jpeg)
+        expect(decoded.value.videoRecordingInfo).toBeUndefined()
+        expect(decoded.value.imagingTemperatureStatus).toBeUndefined()
+        expect(decoded.value.afFrameData.length).toBe(512 - 56)
     })
 
     it('bounds declared media at a nonzero offset and preserves modern recording telemetry', () => {

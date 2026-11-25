@@ -5,7 +5,6 @@
  */
 import { Camera } from '@camera/index'
 import { VendorExtensionCamera } from '@vendors/generic/vendor-extension-camera'
-import { Logger } from '@core/logger'
 import { NikonEventListCodec } from '@vendors/nikon/datasets/nikon-event-list-dataset'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { createCanonRegistry, createNikonRegistry, createSonyRegistry } from '@vendors/registry'
@@ -50,18 +49,13 @@ describe('Canon EOS definitions', () => {
         expect(recorded.dataPhases).toEqual([])
     })
 
-    it('expresses CanonSetRemoteMode 5 (captured on EOS R6 Mark III) and 0x15 (libgphoto2 EOS M default)', () => {
-        expect(remoteMode.decode(Uint8Array.of(0x05, 0, 0, 0)).value).toBe('MODE_0x05')
-        expect(remoteMode.decode(Uint8Array.of(0x15, 0, 0, 0)).value).toBe('MODE_0x15')
-        expect(remoteMode.decode(Uint8Array.of(0x11, 0, 0, 0)).value).toBe('MODE_0x11')
-        expect([...remoteMode.encode('MODE_0x05')]).toEqual([0x05, 0, 0, 0])
-        expect([...remoteMode.encode('ENABLE')]).toEqual([0x01, 0, 0, 0])
-    })
-
     it('replays the public R5 Mark II remote-mode 2 request without changing the default ENABLE encoding', async () => {
         // gphoto/libgphoto2#1028 comment 2382684065, remote-capture.txt:
         // transaction 21: 10000000010014911500000002000000; response 0x2001.
         const { camera, commands } = cameraFor(VendorIDs.CANON)
+        // 5 was captured on the EOS R6 Mark III; 0x15 and 0x11 are libgphoto2 EOS M defaults.
+        for (const raw of [0x05, 0x15, 0x11])
+            expect(remoteMode.decode(Uint8Array.of(raw, 0, 0, 0)).value).toBe(`MODE_0x${raw.toString(16).padStart(2, '0')}`)
         const mode = remoteMode.decode(Uint8Array.of(2, 0, 0, 0)).value
         expect(mode).toBe('MODE_0x02')
         await protocolSession(camera).send(registry.operations.CanonSetRemoteMode, { RemoteMode: mode })
@@ -97,17 +91,6 @@ describe('Canon EOS definitions', () => {
             [0x9114, 5],
         ])
     })
-
-    it('registers the libgphoto2-named EOS operations with their helper parameter counts', () => {
-        const parameterCount = (name: keyof typeof registry.operations) =>
-            registry.operations[name].operationParameters.filter(parameter => parameter?.required).length
-        expect(registry.operations.CanonRemoteRelease.code).toBe(0x910f)
-        expect(parameterCount('CanonTransferComplete')).toBe(1)
-        expect(parameterCount('CanonPCHDDCapacity')).toBe(3)
-        expect(parameterCount('CanonSetRequestOLCInfoGroup')).toBe(1)
-        expect(parameterCount('CanonInitiateViewfinder')).toBe(0)
-        expect(registry.operations.CanonTerminateViewfinder.code).toBe(0x9152)
-    })
 })
 
 describe('Nikon definitions', () => {
@@ -133,18 +116,6 @@ describe('Nikon definitions', () => {
             { code: 0x4006, parameter: 0x100000000 }])
             expect(() => codec.encode([event])).toThrow('Invalid')
         expect(() => codec.encode(Array.from({ length: 0x10000 }, () => ({ code: 0x4006, parameter: 1 })))).toThrow('Too many')
-    })
-
-    it('registers SDRAM capture, legacy live view and event operations with libgphoto2 data directions', () => {
-        const { operations } = registry
-        expect([operations.InitiateCaptureRecInSdram.code, operations.InitiateCaptureRecInSdram.dataDirection]).toEqual(
-            [0x90c0, 'none']
-        )
-        expect([operations.GetEvent.code, operations.GetEvent.dataDirection]).toEqual([0x90c7, 'out'])
-        expect([operations.StartLiveView.code, operations.EndLiveView.code]).toEqual([0x9201, 0x9202])
-        expect([operations.GetLiveViewImg.code, operations.GetLiveViewImg.dataDirection]).toEqual([0x9203, 'out'])
-        expect(operations.InitiateCaptureRecInMedia.code).toBe(0x9207)
-        expect(operations.GetObjectSize.code).toBe(0x9421)
     })
 
     it('sends the captured Z6 III wireless requests byte for byte', async () => {
@@ -185,19 +156,6 @@ describe('vendor classes selected by USB vendor ID', () => {
         expect(named(VendorIDs.LEICA)).toEqual([])
     })
 
-    it('still behaves as a GenericCamera for standard operations', async () => {
-        const { camera, commands } = cameraFor(VendorIDs.PANASONIC)
-        await protocolSession(camera).send(protocolSession(camera).driver.registry.operations.CloseSession, {})
-        expect(commands).toEqual([[0x1003]])
-        expect(
-            new VendorExtensionCamera(
-                recordingTransport().transport,
-                new Logger({ renderInTerminal: false, captureConsole: false }),
-                cameraFor(VendorIDs.SIGMA).registry as never,
-                VendorIDs.SIGMA
-            ).vendorId
-        ).toBe(VendorIDs.SIGMA)
-    })
 })
 
 

@@ -1,19 +1,17 @@
 /**
  * The typed video settings (videoFormat, videoQuality, frameRate, audioRecording) on simulated
- * Sony, Canon and Nikon bodies whose replies are encoded with the real codecs: a confirmed write,
- * a refused value, an unavailable setting and a write the camera never shows.
+ * Sony, Canon and Nikon bodies whose replies are encoded with the real codecs: canonical names and
+ * a confirmed write. The refused, unsupported and unknown outcomes are the matrix in typed-settings.test.ts.
  */
 import type { CanonCamera } from '@vendors/canon/canon-camera'
-import { resolveCameraControl } from '@camera/controls'
-import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import type { PTPRegistry } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import type { AudioRecording, FrameRate, VideoFormat, VideoQuality } from '@camera/settings/values'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { canonAllowedValues, canonEvents, canonValue } from '@tests/fixtures/canon-events'
 import { concatenate, encodedDeviceInfo, fakeTransport as transport, sonyPropertyInventory } from '@tests/fixtures/camera-fixtures'
@@ -45,7 +43,6 @@ function sonyCamera() {
         // AudioRecording, raw 1; its value meanings are undocumented, so Slate does not map it.
         [0xd0d2, { type: 2, value: 1, choices: [1, 0], enabled: 1 }],
     ])
-    const body = { applies: true }
     const writes: [number, number][] = []
     const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(registry, []) }
@@ -53,7 +50,7 @@ function sonyCamera() {
             const record = records.get(parameters.DevicePropCode!)!
             const value = record.type === 2 ? registry.codecs.uint8.decode(data!).value : registry.codecs.uint16.decode(data!).value
             writes.push([parameters.DevicePropCode!, value])
-            if (body.applies) record.value = value
+            record.value = value
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('SDIO_GetAllExtDevicePropInfo')
@@ -61,7 +58,7 @@ function sonyCamera() {
         return { code: 0x2001, data: sonyPropertyInventory(registry, inventory) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    return { camera, records, body, writes }
+    return { camera, records, writes }
 }
 
 describe('Sony typed video settings', () => {
@@ -88,29 +85,6 @@ describe('Sony typed video settings', () => {
         expect(writes).toEqual([])
     })
 
-    it('refuses a value the camera does not offer now, before anything is sent', async () => {
-        const { camera, writes } = sonyCamera()
-        await expect(camera.setFrameRate('120p')).rejects.toBeInstanceOf(CameraRefusedError)
-        await expect(camera.setVideoQuality('150M 4:2:0 10-bit')).rejects.toBeInstanceOf(CameraRefusedError)
-        expect(writes).toEqual([])
-    })
-
-    it('reports a greyed-out setting as unsupported', async () => {
-        const { camera, records } = sonyCamera()
-        records.get(0xd286)!.enabled = 0
-        await expect(camera.setFrameRate('24p')).rejects.toBeInstanceOf(CameraUnsupportedError)
-    })
-
-    it('reports a write the camera acknowledged but never showed as an unknown outcome, sent once', async () => {
-        vi.useFakeTimers()
-        const { camera, body, writes } = sonyCamera()
-        body.applies = false
-        const result = camera.setFrameRate('60p').catch(error => error)
-        await vi.advanceTimersByTimeAsync(10000)
-        expect(await result).toBeInstanceOf(CameraOutcomeUnknownError)
-        expect(writes).toEqual([[0xd286, 3]])
-    })
-
     it('does not name a raw value no codec knows', async () => {
         const { camera, records } = sonyCamera()
         records.get(0xd286)!.value = 0xfe
@@ -123,7 +97,7 @@ function canonCamera() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
     const driver = protocolSession(camera).driver as CanonCamera
     const sound = driver.registry.properties.CanonMovieSoundRecording.code
-    const body = { value: 2, choices: [1, 2, 3], applies: true }
+    const body = { value: 2, choices: [1, 2, 3] }
     const writes: number[] = []
     const send = async (operation: OperationDefinition, _parameters: unknown, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(driver.registry, []) }
@@ -131,7 +105,7 @@ function canonCamera() {
             const view = new DataView(data!.buffer, data!.byteOffset, data!.byteLength)
             expect(view.getUint32(4, true)).toBe(sound)
             writes.push(view.getUint32(8, true))
-            if (body.applies) body.value = view.getUint32(8, true)
+            body.value = view.getUint32(8, true)
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('CanonGetEventData')
@@ -139,7 +113,7 @@ function canonCamera() {
         return { code: 0x2001, data: canonEvents(driver.registry, records) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    return { camera, body, writes }
+    return { camera, writes }
 }
 
 describe('Canon typed audio recording', () => {
@@ -152,18 +126,6 @@ describe('Canon typed audio recording', () => {
             'On (manual level)',
         ])
         expect(await camera.setAudioRecording('Off')).toBe('Off')
-        expect(writes).toEqual([1])
-    })
-
-    it('refuses a choice the body does not advertise and reports an unobserved write as unknown', async () => {
-        vi.useFakeTimers()
-        const { camera, body, writes } = canonCamera()
-        body.choices = [1, 2]
-        await expect(camera.setAudioRecording('On (manual level)')).rejects.toBeInstanceOf(CameraRefusedError)
-        body.applies = false
-        const result = camera.setAudioRecording('Off').catch(error => error)
-        await vi.advanceTimersByTimeAsync(5000)
-        expect(await result).toBeInstanceOf(CameraOutcomeUnknownError)
         expect(writes).toEqual([1])
     })
 
@@ -198,28 +160,5 @@ describe('Nikon typed video settings', () => {
         }) as never)
         for (const read of [() => camera.getVideoFormat(), () => camera.getFrameRate(), () => camera.getAudioRecording()])
             await expect(read()).rejects.toBeInstanceOf(CameraUnsupportedError)
-    })
-})
-
-describe('video setting vocabulary', () => {
-    it('finds each setting by the words people and vendors use', () => {
-        expect(resolveCameraControl('codec')).toBe('videoFormat')
-        expect(resolveCameraControl('movie format')).toBe('videoFormat')
-        expect(resolveCameraControl('movieSetting')).toBe('videoQuality')
-        expect(resolveCameraControl('bit rate')).toBe('videoQuality')
-        expect(resolveCameraControl('fps')).toBe('frameRate')
-        expect(resolveCameraControl('movieFrameRate')).toBe('frameRate')
-        expect(resolveCameraControl('sound')).toBe('audioRecording')
-    })
-
-    it('types each setter with the codec names', () => {
-        const camera = new Camera({ vendorId: 0x054c, transport: transport() })
-        expectTypeOf(camera.setFrameRate).parameter(0).toEqualTypeOf<FrameRate>()
-        expectTypeOf(camera.getVideoFormat).returns.resolves.toEqualTypeOf<VideoFormat>()
-        expectTypeOf(camera.getVideoQuality).returns.resolves.toEqualTypeOf<VideoQuality>()
-        expectTypeOf(camera.setAudioRecording).parameter(0).toEqualTypeOf<AudioRecording>()
-        expectTypeOf<'24p'>().toMatchTypeOf<FrameRate>()
-        expectTypeOf<'Full HD 25 fps · MP4 · IPB (Standard)'>().toMatchTypeOf<VideoFormat>()
-        expectTypeOf<'camera-specific-0'>().not.toMatchTypeOf<AudioRecording>()
     })
 })

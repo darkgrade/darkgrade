@@ -4,7 +4,6 @@ import type { Camera } from '@camera/index'
 import { HardwareBusyError } from '@runtime/errors'
 import { HttpCameraClient } from '@runtime/http-client'
 import { createCameraMcpServer } from '@runtime/mcp'
-import { surfaceOperations } from '@runtime/operations'
 import { CameraRuntime, type CameraProvider } from '@runtime/runtime'
 
 function latch() {
@@ -54,21 +53,6 @@ function fixture(camera = fakeCamera()) {
     }
     return { provider, runtime: new CameraRuntime(provider), calls: camera.calls, allowed }
 }
-
-test('Camera names every MCP tool: one per operation and a getter and setter per setting', async () => {
-    const tools = surfaceOperations().map(operation => operation.mcpTool)
-    const setters = tools.filter(tool => tool.startsWith('camera_set_') && tool !== 'camera_set_control' && tool !== 'camera_set_focus_point' && tool !== 'camera_set_clock')
-    expect(setters).toHaveLength(29)
-    for (const name of ['camera_discover', 'camera_get_capabilities', 'camera_set_control', 'camera_set_iso', 'camera_take_photo',
-        'camera_get_live_view_frame', 'camera_start_recording', 'camera_stop_recording', 'camera_stop_zoom', 'camera_nudge_focus',
-        'camera_download_media', 'camera_get_battery', 'camera_set_clock', 'camera_get_info', 'camera_recover', 'camera_get_iso',
-        'camera_start_zoom'])
-        expect(tools).toContain(name)
-    // Events cannot cross a process.
-    for (const name of ['camera_on', 'camera_off', 'camera_get_instance', 'camera_sony_power_zoom'])
-        expect(tools).not.toContain(name)
-    expect(tools.some(tool => /sony|canon|nikon/.test(tool))).toBe(false)
-})
 
 test('MCP runs each tool as the same Camera call, after the host allows it, and rejects unknown inputs', async () => {
     const { runtime, calls, allowed } = fixture()

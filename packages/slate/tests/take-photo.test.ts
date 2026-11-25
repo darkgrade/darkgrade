@@ -12,10 +12,10 @@ import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { canonEvents, canonObjectAdded } from '@tests/fixtures/canon-events'
+import { canonEvents, canonObjectAdded, canonValue } from '@tests/fixtures/canon-events'
 import { sonyContentList } from '@tests/fixtures/sony-content-list'
 import { decodeMediaId, encodeMediaId, type MediaReference } from '@vendors/generic/media-id'
-import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { encodedDeviceInfo, encodedObjectInfo, fakeTransport } from '@tests/fixtures/camera-fixtures'
 
@@ -90,6 +90,9 @@ function sonyBody() {
         cardIndex: 'lists' as 'lists' | 'unsupported' | 'never',
         movieMode: false,
         restoresMovieMode: true,
+        exposureProgram: 'Movie Manual',
+        /** Exposure programs written, in order. */
+        modeChanges: [] as string[],
     }
     const resumeShooting = vi.spyOn(driver, 'resumeShooting').mockResolvedValue()
     // The save destination reads as writable again once the body has finished with the shot.
@@ -97,7 +100,7 @@ function sonyBody() {
     vi.spyOn(driver, 'refreshPropertyStates').mockImplementation(async () => {
         propertyCache.set(driver.registry.properties.StillImageSaveDestination.code, { vendorExtensions: { enabled: true } })
         if (!body.movieMode) return []
-        return [{ code: 0x500e, value: 'Movie Manual', rawValue: 0x8050, allowedValues: ['Manual', 'Movie Manual'] }] as never
+        return [{ code: 0x500e, value: body.exposureProgram, rawValue: 0x8050, allowedValues: ['Manual', 'Movie Manual'] }] as never
     })
     // Live view is the driver's own business here; the release sequence is under test.
     Object.assign(driver, { startLiveView: async () => undefined, stopLiveView: async () => undefined })
@@ -107,8 +110,11 @@ function sonyBody() {
         return 'CAMERA_DEVICE' as never
     })
     vi.spyOn(driver, 'set').mockImplementation(async (property, value) => {
-        if (property.name === 'ExposureProgramMode' && value === 'Movie Manual' && !body.restoresMovieMode)
-            throw new Error('Sony answered 0x2019 restoring Movie Manual')
+        if (property.name === 'ExposureProgramMode') {
+            body.modeChanges.push(String(value))
+            if (value === 'Movie Manual' && !body.restoresMovieMode) throw new Error('Sony answered 0x2019 restoring Movie Manual')
+            body.exposureProgram = String(value)
+        }
         if (property.name !== 'ShutterReleaseButton' || value !== 'DOWN') return
         body.presses++
         if (body.delivers) emit(driver, { code: 0xc201, parameters: [0xffffc001] })
@@ -183,15 +189,35 @@ function canonBody() {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
     const driver = protocolSession(camera).driver as CanonCamera
     driver.sessionId = 1
-    const body = { queued: [] as Uint8Array[], refuses: false, writes: true, presses: 0, focusPresses: [] as string[] }
-    vi.spyOn(driver, 'listUnknownPropertyStates').mockReturnValue([])
+    const body = {
+        queued: [] as Uint8Array[],
+        refuses: false,
+        writes: true,
+        presses: 0,
+        focusPresses: [] as string[],
+        /** FixedMovie as the body reports it; undefined when the body reports none. */
+        movie: undefined as boolean | undefined,
+        /** Movie select switches, in order. */
+        modeChanges: [] as string[],
+    }
+    vi.spyOn(driver, 'leaveMovieMode').mockImplementation(async () => {
+        body.modeChanges.push('photo')
+        body.movie = false
+    })
+    vi.spyOn(driver, 'enterMovieMode').mockImplementation(async () => {
+        body.modeChanges.push('video')
+        body.movie = true
+    })
     vi.spyOn(driver, 'getObject').mockResolvedValue(jpeg)
     const send: Send = async (operation, parameters) => {
         if (operation.name === 'GetDeviceInfo') return { code: 0x2001, data: deviceInfo(camera) }
         if (operation.name === 'GetStorageIDs') return { code: 0x2001, data: [CARD_STORAGE] }
-        if (operation.name === 'CanonGetEventData')
-            return { code: 0x2001, data: canonEvents(driver.registry, body.queued.splice(0)) }
+        if (operation.name === 'CanonGetEventData') {
+            const fixedMovie = body.movie === undefined ? [] : [canonValue(0xd1c2, body.movie ? 1 : 0)]
+            return { code: 0x2001, data: canonEvents(driver.registry, [...fixedMovie, ...body.queued.splice(0)]) }
+        }
         if (operation.name === 'CanonRemoteReleaseOn' && parameters.ReleaseMode === 'SHUTTER') {
+            expect(body.movie).not.toBe(true)
             body.presses++
             body.focusPresses.push(String(parameters.AFMode))
             // DeviceBusy at an AF full press: the body could not lock focus.
@@ -391,6 +417,22 @@ describe('takePhoto outcomes around the release', () => {
         expect(presses()).toBe(1)
     })
 
+    it.each([
+        ['Sony', 'confirmed', sonyBody, ['Manual', 'Movie Manual']],
+        ['Sony', 'refused', sonyBody, ['Manual', 'Movie Manual']],
+        ['Canon', 'confirmed', canonBody, ['photo', 'video']],
+        ['Canon', 'refused', canonBody, ['photo', 'video']],
+    ] as const)('%s leaves movie mode for the release and restores it after a %s photo', async (vendor, outcome, simulate, changes) => {
+        const { camera, body, refuse } = simulate()
+        if ('exposureProgram' in body) body.movieMode = true
+        else body.movie = true
+        if (outcome === 'refused') refuse()
+        const result = await camera.takePhoto().catch(error => error)
+        if (outcome === 'refused') expect(result).toBeInstanceOf(CameraRefusedError)
+        else expect(result).toMatchObject({ destination: 'card', name: vendor === 'Sony' ? 'DSC00001.JPG' : 'IMG_0002.JPG' })
+        expect(body.modeChanges).toEqual(changes)
+    }, 15000)
+
     it('returns a Sony photo without a media id when the body offers no card index', async () => {
         const { camera, body, presses } = sonyBody()
         body.cardIndex = 'unsupported'
@@ -452,17 +494,5 @@ describe('takePhoto requests a camera cannot do', () => {
         const outcome = await camera.takePhoto({ destination: destination as 'card' }).catch(error => error)
         expect(outcome).toBeInstanceOf(CameraRefusedError)
         expect(presses()).toBe(0)
-    })
-
-    it('types the photo by destination', () => {
-        const camera = new Camera({ transport: transport() })
-        // Type-only: never called, so nothing reaches the transport.
-        const cardId = () => camera.takePhoto().then(photo => photo.mediaId)
-        expectTypeOf(cardId).returns.resolves.toEqualTypeOf<string | undefined>()
-        const computerBytes = () => camera.takePhoto({ destination: 'computer' }).then(photo => photo.data)
-        expectTypeOf(computerBytes).returns.resolves.toEqualTypeOf<Uint8Array>()
-        // @ts-expect-error A card photo carries no bytes.
-        const cardBytes = () => camera.takePhoto({ destination: 'card' }).then(photo => photo.data)
-        void cardBytes
     })
 })

@@ -20,15 +20,13 @@ describe('Sony Bluetooth remote', () => {
         await remote.capture()
         expect(writes).toEqual([[1, 7], [1, 9], [1, 6], [1, 8]])
     })
-    it('releases both stages when the shutter press fails', async () => {
-        const { remote, writes } = fixture(2)
-        await expect(remote.capture()).rejects.toThrow()
+    it.each([
+        ['the shutter press', 2],
+        ['the half release', 3],
+    ])('releases both stages in order when %s fails', async (_stage, failingWrite) => {
+        const { remote, writes } = fixture(failingWrite)
+        await expect(remote.capture()).rejects.toThrow('write failed')
         expect(writes).toEqual([[1, 7], [1, 9], [1, 6], [1, 8]])
-    })
-    it('attempts full release even if half release fails', async () => {
-        const { remote, writes } = fixture(3)
-        await expect(remote.capture()).rejects.toThrow()
-        expect(writes.at(-1)).toEqual([1, 8])
     })
     it('stops a bounded BULB exposure with a second shutter press', async () => {
         const { remote, writes, delays } = fixture()

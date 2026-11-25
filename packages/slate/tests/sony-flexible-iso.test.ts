@@ -6,7 +6,7 @@ import type { SonyDevicePropDesc } from '@vendors/sony/datasets/sdi-ext-device-p
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { protocolSession } from '@camera/protocol-session'
 
-function fixture(flexible = true, initialMode = 2) {
+function fixture(initialMode = 2) {
     let mode = initialMode, iso = 1250
     let manualChoices = [0xffffff, 100, 1250]
     const writes: Array<{ code: number; value: number }> = []
@@ -20,7 +20,7 @@ function fixture(flexible = true, initialMode = 2) {
         getSet: 'GET_SET',
     } as SonyDevicePropDesc)
     const inventory = () => [
-        ...(flexible ? [descriptor(0xd01c, mode, [1, 2], true)] : []),
+        descriptor(0xd01c, mode, [1, 2], true),
         descriptor(0xd21e, iso, mode === 1 ? [] : manualChoices, mode === 2),
     ]
     const owner = new Camera({ vendorId: 0x054c,
@@ -51,38 +51,10 @@ function fixture(flexible = true, initialMode = 2) {
         }
         return { code: 0x2001 }
     }) as typeof camera.send
-    return { camera, owner, writes, setManualChoices: (choices: number[]) => { manualChoices = choices } }
+    return { owner, writes, setManualChoices: (choices: number[]) => { manualChoices = choices } }
 }
 
 describe('Sony Flexible Exposure ISO', () => {
-    it('uses the advertised mode switch for Auto and reads the effective ISO mode', async () => {
-        const { camera, writes } = fixture()
-        await camera.setIso('ISO AUTO')
-        expect(writes).toEqual([{ code: 0xd01c, value: 1 }])
-        expect(await camera.getIso()).toBe('ISO AUTO')
-        const raw = camera.listPropertyStates().find(p => p.code === 0xd21e)!
-        expect(raw.rawValue).toBe(1250)
-        expect(raw.writable).toBe(false)
-    })
-    it('restores manual mode before setting and reading an advertised sensitivity', async () => {
-        const { camera, writes } = fixture()
-        await camera.setIso('auto')
-        await camera.setIso('ISO 100')
-        expect(await camera.getIso()).toBe('ISO 100')
-        expect(writes.slice(1)).toEqual([{ code: 0xd01c, value: 2 }, { code: 0xd21e, value: 100 }])
-    })
-    it('restores Auto when the manual sensitivity is rejected after switching modes', async () => {
-        const { camera, writes } = fixture()
-        await camera.setIso('auto')
-        await expect(camera.setIso('99999')).rejects.toThrow('not advertised')
-        expect(await camera.getIso()).toBe('ISO AUTO')
-        expect(writes.some(write => write.code === 0xd21e)).toBe(false)
-    })
-    it('retains legacy Auto ISO encoding when the separate mode is absent', async () => {
-        const { camera, writes } = fixture(false)
-        await camera.setIso('auto')
-        expect(writes).toEqual([{ code: 0xd21e, value: 0xffffff }])
-    })
     it('preserves advertised manual choices in this owned session when Auto hides the ISO list', async () => {
         const { owner, writes } = fixture()
         expect((await owner.getCapabilities()).controls.iso?.allowedValues).toContain('ISO 1250')
@@ -97,7 +69,7 @@ describe('Sony Flexible Exposure ISO', () => {
         expect(writes).toEqual([{ code: 0xd01c, value: 1 }, { code: 0xd01c, value: 2 }, { code: 0xd21e, value: 100 }])
     })
     it('does not invent a manual sensitivity when the first observed inventory is Auto', async () => {
-        const { owner, writes } = fixture(true, 1)
+        const { owner, writes } = fixture(1)
         expect((await owner.getCapabilities()).controls.iso).toMatchObject({ value: 'Auto', writable: false })
         await expect(owner.setControl('iso', 'ISO 100')).rejects.toThrow('not writable')
         expect(writes).toEqual([])

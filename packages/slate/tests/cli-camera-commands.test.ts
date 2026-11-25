@@ -43,6 +43,7 @@ describe('darkgrade camera commands', () => {
         for (const name of ['on', 'off', 'discover', 'get-instance']) expect(cameraCommandOperations.has(name)).toBe(false)
         expect(resolveCommand(['camera', 'watch']).path.at(-1)?.name).toBe('watch')
         expect(resolveCommand(['camera', 'start-zoom']).path.at(-1)?.flags?.map(flag => flag.name)).toContain('duration')
+        expect(resolveCommand(['camera', 'start-recording']).path.at(-1)?.flags?.map(flag => flag.name)).toEqual(['duration', 'camera', 'json'])
         expect(resolveCommand(['cameras']).path.at(-1)?.name).toBe('cameras')
         expect([...cameraCommandOperations.keys()].some(name => /sony|canon|nikon/.test(name))).toBe(false)
     })

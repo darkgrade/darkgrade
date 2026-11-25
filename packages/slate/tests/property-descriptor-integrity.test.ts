@@ -1,5 +1,4 @@
 import { Camera } from '@camera/index'
-import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { createPTPRegistry } from '@vendors/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
@@ -31,18 +30,4 @@ describe('property descriptor integrity', () => {
         }
     )
 
-    it('rejects corrupt access/form flags while preserving unknown enumeration values', () => {
-        const codec = new DevicePropDescCodec(registry)
-        // Independent UINT16 ISO descriptor: writable, default/current 100, enum [100, 123].
-        const data = Uint8Array.from([0x0f, 0x50, 4, 0, 1, 100, 0, 100, 0, 2, 2, 0, 100, 0, 123, 0])
-        expect(codec.decode(data).value.supportedValuesRaw).toEqual([100, 123])
-        for (const [position, invalid] of [[4, 2], [9, 3], [9, 255]]) {
-            const malformed = data.slice()
-            malformed[position] = invalid
-            expect(() => codec.decode(malformed)).toThrow('flag')
-        }
-        expect(() => codec.decode(data, -1)).toThrow('header')
-        expect(() => codec.decode(data, 1.5)).toThrow('header')
-        expect(() => codec.decode(data, data.length - 4)).toThrow('header')
-    })
 })

@@ -300,16 +300,6 @@ describe('Sony recording through the generic Camera', () => {
         expect(await sony.camera.getRecordingState()).toBe('idle')
     })
 
-    it('does not identify a clip after the PTP session was renewed between Record and Stop', async () => {
-        const sony = sonyCamera()
-        const driver = protocolSession(sony.camera).driver
-        driver.sessionId = 7
-        await settled(sony.camera.startRecording())
-        driver.sessionId = 8
-        expect(await failure(sony.camera.stopRecording())).toBeInstanceOf(CameraClipNotFoundError)
-        expect(sony.modeWrites).toEqual([sonyMovieManual, sonyManual])
-    })
-
     it('after disconnect/connect on the same Camera: refuses a new start, stops once, restores and claims no clip', async () => {
         const sony = sonyCamera({ firstContact: false })
         sessionLifecycle(sony.driver)

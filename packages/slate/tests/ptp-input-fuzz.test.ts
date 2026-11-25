@@ -62,6 +62,18 @@ describe('reproducible PTP input fuzzing', () => {
         }
     })
 
+    it('rejects corrupt standard descriptor access/form flags and header offsets, keeping unknown enum values', () => {
+        const seed = seeds[0]
+        const data = Uint8Array.from(seed.bytes)
+        expect(new DevicePropDescCodec(registry).decode(data).value.supportedValuesRaw).toEqual([100, 200])
+        for (const [position, invalid] of [[4, 2], [9, 3], [9, 255]]) {
+            const malformed = data.slice()
+            malformed[position] = invalid
+            expect(() => seed.codec.decode(malformed), `byte ${position} = ${invalid}`).toThrow('flag')
+        }
+        for (const offset of [-1, 1.5, data.length - 4]) expect(() => seed.codec.decode(data, offset)).toThrow('header')
+    })
+
     it('rejects all reserved Sony descriptor form flags', () => {
         const seed = seeds[1]
         for (let flag = 3; flag <= 255; flag++) {

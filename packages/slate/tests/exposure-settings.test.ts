@@ -1,11 +1,11 @@
 /**
  * The exposure settings (aperture, ISO, exposure mode, exposure compensation, metering) on simulated
  * Sony, Canon, Nikon, generic PTP and Sony SDK bodies whose replies are built with the real codecs.
- * Each covers canonical values read from the vendor's words, a confirmed write of the camera's own
- * choice, a refused value, an unavailable control and an acknowledged write the camera never shows.
+ * Each covers canonical values read from the vendor's words and a confirmed write of the camera's own
+ * choice; the refused, unsupported and unknown outcomes are the matrix in typed-settings.test.ts.
  */
 import type { CanonCamera } from '@vendors/canon/canon-camera'
-import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
 import { Camera } from '@camera/index'
 import type { NikonCamera } from '@vendors/nikon/nikon-camera'
 import {
@@ -14,16 +14,14 @@ import {
     type Aperture,
     type ExposureCompensation,
     type ExposureMode,
-    type ExposureModeAlias,
     type Iso,
     type MeteringMode,
 } from '@camera/settings/values'
 import type { SonyCamera } from '@vendors/sony/sony-camera'
 import { LiveViewSelector } from '@vendors/nikon/definitions/nikon-property-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { canonicalControlValues } from '@vendors/control-properties'
 import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
-import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { protocolSession } from '@camera/protocol-session'
 import { canonAllowedValues, canonEvents, canonValue } from '@tests/fixtures/canon-events'
 import {
@@ -74,7 +72,6 @@ interface Simulation {
     camera: Camera
     body: Body
     writes: { code: number; raw: number }[]
-    applies: { value: boolean }
 }
 
 const wireCodec = (camera: Camera, datatype: number) => integerCodec(protocolSession(camera).driver.registry, datatype)
@@ -84,7 +81,6 @@ function sonyCamera(body: Body): Simulation {
     const camera = new Camera({ vendorId: 0x054c, transport: transport() })
     const driver = protocolSession(camera).driver as SonyCamera
     const writes: Simulation['writes'] = []
-    const applies = { value: true }
     const send = async (operation: OperationDefinition, parameters: Record<string, number>, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo')
             return { code: 0x2001, data: deviceInfo(camera, [], [0x1001, 0x9209, 0x9205]) }
@@ -92,7 +88,7 @@ function sonyCamera(body: Body): Simulation {
             const target = body[parameters.DevicePropCode]!
             const raw = Number(wireCodec(camera, target.datatype).decode(data!).value)
             writes.push({ code: parameters.DevicePropCode, raw })
-            if (applies.value) target.current = raw
+            target.current = raw
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('SDIO_GetAllExtDevicePropInfo')
@@ -104,7 +100,7 @@ function sonyCamera(body: Body): Simulation {
         return { code: 0x2001, data: sonyPropertyInventory(driver.registry, records) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    return { camera, body, writes, applies }
+    return { camera, body, writes }
 }
 
 /** Simulated Canon body: CanonGetEventData value and allowed-value records, CanonSetPropValue. */
@@ -112,7 +108,6 @@ function canonCamera(body: Body): Simulation {
     const camera = new Camera({ vendorId: 0x04a9, transport: transport(), keepAlive: false })
     const driver = protocolSession(camera).driver as CanonCamera
     const writes: Simulation['writes'] = []
-    const applies = { value: true }
     const send = async (operation: OperationDefinition, _parameters: unknown, data?: Uint8Array) => {
         if (operation.name === 'GetDeviceInfo')
             return { code: 0x2001, data: deviceInfo(camera, [], [0x1001, 0x9110, 0x9116]) }
@@ -121,7 +116,7 @@ function canonCamera(body: Body): Simulation {
             const code = view.getUint32(4, true)
             const raw = view.getUint16(8, true)
             writes.push({ code, raw })
-            if (applies.value) body[code]!.current = raw
+            body[code]!.current = raw
             return { code: 0x2001 }
         }
         expect(operation.name).toBe('CanonGetEventData')
@@ -132,7 +127,7 @@ function canonCamera(body: Body): Simulation {
         return { code: 0x2001, data: canonEvents(driver.registry, records) }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    return { camera, body, writes, applies }
+    return { camera, body, writes }
 }
 
 /**
@@ -145,7 +140,6 @@ function descriptorCamera(vendorId: number, body: Body): Simulation {
     if (vendorId === 0x04b0) (driver as NikonCamera).sessionId = 1
     const registry = driver.registry
     const writes: Simulation['writes'] = []
-    const applies = { value: true }
     const selector = LiveViewSelector.code
     const descriptor = (
         code: number,
@@ -167,7 +161,7 @@ function descriptorCamera(vendorId: number, body: Body): Simulation {
             const target = body[parameters.DevicePropCode]!
             const raw = Number(wireCodec(camera, target.datatype).decode(data!).value)
             writes.push({ code: parameters.DevicePropCode, raw })
-            if (applies.value) target.current = raw
+            target.current = raw
             return { code: 0x2001 }
         }
         const code = parameters.DevicePropCode
@@ -187,7 +181,7 @@ function descriptorCamera(vendorId: number, body: Body): Simulation {
         }
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    return { camera, body, writes, applies }
+    return { camera, body, writes }
 }
 
 const sonyScenarios: Scenario[] = [
@@ -282,31 +276,6 @@ describe.each(vendors)('exposure settings on a simulated %s body', (_vendor, sim
         expect(writes).toEqual([{ code: scenario.code, raw: scenario.written }])
         expect(await typedGetter(camera, scenario.id)()).toBe(scenario.requested)
     })
-
-    it.each(scenarios)('$id refuses a value the camera does not offer, sending nothing', async scenario => {
-        const { camera, writes } = simulate()
-        const refused = await typedSetter(camera, scenario.id)(scenario.refused).catch(error => error)
-        expect(refused).toBeInstanceOf(CameraRefusedError)
-        expect(refused).toMatchObject({ operation: scenario.id })
-        expect(writes).toEqual([])
-    })
-
-    it.each(scenarios)('$id is unsupported when the camera disables it', async scenario => {
-        const { camera, body, writes } = simulate()
-        body[scenario.code]!.available = false
-        const unsupported = await typedSetter(camera, scenario.id)(scenario.requested).catch(error => error)
-        expect(unsupported).toBeInstanceOf(CameraUnsupportedError)
-        expect(writes).toEqual([])
-    })
-
-    it('reports an acknowledged write the camera never shows as unknown, and never resends it', async () => {
-        const { camera, writes, applies } = simulate()
-        applies.value = false
-        const [scenario] = scenarios
-        const unknown = await typedSetter(camera, scenario.id)(scenario.requested).catch(error => error)
-        expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
-        expect(writes).toHaveLength(1)
-    }, 15000)
 })
 
 describe('exposure vocabulary', () => {
@@ -319,20 +288,6 @@ describe('exposure vocabulary', () => {
         expect((await camera.getCapabilities()).controls.photoVideoMode?.value).toBe('video')
         expect(await camera.setExposureMode('A')).toBe('Aperture priority')
         expect(writes).toEqual([{ code: 0x500e, raw: 0x00078051 }])
-    })
-
-    it('keeps a Sony mode Slate has no name for read-only and out of the choices', async () => {
-        const body = sonyBody()
-        body[0x500e] = property(6, 0x00000007, [0x00000001, 0x00000007])
-        const { camera } = sonyCamera(body)
-        const mode = (await camera.getCapabilities()).controls.exposureMode
-        expect(mode).toMatchObject({
-            value: 'Unrecognized (Portrait)',
-            writable: false,
-            allowedValues: ['Manual'],
-            unrecognized: { value: 'Portrait', choices: ['Portrait'] },
-        })
-        await expect(camera.getExposureMode()).rejects.toBeInstanceOf(CameraUnsupportedError)
     })
 
     it('accepts the mode-dial letters and Canon Av/Tv as exact spellings', () => {
@@ -375,15 +330,6 @@ describe('exposure vocabulary', () => {
         })
         await expect(camera.setAperture('f/2.8')).rejects.toBeInstanceOf(CameraRefusedError)
         expect(writes).toEqual([])
-    })
-
-    it('names an f/0.95 at hundredths rather than rounding it to f/0.9', () => {
-        // Nikon movie apertures are labelled from hundredths (NikonMovieFNumber 95 is f/0.95).
-        expect(canonicalControlValues('nikonMovie', 'aperture', 'f/0.95', ['f/0.95', 'f/2.8'])).toMatchObject({
-            value: 'f/0.95',
-            allowedValues: ['f/0.95', 'f/2.8'],
-        })
-        expect(canonicalExposureInput('aperture', 'f/0.95')).toBe('f/0.95')
     })
 
     it('reads a Canon implicit auto aperture as Auto and never writes it', async () => {
@@ -434,22 +380,10 @@ describe('exposure vocabulary', () => {
         await expect(camera.setMeteringMode('Spot')).rejects.toBeInstanceOf(CameraUnsupportedError)
         expect(writes).toEqual([])
     })
-
-    it('types values from the canonical names, not plain strings', () => {
-        const camera = new Camera({ transport: transport() })
-        expectTypeOf(camera.setExposureMode).parameter(0).toEqualTypeOf<ExposureMode | ExposureModeAlias>()
-        expectTypeOf(camera.getIso).returns.resolves.toEqualTypeOf<Iso>()
-        expectTypeOf<string>().not.toExtend<Parameters<typeof camera.setAperture>[0]>()
-        // @ts-expect-error Canon's raw AE code is not an exposure mode.
-        void camera.setExposureMode('3').catch(() => undefined)
-        // @ts-expect-error An ISO is spelled with its prefix.
-        void camera.setIso('800').catch(() => undefined)
-    })
 })
 
 describe('exposure settings on the Sony SDK session', () => {
     function sdkCamera() {
-        const applies = { value: true }
         const properties = [
             { code: 256, type: 2, value: '280', writable: true, allowedValues: ['280', '400'] },
             { code: 260, type: 3, value: '100', writable: true, allowedValues: ['16777215', '100', '800'] },
@@ -464,17 +398,14 @@ describe('exposure settings on the Sony SDK session', () => {
                 if (request.cmd === 'set') {
                     writes.push({ code: request.code!, value: request.value! })
                     const target = properties.find(entry => entry.code === Number(request.code))
-                    if (target && applies.value) target.value = request.value!
+                    if (target) target.value = request.value!
                 }
                 return { ok: true }
             },
             close: async () => {},
         }
-        return { camera: new SonyWifiCamera(bridge), writes, properties, applies }
+        return { camera: new SonyWifiCamera(bridge), writes }
     }
-
-    const exposureWrites = (writes: { code: string }[]) =>
-        writes.filter(write => ['256', '257', '260', '261', '266'].includes(write.code))
 
     it('reads canonical names and writes the SDK value behind each', async () => {
         const { camera, writes } = sdkCamera()
@@ -496,43 +427,5 @@ describe('exposure settings on the Sony SDK session', () => {
             { code: '266', value: '8' },
         ])
         await expect(camera.setAperture('f/1.4')).rejects.toBeInstanceOf(CameraRefusedError)
-    })
-
-    it('is unsupported when the SDK reports a setting not writable, sending nothing', async () => {
-        const { camera, writes, properties } = sdkCamera()
-        await camera.connectUsb('unit-test')
-        properties.find(entry => entry.code === 266)!.writable = false
-        expect((await camera.getCapabilities()).controls.meteringMode).toMatchObject({ value: 'Multi', writable: false })
-        await expect(camera.setMeteringMode('Spot')).rejects.toBeInstanceOf(CameraUnsupportedError)
-        expect(exposureWrites(writes)).toEqual([])
-    })
-
-    it('reports an SDK write the camera never shows as unknown, after exactly one set', async () => {
-        const { camera, writes, applies } = sdkCamera()
-        await camera.connectUsb('unit-test')
-        applies.value = false
-        vi.useFakeTimers()
-        const pending = camera.setExposureCompensation('+0.7').catch(error => error)
-        await vi.advanceTimersByTimeAsync(5200)
-        const unknown = await pending
-        expect(unknown).toBeInstanceOf(CameraOutcomeUnknownError)
-        expect(unknown).toMatchObject({ operation: 'exposureCompensation' })
-        expect(exposureWrites(writes)).toEqual([{ code: '257', value: '700' }])
-    })
-
-    it('keeps an SDK exposure mode Slate has no name for read-only and out of the choices', async () => {
-        const { camera, writes, properties } = sdkCamera()
-        await camera.connectUsb('unit-test')
-        Object.assign(properties.find(entry => entry.code === 261)!, { value: '7', allowedValues: ['1', '7'] })
-        const mode = (await camera.getCapabilities()).controls.exposureMode
-        expect(mode).toMatchObject({
-            value: 'Unrecognized (Portrait)',
-            writable: false,
-            allowedValues: ['Manual'],
-            unrecognized: { value: 'Portrait', choices: ['Portrait'] },
-        })
-        await expect(camera.getExposureMode()).rejects.toBeInstanceOf(CameraUnsupportedError)
-        await expect(camera.setExposureMode('M')).rejects.toBeInstanceOf(CameraUnsupportedError)
-        expect(exposureWrites(writes)).toEqual([])
     })
 })

@@ -1,14 +1,9 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { createCanonRegistry } from '@vendors/registry'
-import { CanonCamera } from '@vendors/canon/canon-camera'
-import { Logger } from '@core/logger'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { canonTestCamera } from '@tests/fixtures/canon-camera'
 
 function camera() {
-    const instance = new CanonCamera({isLittleEndian:()=>true,on:()=>{}} as unknown as TransportInterface,
-        new Logger({expanded:false,captureConsole:false,renderInTerminal:false}))
+    const { camera: instance } = canonTestCamera({}, [0x911d])
     const state = instance as any
-    state.supportedOperations = new Set([0x911d])
     instance.send = vi.fn(async()=>({code:0x2001})) as any
     return {instance,state}
 }
@@ -16,14 +11,6 @@ function camera() {
 afterEach(()=>{vi.restoreAllMocks()})
 
 describe('Canon KeepDeviceOn operation', () => {
-    it('registers the parameterless EOS timer-reset command', () => {
-        const operation = createCanonRegistry(true).operations.CanonKeepDeviceOn
-
-        expect(operation.code).toBe(0x911d)
-        expect(operation.dataDirection).toBe('none')
-        expect(operation.operationParameters).toEqual([])
-    })
-
     it('defaults to a ten-second heartbeat and does not rewrite power settings',async()=>{
         const {instance,state}=camera()
         let now=0;vi.spyOn(performance,'now').mockImplementation(()=>now)

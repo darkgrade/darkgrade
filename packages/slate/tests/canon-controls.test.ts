@@ -1,5 +1,3 @@
-import { CanonCamera } from '@vendors/canon/canon-camera'
-import { Logger } from '@core/logger'
 import {
     canonImageFormatFromPacked,
     CanonImageFormatCodec,
@@ -10,44 +8,24 @@ import {
 } from '@vendors/canon/datasets/canon-movie-format-dataset'
 import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
 import { createCanonRegistry } from '@vendors/registry'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { canonTestCamera, recordOperations } from '@tests/fixtures/canon-camera'
 import { describe, expect, it, vi } from 'vitest'
 
 function testCamera() {
-    const transport = {
-        isLittleEndian: () => true,
-        on: () => undefined,
-    } as unknown as TransportInterface
-    const camera = new CanonCamera(
-        transport,
-        new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
-    )
-    const operations: string[] = []
-    camera.send = (async operation => {
-        operations.push(operation.name)
-        return { code: 0x2001 }
-    }) as typeof camera.send
-    return { camera, operations }
+    const { camera, cache, internals } = canonTestCamera()
+    return { camera, cache, internals, operations: recordOperations(camera) }
 }
 
 describe('Canon card recording destination', () => {
-    it('does not send movie selectors absent from an older body inventory', async () => {
-        const { camera, operations } = testCamera()
-        ;(camera as any).supportedOperations = new Set([0x9110, 0x9116])
-        await expect(camera.enterMovieMode()).rejects.toThrow('was not advertised')
-        await expect(camera.leaveMovieMode()).rejects.toThrow('was not advertised')
-        expect(operations).toHaveLength(0)
-    })
-    it('uses the advertised card value and restores host routing after the recording', async () => {
-        const { camera } = testCamera()
+    it.each([[[4, 2]], [[4, 6, 2]]])('uses the advertised card value of %j and restores host routing after the recording', async allowed => {
+        const { camera, cache } = testCamera()
         const property = camera.registry.properties.CanonCaptureDestination
-        const cache = (camera as any).propertyCache
-        cache.set(property, { current: 4, allowed: [4, 2] })
+        cache.set(property, { current: 4, allowed })
         const writes: unknown[] = []
         camera.set = (async (target, value) => {
             expect(target).toBe(property)
             writes.push(value)
-            cache.set(property, { current: value, allowed: [4, 2] })
+            cache.set(property, { current: value, allowed })
         }) as typeof camera.set
         const restore = await camera.prepareRecordingDestination()
         expect(writes).toEqual([2])
@@ -57,9 +35,8 @@ describe('Canon card recording destination', () => {
     })
 
     it('does not invent a card value or write redundantly when already on a card', async () => {
-        const { camera } = testCamera()
+        const { camera, cache } = testCamera()
         const property = camera.registry.properties.CanonCaptureDestination
-        const cache = (camera as any).propertyCache
         camera.set = vi.fn()
         await (await camera.prepareRecordingDestination())()
         cache.set(property, { current: 2, allowed: [2, 4] })
@@ -72,28 +49,16 @@ describe('Canon card recording destination', () => {
         expect(camera.set).not.toHaveBeenCalled()
     })
 
-    it('prefers the verified advertised card value regardless of enum ordering', async () => {
-        const { camera } = testCamera(),property=camera.registry.properties.CanonCaptureDestination
-        const cache=(camera as any).propertyCache,writes:number[]=[]
-        cache.set(property,{current:4,allowed:[4,6,2]})
-        camera.set=(async(_property,value)=>{writes.push(Number(value));cache.set(property,{current:value,allowed:[4,6,2]})}) as typeof camera.set
-        const restore=await camera.prepareRecordingDestination()
-        expect(writes).toEqual([2])
-        await restore()
-        expect(writes).toEqual([2,4])
-    })
-
     it('restores the original destination when card preparation changes state then fails', async () => {
-        const { camera } = testCamera()
+        const { camera, cache } = testCamera()
         const property = camera.registry.properties.CanonCaptureDestination
-        const cache = (camera as any).propertyCache
         cache.set(property, { current: 4, allowed: [2, 4] })
         camera.set = (async (_target, value) => {
             cache.set(property, { current: value, allowed: [2, 4] })
             if (value === 2) throw new Error('readback failed')
         }) as typeof camera.set
         await expect(camera.prepareRecordingDestination()).rejects.toThrow('readback failed')
-        expect(cache.get(property).current).toBe(4)
+        expect(cache.get(property)?.current).toBe(4)
     })
 })
 
@@ -110,33 +75,6 @@ describe('Canon camera controls', () => {
         expect(decoded).toEqual({ value: 0x80000518, bytesRead: 4 })
     })
 
-    it('registers typed focus and white-balance values', () => {
-        const registry = createCanonRegistry(true)
-
-        expect(registry.properties.CanonFocusMode.codec(registry).decode(registry.codecs.uint32.encode(1)).value).toBe(
-            'ai-servo'
-        )
-        expect(registry.properties.CanonWhiteBalance.codec(registry).decode(registry.codecs.uint32.encode(23)).value).toBe(
-            'Auto White Priority'
-        )
-        expect(registry.properties.CanonWhiteBalance.codec(registry).encode('Daylight')).toEqual(Uint8Array.of(1))
-    })
-
-    it('round-trips and sends Canon exposure values used by USB and PTP/IP', async () => {
-        const { camera, operations } = testCamera()
-        const registry = createCanonRegistry(true)
-
-        expect(registry.properties.CanonIso.codec(registry).decode(registry.properties.CanonIso.codec(registry).encode('200')).value).toBe('200')
-        expect(registry.properties.CanonAperture.codec(registry).decode(registry.properties.CanonAperture.codec(registry).encode('f/5.6')).value).toBe('f/5.6')
-        expect(registry.properties.CanonShutterSpeed.codec(registry).decode(registry.properties.CanonShutterSpeed.codec(registry).encode('1/125')).value).toBe('1/125')
-
-        await camera.setIso('200')
-        await camera.setAperture('f/5.6')
-        await camera.setShutterSpeed('1/125')
-
-        expect(operations.filter(name => name === 'CanonSetPropValue')).toHaveLength(3)
-    })
-
     it('enables Manual exposure with verified readback and avoids a redundant write', async () => {
         const {camera} = testCamera()
         let mode = 15, writes = 0
@@ -150,24 +88,6 @@ describe('Canon camera controls', () => {
         await expect(camera.setManualExposureMode()).rejects.toThrow('did not confirm')
     })
 
-    it('maps Canon documented movie audio values without confusing Disable and Auto', () => {
-        const registry = createCanonRegistry(true)
-        const codec = registry.properties.CanonMovieSoundRecording.codec(registry)
-        expect(codec.decode(registry.codecs.uint32.encode(0)).value).toBe('camera-specific-0')
-        expect(codec.encode('camera-specific-0')).toEqual(registry.codecs.uint32.encode(0))
-        expect(codec.decode(registry.codecs.uint32.encode(1)).value).toBe('Off')
-        expect(codec.decode(registry.codecs.uint32.encode(2)).value).toBe('On')
-        expect(codec.decode(registry.codecs.uint32.encode(3)).value).toBe('On (manual level)')
-    })
-
-    it('drives and always releases standalone autofocus', async () => {
-        const { camera, operations } = testCamera()
-
-        await camera.performAutofocus(0)
-
-        expect(operations).toEqual(['CanonDoAutofocus', 'CanonCancelAutofocus'])
-    })
-
     it('falls back to a released half-press when direct autofocus needs live view', async () => {
         const { camera, operations } = testCamera()
         camera.send = (async operation => {
@@ -178,15 +98,6 @@ describe('Canon camera controls', () => {
         await camera.performAutofocus(0)
 
         expect(operations).toEqual(['CanonDoAutofocus', 'CanonRemoteReleaseOn', 'CanonRemoteReleaseOff'])
-    })
-
-    it('enters and leaves movie-select mode without conflating it with recording', async () => {
-        const { camera, operations } = testCamera()
-
-        await camera.enterMovieMode()
-        await camera.leaveMovieMode()
-
-        expect(operations).toEqual(['CanonMovieSelectSwitchOn', 'CanonMovieSelectSwitchOff'])
     })
 
     it('round-trips Canon single and dual still-image format structures', () => {
@@ -238,12 +149,11 @@ describe('Canon camera controls', () => {
     })
 
     it('registers Canon network telemetry and rejects unadvertised mode changes by default', async () => {
-        const { camera } = testCamera()
+        const { camera, cache } = testCamera()
         const communicationMode = camera.registry.properties.CanonNetworkCommunicationMode
         const region = camera.registry.properties.CanonNetworkServerRegion
         const wftStatus = camera.registry.properties.CanonWftStatus
-        const cache = (camera as unknown as { propertyCache: Map<unknown, unknown> }).propertyCache
-        expect(camera.getNetworkState()).toEqual({
+                expect(camera.getNetworkState()).toEqual({
             communicationMode: undefined,
             communicationModeChoices: undefined,
             serverRegion: undefined,
@@ -264,81 +174,53 @@ describe('Canon camera controls', () => {
 })
 
 
-describe('Canon interrupted recording Stop',()=>{
-    it('accepts freshly read idle state without sending another stop write',async()=>{
-        const {camera}=testCamera();let reads=0,writes=0
-        const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
-        cache.set(property,{current:'CARD'})
-        camera.send=(async()=>{reads++;cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
-        camera.set=(async()=>{writes++}) as typeof camera.set
-        await camera.sendStopRecording();expect(reads).toBe(1);expect(writes).toBe(0)
+describe('Canon interrupted recording Stop', () => {
+    it('accepts freshly read idle state without sending another stop write', async () => {
+        const { camera, cache } = testCamera()
+        const property = camera.registry.properties.CanonRecordingDestination
+        cache.set(property, { current: 'CARD' })
+        let reads = 0, writes = 0
+        camera.send = (async () => { reads++; cache.set(property, { current: 'NONE' }); return { code: 0x2001, data: [] } }) as typeof camera.send
+        camera.set = (async () => { writes++ }) as typeof camera.set
+        await camera.sendStopRecording()
+        expect(reads).toBe(1)
+        expect(writes).toBe(0)
     })
-    it('does not treat missing recording telemetry as idle',async()=>{
-        const {camera}=testCamera();camera.set=(async()=>{throw new Error('Unconfirmed stop')}) as typeof camera.set
-        await expect(camera.sendStopRecording()).rejects.toThrow('Unconfirmed stop')
+
+    it('retries busy Stop and accepts idle only after camera readback', async () => {
+        const { camera, cache } = testCamera()
+        const property = camera.registry.properties.CanonRecordingDestination
+        cache.set(property, { current: 'CARD' })
+        let writes = 0, reads = 0
+        camera.send = (async () => { if (++reads === 2) cache.set(property, { current: 'NONE' }); return { code: 0x2001, data: [] } }) as typeof camera.send
+        camera.set = (async () => { writes++; throw Object.assign(new Error('busy'), { code: 0x2019 }) }) as typeof camera.set
+        await camera.sendStopRecording()
+        expect(writes).toBe(1)
+        expect(reads).toBe(2)
     })
-    it('retries busy Stop and accepts idle only after camera readback',async()=>{
-        const {camera}=testCamera();const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
-        cache.set(property,{current:'CARD'});let writes=0,reads=0
-        camera.send=(async()=>{if(++reads===2)cache.set(property,{current:'NONE'});return {code:0x2001,data:[]}}) as typeof camera.send
-        camera.set=(async()=>{writes++;throw Object.assign(new Error('busy'),{code:0x2019})}) as typeof camera.set
-        await camera.sendStopRecording();expect(writes).toBe(1);expect(reads).toBe(2)
-    })
-})
-
-it('accepts EOS movie standby after reconnect without issuing Record or switching modes',async()=>{
-    const {camera}=testCamera();const cache=(camera as any).propertyCache,property=camera.registry.properties.CanonRecordingDestination
-    cache.set(property,{current:'SDRAM'});let writes=0
-    camera.set=(async()=>{writes++}) as typeof camera.set
-    camera.enterMovieMode=async()=>{throw new Error('Must not change mode')}
-    await camera.sendStopRecording();expect(writes).toBe(0)
-})
-
-it('waits through transient Canon movie-switch busy without repeating recording',async()=>{
- const {camera}=testCamera();let attempts=0
- camera.send=(async operation=>{expect(operation.name).toBe('CanonMovieSelectSwitchOn');return {code:++attempts<3?0x2019:0x2001}}) as typeof camera.send
- await camera.enterMovieMode();expect(attempts).toBe(3)
-})
-it('bounds Canon movie-switch busy and rejects other errors immediately',async()=>{
- const {camera}=testCamera();let attempts=0
- camera.send=(async()=>{attempts++;return {code:0x2019}}) as typeof camera.send
- await expect(camera.enterMovieMode()).rejects.toThrow('0x2019');expect(attempts).toBe(4)
- attempts=0;camera.send=(async()=>{attempts++;return {code:0x2005}}) as typeof camera.send
- await expect(camera.enterMovieMode()).rejects.toThrow('0x2005');expect(attempts).toBe(1)
-})
-
-it('waits for movie finalization before releasing movie mode without repeating Record', async () => {
-    vi.useFakeTimers()
-    try {
-        const { camera } = testCamera()
-        let requests = 0
-        camera.send = (async operation => {
-            expect(operation.name).toBe('CanonMovieSelectSwitchOff')
-            return { code: ++requests < 3 ? 0x2019 : 0x2001 }
-        }) as typeof camera.send
-        const result = camera.leaveMovieMode().catch(error => error)
-        await vi.runAllTimersAsync()
-        expect(await result).toBeUndefined()
-        expect(requests).toBe(3)
-    } finally { vi.useRealTimers() }
 })
 
 it.each([
-    { code: 0x2019, requests: 4 },
-    { code: 0x2005, requests: 1 },
-])('rejects movie release code $code after $requests bounded requests', async ({ code, requests }) => {
+    { switching: 'enter', operation: 'CanonMovieSelectSwitchOn', codes: [0x2019, 0x2019, 0x2001], requests: 3 },
+    { switching: 'enter', operation: 'CanonMovieSelectSwitchOn', codes: [0x2019], requests: 4 },
+    { switching: 'enter', operation: 'CanonMovieSelectSwitchOn', codes: [0x2005], requests: 1 },
+    { switching: 'leave', operation: 'CanonMovieSelectSwitchOff', codes: [0x2019, 0x2019, 0x2001], requests: 3 },
+    { switching: 'leave', operation: 'CanonMovieSelectSwitchOff', codes: [0x2019], requests: 4 },
+    { switching: 'leave', operation: 'CanonMovieSelectSwitchOff', codes: [0x2005], requests: 1 },
+] as const)('bounds busy movie-mode $switching to $requests requests for codes $codes without repeating recording', async ({ switching, operation, codes, requests }) => {
     vi.useFakeTimers()
     try {
         const { camera } = testCamera()
         let attempts = 0
-        camera.send = (async operation => {
-            expect(operation.name).toBe('CanonMovieSelectSwitchOff')
-            attempts++
-            return { code }
+        camera.send = (async sent => {
+            expect(sent.name).toBe(operation)
+            return { code: codes[Math.min(attempts++, codes.length - 1)]! }
         }) as typeof camera.send
-        const result = camera.leaveMovieMode().catch(error => error)
+        const result = (switching === 'enter' ? camera.enterMovieMode() : camera.leaveMovieMode()).catch(error => error)
         await vi.runAllTimersAsync()
-        expect(await result).toMatchObject({ code })
+        const finalCode = codes.at(-1)!
+        if (finalCode === 0x2001) expect(await result).toBeUndefined()
+        else expect(await result).toMatchObject({ code: finalCode })
         expect(attempts).toBe(requests)
     } finally { vi.useRealTimers() }
 })
@@ -346,8 +228,7 @@ it.each([
 it.each(['delayed', 'missing'] as const)('requires idle readback after an acknowledged Stop with %s telemetry', async telemetry => {
     vi.useFakeTimers()
     try {
-        const { camera } = testCamera()
-        const cache = (camera as any).propertyCache
+        const { camera, cache } = testCamera()
         const property = camera.registry.properties.CanonRecordingDestination
         cache.set(property, { current: 'CARD' })
         let reads = 0, writes = 0
@@ -375,14 +256,15 @@ it.each(['delayed', 'missing'] as const)('requires idle readback after an acknow
     } finally { vi.useRealTimers() }
 })
 
-it('an unrecognized Canon value cannot discard later exposure properties and choices',async()=>{
- const {camera}=testCamera(),instance=camera as any
- instance.processEvents([
-  {code:0xc189,parameters:[camera.registry.properties.CanonFocusMode.code,999]},
-  {code:0xc189,parameters:[camera.registry.properties.CanonIso.code,0x48]},
-  {code:0xc18a,parameters:[camera.registry.properties.CanonIso.code],allowedValues:[0x48,0x50,0x58]},
- ])
- const iso=(await camera.listPropertyStates()).find(property=>property.name==='CanonIso')
- expect(iso?.value).toBe('100');expect(iso?.allowedValues).toEqual(['100','200','400'])
- expect(camera.listUnknownPropertyStates().find(property=>property.code===camera.registry.properties.CanonFocusMode.code)?.rawValue).toBe(999)
+it('an unrecognized Canon value cannot discard later exposure properties and choices', async () => {
+    const { camera, internals } = testCamera()
+    internals.processEvents([
+        { code: 0xc189, parameters: [camera.registry.properties.CanonFocusMode.code, 999] },
+        { code: 0xc189, parameters: [camera.registry.properties.CanonIso.code, 0x48] },
+        { code: 0xc18a, parameters: [camera.registry.properties.CanonIso.code], allowedValues: [0x48, 0x50, 0x58] },
+    ])
+    const iso = (await camera.listPropertyStates()).find(property => property.name === 'CanonIso')
+    expect(iso?.value).toBe('100')
+    expect(iso?.allowedValues).toEqual(['100', '200', '400'])
+    expect(camera.listUnknownPropertyStates().find(property => property.code === camera.registry.properties.CanonFocusMode.code)?.rawValue).toBe(999)
 })

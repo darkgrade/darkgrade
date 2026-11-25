@@ -17,7 +17,6 @@
         "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
         "test": "vitest run",
         "e2e": "bun e2e/run-each-camera.ts",
-        "e2e:dry-run": "DARKGRADE_E2E_FAKE=1 playwright test -c e2e/playwright.config.ts",
         "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
         "lint": "eslint . --ext .ts,.tsx",
         "format": "prettier --write .",

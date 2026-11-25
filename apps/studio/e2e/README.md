@@ -15,7 +15,6 @@ bun run --cwd apps/studio build          # the walk runs out/main/index.js
 bun run --cwd apps/studio e2e            # once per attached camera, each inside the camera lease
 DARKGRADE_CAMERA=054c:0e78 bun run --cwd apps/studio e2e   # one body
 DARKGRADE_E2E_VISION=1 bun run --cwd apps/studio e2e       # also flip Depth Pro and SAM 3 (may download models)
-bun run --cwd apps/studio e2e:dry-run    # no Studio, no camera: a fake that must fail at "wait for the camera"
 bun run --cwd apps/studio typecheck:e2e
 ```
 

@@ -63,15 +63,9 @@ The USB capture retained only a preview of the large image transfer and has one 
 
 Artifacts and the leased/locked hardware runner are in `/home/darkgrade02/canon-r6-iii-audit`. SDK probes use the official API; Darkgrade probes use the shared camera lock. The runner calls MCP status/readiness, starts and heartbeats an agent job, creates a labelled trace, stops/pins it, probes afterward, and finishes the job. Do not invoke hardware tests outside those guards while the dashboard may use the camera.
 
-```sh
-~/.bun/bin/bun run ~/canon-r6-iii-audit/run-bench.ts \
-  'Darkgrade: Canon USB live-view JPEG and output restore' \
-  /home/darkgrade02/darkgrade-canon-r6-iii/packages/slate/tests/14_canon.ts \
-  /home/darkgrade02/canon-r6-iii-audit/live-view-check.json \
-  --live-view --output /tmp/canon-live-view.jpg
-```
-
-The existing `bench:canon` script also accepts `--round-trip-iso`, `--round-trip-aperture`, `--round-trip-shutter-speed`, `--round-trip-white-balance`, `--round-trip-color-temperature`, `--round-trip-live-view-af`, and `--round-trip-live-view-zoom`. Run one labelled capability per trace. The zoom probe restores its observed initial magnification.
+The Darkgrade probe used here, `tests/14_canon.ts` (`bench:canon`, with `--live-view` and
+`--round-trip-*` flags), was removed on 2026-11-25. Re-check the public API on the body with
+`bun run --cwd packages/slate camera:api-check -- --only canon` inside the same guards.
 
 Library API (renamed on 2026-11-24, when the Canon-named Camera methods left the public API; the
 traces below were recorded with the earlier names):

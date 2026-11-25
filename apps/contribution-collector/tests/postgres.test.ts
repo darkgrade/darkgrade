@@ -196,7 +196,7 @@ test('Matrix pages use a bounded database snapshot and preserve watermark, revie
 })
 
 test(
-    'session lists page across tied timestamps and review queues omit reviewed and withdrawn sources',
+    'session typeahead searches every session and review queues omit reviewed and withdrawn sources',
     { skip: !process.env.DATABASE_URL },
     async () => {
         const database = await postgresDatabase(process.env.DATABASE_URL!)
@@ -211,21 +211,13 @@ test(
         }))
         try {
             assert.equal((await handle(request('/v2/batches', 'POST', user.installKey, payload))).status, 202)
-            const first = await database.operator.report({ days: 1, installation: user.installId })
-            assert.equal(first.sessions.length, 100)
-            assert.ok(first.sessionsNext)
-            const after = JSON.parse(Buffer.from(first.sessionsNext!, 'base64url').toString())
-            const last = await database.operator.report({ days: 1, installation: user.installId, after })
-            assert.equal(last.sessions.length, 11)
-            assert.equal(last.sessionsNext, null)
-            assert.equal(new Set([...first.sessions, ...last.sessions].map(row => row.session_id)).size, 111)
             const suggestions = await database.operator.suggestions('session', '', {
                 days: 1,
                 installation: user.installId,
             })
             assert.equal(suggestions.items.length, 20)
             assert.equal(suggestions.more, true)
-            const olderId = last.sessions[0].session_id
+            const olderId = payload.contributions[0].entries.at(-1)!.sessionId!
             const older = await database.operator.suggestions('session', olderId, {
                 days: 1,
                 installation: user.installId,

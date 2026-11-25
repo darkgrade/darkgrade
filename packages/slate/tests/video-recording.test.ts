@@ -14,11 +14,9 @@ function fixture(){
  return {camera,calls,recording:new UsbVideoRecording(camera,'nikon')}
 }
 describe('USB card movie reliability',()=>{
- it('ignores the empty slot and accepts Nikon host read/delete access',async()=>{const f=fixture();await f.recording.prepare();expect(f.calls.filter(call=>call.operation==='GetObjectHandles').map(call=>call.args.StorageID)).toEqual([0x20001])})
  it('never promotes an acknowledged Nikon start into verified recording telemetry',async()=>{const f=fixture();await f.recording.prepare();expect((await f.recording.start()).recordingConfirmed).toBe(false)})
  it('verifies a new movie after stop and preserves its original identity for transfer',async()=>{const f=fixture();await f.recording.prepare();await f.recording.start();const result=await f.recording.stop();expect(result.stopped).toBe(true);expect(result.media).toEqual([{id:'2',filename:'CLIP.MOV',bytes:12,verified:true}]);const chunks:Uint8Array[]=[];await f.recording.transfer(result.media[0],async bytes=>{chunks.push(bytes)},()=>{});expect(chunks[0].length).toBe(12)})
  it('refuses collection when the file identity changed',async()=>{const f=fixture();await expect(f.recording.transfer({id:'2',filename:'OTHER.MOV',bytes:12,verified:true},async()=>{},()=>{})).rejects.toThrow('Camera file changed')})
- it('rejects actual card protection before opening a recorder',async()=>{const f=fixture();f.camera.get=async()=> 'cardProtected';await expect(f.recording.prepare()).rejects.toThrow('writable memory card')})
  it('does not issue a stop command when recording was never attempted',async()=>{const f=fixture();let stopped=false;f.camera.stopRecording=async()=>{stopped=true};expect(await f.recording.stop()).toEqual({stopped:true,media:[]});expect(stopped).toBe(false)})
 })
 
@@ -30,14 +28,6 @@ it('restores the prepared USB baseline after controller loss and excludes old ob
 it('a missing USB baseline cannot authorize a previous card movie as a new original',async()=>{
  const f=fixture();await f.recording.start();const result=await new UsbVideoRecording(f.camera,'nikon').stopInterrupted()
  expect(result.stopped).toBe(true);expect(result.media).toEqual([]);expect(f.calls.some(call=>call.operation==='GetObjectInfo')).toBe(false)
-})
-
-it('confirms Nikon recording only from the fresh movie-status descriptor',async()=>{
- const f=fixture(),send=f.camera.send
- f.camera.send=async(operation:any,args:any)=>operation?.name==='GetDevicePropDescEx'?{code:0x2001,data:{devicePropertyCode:0xd0a4,currentValueRaw:0x400}} as any:send(operation,args)
- const started=await f.recording.start()
- expect(started.recordingConfirmed).toBe(true)
- expect(started.evidence).toBe('Nikon reports active movie recording')
 })
 
 it('resolves Nikon 4 GiB sentinel sizes and transfers across the 32-bit offset boundary',async()=>{

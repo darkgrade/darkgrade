@@ -16,6 +16,7 @@ import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { StorageInfoCodec } from '@ptp/datasets/storage-info-dataset'
 import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { canonEvents, canonObjectAdded, canonValue } from '@tests/fixtures/canon-events'
 import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { Registry } from '@vendors/registry'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -348,28 +349,19 @@ function canonCamera(options: { clock?: boolean; thumbnails?: boolean } = {}) {
     const driver = protocolSession(camera).driver as CanonCamera
     driver.sessionId = 3
     const card = standardCard(driver.registry, { identity: { manufacturer: 'Canon Inc.', model: 'Canon EOS R8', firmware: '3-1.5.0' }, ...options })
-    let events: Uint8Array = new Uint8Array([8, 0, 0, 0, 0, 0, 0, 0])
+    let events: Uint8Array[] = []
     const send: Send = async (operation, parameters, data) => {
         if (operation.name === 'CanonGetEventData') {
-            const wire = events
-            events = new Uint8Array([8, 0, 0, 0, 0, 0, 0, 0])
-            return { code: 0x2001, data: new CanonEventDataCodec(driver.registry).decode(wire).value }
+            const records = events
+            events = []
+            return { code: 0x2001, data: canonEvents(driver.registry, records) }
         }
         return card.send(operation, parameters, data)
     }
     vi.spyOn(driver, 'send').mockImplementation(send as never)
-    /** Queue EOS event records for the next GetEvent: [code, property, value] each. */
-    const queueEvents = (records: [number, number, number][]) => {
-        const wire = new Uint8Array(records.length * 16 + 8)
-        const view = new DataView(wire.buffer)
-        records.forEach(([code, propertyCode, value], index) => {
-            view.setUint32(index * 16, 16, true)
-            view.setUint32(index * 16 + 4, code, true)
-            view.setUint32(index * 16 + 8, propertyCode, true)
-            view.setUint32(index * 16 + 12, value, true)
-        })
-        view.setUint32(records.length * 16, 8, true)
-        events = wire
+    /** Queue EOS event records, as the camera sends them, for the next GetEvent. */
+    const queueEvents = (records: Uint8Array[]) => {
+        events = records
     }
     return { camera, driver, emit, queueEvents, ...card }
 }
@@ -470,13 +462,6 @@ describe('card and media on a simulated generic PTP body', () => {
         expect(state.downloads).toEqual([])
     })
 
-    it('refuses a thumbnail the camera will not send', async () => {
-        const { camera, state } = genericCamera()
-        const jpegItem = (await camera.listMedia()).find(item => item.name === 'IMG_0001.JPG')!
-        state.refuseThumbnails = true
-        await expect(camera.getMediaPreview(jpegItem.id)).rejects.toBeInstanceOf(CameraRefusedError)
-    })
-
     it('delivers settingsChanged and mediaAdded from the standard events until off()', async () => {
         const { camera, emit } = genericCamera()
         const settings = vi.fn()
@@ -494,11 +479,6 @@ describe('card and media on a simulated generic PTP body', () => {
         emit({ code: 0x4002, parameters: [0x12], transactionId: 0 })
         expect(settings).toHaveBeenCalledOnce()
         expect(media).toHaveBeenCalledOnce()
-    })
-
-    it('reports make, model, firmware and connection, without guessing a lens mount', async () => {
-        const { camera } = genericCamera()
-        expect(await camera.getInfo()).toEqual({ manufacturer: 'Example Optics', model: 'Model 1', firmware: '2.0', serialNumber: '0001', connection: 'ip' })
     })
 })
 
@@ -632,14 +612,6 @@ describe('a simulated Sony body', () => {
         expect(getObject).toHaveBeenCalledWith(0x22, 0x1_2345_6789, undefined, undefined)
     })
 
-    it('cancels a download between chunks', async () => {
-        const { camera } = sonyCamera()
-        const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
-        const cancel = new AbortController()
-        cancel.abort('cancelled')
-        await expect(camera.downloadMedia(photo.id, { signal: cancel.signal })).rejects.toBe('cancelled')
-    })
-
     it('reopens once on the live-view frame after a download that left the body in playback', async () => {
         const { camera, driver, body } = sonyCamera()
         const reopen = vi.spyOn(driver, 'reopenSession').mockImplementation(async () => {
@@ -742,9 +714,12 @@ describe('a simulated Sony body', () => {
 
     it('sets the clock once and waits for the camera to confirm it', async () => {
         const { camera, body } = sonyCamera()
-        await camera.setClock(new Date(2026, 10, 24, 14, 5, 9))
-        expect(body.dateTimeWrites).toHaveLength(1)
-        expect(body.dateTimeWrites[0]).toMatch(/^20261124T140509\.0[+-]\d{4}$/)
+        const moment = new Date(2026, 10, 24, 14, 5, 9, 456)
+        await camera.setClock(moment)
+        // Local wall time, tenths of a second and the UTC offset, as Sony expects.
+        const offsetMinutes = -moment.getTimezoneOffset()
+        const offset = `${offsetMinutes >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0')}${String(Math.abs(offsetMinutes) % 60).padStart(2, '0')}`
+        expect(body.dateTimeWrites).toEqual([`20261124T140509.4${offset}`])
     })
 
     it('reports a refused clock and an unconfirmed one, each written once', async () => {
@@ -760,11 +735,6 @@ describe('a simulated Sony body', () => {
         vi.spyOn(Date, 'now').mockImplementation(() => (now += 1000))
         await expect(unconfirmed.camera.setClock()).rejects.toBeInstanceOf(CameraOutcomeUnknownError)
         for (const { body } of [refused, rejected, unconfirmed]) expect(body.dateTimeWrites).toHaveLength(1)
-    })
-
-    it('reports its make, model and E mount', async () => {
-        const { camera } = sonyCamera()
-        expect(await camera.getInfo()).toEqual({ manufacturer: 'Sony', model: 'ILCE-7M5', firmware: '1.00', serialNumber: '0001', lensMount: 'E', connection: 'usb' })
     })
 
     it('delivers settingsChanged and mediaAdded from its own event codes until off()', async () => {
@@ -788,32 +758,40 @@ describe('a simulated Sony body', () => {
     })
 })
 
-describe('Canon events, identity and card', () => {
+describe('Canon events', () => {
     it('maps EOS property and new-object records to the public events', async () => {
         const { camera, driver, queueEvents } = canonCamera()
         const settings = vi.fn()
         const media = vi.fn()
         camera.on('settingsChanged', settings)
         camera.on('mediaAdded', media)
-        queueEvents([[0xc189, 0xd101, 5], [0xc181, 0x11, 0]])
+        // The first record of a setting after connect is its baseline, not a change.
+        queueEvents([canonValue(0xd101, 4)])
+        await driver.refreshEventProperties()
+        queueEvents([canonValue(0xd101, 5), canonObjectAdded(0x11, 'IMG_0001.JPG', 1024)])
         await driver.refreshEventProperties()
         expect(settings).toHaveBeenCalledOnce()
         expect(media).toHaveBeenCalledOnce()
         camera.off('settingsChanged')
-        queueEvents([[0xc189, 0xd101, 6]])
+        queueEvents([canonValue(0xd101, 6)])
         await driver.refreshEventProperties()
         expect(settings).toHaveBeenCalledOnce()
     })
+})
 
-    it('reports an RF mount for an EOS R body and lists its card', async () => {
-        const { camera } = canonCamera()
-        expect(await camera.getInfo()).toMatchObject({ manufacturer: 'Canon', model: 'Canon EOS R8', lensMount: 'RF' })
-        expect((await camera.listMedia()).map(item => item.name)).toEqual(['IMG_0002.CR3', 'MVI_0003.MP4', 'IMG_0001.JPG'])
-        expect((await camera.getCardStatus())[0]).toMatchObject({ slot: 1, freeBytes: 32_000_000_000 })
+describe('getInfo', () => {
+    it.each([
+        ['generic PTP', genericCamera, { manufacturer: 'Example Optics', model: 'Model 1', firmware: '2.0', serialNumber: '0001', connection: 'ip' }],
+        ['Sony', sonyCamera, { manufacturer: 'Sony', model: 'ILCE-7M5', firmware: '1.00', serialNumber: '0001', lensMount: 'E', connection: 'usb' }],
+        ['Canon EOS R', canonCamera, { manufacturer: 'Canon', model: 'Canon EOS R8', firmware: '3-1.5.0', serialNumber: '0001', lensMount: 'RF', connection: 'usb' }],
+        ['Nikon Z', nikonCamera, { manufacturer: 'Nikon', model: 'Z 5_2', firmware: '1.10', serialNumber: '0001', lensMount: 'Z', connection: 'usb' }],
+    ] as const)('reports make, model, firmware, connection and only a known lens mount on %s', async (_body, simulate, info) => {
+        expect(await simulate().camera.getInfo()).toEqual(info)
     })
 })
 
 describe.each([
+    ['generic PTP', genericCamera],
     ['Canon', canonCamera],
     ['Nikon', nikonCamera],
 ] as const)('%s thumbnails and downloads', (_vendor, simulate) => {
@@ -839,12 +817,6 @@ describe.each([
         await expect(camera.downloadMedia(jpegItem.id)).rejects.toBeInstanceOf(CameraRefusedError)
         expect(downloadRequests()).toBe(1)
         expect(state.downloads).toEqual([])
-    })
-
-    it('has no larger preview than the thumbnail', async () => {
-        const { camera } = simulate()
-        const jpegItem = (await camera.listMedia()).find(item => item.name === 'IMG_0001.JPG')!
-        await expect(camera.getMediaPreview(jpegItem.id, 'preview')).rejects.toBeInstanceOf(CameraUnsupportedError)
     })
 })
 
@@ -948,11 +920,6 @@ describe('Nikon event pump', () => {
         const result = await driver.captureImage({ destination: 'memory', autofocus: false })
         expect(drainedByAnotherPoll).toBe(true)
         expect(result.data).toEqual(jpeg(7))
-    })
-
-    it('reports a Z mount', async () => {
-        const { camera } = nikonCamera()
-        expect(await camera.getInfo()).toMatchObject({ manufacturer: 'Nikon', lensMount: 'Z' })
     })
 })
 

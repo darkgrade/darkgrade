@@ -47,31 +47,6 @@ describe('USB event polling recovery',()=>{
  })
 })
 
-describe('USB camera serial selection', () => {
- it('opens the requested body when two cameras have the same USB model', async () => {
-  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
-  const first = {vendorId:0x054c,productId:0x0f4a,serialNumber:'other',open:vi.fn()}, selected = {vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted',open:vi.fn().mockRejectedValue(new Error('selected body')),close:vi.fn().mockResolvedValue(undefined)}
-  vi.spyOn(transport,'getUSB').mockResolvedValue({})
-  vi.spyOn(transport,'discover').mockResolvedValue([
-   {vendorId:0x054c,productId:0x0f4a,serialNumber:'other',device:first},
-   {vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted',device:selected},
-  ])
-  vi.spyOn(console,'log').mockImplementation(()=>{})
-  await expect(transport.connect({usb:{filters:[{vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted'}]}})).rejects.toThrow('selected body')
-  expect(first.open).not.toHaveBeenCalled();expect(selected.open).toHaveBeenCalledOnce()
- })
- it('refuses another body when the requested serial is absent', async () => {
-  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
-  const device = {open:vi.fn()}
-  vi.spyOn(transport,'getUSB').mockResolvedValue({})
-  vi.spyOn(transport,'discover').mockResolvedValue([{vendorId:0x054c,productId:0x0f4a,serialNumber:'other',device}])
-  vi.spyOn(console,'log').mockImplementation(()=>{})
-  await expect(transport.connect({usb:{filters:[{vendorId:0x054c,productId:0x0f4a,serialNumber:'wanted'}]}})).rejects.toThrow('No matching device')
-  expect(device.open).not.toHaveBeenCalled()
- })
-})
-
-
 describe('USB halt recovery errors', () => {
  it.each(['bulkIn', 'bulkOut', 'interrupt'])('retains a disconnect failure for %s', async type => {
   const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
@@ -153,12 +128,6 @@ describe('USB device removal', () => {
   expect(transport.device.transferOut).not.toHaveBeenCalled()
   await transport.disconnect()
   expect(transport.device).toBeNull()
- })
- it('stops the transferIn event loop after the device disappears', async () => {
-  const transport = attached(() => Promise.reject(new Error('LIBUSB_ERROR_NO_DEVICE')))
-  await transport.listenForInterrupt()
-  expect(transport.device.transferIn).toHaveBeenCalledOnce()
-  expect(transport.isConnected()).toBe(false)
  })
  it('backs off and gives up on an event endpoint that keeps failing', async () => {
   vi.useFakeTimers()

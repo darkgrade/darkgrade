@@ -3,7 +3,7 @@ import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry } from '@vendors/registry'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ptpContainer } from '@tests/fixtures/ptp-wire'
 
 /**
@@ -100,11 +100,20 @@ function wedgedCamera(wedge: Wedge, options: { absentConnects?: number; deniedRe
 const camera = (transport: object) => new GenericCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false } as any))
 const fast = { stepTimeoutMilliseconds: 150, waitForDeviceMilliseconds: 3_000 }
 
+/** Lets the recovery's timeouts and device waits elapse on the fake clock. */
+async function elapsed<T>(operation: Promise<T>): Promise<T> {
+    await vi.advanceTimersByTimeAsync(10_000)
+    return operation
+}
+
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => vi.useRealTimers())
+
 describe('software camera recovery', () => {
     it('Nikon identity alone does not claim recovery while advertised controls remain denied', async () => {
         const { transport, calls } = wedgedCamera('none', { deniedReady: true })
         const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
-        const report = await instance.recover(undefined, { ...fast, allowPortReset: false })
+        const report = await elapsed(instance.recover(undefined, { ...fast, allowPortReset: false }))
         expect(report.steps.map(step => [step.step, step.ok])).toEqual([['session', false], ['device-reset', true]])
         expect(report.recovered).toBe(true)
         expect(calls).toMatchObject({ deviceResets: 1, portResets: 0 })
@@ -114,7 +123,7 @@ describe('software camera recovery', () => {
     it('Nikon readiness that stays denied remains a failure without a forbidden port reset', async () => {
         const { transport, calls } = wedgedCamera('none', { deniedReady: true, neverReady: true })
         const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
-        const report = await instance.recover(undefined, { ...fast, allowPortReset: false })
+        const report = await elapsed(instance.recover(undefined, { ...fast, allowPortReset: false }))
         expect(report.recovered).toBe(false)
         expect(report.steps.every(step => !step.ok)).toBe(true)
         expect(calls.portResets).toBe(0)
@@ -124,14 +133,14 @@ describe('software camera recovery', () => {
     it('Nikon recovery does not assume an unadvertised readiness operation exists', async () => {
         const { transport, calls } = wedgedCamera('none')
         const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
-        expect((await instance.recover(undefined, fast)).recovered).toBe(true)
+        expect((await elapsed(instance.recover(undefined, fast))).recovered).toBe(true)
         expect(calls.operations).not.toContain(0x90c8)
     })
 
     it('a Nikon offering only file transfer does not claim camera controls were recovered', async () => {
         const { transport, calls } = wedgedCamera('none', { transferOnly: true })
         const instance = new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
-        const report = await instance.recover(undefined, { ...fast, allowPortReset: false })
+        const report = await elapsed(instance.recover(undefined, { ...fast, allowPortReset: false }))
         expect(report.recovered).toBe(false)
         expect(report.steps.every(step => step.detail?.includes('file transfer'))).toBe(true)
         expect(calls.portResets).toBe(0)
@@ -142,14 +151,14 @@ describe('software camera recovery', () => {
         const instance = camera(transport)
         instance.configureTransactions({ timeoutMilliseconds: 20, automaticUSBReset: false, deviceBusyRetries: 0 })
         try {
-            await expect(instance.connect()).rejects.toThrow()
+            await elapsed(expect(instance.connect()).rejects.toThrow())
             expect(calls.portResets).toBe(0)
             expect(calls.deviceResets).toBe(0)
         } finally { await transport.disconnect() }
     })
     it('a responsive camera needs only a fresh session, and the transport is left closed', async () => {
         const { transport, calls } = wedgedCamera('none')
-        const report = await camera(transport).recover(undefined, fast)
+        const report = await elapsed(camera(transport).recover(undefined, fast))
         expect(report).toMatchObject({ recovered: true, needsPhysicalAction: false, identity: { manufacturer: 'Test', model: 'Wedge', firmware: '1.0' } })
         expect(report.steps.map(step => [step.step, step.ok])).toEqual([['session', true]])
         expect(calls.deviceResets + calls.portResets).toBe(0)
@@ -158,7 +167,7 @@ describe('software camera recovery', () => {
 
     it('a session left open by a host that died is closed and reopened without any reset', async () => {
         const { transport, calls } = wedgedCamera('session')
-        const report = await camera(transport).recover(undefined, fast)
+        const report = await elapsed(camera(transport).recover(undefined, fast))
         expect(report.recovered).toBe(true)
         expect(report.steps.map(step => step.step)).toEqual(['session'])
         expect(calls.operations).toContain(0x1003)
@@ -167,7 +176,7 @@ describe('software camera recovery', () => {
 
     it('a camera stuck mid-transaction comes back with a Device Reset, before any port reset', async () => {
         const { transport, calls } = wedgedCamera('device-reset')
-        const report = await camera(transport).recover(undefined, fast)
+        const report = await elapsed(camera(transport).recover(undefined, fast))
         expect(report.steps.map(step => [step.step, step.ok])).toEqual([['session', false], ['device-reset', true]])
         expect(report.recovered).toBe(true)
         expect(calls).toMatchObject({ deviceResets: 1, portResets: 0 })
@@ -175,7 +184,7 @@ describe('software camera recovery', () => {
 
     it('a camera that ignores the Device Reset comes back with a port reset, waiting for it to enumerate again', async () => {
         const { transport, calls } = wedgedCamera('port-reset')
-        const report = await camera(transport).recover(undefined, fast)
+        const report = await elapsed(camera(transport).recover(undefined, fast))
         expect(report.steps.map(step => [step.step, step.ok])).toEqual([['session', false], ['device-reset', false], ['port-reset', true]])
         expect(report).toMatchObject({ recovered: true, needsPhysicalAction: false })
         expect(calls.portResets).toBe(1)
@@ -183,7 +192,7 @@ describe('software camera recovery', () => {
 
     it('explicit recovery can stop after session and device recovery without resetting a USB port', async () => {
         const { transport, calls } = wedgedCamera('port-reset')
-        const report = await camera(transport).recover(undefined, { ...fast, allowPortReset: false })
+        const report = await elapsed(camera(transport).recover(undefined, { ...fast, allowPortReset: false }))
         expect(report.recovered).toBe(false)
         expect(report.steps.map(step => step.step)).toEqual(['session', 'device-reset'])
         expect(calls.portResets).toBe(0)
@@ -192,7 +201,7 @@ describe('software camera recovery', () => {
 
     it('a camera nothing in software can reach is reported as needing a physical action', async () => {
         const { transport } = wedgedCamera('dead')
-        const report = await camera(transport).recover(undefined, fast)
+        const report = await elapsed(camera(transport).recover(undefined, fast))
         expect(report).toMatchObject({ recovered: false, needsPhysicalAction: true })
         expect(report.steps.map(step => step.step)).toEqual(['session', 'device-reset', 'port-reset'])
         expect(report.steps.every(step => !step.ok && step.detail)).toBe(true)
@@ -201,9 +210,9 @@ describe('software camera recovery', () => {
 
     it('a camera still starting up is waited for; one that never appears needs a physical action', async () => {
         const starting = wedgedCamera('none', { absentConnects: 3 })
-        expect((await camera(starting.transport).recover(undefined, fast)).recovered).toBe(true)
+        expect((await elapsed(camera(starting.transport).recover(undefined, fast))).recovered).toBe(true)
         const absent = wedgedCamera('none', { absentConnects: 1_000 })
-        const report = await camera(absent.transport).recover(undefined, { stepTimeoutMilliseconds: 150, waitForDeviceMilliseconds: 600 })
+        const report = await elapsed(camera(absent.transport).recover(undefined, { stepTimeoutMilliseconds: 150, waitForDeviceMilliseconds: 600 }))
         expect(report).toMatchObject({ recovered: false, needsPhysicalAction: true })
         expect(report.steps).toEqual([expect.objectContaining({ step: 'enumerate', ok: false, detail: 'No USB devices available' })])
     })
@@ -212,7 +221,7 @@ describe('software camera recovery', () => {
         const { transport } = wedgedCamera('device-reset')
         const instance = camera(transport)
         instance.configureTransactions({ timeoutMilliseconds: 12_345, deviceBusyRetries: 7 })
-        await instance.recover(undefined, fast)
+        await elapsed(instance.recover(undefined, fast))
         expect((instance as any).channel.policy).toMatchObject({ timeoutMilliseconds: 12_345, deviceBusyRetries: 7, automaticUSBReset: true })
     })
 })

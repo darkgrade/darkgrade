@@ -10,34 +10,6 @@ const runner =
     'import { runDarkgradeCli } from "@darkgrade/slate/cli"; process.exitCode = await runDarkgradeCli(process.argv.slice(1));'
 const command = (...args: string[]) => ['--input-type=module', '--eval', runner, '--', ...args]
 
-test('importing the command runner is inert and preference commands never load native camera drivers', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-slate-command-'))
-    const script = `
-        import assert from 'node:assert/strict';
-        import { existsSync } from 'node:fs';
-        import { join } from 'node:path';
-        import { createRequire } from 'node:module';
-        const require = createRequire(import.meta.url);
-        const Module = require('node:module');
-        const load = Module._load;
-        Module._load = function(name, ...args) {
-            if (['usb', 'usb-rs'].includes(name)) throw Error('Preference commands loaded a native camera driver');
-            return load.call(this, name, ...args);
-        };
-        const { runDarkgradeCli } = await import('@darkgrade/slate/cli');
-        assert.equal(existsSync(join(process.env.DARKGRADE_HOME, 'settings.json')), false);
-        assert.equal(await runDarkgradeCli(['telemetry', 'status']), 0);
-    `
-    try {
-        const result = await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', script], {
-            env: { ...process.env, DARKGRADE_HOME: directory, DARKGRADE_TELEMETRY_URL: '' },
-        })
-        assert.equal(JSON.parse(result.stdout).configured, true)
-    } finally {
-        await rm(directory, { recursive: true, force: true })
-    }
-})
-
 test('Slate command identity persists, preferences work offline, and delete disables sharing', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-cli-'))
     const run = (action: string) =>

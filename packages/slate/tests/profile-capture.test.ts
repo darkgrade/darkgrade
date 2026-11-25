@@ -74,6 +74,7 @@ it('rejects invalid or unintended media recording requests before connecting', a
         { initialize: true, repetitions: 4, liveView: true },
         { initialize: true, takePhoto: { autofocus: false, destination: 'other' } },
         { initialize: true, takePhoto: { autofocus: false, rawCompression: 'lossless' } },
+        { liveView: true },
     ]) {
         const source = fixture()
         await expect(captureCameraProfile(source.transport, {
@@ -266,14 +267,6 @@ describe('explicit profile capture', () => {
         expect(result.transactions.find(item => item.operation === 0x1014)?.response.code).toBe(0x200a)
         expect(commands.at(-1)).toBe(0x1003)
     })
-
-    it('rejects live-view activation without explicit initialization before opening hardware', async () => {
-        const { transport, commands } = fixture()
-        await expect(
-            captureCameraProfile(transport, { vendorId: 0x1234, productId: 1, revision: 'fixture', liveView: true })
-        ).rejects.toThrow('explicit initialization')
-        expect(commands).toEqual([])
-    })
 })
 
 describe('retained payload privacy', () => {
@@ -311,14 +304,6 @@ describe('retained payload privacy', () => {
         })
     })
 
-    it('redacts undocumented Sony connect parameters even when the response is empty', () => {
-        const handshake = transaction(0x9201, new Uint8Array(), [1, 123, 0])
-        expect(sanitizeProfileTransaction(handshake, 0x054c, [])).toMatchObject({
-            parameters: [],
-            redactions: ['authentication-payload'],
-        })
-    })
-
     it('retains only public zero-key phase acknowledgement when Sony returns an opaque unused reply', () => {
         const handshake = transaction(0x9201, Buffer.from('PRIVATE_REPLY'), [2, 0, 0])
         handshake.response.parameters = [123456]
@@ -328,7 +313,7 @@ describe('retained payload privacy', () => {
         })
     })
 
-    it('omits media and authentication bytes, including authentication response words', () => {
+    it('omits media and authentication bytes, including authentication response words and undocumented connect parameters with an empty response', () => {
         const secret = Buffer.from('PRIVATE_PASSWORD')
         const auth = transaction(0x9201, secret, [1, 123, 456])
         auth.response.parameters = [987, 654]
@@ -340,6 +325,10 @@ describe('retained payload privacy', () => {
         })
         expect(output.response.data).toBeUndefined()
         expect(sanitizeProfileTransaction(transaction(0x1009, secret), 0x054c, []).response.data).toBeUndefined()
+        expect(sanitizeProfileTransaction(transaction(0x9201, new Uint8Array(), [1, 123, 0]), 0x054c, [])).toMatchObject({
+            parameters: [],
+            redactions: ['authentication-payload'],
+        })
     })
 
     it('retains only complete safe Canon records and omits opaque bulk event payloads', () => {

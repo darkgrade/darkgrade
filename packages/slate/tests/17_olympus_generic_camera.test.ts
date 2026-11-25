@@ -1,11 +1,9 @@
-import { Camera } from '@camera/index'
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Logger } from '@core/logger'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { PTP_DISCOVERY_VENDORS } from '@transport/usb/usb-transport'
 import { describe, expect, it } from 'vitest'
-import { protocolSession } from '@camera/protocol-session'
 
 /** A GenericCamera whose transactions are answered by `send`, with no transport underneath. */
 function answeredCamera(send: (camera: GenericCamera) => GenericCamera['send']) {
@@ -38,18 +36,8 @@ const batteryLevel = {
 }
 
 describe('Olympus generic PTP support', () => {
-    it('requests Olympus devices during WebUSB discovery and uses the standards-based implementation', () => {
+    it('requests Olympus devices during WebUSB discovery', () => {
         expect(PTP_DISCOVERY_VENDORS).toContainEqual({ vendorId: VendorIDs.OLYMPUS, name: 'Olympus' })
-        const camera = new Camera({ device: { usb: { filters: [{ vendorId: VendorIDs.OLYMPUS, productId: 0x012f }] } } })
-        expect(protocolSession(camera).driver).toBeInstanceOf(GenericCamera)
-    })
-
-    it('returns the decoded current value from a standard property descriptor', async () => {
-        const camera = answeredCamera(() => (async operation => {
-            if (operation.name === 'GetDevicePropDesc') return { code: 0x2001, data: { currentValueDecoded: 'ISO 200' } }
-            throw new Error(`Unexpected operation ${operation.name}`)
-        }) as GenericCamera['send'])
-        await expect(camera.getIso()).resolves.toBe('ISO 200')
     })
 
     it('publishes only standard properties advertised by an Olympus body', async () => {

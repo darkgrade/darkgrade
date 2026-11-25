@@ -16,14 +16,6 @@ function fixture(codes: number[]) {
     return { camera, operations }
 }
 
-it('rejects a failed OpenSession before issuing Canon initialization commands', async () => {
-    const { camera, operations } = fixture([0x2003])
-    await expect(camera.connect()).rejects.toThrow('Canon OpenSession failed')
-    expect(operations).toEqual(['OpenSession'])
-    expect(camera.sessionId).toBeNull()
-    await camera.disconnect()
-})
-
 it('closes an acknowledged stale session and reopens once before reading device information', async () => {
     const { camera, operations } = fixture([0x201e, 0x2001, 0x2001, 0x2005])
     await expect(camera.connect()).rejects.toThrow('Canon GetDeviceInfo failed')

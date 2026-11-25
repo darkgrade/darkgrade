@@ -1,4 +1,3 @@
-import type { Camera } from '@darkgrade/slate'
 import { CameraService } from '@main/camera-service'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -21,7 +20,7 @@ function fixture() {
         getInstance: () => ({}),
     }
     const service = new CameraService()
-    Object.assign(service, { camera: camera as unknown as Camera, connected: true })
+    Object.assign(service, { camera, connected: true })
     vi.spyOn(service, 'scheduleSettingsRefresh').mockImplementation(() => undefined)
     return { service, camera, calls }
 }

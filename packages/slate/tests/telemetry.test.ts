@@ -8,15 +8,23 @@ afterEach(() => {
     vi.unstubAllGlobals()
 })
 
-test('discarding a driver detaches telemetry without closing USB or stealing the replacement listener', async () => {
+/** A configured diagnostics client at a fixed revision that keeps each local record in `saved`. */
+async function telemetryClient(options: Partial<Parameters<typeof createApplicationDiagnostics>[0]> = {}) {
     vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
     vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const entries: unknown[] = []
+    const saved: any[] = []
     const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example', store: { read: async () => null, write: async () => {} },
-        localRecord: (_context, entry) => entries.push(entry),
+        endpoint: 'https://telemetry.example',
+        store: { read: async () => null, write: async () => {} },
+        localRecord: (camera, entry) => saved.push({ camera, entry }),
+        ...options,
     })
     configureSlateTelemetry(client)
+    return { client, saved }
+}
+
+test('discarding a driver detaches telemetry without closing USB or stealing the replacement listener', async () => {
+    const { client, saved } = await telemetryClient()
     let handler: ((event: PTPEvent) => void) | undefined
     const disconnect = vi.fn(async () => {})
     const source = { getType: () => 'usb', isConnected: () => true, disconnect,
@@ -34,21 +42,13 @@ test('discarding a driver detaches telemetry without closing USB or stealing the
         handler?.({ code: 0x4002, parameters: [1], transactionId: 0 })
         expect(old).not.toHaveBeenCalled()
         expect(next).toHaveBeenCalledOnce()
-        expect(entries).toHaveLength(1)
+        expect(saved).toHaveLength(1)
         expect(disconnect).not.toHaveBeenCalled()
     } finally { current.detach(); client.close() }
 })
 
 test('property-write diagnostics preserve each transaction and distinguish a rejected request from readback', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const entries: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
-        localRecord: (_camera, entry) => entries.push(entry),
-    })
-    configureSlateTelemetry(client)
+    const { client, saved } = await telemetryClient()
     const observer = slateTelemetry({ getType: () => 'usb', on: () => {} } as any)
     try {
         await observer.identify({ manufacturer: 'Canon', model: 'Test', deviceVersion: '1' })
@@ -58,6 +58,7 @@ test('property-write diagnostics preserve each transaction and distinguish a rej
                 dataType: 6, requested: 4, transactionId, outcome: 'response', response,
             }, 0x9110)
         }
+        const entries = saved.map(item => item.entry)
         expect(entries).toHaveLength(2)
         expect(entries[0]).toMatchObject({ failed: true, kind: 'command', direction: 'out', transactionId: 23 })
         expect(entries[1]).toMatchObject({ failed: false, transactionId: 24 })
@@ -67,19 +68,14 @@ test('property-write diagnostics preserve each transaction and distinguish a rej
 })
 
 test('telemetry retains the native single event handler across attachment, reconnect and identity changes', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
     const entries: any[] = []
     const contexts: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
+    const { client } = await telemetryClient({
         localRecord: (context, entry) => {
             contexts.push(context)
             entries.push(entry)
         },
     })
-    configureSlateTelemetry(client)
     let handler: ((value: any) => void) | undefined
     const source = {
         connect: vi.fn(async () => {}),
@@ -147,15 +143,7 @@ test('custom transports do not initialize hardware telemetry without explicit co
 })
 
 test('SDK telemetry preserves outcomes and profile scoping without passwords, paths, arguments or response payloads', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const saved: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
-        localRecord: (camera, entry) => saved.push({ camera, entry }),
-    })
-    configureSlateTelemetry(client)
+    const { client, saved } = await telemetryClient()
     try {
         const sdk = sdkTelemetry('synthetic')
         await sdk.operation({ cmd: 'connect_wifi', model: 'ILME-FX2', password: 'SECRET' }, async () => ({
@@ -203,35 +191,6 @@ test('SDK telemetry preserves outcomes and profile scoping without passwords, pa
     }
 })
 
-test('connection failures are recorded as unknown identity rather than losing the failure', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const saved: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
-        localRecord: (camera, entry) => saved.push({ camera, entry }),
-    })
-    configureSlateTelemetry(client)
-    try {
-        const source = {
-            connect: async () => {
-                throw new Error('Original camera failure')
-            },
-            on: () => {},
-            off: () => {},
-            getType: () => 'usb',
-        } as any
-        const observed = slateTelemetry(source)
-        await observed.prepare()
-        await expect(observed.transport.connect()).rejects.toThrow('Original camera failure')
-        expect(saved[0].camera.model).toBe('Unknown')
-        expect(saved[0].entry).toMatchObject({ kind: 'connect', failed: true })
-    } finally {
-        client.close()
-    }
-})
-
 test('direct source execution attributes SDK observations to its checkout without changing success or failure', async () => {
     const { execFileSync } = await import('node:child_process')
     const expectedRevision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
@@ -262,15 +221,7 @@ test('direct source execution attributes SDK observations to its checkout withou
 })
 
 test('video workflow markers retain the wire session and SDK USB model without storing command parameters', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const saved: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
-        localRecord: (camera, entry) => saved.push({ camera, entry }),
-    })
-    configureSlateTelemetry(client)
+    const { client, saved } = await telemetryClient()
     try {
         const source = { on: () => {}, off: () => {}, getType: () => 'usb', isLittleEndian: () => true } as any
         const wrapped = slateTelemetry(source)
@@ -308,16 +259,8 @@ test('video workflow markers retain the wire session and SDK USB model without s
     }
 })
 
-test('hardware fingerprints track a body without raw serials and are cleared before a failed reconnect', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const saved: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
-        localRecord: (camera, entry) => saved.push({ camera, entry }),
-    })
-    configureSlateTelemetry(client)
+test('failed connections are recorded unidentified, and hardware fingerprints track a body without raw serials and are cleared before a failed reconnect', async () => {
+    const { client, saved } = await telemetryClient()
     const source = {
         telemetryEvidence: 'hardware',
         getType: () => 'usb',
@@ -331,6 +274,10 @@ test('hardware fingerprints track a body without raw serials and are cleared bef
     } as any
     const wrapped = slateTelemetry(source)
     try {
+        // A connection that fails before any identity read is still recorded, as an unknown body.
+        await wrapped.prepare()
+        await expect(wrapped.transport.connect()).rejects.toThrow('Unplugged')
+        expect(saved[0]).toMatchObject({ camera: { model: 'Unknown' }, entry: { kind: 'connect', failed: true } })
         const camera = { manufacturer: 'Nikon', model: 'Z5_2', deviceVersion: '1', serialNumber: 'PRIVATE-SERIAL-123' }
         await wrapped.identify(camera)
         await wrapped.operation('record_start', async () => 42)
@@ -352,15 +299,7 @@ test('hardware fingerprints track a body without raw serials and are cleared bef
 })
 
 test('Sony USB SDK fingerprints require an acknowledged serial selection, and wireless reconnect clears them', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
-    const saved: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
-        localRecord: (camera, entry) => saved.push({ camera, entry }),
-    })
-    configureSlateTelemetry(client)
+    const { client, saved } = await telemetryClient()
     try {
         const sdk = sdkTelemetry('hardware')
         await sdk.operation({ cmd: 'connect', serial: 'PRIVATE-123' }, async () => ({ ok: true, model: 'ILME-FX2' }))
@@ -376,17 +315,11 @@ test('Sony USB SDK fingerprints require an acknowledged serial selection, and wi
 })
 
 test('facts already reported for an identified body are not re-sent on every connection', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
     const { GenericCamera } = await import('@vendors/generic/generic-camera')
     const { resetReportedFacts } = await import('@core/telemetry')
     const { Logger } = await import('@core/logger')
     resetReportedFacts()
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
-    })
-    configureSlateTelemetry(client)
+    const { client } = await telemetryClient()
     try {
         let connected = false
         const source = {
@@ -444,23 +377,18 @@ test('facts already reported for an identified body are not re-sent on every con
 })
 
 test('a connection that fails before any identity read is attributed to the camera last seen at that USB identity', async () => {
-    vi.stubGlobal('__SLATE_TELEMETRY_REVISION__', 'abcdef0')
-    vi.stubGlobal('__SLATE_TELEMETRY_DIRTY__', false)
     const { configureKnownCameras } = await import('@core/telemetry')
     const remembered = new Map<string, any>()
     const key = (usb: any) => `${usb.vendorId}:${usb.productId}:${usb.serialNumber ?? ''}`
     configureKnownCameras({ lookup: usb => remembered.get(key(usb)), remember: (usb, camera) => void remembered.set(key(usb), camera) })
     const batches: any[] = []
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: { read: async () => null, write: async () => {} },
+    const { client } = await telemetryClient({
         fetch: async (_url, init) => {
             const body = init?.body ? JSON.parse(String(init.body)) : {}
             if (body.contributions) batches.push(body)
             return Response.json(body.installKey ? { installKey: body.installKey, noticeVersion: body.noticeVersion } : {}, { status: body.contributions ? 202 : 200 })
         },
     })
-    configureSlateTelemetry(client)
     try {
         let asleep = false
         const source = { telemetryEvidence: 'hardware', getType: () => 'usb', isLittleEndian: () => true, isConnected: () => false, on: () => {}, off: () => {},

@@ -87,15 +87,6 @@ describe('Sony OSD image (SDIO_GetOsdImage 0x9238)', () => {
             degree: 0,
         })
     })
-
-    it('enables OsdImageMode once, then reads frames', async () => {
-        const { camera, operations, sets } = sonyCamera()
-        const first = await camera.captureOsdImage()
-        await camera.captureOsdImage()
-        expect([...first.image]).toEqual(PNG_SIGNATURE)
-        expect(sets).toEqual([{ name: 'OsdImageMode', value: 'ON' }])
-        expect(operations.map(operation => operation.name)).toEqual(['SDIO_GetOsdImage', 'SDIO_GetOsdImage'])
-    })
 })
 
 

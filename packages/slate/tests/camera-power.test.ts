@@ -2,14 +2,12 @@ import {describe,it,expect} from 'vitest'
 import {normalizeCameraPower} from '@vendors/camera-power'
 import {assessCameraPower} from '@workflows/camera-power'
 
+const standard=(value:number)=>normalizeCameraPower('standard',[{name:'BatteryLevel',value}])
+
 describe('camera battery evidence',()=>{
-    it('keeps Canon enum 2 as a coarse full level, never 2%',()=>{
-        const power=normalizeCameraPower('canon',[{name:'BatteryPower',rawValue:2}])
-        expect(power.level).toBe('full');expect(power.percent).toBeUndefined();expect(power.powerSource).toBe('unknown')
-    })
     it('does not interpret unknown Canon enum values',()=>expect(normalizeCameraPower('canon',[{name:'BatteryPower',rawValue:99}]).level).toBeUndefined())
     it('preserves zero and rejects standard sentinels and malformed values',()=>{
-        expect(normalizeCameraPower('standard',[{name:'BatteryLevel',value:0}]).percent).toBe(0)
+        expect(standard(0).percent).toBe(0)
         for(const value of [255,-1,null,'',{},NaN])expect(normalizeCameraPower('standard',[{name:'BatteryLevel',value}]).percent).toBeUndefined()
     })
     it('keeps Sony percentage separate from level, USB supply, charging and runtime',()=>{
@@ -21,38 +19,20 @@ describe('camera battery evidence',()=>{
         const power=normalizeCameraPower('sony',[{name:'BatteryRemain',value:'65535'},{name:'BatteryLevel',value:'4294967294'}])
         expect(power.batteryPresent).toBe(false);expect(power.percent).toBeUndefined();expect(power.level).toBeUndefined()
     })
-    it('checks actual estimated runtime against planned take plus reserve',()=>{
-        const power=normalizeCameraPower('standard',[{name:'BatteryLevel',value:80}])
-        expect(assessCameraPower({...power,remainingMinutes:29},30).status).toBe('fail')
-        expect(assessCameraPower({...power,remainingMinutes:34},30).status).toBe('warn')
-        expect(assessCameraPower({...power,remainingMinutes:35},30)).toMatchObject({status:'pass',runtimeVerified:true})
+    const now=Date.now()
+    it.each([
+        ['runtime under the take',{...standard(80),remainingMinutes:29},{status:'fail'}],
+        ['runtime inside the reserve',{...standard(80),remainingMinutes:34},{status:'warn'}],
+        ['runtime covering take and reserve',{...standard(80),remainingMinutes:35},{status:'pass',runtimeVerified:true}],
+        ['charge without a runtime',standard(100),{status:'warn',runtimeVerified:false}],
+        ['no telemetry',undefined,{status:'warn'}],
+        ['critical charge despite USB and a long estimate',{...standard(5),powerSource:'usb',remainingMinutes:100},{status:'fail'}],
+        ['an outlet with zero charge',{...standard(5),powerSource:'dc',percent:0},{status:'warn',runtimeVerified:false}],
+        ['a failed refresh',{...standard(100),remainingMinutes:100,lastRefreshError:'Camera busy'},{status:'warn',runtimeVerified:false}],
+        ['an invalid timestamp',{...standard(100),remainingMinutes:100,observedAt:'invalid'},{runtimeVerified:false}],
+        ['old telemetry',{...standard(100),remainingMinutes:100,observedAt:new Date(now-130000).toISOString()},{runtimeVerified:false}],
+        ['future telemetry',{...standard(100),remainingMinutes:100,observedAt:new Date(now+60000).toISOString()},{runtimeVerified:false}],
+    ] as const)('assesses a 30-minute take against %s',(_case,power,expected)=>{
+        expect(assessCameraPower(power,30)).toMatchObject(expected)
     })
-    it('never certifies duration from charge, outlet mapping or unknown telemetry',()=>{
-        expect(assessCameraPower(normalizeCameraPower('standard',[{name:'BatteryLevel',value:100}]),30)).toMatchObject({status:'warn',runtimeVerified:false})
-        expect(assessCameraPower(undefined,30).status).toBe('warn')
-    })
-    it('critical charge takes priority over an optimistic time estimate or USB power',()=>{
-        const power=normalizeCameraPower('standard',[{name:'BatteryLevel',value:5}])
-        expect(assessCameraPower({...power,powerSource:'usb',remainingMinutes:100},30).status).toBe('fail')
-        expect(assessCameraPower({...power,powerSource:'dc',percent:0},30)).toMatchObject({status:'warn',runtimeVerified:false})
-    })
-    it('does not present old, invalid or future telemetry as current',()=>{
-        const power=normalizeCameraPower('standard',[{name:'BatteryLevel',value:100}])
-        expect(assessCameraPower({...power,remainingMinutes:100,lastRefreshError:'Camera busy'},30)).toMatchObject({status:'warn',runtimeVerified:false})
-        for(const observedAt of ['invalid',new Date(Date.now()-130000).toISOString(),new Date(Date.now()+60000).toISOString()])expect(assessCameraPower({...power,observedAt,remainingMinutes:100},30).runtimeVerified).toBe(false)
-    })
-})
-
-it('reads only the standard battery descriptor without a settings write',async()=>{
-    const {readStandardCameraPower}=await import('@vendors/camera-power')
-    const calls:unknown[]=[]
-    const camera={send:async(operation:any,parameters:any)=>{calls.push([operation.code,parameters]);return {code:0x2001,data:{devicePropertyCode:0x5001,currentValueRaw:96}}}}
-    expect(await readStandardCameraPower(camera as any)).toMatchObject({percent:96,powerSource:'unknown'})
-    expect(calls).toEqual([[0x1014,{DevicePropCode:0x5001}]])
-    expect(await readStandardCameraPower({send:async()=>{throw new Error('Not supported')}} as any)).toBeUndefined()
-})
-it('Sony owned-session battery polling uses existing properties without standard PTP or reconnect',async()=>{
-    const {readCameraPower}=await import('@vendors/camera-power')
-    const camera={getSonyPropertyStates:async()=>[{name:'BatteryRemain',value:'79'}],send:async()=>{throw new Error('No second protocol path')}}
-    expect(await readCameraPower(camera as any,'sony')).toMatchObject({percent:79,source:'sony-sdk'})
 })

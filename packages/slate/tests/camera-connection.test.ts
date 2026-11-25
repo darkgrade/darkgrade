@@ -104,24 +104,6 @@ describe('connect', () => {
         await expect(camera.connect(legacy)).rejects.toThrow(TypeError)
     })
 
-    it('disconnects and reconnects the same Camera, keeping its event subscriptions on the same driver', async () => {
-        const camera = new Camera({ vendorId: 0x04b0, transport: transport(), logger, firstContact: false })
-        const session = protocolSession(camera)
-        const driver = session.driver
-        const sent: string[] = []
-        vi.spyOn(driver, 'send').mockImplementation((async (operation: OperationDefinition) => {
-            sent.push(operation.name)
-            return { code: 0x2001 }
-        }) as never)
-        await camera.connect()
-        await camera.disconnect()
-        expect(driver.sessionId).toBeNull()
-        await camera.connect()
-        expect(session.driver).toBe(driver)
-        expect(session.sessionId).toBe(driver.sessionId)
-        expect(sent).toEqual(['OpenSession', 'CloseSession', 'OpenSession'])
-        await camera.disconnect()
-    })
 })
 
 describe('getInfo', () => {
@@ -158,24 +140,21 @@ describe('getInfo', () => {
         expect(information).not.toHaveProperty('serialNumber')
     })
 
-    it('reports a refused GetDeviceInfo as CameraRefusedError', async () => {
+    it.each([
+        ['a refused GetDeviceInfo', { code: 0x2019 }, CameraRefusedError],
+        ['a GetDeviceInfo without a dataset', { code: 0x2001 }, CameraOutcomeUnknownError],
+    ] as const)('reports %s as its public error', async (_case, reply, ErrorType) => {
         const camera = new Camera({ vendorId: 0x04b0, transport: transport(), logger })
-        vi.spyOn(protocolSession(camera).driver, 'send').mockResolvedValue({ code: 0x2019 } as never)
+        vi.spyOn(protocolSession(camera).driver, 'send').mockResolvedValue(reply as never)
         const failure = await camera.getInfo().catch(error => error)
-        expect(failure).toBeInstanceOf(CameraRefusedError)
-        expect(failure).toMatchObject({ operation: 'getInfo', message: expect.stringContaining('0x2019') })
+        expect(failure).toBeInstanceOf(ErrorType)
+        expect(failure).toMatchObject({ operation: 'getInfo' })
+        if (reply.code !== 0x2001) expect(failure.message).toContain('0x2019')
     })
+
 })
 
 describe('protocol session', () => {
-    it('is one object per Camera that follows the driver connect selects', async () => {
-        const camera = new Camera({ transport: transport(), logger, firstContact: false })
-        const session = protocolSession(camera)
-        expect(protocolSession(camera)).toBe(session)
-        expect(session.driver).toBe(protocolSession(camera).driver)
-        expect(session.vendorId).toBeNull()
-    })
-
     it('refuses anything but a Camera; the internal accessor passes a session-shaped helper value through', () => {
         // A Camera-shaped object without a Camera's state, like one built by another copy of Slate.
         const foreign: Camera = Object.create(Camera.prototype)
@@ -205,25 +184,6 @@ describe('protocol session', () => {
         expect(send).not.toHaveBeenCalled()
     })
 
-    it('runs the deprecated Camera keep-awake and viewfinder methods through the protocol session', async () => {
-        const camera = new Camera({ vendorId: 0x054c, transport: transport(), logger })
-        await expect(protocolSession(camera).keepDeviceOn()).rejects.toThrow(CameraUnsupportedError)
-        await expect(protocolSession(camera).captureCanonViewfinderFrame()).rejects.toThrow(CameraUnsupportedError)
-        const canon = new Camera({ vendorId: 0x04a9, transport: transport(), logger, keepAlive: false })
-        const keepDeviceOn = vi.spyOn(protocolSession(canon), 'keepDeviceOn').mockResolvedValue(undefined)
-        await protocolSession(canon).keepDeviceOn()
-        expect(keepDeviceOn).toHaveBeenCalledOnce()
-    })
-
-    it('sends raw operations on the Camera session and the deprecated Camera methods delegate to it', async () => {
-        const camera = new Camera({ vendorId: 0x04b0, transport: transport(), logger })
-        const session = protocolSession(camera)
-        const reply = { code: 0x2001, data: deviceInfo(session.driver) }
-        const send = vi.spyOn(session.driver, 'send').mockResolvedValue(reply as never)
-        expect(await session.send(session.registry.operations.GetDeviceInfo, {})).toBe(reply)
-        expect(await protocolSession(camera).send(session.registry.operations.GetDeviceInfo, {})).toBe(reply)
-        expect(send).toHaveBeenCalledTimes(2)
-    })
 })
 
 /** Simulated Canon EOS body: OpenSession, DeviceInfo, remote/event modes and one initial event record. */
@@ -300,6 +260,8 @@ describe('connection failures', () => {
         await camera.connect()
         expect(protocolSession(camera).driver).toBe(driver)
         expect(driver.sessionId).not.toBeNull()
+        // A vendor without a driver of its own keeps the generic one across attempts.
+        if (vendorId === 0x1234) expect(Object.getPrototypeOf(driver)).toBe(GenericCamera.prototype)
         await camera.disconnect()
     })
 
@@ -327,27 +289,6 @@ describe('connection failures', () => {
         await camera.disconnect()
     })
 
-    it('reports a body that refuses or never answers during recovery in the report, not as a thrown error', async () => {
-        const answers = [
-            async () => ({ code: 0x2019 }),
-            async () => {
-                throw new PTPTimeoutError('response', 50, {})
-            },
-        ]
-        for (const open of answers) {
-            const { camera } = bodyAnswering(0x04b0, open)
-            const report = await camera.recover({ stepTimeoutMilliseconds: 50, waitForDeviceMilliseconds: 0, allowPortReset: false })
-            expect(report).toMatchObject({ recovered: false, needsPhysicalAction: true })
-            expect(report.steps.map(step => step.ok)).not.toContain(true)
-        }
-    })
-
-    it('reports a GetDeviceInfo without a dataset as CameraOutcomeUnknownError', async () => {
-        const camera = new Camera({ vendorId: 0x054c, transport: transport(), logger })
-        vi.spyOn(protocolSession(camera).driver, 'send').mockResolvedValue({ code: 0x2001 } as never)
-        await expect(camera.getInfo()).rejects.toThrow(CameraOutcomeUnknownError)
-    })
-
     it('reports an explicitly requested vendor that differs from the opened USB body as CameraRefusedError', async () => {
         const released = vi.fn(async () => undefined)
         const usb: USBTransport = Object.assign(Object.create(USBTransport.prototype), {
@@ -360,21 +301,12 @@ describe('connection failures', () => {
         })
         const camera = new Camera({ vendorId: 0x054c, transport: usb, logger, firstContact: false })
         vi.spyOn(protocolSession(camera).driver, 'connectTransport').mockResolvedValue(undefined)
+        const vendorProtocol = vi.spyOn(protocolSession(camera).driver, 'connect')
         const failure = await camera.connect().catch(error => error)
         expect(failure).toBeInstanceOf(CameraRefusedError)
         expect(failure.message).toBe('Selected USB camera differs from the explicitly requested vendor')
+        expect(vendorProtocol).not.toHaveBeenCalled()
         expect(released).toHaveBeenCalledOnce()
     })
 
-    it('keeps the generic driver, its policy and counters, for a vendor without a driver of its own', async () => {
-        const camera = new Camera({ vendorId: 0x1234, transport: transport(), logger, firstContact: false })
-        const driver = protocolSession(camera).driver
-        expect(Object.getPrototypeOf(driver)).toBe(GenericCamera.prototype)
-        vi.spyOn(driver, 'send').mockResolvedValue({ code: 0x2001 } as never)
-        for (let attempt = 0; attempt < 2; attempt++) {
-            await camera.connect()
-            expect(protocolSession(camera).driver).toBe(driver)
-            await camera.disconnect()
-        }
-    })
 })

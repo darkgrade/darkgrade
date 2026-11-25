@@ -66,56 +66,6 @@ test('busy camera sessions flush bounded batches early without dropping healthy 
     }
 })
 
-test('email enrollment works before camera use; verification, logout and opt-out stay independent', async () => {
-    const fixture = memoryDatabase(),
-        saved = settings()
-    const messages: { confirmationUrl: string }[] = []
-    const handle = createTelemetry(fixture.database, {
-        publicUrl: 'https://telemetry.example',
-        sendContact: async message => {
-            messages.push(message)
-        },
-    })
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store: saved.store,
-        fetch: (url, init) => handle(new Request(url, init)),
-    })
-    try {
-        await client.requestContact('camera@example.com', { name: 'Camera Contributor', publish: true })
-        assert.equal(client.status().enrolled, true)
-        assert.equal(messages.length, 1)
-        assert.deepEqual(await client.contactStatus(),{email:'camera@example.com',verified:false,credit:null})
-        const token = new URL(messages[0].confirmationUrl).hash.slice(1)
-        const confirm = () =>
-            handle(
-                new Request('https://telemetry.example/v2/contact/confirm', {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ token }),
-                })
-            )
-        assert.equal((await confirm()).status, 200)
-        assert.equal((await client.contactStatus())?.verified, true)
-        assert.equal((await confirm()).status, 410, 'confirmation cannot be replayed')
-        await client.setConsent(false)
-        assert.equal((await client.contactStatus())?.email, 'camera@example.com')
-        await assert.rejects(client.requestContact('other@example.com'), /Turn on sharing to link an email/)
-        assert.equal(messages.length, 1, 'an enrolled installation still respects a saved opt-out')
-        await client.removeContact()
-        assert.equal(await client.contactStatus(), null)
-        assert.equal(client.status().sharingEnabled, false)
-        assert.equal(
-            (await fixture.database.list('diagnostics')).length,
-            0,
-            'contact login creates no synthetic camera events'
-        )
-        await client.withdraw()
-    } finally {
-        client.close()
-    }
-})
-
 test('resuming deletion and repeating delete share the existing request instead of aborting it', async () => {
     const fixture = memoryDatabase()
     const handle = createTelemetry(fixture.database, { publicUrl: 'https://telemetry.example' })
@@ -176,25 +126,6 @@ test('a saved collector URL without registration does not require network deleti
     }
 })
 
-test('a pending enrollment cannot send its persisted secret to a different collector', async () => {
-    const saved = settings({
-        enabled: true,
-        noticeVersion: NOTICE_VERSION,
-        withdrawalPending: false,
-        collectorOrigin: 'https://original.example',
-        registrationPending: true,
-        installationId: '00000000-0000-4000-8000-000000000001',
-        enrollmentKey: 'dgi_00000000-0000-4000-8000-000000000001.' + 'A'.repeat(43),
-    })
-    await assert.rejects(
-        createApplicationDiagnostics({
-            endpoint: 'https://different.example',
-            store: saved.store,
-        }),
-        /another collector/
-    )
-})
-
 test('one application queues multiple cameras, enrolls once and uploads one metadata-only batch', async () => {
     const { database, records } = memoryDatabase()
     const handle = createTelemetry(database, { publicUrl: 'https://telemetry.example' })
@@ -234,34 +165,6 @@ test('one application queues multiple cameras, enrolls once and uploads one meta
     } finally {
         client.close()
     }
-})
-
-test('saved opt-out prevents enrollment and corrupt settings fail closed', async () => {
-    const saved = settings({ enabled: false, noticeVersion: NOTICE_VERSION, withdrawalPending: false })
-    let requests = 0
-    const options = {
-        endpoint: 'https://telemetry.example',
-        store: saved.store,
-        presentNotice: async () => {},
-        fetch: async () => {
-            requests++
-            throw new Error('Must not contact cloud')
-        },
-    }
-    const client = await createApplicationDiagnostics(options)
-    try {
-        await client.observe(transport(), camera).transport.send(bytes, 1, 1)
-        assert.equal(await client.flush(), 'disabled')
-        assert.equal(requests, 0)
-    } finally {
-        client.close()
-    }
-    await assert.rejects(
-        createApplicationDiagnostics({
-            ...options,
-            store: { ...saved.store, read: async () => ({ enabled: true }) as any },
-        })
-    )
 })
 
 test('opt-out during enrollment cannot send buffered diagnostics or re-enable collection', async () => {

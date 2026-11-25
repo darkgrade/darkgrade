@@ -1,38 +1,41 @@
 import { CameraRefusedError } from '@camera/errors'
-import { CanonCamera } from '@vendors/canon/canon-camera'
-import { Camera } from '@camera/index'
-import { Logger } from '@core/logger'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { canonTestCamera } from '@tests/fixtures/canon-camera'
 import { describe, expect, it, vi } from 'vitest'
-import { captureDriverImage } from '@vendors/generic/capture-driver-image'
-import { protocolSession } from '@camera/protocol-session'
 
-function cameraWithResponses(responses: Array<number | {code: number; parameters?: number[]}>) {
-    const transport = {
-        isLittleEndian: () => true,
-        on: () => undefined,
-    } as unknown as TransportInterface
-    const camera = new CanonCamera(
-        transport,
-        new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
-    )
+type CannedResponse = number | { code: number; parameters?: number[] } | Error
+
+function cameraWithResponses(responses: CannedResponse[]) {
+    const { camera } = canonTestCamera()
     const operations: Array<{ name: string; params: unknown }> = []
     camera.send = (async (operation, params) => {
         operations.push({ name: operation.name, params })
         const response = responses.shift() ?? 0x2001
+        if (response instanceof Error) throw response
         return typeof response === 'number' ? { code: response } : response
     }) as typeof camera.send
     return { camera, operations }
 }
 
+const manualFocusPress = { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'MF' } }
+const manualShutterPress = { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'SHUTTER', AFMode: 'MF' } }
+const shutterRelease = { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'SHUTTER' } }
+const focusRelease = { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'FOCUS' } }
+
 describe('Canon capture response handling', () => {
-    it.each([[true, 12], [false, 12], [false, 14]] as const)('rejects a camera-side shutter failure despite PTP OK (autofocus=%s, result=%s)', async (autofocus, result) => {
-        const {camera, operations} = cameraWithResponses([0x2001, {code: 0x2001, parameters: [result]}])
-        await expect(camera.captureImage({autofocus, includeInfo: false, includeData: false})).rejects.toThrow(`shutter result 0x${result.toString(16)}`)
+    it.each([
+        [true, 12, 'shutter result 0xc'],
+        [false, 12, 'shutter result 0xc'],
+        [false, 14, 'shutter result 0xe'],
+        [false, 0, undefined],
+    ] as const)('checks the shutter result despite PTP OK (autofocus=%s, result=%s)', async (autofocus, result, error) => {
+        const {camera, operations} = cameraWithResponses([{code: 0x2001, parameters: [0]}, {code: 0x2001, parameters: [result]}])
+        const capture = camera.captureImage({autofocus, includeInfo: false, includeData: false})
+        if (error) await expect(capture).rejects.toThrow(error)
+        else await expect(capture).resolves.toEqual({})
         expect(operations.map(operation => operation.name)).toEqual([
             'CanonRemoteReleaseOn', 'CanonRemoteReleaseOn', 'CanonRemoteReleaseOff', 'CanonRemoteReleaseOff',
         ])
-        expect(operations.filter(operation => (operation.params as any).ReleaseMode === 'SHUTTER')).toHaveLength(2)
+        expect(operations.filter(operation => (operation.params as { ReleaseMode?: string }).ReleaseMode === 'SHUTTER')).toHaveLength(2)
     })
 
     it('releases an acknowledged half press with a rejected result without sending full press', async () => {
@@ -41,102 +44,60 @@ describe('Canon capture response handling', () => {
         expect(operations.map(operation => operation.name)).toEqual(['CanonRemoteReleaseOn', 'CanonRemoteReleaseOff'])
     })
 
-    it('accepts explicit zero shutter results as well as legacy bodies omitting the result', async () => {
-        const {camera} = cameraWithResponses([{code: 0x2001, parameters: [0]}, {code: 0x2001, parameters: [0]}])
-        await expect(camera.captureImage({autofocus: false, includeInfo: false, includeData: false})).resolves.toEqual({})
-    })
-    it('refuses an AF release that cannot lock focus and never falls back to an unfocused release', async () => {
-        const { camera, operations } = cameraWithResponses([0x2001, 0x2019, 0x2001])
-
-        const refusal = await camera.captureImage({ includeInfo: false, includeData: false }).catch(error => error)
-        expect(refusal).toBeInstanceOf(CameraRefusedError)
-        expect(refusal.message).toContain('could not lock focus')
-        expect(refusal.message).toContain('AF shutter press returned 0x2019')
-        expect(operations).toEqual([
-            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'AF' } },
-            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'SHUTTER', AFMode: 'AF' } },
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'FOCUS' } },
-        ])
-    })
-
-    it('releases shutter and focus after accepted capture commands', async () => {
-        const { camera, operations } = cameraWithResponses([0x2001, 0x2001, 0x2001, 0x2001])
-
-        await expect(camera.captureImage({ includeInfo: false, includeData: false })).resolves.toEqual({})
-        expect(operations.map(operation => operation.name)).toEqual([
-            'CanonRemoteReleaseOn',
-            'CanonRemoteReleaseOn',
-            'CanonRemoteReleaseOff',
-            'CanonRemoteReleaseOff',
-        ])
-    })
     it('explicit no-autofocus capture uses only MF release parameters without changing body focus mode', async () => {
         const { camera, operations } = cameraWithResponses([])
         const setFocusMode = vi.spyOn(camera, 'setFocusMode')
         await expect(camera.captureImage({ includeInfo: false, includeData: false, autofocus: false })).resolves.toEqual({})
-        expect(operations).toEqual([
-            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'MF' } },
-            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'SHUTTER', AFMode: 'MF' } },
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'SHUTTER' } },
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'FOCUS' } },
-        ])
+        expect(operations).toEqual([manualFocusPress, manualShutterPress, shutterRelease, focusRelease])
         expect(setFocusMode).not.toHaveBeenCalled()
     })
 
-    it('checks failed MF full press and releases both attempted controls without AF fallback', async () => {
-        const { camera, operations } = cameraWithResponses([0x2001, 0x2019, 0x2001, 0x2001])
-        await expect(camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).rejects.toThrow('MF shutter press returned 0x2019')
-        expect(operations).toEqual([
-            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'MF' } },
-            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'SHUTTER', AFMode: 'MF' } },
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'SHUTTER' } },
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'FOCUS' } },
-        ])
-    })
-
-    it('checks failed MF focus press and releases the attempted focus control', async () => {
-        const { camera, operations } = cameraWithResponses([0x2019, 0x2001])
-        await expect(camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).rejects.toThrow('MF focus press returned 0x2019')
-        expect(operations).toEqual([
-            { name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'MF' } },
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'FOCUS' } },
-        ])
-    })
-
-    it('releases focus after an MF shutter transport error even when shutter cleanup also throws', async () => {
-        const { camera, operations } = cameraWithResponses([])
-        camera.send = (async (operation, params) => {
-            operations.push({ name: operation.name, params })
-            const release = params as { ReleaseMode?: string }
-            if (release.ReleaseMode === 'SHUTTER') throw new Error('Shutter transport failed')
-            return { code: 0x2001 }
-        }) as typeof camera.send
-        await expect(camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).rejects.toThrow('Shutter transport failed')
-        expect(operations.slice(-2)).toEqual([
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'SHUTTER' } },
-            { name: 'CanonRemoteReleaseOff', params: { ReleaseMode: 'FOCUS' } },
-        ])
-        expect(operations.some(operation => (operation.params as any).AFMode === 'AF')).toBe(false)
-    })
-
-    it('default captures retain AF and do not hide AF focus-press failures', async () => {
-        const { camera, operations } = cameraWithResponses([0x2019])
-        await expect(camera.captureImage({ includeInfo: false, includeData: false })).rejects.toThrow('AF focus press returned 0x2019')
-        expect(operations).toEqual([{ name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'AF' } }])
+    it.each([
+        {
+            failure: 'failed MF full press',
+            autofocus: false,
+            responses: [0x2001, 0x2019, 0x2001, 0x2001],
+            error: 'MF shutter press returned 0x2019',
+            expected: [manualFocusPress, manualShutterPress, shutterRelease, focusRelease],
+        },
+        {
+            failure: 'failed MF focus press',
+            autofocus: false,
+            responses: [0x2019, 0x2001],
+            error: 'MF focus press returned 0x2019',
+            expected: [manualFocusPress, focusRelease],
+        },
+        {
+            failure: 'MF shutter transport error whose cleanup also throws',
+            autofocus: false,
+            responses: [0x2001, new Error('Shutter transport failed'), new Error('Shutter transport failed'), 0x2001],
+            error: 'Shutter transport failed',
+            expected: [manualFocusPress, manualShutterPress, shutterRelease, focusRelease],
+        },
+        {
+            failure: 'shutter cleanup failure',
+            autofocus: false,
+            responses: [0x2001, 0x2001, 0x2019, 0x2001],
+            error: 'shutter cleanup failed',
+            expected: [manualFocusPress, manualShutterPress, shutterRelease, focusRelease],
+        },
+        {
+            failure: 'default AF focus press failure',
+            autofocus: undefined,
+            responses: [0x2019],
+            error: 'AF focus press returned 0x2019',
+            expected: [{ name: 'CanonRemoteReleaseOn', params: { ReleaseMode: 'FOCUS', AFMode: 'AF' } }],
+        },
+    ])('reports $failure, releases every attempted control and never falls back', async ({ autofocus, responses, error, expected }) => {
+        const { camera, operations } = cameraWithResponses([...responses])
+        await expect(camera.captureImage({ autofocus, includeInfo: false, includeData: false })).rejects.toThrow(error)
+        expect(operations).toEqual(expected)
     })
 
     it('rejects invalid runtime autofocus flags before sending a capture command', async () => {
         const { camera, operations } = cameraWithResponses([])
         await expect(camera.captureImage({ autofocus: 0 as unknown as boolean })).rejects.toThrow('true or false')
         expect(operations).toEqual([])
-    })
-
-    it('reports shutter cleanup failure while still releasing focus', async () => {
-        const { camera, operations } = cameraWithResponses([0x2001, 0x2001, 0x2019, 0x2001])
-        await expect(camera.captureImage({ autofocus: false, includeInfo: false, includeData: false }))
-            .rejects.toThrow('shutter cleanup failed')
-        expect(operations.at(-1)?.params).toEqual({ ReleaseMode: 'FOCUS' })
-        expect(operations.filter(operation => operation.name === 'CanonRemoteReleaseOn')).toHaveLength(2)
     })
 
     it('does not repeat the shutter when AF rejection also fails cleanup', async () => {
@@ -159,13 +120,4 @@ describe('Canon capture response handling', () => {
         })
         expect(operations.at(-1)?.name).toBe('CanonRemoteReleaseOff')
     })
-
-    it('forwards the explicit no-autofocus option through the public Canon Camera API', async () => {
-        const transport = { isLittleEndian: () => true, on: () => undefined } as unknown as TransportInterface
-        const camera = new Camera({ vendorId: 0x04a9, transport, logger: { captureConsole: false, renderInTerminal: false } })
-        const capture = vi.spyOn(protocolSession(camera).driver as CanonCamera, 'captureImage').mockResolvedValue({})
-        await captureDriverImage(camera, { autofocus: false, includeData: false })
-        expect(capture).toHaveBeenCalledWith({ includeInfo: true, includeData: false, autofocus: false })
-    })
-
 })

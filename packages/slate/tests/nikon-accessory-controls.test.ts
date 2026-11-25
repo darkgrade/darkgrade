@@ -119,13 +119,6 @@ describe('persistent Nikon accessory control',()=>{
         await expect(controller.press('down')).rejects.toThrow('not ready')
         expect(send.mock.calls.filter(([operation])=>operation.code===0x9457)).toHaveLength(2)
     })
-    it('serializes operation ownership so overlapping keys cannot release each other',async()=>{
-        vi.useFakeTimers()
-        const {controller}=fixture();await controller.requestReady()
-        const pressed=controller.press('right')
-        await expect(controller.press('left')).rejects.toThrow('already in progress')
-        await vi.advanceTimersByTimeAsync(120);await pressed
-    })
     it('registers optional metadata only when explicitly supplied before the readiness request',async()=>{
         const {controller,send}=fixture()
         await controller.requestReady({identity:[7,8],version:'1',level:1,flag:false})

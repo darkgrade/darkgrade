@@ -1,5 +1,5 @@
 import type { Camera } from '@camera/index'
-import { runBenchmarkCommand, type BenchmarkCommandDependencies, type DiscoveredCamera } from '@cli/benchmark'
+import { parseBenchmarkArguments, runBenchmarkCommand, type BenchmarkCommandDependencies, type DiscoveredCamera } from '@cli/benchmark'
 import { attachedCameras, runCamerasCommand } from '@cli/cameras'
 import { closestMatch } from '@cli/commands'
 import { doctorChecks } from '@cli/doctor'
@@ -10,10 +10,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const sony: DiscoveredCamera = { vendorId: 0x054c, productId: 0x0e78, model: 'ILCE-7M5' }
 const fujifilm: DiscoveredCamera = { vendorId: 0x04cb, productId: 0x0305, model: 'X100VI' }
+const phone: DiscoveredCamera = { vendorId: 0x18d1, productId: 0x4ee1, model: 'Pixel' }
 
 const flags = { noColor: false, noInput: false, noProgress: false, quiet: false }
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+})
 
 describe('colour', () => {
     it('follows the flag, NO_COLOR, FORCE_COLOR, TERM=dumb and the stream, in that order', () => {
@@ -115,34 +119,119 @@ describe('typo suggestions', () => {
     })
 })
 
-function benchmarkHarness(devices: DiscoveredCamera[], extra: Partial<BenchmarkCommandDependencies>) {
+describe('benchmark arguments', () => {
+    it('runs everything by default and keeps the old flags', () => {
+        expect(parseBenchmarkArguments([])).toEqual({ capture: true, live: true, json: false })
+        expect(parseBenchmarkArguments(['--camera', '054C:0E78', '--capture', '--live'])).toEqual({
+            camera: { vendorId: 0x054c, productId: 0x0e78 },
+            capture: true,
+            live: true,
+            json: false,
+        })
+        expect(parseBenchmarkArguments(['--no-capture', '--no-live', '--json'])).toMatchObject({
+            capture: false,
+            live: false,
+            json: true,
+        })
+        for (const invalid of [['--camera'], ['--camera', 'sony'], ['--unknown'], ['--camera', '054c:0e78', '--camera', '054c:0e78']])
+            expect(() => parseBenchmarkArguments(invalid)).toThrow(/benchmark/)
+    })
+})
+
+function benchmarkHarness(
+    devices: DiscoveredCamera[],
+    extra: Partial<BenchmarkCommandDependencies> = {},
+    { passed = true, otherModes = [] as DiscoveredCamera[] } = {}
+) {
     const printed: string[] = [],
         progress: string[] = [],
-        created: DiscoveredCamera[] = []
+        created: DiscoveredCamera[] = [],
+        options: unknown[] = []
+    let disconnected = 0
+    const result = {
+        passed,
+        checks: [
+            { name: 'identity', passed: true, durationMilliseconds: 1 },
+            { name: 'property-0x5001', passed: true, durationMilliseconds: 1 },
+            { name: 'property-0xd001', passed: false, durationMilliseconds: 1, error: 'operation-failed' },
+            { name: 'photo-transfer', passed, durationMilliseconds: 1, ...(!passed && { error: 'operation-failed' }) },
+            { name: 'live-transfer', passed: true, durationMilliseconds: 1 },
+        ],
+        profile: { id: 'id', identity: { manufacturer: 'FUJIFILM', model: 'X100VI', firmware: '1.10' }, status: passed ? 'complete' : 'partial' },
+    }
     const dependencies: BenchmarkCommandDependencies = {
         discover: async () => devices,
-        camerasInOtherModes: async () => [],
+        camerasInOtherModes: async () => otherModes,
         createCamera: async device => {
             created.push(device)
-            return { connect: async () => undefined, disconnect: async () => undefined } as unknown as Camera
+            return {
+                connect: async () => undefined,
+                disconnect: async () => {
+                    disconnected++
+                },
+            } as unknown as Camera
         },
-        runBenchmark: (async (_camera: Camera, options: { onProgress: (check: unknown) => void }) => {
-            const checks = [
-                { name: 'property-0x5001', passed: true, durationMilliseconds: 1 },
-                { name: 'property-0xd001', passed: false, durationMilliseconds: 1, error: 'operation-failed' },
-                { name: 'photo-transfer', passed: false, durationMilliseconds: 1, error: 'operation-failed' },
-            ]
-            checks.forEach(options.onProgress)
-            return { passed: false, checks, profile: { id: 'id', status: 'partial' } }
+        runBenchmark: (async (
+            _camera: Camera,
+            benchmarkOptions: { onProgress: (check: unknown) => void; flushEvidence: () => Promise<unknown> }
+        ) => {
+            options.push(benchmarkOptions)
+            result.checks.forEach(benchmarkOptions.onProgress)
+            await benchmarkOptions.flushEvidence()
+            return result
         }) as unknown as typeof runBenchmark,
-        saveProfile: () => '/profiles/id.json',
-        flush: async () => 'sent',
+        saveProfile: () => '/home/me/.darkgrade/profiles/id.json',
+        flush: async () => (printed.length ? 'empty' : 'sent'),
         print: line => printed.push(line),
         progress: line => progress.push(line),
         ...extra,
     }
-    return { dependencies, printed, progress, created }
+    return { dependencies, printed, progress, created, options, disconnected: () => disconnected }
 }
+
+describe('benchmark command', () => {
+    it('auto-detects the attached camera, ignoring a phone, and prints a short summary', async () => {
+        const run = benchmarkHarness([phone, fujifilm])
+        expect(await runBenchmarkCommand([], run.dependencies)).toBe(0)
+        expect(run.created).toEqual([fujifilm])
+        expect(run.options[0]).toMatchObject({ photo: true, liveView: true })
+        expect(run.printed[0]).toContain('FUJIFILM X100VI, firmware 1.10')
+        expect(run.printed[0]).toContain('Properties read: 1/2')
+        expect(run.printed[0]).toContain('Photo capture:   ok')
+        expect(run.printed[0]).toContain('/home/me/.darkgrade/profiles/id.json')
+        expect(run.printed[0]).toContain('Telemetry:       uploaded')
+        expect(run.disconnected()).toBe(1)
+    })
+
+    it('exits non-zero without opening anything when no camera or several are attached, and says how to fix it', async () => {
+        const none = benchmarkHarness([], {}, { otherModes: [{ ...fujifilm, model: undefined }] })
+        expect(await runBenchmarkCommand([], none.dependencies)).toBe(1)
+        expect(none.created).toEqual([])
+        expect(none.progress.join('\n')).toMatch(/No camera found/)
+        expect(none.progress.join('\n')).toMatch(/Fujifilm Corporation \(04cb:0305\) is attached but not in PTP mode/)
+        expect(none.progress.join('\n')).toMatch(/PC Remote/)
+        const several = benchmarkHarness([sony, fujifilm])
+        expect(await runBenchmarkCommand([], several.dependencies)).toBe(1)
+        expect(several.created).toEqual([])
+        expect(several.progress.join('\n')).toMatch(/Several cameras/)
+        expect(several.progress.join('\n')).toMatch(/--camera 054c:0e78.*ILCE-7M5/)
+        expect(several.progress.join('\n')).toMatch(/--camera 04cb:0305.*X100VI/)
+    })
+
+    it('honours --camera over DARKGRADE_CAMERA, DARKGRADE_CAMERA alone, --no-capture and --json, and rejects an environment value that is not a USB id', async () => {
+        vi.stubEnv('DARKGRADE_CAMERA', '054c:0e78')
+        const run = benchmarkHarness([sony, fujifilm], {}, { passed: false })
+        expect(await runBenchmarkCommand(['--camera', '04cb:0305', '--no-capture', '--json'], run.dependencies)).toBe(1)
+        expect(run.created).toEqual([{ vendorId: 0x04cb, productId: 0x0305 }])
+        expect(run.options[0]).toMatchObject({ photo: false, liveView: true })
+        expect(JSON.parse(run.printed[0]!)).toMatchObject({ passed: false, profilePath: '/home/me/.darkgrade/profiles/id.json' })
+        const fromEnvironment = benchmarkHarness([sony, fujifilm])
+        await runBenchmarkCommand([], fromEnvironment.dependencies)
+        expect(fromEnvironment.created).toEqual([{ vendorId: 0x054c, productId: 0x0e78 }])
+        vi.stubEnv('DARKGRADE_CAMERA', 'sony')
+        await expect(runBenchmarkCommand([], fromEnvironment.dependencies)).rejects.toThrow(/DARKGRADE_CAMERA/)
+    })
+})
 
 describe('benchmark on a terminal', () => {
     it('asks which camera when several are attached, and opens nothing on cancel', async () => {
@@ -157,28 +246,16 @@ describe('benchmark on a terminal', () => {
 
     it('shows checks on the status line, keeps only real failures, and clears it before the summary', async () => {
         const events: string[] = []
-        const run = benchmarkHarness([sony], {
-            status: text => events.push(`status ${text}`),
-            clearStatus: () => events.push('clear'),
-        })
+        const run = benchmarkHarness(
+            [sony],
+            { status: text => events.push(`status ${text}`), clearStatus: () => events.push('clear') },
+            { passed: false }
+        )
         run.dependencies.print = () => events.push('print')
         await runBenchmarkCommand([], run.dependencies)
         expect(run.progress).toEqual(['! photo-transfer'])
         expect(events.some(event => /status Benchmarking ILCE-7M5 \(054c:0e78\) · 3 checks/.test(event))).toBe(true)
         expect(events[events.indexOf('print') - 1]).toBe('clear')
-    })
-
-    it('takes the camera from DARKGRADE_CAMERA and rejects a value that is not a USB id', async () => {
-        vi.stubEnv('DARKGRADE_CAMERA', '04cb:0305')
-        const run = benchmarkHarness([sony, fujifilm], {})
-        await runBenchmarkCommand([], run.dependencies)
-        expect(run.created).toEqual([{ vendorId: 0x04cb, productId: 0x0305 }])
-        const explicit = benchmarkHarness([sony, fujifilm], {})
-        await runBenchmarkCommand(['--camera', '054c:0e78'], explicit.dependencies)
-        expect(explicit.created).toEqual([{ vendorId: 0x054c, productId: 0x0e78 }])
-        vi.stubEnv('DARKGRADE_CAMERA', 'sony')
-        await expect(runBenchmarkCommand([], run.dependencies)).rejects.toThrow(/DARKGRADE_CAMERA/)
-        vi.unstubAllEnvs()
     })
 })
 

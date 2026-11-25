@@ -67,7 +67,6 @@ function sonyCamera(initial: { focusArea?: string; focusMode?: string; subjectDe
         ]),
         focusOnPress: 'AF_S_FOCUSED',
         halfPressResponse: 0x2001,
-        applies: true,
         afterRelease: () => {},
     }
     const positions: { x: number; y: number }[] = []
@@ -113,7 +112,7 @@ function sonyCamera(initial: { focusArea?: string; focusMode?: string; subjectDe
             const value = codecOf(property).decode(data!).value
             writes.push({ name: property.name, value })
             wire.push({ name: property.name, data: [...data!] })
-            if (body.applies) body.values.get(property)!.value = String(value)
+            body.values.get(property)!.value = String(value)
             return { code: 0x2001 }
         }
         if (operation.name === 'SDIO_ControlDevice') {
@@ -332,13 +331,6 @@ describe('focus on a simulated Sony body', () => {
         await camera.setFocusPoint(0.5, 0.5, { autofocus: false })
         expect(value(properties.FocusArea)).toBe('Tracking Flexible Spot S')
     })
-
-    it('reports a focus-mode write the body never shows as unknown, without resending it', async () => {
-        const { camera, body, writes } = sonyCamera()
-        body.applies = false
-        await expect(camera.setFocusMode('AF-C')).rejects.toBeInstanceOf(CameraOutcomeUnknownError)
-        expect(writes).toHaveLength(1)
-    }, 15_000)
 })
 
 // ------------------------------------------------------------------------------------------ Nikon

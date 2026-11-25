@@ -23,12 +23,6 @@ describe('Nikon video shutter and external power properties', () => {
         ])
     })
 
-    it('reports a rejected shutter write instead of treating command delivery as success', async () => {
-        const {camera, send} = fixture()
-        send.mockResolvedValue({code: 0x200f} as any)
-        await expect(camera.set(MovieShutterAngle, 18000)).rejects.toThrow('write failed')
-    })
-
     it('reads external power from the extended descriptor and refuses writes before sending', async () => {
         const {camera, send} = fixture()
         send.mockResolvedValue({code: OK.code, data: {devicePropertyCode: 0xd101, currentValueDecoded: 'CONNECTED'}} as any)

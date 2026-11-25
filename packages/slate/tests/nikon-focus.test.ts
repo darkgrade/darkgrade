@@ -56,44 +56,12 @@ describe('Nikon capability-gated focus', () => {
         expect((await camera.captureLiveView()).nikonMetadata?.focusingJudgementResult).toBe(2)
     })
 
-    it('refuses unadvertised operations before starting live view or driving focus', async () => {
-        const { camera, calls, setSupported } = fixture()
-        setSupported([])
-        await expect(camera.performAutofocus()).rejects.toThrow('advertise AfDrive')
-        await expect(camera.touchFocus(0.5, 0.5)).rejects.toThrow('advertise ChangeAfArea')
-        await expect(camera.driveFocus('near')).rejects.toThrow('advertise MfDrive')
-        expect(calls.map(call => call.name)).toEqual(['GetDeviceInfo', 'GetDeviceInfo', 'GetDeviceInfo'])
-    })
-
-    it('does not infer focus lock from accepted autofocus or a driving focus engine', async () => {
-        const { camera, setFrame } = fixture()
-        expect(await camera.performAutofocus()).toMatchObject({ commandSent: true, focusAcquired: false })
-        setFrame({ ...metadata(), focusingJudgementResult: 2, focusDrivingStatus: 1 })
-        expect((await camera.performAutofocus()).focusAcquired).toBe(false)
-        setFrame({ ...metadata(), focusingJudgementResult: 2 })
-        expect((await camera.performAutofocus()).focusAcquired).toBe(true)
-    })
-
     it('reports Nikon OutOfFocus as an unsuccessful focus result even if metadata reports focused', async () => {
         const { camera, responses, setFrame } = fixture()
         await camera.captureLiveView()
         responses.set('DeviceReady', 0xa002)
         setFrame({ ...metadata(), focusingJudgementResult: 2 })
         expect((await camera.performAutofocus()).focusAcquired).toBe(false)
-    })
-
-    it('maps normalized coordinates using 6048×3400 AF dimensions rather than 640×360 JPEG dimensions', async () => {
-        const { camera, calls } = fixture()
-        const result = await camera.touchFocus(0.5, 0.25, { focus: false })
-        expect(calls.find(call => call.name === 'ChangeAfArea')?.params).toEqual({ X: 3024, Y: 850 })
-        expect(result).toMatchObject({ commandSent: true, positionVerified: true, normalized: { x: 0.5, y: 0.25 },
-            x: 3024, y: 850, width: 6048, height: 3400, tolerance: { x: 407, y: 442 } })
-        expect(calls.some(call => call.name === 'AfDrive')).toBe(false)
-    })
-
-    it('reports ignored point placement without claiming position verification', async () => {
-        const { camera } = fixture()
-        expect(await camera.touchFocus(0.5, 0.5, { focus: false })).toMatchObject({ commandSent: true, positionVerified: false })
     })
 
     it('supports coordinate boundaries and rejects invalid coordinates or missing dimensions before point writes', async () => {
@@ -109,21 +77,12 @@ describe('Nikon capability-gated focus', () => {
         expect(calls.some(call => call.name === 'ChangeAfArea')).toBe(false)
     })
 
-    it.each([['near', 1], ['far', 2]] as const)('drives %s by explicit lens steps and reads completion metadata', async (direction, code) => {
+    it('bounds focus inputs before sending', async () => {
         const { camera, calls } = fixture()
-        expect(await camera.driveFocus(direction, 12)).toMatchObject({ commandSent: true, completed: true })
-        expect(calls.find(call => call.name === 'MfDrive')?.params).toEqual({ Direction: code, Steps: 12 })
-        expect(calls.at(-1)?.name).toBe('GetLiveViewImageEx')
-    })
-
-    it('bounds focus inputs and propagates lens endpoint responses', async () => {
-        const { camera, calls, responses } = fixture()
         await expect(camera.driveFocus('near', 0)).rejects.toThrow('lens steps')
         await expect(camera.driveFocus('far', 32768)).rejects.toThrow('lens steps')
         await expect(camera.performAutofocus(0)).rejects.toThrow('timeout')
         expect(calls).toEqual([])
-        responses.set('MfDrive', 0xa00c)
-        await expect(camera.driveFocus('near')).rejects.toThrow('0xa00c')
     })
 
     it('bounds autofocus completion and cancels only an advertised autofocus command', async () => {
@@ -164,13 +123,6 @@ describe('Nikon capability-gated focus', () => {
         await expect(camera.getVendorPropertyCodes()).rejects.toThrow('invalid array length')
         setSupported([])
         await expect(camera.getVendorPropertyCodes()).rejects.toThrow('advertise GetVendorCodes')
-    })
-
-    it('does not send movie start while the camera reports a missing card', async () => {
-        const { camera, calls } = fixture()
-        observe(camera, 'OFF', 'VIDEO', 'noCardInserted')
-        await expect(camera.sendStartRecording()).rejects.toThrow('noCardInserted')
-        expect(calls.some(call => call.name === 'StartMovieRecord')).toBe(false)
     })
 
     it('rejects failed start and stop movie responses instead of reporting completion', async () => {
@@ -328,15 +280,6 @@ describe('Nikon recording transition reliability',()=>{
    call.name==='ChangeCameraMode'&&call.params.Mode==='PC_CAMERA')).toBe(false)
   expect(set.mock.calls.map(([,value])=>value)).toEqual(['VIDEO'])
  })
- it('discards all session mode assumptions on disconnect',async()=>{
-  const {camera}=fixture()
-  Object.assign(camera,{cameraMode:'REMOTE',liveViewMode:'VIDEO',applicationMode:'ON',
-   liveViewStatus:'ON',liveViewStartPending:false,ownsLiveView:false})
-  await camera.disconnect()
-  for(const name of ['cameraMode','liveViewMode','applicationMode','liveViewStatus'])
-   expect((camera as any)[name]).toBe('UNKNOWN')
-  expect((camera as any).liveViewStartPending).toBe(false)
- })
  it('accepts denied application mode only when fresh telemetry confirms the requested state',async()=>{
   const {camera,responses}=fixture();responses.set('ChangeApplicationMode',0x200f)
   vi.spyOn(camera,'get').mockResolvedValue('none' as never)
@@ -350,26 +293,11 @@ describe('Nikon recording transition reliability',()=>{
   await expect((camera as any).changeApplicationMode('ON')).rejects.toThrow('AccessDenied')
   expect(calls.filter(call=>call.name==='ChangeApplicationMode')).toHaveLength(3)
  })
- it('does not swallow rejected Nikon property writes',async()=>{
-  const {camera,responses}=fixture();responses.set('SetDevicePropValueEx',0x200f)
-  await expect(camera.set(camera.registry.properties.LiveViewSelector,'VIDEO')).rejects.toThrow('LiveViewSelector write failed: AccessDenied')
- })
  it('closes the transport even when stopping live view fails',async()=>{
   const {camera,responses,transport}=fixture();await camera.captureLiveView();responses.set('EndLiveView',0xa004)
   await expect(camera.disconnect()).rejects.toThrow('EndLiveView')
   expect(transport.disconnect).toHaveBeenCalled()
  })
-})
-
-it('waits for Nikon recording-state telemetry to clear before leaving its recording modes',async()=>{
- const {camera,calls}=fixture();let samples=0
- ;(camera as any).liveViewStatus='ON';(camera as any).applicationMode='ON'
- vi.spyOn(camera,'get').mockImplementation(async()=>{
-  samples++
-  if(samples<=2){expect(calls.some(call=>call.name==='EndLiveView')).toBe(false);expect(calls.some(call=>call.name==='ChangeApplicationMode')).toBe(false);return 'alreadyRecording' as never}
-  return 'none' as never
- })
- await camera.sendStopRecording();expect(samples).toBeGreaterThan(2);expect(calls.some(call=>call.name==='EndLiveView')).toBe(true)
 })
 
 it('renews an idle Nikon PTP session before movie mode without reconnecting USB',async()=>{

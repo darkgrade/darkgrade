@@ -102,23 +102,18 @@ describe('Sony shutter and host transfer sequencing', () => {
         expect(camera.send).not.toHaveBeenCalled()
         expect(camera.set).not.toHaveBeenCalledWith(camera.registry.properties.SetPostViewEnable, 'ENABLE')
     })
-    it('releases both stages even when the half-press command fails', async () => {
-        const { camera } = fixture()
-        camera.set = vi.fn(async (_property, value) => { if (value === 'DOWN') throw new Error('CameraBusy') }) as any
-        await expect(camera.captureImage({ autofocus: false })).rejects.toThrow('CameraBusy')
-        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.ShutterReleaseButton, 'UP')
-        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.ShutterHalfReleaseButton, 'UP')
-        expect(camera.set).toHaveBeenCalledWith(camera.registry.properties.FocusMode, 'AF-C')
-        expect(camera.set).toHaveBeenLastCalledWith(camera.registry.properties.StillImageSaveDestination, 'CAMERA_DEVICE')
-    })
-    it('releases the half-press even when full-shutter release fails', async () => {
+    it.each([
+        ['the half-press', 'ShutterHalfReleaseButton:DOWN', 'StillImageSaveDestination:CAMERA_DEVICE', {}],
+        ['the full-shutter release', 'ShutterReleaseButton:UP', 'FocusMode:AF-C', { includeInfo: false, includeData: false }],
+    ] as const)('releases both stages and restores focus when %s fails', async (_stage, failing, last, options) => {
         const { camera, sent } = fixture()
+        sent.length = 0
         camera.set = vi.fn(async (property, value) => {
             sent.push(`${property.name}:${value}`)
-            if (property.name === 'ShutterReleaseButton' && value === 'UP') throw new Error('Release failed')
+            if (`${property.name}:${value}` === failing) throw new Error('CameraBusy')
         }) as any
-        await expect(camera.captureImage({ autofocus: false, includeInfo: false, includeData: false })).rejects.toThrow('Release failed')
-        expect(sent).toContain('ShutterHalfReleaseButton:UP')
-        expect(sent.at(-1)).toBe('FocusMode:AF-C')
+        await expect(camera.captureImage({ autofocus: false, ...options })).rejects.toThrow('CameraBusy')
+        expect(sent).toEqual(expect.arrayContaining(['ShutterReleaseButton:UP', 'ShutterHalfReleaseButton:UP', 'FocusMode:AF-C']))
+        expect(sent.at(-1)).toBe(last)
     })
 })

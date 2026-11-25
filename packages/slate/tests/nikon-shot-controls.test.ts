@@ -72,25 +72,26 @@ it('wrong descriptor identity cannot confirm a setting and an altered session is
  await expect(state.controller.read()).rejects.toThrow('descriptor')
  state.instance.sessionId=2;await expect(state.controller.read()).rejects.toThrow('session changed')
 })
-it('shutter, aperture and focus apply exact advertised vendor datatypes and readback',async()=>{
- const {controller}=fixture();await controller.prepare()
- expect((await controller.apply('set-shutter-speed','1/60')).shutterSpeed?.value).toBe('1/60')
- expect((await controller.apply('set-aperture','f/2.8')).aperture?.value).toBe('f/2.8')
- expect((await controller.apply('set-focus-mode','AF-S')).focusMode?.value).toBe('AF-S')
-})
 it('requires current Manual exposure before fixed ISO and retains the active automatic gain otherwise',async()=>{
  const state=fixture();await state.controller.prepare();state.descriptors.get(state.codes.exposureProgram).currentValueRaw=3
  expect((await state.controller.read()).iso).toMatchObject({value:'Auto',writable:false})
  await expect(state.controller.apply('set-iso','ISO 400')).rejects.toThrow('advertised')
 })
 
-it('generic setters accept raw advertised numeric values alongside optimiser labels',async()=>{
+it.each([
+ ['set-shutter-speed','1/60','shutterSpeed','1/60'],
+ ['set-aperture','f/2.8','aperture','f/2.8'],
+ ['set-focus-mode','AF-S','focusMode','AF-S'],
+ ['set-iso','400','iso','ISO 400'],
+ ['set-shutter-speed','65596','shutterSpeed','1/60'],
+ ['set-focus-mode','0','focusMode','AF-S'],
+] as const)('%s %s applies the exact advertised vendor datatype and reads back %s %s',async(action,value,control,expected)=>{
  const {controller}=fixture();await controller.prepare()
- expect((await controller.apply('set-iso','400')).iso?.value).toBe('ISO 400')
- expect((await controller.apply('set-shutter-speed','65596')).shutterSpeed?.value).toBe('1/60')
- expect((await controller.apply('set-focus-mode','0')).focusMode?.value).toBe('AF-S')
- await expect(controller.apply('set-iso','400.0')).rejects.toThrow('advertised')
- await expect(controller.apply('set-iso','9007199254740993')).rejects.toThrow('advertised')
+ expect((await controller.apply(action,value))[control]?.value).toBe(expected)
+})
+it.each(['400.0','9007199254740993'])('rejects the unadvertised numeric ISO %s',async value=>{
+ const {controller}=fixture();await controller.prepare()
+ await expect(controller.apply('set-iso',value)).rejects.toThrow('advertised')
 })
 it('a property removed from fresh vendor discovery cannot retain cached writable controls',async()=>{
  const state=fixture();await state.controller.prepare();state.descriptors.delete(state.codes.aperture)

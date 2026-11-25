@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +10,11 @@ import { promisify } from 'node:util'
 test('the executable delegates to Slate and preserves terminal output and exit codes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-wrapper-'))
     const env = { ...process.env, DARKGRADE_HOME: directory, DARKGRADE_TELEMETRY_URL: '' }
+    const run = (...args: string[]) => promisify(execFile)(process.execPath, ['dist/main.js', ...args], { env })
     try {
+        const { version } = JSON.parse(await readFile('package.json', 'utf8'))
+        assert.equal((await run('--version')).stdout, `darkgrade ${version}\n`)
+        assert.equal(existsSync(join(directory, 'settings.json')), false, 'loading the command runner writes no settings')
         const identity = (
             await promisify(execFile)(process.execPath, ['dist/main.js', 'telemetry', 'whoami'], { env })
         ).stdout.trim()
@@ -37,9 +42,6 @@ test('the executable delegates to Slate and preserves terminal output and exit c
                 return result.code === 1 && result.stderr.includes('Unknown command "invalid"')
             }
         )
-        const run = (...args: string[]) => promisify(execFile)(process.execPath, ['dist/main.js', ...args], { env })
-        const { version } = JSON.parse(await readFile('package.json', 'utf8'))
-        assert.equal((await run('--version')).stdout, `darkgrade ${version}\n`)
         assert.match((await run()).stdout, /Usage\n {2}darkgrade <command> \[options\]/)
         assert.match(await readFile('dist/darkgrade.1', 'utf8'), /^\.TH DARKGRADE 1 /)
     } finally {

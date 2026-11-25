@@ -29,7 +29,7 @@ describe('physical USB camera selection', () => {
         expect(close).toHaveBeenCalledOnce()
     })
 
-    it('opens only the uniquely filtered body, refusing ambiguous or excluded matches', async () => {
+    it('opens only the uniquely filtered body, refusing ambiguous, excluded or absent matches', async () => {
         const bodies = ['one', 'two'].map(serialNumber => ({
             ...camera,
             serialNumber,
@@ -40,6 +40,7 @@ describe('physical USB camera selection', () => {
             [{ filters: [{ vendorId: 0x04a9, serialNumber: 'two' }] }, 'opened two'],
             [{ filters: [{ vendorId: 0x04a9 }] }, /unique serialNumber/],
             [{ filters: [{ vendorId: 0x04a9 }], exclusionFilters: [{ serialNumber: 'one' }] }, 'opened two'],
+            [{ filters: [{ vendorId: 0x04a9, serialNumber: 'absent' }] }, 'No USB devices available'],
         ]
         for (const [usb, expected] of cases) {
             const transport = new USBTransport(new Logger({ captureConsole: false, renderInTerminal: false }))

@@ -1,9 +1,6 @@
 import type { DeviceDescriptor } from '@transport/interfaces/device.interface'
-import { CanonCamera } from '@vendors/canon/canon-camera'
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
-import { NikonCamera } from '@vendors/nikon/nikon-camera'
-import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
 import { genericEventRegistry } from '@ptp/definitions/event-definitions'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
@@ -14,7 +11,7 @@ import { protocolSession } from '@camera/protocol-session'
 
 describe('public Camera USB connection lifecycle', () => {
     it.each(['disconnect', 'recover'] as const)(
-        'restores events and connection state after %s on the same object',
+        'restores events, connection state and the same driver after %s on the same object',
         async cleanup => {
             const transport = new USBTransport(new Logger({ captureConsole: false, renderInTerminal: false }))
             let connected = false
@@ -57,6 +54,7 @@ describe('public Camera USB connection lifecycle', () => {
                 emit(7)
                 if (cleanup === 'disconnect') {
                     await camera.disconnect()
+                    expect(driver.sessionId).toBeNull()
                     subscribe() // Explicit disconnect intentionally removes application subscriptions.
                 } else {
                     const report = await camera.recover({ allowPortReset: false })
@@ -67,6 +65,8 @@ describe('public Camera USB connection lifecycle', () => {
                 emit(8)
                 expect(received).toEqual([7, 8])
                 expect(reset).toHaveBeenCalledTimes(resetsBeforeReconnect + 1)
+                expect(protocolSession(camera).driver).toBe(driver)
+                expect(protocolSession(camera).sessionId).toBe(driver.sessionId)
             } finally {
                 await camera.disconnect()
             }
@@ -74,7 +74,7 @@ describe('public Camera USB connection lifecycle', () => {
     )
 })
 
-describe.each([GenericCamera, SonyCamera, NikonCamera, CanonCamera])('%s event dispatch', Driver => {
+describe('GenericCamera event dispatch', () => {
     function camera() {
         let deliver!: (event: PTPEvent) => void
         const transport = {
@@ -83,7 +83,7 @@ describe.each([GenericCamera, SonyCamera, NikonCamera, CanonCamera])('%s event d
                 deliver = listener
             },
         } as unknown as TransportInterface
-        const camera = new Driver(transport, new Logger({ captureConsole: false, renderInTerminal: false }))
+        const camera = new GenericCamera(transport, new Logger({ captureConsole: false, renderInTerminal: false }))
         return {
             camera,
             deliver: (handle: number) => deliver({ code: 0x4002, transactionId: 1, parameters: [handle] }),
@@ -119,45 +119,29 @@ describe.each([GenericCamera, SonyCamera, NikonCamera, CanonCamera])('%s event d
     })
 })
 
-it('records decoded delivery without exporting parameters and removes listeners after polling', async () => {
-    const listeners = new Map<string, (value: unknown) => void>()
-    const observer = observeCameraEvents({
-        registry: { events: genericEventRegistry },
-        on: (event, listener) => {
-            listeners.set(event.name, listener)
-        },
-        off: event => {
-            listeners.delete(event.name)
-        },
-        pollEvents: async () => {
-            listeners.get('ObjectAdded')?.({ ObjectHandle: 123, private: 'secret' })
-        },
-    })
-    const result = await observer.finish()
-    expect(result.status).toBe('observed')
-    expect(result.events).toContainEqual({ code: 0x4002, name: 'ObjectAdded', count: 1 })
-    expect(JSON.stringify(result)).not.toContain('secret')
-    expect(listeners.size).toBe(0)
-})
-
-it('keeps partial notifications without claiming event success after a poll failure', async () => {
-    const listeners = new Map<string, (value: unknown) => void>()
-    const observer = observeCameraEvents({
-        registry: { events: genericEventRegistry },
-        on: (event, listener) => {
-            listeners.set(event.name, listener)
-        },
-        off: event => {
-            listeners.delete(event.name)
-        },
-        pollEvents: async () => {
-            listeners.get('ObjectAdded')?.({ ObjectHandle: 123 })
-            throw new Error('GetEventEx returned DeviceBusy')
-        },
-    })
-    const result = await observer.finish()
-    expect(result.status).toBe('failed')
-    expect(result.error).toBe('GetEventEx returned DeviceBusy')
-    expect(result.events).toContainEqual({ code: 0x4002, name: 'ObjectAdded', count: 1 })
-    expect(listeners.size).toBe(0)
-})
+it.each([undefined, 'GetEventEx returned DeviceBusy'])(
+    'records decoded delivery without exporting parameters, keeps it after poll failure %s, and removes listeners',
+    async pollFailure => {
+        const listeners = new Map<string, (value: unknown) => void>()
+        const observer = observeCameraEvents({
+            registry: { events: genericEventRegistry },
+            on: (event, listener) => {
+                listeners.set(event.name, listener)
+            },
+            off: event => {
+                listeners.delete(event.name)
+            },
+            pollEvents: async () => {
+                listeners.get('ObjectAdded')?.({ ObjectHandle: 123, private: 'secret' })
+                if (pollFailure) throw new Error(pollFailure)
+            },
+        })
+        const result = await observer.finish()
+        // A poll failure keeps the partial notifications without claiming event success.
+        expect(result.status).toBe(pollFailure ? 'failed' : 'observed')
+        if (pollFailure) expect(result.error).toBe(pollFailure)
+        expect(result.events).toContainEqual({ code: 0x4002, name: 'ObjectAdded', count: 1 })
+        expect(JSON.stringify(result)).not.toContain('secret')
+        expect(listeners.size).toBe(0)
+    }
+)

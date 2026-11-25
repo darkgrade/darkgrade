@@ -61,7 +61,7 @@ describe.each(drivers)('$name object download', driver => {
         expect(requests).toEqual([])
         expect(await camera.getObject(7, 0)).toEqual(new Uint8Array())
     })
-    it('stops on cancellation between chunks and allows a later download', async () => {
+    it('stops on cancellation between chunks, sends nothing once cancelled and allows a later download', async () => {
         const { camera, requests, logger } = fixture(driver, [Uint8Array.of(1, 2), Uint8Array.of(3)])
         const controller = new AbortController()
         await expect(camera.getObject(7, 5, () => controller.abort('cancelled'), controller.signal)).rejects.toBe(
@@ -71,15 +71,12 @@ describe.each(drivers)('$name object download', driver => {
         expect(logger.getActiveTransfer(7)).toBeUndefined()
         const transfer = logger.getOrderedTransactions().flatMap(group => group.logs).find(log => log.type === 'ptp_transfer')
         expect(transfer).toMatchObject({ level: 'error', responsePhase: { code: 0x2007 } })
+        const cancelled = new AbortController()
+        cancelled.abort('cancelled')
+        await expect(camera.getObject(9, 5, undefined, cancelled.signal)).rejects.toBe('cancelled')
+        expect(requests).toHaveLength(1)
         expect(await camera.getObject(8, 1)).toEqual(Uint8Array.of(3))
         expect(requests).toHaveLength(2)
-    })
-    it('does not send a chunk for a previously cancelled download', async () => {
-        const { camera, requests } = fixture(driver, [])
-        const controller = new AbortController()
-        controller.abort('cancelled')
-        await expect(camera.getObject(7, 5, undefined, controller.signal)).rejects.toBe('cancelled')
-        expect(requests).toEqual([])
     })
     it('rejects empty replies and camera refusals without inventing successful progress', async () => {
         const { camera, requests } = fixture(driver, [new Uint8Array()])
