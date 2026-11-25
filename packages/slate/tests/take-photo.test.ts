@@ -433,6 +433,23 @@ describe('takePhoto outcomes around the release', () => {
         expect(body.modeChanges).toEqual(changes)
     }, 15000)
 
+    it.each([
+        ['has no transfer mode to leave, so it is never switched or read', false, []],
+        ['leaves transfer mode before the release when the body lists it', true, ['DISABLE']],
+    ])('a Sony body whose inventory %s', async (_case, listed, switches) => {
+        const { camera, resumeShooting } = sonyBody()
+        resumeShooting.mockRestore()
+        const driver = protocolSession(camera).driver as SonyCamera
+        const propertyCache: Map<number, unknown> = Reflect.get(driver, 'propertyCache')
+        propertyCache.set(driver.registry.properties.StillImageSaveDestination.code, { vendorExtensions: { enabled: true } })
+        if (listed) propertyCache.set(driver.registry.properties.ContentTransferEnable.code, { vendorExtensions: { enabled: true } })
+        await expect(camera.takePhoto()).resolves.toMatchObject({ destination: 'card' })
+        const sent = vi.mocked(driver.send).mock.calls.filter(([operation]) => operation.name === 'SDIO_SetContentsTransferMode')
+        expect(sent.map(([, parameters]) => Reflect.get(parameters, 'TransferMode'))).toEqual(switches)
+        const reads = vi.mocked(driver.get).mock.calls.filter(([property]) => property.name === 'ContentTransferEnable')
+        expect(reads).toHaveLength(switches.length)
+    })
+
     it('returns a Sony photo without a media id when the body offers no card index', async () => {
         const { camera, body, presses } = sonyBody()
         body.cardIndex = 'unsupported'

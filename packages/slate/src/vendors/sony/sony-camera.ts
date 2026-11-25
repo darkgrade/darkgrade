@@ -1233,13 +1233,19 @@ export class SonyCamera extends GenericCamera {
      * Puts the body back into remote shooting regardless of what this session believes: leaves
      * content-transfer mode unconditionally, waits for the camera to confirm it, and forces the
      * next live-view frame to re-enable live view and post view. Use after card access, or when
-     * live view answers AccessDenied (0x200F) because the body is still showing playback.
+     * live view answers AccessDenied (0x200F) because the body is still showing playback. A body
+     * whose property inventory (read at connect) has no ContentTransferEnable (0xD295) has no
+     * transfer mode to leave, so unless this session entered it, nothing is sent and 0xD295 is
+     * never read. With no inventory read yet, it leaves transfer mode as before.
      */
     async resumeShooting(): Promise<void> {
         this.shootingResumeNeeded = false
+        this.liveViewPostViewEnabled = false
+        const inventoryLacksTransferMode =
+            this.propertyCache.size > 0 && !this.propertyCache.has(this.registry.properties.ContentTransferEnable.code)
+        if (!this.contentTransferModeEnabled && inventoryLacksTransferMode) return
         this.contentTransferModeEnabled = true
         await this.disableContentTransferMode()
-        this.liveViewPostViewEnabled = false
     }
 
     /**
