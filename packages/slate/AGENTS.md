@@ -134,8 +134,12 @@ one without it is read once more (live view) or reported, never returned. After 
 body stays in content-transfer mode and answers card-index reads (list, preview) with
 CameraStatusError 0xA106: they leave it first. The FX2's card index is ordered by its clock, which
 was set back during the session: lookups take only contents numbered above the last one, reading
-the whole index once when the time window shows none. Sony colour temperature 0 and an unnamed value
-with nothing to choose (FX2 drive mode 0x0 in movie mode) do not apply; the R6 Mark III offers movie
+the whole index once when the time window shows none. Colour temperature 0 (any vendor), and an unnamed
+value that is disabled or has nothing to choose (FX2 drive mode 0x0 in movie mode, a Nikon's f/0), do
+not apply: `withoutInapplicableValues` (`camera/controls.ts`, on PTP and Sony SDK observations alike)
+reports them `enabled: false` with no `value` and no choices, the raw reading in `unrecognized.value`,
+and the getter answers CameraUnsupportedError (the FX2 in Auto reported "0", which failed the bench's
+spelling check); the R6 Mark III offers movie
 sound 0 and 1, and its clip at 0 has audio, so 0 is On there.
 
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the

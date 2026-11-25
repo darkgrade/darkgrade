@@ -145,7 +145,7 @@ function settingReader<Value extends string>(
     accepts: (value: string) => value is Value = (_value: string): _value is Value => true
 ): SettingReader<Value> {
     return state => {
-        if (state.unrecognized?.value === undefined && accepts(state.value)) return state.value
+        if (state.value !== undefined && state.unrecognized?.value === undefined && accepts(state.value)) return state.value
         throw new CameraUnsupportedError(state.id, `${state.label}: the camera reports a value Slate has no name for (${state.value})`)
     }
 }
@@ -176,10 +176,7 @@ export const typedSettingReaders: { [Id in TypedSettingId]: SettingReader<Settin
     colorTemperature: state => {
         // An a6700 in Daylight reports ColorTemperature disabled at 0: the setting does not apply now.
         if (state.enabled === false)
-            throw new CameraUnsupportedError(
-                'colorTemperature',
-                'Colour temperature does not apply with the current white balance; choose Color Temperature first'
-            )
+            throw new CameraUnsupportedError('colorTemperature', colourTemperatureInapplicable)
         const kelvin = Number(state.value)
         const unreadable = `Colour temperature: the camera reports a value Slate cannot read (${state.value})`
         if (state.unrecognized?.value !== undefined || !Number.isFinite(kelvin) || kelvin <= 0)
@@ -229,15 +226,19 @@ export interface TypedSettingHost {
     ): Promise<CameraControlState>
 }
 
+const colourTemperatureInapplicable =
+    'Colour temperature does not apply with the current white balance; choose Color Temperature first'
+const inapplicableReasons: Partial<Record<TypedSettingId, string>> = { colorTemperature: colourTemperatureInapplicable }
+
 function readSetting(id: TypedSettingId, state: CameraControlState | undefined) {
     if (!state)
         throw new CameraUnsupportedError(
             id,
             `${cameraControlDefinitions[id].label} is not available on this camera in its current mode`
         )
-    // A disabled setting whose value has no name (Sony drive mode 0x0 in movie mode) does not apply now.
-    if (state.enabled === false && state.unrecognized?.value !== undefined)
-        throw new CameraUnsupportedError(id, `${state.label} does not apply in the camera's current mode`)
+    // A setting with no value does not apply now (withoutInapplicableValues: Sony drive mode 0x0 in movie mode).
+    if (state.value === undefined)
+        throw new CameraUnsupportedError(id, inapplicableReasons[id] ?? `${state.label} does not apply in the camera's current mode`)
     return typedSettingReaders[id](state)
 }
 

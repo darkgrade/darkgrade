@@ -8,6 +8,7 @@ import {
     type CameraCapabilities,
     type CameraControlId,
     type UnrecognizedValues,
+    withoutInapplicableValues,
 } from '@camera/controls'
 import { parseExposureTime } from '@camera/exposure-time'
 import { canonicalControlValues, hasCanonicalControlValues } from '@vendors/control-properties'
@@ -203,7 +204,7 @@ export function sonySdkCapabilities(properties: SonySdkProperty[]): CameraCapabi
         }
     }
     // The SDK does not supply a standard PTP DeviceInfo operation inventory.
-    return { observedAt: Date.now(), controls: result, advertisedOperations: null }
+    return { observedAt: Date.now(), controls: withoutInapplicableValues(result), advertisedOperations: null }
 }
 
 export function sonySdkControlWireValue(

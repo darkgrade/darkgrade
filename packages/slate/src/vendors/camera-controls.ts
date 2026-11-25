@@ -9,6 +9,7 @@ import {
     type CameraControlInputs,
     type CameraControlState,
     type UnrecognizedValues,
+    withoutInapplicableValues,
 } from '@camera/controls'
 import {
     exposureSeconds,
@@ -369,18 +370,10 @@ async function observeControls(camera: GenericCamera, requested?: CameraControlI
     }
     for (const [id, state] of Object.entries(composed) as [CameraControlId, CameraControlState | undefined][])
         if (state && (requested === undefined || requested === id)) controls[id] = state
-    // No colour temperature is 0 K: a Sony in a white balance preset reports 0 (FX2 in Auto, a6700 in
-    // Daylight). It does not apply until the white balance is Color Temperature.
-    const kelvin = controls.colorTemperature
-    if (kelvin?.value === '0') controls.colorTemperature = { ...kelvin, enabled: false, writable: false }
-    // A value with no name and nothing to choose (Sony drive mode 0x0 in movie mode) does not apply now.
-    for (const state of Object.values(controls))
-        if (state && state.unrecognized?.value !== undefined && !state.allowedValues?.length && !state.range && !state.unrecognized.choices?.length)
-            controls[state.id] = { ...state, enabled: false, writable: false }
     return {
         capabilities: {
             observedAt: Date.now(),
-            controls,
+            controls: withoutInapplicableValues(controls),
             advertisedOperations: deviceInfo ? [...deviceInfo.operationsSupportedRaw] : null,
             ...(lens ? { lens } : {}),
         },

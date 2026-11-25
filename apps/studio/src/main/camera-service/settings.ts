@@ -88,7 +88,7 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
                       value => Number(value) >= state.range!.minimum && Number(value) <= state.range!.maximum
                   )
                 : listed
-        return { value: state.value, options, enabled: state.enabled && state.writable }
+        return { value: state.value ?? null, options, enabled: state.enabled && state.writable }
     },
 
     async setControl(name: CameraControlName, value: string): Promise<CameraControls | null> {

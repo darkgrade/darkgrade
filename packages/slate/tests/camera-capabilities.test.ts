@@ -393,7 +393,11 @@ describe('photo controls in Slate\'s spelling on every vendor', () => {
         expect(controls.shutterSpeed).toMatchObject({ value: '1.3"', allowedValues: ['0.4"', '1.3"', '1/125', 'Bulb'], writable: true })
         expect(controls.focusMode).toMatchObject({ value: 'AF-A', allowedValues: ['AF-S', 'AF-C', 'MF', 'AF-A'] })
         expect(controls.focusMode?.unrecognized).toEqual({ choices: ['Unknown focus (7)'] })
-        expect(controls.aperture).toMatchObject({ value: 'Unrecognized (f/0)', allowedValues: [], writable: false })
+        // f/0 with nothing to choose is no aperture: it does not apply, so no value and no choices.
+        expect(controls.aperture).toMatchObject({ enabled: false, writable: false, unrecognized: { value: 'f/0' } })
+        expect(controls.aperture).not.toHaveProperty('value')
+        expect(controls.aperture).not.toHaveProperty('allowedValues')
+        expect((await fixture.camera.getAperture().catch(error => error)).message).toContain('does not apply')
         expect(await fixture.camera.getFocusMode()).toBe('AF-A')
         fixture.writes.length = 0
         expect(await fixture.camera.setShutterSpeed('0.4"')).toBe('0.4"')
@@ -526,7 +530,7 @@ describe('Canon structured format capabilities', () => {
         records.push([...records[1]!])
         records[2]![1] = 123 // Distinct wire record with the same human display.
         expect((await camera.getCapabilities()).controls.videoFormat?.writable).toBe(false)
-        await expect(camera.setControl('videoFormat', state.value)).rejects.toThrow('not writable')
+        await expect(camera.setControl('videoFormat', state.value!)).rejects.toThrow('not writable')
         expect(write).toHaveBeenCalledOnce()
     })
 })

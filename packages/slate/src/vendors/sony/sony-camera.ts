@@ -1617,7 +1617,7 @@ export class SonyCamera extends GenericCamera {
 
     private availabilityOfFocus(capabilities: CameraCapabilities): OperationAvailability {
         const area = capabilities.controls.focusArea
-        const spot = area && sonyAreaLabel(area.value)
+        const spot = area?.value !== undefined ? sonyAreaLabel(area.value) : undefined
         const movable = spot !== undefined && isMovableFocusArea(spot)
         if (movable) this.focusSession().lastSpot = sonyPlainArea(spot)
         if (!area) return unsupported('The camera reports no focus area to place a point in')

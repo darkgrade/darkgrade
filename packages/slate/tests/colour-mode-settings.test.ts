@@ -324,25 +324,57 @@ describe('colour temperature in kelvin', () => {
         expect(await camera.setColorTemperature(123456).catch(error => error)).toBeInstanceOf(CameraRefusedError)
     })
 
-    it('says colour temperature does not apply when the camera reports it disabled (a Sony in Daylight)', async () => {
-        const { camera, body } = sonyCamera()
-        Object.assign(body.properties.get(sonyCodes.colorTemperature)!, { current: 0, enabled: false })
+    // A control that does not apply reports no value and no choices, its raw reading in unrecognized.value:
+    // the bench FX2 in Auto reported colour temperature "0", which is no temperature and no spelling.
+    const inapplicable = (raw: string) => ({ enabled: false, writable: false, unrecognized: { value: raw } })
+    const withoutValue = (state: object | undefined) => {
+        for (const key of ['value', 'allowedValues', 'range', 'exposureTime']) expect(state).not.toHaveProperty(key)
+    }
+
+    it.each([
+        ['Sony in Daylight (reported disabled)', () => sonyCamera(), sonyCodes.colorTemperature, false],
+        ['Sony FX2 in Auto (reported enabled)', () => sonyCamera(), sonyCodes.colorTemperature, true],
+        ['Canon', () => canonCamera(), canonCodes.colorTemperature, true],
+        ['Nikon', () => nikonCamera(), nikonCodes.kelvin, true],
+    ] as const)('%s at 0 K: no value, no choices, and the getter says it does not apply', async (_body, simulate, code, enabled) => {
+        const { camera, body } = simulate()
+        Object.assign(body.properties.get(code)!, { current: 0, enabled })
+        const state = (await camera.getCapabilities()).controls.colorTemperature
+        expect(state).toMatchObject(inapplicable('0'))
+        withoutValue(state)
         const outcome = await camera.getColorTemperature().catch(error => error)
         expect(outcome).toBeInstanceOf(CameraUnsupportedError)
         expect(outcome.message).toContain('does not apply with the current white balance')
-        // An FX2 in Auto reports it enabled at 0 K: getCapabilities and the getter agree it does not apply.
-        Object.assign(body.properties.get(sonyCodes.colorTemperature)!, { current: 0, enabled: true })
-        expect((await camera.getCapabilities()).controls.colorTemperature).toMatchObject({ value: '0', enabled: false, writable: false })
-        expect((await camera.getColorTemperature().catch(error => error)).message).toContain('does not apply')
+        expect(await camera.setColorTemperature(5600).catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
+        expect(body.writes).toEqual([])
+    })
+
+    it('Sony Wi-Fi at 0 K: the same rule through the SDK', async () => {
+        const { camera, sets } = sonyWifiCamera([{ code: 277, type: 3, value: '0', writable: true, valueForm: 'range' }])
+        const state = (await camera.getCapabilities()).controls.colorTemperature
+        expect(state).toMatchObject(inapplicable('0'))
+        withoutValue(state)
+        expect(await camera.getColorTemperature().catch(error => error)).toBeInstanceOf(CameraUnsupportedError)
+        expect(sets).toEqual([])
     })
 
     it('says a Sony drive mode 0x0 with nothing to choose (movie mode) does not apply', async () => {
         const { camera, body } = sonyCamera()
         Object.assign(body.properties.get(sonyCodes.driveMode)!, { current: 0, choices: [] })
-        expect((await camera.getCapabilities()).controls.driveMode).toMatchObject({ enabled: false, writable: false })
+        const state = (await camera.getCapabilities()).controls.driveMode
+        expect(state).toMatchObject(inapplicable('0x0'))
+        withoutValue(state)
         const outcome = await camera.getDriveMode().catch(error => error)
         expect(outcome).toBeInstanceOf(CameraUnsupportedError)
         expect(outcome.message).toContain("does not apply in the camera's current mode")
+    })
+
+    it('keeps an unnamed value that still has choices, read-only, with its value', async () => {
+        const { camera, body } = sonyCamera()
+        Object.assign(body.properties.get(sonyCodes.driveMode)!, { current: 0 })
+        const state = (await camera.getCapabilities()).controls.driveMode
+        expect(state).toMatchObject({ value: 'Unrecognized (0x0)', enabled: true, writable: false })
+        expect(state?.allowedValues?.length).toBeGreaterThan(0)
     })
 })
 

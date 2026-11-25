@@ -88,7 +88,10 @@ export type CameraControlInputs = {
 export { unrecognizedValueLabel } from '@ptp/datasets/device-prop-desc-dataset'
 
 export interface UnrecognizedValues {
-    /** The current value; the control is then read-only and its `value` reads `Unrecognized (<raw>)`. */
+    /**
+     * The current raw value. The control is then read-only and its `value` reads `Unrecognized (<raw>)`,
+     * or, when it does not apply now, has no `value` at all.
+     */
     value?: string
     /** Advertised choices left out of `allowedValues`; they are never writable. */
     choices?: string[]
@@ -100,7 +103,12 @@ export interface CameraControlState {
     aliases: readonly string[]
     /** Exact active property, retained for diagnostics. Applications route writes by id. */
     source: { name: string; code: number; protocol: 'ptp' | 'sony-sdk' }
-    value: string
+    /**
+     * The current value in Slate's spelling. Absent when the control does not apply now (`enabled:
+     * false`, no choices, the raw reading in `unrecognized.value`): colour temperature under a white
+     * balance preset, Sony drive mode in movie mode.
+     */
+    value?: string
     allowedValues?: string[]
     writable: boolean
     enabled: boolean
@@ -156,6 +164,37 @@ export interface CameraControlSession extends TypedSettingMethods {
 }
 
 export type CameraRecordingState = 'idle' | 'recording' | 'starting' | 'stopping' | 'unknown'
+
+/**
+ * A control whose reading means nothing now does not apply: it reports no value and no choices, its raw
+ * reading kept in `unrecognized.value`. That is a colour temperature of 0 K (a Sony in a white balance
+ * preset: FX2 in Auto, a6700 in Daylight), and a value with no name that is disabled or has nothing to
+ * choose (Sony drive mode 0x0 in movie mode). Every vendor's observation goes through this.
+ */
+export function withoutInapplicableValues(
+    controls: Partial<Record<CameraControlId, CameraControlState>>
+): Partial<Record<CameraControlId, CameraControlState>> {
+    const result: Partial<Record<CameraControlId, CameraControlState>> = {}
+    for (const [id, state] of Object.entries(controls) as [CameraControlId, CameraControlState | undefined][]) {
+        if (!state) continue
+        const noKelvin = id === 'colorTemperature' && state.value !== undefined && Number(state.value) === 0
+        const raw = state.unrecognized?.value ?? (noKelvin ? state.value : undefined)
+        const nothingToChoose = !state.allowedValues?.length && !state.range && !state.unrecognized?.choices?.length
+        const inapplicable = raw !== undefined && (noKelvin || state.enabled === false || nothingToChoose)
+        result[id] = inapplicable
+            ? {
+                  id: state.id,
+                  label: state.label,
+                  aliases: state.aliases,
+                  source: state.source,
+                  enabled: false,
+                  writable: false,
+                  unrecognized: { value: raw },
+              }
+            : state
+    }
+    return result
+}
 
 const normalized = (name: string) => name.toLowerCase().replace(/[\s_-]+/g, '')
 
