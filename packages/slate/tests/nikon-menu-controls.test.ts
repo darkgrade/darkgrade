@@ -22,7 +22,7 @@ function fixture(options: {
         await options.onCommand?.(parameters as CommandParameters)
         return options.responses?.[(parameters as CommandParameters).Command] ?? { code: 0x2001, parameters: [0x2001, 0, 0, 0, 0] }
     })
-    const camera = { send, getInstance: () => instance }
+    const camera = { send, get driver(){return instance} }
     const controller = new NikonMenuController(camera as any)
     const commands = () => send.mock.calls.filter(([operation]) => operation.code === 0x94fd)
         .map(([, parameters]) => parameters as CommandParameters)
@@ -122,7 +122,7 @@ describe('scoped Nikon menu navigation', () => {
     it('also rejects a replacement camera instance reusing the same numeric session', async () => {
         const setup = fixture()
         await expect(setup.controller.run(options, async menu => {
-            setup.camera.getInstance = () => ({ sessionId: 41 })
+            Object.defineProperty(setup.camera,'driver',{get:()=>({ sessionId: 41 }),configurable:true})
             await menu.press('menu')
         })).rejects.toThrow('cleanup is unconfirmed')
         expect(setup.commands().map(command => command.Command)).toEqual([0xf001, 0xf094])

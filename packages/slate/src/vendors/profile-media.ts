@@ -1,3 +1,4 @@
+import { protocolAccess } from '@camera/operations/protocol'
 import type { Camera } from '@camera/index'
 import { readCameraObjectHandles } from '@camera/storage'
 import { PTPResponseError } from '@core/ptp-errors'
@@ -13,7 +14,7 @@ export async function captureProfilePhoto(
         rawCompression?: 'lossless'
     }
 ): Promise<{ info?: ObjectInfo; data?: Uint8Array }> {
-    const vendor = camera.getInstance().vendorId
+    const vendor = protocolAccess(camera).driver.vendorId
     if ((options.destination === 'memory' && vendor !== 0x054c) || ![0x04b0, 0x054c].includes(vendor!))
         return camera.captureImage({ includeInfo: true, includeData: true, ...options })
     const capture = async () => {
@@ -26,7 +27,7 @@ export async function captureProfilePhoto(
             try {
                 for (const handle of await readCameraObjectHandles(camera)) {
                     if (baseline.has(handle)) continue
-                    const response = await camera.send(camera.getInstance().registry.operations.GetObjectInfo, {
+                    const response = await camera.send(protocolAccess(camera).driver.registry.operations.GetObjectInfo, {
                         ObjectHandle: handle,
                     })
                     if (response.code !== 0x2001)
@@ -56,7 +57,7 @@ export async function captureProfilePhoto(
     if (vendor !== 0x054c) return capture()
     // Read-only profile initialization preserves the body's dial priority. A still workflow
     // must temporarily claim host priority before changing Movie to Photo, then restore it.
-    const properties = camera.getInstance().registry.properties
+    const properties = protocolAccess(camera).driver.registry.properties
     if (!('PositionKeySetting' in properties) || !('StillImageSaveDestination' in properties))
         throw new Error('Sony recording controls are unavailable in this camera registry')
     const priority = properties.PositionKeySetting
@@ -68,7 +69,7 @@ export async function captureProfilePhoto(
         if (original !== 'HOST_PRIORITY') await camera.set(priority, 'HOST_PRIORITY')
         if (originalDestination !== undefined && originalDestination !== 'CAMERA_DEVICE')
             await camera.set(destination, 'CAMERA_DEVICE')
-        const exposureProgram = camera.getInstance().registry.properties.ExposureProgramMode
+        const exposureProgram = protocolAccess(camera).driver.registry.properties.ExposureProgramMode
         return await withSonyPhotoMode({
             refreshPropertyStates: () => camera.getSonyPropertyStates(),
             setExposureProgram: value => camera.set(exposureProgram, value),

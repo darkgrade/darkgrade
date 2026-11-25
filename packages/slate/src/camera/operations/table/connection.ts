@@ -15,6 +15,11 @@ export const connectionOperationTable = {
                 cli: { omitted: 'every command connects itself' },
             },
         },
+        getInfo: {
+            area: 'connection',
+            disposition: { kind: 'keep' },
+            summary: 'Make, model, firmware, lens mount, connection type',
+        },
         connectSonyMenuSession: {
             area: 'connection',
             disposition: { kind: 'protocol' },
@@ -27,9 +32,6 @@ export const connectionOperationTable = {
             area: 'connection',
             disposition: { kind: 'keep' },
             summary: 'Unsticks a camera that stopped answering',
-            surfaces: {
-                cli: { command: 'recover' },
-            },
         },
         disconnect: {
             area: 'connection',
@@ -40,7 +42,6 @@ export const connectionOperationTable = {
             },
         },
     },
-    // getInfo is implemented with the body operations (`@camera/operations/table/body`).
     planned: {},
 } as const satisfies AreaOperationTable
 

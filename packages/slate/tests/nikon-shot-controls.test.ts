@@ -11,7 +11,7 @@ function fixture(){
  let flags=0,video=true,failIso=false,lieIso=false
  const calls:{name:string;code?:number;value?:number}[]=[]
  const instance={sessionId:1,registry:createNikonRegistry(true)}
- const camera={getInstance:()=>instance,get:async()=>video?'VIDEO':'PHOTO',getNikonVendorPropertyCodes:async()=>[...descriptors.keys()],send:async(operation:any,parameters:any,data?:Uint8Array)=>{
+ const camera={get driver(){return instance},get:async()=>video?'VIDEO':'PHOTO',getNikonVendorPropertyCodes:async()=>[...descriptors.keys()],send:async(operation:any,parameters:any,data?:Uint8Array)=>{
   const code=parameters?.DevicePropCode
   calls.push({name:operation.name,code})
   if(operation.name==='ChangeCameraMode')return {code:0x2001}

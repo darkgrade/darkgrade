@@ -51,7 +51,7 @@ When you call `connect()`, Darkgrade Slate:
 
 1. Scans for connected USB devices
 2. Identifies the camera's vendor ID
-3. Selects the appropriate vendor-specific implementation:
+3. Selects the appropriate vendor driver (the classes are exported only from the unsupported `@darkgrade/slate/protocol` entry):
    - **Sony ⍺ Series** → `SonyCamera` with live view, video recording, SDIO
    - **Nikon Z Series** → `NikonCamera` with extended properties
    - **Canon EOS R Series** → `CanonCamera` with remote control
@@ -83,17 +83,21 @@ Values use one spelling on every camera: `'f/4'`, `'ISO 1600'` or `'Auto'`, `'Ma
 ### Event Handling
 
 ```typescript
-// Listen for camera events
-camera.on(camera.getInstance().registry.events.ObjectAdded, event => {
+import { protocolSession } from '@darkgrade/slate/protocol'
+
+// Raw PTP events come from the session's registry (unsupported, for bench work).
+const { events } = protocolSession(camera).registry
+
+camera.on(events.ObjectAdded, event => {
     console.log('New object added:', event.ObjectHandle)
 })
 
-camera.on(camera.getInstance().registry.events.DevicePropChanged, event => {
+camera.on(events.DevicePropChanged, event => {
     console.log('Property changed:', event.DevicePropCode)
 })
 
 // Remove event listeners
-camera.off(camera.getInstance().registry.events.ObjectAdded)
+camera.off(events.ObjectAdded)
 ```
 
 ### Live View
@@ -140,16 +144,20 @@ for (const [storageId, storage] of Object.entries(objects)) {
 
 ### Advanced Property Access
 
-Access vendor-specific properties directly:
+Access vendor-specific properties directly through the unsupported `@darkgrade/slate/protocol`
+entry. These reads and writes are raw PTP: nothing is confirmed the way `Camera` operations are.
 
 ```typescript
-const registry = camera.getInstance().registry
+import { protocolSession } from '@darkgrade/slate/protocol'
+
+const session = protocolSession(camera)
+const { registry } = session
 
 // Get property with type safety
-const propValue = await camera.get(registry.properties.ExposureIndex)
+const propValue = await session.get(registry.properties.ExposureIndex)
 
 // Set property
-await camera.set(registry.properties.ExposureIndex, '3200')
+await session.set(registry.properties.ExposureIndex, '3200')
 ```
 
 ## Advanced Usage

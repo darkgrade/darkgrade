@@ -7,12 +7,6 @@ import type { AreaOperationTable } from '@camera/operations/table/operation-entr
  */
 export const bodyOperationTable = {
     current: {
-        // The plan lists getInfo under Connection; it is implemented with the body operations.
-        getInfo: {
-            area: 'connection',
-            disposition: { kind: 'add' },
-            summary: 'Make, model, firmware, lens mount, connection type',
-        },
         getBattery: {
             area: 'body',
             disposition: { kind: 'add' },

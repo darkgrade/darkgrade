@@ -138,10 +138,10 @@ describe('first contact', () => {
             const codes = source.commands.map(command => command.code)
             expect(codes).toContain(0x1004)
             expect(codes.some(code => [0x100e, 0x1009, 0x1016].includes(code))).toBe(false)
-            // Same model and firmware again: nothing new is read.
+            // Same model and firmware again: nothing new is read; the session's identity is already known.
             const before = source.commands.length
             expect(await recordFirstContact(camera, value)).toBe(false)
-            expect(source.commands.slice(before).map(command => command.code)).toEqual([0x1001])
+            expect(source.commands.slice(before).map(command => command.code)).toEqual([])
         } finally {
             await camera.disconnect()
         }

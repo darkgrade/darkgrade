@@ -1,6 +1,7 @@
 import { GenericCamera } from '@camera/generic-camera'
 import { Camera } from '@camera/index'
-import { SonyCamera } from '@camera/sony-camera'
+import { protocolSession } from '@camera/operations/protocol'
+import type { TransactionPolicy } from '@camera/transaction-channel'
 import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
@@ -222,6 +223,19 @@ export function sanitizeProfileTransaction(
     return result
 }
 
+/** The read-only profile's own standard-PTP driver, with the capture registry and its transaction policy. */
+function readOnlyCamera(
+    transport: TransportInterface,
+    logger: Logger,
+    registry: ReturnType<typeof captureRegistry>,
+    policy: Partial<TransactionPolicy>
+): () => GenericCamera {
+    const driver = new GenericCamera(transport, logger)
+    Object.assign(driver, { registry })
+    driver.configureTransactions(policy)
+    return () => driver
+}
+
 /** Runs only when explicitly invoked; callers own the physical bench lease and recovery policy. */
 export async function captureCameraProfile(source: TransportInterface, options: ProfileCaptureOptions) {
     if (options.liveView && !options.initialize) throw new Error('Live view requires explicit initialization')
@@ -287,16 +301,20 @@ export async function captureCameraProfile(source: TransportInterface, options: 
     })
     const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
     const registry = captureRegistry(options.vendorId)
+    const descriptorPolicy = { timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false }
     const facade = options.initialize
         ? new Camera({
               transport: trace.transport,
               vendorId: options.vendorId,
               logger: { renderInTerminal: false, captureConsole: false },
+              // The profile is the inventory; a first-contact inventory would add its own reads.
+              firstContact: false,
+              // Applied to whichever driver connect selects for the opened body.
+              transactionPolicy: descriptorPolicy,
           })
         : undefined
-    const camera = facade?.getInstance() ?? new GenericCamera(trace.transport, logger)
-    if (!options.initialize) Object.assign(camera, { registry })
-    camera.configureTransactions({ timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false })
+    // Camera.connect may replace its driver once the body's vendor is known, so read it at each use.
+    const camera = facade ? () => protocolSession(facade).driver : readOnlyCamera(trace.transport, logger, registry, descriptorPolicy)
     const check = async <T>(id: string, action: () => Promise<T>, cleanup = false): Promise<T | undefined> => {
         if (!cleanup && Date.now() >= deadline) {
             checks.push({ id, status: 'skipped', detail: 'Capture deadline reached' })
@@ -320,7 +338,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
         }
     }
     const send = async (operation: OperationDefinition, parameters: Record<string, unknown> = {}) => {
-        const response = (await camera.send(operation, parameters as never, undefined, 1024 * 1024)) as {
+        const response = (await camera().send(operation, parameters as never, undefined, 1024 * 1024)) as {
             code: number
             data?: unknown
         }
@@ -341,8 +359,9 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 ],
             },
         }
+        // Initialization opens the vendor session read-only: Sony keeps its dial priority and image routing.
         await check('session', () =>
-            camera instanceof SonyCamera ? camera.connect(selection, { configure: false }) : camera.connect(selection)
+            facade ? facade.connect({ device: selection, observeOnly: true }) : camera().connect(selection)
         )
         const info = await check('device-info', () => send(registry.operations.GetDeviceInfo))
         if (info) {
@@ -426,7 +445,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 await check('nikon-events', () => send(createNikonRegistry(true).operations.GetEvent))
             // Full transfers and busy polling need more time than descriptor reads.
             if (options.takePhoto || options.liveView)
-                camera.configureTransactions({ timeoutMilliseconds: 30000, deviceBusyRetries: 0, automaticUSBReset: false })
+                camera().configureTransactions({ timeoutMilliseconds: 30000, deviceBusyRetries: 0, automaticUSBReset: false })
             for (let index = 0; index < repetitions; index++) {
               const suffix = index ? `-${index + 1}` : ''
               if (options.takePhoto)
@@ -437,7 +456,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 })
               if (options.liveView)
                 await check('live-view' + suffix, async () => {
-                    const frame = await camera.captureLiveView({ includeInfo: false, includeData: true })
+                    const frame = await camera().captureLiveView({ includeInfo: false, includeData: true })
                     if (!frame.data?.length) throw new Error('No live-view image')
                     media.push({ check: 'live-view' + suffix, bytes: frame.data.length, metadataPresent: false })
                 })
@@ -446,7 +465,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 checks.push({ id: 'property-roundtrip', status: 'skipped', detail: 'Insufficient time remains for write, fresh reads and restoration' })
             else if (options.qualify) {
                 qualification = await check('property-roundtrip', () =>
-                    qualifyProfileProperty(camera, options.vendorId, options.qualify!.property, options.qualify!.value))
+                    qualifyProfileProperty(camera(), options.vendorId, options.qualify!.property, options.qualify!.value))
                 if (qualification && !qualification.passed)
                     checks.push({ id: 'property-roundtrip-verification', status: 'error', detail: qualification.restored ? 'Target readback failed; original restored' : 'Original-value restoration failed' })
             }
@@ -458,7 +477,7 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 })
         }
     } finally {
-        await check('disconnect', () => camera.disconnect(), true)
+        await check('disconnect', () => (facade ? facade.disconnect() : camera().disconnect()), true)
     }
     if (budgetReached)
         checks.push({

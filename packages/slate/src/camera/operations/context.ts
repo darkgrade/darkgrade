@@ -75,6 +75,11 @@ export function bindCameraContext(camera: object, context: CameraContext): void 
     contexts.set(camera, context)
 }
 
+/** True for a constructed Camera (it has a context), false for anything shaped like one. */
+export function isCamera(candidate: object): candidate is Camera {
+    return contexts.has(candidate)
+}
+
 export function cameraContext(camera: object): CameraContext {
     const context = contexts.get(camera)
     if (!context) throw new Error('Camera operations must be called on a Camera instance')

@@ -1,12 +1,13 @@
+import { protocolAccess } from '@camera/operations/protocol'
 import type { StatePhase } from '@contribute/protocol'
 /** The existing event cache is the only input; no extra USB commands, waits or cloud calls. */
 function diagnosticState(camera:any,phase:StatePhase){
- try{camera.getInstance?.().recordStateSnapshot?.('recording',phase)}catch{}
+ try{protocolAccess(camera).driver?.recordStateSnapshot?.('recording',phase)}catch{}
 }
 export interface CanonRecordingSettings {mode:number;iso?:string;aperture?:string;shutterSpeed?:string;whiteBalance?:string;settingsMatched:boolean}
 const properties={iso:['CanonIso','setIso'],aperture:['CanonAperture','setAperture'],shutterSpeed:['CanonShutterSpeed','setShutterSpeed'],whiteBalance:['CanonWhiteBalance','setWhiteBalance']} as const
 async function movieMode(camera:any):Promise<number|undefined>{
- const value=(await camera.getCanonUnknownPropertyStates()).find((state:any)=>state.name==='FixedMovie')?.rawValue
+ const value=(await protocolAccess(camera).getCanonUnknownPropertyStates()).find((state:any)=>state.name==='FixedMovie')?.rawValue
  return value===0||value===1?value:undefined
 }
 /** Mode selection can be acknowledged before it takes effect. When the body reports
@@ -17,14 +18,14 @@ async function settleMovieMode(camera:any,expected:number,requiresReadback:boole
  if(!requiresReadback)return
  const deadline=Date.now()+2000
  do{
-  await camera.getInstance?.().refreshEventProperties?.()
+  await protocolAccess(camera).driver?.refreshEventProperties?.()
   if(await movieMode(camera)===expected)return
   await new Promise(resolve=>setTimeout(resolve,100))
  }while(Date.now()<deadline)
  throw new Error(`Canon did not confirm ${expected===1?'Movie':'Photo'} mode after selection`)
 }
 async function snapshot(camera:any):Promise<CanonRecordingSettings>{
- const states=await camera.getCanonPropertyStates(),get=(name:string)=>states.find((state:any)=>state.name===name)?.value
+ const states=await protocolAccess(camera).getCanonPropertyStates(),get=(name:string)=>states.find((state:any)=>state.name===name)?.value
  return {mode:Number(get('CanonAutoExposureMode')),iso:get('CanonIso'),aperture:get('CanonAperture'),shutterSpeed:get('CanonShutterSpeed'),whiteBalance:get('CanonWhiteBalance'),settingsMatched:false}
 }
 async function copySettings(camera:any,before:CanonRecordingSettings){
@@ -33,11 +34,11 @@ async function copySettings(camera:any,before:CanonRecordingSettings){
  for(const [key,[name,method]] of Object.entries(properties)){
   const value=before[key as keyof typeof properties]
   if(value===undefined)continue
-  const state=(await camera.getCanonPropertyStates()).find((state:any)=>state.name===name)
+  const state=(await protocolAccess(camera).getCanonPropertyStates()).find((state:any)=>state.name===name)
   if(String(state?.value)===value)continue
   if(!state?.allowedValues?.map(String).includes(value))throw new Error(`Canon movie mode did not advertise the selected ${key}: ${value}`)
   await camera[method](value)
-  const observed=(await camera.getCanonPropertyStates()).find((state:any)=>state.name===name)?.value
+  const observed=(await protocolAccess(camera).getCanonPropertyStates()).find((state:any)=>state.name===name)?.value
   if(String(observed)!==value)throw new Error(`Canon ${key} readback changed during the movie-mode transition`)
  }
 }
@@ -73,12 +74,12 @@ export async function withCanonRecordingMode<T>(camera:any,record:(settings:Cano
 /** Read actual movie choices without copying photo-only values into movie mode. */
 export async function probeCanonRecordingControls(camera:any){
  const before=await snapshot(camera)
- const movie=(await camera.getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
+ const movie=(await protocolAccess(camera).getCanonUnknownPropertyStates()).some((state:any)=>state.name==='FixedMovie'&&state.rawValue===1)
  let entered=false
  try{
   if(!movie){await camera.enterMovieMode();entered=true;await new Promise(resolve=>setTimeout(resolve,700))}
   if(before.mode===3)await camera.setCanonManualExposureMode()
-  return await camera.getCanonPropertyStates()
+  return await protocolAccess(camera).getCanonPropertyStates()
  }finally{
   if(entered){await camera.leaveMovieMode();await copySettings(camera,before)}
  }

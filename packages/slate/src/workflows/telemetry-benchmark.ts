@@ -1,5 +1,6 @@
 import { CanonCamera } from '@camera/canon-camera'
 import type { Camera } from '@camera/index'
+import { protocolAccess } from '@camera/operations/protocol'
 import { SonyCamera } from '@camera/sony-camera'
 import { slateBuildMetadata } from '@core/telemetry'
 import { type ProtocolEvidence } from '@contribute/protocol'
@@ -13,8 +14,10 @@ export interface BenchmarkCheck {
     error?: 'operation-failed' | 'deadline' | 'cancelled'
 }
 export interface BenchmarkOptions {
-    capture?: boolean
-    live?: boolean
+    /** Take one photo and transfer it. Default false. */
+    photo?: boolean
+    /** Transfer one live-view frame. Default false. */
+    liveView?: boolean
     /** 'first-contact' is the automatic read-only inventory: no capture, live view or storage mode change. */
     purpose?: 'benchmark' | 'first-contact'
     signal?: AbortSignal
@@ -34,9 +37,21 @@ export interface DescriptorShape {
     choices?: number
 }
 
+/** The options `runCameraBenchmark` took before `photo` and `liveView`. */
+export interface LegacyBenchmarkOptions extends Omit<BenchmarkOptions, 'photo' | 'liveView'> {
+    capture?: boolean
+    live?: boolean
+}
+
+/** @deprecated Use `runBenchmark(camera, { photo, liveView })`. */
+export async function runCameraBenchmark(camera: Camera, options: LegacyBenchmarkOptions = {}) {
+    const { capture, live, ...rest } = options
+    return runBenchmark(camera, { ...rest, photo: capture, liveView: live })
+}
+
 /** Caller owns an idle, connected camera. Reads its full advertised inventory and bounded
  * safe numeric descriptors. Photo/live transfers remain explicit; no arbitrary vendor writes. */
-export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptions = {}) {
+export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {}) {
     const firstContact = options.purpose === 'first-contact'
     const timeout = options.timeoutMilliseconds ?? 180_000
     const maximum = options.maximumProperties ?? 128
@@ -52,7 +67,8 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
     const id = crypto.randomUUID(),
         started = Date.now(),
         deadline = started + timeout
-    const instance = camera.getInstance(),
+    const session = protocolAccess(camera),
+        instance = session.driver,
         vendorId = instance.vendorId ?? 0
     const checks: BenchmarkCheck[] = []
     const datasets: ProtocolEvidence[] = []
@@ -98,7 +114,7 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
     let identity: { manufacturer: string; model: string; firmware: string } | undefined
     try {
         const response = await check('identity', async () => {
-            const result = await camera.send(instance.registry.operations.GetDeviceInfo, {})
+            const result = await session.send(instance.registry.operations.GetDeviceInfo, {})
             if (result.code !== 0x2001 || !result.data?.model) throw new Error('Missing camera identity')
             return result.data
         })
@@ -137,14 +153,14 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
             } else if (instance instanceof CanonCamera) {
                 if (supported.has(0x9108))
                     await check('canon-extended-inventory', async () => {
-                        const result = await camera.send(instance.registry.operations.CanonGetExtendedDeviceInfo, {})
+                        const result = await session.send(instance.registry.operations.CanonGetExtendedDeviceInfo, {})
                         if (result.code !== 0x2001 || !result.data) throw new Error('No Canon inventory')
                     })
                 await check('canon-controls', () => instance.refreshEventProperties())
                 properties = properties.filter(code => code < 0x8000)
             } else if (vendorId === 0x04b0 && supported.has(0x9439)) {
                 await check('nikon-vendor-inventory', async () => {
-                    const result = await camera.send(createNikonRegistry(true).operations.GetVendorCodes, { Kind: 13 })
+                    const result = await session.send(createNikonRegistry(true).operations.GetVendorCodes, { Kind: 13 })
                     const bytes = result.data
                     if (result.code !== 0x2001 || !(bytes instanceof Uint8Array) || bytes.length < 4)
                         throw new Error('No vendor inventory')
@@ -175,7 +191,7 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
                         vendorId === 0x04b0 && supported.has(0x943a)
                             ? createNikonRegistry(true).operations.GetDevicePropDescEx
                             : instance.registry.operations.GetDevicePropDesc
-                    const result = await camera.send(operation, { DevicePropCode: property })
+                    const result = await session.send(operation, { DevicePropCode: property })
                     if (result.code !== 0x2001 || !result.data) throw new Error('Missing property descriptor')
                     const descriptor = result.data
                     descriptorShapes.push({
@@ -193,18 +209,18 @@ export async function runCameraBenchmark(camera: Camera, options: BenchmarkOptio
             await check('storage', async () => {
                 try {
                     if (prepareSonyStorage) await instance.prepareStorageRead()
-                    const result = await camera.send(instance.registry.operations.GetStorageIDs, {})
+                    const result = await session.send(instance.registry.operations.GetStorageIDs, {})
                     if (result.code !== 0x2001 || !result.data) throw new Error('Missing storage result')
                 } finally {
                     if (prepareSonyStorage) await instance.resumeShooting()
                 }
             })
-            if (options.capture && !firstContact)
+            if (options.photo && !firstContact)
                 await check('photo-transfer', async () => {
                     const photo = await camera.takePhoto({ autofocus: false, destination: 'computer' })
                     if (!photo.data.length) throw new Error('No image transferred')
                 })
-            if (options.live && !firstContact)
+            if (options.liveView && !firstContact)
                 await check('live-transfer', async () => {
                     const frame = await camera.getLiveViewFrame()
                     if (!frame.jpeg.length) throw new Error('No frame transferred')

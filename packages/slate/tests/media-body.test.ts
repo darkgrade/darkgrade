@@ -586,7 +586,7 @@ describe('card and media on a simulated generic PTP body', () => {
 
     it('reports make, model, firmware and connection, without guessing a lens mount', async () => {
         const { camera } = genericCamera()
-        expect(await camera.getInfo()).toEqual({ manufacturer: 'Example Optics', model: 'Model 1', firmware: '2.0', connection: 'ip' })
+        expect(await camera.getInfo()).toEqual({ manufacturer: 'Example Optics', model: 'Model 1', firmware: '2.0', serialNumber: '0001', connection: 'ip' })
     })
 })
 
@@ -852,7 +852,7 @@ describe('a simulated Sony body', () => {
 
     it('reports its make, model and E mount', async () => {
         const { camera } = sonyCamera()
-        expect(await camera.getInfo()).toEqual({ manufacturer: 'Sony', model: 'ILCE-7M5', firmware: '1.00', lensMount: 'E', connection: 'usb' })
+        expect(await camera.getInfo()).toEqual({ manufacturer: 'Sony', model: 'ILCE-7M5', firmware: '1.00', serialNumber: '0001', lensMount: 'E', connection: 'usb' })
     })
 
     it('delivers settingsChanged and mediaAdded from its own event codes until off()', async () => {

@@ -2,6 +2,7 @@ import { CanonCamera } from '@camera/canon-camera'
 import { CameraConfirmationError, confirmCameraValue } from '@camera/confirmation'
 import type { CameraRecordingState } from '@camera/controls'
 import { Camera } from '@camera/index'
+import { protocolSession } from '@camera/operations/protocol'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { afterEach, expect, it, vi } from 'vitest'
 
@@ -17,7 +18,7 @@ function fixture(vendorId: number) {
         } as unknown as TransportInterface,
     })
     let state: CameraRecordingState = 'idle'
-    if (vendorId === 0x054c) vi.spyOn(camera, 'getSonyPropertyStates').mockResolvedValue([
+    if (vendorId === 0x054c) vi.spyOn(protocolSession(camera), 'getSonyPropertyStates').mockResolvedValue([
         {code:0xd160,rawValue:1,sonyEnabledFlag:1},
         {code:0xd248,rawValue:1,sonyEnabledFlag:2},
         {code:0xd24a,rawValue:120,sonyEnabledFlag:2},

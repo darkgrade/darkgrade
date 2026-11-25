@@ -7,6 +7,7 @@ import {
     type MediaItem,
     type TransactionPolicy,
 } from '@darkgrade/slate'
+import type { SonyContent, SonyContentFile } from '@darkgrade/slate/protocol'
 import type { CameraControlName, FileEntry, FilePreview } from '@shared/ipc'
 
 // Constants and helpers the camera service's area modules share.
@@ -52,6 +53,7 @@ export const TRANSACTION_POLICY: Partial<TransactionPolicy> = {
 export const SETTINGS_EVENT_DEBOUNCE_MS = 400
 
 export const STILL_IMAGE_CLASS = 0x06
+export const PTP_OK = 0x2001
 
 export const DOWNLOAD_PROGRESS_INTERVAL_MS = 100
 
@@ -103,9 +105,17 @@ export function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-/** The session is unusable until a fresh disconnect/connect. */
+/**
+ * The session is unusable until a fresh disconnect/connect. Camera operations report a lost
+ * transport or pending recovery as CameraOutcomeUnknownError with the PTP error as its `cause`.
+ */
 export function requiresReconnect(error: unknown): boolean {
-    return error instanceof PTPDisconnectedError || error instanceof PTPRecoveryRequiredError
+    let failure = error
+    for (let depth = 0; depth < 4 && failure !== undefined; depth++) {
+        if (failure instanceof PTPDisconnectedError || failure instanceof PTPRecoveryRequiredError) return true
+        failure = failure instanceof Error ? failure.cause : undefined
+    }
+    return false
 }
 
 /** Sony's colour-temperature range in its own 100 K steps, for bodies that report a range, not a list. */
@@ -151,40 +161,18 @@ export interface DiscoveredCamera {
  * Slate also selects the actual USB vendor itself when Camera.connect() is used alone.
  */
 export async function discoverCamera(): Promise<DiscoveredCamera | null> {
-    const { webusb } = await import('usb')
-
-    const toDiscovered = (device: USBDevice): DiscoveredCamera => ({
+    // Camera.discover lists PTP still-image interfaces only: a known vendor's body in a non-PTP USB
+    // mode (mass storage, webcam) is not listed, so connect takes the generic path and reports why.
+    const devices = await Camera.discover().catch(() => [])
+    // A known vendor's body first; any other still-image-class device after it.
+    const device = devices.find(candidate => KNOWN_CAMERA_VENDOR_IDS.has(candidate.vendorId)) ?? devices[0]
+    if (!device) return null
+    return {
         vendorId: device.vendorId,
         productId: device.productId,
-        name: [device.manufacturerName, device.productName].filter(Boolean).join(' ') || 'Unknown camera',
+        name: [device.manufacturer, device.model].filter(Boolean).join(' ') || 'Unknown camera',
         model: describeModel(device.vendorId, device.productId),
-    })
-
-    const isCamera = (device: USBDevice): boolean => {
-        if (KNOWN_CAMERA_VENDOR_IDS.has(device.vendorId)) return true
-        return (
-            device.configuration?.interfaces?.some(usbInterface =>
-                usbInterface.alternates?.some(alternate => alternate.interfaceClass === STILL_IMAGE_CLASS)
-            ) ?? false
-        )
     }
-
-    const devices = await webusb.getDevices().catch(() => [] as USBDevice[])
-    const known = devices.find(device => KNOWN_CAMERA_VENDOR_IDS.has(device.vendorId))
-    if (known) return toDiscovered(known)
-    const anyCamera = devices.find(isCamera)
-    if (anyCamera) return toDiscovered(anyCamera)
-
-    // Fallback: explicitly request per known vendor (mirrors link's discover())
-    for (const vendorId of KNOWN_CAMERA_VENDOR_IDS) {
-        try {
-            const device = await webusb.requestDevice({ filters: [{ vendorId, classCode: STILL_IMAGE_CLASS }] })
-            if (device) return toDiscovered(device)
-        } catch {
-            // no device for this vendor
-        }
-    }
-    return null
 }
 
 export function formatBytes(bytes: number): string {

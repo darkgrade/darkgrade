@@ -23,7 +23,7 @@ const unstatedSize = 0xffffffff
 /** The protocol surface the shared storage helpers read, taken from the driver itself. */
 function storageHost(driver: GenericCamera) {
     return {
-        getInstance: () => driver,
+        driver,
         send: driver.send.bind(driver),
         get: driver.get.bind(driver),
     }
@@ -42,7 +42,7 @@ function sonyHost(driver: SonyCamera) {
 /** Canon's recording-mode helper, on the driver's own commands rather than Camera's vendor methods. */
 function canonHost(driver: CanonCamera) {
     return {
-        getInstance: () => driver,
+        driver,
         getCanonPropertyStates: async () => driver.listPropertyStates(),
         getCanonUnknownPropertyStates: async () => driver.listUnknownPropertyStates(),
         prepareCanonRecordingDestination: () => driver.prepareRecordingDestination(),

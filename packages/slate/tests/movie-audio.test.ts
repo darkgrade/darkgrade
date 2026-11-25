@@ -20,12 +20,12 @@ describe('Original card movie audio inspection',()=>{
   const data=box('ftyp',new Uint8Array(4)),video=box('mdat',new Uint8Array(1024)),metadata=box('moov',track('vide'),track('soun'))
   const bytes=new Uint8Array(data.length+video.length+metadata.length);bytes.set(data);bytes.set(video,data.length);bytes.set(metadata,data.length+video.length)
   const counts:number[]=[]
-  const camera:any={getInstance:()=>({registry:{operations:{GetPartialObject:{}}}}),send:async(_:any,p:any)=>{counts.push(p.MaxBytes);return {code:0x2001,data:bytes.subarray(p.Offset,p.Offset+p.MaxBytes)}}}
+  const camera:any={get driver(){return ({registry:{operations:{GetPartialObject:{}}}})},send:async(_:any,p:any)=>{counts.push(p.MaxBytes);return {code:0x2001,data:bytes.subarray(p.Offset,p.Offset+p.MaxBytes)}}}
   expect((await readCameraMovieAudio(camera,{handle:4,filename:'MVI.MP4',objectCompressedSize:bytes.length})).status).toBe('present')
   expect(counts).toEqual([8,8,8,metadata.length])
  })
  it('reports incomplete camera reads as unverified',async()=>{
-  const camera:any={getInstance:()=>({registry:{operations:{GetPartialObject:{}}}}),send:async()=>({code:0x2001,data:new Uint8Array(3)})}
+  const camera:any={get driver(){return ({registry:{operations:{GetPartialObject:{}}}})},send:async()=>({code:0x2001,data:new Uint8Array(3)})}
   expect((await readCameraMovieAudio(camera,{handle:4,filename:'MVI.MP4',objectCompressedSize:100})).status).toBe('unverified')
  })
 })

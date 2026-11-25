@@ -1,11 +1,12 @@
+import { protocolAccess } from '@camera/operations/protocol'
 import {nikonCanRecordToStorage} from '@vendors/nikon/card-storage'
 import {PTPResponseError} from '@core/ptp-errors'
 import {sonyStorageRecordingCapability} from '@vendors/sony/card-storage'
 
 /** Read current card capacity and camera recording capability, independently of host upload access. */
 export async function readCameraStorages(camera: any) {
-    await camera.getInstance().prepareStorageRead?.()
-    const operations = camera.getInstance().registry.operations
+    await protocolAccess(camera).driver.prepareStorageRead?.()
+    const operations = protocolAccess(camera).driver.registry.operations
     const response = await camera.send(operations.GetStorageIDs, {})
     if (response.code !== 0x2001) throw new Error('Camera storage could not be read (GetStorageIDs: 0x' + response.code.toString(16) + ')')
     const summaries = []
@@ -15,7 +16,7 @@ export async function readCameraStorages(camera: any) {
         if (storage.code !== 0x2001) throw new Error('Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
         const info = storage.data || {}
         const access = Number(info.accessCapability ?? info.AccessCapability ?? -1)
-        const vendor = camera.getInstance().vendorId
+        const vendor = protocolAccess(camera).driver.vendorId
         const sony = vendor === 0x054c ? await sonyStorageRecordingCapability(camera, Number(storageId)) : undefined
         const writable = vendor === 0x04b0
             ? await nikonCanRecordToStorage(camera, access) : sony ? sony.recordingReady : access === 0
@@ -36,8 +37,8 @@ export async function readCameraStorages(camera: any) {
 
 /** Enumerate populated card slots only; an empty-slot placeholder is not a readable storage. */
 export async function readCameraObjectHandles(camera: any): Promise<Set<number>> {
-    await camera.getInstance().prepareStorageRead?.()
-    const operations = camera.getInstance().registry.operations
+    await protocolAccess(camera).driver.prepareStorageRead?.()
+    const operations = protocolAccess(camera).driver.registry.operations
     const storage = await camera.send(operations.GetStorageIDs, {})
     if (storage.code !== 0x2001) throw new PTPResponseError(storage.code, 'Camera storage could not be read (GetStorageIDs: 0x' + storage.code.toString(16) + ')')
     if (!Array.isArray(storage.data)) throw new Error('GetStorageIDs returned no storage dataset')
@@ -56,7 +57,7 @@ export async function readCameraObjectHandles(camera: any): Promise<Set<number>>
 export async function waitForNewCameraMovie(camera: any, baseline: Set<number>, timeoutMilliseconds = 12000) {
     if (!Number.isInteger(timeoutMilliseconds) || timeoutMilliseconds < 1 || timeoutMilliseconds > 60000)
         throw new Error('Movie finalization timeout must be 1–60000 milliseconds')
-    const operations = camera.getInstance().registry.operations
+    const operations = protocolAccess(camera).driver.registry.operations
     const deadline = Date.now() + timeoutMilliseconds
     let lastError: unknown
     do {

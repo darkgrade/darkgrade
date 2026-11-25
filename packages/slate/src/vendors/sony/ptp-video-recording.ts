@@ -1,3 +1,4 @@
+import { protocolAccess } from '@camera/operations/protocol'
 import {readCameraObjectHandles} from '@camera/storage'
 import {stopCameraRecording} from '@camera/video-recording'
 import type {TakeMedia} from '@workflows/video-take'
@@ -16,9 +17,9 @@ export class SonyPtpVideoRecording {
     private prepared=false
     private stoppedResult?:{stopped:boolean;media:TakeMedia[];warning?:string}
     constructor(private readonly camera:any){}
-    private get operations(){return this.camera.getInstance().registry.operations}
+    private get operations(){return protocolAccess(this.camera).driver.registry.operations}
     async state(){
-        const value=await readSonyPtpRecordingState(this.camera)
+        const value=await readSonyPtpRecordingState(protocolAccess(this.camera))
         if(value === undefined)throw new Error('Sony did not report a valid native movie state')
         return value
     }

@@ -12,7 +12,8 @@ import {
     sanitizeProfileTransaction,
     type ProfileObservation,
 } from '@vendors/profile-capture'
-import { describe, expect, it } from 'vitest'
+import { GenericCamera } from '@camera/generic-camera'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { configureSlateTelemetry } from '@core/telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
@@ -56,7 +57,7 @@ it('Sony profile storage reads enter transfer mode and restore shooting after a 
         prepareStorageRead:async()=>{calls.push('prepare')},
         resumeShooting:async()=>{calls.push('restore')},
     })
-    const camera={getInstance:()=>instance,send:async(operation:any)=>{
+    const camera={get driver(){return instance},send:async(operation:any)=>{
         if(operation.code===0x1001)return {code:0x2001,data:identity}
         calls.push('storage')
         throw new Error('Read refused')
@@ -170,6 +171,8 @@ function transaction(operation: number, data: Uint8Array, parameters: number[] =
     return { operation, transactionId: 7, parameters, response: { code: 0x2001, parameters: [], data } }
 }
 
+afterEach(() => vi.restoreAllMocks())
+
 describe('explicit profile capture', () => {
     it.each([0x2001, 0x2006, 0x2005, 0x200f, 0x2019])('preserves Nikon event refusals except unsupported retention (0x%s)', async response => {
         const { transport, commands, eventParameters } = fixture(false, response)
@@ -246,6 +249,34 @@ describe('explicit profile capture', () => {
         )
         expect(JSON.stringify(result)).not.toContain(Buffer.from('PRIVATE_SERIAL', 'utf16le').toString('hex'))
         expect(transport.isConnected()).toBe(false)
+    })
+
+    it('initializes a generic body through Camera.connect and reads on the driver that holds the session', async () => {
+        const { transport, commands } = fixture()
+        const configured = new Map<GenericCamera, Parameters<GenericCamera['configureTransactions']>[0]>()
+        const configure = GenericCamera.prototype.configureTransactions
+        vi.spyOn(GenericCamera.prototype, 'configureTransactions').mockImplementation(function (this: GenericCamera, policy) {
+            configured.set(this, { ...configured.get(this), ...policy })
+            return configure.call(this, policy)
+        })
+        const senders: Array<{ driver: GenericCamera; sessionId: number | null }> = []
+        const send = GenericCamera.prototype.send
+        vi.spyOn(GenericCamera.prototype, 'send').mockImplementation(function (this: GenericCamera, ...parameters) {
+            senders.push({ driver: this, sessionId: this.sessionId })
+            return send.apply(this, parameters)
+        } as typeof send)
+        const result = await captureCameraProfile(transport, { vendorId: 0x1234, productId: 1, revision: 'fixture', initialize: true })
+        expect(commands).toEqual([0x1002, 0x1001, 0x1014, 0x1003])
+        expect(result.mode).toBe('initialized')
+        expect(result.checks.every(check => check.status === 'pass')).toBe(true)
+        const reads = senders.filter((_, index) => index > 0 && index < senders.length - 1)
+        const [session] = senders
+        expect(reads.length).toBeGreaterThan(0)
+        for (const read of reads) {
+            expect(read.driver).toBe(session!.driver)
+            expect(read.sessionId).not.toBeNull()
+        }
+        expect(configured.get(session!.driver)).toMatchObject({ timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false })
     })
 
     it('keeps camera refusals as errors and still closes its session', async () => {

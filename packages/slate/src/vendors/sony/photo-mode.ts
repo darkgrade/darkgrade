@@ -1,3 +1,4 @@
+import { protocolAccess } from '@camera/operations/protocol'
 import type { Camera } from '@camera/index'
 import type { SonyCamera, SonyPropertyState } from '@camera/sony-camera'
 import { isSonyMovieExposureProgram, sonyCounterpartExposureProgram } from '@vendors/sony/exposure-program'
@@ -19,7 +20,7 @@ export async function openSonyRecordingMode(camera: Camera) {
         const before = (await camera.getCapabilities()).controls.exposureProgram?.value
         try { await camera.setControl('exposureProgram', requested) }
         catch (error) {
-            camera.getInstance().recordStateSnapshot('recording', 'failure')
+            protocolAccess(camera).driver.recordStateSnapshot('recording', 'failure')
             // Sony's shipped sample reconciles acknowledged, unapplied mode selections.
             // Generic writes stay single-attempt; only an unchanged, writable, idle mode
             // admits one extra idempotent selection. I/O errors and unknown outcomes stop.

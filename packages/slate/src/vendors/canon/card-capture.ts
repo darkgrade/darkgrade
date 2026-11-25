@@ -10,7 +10,7 @@ export async function captureCanonCardImage(
     capture: () => Promise<void>,
     options: { includeInfo: boolean; includeData: boolean },
 ): Promise<{ info?: ObjectInfo; data?: Uint8Array; objectHandle?: number }> {
-    const storageCamera = { getInstance: () => camera, send: camera.send.bind(camera) }
+    const storageCamera = { driver: camera, send: camera.send.bind(camera) }
     const baseline = await readCameraObjectHandles(storageCamera)
     await capture()
     // The shutter was accepted: an unconfirmed or untransferred still is an unknown outcome, never a retry.
@@ -19,7 +19,7 @@ export async function captureCanonCardImage(
 
 async function confirmNewCardImage(
     camera: CanonCamera,
-    storageCamera: { getInstance: () => CanonCamera; send: CanonCamera['send'] },
+    storageCamera: { driver: CanonCamera; send: CanonCamera['send'] },
     baseline: Set<number>,
     options: { includeInfo: boolean; includeData: boolean },
 ): Promise<{ info?: ObjectInfo; data?: Uint8Array; objectHandle: number }> {

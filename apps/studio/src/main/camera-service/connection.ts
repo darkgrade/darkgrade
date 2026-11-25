@@ -1,4 +1,5 @@
 import { Camera } from '@darkgrade/slate'
+import { protocolSession } from '@darkgrade/slate/protocol'
 import type { CameraService } from '@main/camera-service'
 import {
     CONNECT_RETRY_DELAY_MS,
@@ -81,8 +82,7 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
     },
 
     async connectInternal(): Promise<CameraState> {
-        // Discover the device first so Camera instantiates the right vendor
-        // implementation (SonyCamera/NikonCamera/CanonCamera) instead of GenericCamera.
+        // Discover the device first so Camera opens that exact body.
         const discovered = await this.discoverWithRetry(DISCOVERY_ATTEMPTS)
         if (discovered) {
             this.detectedVendorId = discovered.vendorId
@@ -119,8 +119,12 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         }
 
         // Slate selects the actual opened USB body's driver, including when discovery missed it.
-        this.cameraInfo = await camera.getInfo().catch(() => null)
+        this.cameraInfo = await camera.getInfo().catch(error => {
+            this.log('system', `Camera identity read failed: ${errorMessage(error)}`, 'error')
+            return null
+        })
         this.detectedVendorId ??= vendorIdForMake(this.cameraInfo?.manufacturer)
+        if (this.cameraInfo) this.detectedModel ??= this.cameraInfo.model
 
         this.camera = camera
         this.connected = true
@@ -130,7 +134,10 @@ export const connectionOperations: ConnectionOperations & ThisType<CameraService
         this.startClockSync()
         this.previewCache.clear()
         this.scheduleFilesRefresh(FILES_REFRESH_DELAY_MS * 2)
-        this.log('system', `Connected to ${this.vendorName()}`)
+        this.log(
+            'system',
+            `Connected to ${this.cameraInfo ? `${this.cameraInfo.manufacturer} ${this.cameraInfo.model}` : this.vendorName()}`
+        )
 
         // Broadcast connected state immediately — settings reads can be slow
         // (or unsupported) and must never keep the UI stuck on "disconnected".

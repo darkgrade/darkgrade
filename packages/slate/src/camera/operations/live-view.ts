@@ -2,6 +2,7 @@ import type { LiveViewFrame, LiveViewFrameOptions } from '@camera/driver/live-vi
 import type { Camera } from '@camera/index'
 import type { NikonLiveViewMetadata } from '@camera/nikon-camera'
 import { canonDriver, cameraContext, requireCapability } from '@camera/operations/context'
+import { protocolSession } from '@camera/operations/protocol'
 import { SonyCamera, type SonyOsdImage } from '@camera/sony-camera'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import type { CanonLiveViewFrame } from '@ptp/datasets/vendors/canon/canon-live-view-dataset'
@@ -24,6 +25,7 @@ export interface LiveViewOperations {
     millisecondsUntilNextLiveViewFrame(): number
     /** Live-view requests and frames since the last call (Sony), for measuring polling cost. */
     takeLiveViewStatistics(): { requests: number; refusals: number; frames: number } | null
+    /** @deprecated Use `protocolSession(camera).captureCanonViewfinderFrame()` from `@darkgrade/slate/protocol`. */
     captureCanonViewfinderFrame(): Promise<CanonLiveViewFrame>
     stopCanonLiveView(): Promise<void>
     /** Turns the camera's on-screen display stream on or off; captureSonyOsdImage turns it on by itself. */
@@ -63,7 +65,7 @@ export const liveViewOperations: LiveViewOperations & ThisType<Camera> = {
     },
 
     async captureCanonViewfinderFrame(): Promise<CanonLiveViewFrame> {
-        return canonDriver(this).captureViewfinderFrame()
+        return protocolSession(this).captureCanonViewfinderFrame()
     },
 
     async stopCanonLiveView(): Promise<void> {

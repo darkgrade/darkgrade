@@ -1,3 +1,4 @@
+import { protocolAccess } from '@camera/operations/protocol'
 import { CameraClipNotFoundError } from '@camera/errors'
 import { readCameraObjectHandles, readCameraStorages } from '@camera/storage'
 import { readNikonObjectSize } from '@vendors/nikon/object-size'
@@ -27,7 +28,7 @@ export class UsbVideoRecording {
         private readonly vendor: 'canon' | 'nikon'
     ) {}
     private get operations() {
-        return this.camera.getInstance().registry.operations
+        return protocolAccess(this.camera).driver.registry.operations
     }
     private handles() {
         return readCameraObjectHandles(this.camera)

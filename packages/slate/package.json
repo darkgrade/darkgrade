@@ -20,6 +20,11 @@
             "import": "./dist/controls.mjs",
             "require": "./dist/controls.cjs"
         },
+        "./protocol": {
+            "types": "./dist/protocol.d.ts",
+            "import": "./dist/protocol.mjs",
+            "require": "./dist/protocol.cjs"
+        },
         "./runtime": {
             "types": "./dist/runtime/index.d.ts",
             "browser": {
